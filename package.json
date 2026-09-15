@@ -1,0 +1,16 @@
+{
+  "name": "pcdc-vita-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local two-minute PCDC VITA presentation prototype",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node --test tests/domain.test.mjs",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
