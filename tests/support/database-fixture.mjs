@@ -25,6 +25,13 @@ const SAMPLE_REQUEST = Object.freeze({
   message: "Please add the fictional sample.",
 });
 const SAMPLE_FILENAME = "demo-mileage-record-2025.pdf";
+// The one fictional assistance request `seedAssistance` creates. Language and
+// contact preference are the fields the assistance list shows a helper.
+const SAMPLE_ASSISTANCE = Object.freeze({
+  title: "Client needs help completing intake forms",
+  language: "Mandarin",
+  contactPreference: "Prefers calls from the main office",
+});
 // Actions whose payload names a related record. For compact tests only, an
 // omitted id falls back to the case's single current request or open follow-up;
 // the browser always sends the selected id (Ruling R20).
@@ -49,6 +56,12 @@ const STATE_TABLES = Object.freeze([
   "contact_attempts",
   "assistance_items",
 ]);
+// One key for the advisory lock that keeps fixture workspace setup exclusive
+// across parallel test processes (see initializeOwned below).
+const SETUP_LOCK =
+  "select pg_advisory_lock(hashtextextended('vitally-test-fixture-setup',0))";
+const SETUP_UNLOCK =
+  "select pg_advisory_unlock(hashtextextended('vitally-test-fixture-setup',0))";
 const options = {
   auth: {
     persistSession: false,
@@ -75,6 +88,23 @@ export const applyArgs = ({
   p_person_id: personId,
   p_type: type,
   p_payload: payload,
+});
+// The same for vitally_assistance_action, whose envelope carries an item and a
+// plain note instead of a case and a payload object.
+export const assistanceArgs = ({
+  actionId = randomUUID(),
+  itemId,
+  revision,
+  personId = null,
+  type,
+  note = null,
+}) => ({
+  p_action_id: actionId,
+  p_item_id: itemId,
+  p_expected_revision: revision,
+  p_person_id: personId,
+  p_type: type,
+  p_note: note,
 });
 export async function createDatabaseFixture({ afterInitialize } = {}) {
   const target = await assertTestTarget();
@@ -116,16 +146,14 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     return data;
   };
   f.intakeChecks = INTAKE_CHECKS;
-  // A case the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
-  const visibleCase = async (client, caseId) => {
-    const { data, error } = await client
-      .from("cases")
-      .select("*")
-      .eq("id", caseId);
+  // A row the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
+  const visibleRow = async (client, table, id) => {
+    const { data, error } = await client.from(table).select("*").eq("id", id);
     if (error) throw createAppError(error);
     if (!data.length) throw createAppError({ code: "VT002" });
     return data[0];
   };
+  const visibleCase = (client, caseId) => visibleRow(client, "cases", caseId);
   const visibleRows = async (client, table, caseId, tiebreak = "id") => {
     const { data, error } = await client
       .from(table)
@@ -169,6 +197,23 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     if (error) throw createAppError(error);
     return data;
   };
+  // `f.act` for the assistance entry point. Tests that need an explicit
+  // revision (races, replays, invisible items) call `rpc` with assistanceArgs.
+  f.actAssistance = async (client, itemId, personId, type, note = null) => {
+    const current = await visibleRow(client, "assistance_items", itemId);
+    const { data, error } = await client.rpc(
+      "vitally_assistance_action",
+      assistanceArgs({
+        itemId,
+        revision: Number(current.revision),
+        personId,
+        type,
+        note,
+      }),
+    );
+    if (error) throw createAppError(error);
+    return data;
+  };
   // An unclaimed case waiting for a preparer, built only through public actions.
   f.readyCase = async () => {
     const created = await f.createCase(f.applicantA, randomUUID(), {
@@ -207,6 +252,50 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       SAMPLE_REQUEST,
     );
     return created.caseId;
+  };
+  f.sampleAssistance = SAMPLE_ASSISTANCE;
+  // One open assistance request against a received, unclaimed case. Assistance
+  // items have no creating action in this scope, so the row is seeded through
+  // the privileged connection; its case is built only through public actions.
+  f.seedAssistance = async () => {
+    const created = await f.createCase(f.applicantA, randomUUID(), {
+      answers: makeSampleAnswers(),
+    });
+    await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
+      confirmed: true,
+    });
+    const inserted = await f.sql(
+      `insert into public.assistance_items(workspace_id,case_id,title,status,revision,assignee_person_id,language,contact_preference)
+       values($1,$2,$3,'open',1,null,$4,$5) returning id`,
+      [
+        f.workspaceId,
+        created.caseId,
+        SAMPLE_ASSISTANCE.title,
+        SAMPLE_ASSISTANCE.language,
+        SAMPLE_ASSISTANCE.contactPreference,
+      ],
+    );
+    return { itemId: inserted.rows[0].id, caseId: created.caseId };
+  };
+  // The assistance item as staff read it, through the presenter's own client.
+  f.readStaffAssistance = async (itemId) => {
+    const row = camelRow(
+      await visibleRow(f.presenter, "assistance_items", itemId),
+    );
+    return {
+      id: row.id,
+      caseId: row.caseId,
+      title: row.title,
+      status: row.status,
+      revision: Number(row.revision),
+      assigneeId: row.assigneePersonId,
+      resolutionNote: row.resolutionNote,
+      language: row.language,
+      contactPreference: row.contactPreference,
+      fixture: row.fixture,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   };
   // The staff Case shape from src/contracts.mjs, read through the presenter's
   // own client so the helper also proves presenter visibility.
@@ -256,6 +345,8 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       intakeVerified: row.intake_verified,
       preparerId: row.preparer_id,
       reviewerId: row.reviewer_id,
+      lastRemindedAt: row.last_reminded_at,
+      lastRemindedByPersonId: row.last_reminded_by_person_id,
       participants: participants.map((participant) => participant.personId),
       requests: await visibleRows(f.presenter, "document_requests", caseId),
       documents: await visibleRows(f.presenter, "documents", caseId),
@@ -391,24 +482,36 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     const initializeOwned = async (setup) => {
       run.pendingWorkspaces.add(setup.workspaceId);
       await saveRun(runManifest);
-      const result = await initializeWorkspace(setup, {
-        afterInitialize: async (connection) => {
-          await connection.query(
-            "insert into vitally_private.test_workspaces(workspace_id,run_id) values($1,$2)",
-            [setup.workspaceId, runManifest.runId],
-          );
-          if (afterInitialize)
-            await afterInitialize({
-              workspaceId: setup.workspaceId,
-              runId: runManifest.runId,
-              userIds: [...run.users],
-            });
-        },
-      });
-      run.pendingWorkspaces.delete(setup.workspaceId);
-      run.workspaces.add(setup.workspaceId);
-      await saveRun(runManifest);
-      return result;
+      // Setup runs one serializable transaction over a people table small
+      // enough that every workspace shares an index page, so test files
+      // starting together see serialization failures that outlast the
+      // initializer's three retries. This session-level advisory lock, held on
+      // the fixture's own connection and never during a test, makes fixture
+      // setup exclusive across test processes. It changes no product code and
+      // no initializer behaviour.
+      await f.sql(SETUP_LOCK);
+      try {
+        const result = await initializeWorkspace(setup, {
+          afterInitialize: async (connection) => {
+            await connection.query(
+              "insert into vitally_private.test_workspaces(workspace_id,run_id) values($1,$2)",
+              [setup.workspaceId, runManifest.runId],
+            );
+            if (afterInitialize)
+              await afterInitialize({
+                workspaceId: setup.workspaceId,
+                runId: runManifest.runId,
+                userIds: [...run.users],
+              });
+          },
+        });
+        run.pendingWorkspaces.delete(setup.workspaceId);
+        run.workspaces.add(setup.workspaceId);
+        await saveRun(runManifest);
+        return result;
+      } finally {
+        await f.sql(SETUP_UNLOCK);
+      }
     };
     // Workflow tests depend on the shared initializer's permanent people and
     // its default follow-up person; a partial workspace must fail, not skip.
