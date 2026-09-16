@@ -320,6 +320,132 @@ test("case actions apply the shared check order against real Supabase", async (t
       },
     );
     await t.test(
+      "an accepted replay re-checks current membership and operation authority",
+      async () => {
+        const submitted = await draftCase(f);
+        const caseId = submitted.caseId;
+        await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+        const verify = applyArgs({
+          caseId,
+          revision: 2,
+          personId: f.sam,
+          type: "VERIFY_INTAKE",
+          payload: { checks: f.intakeChecks },
+        });
+        const accepted = await f.presenter.rpc("vitally_apply_action", verify);
+        assert.equal(accepted.error, null);
+        const replay = await f.presenter.rpc("vitally_apply_action", verify);
+        assert.equal(replay.error, null);
+        assert.deepEqual(replay.data, accepted.data);
+        const receipt = async () =>
+          (
+            await f.sql(
+              "select * from public.action_receipts where action_id=$1",
+              [verify.p_action_id],
+            )
+          ).rows;
+        const stored = await receipt();
+        const revision = await revisionOf(f, caseId);
+        // The capability the action needed is re-checked on every replay.
+        await f.sql(
+          "update public.people set capabilities=$1 where id=$2",
+          [["assist", "followup", "receive_documents"], f.sam],
+        );
+        try {
+          const stripped = await f.presenter.rpc(
+            "vitally_apply_action",
+            verify,
+          );
+          assert.equal(stripped.error.code, "VT001");
+        } finally {
+          await f.sql("update public.people set capabilities=$1 where id=$2", [
+            ["admin", "assist", "followup", "receive_documents"],
+            f.sam,
+          ]);
+        }
+        // So is the membership the caller acts under.
+        await f.sql(
+          "update public.memberships set active=false where workspace_id=$1 and user_id=$2",
+          [f.workspaceId, f.presenterUserId],
+        );
+        try {
+          const revoked = await f.presenter.rpc(
+            "vitally_apply_action",
+            verify,
+          );
+          assert.equal(revoked.error.code, "VT001");
+        } finally {
+          await f.sql(
+            "update public.memberships set active=true where workspace_id=$1 and user_id=$2",
+            [f.workspaceId, f.presenterUserId],
+          );
+        }
+        // Neither rejection touched the stored receipt or the case.
+        assert.deepEqual(await receipt(), stored);
+        assert.equal(await revisionOf(f, caseId), revision);
+        // Restored authority replays the same receipt again.
+        const restored = await f.presenter.rpc("vitally_apply_action", verify);
+        assert.equal(restored.error, null);
+        assert.deepEqual(restored.data, accepted.data);
+        // The applicant's own accepted envelope follows the same rule.
+        const own = await draftCase(f);
+        const save = applyArgs({
+          caseId: own.caseId,
+          revision: 1,
+          type: "SAVE_ANSWERS",
+          payload: { answers: { city: "Pittsburgh" } },
+        });
+        assert.equal(
+          (await f.applicantA.rpc("vitally_apply_action", save)).error,
+          null,
+        );
+        await f.sql(
+          "update public.memberships set active=false where workspace_id=$1 and user_id=$2",
+          [f.workspaceId, f.applicantAUserId],
+        );
+        try {
+          const revoked = await f.applicantA.rpc("vitally_apply_action", save);
+          assert.equal(revoked.error.code, "VT001");
+        } finally {
+          await f.sql(
+            "update public.memberships set active=true where workspace_id=$1 and user_id=$2",
+            [f.workspaceId, f.applicantAUserId],
+          );
+        }
+      },
+    );
+    await t.test(
+      "an accepted replay returns its receipt without reaching the target",
+      async () => {
+        const created = await draftCase(f);
+        const save = applyArgs({
+          caseId: created.caseId,
+          revision: 1,
+          type: "SAVE_ANSWERS",
+          payload: { answers: { city: "Pittsburgh" } },
+        });
+        const accepted = await f.applicantA.rpc("vitally_apply_action", save);
+        assert.equal(accepted.error, null);
+        // Task 9's fixture reset deletes cases; receipts are historical scalars
+        // with no foreign key, so an identical replay must still answer.
+        await f.sql("delete from public.cases where id=$1", [created.caseId]);
+        const replay = await f.applicantA.rpc("vitally_apply_action", save);
+        assert.equal(replay.error, null);
+        assert.deepEqual(replay.data, accepted.data);
+        // A new action id against the deleted case is NOT_FOUND, as usual.
+        const fresh = await f.applicantA.rpc(
+          "vitally_apply_action",
+          applyArgs({
+            caseId: created.caseId,
+            revision: 2,
+            type: "SAVE_ANSWERS",
+            payload: { answers: { city: "Pittsburgh" } },
+          }),
+        );
+        assert.equal(fresh.error.code, "VT002");
+      },
+    );
+    await t.test(
       "absent, other-owner and invisible cases are the same NOT_FOUND",
       async () => {
         const caseId = await f.readyCase();
@@ -770,7 +896,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
             "select p.proname as name,p.prosecdef,p.proconfig,has_function_privilege('anon',p.oid,'EXECUTE') as anon,has_function_privilege('authenticated',p.oid,'EXECUTE') as browser,has_function_privilege('service_role',p.oid,'EXECUTE') as service from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='vitally_private' order by p.proname",
           )
         ).rows;
-        assert.ok(helpers.length >= 13, "private helpers are installed");
+        assert.ok(helpers.length >= 14, "private helpers are installed");
         for (const helper of helpers) {
           assert.equal(helper.prosecdef, true, `${helper.name} definer`);
           assert.ok(

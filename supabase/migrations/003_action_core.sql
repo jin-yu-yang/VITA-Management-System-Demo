@@ -55,9 +55,11 @@ begin
 end;
 $$;
 
--- Step 4: general authority only. The technical prepare/review qualification is
--- step 7, so any same-workspace person may attempt those action families.
-create function vitally_private.check_authority(p_member public.memberships,p_case public.cases,p_person_id uuid,p_type text)
+-- The target-independent half of step 4: who the caller is, which staff person
+-- they selected, and the operational capability the action type requires. The
+-- replay path runs exactly this, so the two paths cannot drift. The technical
+-- prepare/review qualification is step 7 and must not be tested here.
+create function vitally_private.check_operation_authority(p_member public.memberships,p_person_id uuid,p_type text)
 returns public.people language plpgsql security definer set search_path='' as $$
 declare v_person public.people;
 begin
@@ -73,11 +75,13 @@ begin
  end if;
  case p_type
   when 'SAVE_ANSWERS','SUBMIT' then
+   -- Client-permitted: an applicant answers for themselves, or a presenter
+   -- assists with an admin-capable person.
    if p_person_id is null then
-    if p_member.access<>'applicant' or p_case.owner_user_id is distinct from p_member.user_id then
+    if p_member.access<>'applicant' then
      raise sqlstate 'VT001' using message='FORBIDDEN';
     end if;
-   elsif p_case.owner_user_id is not null or not ('admin'=any(v_person.capabilities)) then
+   elsif not ('admin'=any(v_person.capabilities)) then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
   when 'VERIFY_INTAKE' then
@@ -90,6 +94,28 @@ begin
    end if;
   -- Unknown or not-yet-implemented actions never reach a handler.
   else raise sqlstate 'VT007' using message='VALIDATION';
+ end case;
+ return v_person;
+end;
+$$;
+
+-- Step 4: the operation authority above, then the half that depends on which
+-- case this is. Ownership is the only target-dependent rule these actions have.
+create function vitally_private.check_authority(p_member public.memberships,p_case public.cases,p_person_id uuid,p_type text)
+returns public.people language plpgsql security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ v_person=vitally_private.check_operation_authority(p_member,p_person_id,p_type);
+ case p_type
+  when 'SAVE_ANSWERS','SUBMIT' then
+   if p_person_id is null then
+    if p_case.owner_user_id is distinct from p_member.user_id then
+     raise sqlstate 'VT001' using message='FORBIDDEN';
+    end if;
+   elsif p_case.owner_user_id is not null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  else null;
  end case;
  return v_person;
 end;
@@ -253,9 +279,11 @@ begin
  end if;
  v_digest=encode(extensions.digest(jsonb_build_object('operation',p_type,'caseId',p_case_id,'expectedRevision',p_expected_revision,'personId',p_person_id,'payload',p_payload)::text,'sha256'),'hex');
  v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,p_type,v_digest,p_person_id);
- -- An identical accepted replay returns its receipt without repeating mutation
- -- and without reaching the target, which may since have been deleted.
+ -- An identical accepted replay returns its receipt after the current membership
+ -- and operation-authority checks, without repeating the mutation and without
+ -- reaching the target, which may since have been deleted.
  if v_receipt.receipt is not null then
+  perform vitally_private.check_operation_authority(v_member,p_person_id,p_type);
   return v_receipt.receipt;
  end if;
  v_case=vitally_private.lock_case(v_member,p_case_id);
