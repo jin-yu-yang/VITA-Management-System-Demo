@@ -285,10 +285,17 @@ begin
 end;
 $$;
 
+-- Step 6 is the stage window; step 7 is qualification, assignment, and only
+-- then the request's readiness, so a caller who is not this case's preparer
+-- learns nothing about the request's state from the error code.
 create or replace function vitally_private.act_verify_document(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_request public.document_requests;
 begin
+ if p_case.stage not in ('preparing','corrections_required') then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_preparer(p_case,p_person);
  select * into v_request from public.document_requests
   where workspace_id=p_case.workspace_id and case_id=p_case.id
    and id=vitally_private.payload_uuid(p_payload,'requestId') for update;
@@ -296,7 +303,6 @@ begin
  if v_request.status is distinct from 'awaiting_verification' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- perform vitally_private.require_case_preparer(p_case,p_person);
  update public.document_requests set status='verified',updated_at=now() where id=v_request.id;
  return jsonb_build_object('detail',jsonb_build_object('requestId',v_request.id),
   'message','A volunteer verified your document. No further action is needed for this request.');
@@ -309,6 +315,10 @@ declare v_request public.document_requests;
  v_assignee public.people;
  v_followup uuid;
 begin
+ if p_case.stage not in ('preparing','corrections_required') then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_preparer(p_case,p_person);
  select * into v_request from public.document_requests
   where workspace_id=p_case.workspace_id and case_id=p_case.id
    and id=vitally_private.payload_uuid(p_payload,'requestId') for update;
@@ -317,7 +327,6 @@ begin
   or exists(select 1 from public.admin_followups t where t.request_id=v_request.id and t.status='open') then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- perform vitally_private.require_case_preparer(p_case,p_person);
  -- The workspace's configured follow-up person, never a browser-supplied one.
  -- A missing or unqualified default is a setup error that creates no task.
  select p.* into v_assignee from public.people p
@@ -334,8 +343,9 @@ begin
 end;
 $$;
 
--- Step 7 for the follow-up actions: the capability was checked at step 4, the
--- assignment is checked here, after the task's own state.
+-- Step 7 for the follow-up actions: the capability was checked at step 4; the
+-- assignment comes first here, and the task's readiness only after it, so a
+-- non-assignee cannot tell an open task from a resolved one.
 create or replace function vitally_private.lock_open_followup(p_case public.cases,p_person public.people,p_payload jsonb)
 returns public.admin_followups language plpgsql security definer set search_path='' as $$
 declare v_followup public.admin_followups;
@@ -343,11 +353,11 @@ begin
  select * into v_followup from public.admin_followups
   where workspace_id=p_case.workspace_id and case_id=p_case.id
    and id=vitally_private.payload_uuid(p_payload,'followupId') for update;
- if v_followup.status is distinct from 'open' then
-  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
- end if;
  if v_followup.assignee_person_id is distinct from p_person.id then
   raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ if v_followup.status is distinct from 'open' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
  return v_followup;
 end;
