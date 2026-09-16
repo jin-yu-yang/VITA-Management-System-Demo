@@ -172,15 +172,35 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       await saveRun(runManifest);
       return result;
     };
-    f.people = (await initializeOwned(f.setup)).people;
-    f.foreignPeople = (
-      await initializeOwned({
-        workspaceId: f.foreignWorkspaceId,
-        presenterUserIds: [],
-        applicantUserIds: [f.outsiderUserId],
-        fixtureClientBindings: {},
-      })
-    ).people;
+    // Workflow tests depend on the shared initializer's permanent people and
+    // its default follow-up person; a partial workspace must fail, not skip.
+    const initializeVerified = async (setup) => {
+      const { people } = await initializeOwned(setup);
+      const workspace = (
+        await f.sql(
+          "select w.default_followup_person_id,(select count(*) from public.people p where p.workspace_id=w.id) as people from public.workspaces w where w.id=$1",
+          [setup.workspaceId],
+        )
+      ).rows[0];
+      if (
+        !workspace ||
+        Number(workspace.people) !== 3 ||
+        !people.alex ||
+        !people.morgan ||
+        workspace.default_followup_person_id !== people.sam
+      )
+        throw Object.assign(new Error("Workspace prerequisites are missing."), {
+          code: "SETUP_INCOMPLETE",
+        });
+      return people;
+    };
+    f.people = await initializeVerified(f.setup);
+    f.foreignPeople = await initializeVerified({
+      workspaceId: f.foreignWorkspaceId,
+      presenterUserIds: [],
+      applicantUserIds: [f.outsiderUserId],
+      fixtureClientBindings: {},
+    });
     return f;
   } catch (error) {
     try {
