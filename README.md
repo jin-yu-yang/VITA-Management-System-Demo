@@ -1,16 +1,17 @@
 # ViTally
 
-A classroom prototype for managing VITA client intake, volunteer preparation, independent quality review, and admin follow-up, using **PCDC Community Tax Assistance** as the site context.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+This is a prototype for managing VITA (Volunteer Income Tax Assistance) volunteer preparation, independent quality review, and admin follow-up, designed for **PCDC (Philadelphia Chinatown Development Corporation) Community**.
 
 ## Current status
 
 The runnable app is the original local client/volunteer demo: intake, save/return, preparation claims, document requests, and simulated document responses. It stores one case in browser localStorage and uses simulated verification and presenter role switching.
-
-**Task 1 of the shared-demo plan is complete:** shared workflow contracts, seeded fictional sample helpers, and safe blank-field filling are implemented and tested. The new helpers are not yet connected to the UI. Supabase persistence, real email access, and the admin/reviewer screens are still planned.
+It now supports shared workflow contracts, seeded fictional sample helpers, and safe blank-field filling are implemented and tested. The new helpers are not yet connected to the UI. Supabase persistence, real email access, and the admin/reviewer screens are still planned.
 
 Use fictional data only. The current demo does not send email, store uploaded files, or prepare/file tax returns.
 
-## Approved design — September 15, 2026
+## Provisional design — September 15, 2026
 
 The [ViTally shared-demo spec](docs/superpowers/specs/2026-09-15-vitally-shared-demo-design.md) defines the agreed scope:
 
@@ -39,3 +40,4 @@ npm test
 ```
 
 The dependency-free suite covers existing workflow rules, shared contracts, and fictional sample helpers. Optional browser checks use `npm run test:browser` with Playwright and Google Chrome installed and the local server running.
+
