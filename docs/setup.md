@@ -94,7 +94,7 @@ Set both private files to mode 600. No hosted project references are invented or
 PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
   "$VITALLY_NODE" --env-file=.env.test tools/admin/migrate.mjs
 PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
-  "$VITALLY_NODE" --env-file=.env.test --test tests/database.mjs
+  "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs
 ```
 
 These commands are also `npm run db:migrate:test` and `npm run test:database` when run under the same scoped PATH. Missing `.env.test`, missing/mismatched manifests, wrong ports/projects, stopped containers, and remote local-mode targets fail; tests never silently skip.
