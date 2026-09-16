@@ -1,92 +1,41 @@
-# VITA-Management-System-Demo
+# ViTally
 
-VITA Management System Demo Milestone 1
+A classroom prototype for managing VITA client intake, volunteer preparation, independent quality review, and admin follow-up, using **PCDC Community Tax Assistance** as the site context.
 
-A working local presentation prototype for **PCDC Community Tax Assistance**, designed around a two-minute client/volunteer story. Built from the agreed Figma-oriented brief with plain HTML, CSS, and JavaScript; no Figma file was generated.
+## Current status
+
+The runnable app is the original local client/volunteer demo: intake, save/return, preparation claims, document requests, and simulated document responses. It stores one case in browser localStorage and uses simulated verification and presenter role switching.
+
+**Task 1 of the shared-demo plan is complete:** shared workflow contracts, seeded fictional sample helpers, and safe blank-field filling are implemented and tested. The new helpers are not yet connected to the UI. Supabase persistence, real email access, and the admin/reviewer screens are still planned.
+
+Use fictional data only. The current demo does not send email, store uploaded files, or prepare/file tax returns.
+
+## Approved design — September 15, 2026
+
+The [ViTally shared-demo spec](docs/superpowers/specs/2026-09-15-vitally-shared-demo-design.md) defines the agreed scope:
+
+- Shared applications across a client browser and a staff browser, with presenter controls for Alex (preparer), Morgan (reviewer), and Sam (admin).
+- Independent review with either direct approval or corrections and resubmission; anyone who participated in preparation cannot review that case.
+- A separate admin contact task that keeps the preparer assigned.
+- Supabase-backed storage and approved group/class email access, generated application references, and fictional sample cases.
+- Manually recorded TaxSlayer milestones; documents and reminders remain simulated.
+
+Track progress in the [implementation plan](docs/superpowers/plans/2026-09-15-vitally-shared-demo.md). The [isolated Auth probe report](docs/superpowers/reviews/2026-09-15-vitally-auth-probe.md) records the early Chrome/Firefox OTP checks; it does not verify hosted email delivery or the completed application.
 
 ## Run locally
 
-Requires Node.js 18 or newer. No dependency installation is needed to run the demo.
+Use Node.js 24 LTS. The current app needs no dependency installation or Supabase configuration.
 
 ```sh
 npm start
 ```
 
-Open **http://127.0.0.1:4173**. To use another port:
-
-```sh
-PORT=4174 npm start
-```
-
-The server binds only to localhost. Stop it with Ctrl+C.
-
-## Two-minute walkthrough
-
-1. **Start an application** → **Fill sample details** → **Send verification code**.
-2. **Use demo code** (or enter `246810`) → **Verify and continue**. The Application ID is `DEMO-7K4P-92`.
-3. Continue to intake. Use **Fill sample details** on each step, then **Continue**. Review the answers.
-4. Demonstrate **Save and exit** → **Return to my application** → sample ID and code. The same draft returns.
-5. Check the answer-confirmation box and submit. Status is **Application received**, not verified intake.
-6. In the bottom prototype toolbar, switch to **Volunteer view**. Use **Simulate intake checks** for the off-screen staff work, then **Claim case**.
-7. **Request a document** → **Send request** using the supplied mileage-record example.
-8. Switch to **Client view**. Open **Add document** → **Use sample document** → **Submit document**.
-9. Switch back to **Volunteer view**. The sample document is **Awaiting verification**; preparation remains on hold.
-
-For a shorter rehearsal, describe save/return while showing the ID card and spend the time on the document-request handoff.
-
-### Other demo controls
-
-- **Load exception example:** a separate fictional draft with Uber/Lyft and other self-employment. It demonstrates the PCDC service limitation without overwriting the main walkthrough. Use the banner to return.
-- **Reset demo:** clears the fictional case and restores the welcome screen.
-- **Simulate an upload failure:** available in the upload dialog; uncheck and retry to complete the response.
-- **Print reference card / Copy ID:** available after initial access verification.
-- **Need help?:** office-contact guidance; actual phone/address/hours are deliberately not invented.
-
-## What works
-
-- Account-free client entry and simulated one-time-code access.
-- Locally saved draft answers and return flow, including page refresh.
-- Distinct residence and mailing-address fields.
-- Representative 2025 intake and conditional service screening.
-- PCDC-specific rules: Uber/Lyft is accepted for further screening; other self-employment blocks ordinary submission, even when combined with rideshare. More than 10 stock transactions follows the site's service-limit path; uncertain answers request assistance.
-- Shared case state, explicit intake checks and claim, request history, and sample-document response.
-- Desktop/mobile layouts, keyboard-operable controls, modal focus management, and visible errors.
-
-## Prototype boundary
-
-**Use fictional data only.** This app stores its sample state in this browser's local storage. It is not a secure portal and must not receive real taxpayer data. The verification code and role switch are deliberately simulated. There is no actual SMS/email, file upload/storage, identity check, consent signature, tax calculation, or filing. Refreshing a screen does not create a new application.
-
-Application ID and code access are a demonstration of the intended experience, not implemented production authentication. Likewise, switching to the volunteer view is a presenter control, not an access-control design. The source questionnaire is represented by selected fields; this app does not replace Form 13614-C or Form 14446.
-
-The interface is in English. Preferred service language is recorded, but full translated UI is outside this build. The definition of a counted stock transaction remains a site-policy detail; the prototype asks the source yes/no threshold question and performs no trade counting.
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Use **Fill sample details** and **Use demo code** to try the client flow, then switch to **Volunteer view** in the prototype toolbar. Stop the server with Ctrl+C.
 
 ## Tests
-
-Dependency-free workflow tests:
 
 ```sh
 npm test
 ```
 
-Browser checks require Playwright and Google Chrome, with the app running in another terminal:
-
-```sh
-npm install --no-save playwright@1.62.1
-npm run test:browser
-```
-
-The browser script uses a new temporary browser profile and only fictional data. It writes screenshots into `artifacts/`. `DEMO_URL` changes the test URL; `BROWSER_CHANNEL` selects a supported installed browser channel. `PLAYWRIGHT_MODULE` can point to an existing Playwright package without installing another copy.
-
-Coverage includes complete handoff, mixed-income restriction, save/retrieve, refreshed access, residence/mail separation, exception restoration, invalid code, retryable upload error, persistence, duplicate submission protection, reset, and mobile overflow.
-
-## Files
-
-- `src/domain.mjs`: case events and workflow rules.
-- `src/app.mjs`: navigation, storage, form events, and demo controls.
-- `src/views.mjs`: screen and dialog rendering.
-- `src/ui.mjs`: shared form, button, icon, and status helpers.
-- `src/styles.css`: responsive visual design.
-- `server.mjs`: dependency-free localhost asset server.
-- `tests/`: workflow and browser checks.
-- `docs/superpowers/specs/`: approved design context.
-- `docs/superpowers/plans/`: implementation checklist.
+The dependency-free suite covers existing workflow rules, shared contracts, and fictional sample helpers. Optional browser checks use `npm run test:browser` with Playwright and Google Chrome installed and the local server running.
