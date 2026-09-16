@@ -7,6 +7,14 @@ import {
   restoreCase,
   sampleAnswers,
 } from "../src/domain.mjs";
+import {
+  CASE_ACTIONS,
+  ERROR_CODES,
+  REFERENCE_ALPHABET,
+  REFERENCE_PATTERN,
+  SQLSTATE_ERROR_CODES,
+  STAGES,
+} from "../src/contracts.mjs";
 const ready = () =>
   updateCase(
     updateCase(newCase(), {
@@ -108,4 +116,66 @@ test("submitted answers cannot be silently overwritten", () => {
   assert.throws(() =>
     updateCase(c, { type: "ANSWERS", answers: { firstName: "Someone else" } }),
   );
+});
+
+test("shared case contracts expose readable references and frozen vocabularies", () => {
+  assert.equal(REFERENCE_ALPHABET, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
+  assert.equal(REFERENCE_PATTERN.test("VT-A2BC-DE9F"), true);
+  assert.equal(REFERENCE_PATTERN.test("VT-A1BC-DE0F"), false);
+  assert.deepEqual(STAGES, [
+    "draft",
+    "received",
+    "preparation_ready",
+    "preparing",
+    "review_ready",
+    "reviewing",
+    "corrections_required",
+    "review_approved",
+    "closed",
+  ]);
+  assert.deepEqual(CASE_ACTIONS, [
+    "SAVE_ANSWERS",
+    "SUBMIT",
+    "VERIFY_INTAKE",
+    "CLAIM_PREPARATION",
+    "REQUEST_DOCUMENT",
+    "RESPOND_DOCUMENT",
+    "RECORD_DOCUMENT_RESPONSE",
+    "VERIFY_DOCUMENT",
+    "ESCALATE_CONTACT",
+    "RECORD_CONTACT",
+    "RESOLVE_FOLLOWUP",
+    "SUBMIT_REVIEW",
+    "CLAIM_REVIEW",
+    "REQUEST_CORRECTIONS",
+    "RESUBMIT_REVIEW",
+    "APPROVE_REVIEW",
+    "RECORD_REVIEW_CONTACT",
+    "REMIND",
+    "CLOSE_CASE",
+  ]);
+  assert.deepEqual(ERROR_CODES, [
+    "FORBIDDEN",
+    "NOT_FOUND",
+    "CONFLICT",
+    "INVALID_TRANSITION",
+    "SELF_REVIEW",
+    "INELIGIBLE",
+    "VALIDATION",
+    "OFFLINE",
+    "SERVER_ERROR",
+  ]);
+  assert.deepEqual(SQLSTATE_ERROR_CODES, {
+    VT001: "FORBIDDEN",
+    VT002: "NOT_FOUND",
+    VT003: "CONFLICT",
+    VT004: "INVALID_TRANSITION",
+    VT005: "SELF_REVIEW",
+    VT006: "INELIGIBLE",
+    VT007: "VALIDATION",
+  });
+  assert.equal(Object.isFrozen(STAGES), true);
+  assert.equal(Object.isFrozen(CASE_ACTIONS), true);
+  assert.equal(Object.isFrozen(ERROR_CODES), true);
+  assert.equal(Object.isFrozen(SQLSTATE_ERROR_CODES), true);
 });
