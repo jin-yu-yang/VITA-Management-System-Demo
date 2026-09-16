@@ -3,7 +3,21 @@ import { createClient } from "@supabase/supabase-js";
 import { assertTestTarget } from "../../tools/admin/test-target.mjs";
 import { openDatabase, databaseError } from "../../tools/admin/database.mjs";
 import { initializeWorkspace } from "../../tools/admin/workspace-setup.mjs";
+import { createAppError } from "../../src/errors.mjs";
+import { makeSampleAnswers } from "../../src/sample-data.mjs";
 import { createRun, ownedRun, saveRun, endRun } from "./run-manifest.mjs";
+const camel = (key) =>
+  key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+const camelRow = (row) =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [camel(key), value]),
+  );
+const INTAKE_CHECKS = Object.freeze({
+  interview: true,
+  identity: true,
+  documents: true,
+  consent: true,
+});
 const options = {
   auth: {
     persistSession: false,
@@ -49,6 +63,84 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     });
     if (error) throw databaseError(error);
     return data;
+  };
+  f.intakeChecks = INTAKE_CHECKS;
+  // A case the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
+  const visibleCase = async (client, caseId) => {
+    const { data, error } = await client
+      .from("cases")
+      .select("*")
+      .eq("id", caseId);
+    if (error) throw createAppError(error);
+    if (!data.length) throw createAppError({ code: "VT002" });
+    return data[0];
+  };
+  const visibleRows = async (client, table, caseId, tiebreak = "id") => {
+    const { data, error } = await client
+      .from(table)
+      .select("*")
+      .eq("case_id", caseId)
+      .order("created_at")
+      .order(tiebreak);
+    if (error) throw createAppError(error);
+    return data.map(camelRow);
+  };
+  f.act = async (client, caseId, personId, type, payload = {}) => {
+    const current = await visibleCase(client, caseId);
+    const { data, error } = await client.rpc("vitally_apply_action", {
+      p_action_id: randomUUID(),
+      p_case_id: caseId,
+      p_expected_revision: current.revision,
+      p_person_id: personId,
+      p_type: type,
+      p_payload: payload,
+    });
+    if (error) throw createAppError(error);
+    return data;
+  };
+  // An unclaimed case waiting for a preparer, built only through public actions.
+  f.readyCase = async () => {
+    const created = await f.createCase(f.applicantA, randomUUID(), {
+      answers: makeSampleAnswers(),
+    });
+    await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
+      confirmed: true,
+    });
+    await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
+      checks: INTAKE_CHECKS,
+    });
+    return created.caseId;
+  };
+  // The staff Case shape from src/contracts.mjs, read through the presenter's
+  // own client so the helper also proves presenter visibility.
+  f.readStaffCase = async (caseId) => {
+    const row = await visibleCase(f.presenter, caseId);
+    const participants = await visibleRows(
+      f.presenter,
+      "preparation_participants",
+      caseId,
+      "person_id",
+    );
+    return {
+      id: row.id,
+      reference: row.reference,
+      workspaceId: row.workspace_id,
+      ownerUserId: row.owner_user_id,
+      fixture: row.fixture,
+      stage: row.stage,
+      revision: Number(row.revision),
+      preparationVersion: Number(row.preparation_version),
+      answers: row.answers,
+      intakeVerified: row.intake_verified,
+      preparerId: row.preparer_id,
+      reviewerId: row.reviewer_id,
+      participants: participants.map((participant) => participant.personId),
+      requests: await visibleRows(f.presenter, "document_requests", caseId),
+      documents: await visibleRows(f.presenter, "documents", caseId),
+      followups: await visibleRows(f.presenter, "admin_followups", caseId),
+      history: await visibleRows(f.presenter, "client_events", caseId),
+      internalHistory: await visibleRows(f.presenter, "case_events", caseId),
+    };
   };
   f.snapshot = async () => {
     const out = {};
@@ -195,6 +287,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       return people;
     };
     f.people = await initializeVerified(f.setup);
+    ({ alex: f.alex, morgan: f.morgan, sam: f.sam } = f.people);
     f.foreignPeople = await initializeVerified({
       workspaceId: f.foreignWorkspaceId,
       presenterUserIds: [],

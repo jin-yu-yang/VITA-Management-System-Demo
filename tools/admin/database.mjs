@@ -3,12 +3,17 @@ import { assertTestTarget } from "./test-target.mjs";
 import { assertClassroomTarget } from "./classroom-target.mjs";
 import { requireTarget } from "./target-common.mjs";
 import { SQLSTATE_ERROR_CODES } from "../../src/contracts.mjs";
+import { createAppError } from "../../src/errors.mjs";
 export function databaseError(error) {
-  const code =
-    SQLSTATE_ERROR_CODES[error?.code] || error?.code || "SERVER_ERROR";
-  return Object.assign(new Error(`Database operation failed (${code}).`), {
-    code,
-  });
+  // Application codes use the one shared mapper; tooling codes (40001,
+  // MIGRATION_CHANGED, TARGET_REJECTED, …) stay as the operator sees them.
+  if (SQLSTATE_ERROR_CODES[error?.code] || error?.code === "42501")
+    return createAppError(error);
+  const code = error?.code || "SERVER_ERROR";
+  return Object.assign(
+    new Error(`Database operation failed (${code}).`, { cause: error }),
+    { code },
+  );
 }
 export async function assertTarget(target = { kind: "test" }) {
   requireTarget(target.kind === "test" || target.kind === "classroom");
