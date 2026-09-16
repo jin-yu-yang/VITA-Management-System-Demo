@@ -1,33 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture } from "./support/database-fixture.mjs";
-const rejected = (code) => (error) => error.code === code;
-// Fully specified immutable arguments, so a retry reuses one envelope and a
-// payload can omit a related id the helper would otherwise fill in.
-const applyArgs = ({
-  actionId = crypto.randomUUID(),
-  caseId,
-  revision,
-  personId = null,
-  type,
-  payload = {},
-}) => ({
-  p_action_id: actionId,
-  p_case_id: caseId,
-  p_expected_revision: revision,
-  p_person_id: personId,
-  p_type: type,
-  p_payload: payload,
-});
-const receiptsFor = async (f, actionId) =>
-  Number(
-    (
-      await f.sql(
-        "select count(*) as count from public.action_receipts where action_id=$1",
-        [actionId],
-      )
-    ).rows[0].count,
-  );
+import {
+  createDatabaseFixture,
+  applyArgs,
+  rejected,
+} from "./support/database-fixture.mjs";
 // A client case Alex has claimed: the stage documents may be requested in.
 async function preparingCase(f) {
   const caseId = await f.readyCase();
@@ -38,14 +15,6 @@ async function preparingCase(f) {
 async function requestedCase(f) {
   const caseId = await preparingCase(f);
   await f.act(f.presenter, caseId, f.alex, "REQUEST_DOCUMENT", f.sampleRequest);
-  return caseId;
-}
-// A request that has been answered and is waiting for the preparer.
-async function respondedCase(f) {
-  const caseId = await requestedCase(f);
-  await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
-    filename: f.sampleFilename,
-  });
   return caseId;
 }
 
@@ -235,6 +204,12 @@ test("document requests, receipts and verification keep the preparer in charge",
         await assert.rejects(
           () => f.act(f.presenter, caseId, f.alex, "VERIFY_DOCUMENT", {}),
           rejected("INVALID_TRANSITION"),
+        );
+        // Qualification answers before readiness: an unqualified person on the
+        // same unanswered request is INELIGIBLE, never told the request state.
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "VERIFY_DOCUMENT", {}),
+          rejected("INELIGIBLE"),
         );
         await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
           filename: f.sampleFilename,
@@ -575,6 +550,76 @@ test("document requests, receipts and verification keep the preparer in charge",
         );
       },
     );
+    await t.test(
+      "verification and escalation stay inside the preparation stage window",
+      async () => {
+        const caseId = await requestedCase(f);
+        const requestId = (await f.readStaffCase(caseId)).requests[0].id;
+        const reason = "Office contact needed";
+        // A claimed case moved out of the window by privileged setup: the
+        // stage answers before anything about the request or the actor does.
+        await f.sql("update public.cases set stage='review_ready' where id=$1", [
+          caseId,
+        ]);
+        try {
+          for (const [client, personId, type, payload] of [
+            [f.presenter, f.alex, "VERIFY_DOCUMENT", { requestId }],
+            [f.presenter, f.alex, "ESCALATE_CONTACT", { requestId, reason }],
+            [f.presenter, f.sam, "VERIFY_DOCUMENT", { requestId }],
+            [f.presenter, f.sam, "ESCALATE_CONTACT", { requestId, reason }],
+            [f.presenter, f.alex, "REQUEST_DOCUMENT", f.sampleRequest],
+            [
+              f.applicantA,
+              null,
+              "RESPOND_DOCUMENT",
+              { requestId, filename: f.sampleFilename },
+            ],
+          ])
+            await assert.rejects(
+              () => f.act(client, caseId, personId, type, payload),
+              rejected("INVALID_TRANSITION"),
+              `${type} for ${personId}`,
+            );
+          const held = await f.readStaffCase(caseId);
+          assert.equal(held.stage, "review_ready");
+          assert.equal(held.requests.length, 1);
+          assert.equal(held.requests[0].status, "open");
+          assert.deepEqual(held.documents, []);
+          assert.deepEqual(held.followups, []);
+        } finally {
+          await f.sql("update public.cases set stage='preparing' where id=$1", [
+            caseId,
+          ]);
+        }
+        // Positive controls in both stages of the window.
+        await f.sql(
+          "update public.cases set stage='corrections_required' where id=$1",
+          [caseId],
+        );
+        try {
+          await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", {
+            requestId,
+            reason,
+          });
+          await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
+            requestId,
+            filename: f.sampleFilename,
+          });
+        } finally {
+          await f.sql("update public.cases set stage='preparing' where id=$1", [
+            caseId,
+          ]);
+        }
+        await f.act(f.presenter, caseId, f.alex, "VERIFY_DOCUMENT", {
+          requestId,
+        });
+        const staff = await f.readStaffCase(caseId);
+        assert.equal(staff.stage, "preparing");
+        assert.equal(staff.requests[0].status, "verified");
+        assert.equal(staff.documents.length, 1);
+        assert.equal(staff.followups.length, 1);
+      },
+    );
   } finally {
     await f.close();
   }
@@ -726,6 +771,16 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
           rejected("INVALID_TRANSITION"),
         );
         assert.equal((await f.readStaffCase(caseId)).followups.length, 1);
+        // Qualification answers before readiness: an unqualified person is
+        // INELIGIBLE here, never told that a task already exists.
+        await assert.rejects(
+          () =>
+            f.act(f.presenter, caseId, f.sam, "ESCALATE_CONTACT", {
+              requestId,
+              reason: "Office contact needed",
+            }),
+          rejected("INELIGIBLE"),
+        );
         // A second case proves the rejections leave no task behind.
         const fresh = await requestedCase(f);
         const freshRequest = (await f.readStaffCase(fresh)).requests[0].id;
@@ -766,6 +821,16 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
               reason: "Office contact needed",
             }),
           rejected("INVALID_TRANSITION"),
+        );
+        // ...while an unqualified person on that answered request is still
+        // INELIGIBLE, not told the request has been answered.
+        await assert.rejects(
+          () =>
+            f.act(f.presenter, fresh, f.sam, "ESCALATE_CONTACT", {
+              requestId: freshRequest,
+              reason: "Office contact needed",
+            }),
+          rejected("INELIGIBLE"),
         );
         assert.deepEqual((await f.readStaffCase(fresh)).followups, []);
         // Only the assigned preparer escalates.
@@ -966,6 +1031,30 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
             rejected("INVALID_TRANSITION"),
             type,
           );
+        // Assignment answers before readiness: a capable non-assignee is
+        // FORBIDDEN on the resolved task, never told that it is closed.
+        await f.sql("update public.people set capabilities=$1 where id=$2", [
+          ["followup", "review"],
+          f.morgan,
+        ]);
+        try {
+          for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
+            await assert.rejects(
+              () =>
+                f.act(f.presenter, caseId, f.morgan, type, {
+                  followupId,
+                  outcome: "reached",
+                  note: "Once more",
+                }),
+              rejected("FORBIDDEN"),
+              type,
+            );
+        } finally {
+          await f.sql("update public.people set capabilities=$1 where id=$2", [
+            ["review"],
+            f.morgan,
+          ]);
+        }
         assert.equal(
           (await f.readStaffCase(caseId)).followups[0].attempts.length,
           4,
@@ -1062,7 +1151,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
             applyArgs({ ...spec, actionId }),
           );
           assert.equal(error?.code, code, spec.type);
-          assert.equal(await receiptsFor(f, actionId), 0);
+          assert.equal(await f.receiptsFor(actionId), 0);
         }
         assert.deepEqual(await f.stateSnapshot(), before);
       },

@@ -1,29 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture } from "./support/database-fixture.mjs";
+import {
+  createDatabaseFixture,
+  applyArgs,
+  rejected,
+} from "./support/database-fixture.mjs";
 import { RPC_SIGNATURES } from "./support/rpc-signatures.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
-const rejected = (code) => (error) => error.code === code;
 // The denial Task 2 already asserts for anonymous table and function access.
 const ANONYMOUS_DENIAL = "42501";
-// Fully specified immutable arguments, so replays and races reuse one envelope.
-const applyArgs = ({
-  actionId = crypto.randomUUID(),
-  caseId,
-  revision,
-  personId = null,
-  type,
-  payload = {},
-}) => ({
-  p_action_id: actionId,
-  p_case_id: caseId,
-  p_expected_revision: revision,
-  p_person_id: personId,
-  p_type: type,
-  p_payload: payload,
-});
 const caseRow = async (f, caseId) =>
   (await f.sql("select * from public.cases where id=$1", [caseId])).rows[0];
 const revisionOf = async (f, caseId) =>
@@ -35,19 +22,14 @@ const actions = async (f, table, caseId) =>
       [caseId],
     )
   ).rows.map((row) => row.action);
-const countOf = async (f, text, values) =>
-  Number((await f.sql(text, values)).rows[0].count);
-const receiptsFor = async (f, actionId) =>
-  countOf(
-    f,
-    "select count(*) as count from public.action_receipts where action_id=$1",
-    [actionId],
-  );
 const participantsOf = async (f, caseId) =>
-  countOf(
-    f,
-    "select count(*) as count from public.preparation_participants where case_id=$1",
-    [caseId],
+  Number(
+    (
+      await f.sql(
+        "select count(*) as count from public.preparation_participants where case_id=$1",
+        [caseId],
+      )
+    ).rows[0].count,
   );
 async function draftCase(f, answers = makeSampleAnswers()) {
   const created = await f.createCase(f.applicantA, crypto.randomUUID(), {
@@ -250,7 +232,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           "CLAIM_PREPARATION",
         ]);
         assert.equal(
-          await receiptsFor(f, attempts[results.indexOf(lost[0])]),
+          await f.receiptsFor(attempts[results.indexOf(lost[0])]),
           0,
         );
         assert.equal((await caseRow(f, caseId)).stage, "preparing");
@@ -477,7 +459,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           rejected("NOT_FOUND"),
         );
         for (const actionId of attempts)
-          assert.equal(await receiptsFor(f, actionId), 0);
+          assert.equal(await f.receiptsFor(actionId), 0);
         // Membership is checked before any target, so an unapproved caller
         // cannot tell an absent case from one they may not see.
         const unapproved = await f.unapproved.rpc(
@@ -834,7 +816,7 @@ test("case actions apply the shared check order against real Supabase", async (t
             applyArgs({ ...spec, actionId }),
           );
           assert.equal(error?.code, code);
-          assert.equal(await receiptsFor(f, actionId), 0);
+          assert.equal(await f.receiptsFor(actionId), 0);
         }
         assert.deepEqual(await f.stateSnapshot(), before);
       },

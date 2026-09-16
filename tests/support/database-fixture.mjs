@@ -56,6 +56,26 @@ const options = {
     detectSessionInUrl: false,
   },
 };
+// An assert.rejects predicate for one mapped domain code.
+export const rejected = (code) => (error) => error.code === code;
+// Fully specified immutable arguments for a direct vitally_apply_action call,
+// so replays and races reuse one envelope and a payload can omit the related
+// id that f.act would otherwise fill in.
+export const applyArgs = ({
+  actionId = randomUUID(),
+  caseId,
+  revision,
+  personId = null,
+  type,
+  payload = {},
+}) => ({
+  p_action_id: actionId,
+  p_case_id: caseId,
+  p_expected_revision: revision,
+  p_person_id: personId,
+  p_type: type,
+  p_payload: payload,
+});
 export async function createDatabaseFixture({ afterInitialize } = {}) {
   const target = await assertTestTarget();
   const runManifest = await createRun(),
@@ -258,6 +278,16 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       ).rows.map((row) => row.record);
     return snapshot;
   };
+  // Receipt rows for one action id: zero after any rejection.
+  f.receiptsFor = async (actionId) =>
+    Number(
+      (
+        await f.sql(
+          "select count(*) as count from public.action_receipts where action_id=$1",
+          [actionId],
+        )
+      ).rows[0].count,
+    );
   f.snapshot = async () => {
     const out = {};
     for (const [name, sql] of Object.entries({
