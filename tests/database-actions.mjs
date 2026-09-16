@@ -873,9 +873,13 @@ test("installed entry points deny anonymous callers and serve members", async (t
       async () => {
         for (const entry of RPC_SIGNATURES) {
           const draft = await draftCase(f);
+          const seeded = await f.seedAssistance();
           const context = {
             draftCaseId: draft.caseId,
             draftRevision: 1,
+            assistanceItemId: seeded.itemId,
+            assistanceRevision: 1,
+            assistPersonId: f.sam,
           };
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
@@ -894,8 +898,14 @@ test("installed entry points deny anonymous callers and serve members", async (t
             null,
             `${entry.name} member call must succeed`,
           );
-          assert.match(allowed.data.reference, REFERENCE_PATTERN);
-          assert.ok(allowed.data.caseId, `${entry.name} returns a receipt`);
+          // Each entry answers with its own receipt shape and nothing more.
+          assert.deepEqual(
+            Object.keys(allowed.data).sort(),
+            [...entry.receiptKeys].sort(),
+            `${entry.name} receipt keys`,
+          );
+          if (entry.receiptKeys.includes("reference"))
+            assert.match(allowed.data.reference, REFERENCE_PATTERN);
         }
       },
     );
