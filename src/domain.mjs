@@ -1,3 +1,23 @@
+export const INTAKE_ANSWER_KEYS = Object.freeze([
+  "service",
+  "year",
+  "language",
+  "residenceCity",
+  "residenceState",
+  "city",
+  "state",
+  "rideshare",
+  "other",
+  "stocks",
+  "firstName",
+  "lastName",
+  "address",
+  "zip",
+  "household",
+  "helper",
+  "documents",
+]);
+
 export const sampleAnswers = Object.freeze({
   service: "Drop-off",
   year: "2025",
