@@ -25,6 +25,20 @@ async function rows(client, table, filter = {}) {
   assert.equal(error, null);
   return data;
 }
+const normalized = (expression) => expression.replace(/\s+/g, " ").trim();
+// The balanced parenthesized group starting at `marker`, so one predicate can be
+// lifted out of a rendered policy expression without hand-counting brackets.
+function parenthesized(expression, marker) {
+  const start = expression.indexOf(marker);
+  assert.ok(start >= 0, `Expression is missing ${marker}`);
+  let depth = 0;
+  for (let index = start; index < expression.length; index++) {
+    if (expression[index] === "(") depth++;
+    else if (expression[index] === ")" && --depth === 0)
+      return expression.slice(start, index + 1);
+  }
+  throw new Error(`Unbalanced expression after ${marker}`);
+}
 // Every column of every workflow row, deterministically ordered, so a denied
 // write cannot hide behind an unchanged row count.
 async function workflowSnapshot(f) {
@@ -787,6 +801,47 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
       },
     );
     await t.test(
+      "revoked members read nothing until their membership is restored",
+      async () => {
+        const setActive = (userId, active) =>
+          f.sql("update public.memberships set active=$1 where user_id=$2", [
+            active,
+            userId,
+          ]);
+        const readsNothing = async (actor, label) => {
+          for (const table of WORKFLOW_TABLES) {
+            const revoked = await actor.from(table).select("*");
+            assert.equal(revoked.error, null, `${table} must not error`);
+            assert.deepEqual(revoked.data, [], `${table} revoked ${label}`);
+          }
+        };
+        try {
+          await setActive(f.applicantAUserId, false);
+          await readsNothing(f.applicantA, "applicant");
+        } finally {
+          await setActive(f.applicantAUserId, true);
+        }
+        for (const table of CLIENT_VISIBLE_TABLES)
+          assert.equal(
+            (await rows(f.applicantA, table, { case_id: submitted.caseId }))
+              .length,
+            1,
+            `${table} must return after restoration`,
+          );
+        try {
+          await setActive(f.presenterUserId, false);
+          await readsNothing(f.presenter, "presenter");
+        } finally {
+          await setActive(f.presenterUserId, true);
+        }
+        for (const table of WORKFLOW_TABLES)
+          assert.ok(
+            (await rows(f.presenter, table)).length,
+            `${table} must return after restoration`,
+          );
+      },
+    );
+    await t.test(
       "direct writes by applicants and presenters fail and change nothing",
       async () => {
         const before = await workflowSnapshot(f);
@@ -1027,7 +1082,7 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
         }
         const policies = (
           await f.sql(
-            "select c.relname as name,p.polcmd,p.polroles::regrole[]::text[] as roles from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname=any($1) order by c.relname",
+            "select c.relname as name,p.polcmd,p.polroles::regrole[]::text[] as roles,pg_get_expr(p.polqual,p.polrelid) as expression from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname=any($1) order by c.relname",
             [WORKFLOW_TABLES],
           )
         ).rows;
@@ -1035,9 +1090,47 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
           policies.map((policy) => policy.name),
           [...WORKFLOW_TABLES].sort(),
         );
+        // Each workflow policy inlines its own copy of the case-visibility
+        // rule; derive both halves from 001's visible_cases so drift fails here.
+        const visibleCases = normalized(
+          (
+            await f.sql(
+              "select pg_get_expr(polqual,polrelid) as expression from pg_policy where polname=$1",
+              ["visible_cases"],
+            )
+          ).rows[0].expression,
+        );
+        const ownerRule = parenthesized(
+          visibleCases,
+          "(((m.access = 'applicant'::text)",
+        ).replaceAll("cases.", "c.");
+        const nonDraftRule = parenthesized(
+          visibleCases,
+          "((cases.origin <> ",
+        ).replaceAll("cases.", "c.");
         for (const policy of policies) {
           assert.equal(policy.polcmd, "r", `${policy.name} must be read-only`);
           assert.deepEqual(policy.roles, ["authenticated"], policy.name);
+          const expression = normalized(policy.expression);
+          assert.ok(
+            expression.includes(nonDraftRule),
+            `${policy.name} must reuse the visible_cases draft rule`,
+          );
+          assert.ok(
+            expression.includes("(m.access = 'presenter'::text)"),
+            `${policy.name} must check presenter access`,
+          );
+          const ownerReadable = CLIENT_VISIBLE_TABLES.includes(policy.name);
+          assert.equal(
+            expression.includes(ownerRule),
+            ownerReadable,
+            `${policy.name} must reuse the visible_cases owner rule only when client-visible`,
+          );
+          assert.equal(
+            expression.includes("'applicant'::text"),
+            ownerReadable,
+            `${policy.name} must grant applicant access only when client-visible`,
+          );
         }
       },
     );
