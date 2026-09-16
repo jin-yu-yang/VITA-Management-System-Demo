@@ -2,3 +2,9 @@ node_modules/
 artifacts/
 .DS_Store
 .superpowers/
+.env*
+!.env*.example
+.vitally-targets*.json
+supabase/.temp/
+supabase/.branches/
+.vitally-runs/
