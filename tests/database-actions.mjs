@@ -8,19 +8,6 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 const rejected = (code) => (error) => error.code === code;
 // The denial Task 2 already asserts for anonymous table and function access.
 const ANONYMOUS_DENIAL = "42501";
-// Every table a rejected action could otherwise touch.
-const STATE_TABLES = [
-  "cases",
-  "action_receipts",
-  "preparation_participants",
-  "case_events",
-  "client_events",
-  "document_requests",
-  "documents",
-  "admin_followups",
-  "contact_attempts",
-  "assistance_items",
-];
 // Fully specified immutable arguments, so replays and races reuse one envelope.
 const applyArgs = ({
   actionId = crypto.randomUUID(),
@@ -62,19 +49,6 @@ const participantsOf = async (f, caseId) =>
     "select count(*) as count from public.preparation_participants where case_id=$1",
     [caseId],
   );
-// Every column of every workspace row, so an accepted write cannot hide behind
-// an unchanged row count.
-async function stateSnapshot(f) {
-  const snapshot = {};
-  for (const table of STATE_TABLES)
-    snapshot[table] = (
-      await f.sql(
-        `select to_jsonb(t.*) as record from public.${table} t where t.workspace_id=$1 order by to_jsonb(t.*)::text`,
-        [f.workspaceId],
-      )
-    ).rows.map((row) => row.record);
-  return snapshot;
-}
 async function draftCase(f, answers = makeSampleAnswers()) {
   const created = await f.createCase(f.applicantA, crypto.randomUUID(), {
     answers,
@@ -707,7 +681,8 @@ test("case actions apply the shared check order against real Supabase", async (t
             rejected("VALIDATION"),
           );
         // Unknown and not-yet-implemented actions never reach a handler.
-        for (const type of ["BOGUS", "REQUEST_DOCUMENT", "CLAIM_REVIEW"])
+        // REQUEST_DOCUMENT moved to tests/database-documents.mjs with 004.
+        for (const type of ["BOGUS", "CLAIM_REVIEW"])
           await assert.rejects(
             () => f.act(f.applicantA, caseId, null, type, {}),
             rejected("VALIDATION"),
@@ -793,7 +768,7 @@ test("case actions apply the shared check order against real Supabase", async (t
       async () => {
         const caseId = await f.readyCase();
         const { revision } = await f.readStaffCase(caseId);
-        const before = await stateSnapshot(f);
+        const before = await f.stateSnapshot();
         const attempts = [
           [
             f.presenter,
@@ -861,7 +836,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           assert.equal(error?.code, code);
           assert.equal(await receiptsFor(f, actionId), 0);
         }
-        assert.deepEqual(await stateSnapshot(f), before);
+        assert.deepEqual(await f.stateSnapshot(), before);
       },
     );
   } finally {
@@ -920,7 +895,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
             draftCaseId: draft.caseId,
             draftRevision: 1,
           };
-          const before = await stateSnapshot(f);
+          const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
           assert.ok(denied.error, `${entry.name} anonymous call must fail`);
           assert.equal(
@@ -928,7 +903,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
             ANONYMOUS_DENIAL,
             `${entry.name} anonymous denial code`,
           );
-          assert.deepEqual(await stateSnapshot(f), before);
+          assert.deepEqual(await f.stateSnapshot(), before);
           const allowed = await entry
             .authorized(f)
             .rpc(entry.name, entry.args(context));

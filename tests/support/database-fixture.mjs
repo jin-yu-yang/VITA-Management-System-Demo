@@ -18,6 +18,37 @@ const INTAKE_CHECKS = Object.freeze({
   documents: true,
   consent: true,
 });
+// The one fictional document request and the single simulated file the demo
+// accepts (contracts.mjs payload table, Ruling R18).
+const SAMPLE_REQUEST = Object.freeze({
+  title: "Mileage record",
+  message: "Please add the fictional sample.",
+});
+const SAMPLE_FILENAME = "demo-mileage-record-2025.pdf";
+// Actions whose payload names a related record. For compact tests only, an
+// omitted id falls back to the case's single current request or open follow-up;
+// the browser always sends the selected id (Ruling R20).
+const RELATED_DEFAULTS = Object.freeze({
+  RESPOND_DOCUMENT: "requestId",
+  RECORD_DOCUMENT_RESPONSE: "requestId",
+  VERIFY_DOCUMENT: "requestId",
+  ESCALATE_CONTACT: "requestId",
+  RECORD_CONTACT: "followupId",
+  RESOLVE_FOLLOWUP: "followupId",
+});
+// Every table a case action could touch, for before/after state comparisons.
+const STATE_TABLES = Object.freeze([
+  "cases",
+  "action_receipts",
+  "preparation_participants",
+  "case_events",
+  "client_events",
+  "document_requests",
+  "documents",
+  "admin_followups",
+  "contact_attempts",
+  "assistance_items",
+]);
 const options = {
   auth: {
     persistSession: false,
@@ -85,7 +116,27 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     if (error) throw createAppError(error);
     return data.map(camelRow);
   };
+  // The case's one current request or one open follow-up, so a test payload can
+  // leave the id out. Anything else is a fixture mistake, not a server answer.
+  const onlyRelated = async (caseId, key) => {
+    const [table, current] =
+      key === "requestId"
+        ? ["document_requests", (row) => row.status !== "cancelled"]
+        : ["admin_followups", (row) => row.status === "open"];
+    const rows = (await visibleRows(f.presenter, table, caseId)).filter(current);
+    if (rows.length !== 1)
+      throw Object.assign(
+        new Error(`Expected exactly one current ${table} row for the case.`),
+        { code: "FIXTURE_AMBIGUOUS" },
+      );
+    return rows[0].id;
+  };
   f.act = async (client, caseId, personId, type, payload = {}) => {
+    const related = RELATED_DEFAULTS[type];
+    const body =
+      related && !(related in payload)
+        ? { ...payload, [related]: await onlyRelated(caseId, related) }
+        : payload;
     const current = await visibleCase(client, caseId);
     const { data, error } = await client.rpc("vitally_apply_action", {
       p_action_id: randomUUID(),
@@ -93,7 +144,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       p_expected_revision: current.revision,
       p_person_id: personId,
       p_type: type,
-      p_payload: payload,
+      p_payload: body,
     });
     if (error) throw createAppError(error);
     return data;
@@ -111,6 +162,32 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     });
     return created.caseId;
   };
+  f.sampleRequest = SAMPLE_REQUEST;
+  f.sampleFilename = SAMPLE_FILENAME;
+  // An assisted case with no client owner, prepared by Alex and waiting on one
+  // open document request: the case the staff receipt action exists for.
+  f.assistedCase = async () => {
+    const created = await f.createCase(f.presenter, randomUUID(), {
+      mode: "assisted",
+      personId: f.sam,
+      answers: makeSampleAnswers(),
+    });
+    await f.act(f.presenter, created.caseId, f.sam, "SUBMIT", {
+      confirmed: true,
+    });
+    await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
+      checks: INTAKE_CHECKS,
+    });
+    await f.act(f.presenter, created.caseId, f.alex, "CLAIM_PREPARATION", {});
+    await f.act(
+      f.presenter,
+      created.caseId,
+      f.alex,
+      "REQUEST_DOCUMENT",
+      SAMPLE_REQUEST,
+    );
+    return created.caseId;
+  };
   // The staff Case shape from src/contracts.mjs, read through the presenter's
   // own client so the helper also proves presenter visibility.
   f.readStaffCase = async (caseId) => {
@@ -121,6 +198,31 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       caseId,
       "person_id",
     );
+    // Each follow-up carries its own contact attempts (Ruling R20).
+    const attempts = await visibleRows(f.presenter, "contact_attempts", caseId);
+    const followups = (
+      await visibleRows(f.presenter, "admin_followups", caseId)
+    ).map((followup) => ({
+      id: followup.id,
+      requestId: followup.requestId,
+      assigneeId: followup.assigneePersonId,
+      status: followup.status,
+      reason: followup.reason,
+      resolutionOutcome: followup.resolutionOutcome,
+      resolutionNote: followup.resolutionNote,
+      createdByPersonId: followup.createdByPersonId,
+      createdAt: followup.createdAt,
+      resolvedAt: followup.resolvedAt,
+      attempts: attempts
+        .filter((attempt) => attempt.followupId === followup.id)
+        .map((attempt) => ({
+          id: attempt.id,
+          outcome: attempt.outcome,
+          note: attempt.note,
+          actorPersonId: attempt.actorPersonId,
+          createdAt: attempt.createdAt,
+        })),
+    }));
     return {
       id: row.id,
       reference: row.reference,
@@ -137,10 +239,24 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       participants: participants.map((participant) => participant.personId),
       requests: await visibleRows(f.presenter, "document_requests", caseId),
       documents: await visibleRows(f.presenter, "documents", caseId),
-      followups: await visibleRows(f.presenter, "admin_followups", caseId),
+      followups,
       history: await visibleRows(f.presenter, "client_events", caseId),
       internalHistory: await visibleRows(f.presenter, "case_events", caseId),
     };
+  };
+  // Every column of every application row in the workspace, so an accepted
+  // write cannot hide behind an unchanged row count. `f.snapshot` below covers
+  // workspace setup (people, memberships, bindings) instead.
+  f.stateSnapshot = async () => {
+    const snapshot = {};
+    for (const table of STATE_TABLES)
+      snapshot[table] = (
+        await f.sql(
+          `select to_jsonb(t.*) as record from public.${table} t where t.workspace_id=$1 order by to_jsonb(t.*)::text`,
+          [f.workspaceId],
+        )
+      ).rows.map((row) => row.record);
+    return snapshot;
   };
   f.snapshot = async () => {
     const out = {};
