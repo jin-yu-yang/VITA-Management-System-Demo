@@ -5,12 +5,151 @@ import { REFERENCE_PATTERN } from "../src/contracts.mjs";
 import { initializeWorkspace } from "../tools/admin/workspace-setup.mjs";
 import { extendTestWorkspace } from "./support/workspace-overrides.mjs";
 const rejected = (code) => (error) => error.code === code;
+const CLIENT_VISIBLE_TABLES = [
+  "document_requests",
+  "documents",
+  "client_events",
+];
+const PRESENTER_ONLY_TABLES = [
+  "preparation_participants",
+  "admin_followups",
+  "contact_attempts",
+  "case_events",
+  "assistance_items",
+];
+const WORKFLOW_TABLES = [...CLIENT_VISIBLE_TABLES, ...PRESENTER_ONLY_TABLES];
 async function rows(client, table, filter = {}) {
   let q = client.from(table).select("*");
   for (const [k, v] of Object.entries(filter)) q = q.eq(k, v);
   const { data, error } = await q;
   assert.equal(error, null);
   return data;
+}
+// Every column of every workflow row, deterministically ordered, so a denied
+// write cannot hide behind an unchanged row count.
+async function workflowSnapshot(f) {
+  const snapshot = {};
+  for (const table of WORKFLOW_TABLES)
+    snapshot[table] = (
+      await f.sql(
+        `select to_jsonb(t.*) as record from public.${table} t where t.workspace_id=$1 order by to_jsonb(t.*)::text`,
+        [f.workspaceId],
+      )
+    ).rows.map((row) => row.record);
+  return snapshot;
+}
+// Privileged seeding stands in for the Task 3B-3D actions that will create
+// these rows; Task 3A owns the records and their visibility only.
+async function seedWorkflow(f, caseId) {
+  const seeded = Object.fromEntries(
+    [
+      "requestId",
+      "documentId",
+      "followupId",
+      "contactId",
+      "caseEventId",
+      "clientEventId",
+      "assistanceId",
+      "standaloneAssistanceId",
+    ].map((key) => [key, crypto.randomUUID()]),
+  );
+  await f.sql(
+    "insert into public.preparation_participants(workspace_id,case_id,person_id) values($1,$2,$3)",
+    [f.workspaceId, caseId, f.people.alex],
+  );
+  await f.sql(
+    "insert into public.document_requests(id,workspace_id,case_id,title,message,requested_by_person_id) values($1,$2,$3,$4,$5,$6)",
+    [
+      seeded.requestId,
+      f.workspaceId,
+      caseId,
+      "Mileage record",
+      "Please add the fictional sample.",
+      f.people.alex,
+    ],
+  );
+  await f.sql(
+    "insert into public.documents(id,workspace_id,case_id,request_id,filename,source,submitted_by_user_id) values($1,$2,$3,$4,$5,$6,$7)",
+    [
+      seeded.documentId,
+      f.workspaceId,
+      caseId,
+      seeded.requestId,
+      "mileage-sample.pdf",
+      "client",
+      f.applicantAUserId,
+    ],
+  );
+  await f.sql(
+    "insert into public.admin_followups(id,workspace_id,case_id,request_id,assignee_person_id,reason,created_by_person_id) values($1,$2,$3,$4,$5,$6,$7)",
+    [
+      seeded.followupId,
+      f.workspaceId,
+      caseId,
+      seeded.requestId,
+      f.people.sam,
+      "Office contact needed",
+      f.people.alex,
+    ],
+  );
+  await f.sql(
+    "insert into public.contact_attempts(id,workspace_id,case_id,followup_id,actor_user_id,actor_person_id,outcome,note) values($1,$2,$3,$4,$5,$6,$7,$8)",
+    [
+      seeded.contactId,
+      f.workspaceId,
+      caseId,
+      seeded.followupId,
+      f.presenterUserId,
+      f.people.sam,
+      "no_answer",
+      "Left a fictional message.",
+    ],
+  );
+  await f.sql(
+    "insert into public.case_events(id,workspace_id,case_id,actor_user_id,actor_person_id,action,detail) values($1,$2,$3,$4,$5,$6,$7)",
+    [
+      seeded.caseEventId,
+      f.workspaceId,
+      caseId,
+      f.presenterUserId,
+      f.people.alex,
+      "REQUEST_DOCUMENT",
+      {
+        requestId: seeded.requestId,
+        internalNote: "Mileage looks incomplete.",
+      },
+    ],
+  );
+  await f.sql(
+    "insert into public.client_events(id,workspace_id,case_id,action,message) values($1,$2,$3,$4,$5)",
+    [
+      seeded.clientEventId,
+      f.workspaceId,
+      caseId,
+      "REQUEST_DOCUMENT",
+      "A volunteer asked for one more document.",
+    ],
+  );
+  await f.sql(
+    "insert into public.assistance_items(id,workspace_id,case_id,title,language,contact_preference) values($1,$2,$3,$4,$5,$6)",
+    [
+      seeded.assistanceId,
+      f.workspaceId,
+      caseId,
+      "Client needs help completing intake forms.",
+      "Spanish",
+      "Prefers calls from the main office.",
+    ],
+  );
+  await f.sql(
+    "insert into public.assistance_items(id,workspace_id,title,fixture) values($1,$2,$3,true)",
+    [
+      seeded.standaloneAssistanceId,
+      f.workspaceId,
+      "Seeded assistance example with no linked case.",
+    ],
+  );
+  return seeded;
 }
 test("identity, references, ownership, and privileged setup on real Supabase", async (t) => {
   const f = await createDatabaseFixture();
@@ -510,6 +649,395 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
           });
         } finally {
           await f.sql("rollback");
+        }
+      },
+    );
+  } finally {
+    await f.close();
+  }
+});
+test("workflow records stay owner-visible, presenter-only, and write-protected", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const submitted = await f.createCase(f.applicantA, crypto.randomUUID());
+    const draft = await f.createCase(f.applicantA, crypto.randomUUID());
+    await f.sql("update public.cases set stage=$1 where id=$2", [
+      "received",
+      submitted.caseId,
+    ]);
+    const seeded = await seedWorkflow(f, submitted.caseId);
+    await f.sql(
+      "insert into public.client_events(workspace_id,case_id,action,message) values($1,$2,$3,$4)",
+      [f.workspaceId, draft.caseId, "SAVE_ANSWERS", "Your answers are saved."],
+    );
+    await f.sql(
+      "insert into public.case_events(workspace_id,case_id,actor_user_id,action) values($1,$2,$3,$4)",
+      [f.workspaceId, draft.caseId, f.applicantAUserId, "SAVE_ANSWERS"],
+    );
+    await t.test(
+      "the applicant reads their own requests, document metadata and progress",
+      async () => {
+        const [request] = await rows(f.applicantA, "document_requests", {
+          case_id: submitted.caseId,
+        });
+        assert.equal(request.id, seeded.requestId);
+        assert.equal(request.title, "Mileage record");
+        assert.equal(request.status, "open");
+        const [document] = await rows(f.applicantA, "documents", {
+          case_id: submitted.caseId,
+        });
+        assert.equal(document.id, seeded.documentId);
+        assert.equal(document.request_id, seeded.requestId);
+        assert.equal(document.source, "client");
+        assert.equal(document.submitted_by_user_id, f.applicantAUserId);
+        assert.equal(document.submitted_by_person_id, null);
+        assert.deepEqual(
+          (await rows(f.applicantA, "client_events"))
+            .map((event) => event.action)
+            .sort(),
+          ["REQUEST_DOCUMENT", "SAVE_ANSWERS"],
+        );
+      },
+    );
+    await t.test(
+      "internal staff records are empty for applicants, never errors",
+      async () => {
+        for (const table of PRESENTER_ONLY_TABLES) {
+          const internal = await f.applicantA.from(table).select("*");
+          assert.equal(internal.error, null, `${table} must not error`);
+          assert.deepEqual(internal.data, [], `${table} must be empty`);
+        }
+        for (const table of WORKFLOW_TABLES) {
+          const other = await f.applicantB.from(table).select("*");
+          assert.equal(other.error, null, `${table} must not error`);
+          assert.deepEqual(other.data, [], `${table} must hide other owners`);
+        }
+        for (const actor of [f.applicantA, f.applicantB, f.presenter])
+          assert.ok((await actor.from("action_receipts").select("*")).error);
+      },
+    );
+    await t.test(
+      "the presenter reads every workflow record except private applicant drafts",
+      async () => {
+        for (const table of CLIENT_VISIBLE_TABLES)
+          assert.equal(
+            (await rows(f.presenter, table, { case_id: submitted.caseId }))
+              .length,
+            1,
+            `${table} must be visible to the presenter`,
+          );
+        const [participant] = await rows(
+          f.presenter,
+          "preparation_participants",
+        );
+        assert.equal(participant.person_id, f.people.alex);
+        const [followup] = await rows(f.presenter, "admin_followups");
+        assert.equal(followup.id, seeded.followupId);
+        assert.equal(followup.request_id, seeded.requestId);
+        assert.equal(followup.assignee_person_id, f.people.sam);
+        assert.equal(followup.status, "open");
+        assert.equal(followup.resolution_outcome, null);
+        const [contact] = await rows(f.presenter, "contact_attempts");
+        assert.equal(contact.followup_id, seeded.followupId);
+        assert.equal(contact.outcome, "no_answer");
+        assert.equal(contact.actor_person_id, f.people.sam);
+        const [event] = await rows(f.presenter, "case_events", {
+          case_id: submitted.caseId,
+        });
+        assert.equal(event.action, "REQUEST_DOCUMENT");
+        assert.deepEqual(event.detail, {
+          requestId: seeded.requestId,
+          internalNote: "Mileage looks incomplete.",
+        });
+        const items = await rows(f.presenter, "assistance_items");
+        assert.equal(items.length, 2);
+        const item = items.find((row) => row.id === seeded.assistanceId);
+        assert.equal(item.case_id, submitted.caseId);
+        assert.equal(item.status, "open");
+        assert.equal(item.revision, 1);
+        assert.equal(item.assignee_person_id, null);
+        assert.equal(item.fixture, false);
+        assert.equal(
+          item.contact_preference,
+          "Prefers calls from the main office.",
+        );
+        const standalone = items.find(
+          (row) => row.id === seeded.standaloneAssistanceId,
+        );
+        assert.equal(standalone.case_id, null);
+        assert.equal(standalone.fixture, true);
+        for (const table of ["client_events", "case_events"])
+          assert.deepEqual(
+            await rows(f.presenter, table, { case_id: draft.caseId }),
+            [],
+            `${table} on a private draft`,
+          );
+      },
+    );
+    await t.test(
+      "anonymous, outsider and unapproved callers read no workflow record",
+      async () => {
+        for (const table of WORKFLOW_TABLES) {
+          const denied = await f.anonymous.from(table).select("*");
+          assert.ok(denied.error, `${table} anonymous SELECT must fail`);
+          assert.equal(denied.error.code, "42501", `${table} anonymous code`);
+          for (const actor of [f.outsider, f.unapproved])
+            assert.deepEqual(await rows(actor, table), [], `${table} outside`);
+        }
+      },
+    );
+    await t.test(
+      "direct writes by applicants and presenters fail and change nothing",
+      async () => {
+        const before = await workflowSnapshot(f);
+        for (const table of WORKFLOW_TABLES)
+          assert.ok(before[table].length, `${table} must hold a seeded row`);
+        const probes = {
+          preparation_participants: {
+            filter: ["case_id", submitted.caseId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              person_id: f.people.morgan,
+            },
+            update: { person_id: f.people.morgan },
+          },
+          document_requests: {
+            filter: ["id", seeded.requestId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              title: "Direct request",
+              message: "Written without an action.",
+              requested_by_person_id: f.people.alex,
+            },
+            update: { status: "verified" },
+          },
+          documents: {
+            filter: ["id", seeded.documentId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              request_id: seeded.requestId,
+              filename: "direct.pdf",
+              source: "client",
+              submitted_by_user_id: f.applicantAUserId,
+            },
+            update: { filename: "renamed.pdf" },
+          },
+          admin_followups: {
+            filter: ["id", seeded.followupId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              request_id: seeded.requestId,
+              assignee_person_id: f.people.sam,
+              reason: "Direct escalation",
+              created_by_person_id: f.people.alex,
+            },
+            update: { status: "cancelled" },
+          },
+          contact_attempts: {
+            filter: ["id", seeded.contactId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              followup_id: seeded.followupId,
+              actor_user_id: f.presenterUserId,
+              actor_person_id: f.people.sam,
+              outcome: "reached",
+            },
+            update: { outcome: "reached" },
+          },
+          case_events: {
+            filter: ["id", seeded.caseEventId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              action: "REMIND",
+            },
+            update: { action: "REMIND" },
+          },
+          client_events: {
+            filter: ["id", seeded.clientEventId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              action: "REMIND",
+              message: "Written without an action.",
+            },
+            update: { message: "Rewritten." },
+          },
+          assistance_items: {
+            filter: ["id", seeded.assistanceId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              title: "Direct assistance item",
+            },
+            update: { status: "resolved" },
+          },
+        };
+        assert.deepEqual(
+          Object.keys(probes).sort(),
+          [...WORKFLOW_TABLES].sort(),
+        );
+        for (const actor of [f.applicantA, f.presenter])
+          for (const [table, probe] of Object.entries(probes)) {
+            assert.ok(
+              (await actor.from(table).insert(probe.insert)).error,
+              `${table} direct INSERT must fail`,
+            );
+            assert.ok(
+              (
+                await actor
+                  .from(table)
+                  .update(probe.update)
+                  .eq(probe.filter[0], probe.filter[1])
+              ).error,
+              `${table} direct UPDATE must fail`,
+            );
+            assert.ok(
+              (
+                await actor
+                  .from(table)
+                  .delete()
+                  .eq(probe.filter[0], probe.filter[1])
+              ).error,
+              `${table} direct DELETE must fail`,
+            );
+          }
+        assert.deepEqual(await workflowSnapshot(f), before);
+      },
+    );
+    await t.test(
+      "related identifiers cannot cross workspaces or cases",
+      async () => {
+        await assert.rejects(
+          () =>
+            f.sql(
+              "insert into public.document_requests(workspace_id,case_id,title,message,requested_by_person_id) values($1,$2,$3,$4,$5)",
+              [
+                f.foreignWorkspaceId,
+                submitted.caseId,
+                "Cross-workspace",
+                "Rejected.",
+                f.foreignPeople.alex,
+              ],
+            ),
+          (error) => error.code === "23503",
+        );
+        await assert.rejects(
+          () =>
+            f.sql(
+              "insert into public.document_requests(workspace_id,case_id,title,message,requested_by_person_id) values($1,$2,$3,$4,$5)",
+              [
+                f.workspaceId,
+                submitted.caseId,
+                "Cross-workspace person",
+                "Rejected.",
+                f.foreignPeople.alex,
+              ],
+            ),
+          (error) => error.code === "23503",
+        );
+        await assert.rejects(
+          () =>
+            f.sql(
+              "insert into public.documents(workspace_id,case_id,request_id,filename,source,submitted_by_user_id) values($1,$2,$3,$4,$5,$6)",
+              [
+                f.workspaceId,
+                draft.caseId,
+                seeded.requestId,
+                "cross-case.pdf",
+                "client",
+                f.applicantAUserId,
+              ],
+            ),
+          (error) => error.code === "23503",
+        );
+        await assert.rejects(
+          () =>
+            f.sql(
+              "insert into public.documents(workspace_id,case_id,request_id,filename,source,submitted_by_user_id,submitted_by_person_id) values($1,$2,$3,$4,$5,$6,$7)",
+              [
+                f.workspaceId,
+                submitted.caseId,
+                seeded.requestId,
+                "unattributed.pdf",
+                "staff_recorded",
+                f.presenterUserId,
+                null,
+              ],
+            ),
+          (error) => error.code === "23514",
+        );
+        await assert.rejects(
+          () =>
+            f.sql(
+              "insert into public.admin_followups(workspace_id,case_id,request_id,assignee_person_id,reason,created_by_person_id) values($1,$2,$3,$4,$5,$6)",
+              [
+                f.workspaceId,
+                submitted.caseId,
+                seeded.requestId,
+                f.people.sam,
+                "Duplicate escalation",
+                f.people.alex,
+              ],
+            ),
+          (error) => error.code === "23505",
+        );
+      },
+    );
+    await t.test(
+      "effective privileges keep workflow tables select-only for browser roles",
+      async () => {
+        for (const table of WORKFLOW_TABLES) {
+          const relation = (
+            await f.sql(
+              "select relrowsecurity from pg_class where oid=$1::regclass",
+              [`public.${table}`],
+            )
+          ).rows[0];
+          assert.equal(relation.relrowsecurity, true, `${table} RLS`);
+          for (const role of ["anon", "authenticated", "service_role"]) {
+            const acl = (
+              await f.sql(
+                "select has_table_privilege($1,$2,'SELECT') as sel,has_table_privilege($1,$2,'INSERT') as can_insert,has_table_privilege($1,$2,'UPDATE') as can_update,has_table_privilege($1,$2,'DELETE') as can_delete",
+                [role, `public.${table}`],
+              )
+            ).rows[0];
+            assert.equal(acl.sel, role !== "anon", `${table} SELECT ${role}`);
+            assert.equal(
+              acl.can_insert,
+              role === "service_role",
+              `${table} INSERT ${role}`,
+            );
+            assert.equal(
+              acl.can_update,
+              role === "service_role",
+              `${table} UPDATE ${role}`,
+            );
+            assert.equal(
+              acl.can_delete,
+              role === "service_role",
+              `${table} DELETE ${role}`,
+            );
+          }
+        }
+        const policies = (
+          await f.sql(
+            "select c.relname as name,p.polcmd,p.polroles::regrole[]::text[] as roles from pg_policy p join pg_class c on c.oid=p.polrelid where c.relname=any($1) order by c.relname",
+            [WORKFLOW_TABLES],
+          )
+        ).rows;
+        assert.deepEqual(
+          policies.map((policy) => policy.name),
+          [...WORKFLOW_TABLES].sort(),
+        );
+        for (const policy of policies) {
+          assert.equal(policy.polcmd, "r", `${policy.name} must be read-only`);
+          assert.deepEqual(policy.roles, ["authenticated"], policy.name);
         }
       },
     );
