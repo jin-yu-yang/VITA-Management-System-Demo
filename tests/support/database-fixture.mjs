@@ -7,12 +7,10 @@ import { createAppError } from "../../src/errors.mjs";
 import { makeSampleAnswers } from "../../src/sample-data.mjs";
 import { createRun, ownedRun, saveRun, endRun } from "./run-manifest.mjs";
 import { extendTestWorkspace } from "./workspace-overrides.mjs";
-const camel = (key) =>
-  key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-const camelRow = (row) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [camel(key), value]),
-  );
+// The fixture reads staff rows through the production adapter, so the browser
+// and these tests share one snake_case → camelCase mapping (Ruling R32). A
+// second copy here could drift from the shapes the application actually shows.
+import { createStore, camelRow } from "../../src/supabase-store.mjs";
 const INTAKE_CHECKS = Object.freeze({
   interview: true,
   identity: true,
@@ -336,102 +334,21 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     );
     return { itemId: inserted.rows[0].id, caseId: created.caseId };
   };
-  // The assistance item as staff read it, through the presenter's own client.
+  // Staff reads go through the production adapter on the presenter's own
+  // client, so these helpers prove presenter visibility *and* exercise the one
+  // mapping the browser uses. A row the presenter cannot see is NOT_FOUND,
+  // exactly as it is for the application.
+  f.staffStore = () => createStore(f.presenter);
+  // The assistance item as staff read it.
   f.readStaffAssistance = async (itemId) => {
-    const row = camelRow(
-      await visibleRow(f.presenter, "assistance_items", itemId),
+    const item = (await f.staffStore().listAssistance()).find(
+      (row) => row.id === itemId,
     );
-    return {
-      id: row.id,
-      caseId: row.caseId,
-      title: row.title,
-      status: row.status,
-      revision: Number(row.revision),
-      assigneeId: row.assigneePersonId,
-      resolutionNote: row.resolutionNote,
-      language: row.language,
-      contactPreference: row.contactPreference,
-      fixture: row.fixture,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    if (!item) throw createAppError({ code: "VT002" });
+    return item;
   };
-  // The staff Case shape from src/contracts.mjs, read through the presenter's
-  // own client so the helper also proves presenter visibility.
-  f.readStaffCase = async (caseId) => {
-    const row = await visibleCase(f.presenter, caseId);
-    const participants = await visibleRows(
-      f.presenter,
-      "preparation_participants",
-      caseId,
-      "person_id",
-    );
-    // Each follow-up carries its own contact attempts (Ruling R20).
-    const attempts = await visibleRows(f.presenter, "contact_attempts", caseId);
-    const followups = (
-      await visibleRows(f.presenter, "admin_followups", caseId)
-    ).map((followup) => ({
-      id: followup.id,
-      requestId: followup.requestId,
-      assigneeId: followup.assigneePersonId,
-      status: followup.status,
-      reason: followup.reason,
-      resolutionOutcome: followup.resolutionOutcome,
-      resolutionNote: followup.resolutionNote,
-      createdByPersonId: followup.createdByPersonId,
-      createdAt: followup.createdAt,
-      resolvedAt: followup.resolvedAt,
-      attempts: attempts
-        .filter((attempt) => attempt.followupId === followup.id)
-        .map((attempt) => ({
-          id: attempt.id,
-          outcome: attempt.outcome,
-          note: attempt.note,
-          actorPersonId: attempt.actorPersonId,
-          createdAt: attempt.createdAt,
-        })),
-    }));
-    return {
-      id: row.id,
-      reference: row.reference,
-      workspaceId: row.workspace_id,
-      ownerUserId: row.owner_user_id,
-      fixture: row.fixture,
-      stage: row.stage,
-      revision: Number(row.revision),
-      preparationVersion: Number(row.preparation_version),
-      answers: row.answers,
-      intakeVerified: row.intake_verified,
-      preparerId: row.preparer_id,
-      reviewerId: row.reviewer_id,
-      lastRemindedAt: row.last_reminded_at,
-      lastRemindedByPersonId: row.last_reminded_by_person_id,
-      participants: participants.map((participant) => participant.personId),
-      // Review attempts oldest first; findings and resolutions are internal and
-      // reach no client-readable row.
-      reviews: (await visibleRows(f.presenter, "reviews", caseId)).map(
-        (review) => ({
-          id: review.id,
-          preparationVersion: Number(review.preparationVersion),
-          reviewerId: review.reviewerPersonId,
-          status: review.status,
-          findings: review.findings,
-          resolution: review.resolution,
-          clientContactStatus: review.clientContactStatus,
-          clientContactOutcome: review.clientContactOutcome,
-          clientContactNote: review.clientContactNote,
-          createdAt: review.createdAt,
-          decidedAt: review.decidedAt,
-          clientContactedAt: review.clientContactedAt,
-        }),
-      ),
-      requests: await visibleRows(f.presenter, "document_requests", caseId),
-      documents: await visibleRows(f.presenter, "documents", caseId),
-      followups,
-      history: await visibleRows(f.presenter, "client_events", caseId),
-      internalHistory: await visibleRows(f.presenter, "case_events", caseId),
-    };
-  };
+  // The staff Case shape from src/contracts.mjs.
+  f.readStaffCase = (caseId) => f.staffStore().getCase(caseId);
   // Every column of every application row in the workspace, so an accepted
   // write cannot hide behind an unchanged row count. `f.snapshot` below covers
   // workspace setup (people, memberships, bindings) instead.
