@@ -74,6 +74,10 @@ if (!config) {
   function render(focus = false) {
     if (quiet) return;
     const state = controller.getState();
+    // A full rebuild replaces the fields, so remember where the keyboard was.
+    const active = document.activeElement;
+    const focused = active?.closest?.("#app") ? active.name : null;
+    const caret = focused && "selectionStart" in active ? active.selectionStart : null;
     root.innerHTML = views.page(state, screenFor(state));
     tickCooldown(state);
     if (state.dialog)
@@ -85,11 +89,28 @@ if (!config) {
     else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
+    } else if (focused) restoreField(focused, caret);
+  }
+
+  // Every field the page rebuilds is rendered from state, so the value is back
+  // already; this puts the cursor back where it was so typing can continue.
+  function restoreField(name, caret) {
+    const field = root.querySelector(`[name="${name}"]`);
+    if (!field) return;
+    field.focus();
+    if (caret === null || !("setSelectionRange" in field)) return;
+    try {
+      field.setSelectionRange(caret, caret);
+    } catch {
+      // Some input types refuse a selection range; the focus is what matters.
     }
   }
 
   // The countdown is the only thing on the page that changes by itself, so it
   // is the only thing that owns a timer, and it stops the moment it reaches 0.
+  // It patches its own two elements rather than re-rendering: a rebuild once a
+  // second would replace the code field under a visitor who is still typing
+  // into it, and `required` would then stop the form with nothing on screen.
   function tickCooldown(state) {
     const running =
       !state.principal &&
@@ -97,16 +118,32 @@ if (!config) {
       controller.cooldownRemaining() > 0;
     if (running && !cooldownTimer)
       cooldownTimer = window.setInterval(() => {
-        if (controller.cooldownRemaining() <= 0) {
+        const left = controller.cooldownRemaining();
+        if (left <= 0) {
           window.clearInterval(cooldownTimer);
           cooldownTimer = null;
         }
-        render();
+        paintCountdown(left);
       }, 1000);
     else if (!running && cooldownTimer) {
       window.clearInterval(cooldownTimer);
       cooldownTimer = null;
     }
+  }
+
+  function paintCountdown(secondsLeft) {
+    const countdown = root.querySelector('[data-role="resend-countdown"]');
+    const resend = root.querySelector('[data-action="resend-code"]');
+    if (!countdown || !resend) return;
+    if (secondsLeft > 0) {
+      countdown.textContent = `You can request another code in ${secondsLeft} seconds.`;
+      resend.textContent = `Resend code in ${secondsLeft}s`;
+      resend.disabled = true;
+      return;
+    }
+    countdown.textContent = "";
+    resend.textContent = "Resend code";
+    resend.disabled = false;
   }
 
   function notify(text) {
@@ -349,6 +386,10 @@ if (!config) {
       }
       refreshSaveChip();
     } else if (field.name === "lookup") controller.setLookup(field.value);
+    // Kept in state so a re-render re-renders them rather than blanking them.
+    // None of these three re-render: the field already shows what was typed.
+    else if (field.name === "code") controller.editAuthCode(field.value);
+    else if (field.name === "email") controller.editAuthEmail(field.value);
   });
 
   root.addEventListener("change", (event) => {

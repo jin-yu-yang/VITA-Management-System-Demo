@@ -858,6 +858,86 @@ test("the resend cooldown survives a reload of the same window", async () => {
   second.controller.stop();
 });
 
+test("the code being typed is held in state and cleared on every way out", async () => {
+  const store = fakeStore();
+  const sent = [];
+  let session = null;
+  const auth = {
+    getSession: async () => session,
+    subscribe: () => () => {},
+    signOut: async () => {},
+    cooldownRemaining: () => 0,
+    sendCode: async () => ({
+      state: "code_entry",
+      message: "If this address is eligible, check your inbox for a sign-in code.",
+      retryAfterSeconds: 65,
+    }),
+    verifyCode: async (email, code) => {
+      sent.push([email, code]);
+      if (code !== "246") throw Object.assign(new Error("no"), { code: "AUTH_INVALID_CODE" });
+      session = { user: { id: "user-1" } };
+    },
+  };
+  const { controller, renders } = build({ store, auth });
+  await controller.start();
+  await controller.sendCode("mei@example.org");
+
+  // Typing does not re-render: the field already shows the characters, and a
+  // rebuild would take them away again.
+  const before = renders.count;
+  controller.editAuthCode("24");
+  controller.editAuthCode("246");
+  assert.equal(controller.getState().authCode, "246");
+  assert.equal(renders.count, before, "a keystroke never rebuilds the page");
+  // Typing the address works the same way.
+  controller.editAuthEmail("mei@example.org");
+  assert.equal(controller.getState().authEmail, "mei@example.org");
+  assert.equal(renders.count, before);
+
+  // Called with nothing, the stored code is what is submitted.
+  await assert.rejects(
+    (async () => {
+      controller.editAuthCode("999");
+      await controller.verifyCode();
+    })(),
+    (error) => error.code === "AUTH_INVALID_CODE",
+  );
+  assert.deepEqual(sent.at(-1), ["mei@example.org", "999"]);
+  assert.equal(controller.getState().authCode, "999", "a failed code stays editable");
+
+  // Called with an argument, state and submission agree on that argument.
+  await controller.verifyCode("246");
+  assert.deepEqual(sent.at(-1), ["mei@example.org", "246"]);
+  assert.equal(controller.getState().authCode, "", "cleared once it is spent");
+  assert.equal(controller.getState().principal.userId, "user-1");
+
+  await controller.signOut();
+  assert.equal(controller.getState().authCode, "");
+  controller.stop();
+});
+
+test("restarting sign-in forgets the code as well as the address", async () => {
+  const auth = {
+    ...idleAuth(),
+    getSession: async () => null,
+    sendCode: async () => ({
+      state: "code_entry",
+      message: "If this address is eligible, check your inbox for a sign-in code.",
+      retryAfterSeconds: 65,
+    }),
+    verifyCode: async () => {},
+  };
+  const { controller } = build({ store: fakeStore(), auth });
+  await controller.start();
+  await controller.sendCode("mei@exmaple.org");
+  controller.editAuthCode("123456");
+  controller.restartSignIn();
+  assert.equal(controller.getState().authCode, "");
+  assert.equal(controller.getState().authEmail, "");
+  assert.equal(controller.getState().authStep, "email");
+  controller.stop();
+});
+
 test("an invalid code is a distinct failure and a verified visitor loads their own cases", async () => {
   const store = fakeStore({
     cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],

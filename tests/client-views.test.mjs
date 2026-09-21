@@ -30,6 +30,7 @@ const baseState = (overrides = {}) => ({
   retryable: false,
   authStep: "email",
   authEmail: "",
+  authCode: "",
   authMessage: "",
   authError: null,
   resendSeconds: 0,
@@ -185,6 +186,43 @@ test("an unreachable server gets its own screen, not the sign-in form", () => {
   assert.ok(!/<input[^>]*type="email"/.test(html));
   assert.match(html, /not signed out/i);
   assert.ok(!/data-case-action/.test(html));
+});
+
+test("a half-typed code survives a re-render, and the countdown has a stable hook", () => {
+  const html = accessScreen(
+    baseState({
+      principal: null,
+      session: "none",
+      authStep: "code",
+      authEmail: "mei@example.org",
+      authCode: "12",
+      resendSeconds: 41,
+    }),
+  );
+  // The field renders what is being typed, not a blank: a re-render arriving
+  // between a keystroke and pressing Verify must not empty a required field.
+  const field = labelledControl(html, "Verification code");
+  assert.match(field, /value="12"/);
+  // The countdown is patched in place by the tick, so it needs a stable hook.
+  assert.match(html, /data-role="resend-countdown"/);
+  const countdown = /<span[^>]*data-role="resend-countdown"[^>]*>([^<]*)</.exec(html);
+  assert.ok(countdown, "the countdown element is a single stable element");
+  assert.match(countdown[1], /41 seconds/);
+  // The element is present even at zero, so the tick has something to write to.
+  assert.match(
+    accessScreen(baseState({ principal: null, session: "none", authStep: "code" })),
+    /data-role="resend-countdown"/,
+  );
+  // And a value from the visitor is escaped like any other.
+  assert.match(
+    labelledControl(
+      accessScreen(
+        baseState({ principal: null, session: "none", authStep: "code", authCode: '"><script>' }),
+      ),
+      "Verification code",
+    ),
+    /value="&quot;&gt;&lt;script&gt;"/,
+  );
 });
 
 test("the code step names the address it is bound to", () => {
