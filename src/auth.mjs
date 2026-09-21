@@ -153,6 +153,10 @@ export function createAuth(
     }
     const error = result?.error;
     if (!error) return;
+    // An unreachable Auth server is *returned* here, not thrown (see the note
+    // on `isAuthTransportError` above). Without this the visitor would be told
+    // their code was wrong, and a new one would fail the same way.
+    if (isAuthTransportError(error)) throw transportError(error);
     if (error.code === "otp_expired")
       throw authError(
         "AUTH_INVALID_CODE",

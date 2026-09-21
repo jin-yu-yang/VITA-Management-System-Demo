@@ -287,6 +287,26 @@ test("other verification errors and transport failures stay separate and safe", 
       return true;
     },
   );
+  // The shape the SDK actually produces for an unreachable Auth server: it is
+  // returned in `{error}`, not thrown. Reading it as a bad code would tell the
+  // visitor to request another one, which would fail exactly the same way.
+  const failure = {
+    name: "AuthRetryableFetchError",
+    status: 0,
+    message: "Failed to fetch",
+  };
+  const unreachable = createAuth(
+    fakeClient({ verify: () => ({ data: { session: null }, error: failure }) }),
+    { clock: fakeClock().now },
+  );
+  await assert.rejects(
+    () => unreachable.verifyCode("student@example.com", "000000"),
+    (error) => {
+      assert.equal(error.code, "OFFLINE");
+      assert.equal(error.cause, failure);
+      return true;
+    },
+  );
 });
 
 test("there is no fixed demo code and no bypass", async () => {
