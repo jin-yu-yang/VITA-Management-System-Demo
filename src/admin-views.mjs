@@ -262,6 +262,15 @@ const outcomeOptions = (values) =>
 const openFollowups = (record) =>
   (record?.followups ?? []).filter((task) => task?.status === "open");
 
+// A board row is a scalar Case and carries no follow-up records at all, so the
+// count comes from the summary the presenter list attaches instead (Ruling
+// R56). An opened case carries the records themselves and is counted from
+// them, which is always the more exact of the two.
+const openFollowupCount = (record) =>
+  Array.isArray(record?.followups)
+    ? openFollowups(record).length
+    : Number(record?.openFollowups ?? 0);
+
 const requestById = (record, requestId) =>
   (record?.requests ?? []).find((entry) => entry?.id === requestId) ?? null;
 
@@ -343,22 +352,32 @@ function availableCard(record, rights, ui) {
 // plainly when there is none.
 function followupCard(record, item) {
   const tasks = openFollowups(record);
+  // A board row knows how many calls are owed and who owes them; the reasons
+  // are on the case itself, which is where the call is recorded anyway.
+  const owed = record?.followupAssigneeNames ?? [];
   return boardCard(
     record,
-    `${detailRow("Open tasks", `${tasks.length}`)}${detailRow(
+    `${detailRow("Open tasks", `${openFollowupCount(record)}`)}${detailRow(
       "Language",
       record?.answers?.language || item?.language,
     )}${detailRow(
       "Contact preference",
       item?.contactPreference || "Not recorded for this case",
-    )}${tasks
-      .map(
-        (task) =>
-          `<p class="field-note">${icon("phone")} ${esc(task?.reason)} <small>${esc(
-            task?.assigneeName ?? UNKNOWN_PERSON,
-          )}</small></p>`,
-      )
-      .join("")}<p class="field-note">Open the case to record a call or resolve the task.</p>`,
+    )}${
+      tasks.length
+        ? tasks
+            .map(
+              (task) =>
+                `<p class="field-note">${icon("phone")} ${esc(task?.reason)} <small>${esc(
+                  task?.assigneeName ?? UNKNOWN_PERSON,
+                )}</small></p>`,
+            )
+            .join("")
+        : when(
+            owed.length,
+            `<p class="field-note">${icon("phone")} Waiting on ${esc(owed.join(", "))}.</p>`,
+          )
+    }<p class="field-note">Open the case to record a call or resolve the task.</p>`,
   );
 }
 
@@ -528,7 +547,7 @@ export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
 
   const available = records.filter((record) => isAvailableWork(record) && inLanguage(record));
   const needsCall = records.filter(
-    (record) => openFollowups(record).length && inLanguage(record),
+    (record) => openFollowupCount(record) && inLanguage(record),
   );
   const rights = adminEligibility({}, person);
   const panelUi = { ...view, rights };

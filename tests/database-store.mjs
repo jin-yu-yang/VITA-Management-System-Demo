@@ -125,6 +125,58 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       );
     });
 
+    await t.test("a presenter list summarises the work on each case", async () => {
+      // A board that cannot say who is already on a case, or what is waiting
+      // on a client, is only a list of references (Ruling R56).
+      const claimed = (await presenter.listCases()).find(
+        (row) => row.id === caseId,
+      );
+      assert.deepEqual(claimed.participants, [f.alex]);
+      // One request, already answered and waiting on the preparer, so nothing
+      // is open on the client's side.
+      assert.equal(claimed.openRequests, 0);
+      assert.equal(claimed.openFollowups, 0);
+      assert.deepEqual(claimed.followupAssigneeIds, []);
+      // An unclaimed case carries the same fields, empty.
+      const unclaimed = (await presenter.listCases()).find(
+        (row) => row.id === other.caseId,
+      );
+      assert.deepEqual(unclaimed.participants, []);
+      assert.equal(unclaimed.openFollowups, 0);
+      // The office's own escalation is counted, and it names who owes the call.
+      const chased = await f.assistedCase();
+      await f.act(f.presenter, chased, f.alex, "ESCALATE_CONTACT", {
+        reason: "No response to the document request.",
+      });
+      const waiting = (await presenter.listCases()).find(
+        (row) => row.id === chased,
+      );
+      assert.equal(waiting.openRequests, 1);
+      assert.equal(waiting.openFollowups, 1);
+      assert.deepEqual(waiting.followupAssigneeIds, [f.sam]);
+      assert.deepEqual(waiting.participants, [f.alex]);
+      // A client's own list carries none of it: the summaries are staff work.
+      for (const row of await applicant.listCases())
+        for (const field of [
+          "participants",
+          "openFollowups",
+          "followupAssigneeIds",
+          "openRequests",
+        ])
+          assert.ok(!(field in row), `${field} is absent for an applicant`);
+    });
+
+    await t.test("the workspace read carries the fixture generation", async () => {
+      const workspace = await presenter.getWorkspace();
+      assert.equal(workspace.id, f.workspaceId);
+      assert.equal(typeof workspace.fixtureGeneration, "number");
+      assert.ok(workspace.fixtureGeneration >= 0);
+      assert.equal(workspace.defaultFollowupPersonId, f.sam);
+      // The client reads their own workspace row too — it is how they learn
+      // the demonstration set changed — and it carries nothing private.
+      assert.deepEqual(await createStore(f.applicantA).getWorkspace(), workspace);
+    });
+
     await t.test("an applicant case read loads no staff section", async () => {
       const found = await applicant.getCase(caseId);
       assert.equal(found.id, caseId);

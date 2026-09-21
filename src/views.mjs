@@ -9,6 +9,11 @@ import {
   renderAdminCase,
   closeCaseDialogBody,
 } from "./admin-views.mjs";
+import {
+  renderPresenterPanel,
+  resetDialogBody,
+  checkpointDialogBody,
+} from "./presenter-views.mjs";
 
 // The shared shell: the frame every screen sits in, the dialogs, the two
 // screens that belong to nobody in particular (setup needed, no access), and
@@ -38,6 +43,14 @@ export function connectionNotice(state) {
   }</span></div>`;
 }
 
+// Something worth saying that is not a failure: today, that somebody rebuilt
+// the demonstration cases while this window was looking at one. It is a
+// status, not an alert, and it is dismissed by the same control.
+function noticeBanner(state) {
+  if (!state.notice) return "";
+  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
+}
+
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";
   // The staff workspace states a failure in place, beside the action that
@@ -53,7 +66,7 @@ export function footer() {
 }
 
 export function page(state, body) {
-  return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
@@ -80,20 +93,6 @@ export function noAccessScreen(state) {
 // The staff frame
 // ---------------------------------------------------------------------------
 
-function personaPicker(people = [], selectedPersonId = null) {
-  if (!people.length) return "";
-  return `<section class="panel persona-picker" aria-labelledby="persona-title"><h2 id="persona-title">Acting as</h2><p class="field-note">Choose the volunteer this window is working as. The choice is local to this window and travels with staff actions only.</p><div class="persona-row">${people
-    .map((person) =>
-      button(
-        `${icon("user")} ${esc(person.name)}<small>${esc(person.capabilities?.join(", ") ?? "")}</small>`,
-        "select-person",
-        selectedPersonId === person.id ? "secondary selected" : "secondary",
-        `data-person-id="${esc(person.id)}" aria-pressed="${selectedPersonId === person.id}"`,
-      ),
-    )
-    .join("")}</div></section>`;
-}
-
 // Which screens a presenter gets is decided by the persona this window is
 // acting as, not by the account: an office administrator works in the follow-up
 // and assistance workspace, everybody else in the preparation/review one
@@ -103,20 +102,29 @@ const isAdmin = (person) =>
   Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
 
 // A presenter is on one of two screens: the work board, or one case. Both get
-// the persona selector, because which volunteer this window is acting as is
-// what decides who may do what. The records are decorated here — once, with the
-// roster this screen already holds — so the renderers never see a bare id.
+// the presenter panel, because which volunteer this window is acting as is
+// what decides who may do what — and because the person running the session
+// needs their own controls wherever they happen to be standing. The records
+// are decorated here — once, with the roster this screen already holds — so
+// the renderers never see a bare id.
 export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
     people.find((entry) => entry.id === state.selectedPersonId) ?? null;
-  const picker = personaPicker(people, state.selectedPersonId);
+  const panel = renderPresenterPanel({
+    principal: state.principal,
+    people,
+    selectedPersonId: state.selectedPersonId,
+    connection: state.connection,
+    workspace: state.workspace,
+    cases: state.cases,
+  });
   const office = isAdmin(person);
   const frame = (overline, title, intro, back, body) =>
     `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
       back,
       button(`${icon("back")} Back to the work board`, "open-board", "text"),
-    )}</div>${picker}${body}</main>`;
+    )}</div>${panel}${body}</main>`;
   if (state.screen === "staff-case" && state.savedCase) {
     const record = decorateStaffCase(state.savedCase, people);
     const ui = {
@@ -211,6 +219,14 @@ export function dialog(state) {
     title = "Close this case?";
     // The office screens own their own copy; this frame only places it.
     body = closeCaseDialogBody(state);
+  }
+  if (state.dialog === "reset-fixtures") {
+    title = "Reset the sample cases?";
+    body = resetDialogBody(state);
+  }
+  if (state.dialog === "load-checkpoint") {
+    title = "Load a sample checkpoint";
+    body = checkpointDialogBody(state);
   }
   if (state.dialog === "print") {
     title = "Your application reference card";

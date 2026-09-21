@@ -166,6 +166,63 @@ Task 10C does the full documentation pass; these are the pieces Task 5 added.
 
 **Realtime publication.** Migration `007_realtime_publication.sql` adds the twelve browser-readable tables (`cases`, `document_requests`, `documents`, `client_events`, `workspaces`, `people`, `preparation_participants`, `admin_followups`, `contact_attempts`, `case_events`, `assistance_items`, `reviews`) to `supabase_realtime` and sets `publish = 'insert, update'`. Publishing exposes a table's write-ahead log to Realtime, which then applies the same RLS policies, so the list stops exactly where browser read permission stops: `action_receipts` and `vitally_private` are never published. DELETE and TRUNCATE are never published, because a removed row cannot be authorized through RLS state it no longer has. The migration is idempotent and fails loudly on a project with no `supabase_realtime` publication. Without it a browser subscription receives nothing while Realtime still reports `SUBSCRIBED`, and one unpublished table in a channel's set drops that channel's whole subscription.
 
+## Task 9 sample cases, reset and checkpoints
+
+Task 10C does the full documentation pass; these are the pieces Task 9 added. Migration
+`009_fixtures_and_realtime.sql` adds no table and replaces no earlier object; it can be re-applied as a whole
+after `artifacts/rollback-009.mjs` (gitignored), which drops only its own functions and its
+`schema_migrations` row.
+
+**The six sample cases.** A demonstration needs cases that are already somewhere. Each is keyed by one of the
+six stable `fixture_key` names the schema already constrains, carries `fixture=true` and `origin='fixture'`,
+and gets a fresh UUID and a fresh readable reference on every reset:
+
+| `fixture_key` | Stage | Preparer / reviewer | What it holds |
+| --- | --- | --- | --- |
+| `preparation_ready` | `preparation_ready` | — | intake recorded, waiting to be claimed |
+| `waiting_documents` | `preparing` | Alex | one open document request |
+| `admin_followup` | `preparing` | Alex | one open request, one open office task for Sam with an unanswered call, and the workspace's one sample assistance request beside it |
+| `review_ready` | `review_ready` | Alex | a verified request with the document the office recorded, preparation version 1 |
+| `corrections_required` | `corrections_required` | Alex | Morgan's correction request with its findings, preparation version 1 |
+| `review_approved` | `review_approved` | Alex / Morgan | a corrections attempt with its resolution and an approved attempt, client contact still pending, preparation version 2 |
+
+Every one carries the seventeen whitelisted intake answers of an invented client, a coherent internal and
+client-visible history whose details are all marked `simulated`, and `created_at`/`updated_at`. The names are
+fictional, the addresses are withheld, and no answer carries an email address or any other routable contact
+detail. The owner of a sample case comes from the private `vitally_private.fixture_client_bindings` table: a
+bound scenario belongs to that account after every reset, and an unbound one has no client account at all.
+
+**Reset.** `public.vitally_reset_fixtures(p_action_id uuid)` is presenter-only. It checks membership, then
+presenter access, then reserves the caller's receipt for that action id (operation `RESET_FIXTURES`, digest
+over the operation alone). An identical replay returns the stored receipt and stops — no second deletion, no
+second seeding, no second generation. Otherwise it takes a workspace advisory lock, deletes only
+`cases where fixture` and `assistance_items where fixture` (children cascade; `action_receipts` has no foreign
+key to a case and survives), increments `workspaces.fixture_generation`, and reseeds through
+`vitally_private.seed_fixtures`. Its receipt is `{actionId, generation, fixtureCaseIds:{key: id}}`. Auth users,
+memberships, the permanent people and their capabilities, the default follow-up person, the bindings and every
+case the class created are all outside it.
+
+**The generation signal.** A deleted row cannot be authorized through the row-level security state it no longer
+has, so deletions are never published (migration 007 publishes INSERT and UPDATE only). The reset therefore
+announces itself as one UPDATE on `public.workspaces`, which every member of the workspace may read and which
+carries a workspace id, the default follow-up person and a number — no case id, no reference, no answers. The
+browser reacts by re-reading its own lists through the same RLS-scoped reads it always uses.
+
+**Checkpoints.** `public.vitally_load_checkpoint(p_action_id, p_case_id, p_expected_revision, p_checkpoint)` is
+presenter-only and accepts `intake_ready`, `document_requested`, `admin_followup_needed`, `ready_for_review`
+and `corrections_required`. The checks run in the shared order: membership, presenter access, the checkpoint
+vocabulary (`VALIDATION`), the caller's receipt, the target through permitted visibility (absent, another
+workspace's and another applicant's case are one `NOT_FOUND`), that it is a fixture case at all (`VALIDATION`
+for a case the class created), then the expected revision (`CONFLICT`). The case keeps its id, its readable
+reference, its client and its answers, and exchanges its workflow records for the checkpoint's through the same
+scenario routine the reset uses. It gains one internal `CHECKPOINT` entry marked `simulated`, `revision + 1`
+and a new `updated_at`. Its receipt is the ordinary `{actionId, caseId, reference, revision}`.
+
+**Evidence.** `tests/database-fixtures.mjs` covers the seeded records, the four receipt paths across a reset,
+the checkpoints and the refusals. `tests/database-realtime.mjs` proves ownership isolation for every
+owner-scoped client-visible table and both published event types, using a control, a uniquely marked change and
+a later ordered fence rather than a quiet timeout; every wait has a fifteen-second deadline that fails the test.
+
 ## Task 5A auth gate evidence
 
 `npm run test:auth-browser` (`node --env-file=.env.test --test tests/auth-browser.mjs`) is the early

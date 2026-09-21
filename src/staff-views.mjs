@@ -155,6 +155,12 @@ export function decorateStaffCase(caseRecord, people = []) {
       (id) => nameOf(id) ?? UNKNOWN_PERSON,
     ),
   };
+  // A board row carries the people who owe a call rather than the tasks
+  // themselves (Ruling R56), and they get names here like everybody else.
+  if (Array.isArray(caseRecord.followupAssigneeIds))
+    decorated.followupAssigneeNames = caseRecord.followupAssigneeIds.map(
+      (id) => nameOf(id) ?? UNKNOWN_PERSON,
+    );
   if (Array.isArray(caseRecord.followups))
     decorated.followups = caseRecord.followups.map((followup) => ({
       ...followup,

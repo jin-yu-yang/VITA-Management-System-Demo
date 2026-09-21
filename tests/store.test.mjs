@@ -239,6 +239,10 @@ function fakeClient({
           read.filters.push([column, value]);
           return builder;
         },
+        in(column, values) {
+          read.within = [column, [...values]];
+          return builder;
+        },
         order(column) {
           read.orders.push(column);
           return builder;
@@ -247,8 +251,10 @@ function fakeClient({
           Promise.resolve()
             .then(() => {
               if (readError) return { data: null, error: readError };
-              const matches = table(name).filter((row) =>
-                read.filters.every(([column, value]) => row[column] === value),
+              const matches = table(name).filter(
+                (row) =>
+                  read.filters.every(([column, value]) => row[column] === value) &&
+                  (!read.within || read.within[1].includes(row[read.within[0]])),
               );
               return { data: matches, error: null };
             })
@@ -368,9 +374,82 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
+  // The list asks who is reading before it decides what to fetch, so a client
+  // list still names no staff table at all (Ruling R56).
   assert.deepEqual(
     client.reads.map((read) => read.table),
-    ["cases"],
+    ["memberships", "cases"],
+  );
+  for (const staffTable of STAFF_ONLY_TABLES)
+    assert.ok(
+      !client.reads.some((read) => read.table === staffTable),
+      staffTable,
+    );
+});
+
+test("a presenter list carries the summaries a work board reads", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const [row] = await createStore(client).listCases();
+  // The Case scalars, unchanged, plus exactly four summary fields.
+  assert.deepEqual(
+    Object.keys(row).toSorted(),
+    [
+      ...Object.keys(mapCase(CASE_ROW)),
+      "followupAssigneeIds",
+      "openFollowups",
+      "openRequests",
+      "participants",
+    ].toSorted(),
+  );
+  assert.deepEqual(row.participants, ["person-alex"]);
+  assert.equal(row.openFollowups, 1);
+  assert.deepEqual(row.followupAssigneeIds, ["person-sam"]);
+  assert.equal(row.openRequests, 1);
+  // Three grouped reads, each scoped to the cases this list actually holds,
+  // and each asking only for the columns the board needs.
+  const summaries = client.reads.filter((read) =>
+    ["preparation_participants", "admin_followups", "document_requests"].includes(
+      read.table,
+    ),
+  );
+  assert.equal(summaries.length, 3);
+  for (const read of summaries) assert.deepEqual(read.within, ["case_id", ["case-1"]]);
+  assert.ok(!summaries.some((read) => read.columns === "*"), "no whole rows");
+  // Only the open work is counted: a resolved task is not a task.
+  for (const read of summaries.filter((entry) => entry.table !== "preparation_participants"))
+    assert.deepEqual(read.filters, [["status", "open"]]);
+});
+
+test("an empty presenter list asks for no summaries at all", async () => {
+  const client = fakeClient({ access: "presenter", rows: { cases: [] } });
+  assert.deepEqual(await createStore(client).listCases(), []);
+  assert.deepEqual(
+    client.reads.map((read) => read.table),
+    ["memberships", "cases"],
+  );
+});
+
+test("the workspace read carries the fixture generation", async () => {
+  const client = fakeClient({
+    access: "presenter",
+    rows: {
+      workspaces: [
+        {
+          id: "workspace-1",
+          default_followup_person_id: "person-sam",
+          fixture_generation: "7",
+        },
+      ],
+    },
+  });
+  assert.deepEqual(await createStore(client).getWorkspace(), {
+    id: "workspace-1",
+    fixtureGeneration: 7,
+    defaultFollowupPersonId: "person-sam",
+  });
+  await assert.rejects(
+    () => createStore(fakeClient({ rows: { workspaces: [] } })).getWorkspace(),
+    { code: "NOT_FOUND" },
   );
 });
 

@@ -1,4 +1,4 @@
-import { CASE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, CHECKPOINTS } from "./contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 import { createWindowState } from "./window-state.mjs";
 
@@ -54,6 +54,12 @@ const ASSISTANCE_CONFLICT_MESSAGE =
   "Someone else changed this item. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
+// What a window says when the demonstration set is rebuilt underneath it. The
+// signal is a workspace row, not a case, so this is the only way somebody
+// looking at a sample case learns why it is gone.
+const FIXTURES_RESET_NOTICE = "Sample cases were reset.";
+const FIXTURES_GONE_NOTICE =
+  "Sample cases were reset. The one you had open is no longer there.";
 
 function controllerError(code, message, cause) {
   return Object.assign(new Error(message, { cause }), { code });
@@ -103,6 +109,12 @@ export function createController({
     // Records
     cases: [],
     people: [],
+    // The caller's own workspace row, read only for a presenter: it is where
+    // the fixture generation lives, and the presenter panel shows it.
+    workspace: null,
+    // Something worth saying that is not a failure. The one thing that says
+    // it today is a fixture reset somebody else ran.
+    notice: null,
     // The office's assistance requests. Presenter-only: an applicant never
     // reads this table, so the list stays empty for them and is never fetched.
     assistance: [],
@@ -133,6 +145,10 @@ export function createController({
   // The envelope of the last action whose outcome is unknown. Kept as the very
   // object that was sent, because retrying a copy would be a second action.
   let pendingAction = null;
+  // The presenter's two requests, kept as the objects that were sent so a
+  // retry is the same request rather than a second one.
+  let pendingReset = null;
+  let pendingCheckpoint = null;
   let creating = false;
   let releaseStore = null;
   let releaseAuth = null;
@@ -260,6 +276,15 @@ export function createController({
     noteConnected();
   }
 
+  // The workspace row carries the fixture generation, which is the number the
+  // presenter panel shows and the signal a reset moves. Only a presenter has a
+  // panel, so only a presenter reads it.
+  async function loadWorkspace() {
+    if (!presenter() || !store.getWorkspace) return;
+    state.workspace = await store.getWorkspace();
+    noteConnected();
+  }
+
   async function loadSelected() {
     if (!state.selectedCaseId) return;
     const next = await store.getCase(state.selectedCaseId);
@@ -368,23 +393,38 @@ export function createController({
   // through the same access-scoped path — never the payload itself.
   async function handleChange(change) {
     if (!state.principal || !change) return;
-    const touchesList = change.table === "cases";
+    // The shared fixture signal. A reset deletes rows wholesale, and a
+    // deletion is never published — so what arrives is one workspace row with
+    // a new generation on it, naming no case and carrying nothing private.
+    // Everything this window holds about the demonstration set may have been
+    // replaced, so all of it is re-read through the same access-scoped paths.
+    const touchesWorkspace = change.table === "workspaces";
+    const touchesList = touchesWorkspace || change.table === "cases";
     const touchesOpen =
-      state.selectedCaseId && change.caseId === state.selectedCaseId;
+      Boolean(state.selectedCaseId) &&
+      (touchesWorkspace || change.caseId === state.selectedCaseId);
     // An assistance item belongs to no case, so it is named by its own table
     // rather than by a case id: a claim in another window has to reach this one.
-    const touchesAssistance = change.table === "assistance_items";
+    const touchesAssistance =
+      touchesWorkspace || change.table === "assistance_items";
     if (!touchesList && !touchesOpen && !touchesAssistance) return;
     try {
       if (touchesList) await loadList();
-      if (touchesOpen) await loadSelected();
+      if (touchesWorkspace) await loadWorkspace();
       if (touchesAssistance) await loadAssistance();
+      // The open case comes last, because it is the one read that may
+      // legitimately find nothing: a case that is gone must not stop the
+      // lists around it from being refreshed.
+      if (touchesOpen) await loadSelected();
       state.error = null;
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
       else {
         clearSelection();
         state.screen = homeScreen();
+        // The case that was open is gone. Somebody reset the demonstration
+        // set, and this is the only place this window can be told so.
+        if (touchesWorkspace) state.notice = FIXTURES_GONE_NOTICE;
       }
     }
     show();
@@ -444,6 +484,7 @@ export function createController({
       if (principal.access === "presenter") {
         state.people = await store.listPeople();
         await loadAssistance();
+        await loadWorkspace();
       }
       state.error = null;
     } catch (error) {
@@ -603,6 +644,10 @@ export function createController({
     state.cases = [];
     state.people = [];
     state.assistance = [];
+    state.workspace = null;
+    state.notice = null;
+    pendingReset = null;
+    pendingCheckpoint = null;
     state.selectedPersonId = null;
     state.openPanels = [];
     state.lookup = "";
@@ -667,6 +712,7 @@ export function createController({
 
   function dismissError() {
     state.error = null;
+    state.notice = null;
     show();
   }
 
@@ -1025,6 +1071,111 @@ export function createController({
     }
   }
 
+  // ---- the presenter's own controls ---------------------------------------
+  //
+  // Rebuilding the demonstration set, and putting one of its cases back to a
+  // chosen point in the story. Both are presenter work — the database checks
+  // that again before it reserves anything — and both are idempotent: the
+  // envelope is kept while the outcome is unknown, so pressing the button
+  // again re-sends the same action id and the server answers with its stored
+  // receipt instead of resetting twice. A refusal is final, so its envelope is
+  // dropped and the next attempt is a new request.
+
+  function requirePresenter(message) {
+    if (!presenter()) throw controllerError("FORBIDDEN", message);
+  }
+
+  // Everything this window holds about the demonstration set, read again. The
+  // case that was open may simply not exist any more, which `refresh` already
+  // treats as a cleared selection rather than as a failure.
+  async function afterFixtureChange(notice) {
+    const had = state.selectedCaseId;
+    await refresh();
+    try {
+      await loadWorkspace();
+    } catch (error) {
+      noteFailure(error);
+    }
+    if (notice)
+      state.notice = had && !state.selectedCaseId ? FIXTURES_GONE_NOTICE : notice;
+    show();
+  }
+
+  async function resetFixtures() {
+    requirePresenter(
+      "Only the person running the session can reset the sample cases.",
+    );
+    if (!pendingReset) pendingReset = { actionId: newActionId() };
+    const request = pendingReset;
+    state.busy = true;
+    state.error = null;
+    state.notice = null;
+    show();
+    try {
+      await store.resetFixtures(request);
+      pendingReset = null;
+      state.busy = false;
+      noteConnected();
+      await afterFixtureChange(FIXTURES_RESET_NOTICE);
+      return request;
+    } catch (error) {
+      state.busy = false;
+      if (!UNKNOWN_OUTCOME.includes(error?.code)) pendingReset = null;
+      noteFailure(error);
+      show();
+      throw error;
+    }
+  }
+
+  async function loadCheckpoint({ caseId, checkpoint } = {}) {
+    requirePresenter(
+      "Only the person running the session can load a checkpoint.",
+    );
+    if (!CHECKPOINTS.includes(checkpoint))
+      throw controllerError("VALIDATION", "This checkpoint is not available.");
+    const record = state.cases.find((entry) => entry?.id === caseId);
+    if (!record)
+      throw controllerError("NOT_FOUND", "This sample case is no longer on screen.");
+    // A case this class created is somebody's work, never a demonstration
+    // prop. The database says the same thing; this says it without a round
+    // trip and in words a person can read.
+    if (!record.fixture)
+      throw controllerError(
+        "VALIDATION",
+        "Checkpoints belong to the sample cases only.",
+      );
+    if (
+      !pendingCheckpoint ||
+      pendingCheckpoint.caseId !== caseId ||
+      pendingCheckpoint.checkpoint !== checkpoint
+    )
+      pendingCheckpoint = {
+        actionId: newActionId(),
+        caseId,
+        expectedRevision: Number(record.revision),
+        checkpoint,
+      };
+    const request = pendingCheckpoint;
+    state.busy = true;
+    state.error = null;
+    state.notice = null;
+    show();
+    try {
+      await store.loadCheckpoint(request);
+      pendingCheckpoint = null;
+      state.busy = false;
+      noteConnected();
+      await afterFixtureChange();
+      return request;
+    } catch (error) {
+      state.busy = false;
+      if (!UNKNOWN_OUTCOME.includes(error?.code)) pendingCheckpoint = null;
+      noteFailure(error);
+      show();
+      throw error;
+    }
+  }
+
   async function retryLast() {
     if (!pendingAction) return null;
     // Second guard, for any path that changes the draft without going through
@@ -1071,6 +1222,8 @@ export function createController({
     createCase,
     createAssistedCase,
     runAssistanceAction,
+    resetFixtures,
+    loadCheckpoint,
     selectPerson,
     setBoardFilter,
     clearBoardFilters,

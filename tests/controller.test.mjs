@@ -43,10 +43,16 @@ function fakeStore({
   cases = [],
   people = [],
   assistance = [],
+  workspace = {
+    id: "w1",
+    fixtureGeneration: 3,
+    defaultFollowupPersonId: "person-sam",
+  },
 } = {}) {
   const records = new Map(cases.map((entry) => [entry.id, entry]));
   const items = new Map(assistance.map((entry) => [entry.id, entry]));
   const store = {
+    workspace,
     calls: [],
     writes: [],
     subscriptions: 0,
@@ -155,6 +161,56 @@ function fakeStore({
         resolutionNote: request.note ?? current.resolutionNote,
       });
     },
+    async getWorkspace() {
+      store.calls.push("getWorkspace");
+      return { ...store.workspace };
+    },
+    // The demonstration set, as the database treats it: the fixture cases are
+    // replaced by new ones with new ids, and the generation moves once.
+    async resetFixtures(request) {
+      store.calls.push("resetFixtures");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      if (store.seeded.has(request.actionId)) return;
+      store.seeded.add(request.actionId);
+      for (const [id, record] of [...records])
+        if (record.fixture) records.delete(id);
+      store.workspace = {
+        ...store.workspace,
+        fixtureGeneration: store.workspace.fixtureGeneration + 1,
+      };
+      const id = `fixture-${store.workspace.fixtureGeneration}`;
+      records.set(id, {
+        id,
+        reference: `VT-SEED-${store.workspace.fixtureGeneration}AAA`,
+        stage: "preparation_ready",
+        revision: 4,
+        fixture: true,
+        answers: {},
+      });
+    },
+    async loadCheckpoint(request) {
+      store.calls.push("loadCheckpoint");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      if (store.seeded.has(request.actionId)) return;
+      store.seeded.add(request.actionId);
+      const record = records.get(request.caseId);
+      records.set(request.caseId, {
+        ...record,
+        revision: record.revision + 1,
+        stage: "preparation_ready",
+      });
+    },
+    seeded: new Set(),
     subscribe(handlers) {
       store.subscriptions += 1;
       store.handlers = handlers;
@@ -1385,4 +1441,277 @@ test("the office answers for a walk-in client as its own persona", async () => {
   assert.equal(asClient.controller.getState().savedCase.answers.firstName, "Mei");
   controller.stop();
   asClient.controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The presenter's own two controls
+// ---------------------------------------------------------------------------
+
+const presenterStore = (overrides = {}) =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "person-sam", name: "Sam", capabilities: ["admin"] }],
+    ...overrides,
+  });
+
+const sampleCase = (overrides = {}) => ({
+  id: "fixture-a",
+  reference: "VT-SEED-1AAA",
+  stage: "review_approved",
+  revision: 11,
+  fixture: true,
+  answers: {},
+  ...overrides,
+});
+
+test("a presenter start reads the workspace the fixture generation lives on", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.ok(store.calls.includes("getWorkspace"));
+  assert.deepEqual(controller.getState().workspace, {
+    id: "w1",
+    fixtureGeneration: 3,
+    defaultFollowupPersonId: "person-sam",
+  });
+  controller.stop();
+
+  // A client has no panel, so the workspace is never read for them.
+  const clientStore = fakeStore({ cases: [] });
+  const asClient = build({ store: clientStore });
+  await asClient.controller.start();
+  assert.ok(!clientStore.calls.includes("getWorkspace"));
+  assert.equal(asClient.controller.getState().workspace, null);
+  asClient.controller.stop();
+});
+
+test("a reset is one request, retried as itself and never sent twice", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  assert.equal(controller.getState().selectedCaseId, "fixture-a");
+
+  // The first attempt cannot be confirmed, so the envelope is kept.
+  store.failNext = Object.assign(new Error("timeout"), { code: "OFFLINE" });
+  await assert.rejects(() => controller.resetFixtures(), { code: "OFFLINE" });
+  const first = store.writes.at(-1);
+  assert.ok(first.actionId, "a reset carries an action id");
+  assert.equal(controller.getState().error.code, "OFFLINE");
+
+  // Pressing it again re-sends the identical request, which is what lets the
+  // server answer with its stored receipt instead of resetting twice.
+  await controller.resetFixtures();
+  assert.equal(store.writes.at(-1).actionId, first.actionId);
+  assert.equal(
+    store.calls.filter((entry) => entry === "resetFixtures").length,
+    2,
+  );
+  assert.equal(controller.getState().workspace.fixtureGeneration, 4);
+  // The sample case that was open is gone, so the selection goes with it and
+  // the window is told why.
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().savedCase, null);
+  assert.equal(controller.getState().screen, "staff");
+  assert.match(controller.getState().notice, /Sample cases were reset/);
+  assert.match(controller.getState().notice, /no longer there/);
+
+  // A third press is a new request: the last one is spent.
+  await controller.resetFixtures();
+  assert.notEqual(store.writes.at(-1).actionId, first.actionId);
+  assert.equal(controller.getState().workspace.fixtureGeneration, 5);
+  assert.equal(controller.getState().notice, "Sample cases were reset.");
+  controller.stop();
+});
+
+test("a refused reset spends its envelope rather than repeating it", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  store.failNext = Object.assign(new Error("no"), { code: "FORBIDDEN" });
+  await assert.rejects(() => controller.resetFixtures(), { code: "FORBIDDEN" });
+  const refused = store.writes.at(-1).actionId;
+  await controller.resetFixtures();
+  assert.notEqual(
+    store.writes.at(-1).actionId,
+    refused,
+    "a refusal is final, so the retry is a new request",
+  );
+  controller.stop();
+});
+
+test("an applicant can neither reset the samples nor load a checkpoint", async () => {
+  const store = fakeStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(() => controller.resetFixtures(), { code: "FORBIDDEN" });
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({
+        caseId: "fixture-a",
+        checkpoint: "intake_ready",
+      }),
+    { code: "FORBIDDEN" },
+  );
+  assert.deepEqual(store.writes, [], "nothing privileged is ever sent");
+  assert.ok(!store.calls.includes("resetFixtures"));
+  assert.ok(!store.calls.includes("loadCheckpoint"));
+  controller.stop();
+});
+
+test("a checkpoint carries the case's own revision and the chosen point", async () => {
+  const store = presenterStore({
+    cases: [sampleCase(), sampleCase({ id: "case-b", fixture: false })],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "ready_for_review",
+  });
+  assert.deepEqual(
+    { ...store.writes.at(-1), actionId: "any" },
+    {
+      actionId: "any",
+      caseId: "fixture-a",
+      expectedRevision: 11,
+      checkpoint: "ready_for_review",
+    },
+  );
+  // The case stays itself: a checkpoint keeps its id and its reference.
+  assert.equal(controller.getState().cases[0].id, "fixture-a");
+  assert.equal(controller.getState().notice, null);
+  assert.ok(store.calls.includes("getWorkspace"));
+
+  // A name the database does not know never leaves the browser.
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "fixture-a", checkpoint: "all_done" }),
+    { code: "VALIDATION" },
+  );
+  // Neither does a case this class created, or one that is not on screen.
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "case-b", checkpoint: "intake_ready" }),
+    { code: "VALIDATION" },
+  );
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "case-zz", checkpoint: "intake_ready" }),
+    { code: "NOT_FOUND" },
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "loadCheckpoint").length,
+    1,
+    "a refusal reaches no store call",
+  );
+  controller.stop();
+});
+
+test("a checkpoint retry is the same request until the choice changes", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  store.failNext = Object.assign(new Error("gone"), { code: "SERVER_ERROR" });
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({
+        caseId: "fixture-a",
+        checkpoint: "intake_ready",
+      }),
+    { code: "SERVER_ERROR" },
+  );
+  const first = store.writes.at(-1).actionId;
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "intake_ready",
+  });
+  assert.equal(
+    store.writes.at(-1).actionId,
+    first,
+    "the retry is the same request",
+  );
+  // A different point in the story is a different request entirely.
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "document_requested",
+  });
+  assert.notEqual(store.writes.at(-1).actionId, first);
+  controller.stop();
+});
+
+test("the shared generation signal refetches everything it could have replaced", async () => {
+  const store = presenterStore({
+    cases: [sampleCase()],
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  const before = {
+    cases: store.calls.filter((entry) => entry === "listCases").length,
+    workspace: store.calls.filter((entry) => entry === "getWorkspace").length,
+    assistance: store.calls.filter((entry) => entry === "listAssistance").length,
+  };
+  // Somebody else reset the samples: the row that moved is the workspace, and
+  // it names no case at all.
+  store.records.delete("fixture-a");
+  store.workspace = { ...store.workspace, fixtureGeneration: 9 };
+  await store.handlers.onChange({
+    table: "workspaces",
+    eventType: "UPDATE",
+    id: "w1",
+    caseId: null,
+  });
+  assert.equal(
+    store.calls.filter((entry) => entry === "listCases").length,
+    before.cases + 1,
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "getWorkspace").length,
+    before.workspace + 1,
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    before.assistance + 1,
+  );
+  assert.equal(controller.getState().workspace.fixtureGeneration, 9);
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "staff");
+  assert.match(controller.getState().notice, /Sample cases were reset/);
+  assert.equal(controller.getState().error, null, "a reset is not a failure");
+  // Dismissing clears it.
+  controller.dismissError();
+  assert.equal(controller.getState().notice, null);
+  controller.stop();
+});
+
+test("a generation signal with the open case still there keeps the selection", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  await store.handlers.onChange({
+    table: "workspaces",
+    eventType: "UPDATE",
+    id: "w1",
+    caseId: null,
+  });
+  assert.equal(controller.getState().selectedCaseId, "fixture-a");
+  assert.equal(controller.getState().notice, null);
+  controller.stop();
+});
+
+test("signing out forgets the workspace and the notice with everything else", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.resetFixtures();
+  assert.ok(controller.getState().notice);
+  await controller.signOut();
+  assert.equal(controller.getState().workspace, null);
+  assert.equal(controller.getState().notice, null);
+  controller.stop();
 });

@@ -487,6 +487,21 @@ if (!config) {
       case "open-close-case":
         openDialog("close-case");
         break;
+      // The presenter's own two controls. Both confirm first: one replaces
+      // every sample case on the projector, and the other rewrites one of
+      // them in front of the room.
+      case "open-reset-fixtures":
+        openDialog("reset-fixtures");
+        break;
+      case "open-checkpoint":
+        openDialog("load-checkpoint");
+        break;
+      case "confirm-reset-fixtures":
+        await controller.resetFixtures();
+        formDrafts.clear();
+        closeDialog();
+        notify("The sample cases were rebuilt. Nothing else was touched.");
+        break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
         break;
@@ -669,6 +684,16 @@ if (!config) {
         // already put away by the time this returns.
         formDrafts.clear();
         notify("An assisted application is ready. Nobody was emailed.");
+      } else if (form.id === "checkpoint-form") {
+        // The choice and its confirmation are the same submit: the dialog says
+        // what a checkpoint does, and this button is the person agreeing to it.
+        await controller.loadCheckpoint({
+          caseId: String(values.get("caseId") ?? ""),
+          checkpoint: String(values.get("checkpoint") ?? ""),
+        });
+        formDrafts.clear();
+        closeDialog();
+        notify("The sample case was moved to that point in the story.");
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {

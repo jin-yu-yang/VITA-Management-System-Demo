@@ -35,6 +35,17 @@ export const CASE_ACTIONS = Object.freeze([
   "CLOSE_CASE",
 ]);
 
+// The points in the story a presenter may put one demonstration case back to.
+// The database enforces the same five names (migration 009); this is the one
+// place the browser spells them, so the panel and the controller cannot drift.
+export const CHECKPOINTS = Object.freeze([
+  "intake_ready",
+  "document_requested",
+  "admin_followup_needed",
+  "ready_for_review",
+  "corrections_required",
+]);
+
 export const ERROR_CODES = Object.freeze([
   "FORBIDDEN",
   "NOT_FOUND",
