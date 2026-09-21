@@ -298,3 +298,44 @@ gate now guards it two ways: signing in is a plain fill-then-click with no retry
 fail the login, and `tests/auth-browser.mjs` additionally types a value, waits — by condition — for the
 countdown to advance two seconds, and asserts the value is still there. Both engines record
 `codeSurvivedCountdownSeconds: 2`.
+
+## Task 10A local cross-browser story
+
+`npm run test:browser` (`node --env-file=.env.test --test tests/browser.mjs`) drives the whole demonstration
+script of the design's section 9 through two real engines at once, twice, with the roles swapped: Chrome client
+with Firefox staff, then Firefox client with Chrome staff. Each permutation builds a fresh database fixture and
+serves the application in-process from this repository, exactly as the Task 5A gate does, so it needs the same
+guarded test target and the same installed engines and nothing else.
+
+What it proves, in one run:
+
+- **The story.** A new application is started, filled with fictional details in one click and submitted; its
+  generated `VT-XXXX-XXXX` reference is asserted against `REFERENCE_PATTERN` and then *waited for on the other
+  engine's board*, with nothing copied by hand. The office records the simulated intake checks; Alex claims
+  preparation, requests the sample mileage record and asks the office to call; Sam records the call and resolves
+  the task while Alex stays the preparer; the client sends the sample document; Alex verifies it and records
+  preparation complete; Morgan claims the review, asks for corrections, Alex resubmits, Morgan re-claims,
+  approves and records the client conversation. A second case takes the short path — claim review, approve.
+- **What the client never sees.** The reviewer's findings, the preparer's resolution and the office's notes are
+  asserted absent from the client window, along with any `$`, refund, routing or deposit wording, at the point
+  where the client reads "Review complete".
+- **Window isolation.** The client's selected case, screen, form step and open panel are captured, the staff
+  window switches Alex → Sam → Morgan and reloads, and the client's stored record is asserted unchanged — while
+  the next office step still arrives in it without a reload. Two presenter pages in **one** BrowserContext under
+  the same account keep different personas and different places through a reload each.
+- **The regressions.** Two simultaneous claims (exactly one claim event, one receipt, one participant, and the
+  loser told); a second applicant who can see nothing of the first's case, by list, by reference lookup, by
+  direct id and by a forged action; an applicant's forged staff action refused `FORBIDDEN` with no receipt; a
+  disconnected save that reports no success and whose retry adds exactly one receipt and one revision; a draft
+  edited in two windows reconciled through the conflict form; the removed fixed code refused and an unknown
+  address answered neutrally; an assisted intake taken in, claimed, requested, staff-recorded and verified; and
+  a fixture reset that replaces all six sample cases while the class's own application keeps its reference,
+  owner and stage.
+- **Evidence.** Screenshots of eight screens at 720 px and 390 px land in the git-ignored `artifacts/browser/`,
+  every 390 px capture asserts `scrollWidth === clientWidth`, console output is asserted to contain nothing but
+  the refusals the run asked for, and each dialog is opened and closed from the keyboard.
+
+Only the code *send* is simulated, exactly as in the Task 5A gate: `/auth/v1/otp` is intercepted so no automated
+run asks a mail server for anything, while every verification, every workflow action and every Realtime
+notification is real. No address, code or token is logged, and no screenshot is taken of a screen that carries
+one.
