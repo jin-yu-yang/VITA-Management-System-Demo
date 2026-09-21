@@ -43,18 +43,72 @@ export const button = (text, action, kind = "primary", extra = "") =>
 export const caseButton = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-case-action="${action}" ${extra}>${text}</button>`;
 
+// The same, as a form's submit control: the named fields around it are what the
+// payload is built from, so the button has to submit the form rather than fire
+// on click (the click handler skips submit buttons for exactly that reason).
+export const caseSubmit = (text, action, kind = "primary", extra = "") =>
+  `<button type="submit" class="btn ${kind}" data-case-action="${action}" ${extra}>${text}</button>`;
+
 // One id per field name, so every control has a real `for` association rather
-// than only a wrapping element.
-export const fieldId = (name) => `field-${name}`;
-export const input = (label, name, value = "", type = "text", extra = "") =>
-  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><input id="${fieldId(name)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
-export const select = (label, name, value, options, extra = "") =>
-  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><select id="${fieldId(name)}" name="${name}" ${extra}><option value="">Select an option</option>${options
+// than only a wrapping element. A `scope` keeps ids unique when the same field
+// name appears in more than one form on a page (one escalation form per open
+// document request, for instance).
+export const fieldId = (name, scope = "") =>
+  `field-${scope ? `${esc(scope)}-` : ""}${name}`;
+export const input = (
+  label,
+  name,
+  value = "",
+  type = "text",
+  extra = "",
+  scope = "",
+) =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><input id="${fieldId(name, scope)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
+export const textarea = (label, name, value = "", extra = "", scope = "") =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><textarea id="${fieldId(name, scope)}" name="${name}" ${extra}>${esc(value)}</textarea></label>`;
+export const select = (label, name, value, options, extra = "", scope = "") =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><select id="${fieldId(name, scope)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {
       const [val, txt] = Array.isArray(o) ? o : [o, o];
       return `<option value="${esc(val)}" ${value === val ? "selected" : ""}>${esc(txt)}</option>`;
     })
     .join("")}</select></label>`;
+// One vocabulary for the intake answers, shared by the client's own screens and
+// by the staff summary of the same answers, so the two can never name the same
+// question differently.
+export const ANSWER_LABELS = Object.freeze({
+  service: "Service",
+  year: "Tax year",
+  language: "Preferred language",
+  residenceCity: "City of residence",
+  residenceState: "State of residence",
+  city: "Mailing city",
+  state: "Mailing state",
+  zip: "ZIP code",
+  address: "Mailing address",
+  rideshare: "Uber / Lyft income",
+  other: "Other self-employment",
+  stocks: "More than 10 stock transactions",
+  firstName: "First name",
+  lastName: "Last name",
+  household: "People in your household",
+  helper: "Who is completing this form",
+  documents: "Income documents",
+});
+
+// One time format for every screen. An unusable value renders as nothing at
+// all rather than "Invalid Date".
+export function formatTime(value) {
+  const at = new Date(value ?? "");
+  if (Number.isNaN(at.getTime())) return "";
+  return at.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export const radio = (
   label,
   name,

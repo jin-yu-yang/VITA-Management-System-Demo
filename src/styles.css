@@ -2822,3 +2822,186 @@ textarea::placeholder {
     bottom: 24px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Staff work board and case workspace (Task 7)
+   Built from the same custom properties as the client screens; nothing here
+   carries meaning by colour alone — every badge and chip has its own words.
+   --------------------------------------------------------------------------- */
+.staff-board {
+  padding-top: 18px;
+}
+.board-counts {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+.board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.btn.chip {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  min-height: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.btn.chip.selected {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+.board-list {
+  display: grid;
+  gap: 14px;
+}
+.board-row {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 15px 16px;
+  background: var(--paper);
+}
+.board-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 11px;
+}
+.board-reference {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--blue);
+  cursor: pointer;
+  text-decoration: underline;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.board-reference .icon {
+  width: 15px;
+  height: 15px;
+}
+.board-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px 18px;
+  margin: 0 0 12px;
+}
+.board-fact dt {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-fact dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+.board-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+.staff-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.staff-reason .icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+}
+.staff-header p:first-of-type {
+  margin-top: 0;
+  color: var(--muted);
+}
+.request-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 8px;
+  padding: 14px 15px;
+  margin-bottom: 14px;
+}
+.request-card p {
+  margin: 6px 0;
+  font-size: 14px;
+}
+.document-list,
+.followup-list,
+.attempt-list,
+.blocker-list,
+.review-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+.document-list li,
+.blocker-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+.document-list small,
+.attempt-list small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.followup-list > li,
+.review-attempt {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.attempt-list {
+  margin: 8px 0 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+.staff-form {
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+  margin-top: 15px;
+}
+.staff-form h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+.staff-form textarea {
+  min-height: 78px;
+}
+@media (max-width: 760px) {
+  .board-facts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .board-filters {
+    gap: 8px 10px;
+  }
+}

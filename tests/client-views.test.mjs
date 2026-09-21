@@ -13,7 +13,6 @@ import {
   page,
   setupNeeded,
   staffScreen,
-  renderStaffLanding,
   connectionNotice,
   unreachableScreen,
 } from "../src/views.mjs";
@@ -456,32 +455,87 @@ test("the setup-needed screen explains the configuration and holds no secrets", 
   assert.ok(!/data-case-action/.test(html));
 });
 
-test("the presenter landing is read-only until the staff screens arrive", () => {
+test("a presenter gets the persona selector, the board and one case workspace", () => {
   const cases = [
     caseRecord({ id: "case-a", reference: "VT-AB2C-DE3F", stage: "preparing", preparerId: "person-1" }),
   ];
-  const state = baseState({
-    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
-    screen: "staff",
-    cases,
-    people: [
-      { id: "person-1", name: "Alex", capabilities: ["prepare"] },
-      { id: "person-2", name: "Morgan", capabilities: ["review"] },
-    ],
-    selectedPersonId: "person-1",
-  });
-  const html = staffScreen(state);
-  assert.ok(html.includes("VT-AB2C-DE3F"));
-  assert.ok(html.includes(describeStage("preparing").label));
-  assert.ok(html.includes("Alex"));
-  assert.match(html, /Staff work screens arrive next/);
-  assert.ok(!/data-case-action/.test(html), "no workflow buttons for staff yet");
-  assert.match(html, /data-action="select-person"[^>]*|name="personId"/);
-  assert.ok(renderStaffLanding(cases).includes("VT-AB2C-DE3F"));
-  // The applicant never sees the persona selector.
+  const staffState = (overrides = {}) =>
+    baseState({
+      principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+      screen: "staff",
+      cases,
+      people: [
+        { id: "person-1", name: "Alex", capabilities: ["prepare"] },
+        { id: "person-2", name: "Morgan", capabilities: ["review"] },
+      ],
+      selectedPersonId: "person-1",
+      ...overrides,
+    });
+  const board = staffScreen(staffState());
+  assert.ok(board.includes("VT-AB2C-DE3F"));
+  assert.ok(board.includes(describeStage("preparing").label));
+  assert.ok(board.includes("Alex"), "the preparer is named, not an id");
+  assert.ok(!board.includes("person-1</"), "no person id is shown as a name");
+  assert.match(board, /data-action="select-person"/);
+  assert.match(board, /data-action="open-case" data-case-id="case-a"/);
+
+  // Opening a case is the same screen function, with the workspace inside it.
+  const workspace = staffScreen(
+    staffState({
+      screen: "staff-case",
+      savedCase: {
+        ...cases[0],
+        participants: ["person-1"],
+        requests: [],
+        documents: [],
+        followups: [],
+        reviews: [],
+        internalHistory: [],
+      },
+    }),
+  );
+  assert.match(workspace, /Preparation milestones/);
+  assert.match(workspace, /data-case-action="SUBMIT_REVIEW"/);
+  assert.match(workspace, /data-action="open-board"/);
+  assert.match(workspace, /data-action="select-person"/);
+
+  // The applicant never sees the persona selector or a staff screen.
   const clientPage = page(baseState(), applicationsScreen(baseState()));
   assert.ok(!/data-action="select-person"/.test(clientPage));
   assert.ok(!clientPage.includes("Morgan"));
+  assert.ok(!/data-case-action="CLAIM_/.test(clientPage));
+});
+
+test("the staff workspace announces a failure once, beside the work", () => {
+  const state = baseState({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    screen: "staff-case",
+    error: {
+      code: "CONFLICT",
+      message: "Someone else changed this case. The newest version is shown — check it and try again.",
+    },
+    people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
+    selectedPersonId: "person-1",
+    savedCase: {
+      ...caseRecord({ id: "case-a", stage: "preparing", preparerId: "person-1" }),
+      participants: ["person-1"],
+      requests: [],
+      documents: [],
+      followups: [],
+      reviews: [],
+      internalHistory: [],
+    },
+  });
+  const html = page(state, staffScreen(state));
+  assert.equal(
+    html.match(/Someone else changed this case/g).length,
+    1,
+    "the page-wide banner steps aside for the in-place notice",
+  );
+  assert.match(html, /data-action="dismiss-error"/);
+  // The board keeps the page-wide banner, which is the only notice there.
+  const onBoard = { ...state, screen: "staff" };
+  assert.match(page(onBoard, staffScreen(onBoard)), /problem-banner/);
 });
 
 test("the brand is ViTally, attributed to PCDC, for tax year 2025", () => {

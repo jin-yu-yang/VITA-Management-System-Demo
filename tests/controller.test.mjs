@@ -698,6 +698,94 @@ test("a presenter's selected person travels with the action", async () => {
   controller.stop();
 });
 
+test("a presenter opens a case on the staff workspace and claims it as the chosen person", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      { id: "alex", name: "Alex", capabilities: ["prepare"] },
+      { id: "morgan", name: "Morgan", capabilities: ["review"] },
+    ],
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "review_ready",
+        revision: 4,
+        answers: {},
+        preparerId: "alex",
+        reviewerId: null,
+        participants: ["alex"],
+      },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().screen, "staff");
+  await controller.selectCase("case-a");
+  assert.equal(
+    controller.getState().screen,
+    "staff-case",
+    "a presenter never lands on the client's progress screen",
+  );
+  controller.selectPerson("morgan");
+  // The board's claim button sends exactly this: the canonical type, an empty
+  // payload, and the persona this window is acting as.
+  await controller.runAction("CLAIM_REVIEW", {});
+  assert.deepEqual(
+    { ...store.writes[0], actionId: "id" },
+    {
+      actionId: "id",
+      caseId: "case-a",
+      expectedRevision: 4,
+      personId: "morgan",
+      type: "CLAIM_REVIEW",
+      payload: {},
+    },
+  );
+  controller.stop();
+});
+
+test("the board's filters are this window's, kept per user and dropped on sign-out", async () => {
+  const shared = fakeSession();
+  const staffCases = [
+    { id: "case-a", reference: "VT-AAAA-BBBB", stage: "review_ready", revision: 4, answers: {} },
+  ];
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: staffCases,
+  });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  assert.deepEqual(first.controller.getState().boardFilters, {});
+  first.controller.setBoardFilter("status", "available");
+  first.controller.setBoardFilter("language", "Cantonese");
+  first.controller.selectPerson("alex");
+  assert.deepEqual(first.controller.getState().boardFilters, {
+    status: "available",
+    language: "Cantonese",
+  });
+  first.controller.stop();
+
+  // A reload of the same window restores them, next to the persona.
+  const again = build({ store, sessionStorage: shared });
+  await again.controller.start();
+  assert.deepEqual(again.controller.getState().boardFilters, {
+    status: "available",
+    language: "Cantonese",
+  });
+  assert.equal(again.controller.getState().selectedPersonId, "alex");
+  again.controller.clearBoardFilters();
+  assert.deepEqual(again.controller.getState().boardFilters, {});
+  again.controller.setBoardFilter("status", "mine");
+
+  // Signing out drops them with everything else this window held.
+  await again.controller.signOut();
+  assert.deepEqual(again.controller.getState().boardFilters, {});
+  assert.equal(shared.raw("vitally:client:v1:p1"), null);
+  again.controller.stop();
+});
+
 test("starting a new application is explicit, idempotent and selects the new case", async () => {
   const store = fakeStore();
   let next = 0;

@@ -1,5 +1,6 @@
 import { CASE_ACTIONS } from "./contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
+import { createWindowState } from "./window-state.mjs";
 
 // The one place browser state lives. It owns what is loaded, what is being
 // edited, and which action envelope is in flight; it renders nothing and knows
@@ -15,21 +16,22 @@ import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 //   * **An unknown outcome keeps its envelope.** A timed-out action is retried
 //     as the identical object — same action id, payload, persona and expected
 //     revision — so the server replays its receipt instead of acting twice.
-//   * **Window state is per window and per user.** Selection, screen, form step
-//     and open panels live in session storage under the authenticated user's
-//     id, so two windows disagree freely and two accounts never share a view.
+//   * **Window state is per window and per user.** Selection, screen, form step,
+//     open panels, the persona and the board's filters live in session storage
+//     under the authenticated user's id, so two windows disagree freely and two
+//     accounts never share a view. That storage is a collaborator of its own
+//     (`window-state.mjs`, Ruling R44); this file decides what the values mean.
 
-const SESSION_PREFIX = "vitally:client:v1:";
-const ACCESS_KEY = "vitally:access:v1";
-
-// Screens the applicant can be on. A restored value outside this list is
-// ignored rather than trusted.
+// Screens each principal can be on, first entry first. A restored value outside
+// the caller's own list is ignored rather than trusted — which is also what
+// stops a client screen from being restored for a presenter, and the reverse.
 const CLIENT_SCREENS = Object.freeze([
   "applications",
   "reference",
   "intake",
   "progress",
 ]);
+const STAFF_SCREENS = Object.freeze(["staff", "staff-case"]);
 
 // An action whose answer never arrived may or may not have been applied. Those
 // are the only failures worth retrying with the same envelope; a refusal is
@@ -38,6 +40,10 @@ const UNKNOWN_OUTCOME = Object.freeze(["OFFLINE", "SERVER_ERROR"]);
 
 const CONFLICT_MESSAGE =
   "Someone else changed this application. The newest version is shown — check it and try again.";
+// The same event, in the words of the screen it lands on: staff read "case",
+// clients read "application", and neither ever sees a revision number.
+const STAFF_CONFLICT_MESSAGE =
+  "Someone else changed this case. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 
@@ -105,7 +111,13 @@ export function createController({
     lookup: "",
     dialog: null,
     pendingCreateActionId: null,
+    // The staff board's filters, as chosen in this window. Only the choices a
+    // person made are held; the board fills in its own defaults for the rest.
+    boardFilters: {},
   };
+
+  // Everything this window remembers by itself, under one key per user.
+  const windowState = createWindowState({ sessionStorage, clock });
 
   // The envelope of the last action whose outcome is unknown. Kept as the very
   // object that was sent, because retrying a copy would be a second action.
@@ -119,64 +131,46 @@ export function createController({
   const show = () => render?.();
 
   // ---- window-local state ------------------------------------------------
+  //
+  // What is stored, and how, belongs to the collaborator; what the values mean
+  // — which screens exist, which of them this principal may be on — belongs
+  // here.
 
-  const readJson = (key) => {
-    try {
-      const raw = sessionStorage?.getItem?.(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  };
+  // Screens the current principal may be on, first entry first.
+  const screens = () =>
+    state.principal?.access === "presenter" ? STAFF_SCREENS : CLIENT_SCREENS;
 
-  const writeJson = (key, value) => {
-    try {
-      sessionStorage?.setItem?.(key, JSON.stringify(value));
-    } catch {
-      // A window with no session storage still works; it just forgets.
-    }
-  };
-
-  const dropKey = (key) => {
-    try {
-      sessionStorage?.removeItem?.(key);
-    } catch {
-      // Nothing to do: the value is already unreachable.
-    }
-  };
-
-  const sessionKey = () =>
-    state.principal ? `${SESSION_PREFIX}${state.principal.userId}` : null;
+  // Where "back to the list" goes for whoever is signed in.
+  const homeScreen = () => screens()[0];
 
   function persistSession() {
-    const key = sessionKey();
-    if (!key) return;
-    writeJson(key, {
+    if (!state.principal) return;
+    windowState.write(state.principal.userId, {
       screen: state.screen,
       selectedCaseId: state.selectedCaseId,
       selectedPersonId: state.selectedPersonId,
       formStep: state.formStep,
       openPanels: state.openPanels,
       pendingCreateActionId: state.pendingCreateActionId,
+      boardFilters: state.boardFilters,
     });
   }
 
   function restoreSession() {
-    const key = sessionKey();
-    const saved = key ? readJson(key) : null;
+    const saved = state.principal
+      ? windowState.read(state.principal.userId)
+      : null;
     if (!saved) return;
-    if (CLIENT_SCREENS.includes(saved.screen)) state.screen = saved.screen;
-    if (typeof saved.selectedCaseId === "string")
-      state.selectedCaseId = saved.selectedCaseId;
-    if (typeof saved.selectedPersonId === "string")
-      state.selectedPersonId = saved.selectedPersonId;
-    if (Number.isInteger(saved.formStep)) state.formStep = saved.formStep;
-    if (Array.isArray(saved.openPanels))
-      state.openPanels = saved.openPanels.filter(
-        (name) => typeof name === "string",
-      );
-    if (typeof saved.pendingCreateActionId === "string")
+    // Every field has already been checked for its shape; the screen is checked
+    // here, against the list this principal is allowed.
+    if (screens().includes(saved.screen)) state.screen = saved.screen;
+    if (saved.selectedCaseId) state.selectedCaseId = saved.selectedCaseId;
+    if (saved.selectedPersonId) state.selectedPersonId = saved.selectedPersonId;
+    if (saved.formStep !== undefined) state.formStep = saved.formStep;
+    if (saved.openPanels) state.openPanels = saved.openPanels;
+    if (saved.pendingCreateActionId)
       state.pendingCreateActionId = saved.pendingCreateActionId;
+    if (saved.boardFilters) state.boardFilters = saved.boardFilters;
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -187,19 +181,13 @@ export function createController({
   // cannot buy another send. It is per window, exactly like the rest of this
   // state, and holds no code or token.
 
-  const accessRecord = () => readJson(ACCESS_KEY) ?? {};
-
-  function storedRemaining() {
-    const { startedAt } = accessRecord();
-    if (!Number.isFinite(startedAt)) return 0;
-    return Math.max(
-      0,
-      Math.ceil((startedAt + cooldownSeconds * 1000 - clock()) / 1000),
-    );
-  }
+  const accessRecord = () => windowState.readAccess();
 
   const cooldownRemaining = () =>
-    Math.max(storedRemaining(), auth?.cooldownRemaining?.() ?? 0);
+    Math.max(
+      windowState.cooldownRemaining(cooldownSeconds),
+      auth?.cooldownRemaining?.() ?? 0,
+    );
 
   // ---- reading -----------------------------------------------------------
 
@@ -282,7 +270,7 @@ export function createController({
       // reset, or it was closed and removed. Fall back to the list.
       if (error?.code === "NOT_FOUND") {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
       } else failure = failure ?? error;
     }
     if (failure) noteFailure(failure);
@@ -362,7 +350,7 @@ export function createController({
       if (error?.code !== "NOT_FOUND") noteFailure(error);
       else {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
       }
     }
     show();
@@ -412,10 +400,11 @@ export function createController({
     }
     state.principal = principal;
     state.authError = null;
-    dropKey(ACCESS_KEY);
+    windowState.clearAccess();
     restoreSession();
-    if (!CLIENT_SCREENS.includes(state.screen)) state.screen = "applications";
-    if (principal.access === "presenter") state.screen = "staff";
+    // A presenter lands on the work board and a client on their applications,
+    // unless this window was already somewhere this principal may be.
+    if (!screens().includes(state.screen)) state.screen = homeScreen();
     try {
       await loadList();
       if (principal.access === "presenter") state.people = await store.listPeople();
@@ -430,8 +419,7 @@ export function createController({
       } catch (error) {
         if (error?.code === "NOT_FOUND") {
           clearSelection();
-          state.screen =
-            principal.access === "presenter" ? "staff" : "applications";
+          state.screen = homeScreen();
         } else noteFailure(error);
       }
     }
@@ -480,7 +468,7 @@ export function createController({
         retryAfterSeconds: remaining,
       };
       state.authMessage = answer.message;
-      writeJson(ACCESS_KEY, {
+      windowState.writeAccess({
         startedAt: record.startedAt,
         email: address,
         message: answer.message,
@@ -493,7 +481,7 @@ export function createController({
       state.authStep = "code";
       state.authEmail = address;
       state.authMessage = answer.message;
-      writeJson(ACCESS_KEY, {
+      windowState.writeAccess({
         startedAt: clock(),
         email: address,
         message: answer.message,
@@ -541,10 +529,11 @@ export function createController({
       show();
       throw error;
     }
-    dropKey(ACCESS_KEY);
+    windowState.clearAccess();
     state.authStep = "email";
     state.authCode = "";
-    state.screen = "applications";
+    // Which screen this visitor lands on is `load()`'s to decide: it knows the
+    // principal, and this window may already have been somewhere.
     await load();
   }
 
@@ -558,15 +547,18 @@ export function createController({
     state.authCode = "";
     state.authError = null;
     state.authMessage = "";
-    if (record.startedAt === undefined) dropKey(ACCESS_KEY);
-    else writeJson(ACCESS_KEY, { startedAt: record.startedAt, message: record.message });
+    if (record.startedAt === undefined) windowState.clearAccess();
+    else
+      windowState.writeAccess({
+        startedAt: record.startedAt,
+        message: record.message,
+      });
     show();
   }
 
   // Signing out drops every record this window holds, not just the session.
   function forgetUser() {
-    const key = sessionKey();
-    if (key) dropKey(key);
+    if (state.principal) windowState.clear(state.principal.userId);
     unsubscribe();
     clearSelection();
     state.session = "none";
@@ -578,6 +570,7 @@ export function createController({
     state.lookup = "";
     state.dialog = null;
     state.pendingCreateActionId = null;
+    state.boardFilters = {};
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -647,6 +640,22 @@ export function createController({
     show();
   }
 
+  // The work board's filters, one choice at a time. They are this window's
+  // view of the same list everybody else sees, so they are stored beside the
+  // selection rather than sent anywhere.
+  function setBoardFilter(name, value) {
+    if (!name) return;
+    state.boardFilters = { ...state.boardFilters, [name]: String(value ?? "") };
+    persistSession();
+    show();
+  }
+
+  function clearBoardFilters() {
+    state.boardFilters = {};
+    persistSession();
+    show();
+  }
+
   // ---- cases -------------------------------------------------------------
 
   async function selectCase(id, { navigate: move = true } = {}) {
@@ -659,11 +668,16 @@ export function createController({
       noteConnected();
       state.error = null;
       if (move)
-        state.screen = next.stage === "draft" ? "intake" : "progress";
+        state.screen =
+          state.principal?.access === "presenter"
+            ? "staff-case"
+            : next.stage === "draft"
+              ? "intake"
+              : "progress";
     } catch (error) {
       if (error?.code === "NOT_FOUND") {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
       }
       noteFailure(error);
       persistSession();
@@ -793,7 +807,14 @@ export function createController({
         state.retryable = false;
         noteFailure(
           error,
-          error?.code === "CONFLICT" ? { message: CONFLICT_MESSAGE } : undefined,
+          error?.code === "CONFLICT"
+            ? {
+                message:
+                  state.principal?.access === "presenter"
+                    ? STAFF_CONFLICT_MESSAGE
+                    : CONFLICT_MESSAGE,
+              }
+            : undefined,
         );
         if (error?.code === "CONFLICT")
           await loadSelected().catch(() => {});
@@ -896,6 +917,7 @@ export function createController({
       people: [...state.people],
       draftAnswers: { ...state.draftAnswers },
       openPanels: [...state.openPanels],
+      boardFilters: { ...state.boardFilters },
       conflict: state.conflict ? { ...state.conflict } : null,
       error: state.error ? { ...state.error } : null,
       authError: state.authError ? { ...state.authError } : null,
@@ -918,6 +940,8 @@ export function createController({
     selectCase,
     createCase,
     selectPerson,
+    setBoardFilter,
+    clearBoardFilters,
     editAnswers,
     saveAnswers,
     reconcileAnswers,

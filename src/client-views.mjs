@@ -7,6 +7,8 @@ import {
   select,
   radio,
   stageBadge,
+  formatTime,
+  ANSWER_LABELS as answerLabels,
 } from "./ui.mjs";
 import {
   describeStage,
@@ -33,17 +35,6 @@ const steps = [
   "Your details",
   "Check your answers",
 ];
-
-function formatTime(value) {
-  const at = new Date(value ?? "");
-  if (Number.isNaN(at.getTime())) return "";
-  return at.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 const row = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`;
@@ -161,26 +152,6 @@ export function saveStatus(state) {
     return `<span class="save-chip unsaved" role="status">${icon("clock")} Unsaved changes</span>`;
   return `<span class="save-chip" role="status">${icon("check")} Up to date</span>`;
 }
-
-const answerLabels = Object.freeze({
-  service: "Service",
-  year: "Tax year",
-  language: "Preferred language",
-  residenceCity: "City of residence",
-  residenceState: "State of residence",
-  city: "Mailing city",
-  state: "Mailing state",
-  zip: "ZIP code",
-  address: "Mailing address",
-  rideshare: "Uber / Lyft income",
-  other: "Other self-employment",
-  stocks: "More than 10 stock transactions",
-  firstName: "First name",
-  lastName: "Last name",
-  household: "People in your household",
-  helper: "Who is completing this form",
-  documents: "Income documents",
-});
 
 // A deliberate choice between two sets of answers. It shows only what actually
 // differs, and neither button saves: reconciliation picks a new edit base, and

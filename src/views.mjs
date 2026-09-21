@@ -1,11 +1,16 @@
-import { esc, icon, button, stageBadge } from "./ui.mjs";
-import { describeStage } from "./domain.mjs";
+import { esc, icon, button } from "./ui.mjs";
+import {
+  renderStaffBoard,
+  renderStaffCase,
+  decorateStaffCase,
+} from "./staff-views.mjs";
 
 // The shared shell: the frame every screen sits in, the dialogs, the two
 // screens that belong to nobody in particular (setup needed, no access), and
-// the read-only staff landing that stands in until the staff work screens
-// arrive. The client screens live in `client-views.mjs`; this file renders no
-// intake, no progress and no workflow button.
+// the staff frame — the persona selector and the `<main>` that the work board
+// or one case workspace sits in. The client screens live in
+// `client-views.mjs` and the staff screens in `staff-views.mjs`; this file
+// renders no intake, no progress and no workflow button of its own.
 
 const when = (condition, html) => (condition ? html : "");
 
@@ -30,6 +35,11 @@ export function connectionNotice(state) {
 
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";
+  // The staff workspace states a failure in place, beside the action that
+  // failed, with the same Try again and Dismiss controls. One announcement is
+  // enough, and that one is the more useful of the two — but only when that
+  // screen is really the one being rendered (see `staffScreen`).
+  if (state.screen === "staff-case" && state.savedCase) return "";
   return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
@@ -62,27 +72,8 @@ export function noAccessScreen(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Staff placeholder (Ruling R41)
+// The staff frame
 // ---------------------------------------------------------------------------
-
-// Read-only, on purpose: the board, preparation and review screens are the next
-// task, and until then a presenter can see what exists without acting on it.
-export function renderStaffLanding(cases = [], people = []) {
-  const name = (id) =>
-    people.find((person) => person.id === id)?.name ?? (id ? "Assigned" : "");
-  if (!cases.length)
-    return `<div class="panel empty-state">${icon("folder")}<h2>No applications yet</h2><p>Applications appear here as soon as someone starts one.</p></div>`;
-  return `<div class="application-list">${cases
-    .map(
-      (entry) =>
-        `<div class="application-row static"><span class="application-reference">${esc(entry.reference)}</span><span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${esc(
-          entry.preparerId
-            ? `Preparer: ${name(entry.preparerId)}`
-            : "No preparer yet",
-        )}${esc(entry.reviewerId ? ` · Reviewer: ${name(entry.reviewerId)}` : "")}</span></div>`,
-    )
-    .join("")}</div>`;
-}
 
 function personaPicker(people = [], selectedPersonId = null) {
   if (!people.length) return "";
@@ -98,8 +89,30 @@ function personaPicker(people = [], selectedPersonId = null) {
     .join("")}</div></section>`;
 }
 
+// A presenter is on one of two screens: the work board, or one case. Both get
+// the persona selector, because which volunteer this window is acting as is
+// what decides who may do what. The records are decorated here — once, with the
+// roster this screen already holds — so the renderers never see a bare id.
 export function staffScreen(state) {
-  return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>Case overview</h1><p>Staff work screens arrive next. This page lists what the workspace holds so far; nothing here changes a case.</p></div>${personaPicker(state.people, state.selectedPersonId)}<section class="panel"><div class="section-head"><h2>Applications</h2><span class="muted small">${esc(state.cases.length)} in this workspace</span></div>${renderStaffLanding(state.cases, state.people)}</section><p class="field-note">Stage names come from the same table the client sees, so both sides of the demo always agree: ${esc(describeStage("review_ready").label)}, ${esc(describeStage("reviewing").label)}, and so on.</p></main>`;
+  const people = state.people ?? [];
+  const person =
+    people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+  const picker = personaPicker(people, state.selectedPersonId);
+  if (state.screen === "staff-case" && state.savedCase)
+    return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>One case</h1><p>Everything this case holds, and the work you may do on it as the volunteer you are acting as.</p>${button(`${icon("back")} Back to the work board`, "open-board", "text")}</div>${picker}${renderStaffCase(
+      decorateStaffCase(state.savedCase, people),
+      person,
+      {
+        busy: state.busy,
+        error: state.error,
+        retryable: state.retryable,
+      },
+    )}</main>`;
+  return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>Work board</h1><p>Every case in this workspace, what it is waiting for, and the work you can take on.</p></div>${picker}${renderStaffBoard(
+    (state.cases ?? []).map((record) => decorateStaffCase(record, people)),
+    people,
+    { person, filters: state.boardFilters, busy: state.busy },
+  )}</main>`;
 }
 
 // ---------------------------------------------------------------------------

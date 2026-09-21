@@ -2,6 +2,7 @@ import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS } from "./contracts.mjs";
+import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
 import { describeFocus } from "./ui.mjs";
 import * as views from "./views.mjs";
@@ -54,12 +55,17 @@ if (!config) {
     cooldownSeconds: config.authResendCooldownSeconds,
   });
 
-  const SAMPLE_FILE = "demo-mileage-record-2025.pdf";
   let toastTimer = null;
   let cooldownTimer = null;
   let focusBeforeDialog = null;
   let quiet = false;
   let sampleSeed = 0;
+  // What is half-typed into a staff form, by field id. A re-render can arrive
+  // at any moment — a realtime change, a persona click, a connection notice —
+  // and rebuilding the page must not empty a box somebody is writing in. It is
+  // dropped the moment the text is sent or the person moves to another case, so
+  // nothing can reappear where it does not belong.
+  const formDrafts = new Map();
 
   function screenFor(state) {
     if (!state.principal) {
@@ -81,6 +87,7 @@ if (!config) {
     const active = document.activeElement;
     const keyboard = active?.closest?.("#app") ? describeFocus(active) : null;
     root.innerHTML = views.page(state, screenFor(state));
+    restoreFormDrafts();
     tickCooldown(state);
     if (state.dialog)
       requestAnimationFrame(() =>
@@ -92,6 +99,16 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard.name, keyboard.caret);
+  }
+
+  // Staff form fields are not rendered from controller state — they are blank
+  // boxes for text that only exists until it is sent — so what was typed is put
+  // back by hand after a rebuild, and only into a field that is still empty.
+  function restoreFormDrafts() {
+    for (const [id, value] of formDrafts) {
+      const field = root.querySelector(`#${CSS.escape(id)}`);
+      if (field && !field.value) field.value = value;
+    }
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back
@@ -215,19 +232,33 @@ if (!config) {
 
   // ---- workflow actions -------------------------------------------------
 
-  function payloadFor(type, target) {
-    if (type === "SUBMIT") return { confirmed: true };
-    if (type === "RESPOND_DOCUMENT")
-      return { requestId: target.dataset.requestId, filename: SAMPLE_FILE };
-    return {};
-  }
+  // One short sentence per staff action, said after it lands. The screen itself
+  // already shows the new state; this is the confirmation that it was this
+  // click that changed it.
+  const STAFF_NOTICES = Object.freeze({
+    CLAIM_PREPARATION: "This case is yours to prepare.",
+    CLAIM_REVIEW: "This review is yours.",
+    REQUEST_DOCUMENT: "The client was asked for this document.",
+    VERIFY_DOCUMENT: "The document is verified.",
+    ESCALATE_CONTACT: "The office was asked to contact the client.",
+    SUBMIT_REVIEW:
+      "Preparation is recorded as complete. The case is waiting for a reviewer.",
+    RESUBMIT_REVIEW:
+      "The corrections are recorded. The case is waiting for a reviewer.",
+    REQUEST_CORRECTIONS: "The preparer was asked for corrections.",
+    APPROVE_REVIEW: "The review result is recorded.",
+    RECORD_REVIEW_CONTACT: "The conversation is recorded.",
+  });
+  const CLAIMS = Object.freeze(["CLAIM_PREPARATION", "CLAIM_REVIEW"]);
 
-  async function runCaseAction(target) {
+  async function runCaseAction(target, form = null) {
     const type = target.dataset.caseAction;
     // The DOM says a canonical name or it says nothing at all.
     if (!CASE_ACTIONS.includes(type)) return;
     const state = controller.getState();
     if (type === "SAVE_ANSWERS") {
+      // The controller owns the draft and the revision the edits started from,
+      // so this one is never built from a form.
       await controller.saveAnswers();
       notify("Your answers are saved.");
       return;
@@ -244,16 +275,38 @@ if (!config) {
       else render();
       return;
     }
-    await controller.runAction(type, payloadFor(type, target));
+    // A control on the work board names the case it belongs to. Opening it
+    // first is what gives the action its case id and its expected revision.
+    const boardCaseId = target.dataset.caseId;
+    if (boardCaseId && state.savedCase?.id !== boardCaseId)
+      await controller.selectCase(boardCaseId, { navigate: false });
+    // The payload rules are a pure function of the control and its form.
+    const { payload } = payloadFor(
+      type,
+      target.dataset,
+      form ? Object.fromEntries(new FormData(form)) : {},
+    );
+    await controller.runAction(type, payload);
+    // Sent: whatever was typed for it is no longer a draft.
+    formDrafts.clear();
     if (type === "SUBMIT") {
       controller.navigate("progress");
       notify("Your application was sent to the office.");
+      return;
     }
     if (type === "RESPOND_DOCUMENT") {
       if (controller.getState().openPanels.includes("upload-failed"))
         controller.togglePanel("upload-failed");
       notify("Your sample document was sent.");
+      return;
     }
+    // A claim opens the case that was just taken on.
+    if (
+      CLAIMS.includes(type) &&
+      controller.getState().principal?.access === "presenter"
+    )
+      controller.navigate("staff-case");
+    if (STAFF_NOTICES[type]) notify(STAFF_NOTICES[type]);
   }
 
   // ---- navigation actions -----------------------------------------------
@@ -273,7 +326,19 @@ if (!config) {
         controller.navigate("progress");
         break;
       case "open-case":
+        // Another case is another set of forms; nothing half-typed follows it.
+        formDrafts.clear();
         await controller.selectCase(target.dataset.caseId);
+        break;
+      case "open-board":
+        formDrafts.clear();
+        controller.navigate("staff");
+        break;
+      case "set-board-filter":
+        controller.setBoardFilter(target.dataset.filter, target.dataset.value);
+        break;
+      case "clear-board-filters":
+        controller.clearBoardFilters();
         break;
       case "start-application":
         await controller.createCase();
@@ -365,6 +430,9 @@ if (!config) {
 
   root.addEventListener("click", async (event) => {
     const caseTarget = event.target.closest("[data-case-action]");
+    // A submit button inside a form is handled by the submit event, where the
+    // form's own values are; acting on the click too would send it twice.
+    if (caseTarget?.type === "submit") return;
     const target = caseTarget ?? event.target.closest("[data-action]");
     if (!target) return;
     try {
@@ -387,6 +455,10 @@ if (!config) {
         quiet = false;
       }
       refreshSaveChip();
+    } else if (field.closest(".staff-form") && field.id) {
+      // Held in the wiring layer, not in the controller: this text is not part
+      // of any record until the action that carries it is sent.
+      formDrafts.set(field.id, field.value);
     } else if (field.name === "lookup") controller.setLookup(field.value);
     // Kept in state so a re-render re-renders them rather than blanking them.
     // None of these three re-render: the field already shows what was typed.
@@ -425,7 +497,16 @@ if (!config) {
     if (!form.reportValidity()) return;
     const values = new FormData(form);
     try {
-      if (form.id === "email-form") {
+      // A staff form carries its action on its own submit button and names its
+      // fields after the payload keys; everything else is a known form id. The
+      // selector is deliberately narrow: the intake form also holds a workflow
+      // button, but that one is `type="button"` and belongs to the click path.
+      const caseControl = form.querySelector(
+        'button[type="submit"][data-case-action]',
+      );
+      if (caseControl) {
+        await runCaseAction(caseControl, form);
+      } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
         await controller.verifyCode(String(values.get("code") ?? ""));
