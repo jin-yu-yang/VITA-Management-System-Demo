@@ -229,23 +229,36 @@ export function describeFocus(active) {
 }
 
 // How to find that element again, most specific first: its own id, then its
-// name, then what it does *and* which row it belongs to, and only then what it
-// does. The last one can match several buttons; it resolves to the first, which
-// is why the related id comes before it rather than instead of it.
+// name, then what it does together with the row it belongs to — **or**, for a
+// control that belongs to no row, what it does.
+//
+// A button that named a row is never looked up by what it does alone. The two
+// are alternatives, not a fallback chain: a case can have several open document
+// requests at once, each rendering its own RESPOND_DOCUMENT button that differs
+// only by `data-request-id`. If the focused request is resolved in a background
+// rebuild while another stays open, falling back to the bare action would put
+// the keyboard on a *different* request's live button — and a keyboard user
+// mid-keypress would then send a real workflow action against the wrong
+// request. A row that is gone restores nothing, which is the safe answer.
 export function focusSelectors(focus) {
   if (!focus) return [];
   const selectors = [];
   // Attribute form throughout, so no value needs CSS.escape — which does not
   // exist outside a browser, and this has to be testable without one.
+  // An id is unique and row-scoped (`fieldId(name, scope)`), so it is the whole
+  // answer when there is one. The name is the fallback for a control that has
+  // no id — never a fallback *from* an id, for the same reason the bare action
+  // is not one: a case with two open document requests renders two `reason`
+  // boxes, and landing in the surviving one would put the rest of a sentence
+  // into, and send it for, the wrong request.
   if (focus.id) selectors.push(`[id=${attributeValue(focus.id)}]`);
-  if (focus.name) selectors.push(`[name=${attributeValue(focus.name)}]`);
+  else if (focus.name) selectors.push(`[name=${attributeValue(focus.name)}]`);
   if (focus.action) {
     const base = `[${focus.action.attribute}=${attributeValue(focus.action.value)}]`;
     const related = (focus.related ?? [])
       .map(({ attribute, value }) => `[${attribute}=${attributeValue(value)}]`)
       .join("");
-    if (related) selectors.push(`${base}${related}`);
-    selectors.push(base);
+    selectors.push(related ? `${base}${related}` : base);
   }
   return selectors;
 }

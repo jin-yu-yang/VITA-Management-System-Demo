@@ -208,17 +208,51 @@ test("a related id tells one namesake button from another", () => {
   assert.deepEqual(describeFocus(second).related, [
     { attribute: "data-request-id", value: "req-2" },
   ]);
-  // Ambiguity resolves to the first match only when nothing disambiguates.
+  // Ambiguity resolves to the first match only when nothing disambiguates:
+  // a control that belongs to no row is looked up by what it does.
   const plain = pressable({ caseAction: "RESPOND_DOCUMENT" });
   assert.deepEqual(describeFocus(plain).related, []);
   assert.equal(resolveAmong(page, describeFocus(plain)), first);
-  // A row that is gone after the rebuild simply is not found, rather than
-  // stealing the keyboard for a different request.
-  assert.equal(resolveAmong([second], describeFocus(first)), second);
+
+  // A row that is gone after the rebuild is not found — it never steals the
+  // keyboard for a different request. This is the whole point of naming the
+  // row: the other button is live, and a keypress on it would send a real
+  // workflow action against the wrong request.
+  assert.equal(resolveAmong([second], describeFocus(first)), null);
   assert.equal(resolveAmong([], describeFocus(first)), null);
+  // The one that is still there is still found, on the same page.
+  assert.equal(resolveAmong([second], describeFocus(second)), second);
 });
 
-test("focus selectors are ordered id, name, action with its row, then action", () => {
+test("a field whose row is gone does not put the cursor in a namesake", () => {
+  // The staff workspace renders one escalation form per open document request:
+  // same `reason` name, ids scoped to the request. If the focused request is
+  // resolved in a background rebuild while another stays open, the rest of the
+  // sentence must not be typed into — and sent for — the other request.
+  const box = (requestId, caret) => ({
+    tagName: "TEXTAREA",
+    id: `field-${requestId}-reason`,
+    name: "reason",
+    caret,
+    get selectionStart() {
+      return caret;
+    },
+  });
+  const one = box("req-1", 9);
+  const two = box("req-2", 0);
+  assert.equal(resolveAmong([one, two], describeFocus(one)), one);
+  assert.equal(resolveAmong([one, two], describeFocus(two)), two);
+  assert.equal(resolveAmong([two], describeFocus(one)), null, "not the other box");
+  // A control with no id of its own still comes back by name.
+  const lookup = { tagName: "INPUT", type: "text", name: "lookup", selectionStart: 2 };
+  assert.deepEqual(focusSelectors(describeFocus(lookup)), ['[name="lookup"]']);
+  assert.equal(resolveAmong([lookup], describeFocus(lookup)), lookup);
+});
+
+test("every selector names the row as precisely as the element did", () => {
+  // The id is the whole answer when there is one, and the row-specific action
+  // is the only action selector for a control that named its row. Nothing in
+  // this list can match a different row's control.
   assert.deepEqual(
     focusSelectors({
       id: "field-req-1-reason",
@@ -229,11 +263,37 @@ test("focus selectors are ordered id, name, action with its row, then action", (
     }),
     [
       '[id="field-req-1-reason"]',
-      '[name="reason"]',
       '[data-action="escalate"][data-request-id="req-1"]',
-      '[data-action="escalate"]',
     ],
   );
+  // No id: the name is the fallback for a control that has none.
+  assert.deepEqual(
+    focusSelectors({ id: null, name: "lookup", action: null, related: [], caret: 0 }),
+    ['[name="lookup"]'],
+  );
+  // No row: what it does is all there is, and all that is needed.
+  assert.deepEqual(
+    focusSelectors({
+      id: null,
+      name: null,
+      action: { attribute: "data-action", value: "open-help" },
+      related: [],
+      caret: null,
+    }),
+    ['[data-action="open-help"]'],
+  );
+  // A row named once is never widened back to the bare action.
+  const rowScoped = focusSelectors({
+    id: null,
+    name: null,
+    action: { attribute: "data-case-action", value: "RESPOND_DOCUMENT" },
+    related: [{ attribute: "data-request-id", value: "req-1" }],
+    caret: null,
+  });
+  assert.deepEqual(rowScoped, [
+    '[data-case-action="RESPOND_DOCUMENT"][data-request-id="req-1"]',
+  ]);
+  assert.ok(!rowScoped.includes('[data-case-action="RESPOND_DOCUMENT"]'));
   assert.deepEqual(focusSelectors(null), []);
   assert.deepEqual(focusSelectors({ id: null, name: null, action: null, related: [] }), []);
   // A value carrying a quote or a backslash cannot break out of the selector.
