@@ -137,9 +137,136 @@ const caseActions = (html) => [
   ...html.matchAll(/data-case-action="([A-Z_]+)"/g),
 ].map((match) => match[1]);
 
+// One board section, by the heading id it is labelled with. The board's
+// sections do not nest, so the next closing tag is this one's.
+function sectionOf(html, id) {
+  const start = html.indexOf(`aria-labelledby="${id}"`);
+  assert.notEqual(start, -1, `no section labelled ${id}`);
+  const end = html.indexOf("</section>", start);
+  assert.notEqual(end, -1, `section ${id} is never closed`);
+  return html.slice(start, end);
+}
+
 // ---------------------------------------------------------------------------
 // The board
 // ---------------------------------------------------------------------------
+
+test("a case that has just arrived is reachable from the office board", () => {
+  const arrived = boardCase({
+    id: "case-new",
+    reference: "VT-EEEE-5555",
+    stage: "received",
+    intakeVerified: false,
+    answers: { service: "Drop-off", language: "Mandarin" },
+  });
+  const claimable = boardCase(); // preparation_ready, intake checks recorded
+  const html = renderAdminBoard(
+    [arrived, claimable],
+    [item({ caseId: "case-new" })],
+    { person: SAM },
+  );
+  const section = sectionOf(html, "arrived-title");
+  // The office's first step in the demonstration, so it is the first section.
+  assert.ok(
+    html.indexOf('aria-labelledby="arrived-title"') <
+      html.indexOf('aria-labelledby="available-title"'),
+  );
+  // Its reference, and the same control every other section opens a case with.
+  assert.match(section, /VT-EEEE-5555/);
+  assert.match(section, /data-action="open-case" data-case-id="case-new"/);
+  // The count is the number of arrived cases, and the summary line agrees.
+  assert.match(section, /Intake checks needed<\/h2><span class="muted small">Waiting: 1/);
+  assert.match(html, /1 waiting for intake checks, 1 waiting to be claimed/);
+  // Language and contact preference read the same way the follow-up cards do.
+  assert.match(section, /<span>Language<\/span><strong>Mandarin<\/strong>/);
+  assert.match(section, /Prefers calls from the main office/);
+  // A case past its intake checks is not here, and the arrived one is not in
+  // "Available work": nobody can claim it until the checks are recorded.
+  assert.doesNotMatch(section, /VT-AAAA-1111/);
+  assert.doesNotMatch(sectionOf(html, "available-title"), /VT-EEEE-5555/);
+  assert.doesNotMatch(sectionOf(html, "calls-title"), /VT-EEEE-5555/);
+  // The row carries no workflow action: the four attestations live on the case.
+  assert.deepEqual(caseActions(section), []);
+  assert.match(section, /Open the case to record the simulated intake checks\./);
+  // With nothing new, the section says so rather than disappearing.
+  const quiet = renderAdminBoard([claimable], [], { person: SAM });
+  assert.match(
+    sectionOf(quiet, "arrived-title"),
+    /Nothing new has arrived\./,
+  );
+  assert.match(quiet, /0 waiting for intake checks/);
+});
+
+test("an assisted draft the office has not sent is reachable too", () => {
+  const draft = boardCase({
+    id: "case-draft",
+    reference: "VT-FFFF-6666",
+    stage: "draft",
+    ownerUserId: null,
+    intakeVerified: false,
+    answers: { service: "Drop-off", language: "Cantonese" },
+  });
+  // A client's own draft is theirs; the office is not waiting on it, and the
+  // presenter's RLS policy does not show it in the first place.
+  const clientDraft = boardCase({
+    id: "case-theirs",
+    reference: "VT-GGGG-7777",
+    stage: "draft",
+    ownerUserId: "owner-1",
+  });
+  const html = renderAdminBoard([draft, clientDraft], [], { person: SAM });
+  const section = sectionOf(html, "arrived-title");
+  assert.match(section, /VT-FFFF-6666/);
+  assert.match(section, /data-action="open-case" data-case-id="case-draft"/);
+  assert.match(section, /The office started this one and has not sent it yet\./);
+  assert.match(section, /Assisted drafts: 1/);
+  assert.doesNotMatch(section, /VT-GGGG-7777/);
+  // An assisted draft is not an arrived application, so the waiting count and
+  // the summary line stay honest about what is actually owed intake checks.
+  assert.match(section, /Waiting: 0/);
+  assert.match(html, /0 waiting for intake checks/);
+  // Its stage is named, so nobody reads it as an application that has arrived.
+  assert.match(section, new RegExp(`VT-FFFF-6666[^]{0,400}${describeStage("draft").label}`));
+  // With no assisted draft the extra count line is absent rather than zero.
+  assert.doesNotMatch(
+    sectionOf(renderAdminBoard([clientDraft], [], { person: SAM }), "arrived-title"),
+    /Assisted drafts/,
+  );
+});
+
+test("the arrived section filters and escapes like the rest of the board", () => {
+  const nasty = '<script>alert("x")</script>';
+  const cases = [
+    boardCase({
+      id: "case-new",
+      reference: nasty,
+      stage: "received",
+      intakeVerified: false,
+      answers: { service: "Drop-off", language: nasty },
+    }),
+    boardCase({
+      id: "case-other",
+      reference: "VT-HHHH-8888",
+      stage: "received",
+      intakeVerified: false,
+      answers: { service: "Drop-off", language: "Cantonese" },
+    }),
+  ];
+  const html = renderAdminBoard(cases, [item({ caseId: "case-new", contactPreference: nasty })], {
+    person: SAM,
+  });
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(sectionOf(html, "arrived-title"), /Waiting: 2/);
+  // The board's one stored filter applies here as it does everywhere else.
+  const filtered = renderAdminBoard(cases, [], {
+    person: SAM,
+    filters: { language: "Cantonese" },
+  });
+  const section = sectionOf(filtered, "arrived-title");
+  assert.match(section, /VT-HHHH-8888/);
+  assert.match(section, /Waiting: 1/);
+});
 
 test("the board counts what each of its sections is showing", () => {
   const cases = [

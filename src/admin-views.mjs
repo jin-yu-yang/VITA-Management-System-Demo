@@ -345,6 +345,31 @@ function availableCard(record, rights, ui) {
   );
 }
 
+// A case the office has to pick up before anyone else can: one that has just
+// arrived and still needs its simulated intake checks, or an assisted draft the
+// office started and has not sent yet. Neither is "available work" — nobody can
+// claim either for preparation — so without this card there is no control on
+// any office screen that opens them at all.
+//
+// The row carries no workflow action. `VERIFY_INTAKE` and `SUBMIT` live on the
+// case workspace, where the four attestations and the answers are, and this is
+// the way in to it.
+function arrivedCard(record, item, waiting, next = "") {
+  return boardCard(
+    record,
+    `<p>${esc(waiting)}</p>${detailRow(
+      "Language",
+      record?.answers?.language || item?.language,
+    )}${detailRow(
+      "Contact preference",
+      item?.contactPreference || "Not recorded for this case",
+    )}${detailRow(
+      "Waiting since",
+      record.updatedAt ? formatTime(record.updatedAt) : "—",
+    )}${when(next, `<p class="field-note">${esc(next)}</p>`)}`,
+  );
+}
+
 // A case waiting for a call. The language is the client's own intake answer;
 // the contact preference is the one the office recorded when this client asked
 // for help with their forms — an assistance item is the only place this demo
@@ -522,8 +547,13 @@ const countLine = (label, value) =>
   `<span class="muted small">${esc(label)}: ${esc(value)}</span>`;
 
 /**
- * The office board: the work waiting to be nudged, the cases waiting for a
- * call, the assistance requests, and the way in to an assisted application.
+ * The office board: the applications waiting for their intake checks, the work
+ * waiting to be nudged, the cases waiting for a call, the assistance requests,
+ * and the way in to an assisted application.
+ *
+ * The first section is deliberately first: recording the intake checks is the
+ * office's first step in the demonstration, and it is the only way a case
+ * leaves `received`.
  *
  * @param {object[]} cases      decorated Cases (`decorateStaffCase`)
  * @param {object[]} assistance `listAssistance()`, decorated with helper names
@@ -545,10 +575,27 @@ export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
     ),
   ].sort();
 
+  // The office's own first step. A case at `received` is claimable by nobody
+  // and owed to nobody, so it matches none of the other sections; the intake
+  // checks are what move it on, and they are only offered on the case itself.
+  // (`intakeVerified` cannot be true at this stage — VERIFY_INTAKE sets both in
+  // one statement — so the second test is belt and braces, not a filter.)
+  const arrived = records.filter(
+    (record) =>
+      record?.stage === "received" && !record?.intakeVerified && inLanguage(record),
+  );
+  // An assisted draft belongs to the office too: it has no client account to
+  // send it, so it waits here until the office does (the spec: a staff-created
+  // intake draft stays reachable by authorised staff).
+  const officeDrafts = records.filter(
+    (record) => record?.stage === "draft" && assisted(record) && inLanguage(record),
+  );
   const available = records.filter((record) => isAvailableWork(record) && inLanguage(record));
   const needsCall = records.filter(
     (record) => openFollowupCount(record) && inLanguage(record),
   );
+  const itemFor = (record) =>
+    items.find((item) => item?.caseId === record?.id) ?? null;
   const rights = adminEligibility({}, person);
   const panelUi = { ...view, rights };
 
@@ -569,7 +616,9 @@ export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
   return `<section class="panel staff-board" aria-labelledby="office-title"><div class="section-head"><h2 id="office-title">Office work</h2>${countLine(
     "Cases",
     records.length,
-  )}</div><p class="board-counts" role="status">${esc(available.length)} waiting to be claimed, ${esc(
+  )}</div><p class="board-counts" role="status">${esc(
+    arrived.length,
+  )} waiting for intake checks, ${esc(available.length)} waiting to be claimed, ${esc(
     needsCall.length,
   )} waiting for a call, ${esc(
     items.filter((item) => item?.status === "open").length,
@@ -578,7 +627,33 @@ export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
   } unclaimed.</p>${chips}${when(
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this board is read-only.</p>`,
-  )}<p class="field-note">This board shows workflow only: no taxpayer names, no addresses and no document contents.</p></section><section class="panel" aria-labelledby="available-title"><div class="section-head"><h2 id="available-title">Available work</h2>${countLine(
+  )}<p class="field-note">This board shows workflow only: no taxpayer names, no addresses and no document contents.</p></section><section class="panel" aria-labelledby="arrived-title"><div class="section-head"><h2 id="arrived-title">Intake checks needed</h2>${countLine(
+    "Waiting",
+    arrived.length,
+  )}${when(
+    officeDrafts.length,
+    countLine("Assisted drafts", officeDrafts.length),
+  )}</div><p class="field-note">An application that has just arrived waits here until the office records its simulated intake checks. Nobody can claim it for preparation until then.</p>${
+    arrived.length || officeDrafts.length
+      ? `<div class="board-list">${[
+          ...arrived.map((record) =>
+            arrivedCard(
+              record,
+              itemFor(record),
+              stageWork(record.stage).work,
+              "Open the case to record the simulated intake checks.",
+            ),
+          ),
+          ...officeDrafts.map((record) =>
+            arrivedCard(
+              record,
+              itemFor(record),
+              "The office started this one and has not sent it yet. Open it to finish the answers and send it.",
+            ),
+          ),
+        ].join("")}</div>`
+      : '<p class="muted">Nothing new has arrived. Every application the office has is past its intake checks.</p>'
+  }</section><section class="panel" aria-labelledby="available-title"><div class="section-head"><h2 id="available-title">Available work</h2>${countLine(
     "Waiting",
     available.length,
   )}</div><p class="field-note">${esc(
@@ -597,12 +672,7 @@ export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
   )}</div>${
     needsCall.length
       ? `<div class="board-list">${needsCall
-          .map((record) =>
-            followupCard(
-              record,
-              items.find((item) => item?.caseId === record?.id) ?? null,
-            ),
-          )
+          .map((record) => followupCard(record, itemFor(record)))
           .join("")}</div>`
       : '<p class="muted">No case on this board is waiting for a call. Each case lists its own office tasks.</p>'
   }</section><section class="panel" aria-labelledby="assistance-title"><div class="section-head"><h2 id="assistance-title">Assistance requests</h2>${countLine(
