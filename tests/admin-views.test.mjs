@@ -5,6 +5,7 @@ import {
   renderAdminBoard,
   closeCaseDialogBody,
   adminEligibility,
+  ASSISTED_ANSWERS_FORM_ID,
 } from "../src/admin-views.mjs";
 import { decorateStaffCase } from "../src/staff-views.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
@@ -471,6 +472,50 @@ test("the assignee records attempts and resolves separately, and nobody else can
   assert.doesNotMatch(forMorgan, /Needs office follow-up access\./);
 });
 
+test("two open tasks get four forms that cannot be confused", () => {
+  const record = officeCase({
+    requests: [
+      openRequest(),
+      openRequest({ id: "req-2", title: "Bank letter", status: "open" }),
+    ],
+    followups: [openTask(), openTask({ id: "task-2", requestId: "req-2" })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  // Task 7's cursor fix resolves a focused field by **id**, so two tasks on one
+  // page must never share one: a namesake would take the cursor, and the rest
+  // of the sentence would be typed into, and sent for, the other task.
+  for (const id of [
+    "field-contact-task-1-outcome",
+    "field-contact-task-1-note",
+    "field-resolve-task-1-outcome",
+    "field-resolve-task-1-note",
+    "field-contact-task-2-outcome",
+    "field-contact-task-2-note",
+    "field-resolve-task-2-outcome",
+    "field-resolve-task-2-note",
+  ]) {
+    assert.equal(
+      (html.match(new RegExp(`id="${id}"`, "g")) ?? []).length,
+      1,
+      id,
+    );
+    assert.match(html, new RegExp(`<label class="field" for="${id}">`));
+  }
+  // Each form names its own task on the button and in its hidden field.
+  for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
+    for (const taskId of ["task-1", "task-2"])
+      assert.match(
+        html,
+        new RegExp(`data-case-action="${type}" data-followup-id="${taskId}"`),
+      );
+  assert.equal(
+    (html.match(/<input type="hidden" name="followupId" value="task-2">/g) ?? [])
+      .length,
+    2,
+    "one hidden id per form, and both belong to the second task",
+  );
+});
+
 test("a resolved task keeps its history and offers no further action", () => {
   const record = officeCase({
     requests: [openRequest()],
@@ -649,14 +694,46 @@ test("an office draft is editable and submitted from the case, a client's is not
   assert.match(html, /<span>Client account<\/span><strong>No client account/);
   assert.match(html, /data-case-action="SAVE_ANSWERS"/);
   assert.match(html, /data-case-action="SUBMIT"/);
+  // The id the input and change listeners look for: without it a typed answer
+  // reaches no draft and the next render throws it away (`app.mjs`,
+  // `ANSWER_FORMS`). The panel and the wiring layer share the one constant.
+  assert.equal(ASSISTED_ANSWERS_FORM_ID, "assisted-answers-form");
+  assert.match(html, /<form id="assisted-answers-form" class="staff-form">/);
   // Nothing can be sent before the saved answers are complete and checked.
-  assert.match(html, /data-case-action="SUBMIT" disabled>/);
+  assert.match(html, /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/);
   assert.match(html, /Some answers are still missing\. Fill them in and save first\./);
   assert.match(html, /It is not a signature on a tax or consent form\./);
-  // Unsaved edits are named as their own reason, because saving them is the
-  // step that changes the answer the office checks.
-  const edited = renderAdminCase(draft, { person: SAM, dirty: true });
-  assert.match(edited, /These edits are not saved yet\./);
+  // Nothing to say yet, but the notice is already there for the wiring layer
+  // to reveal without rebuilding the page under the cursor.
+  assert.match(html, /data-role="assisted-unsaved" hidden>/);
+  // Every box renders from the draft, so what was typed survives a re-render —
+  // and the draft wins over the saved answer it differs from.
+  const typing = renderAdminCase(
+    officeCase({
+      stage: "draft",
+      intakeVerified: false,
+      answers: { firstName: "Mei", language: "English" },
+      requests: [],
+    }),
+    {
+      person: SAM,
+      dirty: true,
+      draftAnswers: { firstName: "Mei-Ling", language: "Cantonese" },
+    },
+  );
+  assert.match(typing, /id="field-assisted-firstName"[^>]*value="Mei-Ling"/);
+  assert.doesNotMatch(typing, /id="field-assisted-firstName"[^>]*value="Mei"/);
+  assert.match(
+    typing,
+    /<option value="Cantonese" selected>/,
+    "a select renders the draft's choice too",
+  );
+  // Unsaved edits are named as their own reason and lock the send button,
+  // because saving them is the step that changes the answer the office checks.
+  assert.match(typing, /data-role="assisted-unsaved" >/);
+  assert.doesNotMatch(typing, /data-role="assisted-unsaved" hidden>/);
+  assert.match(typing, /These edits are not saved yet\./);
+  assert.match(typing, /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/);
   // A refusal outside the service scope says what it is, and what it is not.
   const outside = renderAdminCase(
     officeCase({
@@ -686,7 +763,10 @@ test("an office draft is editable and submitted from the case, a client's is not
   );
   assert.match(outside, /outside PCDC&#39;s current service scope/);
   assert.match(outside, /not a judgement about anyone&#39;s taxes/);
-  assert.match(outside, /data-case-action="SUBMIT" disabled>/);
+  assert.match(
+    outside,
+    /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/,
+  );
 
   // A client's own case is never edited here: the summary is read-only.
   const owned = renderAdminCase(officeCase({ ownerUserId: "owner-1" }), { person: SAM });

@@ -7,6 +7,7 @@ import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
 import { describeFocus } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
+import * as admin from "./admin-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -189,6 +190,38 @@ if (!config) {
     if (chip) chip.outerHTML = client.saveStatus(controller.getState());
   }
 
+  // The office's copy of the same rule. Its screen has no save chip; what it has
+  // is a notice that says the edits are not saved and a send button that must
+  // not act on them, so those two are patched instead. Both are recomputed from
+  // state on the next real render, and an unsaved edit can only ever *add* the
+  // lock, so patching it here can never release one the renderer applied.
+  function refreshOfficeDraft() {
+    if (!controller.getState().dirty) return;
+    const unsaved = root.querySelector('[data-role="assisted-unsaved"]');
+    if (unsaved) unsaved.hidden = false;
+    const send = root.querySelector('[data-role="assisted-submit"]');
+    if (send) send.disabled = true;
+  }
+
+  // Which form on screen is an intake-answer form: the client's own, and the
+  // office's copy of it. Both are rendered from `state.draftAnswers`, so both
+  // must write back to it — a box that renders from state and does not update
+  // it silently reverts what was typed on the next render.
+  const ANSWER_FORMS = `#intake-form, #${admin.ASSISTED_ANSWERS_FORM_ID}`;
+
+  // One quiet edit, used by both: the field already shows the character, and
+  // rebuilding the page under the cursor is the defect this avoids.
+  function editAnswerField(field) {
+    quiet = true;
+    try {
+      controller.editAnswers({ [field.name]: field.value });
+    } finally {
+      quiet = false;
+    }
+    refreshSaveChip();
+    refreshOfficeDraft();
+  }
+
   function openDialog(name) {
     focusBeforeDialog = document.activeElement?.dataset?.action ?? null;
     controller.openDialog(name);
@@ -222,16 +255,29 @@ if (!config) {
     );
   }
 
-  // The office's own "fill fictional details". It writes into the boxes on
-  // screen and into the draft that survives a re-render, and it does nothing
-  // else: it never submits the form, never creates a case, and never sends a
-  // message to anybody. The same generator the client's form uses.
+  // The office's own "fill fictional details", the same generator the client's
+  // form uses. It never submits a form, never creates a case and never sends a
+  // message to anybody.
+  //
+  // Two forms wear this button, and they hold their text in two different
+  // places. On a case there is a draft, so the fill goes through the controller
+  // like the client's own helper does and the render puts it on screen; on the
+  // board there is no case yet, so it fills the boxes and the wiring layer's
+  // draft map. Writing to the boxes in the first case would fill them behind
+  // the draft's back and the next render would throw the answers away.
   function fillAssistedIntake() {
     sampleSeed += 1;
     const generated = makeSampleAnswers({
       seed: sampleSeed,
       scenario: "ordinary",
     });
+    if (root.querySelector(`#${admin.ASSISTED_ANSWERS_FORM_ID}`)) {
+      controller.editAnswers(
+        fillBlankAnswers(controller.getState().draftAnswers, generated),
+      );
+      notify("Fictional details filled in. Nothing is saved yet.");
+      return;
+    }
     let boxes = 0;
     let filled = 0;
     for (const [name, value] of Object.entries(generated)) {
@@ -302,11 +348,13 @@ if (!config) {
     const state = controller.getState();
     if (type === "SAVE_ANSWERS") {
       // The controller owns the draft and the revision the edits started from,
-      // so this one is never built from a form's payload. The office's assisted
-      // intake form does hand over what its boxes currently say — `editAnswers`
-      // whitelists it into the same draft the client's own form writes to — and
-      // the save itself is still the controller's, with its revision check.
-      if (form) controller.editAnswers(Object.fromEntries(new FormData(form)));
+      // so this one is never built from a form's payload. An answer form's
+      // boxes are already in the draft — every keystroke puts them there — and
+      // this last sweep is for a value that reached the box without an input
+      // event at all, such as a browser autofill. `editAnswers` whitelists it
+      // into the same draft, and the save is still the controller's.
+      if (form?.matches?.(ANSWER_FORMS))
+        controller.editAnswers(Object.fromEntries(new FormData(form)));
       await controller.saveAnswers();
       formDrafts.clear();
       notify("Your answers are saved.");
@@ -555,14 +603,10 @@ if (!config) {
 
   root.addEventListener("input", (event) => {
     const field = event.target;
-    if (field.closest("#intake-form") && field.name && field.type !== "checkbox") {
-      quiet = true;
-      try {
-        controller.editAnswers({ [field.name]: field.value });
-      } finally {
-        quiet = false;
-      }
-      refreshSaveChip();
+    // An answer form first: the office's copy is also a `.staff-form`, and its
+    // boxes belong to the draft rather than to the wiring layer's own map.
+    if (field.closest(ANSWER_FORMS) && field.name && field.type !== "checkbox") {
+      editAnswerField(field);
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
       // of any record until the action that carries it is sent.
@@ -581,16 +625,11 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
-    if (!field.closest("#intake-form") || !field.name) return;
+    if (!field.closest(ANSWER_FORMS) || !field.name) return;
     if (field.type === "radio" || field.tagName === "SELECT") {
       // These change what the rest of the step says, so the page is rebuilt and
       // the control the person used keeps the focus.
-      quiet = true;
-      try {
-        controller.editAnswers({ [field.name]: field.value });
-      } finally {
-        quiet = false;
-      }
+      editAnswerField(field);
       render();
       const again = [...root.querySelectorAll(`[name="${field.name}"]`)].find(
         (element) => element.value === field.value || element.tagName === "SELECT",

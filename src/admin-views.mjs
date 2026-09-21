@@ -660,6 +660,21 @@ const SUBMISSION_BLOCKERS = Object.freeze({
     "Some screening answers still need checking with the client before this is sent.",
 });
 
+// The office's copy of the client intake form. Its boxes are rendered from the
+// controller's **draft**, not from the saved case, exactly like the client's own
+// `#intake-form` — which is why it carries an id: the wiring layer routes an
+// edit in a form with that id into `controller.editAnswers`, so a re-render
+// puts back what is on screen rather than what was last saved, and `dirty`, the
+// unsaved notice and the SUBMIT lock all describe the same thing.
+//
+// The unsaved notice and the send button carry stable `data-role` hooks and the
+// notice is always present (hidden when there is nothing to say), so a typed
+// character can reveal the one and lock the other in place — rebuilding the page
+// under the cursor is the defect that pattern exists to avoid (`paintCountdown`
+// in `app.mjs` does the same for the resend countdown). Both are recomputed from
+// state on the next real render, so the patch can only ever add the lock.
+export const ASSISTED_ANSWERS_FORM_ID = "assisted-answers-form";
+
 function assistedAnswersPanel(record, rights, ui) {
   const answers = ui.draftAnswers ?? record.answers ?? {};
   const blocker = submissionBlocker(record.answers ?? {});
@@ -671,7 +686,7 @@ function assistedAnswersPanel(record, rights, ui) {
     )}</section>`;
   return `<section class="panel" aria-labelledby="assisted-case-title"><div class="section-head"><h2 id="assisted-case-title">The answers the office entered</h2></div><p class="field-note">This draft belongs to the office. ${esc(
     OFFICE_NOTE,
-  )}</p><form class="staff-form">${button(
+  )}</p><form id="${ASSISTED_ANSWERS_FORM_ID}" class="staff-form">${button(
     `${icon("spark")} Fill fictional details`,
     "fill-assisted-intake",
     "secondary",
@@ -691,16 +706,18 @@ function assistedAnswersPanel(record, rights, ui) {
           named(SUBMISSION_BLOCKERS, blocker, "This cannot be sent yet."),
         )}</p>`
       : ""
-  }${when(
-    ui.dirty,
-    `<p class="staff-reason" role="note">${icon(
-      "clock",
-    )} These edits are not saved yet. The office checks the saved answers, so save before sending.</p>`,
-  )}${caseButton(
+  }<p class="staff-reason" role="note" data-role="assisted-unsaved" ${when(
+    !ui.dirty,
+    "hidden",
+  )}>${icon(
+    "clock",
+  )} These edits are not saved yet. The office checks the saved answers, so save before sending.</p>${caseButton(
     `${icon("arrow")} Send this application to the office`,
     "SUBMIT",
     "primary",
-    blocker || ui.dirty || !confirmed || ui.busy ? "disabled" : "",
+    `data-role="assisted-submit" ${
+      blocker || ui.dirty || !confirmed || ui.busy ? "disabled" : ""
+    }`,
   )}</section>`;
 }
 
