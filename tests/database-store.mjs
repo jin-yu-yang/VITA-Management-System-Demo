@@ -301,23 +301,42 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       assert.equal(claimed.assigneeId, f.sam);
     });
 
-    await t.test("the Task 9 RPCs are called and answer SERVER_ERROR today", async () => {
-      // Both functions arrive with fixture reset and checkpoints. Until then
-      // PostgREST cannot find them, and the shared mapper reports the generic
-      // server failure. Task 9 flips this test.
-      await assert.rejects(
-        () => presenter.resetFixtures({ actionId: crypto.randomUUID() }),
-        rejected("SERVER_ERROR"),
+    await t.test("the adapter resets fixtures and loads a checkpoint", async () => {
+      // Migration 009 installs both. The adapter returns nothing from either —
+      // the browser reacts by re-reading — so what is asserted here is that
+      // the call is accepted and that the database really moved.
+      await presenter.resetFixtures({ actionId: crypto.randomUUID() });
+      const seeded = await f.readFixtureCases();
+      assert.equal(seeded.length, 6);
+      const target = seeded.find((row) => row.fixtureKey === "review_approved");
+      await presenter.loadCheckpoint({
+        actionId: crypto.randomUUID(),
+        caseId: target.id,
+        expectedRevision: target.revision,
+        checkpoint: "intake_ready",
+      });
+      const moved = (await f.readFixtureCases()).find(
+        (row) => row.fixtureKey === "review_approved",
       );
+      assert.equal(moved.id, target.id, "a checkpoint keeps the case it moves");
+      assert.equal(moved.stage, "preparation_ready");
+      assert.equal(moved.revision, target.revision + 1);
+      // A checkpoint on a case a student created is refused as a validation
+      // failure, and an applicant may reset nothing at all.
+      const classCase = await presenter.getCase(caseId);
       await assert.rejects(
         () =>
           presenter.loadCheckpoint({
             actionId: crypto.randomUUID(),
             caseId,
-            expectedRevision: 1,
-            checkpoint: "review_ready",
+            expectedRevision: classCase.revision,
+            checkpoint: "intake_ready",
           }),
-        rejected("SERVER_ERROR"),
+        rejected("VALIDATION"),
+      );
+      await assert.rejects(
+        () => applicant.resetFixtures({ actionId: crypto.randomUUID() }),
+        rejected("FORBIDDEN"),
       );
     });
 

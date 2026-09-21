@@ -882,12 +882,20 @@ test("installed entry points deny anonymous callers and serve members", async (t
         for (const entry of RPC_SIGNATURES) {
           const draft = await draftCase(f);
           const seeded = await f.seedAssistance();
+          // The two fixture entry points work on the demonstration set, so it
+          // has to exist before either of them is called with a real target.
+          await f.seedFixtures();
+          const fixture = (await f.readFixtureCases()).find(
+            (row) => row.fixtureKey === "review_ready",
+          );
           const context = {
             draftCaseId: draft.caseId,
             draftRevision: 1,
             assistanceItemId: seeded.itemId,
             assistanceRevision: 1,
             assistPersonId: f.sam,
+            fixtureCaseId: fixture.id,
+            fixtureRevision: fixture.revision,
           };
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));

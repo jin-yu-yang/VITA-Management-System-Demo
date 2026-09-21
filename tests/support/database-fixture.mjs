@@ -31,6 +31,19 @@ const SAMPLE_ASSISTANCE = Object.freeze({
   language: "Mandarin",
   contactPreference: "Prefers calls from the main office",
 });
+// The six scenario keys the private binding table and `cases.fixture_key`
+// already constrain (migration 001). They are stable names, never case ids.
+const FIXTURE_KEYS = Object.freeze([
+  "preparation_ready",
+  "waiting_documents",
+  "admin_followup",
+  "review_ready",
+  "corrections_required",
+  "review_approved",
+]);
+// The one key this fixture binds to applicant A through the shared
+// initializer, so a reset has a durable client binding to reapply.
+const BOUND_FIXTURE_KEY = "preparation_ready";
 // Actions whose payload names a related record. For compact tests only, an
 // omitted id falls back to the case's single current request or open follow-up;
 // the browser always sends the selected id (Ruling R20).
@@ -373,6 +386,124 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         )
       ).rows[0].count,
     );
+  // ---- fixtures, resets and checkpoints (Task 9) -------------------------
+  //
+  // Everything a reset must leave alone is read through one set of helpers, so
+  // "preserved" means the same thing in every test: the same privileged
+  // connection, the same deterministic ordering, and values that are stable by
+  // construction rather than by luck.
+
+  f.fixtureKeys = FIXTURE_KEYS;
+  f.boundFixtureKey = BOUND_FIXTURE_KEY;
+
+  // A class-created application carried to the same place the demo's own
+  // cases sit: submitted, intake recorded, and claimed by a preparer whose
+  // participation the claim writes. Only public actions are used, so what this
+  // builds is exactly what a student would have built.
+  f.prepareClassCase = async (caseId, preparerId) => {
+    // A client's own draft is private to them, so the stage is read through
+    // the privileged connection rather than through a staff client that is
+    // not allowed to see it yet.
+    const [current] = (
+      await f.sql("select stage,answers from public.cases where id=$1", [caseId])
+    ).rows;
+    if (current?.stage === "draft" && !current?.answers?.year)
+      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
+        answers: makeSampleAnswers(),
+      });
+    await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+    await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+      checks: INTAKE_CHECKS,
+    });
+    await f.act(f.presenter, caseId, preparerId, "CLAIM_PREPARATION", {});
+    return caseId;
+  };
+
+  // The workspace setup a reset must never touch. Deliberately excludes
+  // `workspaces.fixture_generation`, which a reset is *supposed* to move.
+  f.readStableSetup = async () => {
+    const people = (
+      await f.sql(
+        "select id,person_key,name,capabilities from public.people where workspace_id=$1 order by person_key",
+        [f.workspaceId],
+      )
+    ).rows.map((row) => ({ ...row, capabilities: [...row.capabilities].sort() }));
+    const memberships = (
+      await f.sql(
+        "select user_id,access,active from public.memberships where workspace_id=$1 order by user_id",
+        [f.workspaceId],
+      )
+    ).rows;
+    const bindings = (
+      await f.sql(
+        "select fixture_key,owner_user_id from vitally_private.fixture_client_bindings where workspace_id=$1 order by fixture_key",
+        [f.workspaceId],
+      )
+    ).rows;
+    const workspace = (
+      await f.sql(
+        "select default_followup_person_id from public.workspaces where id=$1",
+        [f.workspaceId],
+      )
+    ).rows;
+    return { people, memberships, bindings, workspace };
+  };
+
+  // Every membership row this account holds anywhere, so a revoked or deleted
+  // one is an empty array rather than a silent undefined.
+  f.readMembership = async (userId) =>
+    (
+      await f.sql(
+        "select workspace_id,user_id,access,active from public.memberships where user_id=$1 order by workspace_id",
+        [userId],
+      )
+    ).rows;
+
+  f.readFixtureCases = async () =>
+    (
+      await f.sql(
+        "select id,fixture_key,owner_user_id,stage,revision from public.cases where workspace_id=$1 and fixture order by fixture_key",
+        [f.workspaceId],
+      )
+    ).rows.map((row) => ({
+      id: row.id,
+      fixtureKey: row.fixture_key,
+      ownerUserId: row.owner_user_id,
+      stage: row.stage,
+      revision: Number(row.revision),
+    }));
+
+  f.readFixtureAssistance = async () =>
+    (
+      await f.sql(
+        "select * from public.assistance_items where workspace_id=$1 and fixture order by created_at,id",
+        [f.workspaceId],
+      )
+    ).rows.map(camelRow);
+
+  // The generation and the identities of everything a reset replaces: equal
+  // before and after means nothing was reseeded.
+  f.readFixtureState = async () => ({
+    generation: Number(
+      (
+        await f.sql("select fixture_generation from public.workspaces where id=$1", [
+          f.workspaceId,
+        ])
+      ).rows[0].fixture_generation,
+    ),
+    caseIds: (await f.readFixtureCases()).map((row) => row.id).sort(),
+    itemIds: (await f.readFixtureAssistance()).map((row) => row.id).sort(),
+  });
+
+  // A seeded workspace, through the one public path that seeds one.
+  f.seedFixtures = async (client = f.presenter) => {
+    const { data, error } = await client.rpc("vitally_reset_fixtures", {
+      p_action_id: randomUUID(),
+    });
+    if (error) throw createAppError(error);
+    return data;
+  };
+
   f.snapshot = async () => {
     const out = {};
     for (const [name, sql] of Object.entries({
