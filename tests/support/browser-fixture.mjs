@@ -130,15 +130,30 @@ export function createSendRoute({ frontendOrigin }) {
   };
 }
 
+// The heading an applicant lands on. A presenter lands somewhere else — the
+// work board, or the office board — so the screen a caller waits for is an
+// argument with this as its default. Nothing else about the assertion changes.
+export const SIGNED_IN_HEADING = "My applications";
+
 /**
  * Prove the session, not the screen (Ruling R46). The signed-in screen is the
  * first condition, but a screen change alone says nothing about who is signed
  * in: the SDK's stored session is read in the page, and only the user id and
  * two booleans come back — the access token never leaves the browser.
+ *
+ * `heading` is the signed-in screen's own heading; it defaults to the
+ * applicant's, and a staff caller passes the one their principal lands on.
+ * `.first()` because a staff screen names itself twice — once in the frame and
+ * once in the panel — and a single match is unaffected by it.
  */
-export async function assertAuthenticatedUser(page, userId, { timeout } = {}) {
+export async function assertAuthenticatedUser(
+  page,
+  userId,
+  { timeout, heading = SIGNED_IN_HEADING } = {},
+) {
   await page
-    .getByRole("heading", { name: "My applications", exact: true })
+    .getByRole("heading", { name: heading, exact: true })
+    .first()
     .waitFor(timeout === undefined ? undefined : { timeout });
   const stored = await page.evaluate(
     ({ stateKey }) => {
@@ -248,9 +263,10 @@ export async function submitVerificationCode({ page, code }) {
  * `otp` is optional: pass one that was generated earlier (a return visit, or a
  * repeat-generation measurement), otherwise one is generated here. The returned
  * code is for a caller that needs to prove it cannot be reused — it must never
- * be logged.
+ * be logged. `heading` is the signed-in screen this actor lands on; a presenter
+ * passes their own, and an applicant needs nothing.
  */
-export async function loginTestUser({ page, actor, fixture, otp }) {
+export async function loginTestUser({ page, actor, fixture, otp, heading }) {
   const code = otp ?? (await fixture.generateOtp(actor.email));
   assert.match(String(code), /^[0-9]+$/);
   const { route, release } = await requestCode({
@@ -266,6 +282,7 @@ export async function loginTestUser({ page, actor, fixture, otp }) {
     // case list all happen before the signed-in screen renders.
     await assertAuthenticatedUser(page, actor.userId, {
       timeout: SIGNED_IN_TIMEOUT_MS,
+      ...(heading === undefined ? {} : { heading }),
     });
     return { posts: route.posts, preflights: route.preflights, otp: code };
   } catch (error) {
