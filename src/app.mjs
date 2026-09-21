@@ -98,7 +98,7 @@ if (!config) {
     else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
-    } else if (keyboard) restoreField(keyboard.name, keyboard.caret);
+    } else if (keyboard) restoreField(keyboard);
   }
 
   // Staff form fields are not rendered from controller state — they are blank
@@ -113,13 +113,18 @@ if (!config) {
 
   // Every field the page rebuilds is rendered from state, so the value is back
   // already; this puts the cursor back where it was so typing can continue.
-  function restoreField(name, caret) {
-    const field = root.querySelector(`[name="${name}"]`);
+  // The id decides which field that is: a page can hold several fields with the
+  // same name — one `reason` box per open document request — and the name alone
+  // would put the cursor in the first of them.
+  function restoreField(focus) {
+    const field =
+      (focus.id ? root.querySelector(`#${CSS.escape(focus.id)}`) : null) ??
+      (focus.name ? root.querySelector(`[name="${focus.name}"]`) : null);
     if (!field) return;
     field.focus();
-    if (caret === null || !("setSelectionRange" in field)) return;
+    if (focus.caret === null || !("setSelectionRange" in field)) return;
     try {
-      field.setSelectionRange(caret, caret);
+      field.setSelectionRange(focus.caret, focus.caret);
     } catch {
       // Some input types refuse a selection range; the focus is what matters.
     }

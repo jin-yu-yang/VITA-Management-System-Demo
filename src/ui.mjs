@@ -138,7 +138,15 @@ export const stageBadge = (stage) =>
   `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage).label)}</span>`;
 
 // Rebuilding the page loses the keyboard, so the wiring layer records where it
-// was first. Only these controls have a text selection at all: `selectionStart`
+// was first — by **id** before name, because a name is not unique on a page any
+// more: a case with two open document requests renders one escalation form per
+// request, each with a `reason` field. Restoring by name alone would move the
+// cursor to the first of them, and the rest of the sentence would be typed
+// into, and sent for, the wrong request. Ids already carry the request they
+// belong to (`fieldId(name, scope)`); the name stays as the fallback for a
+// control that has none.
+//
+// Only these controls have a text selection at all: `selectionStart`
 // is defined on `HTMLInputElement.prototype` for *every* input, so testing
 // `"selectionStart" in element` proves nothing about whether it can be read.
 // The measured behaviour for the rest (radio, checkbox, number, email, date,
@@ -156,19 +164,21 @@ const SELECTABLE_INPUT_TYPES = Object.freeze([
 ]);
 
 export function describeFocus(active) {
-  const name = active?.name;
-  if (!name) return null;
+  const id = active?.id || null;
+  const name = active?.name || null;
+  // With neither there is nothing to find again after the rebuild.
+  if (!id && !name) return null;
   const selectable =
     active.tagName === "TEXTAREA" ||
     (active.tagName === "INPUT" &&
       SELECTABLE_INPUT_TYPES.includes(
         String(active.type ?? "text").toLowerCase(),
       ));
-  if (!selectable) return { name, caret: null };
+  if (!selectable) return { id, name, caret: null };
   try {
     const caret = active.selectionStart;
-    return { name, caret: typeof caret === "number" ? caret : null };
+    return { id, name, caret: typeof caret === "number" ? caret : null };
   } catch {
-    return { name, caret: null };
+    return { id, name, caret: null };
   }
 }

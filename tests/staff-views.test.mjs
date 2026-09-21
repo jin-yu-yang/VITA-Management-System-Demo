@@ -481,6 +481,55 @@ test("the preparer's documents and hand-off, and nobody else's", () => {
   assert.match(forMorgan, /Needs preparation eligibility\./);
 });
 
+test("two open requests get two forms that cannot be confused", () => {
+  const html = renderStaffCase(
+    staffCase({
+      requests: [
+        {
+          id: "req-first",
+          title: "Mileage record",
+          message: "Please add the fictional sample.",
+          status: "open",
+          createdAt: "2026-09-12T15:00:00.000Z",
+        },
+        {
+          id: "req-second",
+          title: "Second page",
+          message: "The second page is missing.",
+          status: "open",
+          createdAt: "2026-09-12T15:30:00.000Z",
+        },
+      ],
+    }),
+    ALEX,
+  );
+  // Each escalation form names its own request, in the button's dataset and in
+  // the hidden field, so whichever one is submitted carries the right id.
+  for (const id of ["req-first", "req-second"]) {
+    assert.match(
+      html,
+      new RegExp(`data-case-action="ESCALATE_CONTACT" data-request-id="${id}"`),
+      id,
+    );
+    assert.match(
+      html,
+      new RegExp(`<input type="hidden" name="requestId" value="${id}">`),
+      id,
+    );
+  }
+  // And each `reason` box has its own id, which is what lets the cursor go back
+  // to the box it came from after a re-render (see `describeFocus`).
+  const ids = [...html.matchAll(/<textarea id="([^"]+)" name="reason"/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(ids.length, 2);
+  assert.equal(new Set(ids).size, 2, "the two boxes do not share an id");
+  for (const id of ids) assert.match(id, /^field-req-(first|second)-reason$/);
+  // The labels point at their own box, not at the first one.
+  for (const id of ids)
+    assert.match(html, new RegExp(`<label class="field" for="${id}">`));
+});
+
 test("the hand-off to review waits for the intake checks and the documents", () => {
   const ready = renderStaffCase(staffCase(), ALEX);
   assert.match(
