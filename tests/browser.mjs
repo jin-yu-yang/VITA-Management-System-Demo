@@ -39,6 +39,7 @@ import {
   readClientPlace,
   readFixtureIndicator,
   readPersona,
+  redactAddresses,
   resetSampleCases,
   screenshotDir,
   submitCaseFormUntil,
@@ -105,6 +106,14 @@ const OTHER_CITY = "Otherwindow City";
 // Words a client screen must never carry: this demo records a workflow, and
 // there is no amount, refund, bank or routing field anywhere in it.
 const MONEY_WORDS = Object.freeze(["$", "refund", "routing", "deposit", "direct debit"]);
+
+// What counts as the keyboard being somewhere a person can use it.
+const CONTROLS = Object.freeze(["BUTTON", "INPUT", "TEXTAREA", "SELECT", "A"]);
+
+// The screening answer that takes an application outside what PCDC prepares,
+// and the sentence the form answers it with (`src/client-views.mjs`).
+const OUT_OF_SCOPE_NOTICE = "Outside PCDC’s current service scope";
+const RETURN_CITY = "Comebackton";
 
 // ---------------------------------------------------------------------------
 // Server-side reads — the receipts and rows a screen cannot show
@@ -462,9 +471,22 @@ async function runPermutation(t, roles) {
         assert.deepEqual(after, before, "the staff window moved the client window");
 
         // …and the client window is not frozen: the next office step arrives.
-        await choosePersona(staff, alex);
-        await openCaseByReference(staff, classReference);
+        // The office opens it from its own board — "Intake checks needed" is
+        // the first section, and a case at `received` is claimable by nobody,
+        // so this is the only control on any office screen that reaches it.
         await choosePersona(staff, sam);
+        await waitForText(staff, OFFICE_BOARD_HEADING, RENDER_MS);
+        const arrived = staff
+          .locator('section[aria-labelledby="arrived-title"] .board-row')
+          .filter({ hasText: classReference })
+          .first();
+        await arrived.waitFor({ state: "visible", timeout: RENDER_MS });
+        assert.equal(
+          await arrived.locator("[data-case-action]").count(),
+          0,
+          "the way in to a new application offers a workflow action of its own",
+        );
+        await openCaseByReference(staff, classReference);
         await waitForText(staff, "Simulated intake checks", RENDER_MS);
         for (const check of ["interview", "identity", "documents", "consent"])
           await tickBox(staff, `field-intake-${check}`);
@@ -547,9 +569,21 @@ async function runPermutation(t, roles) {
       // The office has just finished working on this case, so this click can
       // meet a revision that moved a moment ago. The application refuses it and
       // says to try again — which is what this does, and counts.
-      evidence.story.documentResponse = await act(client, "RESPOND_DOCUMENT", {
+      const response = await act(client, "RESPOND_DOCUMENT", {
         text: "What you sent",
       });
+      evidence.story.documentResponse = response;
+      // Ruling R65: a refusal is the person's to act on. Each one recorded here
+      // was read back from the screen after the ten-second wait that followed
+      // it — several background changes later — and had to still be there.
+      for (const refusal of response.refusals) {
+        assert.match(refusal.recorded, /Someone else (changed|updated) this/);
+        assert.match(
+          refusal.onScreen ?? "",
+          /Someone else changed this application/,
+          `a refusal left the screen before the client acted on it: ${JSON.stringify(refusal)}`,
+        );
+      }
       await waitForText(client, SAMPLE_DOCUMENT_FILENAME, RENDER_MS);
       await choosePersona(staff, alex);
       await waitForBadge(staff, "Received, not verified yet");
@@ -949,6 +983,116 @@ async function runPermutation(t, roles) {
       await draftWin.context.close();
     });
 
+    await phase(
+      "the form screens, blocks a blank required answer, and keeps what was saved",
+      async () => {
+        await clickAction(client, "open-applications");
+        const reference = await startApplication(client);
+        const own = await caseByReference(fixture, reference);
+        const untouched = Number(own.revision);
+        await clickAction(client, "continue-intake");
+        await waitForText(client, "Your visit", RENDER_MS);
+
+        // A required answer nobody has given stops the step, and the field
+        // that stopped it says so for itself.
+        await clickContinue(client);
+        const blocked = await client.evaluate(() => {
+          const form = document.querySelector("#intake-form");
+          const invalid = [...form.elements].find(
+            (element) => element.willValidate && !element.checkValidity(),
+          );
+          return {
+            formValid: form.checkValidity(),
+            step: document.querySelector(".page-intro .overline")?.textContent ?? null,
+            field: invalid?.name ?? null,
+            message: invalid?.validationMessage ?? null,
+          };
+        });
+        assert.equal(blocked.formValid, false);
+        assert.equal(blocked.step, "STEP 1 OF 4", "a blank required answer did not stop the step");
+        assert.equal(blocked.field, "service", "a different field was the one that blocked");
+        assert.ok(blocked.message, "the field that blocked the step explains nothing");
+        assert.equal(
+          Number((await caseById(fixture, own.id)).revision),
+          untouched,
+          "a form that refused to submit still sent something",
+        );
+        evidence.regressions.requiredField = {
+          field: blocked.field,
+          stoppedAt: blocked.step,
+        };
+
+        await clickAction(client, "fill-fictional");
+        await clickContinue(client);
+        await waitForText(client, "City of residence", ARRIVAL_MS);
+
+        // Screening: an answer outside what PCDC prepares stops the
+        // application where it stands, and says it is a service limit.
+        await waitForQuiet(client);
+        await client
+          .locator('input[name="other"][value="yes"]')
+          .click({ timeout: CLICK_MS });
+        await waitForText(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
+        const stopped = await client.evaluate(() => ({
+          continueDisabled: [
+            ...document.querySelectorAll("#intake-form button[type='submit']"),
+          ].every((button) => button.disabled),
+          submits: document.querySelectorAll('[data-case-action="SUBMIT"]').length,
+        }));
+        assert.equal(stopped.continueDisabled, true, "an unsupported answer still continues");
+        assert.equal(stopped.submits, 0, "an unsupported answer can still be submitted");
+        await waitForText(
+          client,
+          "This is a PCDC service limitation, not a judgement about your taxes.",
+          RENDER_MS,
+        );
+        evidence.regressions.screening =
+          "the out-of-scope notice appeared, Continue was disabled and nothing could be submitted";
+
+        await waitForQuiet(client);
+        await client
+          .locator('input[name="other"][value="no"]')
+          .click({ timeout: CLICK_MS });
+        await waitForTextGone(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
+
+        // Save and exit, sign out, come back as the same applicant, and open
+        // the same application again from the list.
+        await client.getByLabel("City of residence", { exact: true }).fill(RETURN_CITY);
+        await clickAction(client, "save-exit");
+        await waitForText(client, "My applications", RENDER_MS);
+        assert.equal(
+          (await caseById(fixture, own.id)).answers.residenceCity,
+          RETURN_CITY,
+          "save and exit saved nothing",
+        );
+        await clickAction(client, "sign-out");
+        await waitForText(client, "Sign in with your email", RENDER_MS);
+        // A fresh document, because the auth module's resend cooldown lives in
+        // the one it signed out of (Task 5A, note 3).
+        await client.goto(fixture.appOrigin);
+        await loginTestUser({ page: client, actor: applicantA, fixture });
+        await watchAlerts(client);
+        await waitForQuiet(client);
+        await client
+          .locator(`.application-row:has-text("${reference}")`)
+          .first()
+          .click({ timeout: CLICK_MS });
+        await waitForText(client, "Your visit", ARRIVAL_MS);
+        await clickContinue(client);
+        await waitForText(client, "City of residence", ARRIVAL_MS);
+        assert.equal(
+          await client.getByLabel("City of residence", { exact: true }).inputValue(),
+          RETURN_CITY,
+          "the answers saved before signing out did not come back",
+        );
+        evidence.regressions.saveAndReturn =
+          "saved, signed out, signed back in, reopened from the list with the same answers";
+        // Left on the step the reset phase reads a field from.
+        await clickContinue(client);
+        await waitForText(client, "Your details", ARRIVAL_MS);
+      },
+    );
+
     await phase("a dialog takes the keyboard and gives it back", async () => {
       // Run while the client window is quiet: a dialog is about the keyboard,
       // and a page that is rebuilding itself is a different question (see the
@@ -1030,11 +1174,22 @@ async function runPermutation(t, roles) {
       assert.equal(secondTab.inModal, true, "Tab left the dialog on the way round");
       await closeWithEscape("regenerate-fictional");
 
-      // The help dialog's body carries no control at all. Measured, not
-      // asserted: where the keyboard ends up is a defect this run reports.
+      // A dialog whose body is only prose — the help dialog's one focusable
+      // control is its own close button. It still has to take the keyboard
+      // (Ruling R65), and Tab still has to stay inside it.
       const helpDialog = await openWithKeyboard("open-help");
+      assert.equal(
+        helpDialog.landed,
+        true,
+        `the help dialog opened without taking the keyboard: ${JSON.stringify(helpDialog.focus)}`,
+      );
+      assert.ok(
+        CONTROLS.includes(helpDialog.focus.element),
+        `the help dialog put the keyboard on ${helpDialog.focus.element} rather than on a control`,
+      );
       await client.keyboard.press("Tab");
       const helpAfterTab = await where();
+      assert.equal(helpAfterTab.inModal, true, "Tab left the help dialog");
       await closeWithEscape("open-help");
 
       evidence.regressions.dialogFocus = {
@@ -1238,10 +1393,9 @@ async function runPermutation(t, roles) {
 
     await phase("a reset rebuilds the samples and leaves the class's own work alone", async () => {
       const before = await fixtureCases(fixture);
-      // Two measurements this phase takes of the client window while somebody
-      // else rebuilds the sample cases underneath it. Neither is asserted:
-      // each is a defect this run reports, and an assertion here would fail
-      // the run for something the story cannot fix.
+      // Two things this phase asserts about the client window while somebody
+      // else rebuilds the sample cases underneath it. Both were defects this
+      // story found; both are fixed, and this is what pins them (Ruling R65).
       //
       // (1) A refusal the person has not dismissed. The save below is refused
       //     because the API is unreachable, and the notice names why.
@@ -1305,6 +1459,16 @@ async function runPermutation(t, roles) {
       };
       reset.refusalKept = reset.refusalAfter === refusalBefore;
       evidence.regressions.reset = reset;
+      assert.equal(
+        reset.keyboardAfterSharedUpdate,
+        reset.keyboardBeforeSharedUpdate,
+        "a shared update took the keyboard away from the control it was on",
+      );
+      assert.equal(
+        reset.refusalKept,
+        true,
+        `a refusal nobody had dismissed was changed by a background update: ${JSON.stringify(reset.refusalAfter)}`,
+      );
       // The client's own window still lists their own application, unchanged.
       await clickAction(client, "open-applications");
       await waitForText(client, classReference, ARRIVAL_MS);
@@ -1328,6 +1492,13 @@ async function runPermutation(t, roles) {
           allow: REFUSAL_LINES,
         }),
       };
+      // A press that reached nothing at all is an application defect, not a
+      // retry case: the page rebuilt itself under the pointer (Ruling R65).
+      assert.deepEqual(
+        evidence.retries.filter((entry) => entry.lost > 0),
+        [],
+        "a press reached nothing at all and had to be sent again",
+      );
       // Recorded, not asserted: the measurement that matters is the one each
       // screenshot took at 390px, and every one of those is asserted there.
       evidence.overflow.desktop = {
@@ -1348,10 +1519,42 @@ async function runPermutation(t, roles) {
     } catch (error) {
       evidence.evidenceGathering = String(error?.message ?? error);
     }
-    t.diagnostic(`evidence ${JSON.stringify(evidence)}`);
+    // The one place the whole record is printed, and so the one place worth
+    // masking as a whole: anything read off a page reaches this line.
+    t.diagnostic(redactAddresses(`evidence ${JSON.stringify(evidence)}`));
     await fixture.close();
   }
 }
+
+// The guard for this file's own invariant, and the only test here that needs
+// no browser: a test account's address is the one secret a screen can echo
+// back ("Signing in as …" on the code step), and everything this file reads off
+// a page ends up in a failure message or in the evidence diagnostic.
+test("no address survives the redaction every message goes through", () => {
+  const address = "applicant-7f3a2e1c@vitally.invalid";
+  // The sentence the code step renders. The trailing full stop goes with the
+  // address, which is the safe direction to err in.
+  assert.equal(
+    redactAddresses(`Signing in as ${address}. This confirms you can read that inbox.`),
+    "Signing in as <address> This confirms you can read that inbox.",
+  );
+  // Whatever quoting a screen read, a JSON dump or an alert puts around one.
+  assert.equal(
+    redactAddresses(JSON.stringify({ tail: `to "${address}" and <${address}>` })),
+    '{"tail":"to \\"<address>\\" and <<address>>"}',
+  );
+  assert.equal(
+    redactAddresses(`unknown-1@vitally.invalid and unknown-2@vitally.invalid`),
+    "<address> and <address>",
+  );
+  // And nothing else is touched: the reference, the stages and the copy this
+  // file asserts on have to survive a message unchanged.
+  const ordinary =
+    "VT-4UPB-2AKH Waiting for preparation · Someone else changed this case.";
+  assert.equal(redactAddresses(ordinary), ordinary);
+  assert.equal(redactAddresses(null), null);
+  assert.equal(redactAddresses(undefined), undefined);
+});
 
 test(
   "Chrome client and Firefox staff run the whole demonstration story",

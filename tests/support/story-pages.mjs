@@ -30,6 +30,30 @@ export const SCREENSHOT_WIDTHS = Object.freeze([720, 390]);
 export const MOBILE_WIDTH = 390;
 
 // ---------------------------------------------------------------------------
+// The one thing a screen can echo back
+// ---------------------------------------------------------------------------
+
+// A test account's address is the only secret a screen ever shows: the access
+// form's code step renders "Signing in as <address>" from what was typed
+// (`src/client-views.mjs`). Anything read off a page can therefore carry one,
+// and everything read off a page ends up in a failure message or a diagnostic.
+//
+// So it is masked twice: once **inside the page**, so an address never crosses
+// into this process at all, and once here, over everything on its way into a
+// message — the belt for the in-page braces, and the one that can be tested
+// without a browser. `ADDRESS` is the shape an address has in page text:
+// non-space either side of an `@`, stopping at the quoting a page or a JSON
+// dump puts around it, including the backslash that escapes that quoting.
+const ADDRESS = /[^\s<>"'\\]+@[^\s<>"'\\]+/g;
+export const ADDRESS_MASK = "<address>";
+
+/** Mask every address in one string, or in anything stringified. */
+export const redactAddresses = (value) =>
+  value === null || value === undefined
+    ? value
+    : String(value).replace(ADDRESS, ADDRESS_MASK);
+
+// ---------------------------------------------------------------------------
 // Bounded condition waits
 // ---------------------------------------------------------------------------
 
@@ -39,12 +63,12 @@ export const MOBILE_WIDTH = 390;
 // about the case).
 const screenText = async (page) => {
   try {
-    return await page.evaluate(() => {
+    const read = await page.evaluate(() => {
       // The access screen echoes the address somebody typed, and a failure
       // message is printed. Addresses are redacted in the page, so one cannot
       // reach this process at all — the same rule the Task 5A gate keeps.
       const safe = (value) =>
-        String(value ?? "").replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>");
+        String(value ?? "").replace(/[^\s<>"'\\]+@[^\s<>"'\\]+/g, "<address>");
       const text = safe(
         (document.querySelector("#main")?.innerText ?? "").replace(/\s+/g, " "),
       );
@@ -67,6 +91,8 @@ const screenText = async (page) => {
         tail: text.slice(-700),
       });
     });
+    // Masked in the page already; masked again on the way into the message.
+    return redactAddresses(read);
   } catch {
     return "<the page could not be read>";
   }
@@ -158,7 +184,14 @@ export const pageText = (page) => page.locator("#app").innerText();
 // ---------------------------------------------------------------------------
 
 // How long the page must hold still before a click is sent.
-const QUIET_MS = 300;
+//
+// A re-render burst is several rebuilds a few hundred milliseconds apart — two
+// `cases` rows per accepted action, plus a row per related table — so a short
+// window can fall in a gap between two of them and let a press go out just as
+// the next one lands. At 300ms about two presses per run reached nothing at
+// all; at this length none did. It is the cost of pressing only into a page
+// that is actually still.
+const QUIET_MS = 600;
 
 /**
  * Wait until the page has stopped rebuilding itself.
@@ -255,6 +288,12 @@ export const HAS_DETAIL = ({ label, value }) =>
  * applied. The first is repeated only when `safeToRepeat()` says the server
  * state has not moved — so a slow-but-accepted action is never sent twice.
  * Anything else is reported, with what the page said since the press.
+ *
+ * `refusals` carries, for each conflict, both what the window *recorded* and
+ * what it is **still showing** at the moment the retry is about to go out —
+ * which is several seconds and at least one background change after the
+ * refusal, because the wait above ran out first. A refusal the person has not
+ * acted on has to survive that (Ruling R65); the caller asserts it.
  */
 export async function pressUntilEffect(
   page,
@@ -262,24 +301,30 @@ export async function pressUntilEffect(
 ) {
   let conflicts = 0;
   let lost = 0;
+  const refusals = [];
   for (let attempt = 1; attempt <= tries; attempt += 1) {
     const before = (await readAlerts(page))?.length ?? 0;
     await press();
     try {
       await page.waitForFunction(ready, arg, { timeout: RENDER_MS, polling: 150 });
-      return { attempts: attempt, conflicts, lost };
+      return { attempts: attempt, conflicts, lost, refusals };
     } catch (error) {
       const since = ((await readAlerts(page)) ?? []).slice(before);
       if (since.some((line) => STALE_REVISION.test(line))) {
         conflicts += 1;
+        refusals.push({
+          recorded: since.find((line) => STALE_REVISION.test(line)),
+          onScreen: await alertText(page),
+        });
         continue;
       }
       const repeatable = since.length === 0 && (await safeToRepeat?.());
       if (!repeatable)
         throw new Error(
-          `The press never produced ${what} (attempt ${attempt} of ${tries}). ` +
-            `What it said since the press: ${JSON.stringify(since)}. ` +
-            `The screen read: ${await screenText(page)}`,
+          redactAddresses(
+            `The press never produced ${what} (attempt ${attempt} of ${tries}). ` +
+              `What it said since the press: ${JSON.stringify(since)}. `,
+          ) + `The screen read: ${await screenText(page)}`,
           { cause: error },
         );
       lost += 1;
@@ -322,9 +367,11 @@ export async function fieldByLabel(form, label, what = "this") {
   );
   if (!id)
     throw new Error(
-      `The ${what} form has no field labelled ${JSON.stringify(label)}. ` +
-        `Its labels were ${JSON.stringify(await form.locator("label").allInnerTexts())}. ` +
-        `It read: ${(await form.innerText()).replace(/\s+/g, " ").slice(0, 300)}`,
+      redactAddresses(
+        `The ${what} form has no field labelled ${JSON.stringify(label)}. ` +
+          `Its labels were ${JSON.stringify(await form.locator("label").allInnerTexts())}. ` +
+          `It read: ${(await form.innerText()).replace(/\s+/g, " ").slice(0, 300)}`,
+      ),
     );
   return form.locator(`[id="${id}"]`);
 }
@@ -338,6 +385,8 @@ export async function submitCaseForm(page, type, fields = {}, { attributes = "" 
   const selector = `button[type="submit"][data-case-action="${type}"]${attributes}`;
   const form = page.locator(`form:has(${selector})`).first();
   await form.waitFor({ state: "visible", timeout: RENDER_MS });
+  // Still before the boxes are filled — a rebuild would empty a select, whose
+  // value the wiring layer does not keep — and still again before the press.
   await waitForQuiet(page);
   for (const [label, value] of Object.entries(fields)) {
     const field = await fieldByLabel(form, label, type);
@@ -346,6 +395,7 @@ export async function submitCaseForm(page, type, fields = {}, { attributes = "" 
     if (tag === "SELECT") await field.selectOption(value, { timeout: CLICK_MS });
     else await field.fill(value, { timeout: CLICK_MS });
   }
+  await waitForQuiet(page);
   await form.locator(selector).click({ timeout: CLICK_MS });
 }
 
@@ -398,16 +448,18 @@ export async function pressUntil(page, locator, key, ready, what, timeout = REND
 }
 
 /** The first thing this page is announcing as a problem, if anything. */
-export const alertText = (page) =>
-  page.evaluate(() => {
-    const alert = document.querySelector('[role="alert"]');
-    return alert
-      ? alert.innerText
-          .replace(/\s+/g, " ")
-          .trim()
-          .replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>")
-      : null;
-  });
+export const alertText = async (page) =>
+  redactAddresses(
+    await page.evaluate(() => {
+      const alert = document.querySelector('[role="alert"]');
+      return alert
+        ? alert.innerText
+            .replace(/\s+/g, " ")
+            .trim()
+            .replace(/[^\s<>"'\\]+@[^\s<>"'\\]+/g, "<address>")
+        : null;
+    }),
+  );
 
 /**
  * Record every alert this page ever shows, including the ones that are gone
@@ -428,7 +480,7 @@ export const watchAlerts = (page) =>
     // Recorded without the one thing a screen can echo back: whatever address
     // somebody typed into the access form. It never leaves the page.
     const safe = (value) =>
-      String(value ?? "").replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>");
+      String(value ?? "").replace(/[^\s<>"'\\]+@[^\s<>"'\\]+/g, "<address>");
     const sweep = () => {
       const seen = [];
       for (const node of document.querySelectorAll('[role="alert"]'))
@@ -445,8 +497,10 @@ export const watchAlerts = (page) =>
     sweep();
   });
 
-export const readAlerts = (page) =>
-  page.evaluate(() => window.__vitallyAlerts ?? null);
+export const readAlerts = async (page) =>
+  (await page.evaluate(() => window.__vitallyAlerts ?? null))?.map(
+    redactAddresses,
+  ) ?? null;
 
 // ---------------------------------------------------------------------------
 // Staff navigation
@@ -612,14 +666,15 @@ export const measureOverflow = (page) =>
 
 /** Every console error a page has produced must be one we expected. */
 export function assertConsoleQuiet(surface, { name, allow = [] }) {
+  // Both lists are printed by a failing assertion, so both are masked first.
   assert.deepEqual(
-    surface.pageErrors,
+    surface.pageErrors.map(redactAddresses),
     [],
     `${name}: the application threw in the page`,
   );
-  const unexplained = surface.errors.filter(
-    (line) => !allow.some((pattern) => pattern.test(line)),
-  );
+  const unexplained = surface.errors
+    .filter((line) => !allow.some((pattern) => pattern.test(line)))
+    .map(redactAddresses);
   assert.deepEqual(unexplained, [], `${name}: unexplained console errors`);
   return surface.errors.length;
 }
