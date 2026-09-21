@@ -662,9 +662,12 @@ test("case actions apply the shared check order against real Supabase", async (t
             () => f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", payload),
             rejected("VALIDATION"),
           );
-        // Unknown and not-yet-implemented actions never reach a handler.
-        // REQUEST_DOCUMENT moved to tests/database-documents.mjs with 004.
-        for (const type of ["BOGUS", "CLAIM_REVIEW"])
+        // Unknown actions never reach a handler. Every action in CASE_ACTIONS
+        // is implemented now: REQUEST_DOCUMENT moved to
+        // tests/database-documents.mjs with 004 and CLAIM_REVIEW to
+        // tests/database-review.mjs with 006, where a client attempt is
+        // FORBIDDEN rather than a validation error.
+        for (const type of ["BOGUS", "claim_review", "CLAIM REVIEW"])
           await assert.rejects(
             () => f.act(f.applicantA, caseId, null, type, {}),
             rejected("VALIDATION"),

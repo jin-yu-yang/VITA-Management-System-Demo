@@ -6,6 +6,7 @@ import {
   updateCase,
   restoreCase,
   sampleAnswers,
+  describeStage,
 } from "../src/domain.mjs";
 import {
   CASE_ACTIONS,
@@ -116,6 +117,70 @@ test("submitted answers cannot be silently overwritten", () => {
   assert.throws(() =>
     updateCase(c, { type: "ANSWERS", answers: { firstName: "Someone else" } }),
   );
+});
+
+test("every server stage has plain status copy and no workflow decision", () => {
+  const described = STAGES.map((stage) => describeStage(stage));
+  for (const [index, stage] of STAGES.entries()) {
+    const { label, clientMessage } = described[index];
+    assert.equal(typeof label, "string", stage);
+    assert.equal(typeof clientMessage, "string", stage);
+    assert.ok(label.length > 0 && label.length <= 40, stage);
+    assert.ok(clientMessage.length > 0, stage);
+    // Status copy is client-facing: no internal words, no money, and no claim
+    // that a later milestone has happened.
+    for (const word of [
+      "findings",
+      "refund",
+      "bank",
+      "routing",
+      "deposit",
+      "$",
+    ])
+      assert.ok(
+        !clientMessage.toLowerCase().includes(word),
+        `${stage} must not mention ${word}`,
+      );
+  }
+  // Every stage is described distinctly, and the table is stage-keyed only.
+  assert.equal(
+    new Set(described.map((entry) => entry.label)).size,
+    STAGES.length,
+  );
+  assert.deepEqual(Object.keys(describeStage("reviewing")).sort(), [
+    "clientMessage",
+    "label",
+  ]);
+  assert.equal(describeStage("reviewing").label, "In review");
+  assert.match(
+    describeStage("corrections_required").clientMessage,
+    /No action is needed from you right now/,
+  );
+  assert.match(
+    describeStage("review_approved").clientMessage,
+    /Signing and filing are later milestones and are not done yet/,
+  );
+  // Pure: the same input answers the same way, and an edited result never
+  // changes the next answer.
+  const first = describeStage("preparing");
+  first.label = "Changed";
+  assert.equal(describeStage("preparing").label, "In preparation");
+  assert.deepEqual(describeStage("preparing"), describeStage("preparing"));
+  // Anything the server never sends falls back to neutral copy.
+  for (const unknown of [
+    "signed",
+    "filed",
+    "accepted",
+    "",
+    undefined,
+    null,
+    "toString",
+  ])
+    assert.deepEqual(describeStage(unknown), {
+      label: "Application",
+      clientMessage:
+        "This application is with the office. Contact PCDC if you have questions.",
+    });
 });
 
 test("shared case contracts expose readable references and frozen vocabularies", () => {

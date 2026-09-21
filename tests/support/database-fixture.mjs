@@ -6,6 +6,7 @@ import { initializeWorkspace } from "../../tools/admin/workspace-setup.mjs";
 import { createAppError } from "../../src/errors.mjs";
 import { makeSampleAnswers } from "../../src/sample-data.mjs";
 import { createRun, ownedRun, saveRun, endRun } from "./run-manifest.mjs";
+import { extendTestWorkspace } from "./workspace-overrides.mjs";
 const camel = (key) =>
   key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 const camelRow = (row) =>
@@ -54,6 +55,7 @@ const STATE_TABLES = Object.freeze([
   "documents",
   "admin_followups",
   "contact_attempts",
+  "reviews",
   "assistance_items",
 ]);
 // One key for the advisory lock that keeps fixture workspace setup exclusive
@@ -129,6 +131,23 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       return await sqlClient.query(text, values);
     } catch (error) {
       throw databaseError(error);
+    }
+  };
+  // Workspace setup is one serializable transaction over a people table small
+  // enough that every workspace shares an index page, so test files starting
+  // together see serialization failures that outlast the initializer's three
+  // retries. Every setup call — the fixture's own and the direct
+  // `initializeWorkspace` calls in tests/database.mjs — runs inside this
+  // session-level advisory lock, held on the fixture's own connection and
+  // never during a test. A deliberately concurrent pair belongs inside one
+  // call so the pair still races itself (Ruling R26). Nothing in the product,
+  // the initializer or the migrations changes.
+  f.withSetupLock = async (body) => {
+    await f.sql(SETUP_LOCK);
+    try {
+      return await body();
+    } finally {
+      await f.sql(SETUP_UNLOCK);
     }
   };
   f.createCase = async (
@@ -253,6 +272,46 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     );
     return created.caseId;
   };
+  // A client case Alex has claimed and handed to review: preparation version 1,
+  // stage review_ready, no reviewer. Built only through public actions.
+  f.preparedCase = async () => {
+    const caseId = await f.readyCase();
+    await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    return caseId;
+  };
+  // Test-only additive people and capabilities on this run's own workspace
+  // (contracts, "Test-only people and capabilities"). Returns the added
+  // people's ids keyed by person_key. After any enrichment the normal
+  // initializer rejects this workspace, by design.
+  f.enrich = async ({ addPeople = [], addCapabilities = [] } = {}) => {
+    const { people } = await extendTestWorkspace({
+      runManifest,
+      workspaceId: f.workspaceId,
+      addPeople,
+      addCapabilities,
+    });
+    return people;
+  };
+  // Historical reassignment for the self-review regression only. No product
+  // action reassigns or releases a case, so the test project writes the
+  // records a reassignment would have left: the new current preparer, their
+  // participation, and the former preparer's participation retained.
+  f.reassignPreparer = async (caseId, fromPersonId, toPersonId) => {
+    const moved = await f.sql(
+      "update public.cases set preparer_id=$3 where id=$1 and workspace_id=$4 and preparer_id=$2 returning id",
+      [caseId, fromPersonId, toPersonId, f.workspaceId],
+    );
+    if (moved.rowCount !== 1)
+      throw Object.assign(
+        new Error("Expected the case to be prepared by the former preparer."),
+        { code: "FIXTURE_AMBIGUOUS" },
+      );
+    await f.sql(
+      "insert into public.preparation_participants(workspace_id,case_id,person_id) values($1,$2,$3) on conflict do nothing",
+      [f.workspaceId, caseId, toPersonId],
+    );
+  };
   f.sampleAssistance = SAMPLE_ASSISTANCE;
   // One open assistance request against a received, unclaimed case. Assistance
   // items have no creating action in this scope, so the row is seeded through
@@ -348,6 +407,24 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       lastRemindedAt: row.last_reminded_at,
       lastRemindedByPersonId: row.last_reminded_by_person_id,
       participants: participants.map((participant) => participant.personId),
+      // Review attempts oldest first; findings and resolutions are internal and
+      // reach no client-readable row.
+      reviews: (await visibleRows(f.presenter, "reviews", caseId)).map(
+        (review) => ({
+          id: review.id,
+          preparationVersion: Number(review.preparationVersion),
+          reviewerId: review.reviewerPersonId,
+          status: review.status,
+          findings: review.findings,
+          resolution: review.resolution,
+          clientContactStatus: review.clientContactStatus,
+          clientContactOutcome: review.clientContactOutcome,
+          clientContactNote: review.clientContactNote,
+          createdAt: review.createdAt,
+          decidedAt: review.decidedAt,
+          clientContactedAt: review.clientContactedAt,
+        }),
+      ),
       requests: await visibleRows(f.presenter, "document_requests", caseId),
       documents: await visibleRows(f.presenter, "documents", caseId),
       followups,
@@ -482,15 +559,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     const initializeOwned = async (setup) => {
       run.pendingWorkspaces.add(setup.workspaceId);
       await saveRun(runManifest);
-      // Setup runs one serializable transaction over a people table small
-      // enough that every workspace shares an index page, so test files
-      // starting together see serialization failures that outlast the
-      // initializer's three retries. This session-level advisory lock, held on
-      // the fixture's own connection and never during a test, makes fixture
-      // setup exclusive across test processes. It changes no product code and
-      // no initializer behaviour.
-      await f.sql(SETUP_LOCK);
-      try {
+      return await f.withSetupLock(async () => {
         const result = await initializeWorkspace(setup, {
           afterInitialize: async (connection) => {
             await connection.query(
@@ -509,9 +578,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         run.workspaces.add(setup.workspaceId);
         await saveRun(runManifest);
         return result;
-      } finally {
-        await f.sql(SETUP_UNLOCK);
-      }
+      });
     };
     // Workflow tests depend on the shared initializer's permanent people and
     // its default follow-up person; a partial workspace must fail, not skip.

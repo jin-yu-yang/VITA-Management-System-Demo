@@ -15,6 +15,7 @@ const PRESENTER_ONLY_TABLES = [
   "admin_followups",
   "contact_attempts",
   "case_events",
+  "reviews",
   "assistance_items",
 ];
 const WORKFLOW_TABLES = [...CLIENT_VISIBLE_TABLES, ...PRESENTER_ONLY_TABLES];
@@ -61,6 +62,7 @@ async function seedWorkflow(f, caseId) {
       "documentId",
       "followupId",
       "contactId",
+      "reviewId",
       "caseEventId",
       "clientEventId",
       "assistanceId",
@@ -118,6 +120,10 @@ async function seedWorkflow(f, caseId) {
       "no_answer",
       "Left a fictional message.",
     ],
+  );
+  await f.sql(
+    "insert into public.reviews(id,workspace_id,case_id,preparation_version,reviewer_person_id) values($1,$2,$3,1,$4)",
+    [seeded.reviewId, f.workspaceId, caseId, f.people.morgan],
   );
   await f.sql(
     "insert into public.case_events(id,workspace_id,case_id,actor_user_id,actor_person_id,action,detail) values($1,$2,$3,$4,$5,$6,$7)",
@@ -384,10 +390,14 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
       "normal initializer preserves people, default, capabilities and binding; adds roster only explicitly",
       async () => {
         const before = await f.snapshot();
-        const [result, concurrent] = await Promise.all([
-          initializeWorkspace(f.setup),
-          initializeWorkspace(f.setup),
-        ]);
+        // One lock around the pair, not one each: the two calls must still race
+        // each other, only not the other test files' setup (Ruling R26).
+        const [result, concurrent] = await f.withSetupLock(() =>
+          Promise.all([
+            initializeWorkspace(f.setup),
+            initializeWorkspace(f.setup),
+          ]),
+        );
         assert.deepEqual(result, concurrent);
         assert.deepEqual(result.people, f.people);
         assert.deepEqual(await f.snapshot(), before);
@@ -420,19 +430,23 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
             ),
           (error) => error.code === "23503",
         );
-        const added = await initializeWorkspace({
-          ...f.setup,
-          applicantUserIds: [...f.setup.applicantUserIds, f.unapprovedUserId],
-        });
+        const added = await f.withSetupLock(() =>
+          initializeWorkspace({
+            ...f.setup,
+            applicantUserIds: [...f.setup.applicantUserIds, f.unapprovedUserId],
+          }),
+        );
         assert.deepEqual(added.people, f.people);
         assert.equal((await rows(f.unapproved, "memberships")).length, 1);
-        await assert.rejects(
-          () =>
-            initializeWorkspace({
-              ...f.setup,
-              fixtureClientBindings: { preparation_ready: f.applicantBUserId },
-            }),
-          rejected("VALIDATION"),
+        await f.withSetupLock(() =>
+          assert.rejects(
+            () =>
+              initializeWorkspace({
+                ...f.setup,
+                fixtureClientBindings: { preparation_ready: f.applicantBUserId },
+              }),
+            rejected("VALIDATION"),
+          ),
         );
       },
     );
@@ -488,9 +502,11 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
           });
         assert.equal(old, undefined);
         const before = await f.snapshot();
-        await assert.rejects(
-          () => initializeWorkspace(f.setup),
-          rejected("VALIDATION"),
+        await f.withSetupLock(() =>
+          assert.rejects(
+            () => initializeWorkspace(f.setup),
+            rejected("VALIDATION"),
+          ),
         );
         assert.deepEqual(await f.snapshot(), before);
         assert.deepEqual(await rows(f.applicantB, "workspaces"), []);
@@ -550,9 +566,11 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
             }),
           rejected("VALIDATION"),
         );
-        await assert.rejects(
-          () => initializeWorkspace(f.setup),
-          rejected("VALIDATION"),
+        await f.withSetupLock(() =>
+          assert.rejects(
+            () => initializeWorkspace(f.setup),
+            rejected("VALIDATION"),
+          ),
         );
         assert.deepEqual(await f.snapshot(), before);
         await assert.rejects(
@@ -903,6 +921,17 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
               outcome: "reached",
             },
             update: { outcome: "reached" },
+          },
+          reviews: {
+            filter: ["id", seeded.reviewId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              preparation_version: 2,
+              reviewer_person_id: f.people.morgan,
+            },
+            // Findings are internal: no browser role rewrites or reads them.
+            update: { status: "approved", findings: "Direct finding." },
           },
           case_events: {
             filter: ["id", seeded.caseEventId],
