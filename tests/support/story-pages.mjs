@@ -40,9 +40,13 @@ export const MOBILE_WIDTH = 390;
 const screenText = async (page) => {
   try {
     return await page.evaluate(() => {
-      const text = (document.querySelector("#main")?.innerText ?? "").replace(
-        /\s+/g,
-        " ",
+      // The access screen echoes the address somebody typed, and a failure
+      // message is printed. Addresses are redacted in the page, so one cannot
+      // reach this process at all — the same rule the Task 5A gate keeps.
+      const safe = (value) =>
+        String(value ?? "").replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>");
+      const text = safe(
+        (document.querySelector("#main")?.innerText ?? "").replace(/\s+/g, " "),
       );
       return JSON.stringify({
         title:
@@ -52,11 +56,11 @@ const screenText = async (page) => {
         badges: [...document.querySelectorAll(".badge")].map((badge) =>
           badge.textContent.trim(),
         ),
-        alert:
-          document.querySelector('[role="alert"]')?.innerText.replace(/\s+/g, " ").trim() ??
-          null,
-        toast: document.querySelector("#toast")?.textContent.trim() || null,
-        notices: window.__vitallyAlerts ?? null,
+        alert: document.querySelector('[role="alert"]')
+          ? safe(document.querySelector('[role="alert"]').innerText.replace(/\s+/g, " ").trim())
+          : null,
+        toast: safe(document.querySelector("#toast")?.textContent.trim()) || null,
+        notices: (window.__vitallyAlerts ?? null)?.map(safe) ?? null,
         sections: [...document.querySelectorAll(".panel h2")].map((heading) =>
           heading.textContent.trim(),
         ),
@@ -397,7 +401,12 @@ export async function pressUntil(page, locator, key, ready, what, timeout = REND
 export const alertText = (page) =>
   page.evaluate(() => {
     const alert = document.querySelector('[role="alert"]');
-    return alert ? alert.innerText.replace(/\s+/g, " ").trim() : null;
+    return alert
+      ? alert.innerText
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>")
+      : null;
   });
 
 /**
@@ -416,14 +425,18 @@ export const watchAlerts = (page) =>
     window.__vitallyAlerts = [];
     const app = document.querySelector("#app");
     if (!app) return;
+    // Recorded without the one thing a screen can echo back: whatever address
+    // somebody typed into the access form. It never leaves the page.
+    const safe = (value) =>
+      String(value ?? "").replace(/[^\s<>"']+@[^\s<>"']+/g, "<address>");
     const sweep = () => {
       const seen = [];
       for (const node of document.querySelectorAll('[role="alert"]'))
-        seen.push(node.innerText.replace(/\s+/g, " ").trim());
+        seen.push(safe(node.innerText.replace(/\s+/g, " ").trim()));
       // The toast is where a refused click says what went wrong, and it is a
       // status rather than an alert, so it needs its own look.
       const toast = document.querySelector("#toast")?.textContent.trim();
-      if (toast) seen.push(`toast: ${toast}`);
+      if (toast) seen.push(`toast: ${safe(toast)}`);
       for (const text of seen)
         if (text && !window.__vitallyAlerts.includes(text))
           window.__vitallyAlerts.push(text);
