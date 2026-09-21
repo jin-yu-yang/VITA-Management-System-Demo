@@ -3,6 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS } from "./contracts.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
+import { describeFocus } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
 
@@ -75,9 +76,10 @@ if (!config) {
     if (quiet) return;
     const state = controller.getState();
     // A full rebuild replaces the fields, so remember where the keyboard was.
+    // `describeFocus` decides what can be read; nothing it does may throw here,
+    // because this runs before the page is replaced.
     const active = document.activeElement;
-    const focused = active?.closest?.("#app") ? active.name : null;
-    const caret = focused && "selectionStart" in active ? active.selectionStart : null;
+    const keyboard = active?.closest?.("#app") ? describeFocus(active) : null;
     root.innerHTML = views.page(state, screenFor(state));
     tickCooldown(state);
     if (state.dialog)
@@ -89,7 +91,7 @@ if (!config) {
     else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
-    } else if (focused) restoreField(focused, caret);
+    } else if (keyboard) restoreField(keyboard.name, keyboard.caret);
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back

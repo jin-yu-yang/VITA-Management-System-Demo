@@ -82,3 +82,39 @@ const STAGE_TONES = Object.freeze({
 });
 export const stageBadge = (stage) =>
   `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage).label)}</span>`;
+
+// Rebuilding the page loses the keyboard, so the wiring layer records where it
+// was first. Only these controls have a text selection at all: `selectionStart`
+// is defined on `HTMLInputElement.prototype` for *every* input, so testing
+// `"selectionStart" in element` proves nothing about whether it can be read.
+// The measured behaviour for the rest (radio, checkbox, number, email, date,
+// colour, range, file) is `null` in Chromium 153 and Firefox 155 — but the
+// specification allows an `InvalidStateError` instead, engines have differed
+// historically, and this runs *before* the page is replaced, so a throw here
+// would take the whole render with it. Hence the allowlist and the try/catch:
+// a field with no caret still gets its focus back, just without one.
+const SELECTABLE_INPUT_TYPES = Object.freeze([
+  "text",
+  "search",
+  "url",
+  "tel",
+  "password",
+]);
+
+export function describeFocus(active) {
+  const name = active?.name;
+  if (!name) return null;
+  const selectable =
+    active.tagName === "TEXTAREA" ||
+    (active.tagName === "INPUT" &&
+      SELECTABLE_INPUT_TYPES.includes(
+        String(active.type ?? "text").toLowerCase(),
+      ));
+  if (!selectable) return { name, caret: null };
+  try {
+    const caret = active.selectionStart;
+    return { name, caret: typeof caret === "number" ? caret : null };
+  } catch {
+    return { name, caret: null };
+  }
+}
