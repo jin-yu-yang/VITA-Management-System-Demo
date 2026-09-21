@@ -61,10 +61,12 @@ if (!config) {
   let sampleSeed = 0;
 
   function screenFor(state) {
-    if (!state.principal)
-      return state.error?.code === "FORBIDDEN"
-        ? views.noAccessScreen(state)
-        : client.accessScreen(state);
+    if (!state.principal) {
+      // The sign-in form is only for a visitor who is known to be signed out.
+      if (state.error?.code === "FORBIDDEN") return views.noAccessScreen(state);
+      if (state.session !== "none") return views.unreachableScreen(state);
+      return client.accessScreen(state);
+    }
     if (state.principal.access === "presenter") return views.staffScreen(state);
     return client.clientScreen(state);
   }
@@ -304,6 +306,9 @@ if (!config) {
       case "retry-action":
         await controller.retryLast();
         notify("Sent again.");
+        break;
+      case "retry-connection":
+        await controller.refresh();
         break;
       case "dismiss-error":
         controller.dismissError();

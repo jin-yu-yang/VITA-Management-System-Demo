@@ -15,6 +15,7 @@ import {
   staffScreen,
   renderStaffLanding,
   connectionNotice,
+  unreachableScreen,
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 
@@ -22,6 +23,7 @@ import { describeStage } from "../src/domain.mjs";
 // the HTML string itself. No DOM library, and nothing here may reach a store.
 
 const baseState = (overrides = {}) => ({
+  session: "present",
   principal: { userId: "user-1", workspaceId: "w1", access: "applicant" },
   connection: "online",
   error: null,
@@ -161,6 +163,50 @@ test("an offline visitor reads the last view behind a connection notice", () => 
     }),
   );
   assert.match(offline, /cannot reach the server/i);
+});
+
+test("an unreachable server gets its own screen, not the sign-in form", () => {
+  const html = unreachableScreen(
+    baseState({
+      session: "unknown",
+      principal: null,
+      connection: "offline",
+      error: {
+        code: "OFFLINE",
+        message: "The demo cannot reach the server. Check the connection.",
+      },
+    }),
+  );
+  assert.match(html, /cannot reach the server/i);
+  assert.match(html, /data-action="retry-connection"/);
+  // It must not read as a sign-out, and it must not ask for the address again.
+  assert.ok(!/Sign in with your email/.test(html));
+  assert.ok(!/Send verification code/.test(html));
+  assert.ok(!/<input[^>]*type="email"/.test(html));
+  assert.match(html, /not signed out/i);
+  assert.ok(!/data-case-action/.test(html));
+});
+
+test("the code step names the address it is bound to", () => {
+  const html = accessScreen(
+    baseState({
+      principal: null,
+      session: "none",
+      authStep: "code",
+      authEmail: "mei@example.org",
+    }),
+  );
+  assert.ok(html.includes("mei@example.org"));
+  assert.match(html, /Signing in as/);
+  assert.match(html, /data-action="back-to-email"/);
+  // An address is the visitor's own input, never a claim about the roster.
+  assert.ok(!/registered|on file|approved address/i.test(html));
+  // And with nothing bound yet, nothing is claimed.
+  assert.ok(
+    !/Signing in as/.test(
+      accessScreen(baseState({ principal: null, session: "none", authStep: "code" })),
+    ),
+  );
 });
 
 test("applicant text is escaped everywhere it is rendered", () => {
