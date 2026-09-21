@@ -58,9 +58,18 @@ export function missingAnswers(answers = {}) {
 }
 
 // Why the form cannot be submitted yet, or null when nothing local stands in
-// the way. The order mirrors the server's, so the browser never offers a
-// button the database would refuse — but a null here is a prediction, not a
-// permission, and the action still goes through the same checks.
+// the way, so the browser does not offer a button the database would refuse.
+// A null here is a prediction, not a permission: `vitally_private.act_submit`
+// (migration 003) re-checks the saved answers and decides.
+//
+// Which of that function's checks are mirrored, in its order:
+//   1. stage must be `draft` — **not** mirrored here; the intake form is only
+//      rendered for a draft case at all.
+//   2. the fourteen required answers must be non-blank → "incomplete".
+//   3. year/residenceState/helper — one check server-side, three here so the
+//      form can say which one. Their relative order is the browser's own and
+//      is not load-bearing: all three are the same refusal to the database.
+//   4. screening must continue → "unsupported" | "assistance" | "incomplete".
 export function submissionBlocker(answers = {}) {
   if (missingAnswers(answers).length) return "incomplete";
   if (answers.year !== "2025") return "year";

@@ -74,7 +74,7 @@ function codeStep(state) {
     "",
     "text",
     'required inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit code"',
-  )}<p class="field-note">This confirms you can read that inbox. A volunteer verifies taxpayer identity separately.</p>${authFailure(state)}<button class="btn primary full" type="submit">Verify and continue ${icon("arrow")}</button><div class="resend-row"><span>Didn’t receive it?</span>${button(
+  )}<p class="field-note">${when(state.authEmail, `Signing in as <strong>${esc(state.authEmail)}</strong>. `)}This confirms you can read that inbox. A volunteer verifies taxpayer identity separately.</p>${authFailure(state)}<button class="btn primary full" type="submit">Verify and continue ${icon("arrow")}</button><div class="resend-row"><span>Didn’t receive it?</span>${button(
     waiting ? `Resend code in ${esc(state.resendSeconds)}s` : "Resend code",
     "resend-code",
     "inline",

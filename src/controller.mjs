@@ -69,7 +69,12 @@ export function createController({
   cooldownSeconds = 65,
 }) {
   const state = {
-    // Identity and transport
+    // Identity and transport. `session` is what the last identity attempt
+    // learned, and it is deliberately three-valued: a visitor who is signed out
+    // and a server that cannot be reached must never be shown the same screen,
+    // which is exactly why `auth.getSession()` throws OFFLINE rather than
+    // answering null.
+    session: "unknown", // 'unknown' | 'none' | 'present'
     principal: null,
     connection: "unknown",
     error: null,
@@ -253,7 +258,15 @@ export function createController({
   // reconnect, the window focus and the online event alike, because a
   // subscription is never the only way back.
   async function refresh() {
-    if (!state.principal) return;
+    // Without a principal there is nothing to re-read, but there may still be
+    // an identity to establish: a visitor whose session could not be read, or
+    // who is signed in and could not be identified, gets another attempt here.
+    // That is what makes focus, `online` and the retry button work when the
+    // subscription never opened at all.
+    if (!state.principal) {
+      if (state.session !== "none") await load();
+      return;
+    }
     let failure = null;
     try {
       await loadList();
@@ -361,12 +374,17 @@ export function createController({
     try {
       session = await auth.getSession();
     } catch (error) {
+      // Whether this visitor is signed in is simply not known, so the sign-in
+      // form would be a guess. The screen says so and offers another attempt,
+      // and focus/online events keep trying on their own.
+      state.session = "unknown";
+      state.principal = null;
       noteFailure(error);
-      state.screen = "access";
       show();
       return;
     }
     if (!session) {
+      state.session = "none";
       state.principal = null;
       state.screen = "access";
       const record = accessRecord();
@@ -378,10 +396,13 @@ export function createController({
       show();
       return;
     }
+    state.session = "present";
     let principal;
     try {
       principal = await store.getPrincipal();
     } catch (error) {
+      // There is a session, so this is never the sign-in form: either this
+      // account is not on the roster (FORBIDDEN) or the server is unreachable.
       state.principal = null;
       noteFailure(error);
       show();
@@ -445,16 +466,23 @@ export function createController({
     if (remaining > 0) {
       // Inside the window nothing leaves at all, and the answer is the same
       // sentence as a real send: a cooldown must not become a second channel
-      // for telling two addresses apart.
+      // for telling two addresses apart. The cooldown runs against the window,
+      // not against an address, so the address entered now is the one bound and
+      // shown — a corrected typo must never stay tied to the typo.
       const record = accessRecord();
       state.authStep = "code";
-      state.authEmail = record.email ?? address;
+      state.authEmail = address;
       const answer = {
         state: "code_entry",
         message: record.message ?? state.authMessage,
         retryAfterSeconds: remaining,
       };
       state.authMessage = answer.message;
+      writeJson(ACCESS_KEY, {
+        startedAt: record.startedAt,
+        email: address,
+        message: answer.message,
+      });
       show();
       return answer;
     }
@@ -501,10 +529,17 @@ export function createController({
     await load();
   }
 
+  // "Use a different email address". The cooldown is the window's and survives
+  // (R38 — a reload or a restart cannot buy another send), but the address it
+  // was bound to does not: the next send binds whatever is typed then.
   function restartSignIn() {
+    const record = accessRecord();
     state.authStep = "email";
+    state.authEmail = "";
     state.authError = null;
     state.authMessage = "";
+    if (record.startedAt === undefined) dropKey(ACCESS_KEY);
+    else writeJson(ACCESS_KEY, { startedAt: record.startedAt, message: record.message });
     show();
   }
 
@@ -514,6 +549,7 @@ export function createController({
     if (key) dropKey(key);
     unsubscribe();
     clearSelection();
+    state.session = "none";
     state.principal = null;
     state.cases = [];
     state.people = [];
@@ -665,6 +701,23 @@ export function createController({
 
   // ---- editing and saving -------------------------------------------------
 
+  // A retained save envelope carries the answers it was built from. It is only
+  // meaningful while those answers are still the draft: re-sending it after a
+  // further edit would commit the older text at its older expected revision
+  // and then be refreshed over, losing the newer typing without any error.
+  const staleSave = () =>
+    Boolean(
+      pendingAction?.save &&
+        JSON.stringify(pendingAction.action.payload?.answers ?? {}) !==
+          JSON.stringify(state.draftAnswers),
+    );
+
+  function forgetPendingSave() {
+    if (!pendingAction?.save) return;
+    pendingAction = null;
+    state.retryable = false;
+  }
+
   function editAnswers(patch) {
     const clean = pickAnswers(patch);
     if (!Object.keys(clean).length) return;
@@ -677,6 +730,9 @@ export function createController({
     state.dirty = true;
     state.saveState = "unsaved";
     state.error = null;
+    // The next save builds a fresh envelope from the new draft; the old one is
+    // dropped here so no banner can still offer to re-send it.
+    forgetPendingSave();
     show();
   }
 
@@ -771,6 +827,9 @@ export function createController({
     state.conflict = null;
     state.saveState = "unsaved";
     state.error = null;
+    // The chosen answers are a new draft, so any retained save envelope is as
+    // stale here as it is after a keystroke.
+    forgetPendingSave();
     show();
   }
 
@@ -797,6 +856,14 @@ export function createController({
 
   async function retryLast() {
     if (!pendingAction) return null;
+    // Second guard, for any path that changes the draft without going through
+    // editAnswers: an envelope that no longer matches the draft is dropped, not
+    // sent. Nothing is lost — the draft is still here and still saveable.
+    if (staleSave()) {
+      forgetPendingSave();
+      show();
+      return null;
+    }
     const { action, save } = pendingAction;
     return await dispatch(action, { save });
   }

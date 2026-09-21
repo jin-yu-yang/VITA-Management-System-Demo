@@ -48,6 +48,14 @@ export function setupNeeded() {
 SUPABASE_PUBLISHABLE_KEY=your-publishable-key</code></pre><p>Then restart the server with <code>npm start</code> and reload this page. Both values are the ones a browser is meant to hold; nothing private belongs in this file, and it is never committed.</p><p class="field-note">See <code>docs/setup.md</code> for the database migrations and workspace setup that come before this step.</p></section></main>`;
 }
 
+// The server could not be reached while establishing who this visitor is.
+// Showing the sign-in form here would be a guess — and a misleading one for
+// someone who is already signed in — so this says what is actually known and
+// offers another attempt. Focus and `online` events retry on their own too.
+export function unreachableScreen(state) {
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">NO CONNECTION</span><h1>ViTally cannot reach the server</h1><p>${esc(state.error?.message ?? "The demo cannot reach the server. Check the connection.")}</p></div><div class="panel"><p>You are not signed out — this browser simply could not check. Nothing has been lost, and nothing was sent.</p>${button(`${icon("refresh")} Try again`, "retry-connection", "primary full")}<p class="field-note">This page also retries by itself when the connection returns or when you come back to this window.</p></div></main>`;
+}
+
 // Signed in, but this account has no active membership in a workspace.
 export function noAccessScreen(state) {
   return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("lock")}</div><div class="page-intro centered"><span class="overline">NOT ON THIS ROSTER</span><h1>This account has no access</h1><p>${esc(state.error?.message ?? "You do not have access to this step.")}</p></div><div class="panel"><p>ViTally is a closed demo: an organiser adds each address before it can be used. Ask the person running this session to add yours, then sign in again.</p>${button("Sign out", "sign-out", "primary full")}</div></main>`;

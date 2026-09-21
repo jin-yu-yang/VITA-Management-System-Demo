@@ -105,6 +105,11 @@ test("case actions apply the shared check order against real Supabase", async (t
         );
         assert.equal(submitted.revision, 4);
         assert.equal((await caseRow(f, created.caseId)).stage, "received");
+        // Receipt is not verification: the intake checks are their own action.
+        assert.equal(
+          (await caseRow(f, created.caseId)).intake_verified,
+          false,
+        );
         const verified = await f.act(
           f.presenter,
           created.caseId,

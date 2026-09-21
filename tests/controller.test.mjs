@@ -419,6 +419,169 @@ test("a failed save keeps the draft editable and retries the identical envelope"
   controller.stop();
 });
 
+test("a retained envelope never outlives the answers it was built from", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "First try" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
+  assert.equal(controller.getState().retryable, true);
+  // The person keeps typing while the save is still unsent.
+  controller.editAnswers({ firstName: "Newer answer" });
+  assert.equal(
+    controller.getState().retryable,
+    false,
+    "no banner may still offer to re-send the older answers",
+  );
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(store.writes.length, 1, "the stale envelope is never re-sent");
+  assert.equal(controller.getState().draftAnswers.firstName, "Newer answer");
+  assert.equal(controller.getState().dirty, true);
+  // Saving now sends the newer answers under a fresh envelope.
+  await controller.saveAnswers();
+  assert.equal(store.writes.length, 2);
+  assert.notEqual(store.writes[1].actionId, store.writes[0].actionId);
+  assert.equal(store.writes[1].payload.answers.firstName, "Newer answer");
+  assert.equal(controller.getState().savedCase.answers.firstName, "Newer answer");
+  controller.stop();
+});
+
+test("an unreachable server is never shown as a sign-in form, and retries by itself", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  let reachable = false;
+  const auth = {
+    ...idleAuth(),
+    getSession: async () => {
+      if (!reachable)
+        throw Object.assign(
+          new Error("The demo cannot reach the server. Check the connection."),
+          { code: "OFFLINE" },
+        );
+      return { user: { id: "user-1" } };
+    },
+  };
+  const { controller, events } = build({ store, auth });
+  await controller.start();
+  let state = controller.getState();
+  assert.equal(state.session, "unknown", "whether they are signed in is not known");
+  assert.equal(state.principal, null);
+  assert.equal(state.error.code, "OFFLINE");
+  assert.equal(store.calls.length, 0, "nothing is read and nothing is subscribed");
+  assert.equal(store.subscriptions, 0);
+  // Coming back to the window re-attempts the identity load.
+  await events.emit("focus");
+  assert.equal(controller.getState().session, "unknown");
+  reachable = true;
+  await events.emit("online");
+  state = controller.getState();
+  assert.equal(state.session, "present");
+  assert.equal(state.principal.userId, "user-1");
+  assert.equal(state.error, null);
+  assert.equal(state.cases.length, 1);
+  assert.equal(store.subscriptions, 1);
+  controller.stop();
+});
+
+test("a signed-in visitor the server cannot identify is not signed out either", async () => {
+  const store = fakeStore({
+    principal: Object.assign(new Error("offline"), { code: "OFFLINE" }),
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  const state = controller.getState();
+  assert.equal(state.session, "present", "the session was read; the principal was not");
+  assert.equal(state.principal, null);
+  assert.equal(state.error.code, "OFFLINE");
+  assert.equal(store.subscriptions, 0);
+  // Signing out is the one thing that makes the sign-in form right again.
+  await controller.signOut();
+  assert.equal(controller.getState().session, "none");
+  controller.stop();
+});
+
+test("a corrected email address is the one bound, even inside the cooldown", async () => {
+  const session = fakeSession();
+  let now = 2_000_000;
+  const sends = [];
+  const verified = [];
+  const auth = {
+    getSession: async () => null,
+    subscribe: () => () => {},
+    signOut: async () => {},
+    cooldownRemaining: () => 0,
+    sendCode: async (email) => {
+      sends.push(email);
+      return {
+        state: "code_entry",
+        message: "If this address is eligible, check your inbox for a sign-in code.",
+        retryAfterSeconds: 65,
+      };
+    },
+    verifyCode: async (email, code) => {
+      verified.push([email, code]);
+    },
+  };
+  const { controller } = build({
+    store: fakeStore(),
+    auth,
+    sessionStorage: session,
+    clock: () => now,
+    cooldownSeconds: 65,
+  });
+  await controller.start();
+  await controller.sendCode("mei@exmaple.org");
+  assert.equal(controller.getState().authEmail, "mei@exmaple.org");
+  // The typo is noticed and corrected while the cooldown is still running.
+  controller.restartSignIn();
+  assert.equal(controller.getState().authStep, "email");
+  assert.equal(controller.getState().authEmail, "");
+  now += 5_000;
+  assert.equal(controller.cooldownRemaining(), 60, "R38: the cooldown still runs");
+  const answer = await controller.sendCode("mei@example.org");
+  assert.equal(sends.length, 1, "nothing leaves inside the cooldown");
+  assert.equal(
+    answer.message,
+    "If this address is eligible, check your inbox for a sign-in code.",
+  );
+  assert.equal(answer.retryAfterSeconds, 60);
+  assert.equal(controller.getState().authStep, "code");
+  assert.equal(
+    controller.getState().authEmail,
+    "mei@example.org",
+    "the corrected address is bound, not the typo",
+  );
+  await controller.verifyCode("123456");
+  assert.deepEqual(verified, [["mei@example.org", "123456"]]);
+  controller.stop();
+
+  // And the binding survives a reload, like the cooldown itself.
+  now += 1_000;
+  const again = build({
+    store: fakeStore(),
+    auth: { ...auth, getSession: async () => null },
+    sessionStorage: session,
+    clock: () => now,
+    cooldownSeconds: 65,
+  });
+  session.setItem(
+    "vitally:access:v1",
+    JSON.stringify({
+      startedAt: now - 5_000,
+      email: "mei@example.org",
+      message: "If this address is eligible, check your inbox for a sign-in code.",
+    }),
+  );
+  await again.controller.start();
+  assert.equal(again.controller.getState().authEmail, "mei@example.org");
+  again.controller.stop();
+});
+
 test("an action that succeeded is never reported as failed by a later read", async () => {
   const store = fakeStore({
     cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
