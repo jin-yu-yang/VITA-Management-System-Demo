@@ -529,7 +529,10 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           reviewId: done.reviews[0].id,
           outcome: "reached",
         });
-        // A completed conversation is not repeated.
+        // A completed conversation is not repeated — and only the reviewer
+        // holding the case is told so. Everybody else answers exactly as they
+        // did while it was pending, so the error code discloses nothing about
+        // whether the client has been spoken to.
         for (const outcome of ["no_answer", "reached", "closure_requested"])
           await assert.rejects(
             () =>
@@ -539,6 +542,39 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
               }),
             rejected("INVALID_TRANSITION"),
           );
+        await assert.rejects(
+          () =>
+            f.act(
+              f.presenter,
+              caseId,
+              f.sam,
+              "RECORD_REVIEW_CONTACT",
+              REVIEW_PAYLOADS.RECORD_REVIEW_CONTACT,
+            ),
+          rejected("INELIGIBLE"),
+        );
+        await assert.rejects(
+          () =>
+            f.act(
+              f.presenter,
+              caseId,
+              riley,
+              "RECORD_REVIEW_CONTACT",
+              REVIEW_PAYLOADS.RECORD_REVIEW_CONTACT,
+            ),
+          rejected("FORBIDDEN"),
+        );
+        await assert.rejects(
+          () =>
+            f.act(
+              f.presenter,
+              caseId,
+              f.alex,
+              "RECORD_REVIEW_CONTACT",
+              REVIEW_PAYLOADS.RECORD_REVIEW_CONTACT,
+            ),
+          rejected("SELF_REVIEW"),
+        );
         // A request to close stays a contact record: closure is its own action.
         const closing = await f.preparedCase();
         await f.act(f.presenter, closing, f.morgan, "CLAIM_REVIEW", {});
@@ -776,7 +812,7 @@ test("review submission waits for documents, not for office contact", async (t) 
       },
     );
     await t.test(
-      "an unverified document blocks submission before any qualification",
+      "an unverified document blocks the preparer, after the qualification",
       async () => {
         const caseId = await f.readyCase();
         await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
@@ -787,12 +823,17 @@ test("review submission waits for documents, not for office contact", async (t) 
           "REQUEST_DOCUMENT",
           f.sampleRequest,
         );
-        // An open request blocks the hand-off for everybody, qualified or not:
-        // the blocker is case state the presenter can already read.
-        for (const personId of [f.alex, f.sam, f.morgan])
+        // Readiness answers last (contract step 7, Rulings R21 and R31): only
+        // this case's preparer is told a document is still open; everybody
+        // else is refused for the qualification or the assignment they lack.
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
+          rejected("INVALID_TRANSITION"),
+        );
+        for (const personId of [f.sam, f.morgan])
           await assert.rejects(
             () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
-            rejected("INVALID_TRANSITION"),
+            rejected("INELIGIBLE"),
           );
         await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
           filename: f.sampleFilename,
@@ -803,17 +844,15 @@ test("review submission waits for documents, not for office contact", async (t) 
           rejected("INVALID_TRANSITION"),
         );
         await f.act(f.presenter, caseId, f.alex, "VERIFY_DOCUMENT", {});
-        // With nothing blocking, the unqualified caller is refused for the
-        // qualification instead: step 6 answered before step 7.
-        await assert.rejects(
-          () => f.act(f.presenter, caseId, f.sam, "SUBMIT_REVIEW", {}),
-          rejected("INELIGIBLE"),
-        );
-        await assert.rejects(
-          () => f.act(f.presenter, caseId, f.morgan, "SUBMIT_REVIEW", {}),
-          rejected("INELIGIBLE"),
-        );
-        // An unverified intake could never reach this stage, and is refused too.
+        // With nothing blocking, the unqualified callers answer the same way
+        // as before: the blocker never changed what they are told.
+        for (const personId of [f.sam, f.morgan])
+          await assert.rejects(
+            () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
+            rejected("INELIGIBLE"),
+          );
+        // An unverified intake could never reach this stage, and is refused
+        // too — again only once the caller is this case's preparer.
         await f.sql("update public.cases set intake_verified=false where id=$1", [
           caseId,
         ]);
@@ -822,6 +861,11 @@ test("review submission waits for documents, not for office contact", async (t) 
             () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
             rejected("INVALID_TRANSITION"),
           );
+          for (const personId of [f.sam, f.morgan])
+            await assert.rejects(
+              () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
+              rejected("INELIGIBLE"),
+            );
         } finally {
           await f.sql(
             "update public.cases set intake_verified=true where id=$1",
@@ -861,6 +905,16 @@ test("review submission waits for documents, not for office contact", async (t) 
             }),
           rejected("INVALID_TRANSITION"),
         );
+        // The second hand-off orders its checks the same way: the blocker is
+        // the preparer's to see, and nobody else's.
+        for (const personId of [f.morgan, f.sam])
+          await assert.rejects(
+            () =>
+              f.act(f.presenter, caseId, personId, "RESUBMIT_REVIEW", {
+                resolution: RESOLUTION,
+              }),
+            rejected("INELIGIBLE"),
+          );
         await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
           filename: f.sampleFilename,
         });

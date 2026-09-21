@@ -286,18 +286,23 @@ begin
 end;
 $$;
 
--- Steps 6-8 per action. The preparer hands finished work to review: the stage,
--- the recorded intake and the unverified-document blocker are step 6, and the
--- case's own participating preparer is step 7.
+-- Steps 6-8 per action. The stage is step 6; the case's own participating
+-- preparer is step 7, and the readiness blockers come after it (Ruling R21 and
+-- R31, as 004 orders VERIFY_DOCUMENT and ESCALATE_CONTACT): a caller who is not
+-- this case's preparer learns nothing about its intake or its documents.
 create or replace function vitally_private.act_submit_review(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_version bigint;
 begin
- if p_case.stage<>'preparing' or not p_case.intake_verified then
+ if p_case.stage<>'preparing' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_preparer(p_case,p_person);
+ -- Readiness: recorded intake, then no document still waiting on anybody.
+ if not p_case.intake_verified then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
  perform vitally_private.require_documents_settled(p_case);
- perform vitally_private.require_case_preparer(p_case,p_person);
  v_version=vitally_private.hand_to_review(p_case);
  -- The milestone is a manual one in external tax software; the client is told
  -- what happened in plain language, with no amounts and no findings.
@@ -357,8 +362,9 @@ begin
  if p_case.stage<>'corrections_required' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- perform vitally_private.require_documents_settled(p_case);
  perform vitally_private.require_case_preparer(p_case,p_person);
+ -- Readiness, after the assignment, exactly as the first hand-off orders it.
+ perform vitally_private.require_documents_settled(p_case);
  select * into v_review from public.reviews
   where workspace_id=p_case.workspace_id and case_id=p_case.id and status='corrections_requested'
   order by preparation_version desc,created_at desc limit 1 for update;
@@ -405,13 +411,15 @@ begin
  if p_case.stage<>'review_approved' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
+ -- The reviewer holding the case answers first: nobody else locks the attempt
+ -- or learns from the error code whether the conversation already happened.
+ perform vitally_private.require_case_reviewer(p_case,p_person);
  select * into v_review from public.reviews
   where workspace_id=p_case.workspace_id and case_id=p_case.id and status='approved'
   order by created_at desc limit 1 for update;
  if v_review.client_contact_status is distinct from 'pending' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- perform vitally_private.require_case_reviewer(p_case,p_person);
  update public.reviews set client_contact_outcome=p_payload->>'outcome',client_contact_note=p_payload->>'note',
   client_contact_status=case when v_completed then 'completed' else client_contact_status end,
   client_contacted_at=case when v_completed then now() else client_contacted_at end
