@@ -42,9 +42,17 @@ function fakeStore({
   principal = { userId: "user-1", workspaceId: "w1", access: "applicant" },
   cases = [],
   people = [],
+  assistance = [],
+  workspace = {
+    id: "w1",
+    fixtureGeneration: 3,
+    defaultFollowupPersonId: "person-sam",
+  },
 } = {}) {
   const records = new Map(cases.map((entry) => [entry.id, entry]));
+  const items = new Map(assistance.map((entry) => [entry.id, entry]));
   const store = {
+    workspace,
     calls: [],
     writes: [],
     subscriptions: 0,
@@ -130,6 +138,79 @@ function fakeStore({
         revision: next.revision,
       };
     },
+    items,
+    async listAssistance() {
+      store.calls.push("listAssistance");
+      return [...items.values()];
+    },
+    async actAssistance(request) {
+      store.calls.push(`actAssistance:${request.type}`);
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      const current = items.get(request.itemId);
+      items.set(request.itemId, {
+        ...current,
+        revision: current.revision + 1,
+        status: request.type === "CLAIM" ? "assigned" : "resolved",
+        assigneeId:
+          request.type === "CLAIM" ? request.personId : current.assigneeId,
+        resolutionNote: request.note ?? current.resolutionNote,
+      });
+    },
+    async getWorkspace() {
+      store.calls.push("getWorkspace");
+      return { ...store.workspace };
+    },
+    // The demonstration set, as the database treats it: the fixture cases are
+    // replaced by new ones with new ids, and the generation moves once.
+    async resetFixtures(request) {
+      store.calls.push("resetFixtures");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      if (store.seeded.has(request.actionId)) return;
+      store.seeded.add(request.actionId);
+      for (const [id, record] of [...records])
+        if (record.fixture) records.delete(id);
+      store.workspace = {
+        ...store.workspace,
+        fixtureGeneration: store.workspace.fixtureGeneration + 1,
+      };
+      const id = `fixture-${store.workspace.fixtureGeneration}`;
+      records.set(id, {
+        id,
+        reference: `VT-SEED-${store.workspace.fixtureGeneration}AAA`,
+        stage: "preparation_ready",
+        revision: 4,
+        fixture: true,
+        answers: {},
+      });
+    },
+    async loadCheckpoint(request) {
+      store.calls.push("loadCheckpoint");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      if (store.seeded.has(request.actionId)) return;
+      store.seeded.add(request.actionId);
+      const record = records.get(request.caseId);
+      records.set(request.caseId, {
+        ...record,
+        revision: record.revision + 1,
+        stage: "preparation_ready",
+      });
+    },
+    seeded: new Set(),
     subscribe(handlers) {
       store.subscriptions += 1;
       store.handlers = handlers;
@@ -627,6 +708,102 @@ test("panels opened on one application do not follow to another", async () => {
   controller.stop();
 });
 
+test("a refusal nobody has dismissed survives an unrelated background re-read", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "Mei" });
+  store.failNext = Object.assign(
+    new Error("The demo cannot reach the server. Check the connection."),
+    { code: "OFFLINE" },
+  );
+  await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
+  const shown = controller.getState().error;
+  assert.equal(shown.code, "OFFLINE");
+  assert.match(shown.message, /cannot reach the server/);
+
+  // Somebody else's window resets the sample cases. That says nothing about
+  // this person's save, and must not answer for it.
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
+  assert.deepEqual(controller.getState().error, shown, "the reason is still on screen");
+  assert.equal(controller.getState().saveState, "failed");
+
+  // Nor does a reconnect, a window focus or any other re-read.
+  await controller.refresh();
+  assert.deepEqual(controller.getState().error, shown);
+
+  // Their own next action is what clears it.
+  controller.editAnswers({ lastName: "Chen" });
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("each way a person can answer a refusal clears it", async () => {
+  const fresh = async () => {
+    const store = fakeStore({
+      cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+    });
+    const { controller } = build({ store });
+    await controller.start();
+    await controller.selectCase("case-a");
+    store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+    await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }));
+    assert.equal(controller.getState().error.code, "OFFLINE");
+    return { store, controller };
+  };
+
+  const dismissed = await fresh();
+  dismissed.controller.dismissError();
+  assert.equal(dismissed.controller.getState().error, null, "the dismiss control");
+  dismissed.controller.stop();
+
+  const navigated = await fresh();
+  navigated.controller.navigate("applications");
+  assert.equal(navigated.controller.getState().error, null, "navigation");
+  navigated.controller.stop();
+
+  const acted = await fresh();
+  await acted.controller.runAction("SUBMIT", { confirmed: true });
+  assert.equal(acted.controller.getState().error, null, "the next action");
+  acted.controller.stop();
+
+  const saved = await fresh();
+  saved.controller.editAnswers({ firstName: "Mei" });
+  await saved.controller.saveAnswers();
+  assert.equal(saved.controller.getState().error, null, "a save");
+  saved.controller.stop();
+});
+
+test("a conflict explains itself and its own re-read does not erase the explanation", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparing", revision: 3, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  // The office's work moved the revision a moment ago.
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.runAction("RESPOND_DOCUMENT", {
+      requestId: "req-1",
+      filename: "demo-mileage-record-2025.pdf",
+    }),
+    (error) => error.code === "CONFLICT",
+  );
+  // The post-conflict re-read is what shows the newest case; it must not take
+  // the sentence explaining the refusal with it.
+  const after = controller.getState();
+  assert.equal(after.error.code, "CONFLICT");
+  assert.match(after.error.message, /someone else changed this/i);
+  // And a background change arriving afterwards leaves it alone too.
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
+  assert.equal(controller.getState().error.code, "CONFLICT");
+  controller.stop();
+});
+
 test("a rejected action is not retryable and a remote conflict refreshes the case", async () => {
   const store = fakeStore({
     cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
@@ -696,6 +873,94 @@ test("a presenter's selected person travels with the action", async () => {
   assert.equal(store.writes[0].personId, "person-1");
   assert.equal(store.writes[0].expectedRevision, 2);
   controller.stop();
+});
+
+test("a presenter opens a case on the staff workspace and claims it as the chosen person", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      { id: "alex", name: "Alex", capabilities: ["prepare"] },
+      { id: "morgan", name: "Morgan", capabilities: ["review"] },
+    ],
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "review_ready",
+        revision: 4,
+        answers: {},
+        preparerId: "alex",
+        reviewerId: null,
+        participants: ["alex"],
+      },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().screen, "staff");
+  await controller.selectCase("case-a");
+  assert.equal(
+    controller.getState().screen,
+    "staff-case",
+    "a presenter never lands on the client's progress screen",
+  );
+  controller.selectPerson("morgan");
+  // The board's claim button sends exactly this: the canonical type, an empty
+  // payload, and the persona this window is acting as.
+  await controller.runAction("CLAIM_REVIEW", {});
+  assert.deepEqual(
+    { ...store.writes[0], actionId: "id" },
+    {
+      actionId: "id",
+      caseId: "case-a",
+      expectedRevision: 4,
+      personId: "morgan",
+      type: "CLAIM_REVIEW",
+      payload: {},
+    },
+  );
+  controller.stop();
+});
+
+test("the board's filters are this window's, kept per user and dropped on sign-out", async () => {
+  const shared = fakeSession();
+  const staffCases = [
+    { id: "case-a", reference: "VT-AAAA-BBBB", stage: "review_ready", revision: 4, answers: {} },
+  ];
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: staffCases,
+  });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  assert.deepEqual(first.controller.getState().boardFilters, {});
+  first.controller.setBoardFilter("status", "available");
+  first.controller.setBoardFilter("language", "Cantonese");
+  first.controller.selectPerson("alex");
+  assert.deepEqual(first.controller.getState().boardFilters, {
+    status: "available",
+    language: "Cantonese",
+  });
+  first.controller.stop();
+
+  // A reload of the same window restores them, next to the persona.
+  const again = build({ store, sessionStorage: shared });
+  await again.controller.start();
+  assert.deepEqual(again.controller.getState().boardFilters, {
+    status: "available",
+    language: "Cantonese",
+  });
+  assert.equal(again.controller.getState().selectedPersonId, "alex");
+  again.controller.clearBoardFilters();
+  assert.deepEqual(again.controller.getState().boardFilters, {});
+  again.controller.setBoardFilter("status", "mine");
+
+  // Signing out drops them with everything else this window held.
+  await again.controller.signOut();
+  assert.deepEqual(again.controller.getState().boardFilters, {});
+  assert.equal(shared.raw("vitally:client:v1:p1"), null);
+  again.controller.stop();
 });
 
 test("starting a new application is explicit, idempotent and selects the new case", async () => {
@@ -976,5 +1241,573 @@ test("an invalid code is a distinct failure and a verified visitor loads their o
   assert.equal(controller.getState().principal.userId, "user-1");
   assert.equal(controller.getState().cases.length, 1);
   assert.equal(controller.getState().screen, "applications");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The office: assisted intake and assistance requests (Ruling R52)
+// ---------------------------------------------------------------------------
+
+const officeStore = (extra = {}) =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      {
+        id: "sam",
+        name: "Sam",
+        capabilities: ["admin", "assist", "followup", "receive_documents"],
+      },
+    ],
+    ...extra,
+  });
+
+test("an assisted application is created once, as the chosen office persona", async () => {
+  const store = officeStore();
+  let next = 0;
+  const { controller, sessionStorage } = build({
+    store,
+    newActionId: () => `action-${(next += 1)}`,
+  });
+  await controller.start();
+  controller.selectPerson("sam");
+  const answers = { firstName: "Mei", language: "Mandarin" };
+  // A transport failure keeps the pending action id, exactly like a client's.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(
+    controller.createAssistedCase({ answers }),
+    (error) => error.code === "OFFLINE",
+  );
+  assert.equal(store.writes[0].actionId, "action-1");
+  assert.ok(
+    sessionStorage.raw("vitally:client:v1:p1").includes("action-1"),
+    "the pending action id survives in window state",
+  );
+  // The retry is the same request, and a second click while one is in flight
+  // sends nothing at all.
+  const first = controller.createAssistedCase({ answers });
+  const second = controller.createAssistedCase({ answers });
+  await Promise.all([first, second]);
+  assert.equal(store.writes.length, 2, "a second click while pending is a no-op");
+  assert.deepEqual(store.writes[1], {
+    actionId: "action-1",
+    mode: "assisted",
+    personId: "sam",
+    answers: { firstName: "Mei", language: "Mandarin" },
+  });
+  // The new case is open, on the staff workspace, and the id is spent.
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, state.savedCase.id);
+  assert.equal(state.screen, "staff-case");
+  assert.ok(!sessionStorage.raw("vitally:client:v1:p1").includes("action-1"));
+  // Only intake answers travel: nothing else can be smuggled into a new case.
+  await controller.createAssistedCase({
+    answers: { firstName: "Jordan", ownerUserId: "someone", stage: "closed" },
+  });
+  assert.deepEqual(store.writes[2].answers, { firstName: "Jordan" });
+  assert.equal(store.writes[2].actionId, "action-2");
+  controller.stop();
+});
+
+test("an assisted application needs a presenter with a chosen persona", async () => {
+  const office = officeStore();
+  const { controller } = build({ store: office });
+  await controller.start();
+  await assert.rejects(
+    controller.createAssistedCase({ answers: {} }),
+    (error) => error.code === "VALIDATION",
+  );
+  assert.equal(office.writes.length, 0, "nothing is sent without a persona");
+  controller.stop();
+
+  const client = fakeStore();
+  const asClient = build({ store: client });
+  await asClient.controller.start();
+  await assert.rejects(
+    asClient.controller.createAssistedCase({ answers: {} }),
+    (error) => error.code === "FORBIDDEN",
+  );
+  assert.equal(client.writes.length, 0);
+  asClient.controller.stop();
+});
+
+test("assistance is loaded for a presenter only, and refreshed when its table changes", async () => {
+  const applicant = fakeStore();
+  const asClient = build({ store: applicant });
+  await asClient.controller.start();
+  assert.ok(!applicant.calls.includes("listAssistance"));
+  assert.deepEqual(asClient.controller.getState().assistance, []);
+  asClient.controller.stop();
+
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    1,
+  );
+  assert.equal(controller.getState().assistance[0].id, "item-1");
+  // A change naming the assistance table re-reads the list, and nothing else.
+  store.items.set("item-1", {
+    id: "item-1",
+    title: "Help with the forms",
+    status: "assigned",
+    revision: 2,
+  });
+  const listReads = store.calls.filter((entry) => entry === "listCases").length;
+  await store.handlers.onChange({
+    table: "assistance_items",
+    eventType: "UPDATE",
+    id: "item-1",
+    caseId: null,
+  });
+  assert.equal(controller.getState().assistance[0].status, "assigned");
+  assert.equal(
+    store.calls.filter((entry) => entry === "listCases").length,
+    listReads,
+    "an assistance change is not a case change",
+  );
+  // A reconnect re-reads it too: a subscription is never the only way back.
+  const assistanceReads = store.calls.filter(
+    (entry) => entry === "listAssistance",
+  ).length;
+  await controller.refresh();
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    assistanceReads + 1,
+  );
+  // Signing out drops the list with everything else.
+  await controller.signOut();
+  assert.deepEqual(controller.getState().assistance, []);
+  controller.stop();
+});
+
+test("an assistance action carries the item's own revision and re-reads the list", async () => {
+  const store = officeStore({
+    assistance: [
+      {
+        id: "item-1",
+        title: "Help with the forms",
+        status: "open",
+        revision: 4,
+        assigneeId: null,
+      },
+    ],
+  });
+  let next = 0;
+  const { controller } = build({
+    store,
+    newActionId: () => `action-${(next += 1)}`,
+  });
+  await controller.start();
+  controller.selectPerson("sam");
+  await controller.runAssistanceAction("CLAIM", "item-1");
+  assert.deepEqual(store.writes[0], {
+    actionId: "action-1",
+    itemId: "item-1",
+    expectedRevision: 4,
+    personId: "sam",
+    type: "CLAIM",
+    note: null,
+  });
+  // The list is re-read, so the card now shows the new status and revision.
+  assert.equal(controller.getState().assistance[0].status, "assigned");
+  assert.equal(controller.getState().assistance[0].revision, 5);
+  // A resolution carries the note and the revision the claim produced.
+  await controller.runAssistanceAction("RESOLVE", "item-1", "Filled it in together.");
+  assert.deepEqual(store.writes[1], {
+    actionId: "action-2",
+    itemId: "item-1",
+    expectedRevision: 5,
+    personId: "sam",
+    type: "RESOLVE",
+    note: "Filled it in together.",
+  });
+  assert.equal(controller.getState().assistance[0].status, "resolved");
+  assert.equal(controller.getState().busy, false);
+  // A claim never carries a note, whatever it is handed.
+  store.items.set("item-2", {
+    id: "item-2",
+    title: "Another form",
+    status: "open",
+    revision: 1,
+  });
+  await store.handlers.onChange({
+    table: "assistance_items",
+    eventType: "INSERT",
+    id: "item-2",
+    caseId: null,
+  });
+  await controller.runAssistanceAction("CLAIM", "item-2", "smuggled");
+  assert.equal(store.writes[2].note, null);
+  controller.stop();
+});
+
+test("a stale assistance item is a conflict in the words of the item", async () => {
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  const reads = store.calls.filter((entry) => entry === "listAssistance").length;
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.runAssistanceAction("CLAIM", "item-1"),
+    (error) => error.code === "CONFLICT",
+  );
+  const state = controller.getState();
+  assert.equal(state.error.code, "CONFLICT");
+  assert.match(state.error.message, /Someone else changed this item/);
+  assert.equal(state.retryable, false, "an assistance action is never re-sent");
+  assert.equal(state.busy, false);
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    reads + 1,
+    "the newest version is read before the failure is shown",
+  );
+  controller.stop();
+});
+
+test("an unknown assistance type, or an item that is gone, never reaches the store", async () => {
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  for (const type of ["RELEASE", "claim", "CLOSE_CASE", "toString", ""])
+    await assert.rejects(
+      controller.runAssistanceAction(type, "item-1"),
+      (error) => error.code === "VALIDATION",
+      type,
+    );
+  await assert.rejects(
+    controller.runAssistanceAction("CLAIM", "item-missing"),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.equal(store.writes.length, 0);
+  controller.stop();
+});
+
+test("the office answers for a walk-in client as its own persona", async () => {
+  const store = officeStore({
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "draft",
+        revision: 2,
+        ownerUserId: null,
+        answers: {},
+      },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "Mei" });
+  await controller.saveAnswers();
+  // The database refuses SAVE_ANSWERS from a presenter who sends no person at
+  // all, and accepts it only from an `admin` one on an owner-less draft.
+  assert.equal(store.writes[0].type, "SAVE_ANSWERS");
+  assert.equal(store.writes[0].personId, "sam");
+  assert.equal(store.writes[0].expectedRevision, 2);
+  assert.deepEqual(store.writes[0].payload, { answers: { firstName: "Mei" } });
+  // A client still answers for themselves, with no persona at all.
+  const asClient = build({
+    store: fakeStore({
+      cases: [
+        { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} },
+      ],
+    }),
+  });
+  await asClient.controller.start();
+  await asClient.controller.selectCase("case-a");
+  asClient.controller.editAnswers({ firstName: "Mei" });
+  await asClient.controller.saveAnswers();
+  assert.equal(asClient.controller.getState().savedCase.answers.firstName, "Mei");
+  controller.stop();
+  asClient.controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The presenter's own two controls
+// ---------------------------------------------------------------------------
+
+const presenterStore = (overrides = {}) =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "person-sam", name: "Sam", capabilities: ["admin"] }],
+    ...overrides,
+  });
+
+const sampleCase = (overrides = {}) => ({
+  id: "fixture-a",
+  reference: "VT-SEED-1AAA",
+  stage: "review_approved",
+  revision: 11,
+  fixture: true,
+  answers: {},
+  ...overrides,
+});
+
+test("a presenter start reads the workspace the fixture generation lives on", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.ok(store.calls.includes("getWorkspace"));
+  assert.deepEqual(controller.getState().workspace, {
+    id: "w1",
+    fixtureGeneration: 3,
+    defaultFollowupPersonId: "person-sam",
+  });
+  controller.stop();
+
+  // A client has no panel, so the workspace is never read for them.
+  const clientStore = fakeStore({ cases: [] });
+  const asClient = build({ store: clientStore });
+  await asClient.controller.start();
+  assert.ok(!clientStore.calls.includes("getWorkspace"));
+  assert.equal(asClient.controller.getState().workspace, null);
+  asClient.controller.stop();
+});
+
+test("a reset is one request, retried as itself and never sent twice", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  assert.equal(controller.getState().selectedCaseId, "fixture-a");
+
+  // The first attempt cannot be confirmed, so the envelope is kept.
+  store.failNext = Object.assign(new Error("timeout"), { code: "OFFLINE" });
+  await assert.rejects(() => controller.resetFixtures(), { code: "OFFLINE" });
+  const first = store.writes.at(-1);
+  assert.ok(first.actionId, "a reset carries an action id");
+  assert.equal(controller.getState().error.code, "OFFLINE");
+
+  // Pressing it again re-sends the identical request, which is what lets the
+  // server answer with its stored receipt instead of resetting twice.
+  await controller.resetFixtures();
+  assert.equal(store.writes.at(-1).actionId, first.actionId);
+  assert.equal(
+    store.calls.filter((entry) => entry === "resetFixtures").length,
+    2,
+  );
+  assert.equal(controller.getState().workspace.fixtureGeneration, 4);
+  // The sample case that was open is gone, so the selection goes with it and
+  // the window is told why.
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().savedCase, null);
+  assert.equal(controller.getState().screen, "staff");
+  assert.match(controller.getState().notice, /Sample cases were reset/);
+  assert.match(controller.getState().notice, /no longer there/);
+
+  // A third press is a new request: the last one is spent.
+  await controller.resetFixtures();
+  assert.notEqual(store.writes.at(-1).actionId, first.actionId);
+  assert.equal(controller.getState().workspace.fixtureGeneration, 5);
+  assert.equal(controller.getState().notice, "Sample cases were reset.");
+  controller.stop();
+});
+
+test("a refused reset spends its envelope rather than repeating it", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  store.failNext = Object.assign(new Error("no"), { code: "FORBIDDEN" });
+  await assert.rejects(() => controller.resetFixtures(), { code: "FORBIDDEN" });
+  const refused = store.writes.at(-1).actionId;
+  await controller.resetFixtures();
+  assert.notEqual(
+    store.writes.at(-1).actionId,
+    refused,
+    "a refusal is final, so the retry is a new request",
+  );
+  controller.stop();
+});
+
+test("an applicant can neither reset the samples nor load a checkpoint", async () => {
+  const store = fakeStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(() => controller.resetFixtures(), { code: "FORBIDDEN" });
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({
+        caseId: "fixture-a",
+        checkpoint: "intake_ready",
+      }),
+    { code: "FORBIDDEN" },
+  );
+  assert.deepEqual(store.writes, [], "nothing privileged is ever sent");
+  assert.ok(!store.calls.includes("resetFixtures"));
+  assert.ok(!store.calls.includes("loadCheckpoint"));
+  controller.stop();
+});
+
+test("a checkpoint carries the case's own revision and the chosen point", async () => {
+  const store = presenterStore({
+    cases: [sampleCase(), sampleCase({ id: "case-b", fixture: false })],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "ready_for_review",
+  });
+  assert.deepEqual(
+    { ...store.writes.at(-1), actionId: "any" },
+    {
+      actionId: "any",
+      caseId: "fixture-a",
+      expectedRevision: 11,
+      checkpoint: "ready_for_review",
+    },
+  );
+  // The case stays itself: a checkpoint keeps its id and its reference.
+  assert.equal(controller.getState().cases[0].id, "fixture-a");
+  assert.equal(controller.getState().notice, null);
+  assert.ok(store.calls.includes("getWorkspace"));
+
+  // A name the database does not know never leaves the browser.
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "fixture-a", checkpoint: "all_done" }),
+    { code: "VALIDATION" },
+  );
+  // Neither does a case this class created, or one that is not on screen.
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "case-b", checkpoint: "intake_ready" }),
+    { code: "VALIDATION" },
+  );
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({ caseId: "case-zz", checkpoint: "intake_ready" }),
+    { code: "NOT_FOUND" },
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "loadCheckpoint").length,
+    1,
+    "a refusal reaches no store call",
+  );
+  controller.stop();
+});
+
+test("a checkpoint retry is the same request until the choice changes", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  store.failNext = Object.assign(new Error("gone"), { code: "SERVER_ERROR" });
+  await assert.rejects(
+    () =>
+      controller.loadCheckpoint({
+        caseId: "fixture-a",
+        checkpoint: "intake_ready",
+      }),
+    { code: "SERVER_ERROR" },
+  );
+  const first = store.writes.at(-1).actionId;
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "intake_ready",
+  });
+  assert.equal(
+    store.writes.at(-1).actionId,
+    first,
+    "the retry is the same request",
+  );
+  // A different point in the story is a different request entirely.
+  await controller.loadCheckpoint({
+    caseId: "fixture-a",
+    checkpoint: "document_requested",
+  });
+  assert.notEqual(store.writes.at(-1).actionId, first);
+  controller.stop();
+});
+
+test("the shared generation signal refetches everything it could have replaced", async () => {
+  const store = presenterStore({
+    cases: [sampleCase()],
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  const before = {
+    cases: store.calls.filter((entry) => entry === "listCases").length,
+    workspace: store.calls.filter((entry) => entry === "getWorkspace").length,
+    assistance: store.calls.filter((entry) => entry === "listAssistance").length,
+  };
+  // Somebody else reset the samples: the row that moved is the workspace, and
+  // it names no case at all.
+  store.records.delete("fixture-a");
+  store.workspace = { ...store.workspace, fixtureGeneration: 9 };
+  await store.handlers.onChange({
+    table: "workspaces",
+    eventType: "UPDATE",
+    id: "w1",
+    caseId: null,
+  });
+  assert.equal(
+    store.calls.filter((entry) => entry === "listCases").length,
+    before.cases + 1,
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "getWorkspace").length,
+    before.workspace + 1,
+  );
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    before.assistance + 1,
+  );
+  assert.equal(controller.getState().workspace.fixtureGeneration, 9);
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "staff");
+  assert.match(controller.getState().notice, /Sample cases were reset/);
+  assert.equal(controller.getState().error, null, "a reset is not a failure");
+  // Dismissing clears it.
+  controller.dismissError();
+  assert.equal(controller.getState().notice, null);
+  controller.stop();
+});
+
+test("a generation signal with the open case still there keeps the selection", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("fixture-a");
+  await store.handlers.onChange({
+    table: "workspaces",
+    eventType: "UPDATE",
+    id: "w1",
+    caseId: null,
+  });
+  assert.equal(controller.getState().selectedCaseId, "fixture-a");
+  assert.equal(controller.getState().notice, null);
+  controller.stop();
+});
+
+test("signing out forgets the workspace and the notice with everything else", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.resetFixtures();
+  assert.ok(controller.getState().notice);
+  await controller.signOut();
+  assert.equal(controller.getState().workspace, null);
+  assert.equal(controller.getState().notice, null);
   controller.stop();
 });

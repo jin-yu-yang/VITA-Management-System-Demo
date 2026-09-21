@@ -1,5 +1,6 @@
-import { CASE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, CHECKPOINTS } from "./contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
+import { createWindowState } from "./window-state.mjs";
 
 // The one place browser state lives. It owns what is loaded, what is being
 // edited, and which action envelope is in flight; it renders nothing and knows
@@ -15,31 +16,50 @@ import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 //   * **An unknown outcome keeps its envelope.** A timed-out action is retried
 //     as the identical object — same action id, payload, persona and expected
 //     revision — so the server replays its receipt instead of acting twice.
-//   * **Window state is per window and per user.** Selection, screen, form step
-//     and open panels live in session storage under the authenticated user's
-//     id, so two windows disagree freely and two accounts never share a view.
+//   * **Window state is per window and per user.** Selection, screen, form step,
+//     open panels, the persona and the board's filters live in session storage
+//     under the authenticated user's id, so two windows disagree freely and two
+//     accounts never share a view. That storage is a collaborator of its own
+//     (`window-state.mjs`, Ruling R44); this file decides what the values mean.
 
-const SESSION_PREFIX = "vitally:client:v1:";
-const ACCESS_KEY = "vitally:access:v1";
-
-// Screens the applicant can be on. A restored value outside this list is
-// ignored rather than trusted.
+// Screens each principal can be on, first entry first. A restored value outside
+// the caller's own list is ignored rather than trusted — which is also what
+// stops a client screen from being restored for a presenter, and the reverse.
 const CLIENT_SCREENS = Object.freeze([
   "applications",
   "reference",
   "intake",
   "progress",
 ]);
+const STAFF_SCREENS = Object.freeze(["staff", "staff-case"]);
 
 // An action whose answer never arrived may or may not have been applied. Those
 // are the only failures worth retrying with the same envelope; a refusal is
 // final and its expected revision is already stale.
 const UNKNOWN_OUTCOME = Object.freeze(["OFFLINE", "SERVER_ERROR"]);
 
+// Assistance is its own workflow: its own RPC, its own revision and its own
+// list, beside the tax case rather than inside it (Ruling R22). Its two actions
+// therefore have their own vocabulary, checked here exactly as `CASE_ACTIONS`
+// is checked for a case action.
+const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+
 const CONFLICT_MESSAGE =
   "Someone else changed this application. The newest version is shown — check it and try again.";
+// The same event, in the words of the screen it lands on: staff read "case",
+// clients read "application", and neither ever sees a revision number.
+const STAFF_CONFLICT_MESSAGE =
+  "Someone else changed this case. The newest version is shown — check it and try again.";
+const ASSISTANCE_CONFLICT_MESSAGE =
+  "Someone else changed this item. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
+// What a window says when the demonstration set is rebuilt underneath it. The
+// signal is a workspace row, not a case, so this is the only way somebody
+// looking at a sample case learns why it is gone.
+const FIXTURES_RESET_NOTICE = "Sample cases were reset.";
+const FIXTURES_GONE_NOTICE =
+  "Sample cases were reset. The one you had open is no longer there.";
 
 function controllerError(code, message, cause) {
   return Object.assign(new Error(message, { cause }), { code });
@@ -89,6 +109,15 @@ export function createController({
     // Records
     cases: [],
     people: [],
+    // The caller's own workspace row, read only for a presenter: it is where
+    // the fixture generation lives, and the presenter panel shows it.
+    workspace: null,
+    // Something worth saying that is not a failure. The one thing that says
+    // it today is a fixture reset somebody else ran.
+    notice: null,
+    // The office's assistance requests. Presenter-only: an applicant never
+    // reads this table, so the list stays empty for them and is never fetched.
+    assistance: [],
     savedCase: null,
     draftAnswers: {},
     editBaseRevision: null,
@@ -105,11 +134,21 @@ export function createController({
     lookup: "",
     dialog: null,
     pendingCreateActionId: null,
+    // The staff board's filters, as chosen in this window. Only the choices a
+    // person made are held; the board fills in its own defaults for the rest.
+    boardFilters: {},
   };
+
+  // Everything this window remembers by itself, under one key per user.
+  const windowState = createWindowState({ sessionStorage, clock });
 
   // The envelope of the last action whose outcome is unknown. Kept as the very
   // object that was sent, because retrying a copy would be a second action.
   let pendingAction = null;
+  // The presenter's two requests, kept as the objects that were sent so a
+  // retry is the same request rather than a second one.
+  let pendingReset = null;
+  let pendingCheckpoint = null;
   let creating = false;
   let releaseStore = null;
   let releaseAuth = null;
@@ -119,64 +158,46 @@ export function createController({
   const show = () => render?.();
 
   // ---- window-local state ------------------------------------------------
+  //
+  // What is stored, and how, belongs to the collaborator; what the values mean
+  // — which screens exist, which of them this principal may be on — belongs
+  // here.
 
-  const readJson = (key) => {
-    try {
-      const raw = sessionStorage?.getItem?.(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  };
+  // Screens the current principal may be on, first entry first.
+  const screens = () =>
+    state.principal?.access === "presenter" ? STAFF_SCREENS : CLIENT_SCREENS;
 
-  const writeJson = (key, value) => {
-    try {
-      sessionStorage?.setItem?.(key, JSON.stringify(value));
-    } catch {
-      // A window with no session storage still works; it just forgets.
-    }
-  };
-
-  const dropKey = (key) => {
-    try {
-      sessionStorage?.removeItem?.(key);
-    } catch {
-      // Nothing to do: the value is already unreachable.
-    }
-  };
-
-  const sessionKey = () =>
-    state.principal ? `${SESSION_PREFIX}${state.principal.userId}` : null;
+  // Where "back to the list" goes for whoever is signed in.
+  const homeScreen = () => screens()[0];
 
   function persistSession() {
-    const key = sessionKey();
-    if (!key) return;
-    writeJson(key, {
+    if (!state.principal) return;
+    windowState.write(state.principal.userId, {
       screen: state.screen,
       selectedCaseId: state.selectedCaseId,
       selectedPersonId: state.selectedPersonId,
       formStep: state.formStep,
       openPanels: state.openPanels,
       pendingCreateActionId: state.pendingCreateActionId,
+      boardFilters: state.boardFilters,
     });
   }
 
   function restoreSession() {
-    const key = sessionKey();
-    const saved = key ? readJson(key) : null;
+    const saved = state.principal
+      ? windowState.read(state.principal.userId)
+      : null;
     if (!saved) return;
-    if (CLIENT_SCREENS.includes(saved.screen)) state.screen = saved.screen;
-    if (typeof saved.selectedCaseId === "string")
-      state.selectedCaseId = saved.selectedCaseId;
-    if (typeof saved.selectedPersonId === "string")
-      state.selectedPersonId = saved.selectedPersonId;
-    if (Number.isInteger(saved.formStep)) state.formStep = saved.formStep;
-    if (Array.isArray(saved.openPanels))
-      state.openPanels = saved.openPanels.filter(
-        (name) => typeof name === "string",
-      );
-    if (typeof saved.pendingCreateActionId === "string")
+    // Every field has already been checked for its shape; the screen is checked
+    // here, against the list this principal is allowed.
+    if (screens().includes(saved.screen)) state.screen = saved.screen;
+    if (saved.selectedCaseId) state.selectedCaseId = saved.selectedCaseId;
+    if (saved.selectedPersonId) state.selectedPersonId = saved.selectedPersonId;
+    if (saved.formStep !== undefined) state.formStep = saved.formStep;
+    if (saved.openPanels) state.openPanels = saved.openPanels;
+    if (saved.pendingCreateActionId)
       state.pendingCreateActionId = saved.pendingCreateActionId;
+    if (saved.boardFilters) state.boardFilters = saved.boardFilters;
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -187,19 +208,13 @@ export function createController({
   // cannot buy another send. It is per window, exactly like the rest of this
   // state, and holds no code or token.
 
-  const accessRecord = () => readJson(ACCESS_KEY) ?? {};
-
-  function storedRemaining() {
-    const { startedAt } = accessRecord();
-    if (!Number.isFinite(startedAt)) return 0;
-    return Math.max(
-      0,
-      Math.ceil((startedAt + cooldownSeconds * 1000 - clock()) / 1000),
-    );
-  }
+  const accessRecord = () => windowState.readAccess();
 
   const cooldownRemaining = () =>
-    Math.max(storedRemaining(), auth?.cooldownRemaining?.() ?? 0);
+    Math.max(
+      windowState.cooldownRemaining(cooldownSeconds),
+      auth?.cooldownRemaining?.() ?? 0,
+    );
 
   // ---- reading -----------------------------------------------------------
 
@@ -249,6 +264,27 @@ export function createController({
     noteConnected();
   }
 
+  // Only a presenter may read the assistance table at all, so only a presenter
+  // ever asks: the adapter would refuse an applicant, and asking is already a
+  // mistake (`supabase-store.mjs`, "an applicant read never names a staff
+  // table").
+  const presenter = () => state.principal?.access === "presenter";
+
+  async function loadAssistance() {
+    if (!presenter()) return;
+    state.assistance = await store.listAssistance();
+    noteConnected();
+  }
+
+  // The workspace row carries the fixture generation, which is the number the
+  // presenter panel shows and the signal a reset moves. Only a presenter has a
+  // panel, so only a presenter reads it.
+  async function loadWorkspace() {
+    if (!presenter() || !store.getWorkspace) return;
+    state.workspace = await store.getWorkspace();
+    noteConnected();
+  }
+
   async function loadSelected() {
     if (!state.selectedCaseId) return;
     const next = await store.getCase(state.selectedCaseId);
@@ -276,17 +312,29 @@ export function createController({
       failure = error;
     }
     try {
+      // The office board shows these beside the cases, and a reconnect is the
+      // one path a missed subscription change comes back through.
+      await loadAssistance();
+    } catch (error) {
+      failure = failure ?? error;
+    }
+    try {
       await loadSelected();
     } catch (error) {
       // A case that is gone is not a failure to report: the fixtures were
       // reset, or it was closed and removed. Fall back to the list.
       if (error?.code === "NOT_FOUND") {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
       } else failure = failure ?? error;
     }
+    // A refusal the person has been shown is theirs to dismiss or to act on.
+    // Re-reading is not an answer to it: an unrelated fixture reset landing in
+    // this window must not quietly replace "the demo cannot reach the server"
+    // with nothing, leaving a click that did nothing and no explanation. The
+    // next deliberate action clears it (every dispatch, save, navigation and
+    // the dismiss control do), and so does a successful identity load.
     if (failure) noteFailure(failure);
-    else state.error = null;
     persistSession();
     show();
   }
@@ -350,19 +398,40 @@ export function createController({
   // through the same access-scoped path — never the payload itself.
   async function handleChange(change) {
     if (!state.principal || !change) return;
-    const touchesList = change.table === "cases";
+    // The shared fixture signal. A reset deletes rows wholesale, and a
+    // deletion is never published — so what arrives is one workspace row with
+    // a new generation on it, naming no case and carrying nothing private.
+    // Everything this window holds about the demonstration set may have been
+    // replaced, so all of it is re-read through the same access-scoped paths.
+    const touchesWorkspace = change.table === "workspaces";
+    const touchesList = touchesWorkspace || change.table === "cases";
     const touchesOpen =
-      state.selectedCaseId && change.caseId === state.selectedCaseId;
-    if (!touchesList && !touchesOpen) return;
+      Boolean(state.selectedCaseId) &&
+      (touchesWorkspace || change.caseId === state.selectedCaseId);
+    // An assistance item belongs to no case, so it is named by its own table
+    // rather than by a case id: a claim in another window has to reach this one.
+    const touchesAssistance =
+      touchesWorkspace || change.table === "assistance_items";
+    if (!touchesList && !touchesOpen && !touchesAssistance) return;
     try {
       if (touchesList) await loadList();
+      if (touchesWorkspace) await loadWorkspace();
+      if (touchesAssistance) await loadAssistance();
+      // The open case comes last, because it is the one read that may
+      // legitimately find nothing: a case that is gone must not stop the
+      // lists around it from being refreshed.
       if (touchesOpen) await loadSelected();
-      state.error = null;
+      // Deliberately not `state.error = null`: this ran because somebody
+      // else's window did something, and a notice nobody in *this* window has
+      // read is not theirs to erase. See the note in `refresh`.
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
       else {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
+        // The case that was open is gone. Somebody reset the demonstration
+        // set, and this is the only place this window can be told so.
+        if (touchesWorkspace) state.notice = FIXTURES_GONE_NOTICE;
       }
     }
     show();
@@ -412,13 +481,18 @@ export function createController({
     }
     state.principal = principal;
     state.authError = null;
-    dropKey(ACCESS_KEY);
+    windowState.clearAccess();
     restoreSession();
-    if (!CLIENT_SCREENS.includes(state.screen)) state.screen = "applications";
-    if (principal.access === "presenter") state.screen = "staff";
+    // A presenter lands on the work board and a client on their applications,
+    // unless this window was already somewhere this principal may be.
+    if (!screens().includes(state.screen)) state.screen = homeScreen();
     try {
       await loadList();
-      if (principal.access === "presenter") state.people = await store.listPeople();
+      if (principal.access === "presenter") {
+        state.people = await store.listPeople();
+        await loadAssistance();
+        await loadWorkspace();
+      }
       state.error = null;
     } catch (error) {
       noteFailure(error);
@@ -430,8 +504,7 @@ export function createController({
       } catch (error) {
         if (error?.code === "NOT_FOUND") {
           clearSelection();
-          state.screen =
-            principal.access === "presenter" ? "staff" : "applications";
+          state.screen = homeScreen();
         } else noteFailure(error);
       }
     }
@@ -480,7 +553,7 @@ export function createController({
         retryAfterSeconds: remaining,
       };
       state.authMessage = answer.message;
-      writeJson(ACCESS_KEY, {
+      windowState.writeAccess({
         startedAt: record.startedAt,
         email: address,
         message: answer.message,
@@ -493,7 +566,7 @@ export function createController({
       state.authStep = "code";
       state.authEmail = address;
       state.authMessage = answer.message;
-      writeJson(ACCESS_KEY, {
+      windowState.writeAccess({
         startedAt: clock(),
         email: address,
         message: answer.message,
@@ -541,10 +614,11 @@ export function createController({
       show();
       throw error;
     }
-    dropKey(ACCESS_KEY);
+    windowState.clearAccess();
     state.authStep = "email";
     state.authCode = "";
-    state.screen = "applications";
+    // Which screen this visitor lands on is `load()`'s to decide: it knows the
+    // principal, and this window may already have been somewhere.
     await load();
   }
 
@@ -558,26 +632,35 @@ export function createController({
     state.authCode = "";
     state.authError = null;
     state.authMessage = "";
-    if (record.startedAt === undefined) dropKey(ACCESS_KEY);
-    else writeJson(ACCESS_KEY, { startedAt: record.startedAt, message: record.message });
+    if (record.startedAt === undefined) windowState.clearAccess();
+    else
+      windowState.writeAccess({
+        startedAt: record.startedAt,
+        message: record.message,
+      });
     show();
   }
 
   // Signing out drops every record this window holds, not just the session.
   function forgetUser() {
-    const key = sessionKey();
-    if (key) dropKey(key);
+    if (state.principal) windowState.clear(state.principal.userId);
     unsubscribe();
     clearSelection();
     state.session = "none";
     state.principal = null;
     state.cases = [];
     state.people = [];
+    state.assistance = [];
+    state.workspace = null;
+    state.notice = null;
+    pendingReset = null;
+    pendingCheckpoint = null;
     state.selectedPersonId = null;
     state.openPanels = [];
     state.lookup = "";
     state.dialog = null;
     state.pendingCreateActionId = null;
+    state.boardFilters = {};
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -636,6 +719,7 @@ export function createController({
 
   function dismissError() {
     state.error = null;
+    state.notice = null;
     show();
   }
 
@@ -643,6 +727,22 @@ export function createController({
   // only through `runAction`, and only for a presenter.
   function selectPerson(id) {
     state.selectedPersonId = id ?? null;
+    persistSession();
+    show();
+  }
+
+  // The work board's filters, one choice at a time. They are this window's
+  // view of the same list everybody else sees, so they are stored beside the
+  // selection rather than sent anywhere.
+  function setBoardFilter(name, value) {
+    if (!name) return;
+    state.boardFilters = { ...state.boardFilters, [name]: String(value ?? "") };
+    persistSession();
+    show();
+  }
+
+  function clearBoardFilters() {
+    state.boardFilters = {};
     persistSession();
     show();
   }
@@ -659,11 +759,16 @@ export function createController({
       noteConnected();
       state.error = null;
       if (move)
-        state.screen = next.stage === "draft" ? "intake" : "progress";
+        state.screen =
+          state.principal?.access === "presenter"
+            ? "staff-case"
+            : next.stage === "draft"
+              ? "intake"
+              : "progress";
     } catch (error) {
       if (error?.code === "NOT_FOUND") {
         clearSelection();
-        state.screen = "applications";
+        state.screen = homeScreen();
       }
       noteFailure(error);
       persistSession();
@@ -678,7 +783,11 @@ export function createController({
   // its receipt arrives, so an offline retry reuses it and a second click while
   // one is in flight does nothing at all. Reopening, refreshing or filling a
   // form never reaches this function.
-  async function createCase() {
+  //
+  // `mode` and `personId` are what distinguish a client's own application from
+  // one the office typed in for a walk-in; the idempotency, the receipt and the
+  // "what happens next" hook are the same for both, so they are written once.
+  async function startCase({ mode, personId, answers }, afterReceipt) {
     if (creating) return null;
     creating = true;
     if (!state.pendingCreateActionId) {
@@ -687,9 +796,9 @@ export function createController({
     }
     const request = {
       actionId: state.pendingCreateActionId,
-      mode: "client",
-      personId: null,
-      answers: {},
+      mode,
+      personId: personId ?? null,
+      answers,
     };
     try {
       const receipt = await store.createCase(request);
@@ -702,7 +811,7 @@ export function createController({
       try {
         await loadList();
         await selectCase(receipt.caseId);
-        state.screen = "reference";
+        afterReceipt?.();
       } catch (error) {
         noteFailure(error);
       }
@@ -718,6 +827,33 @@ export function createController({
     } finally {
       creating = false;
     }
+  }
+
+  async function createCase() {
+    return await startCase({ mode: "client", personId: null, answers: {} }, () => {
+      state.screen = "reference";
+    });
+  }
+
+  // The office types a walk-in client's answers in itself. The case it creates
+  // has no client account at all — the database's `cases_origin_owner` rule
+  // makes an assisted case owner-less — so nobody is emailed, invited or given
+  // a way in, and the office owns the draft until it submits it.
+  async function createAssistedCase({ answers } = {}) {
+    if (!presenter())
+      throw controllerError(
+        "FORBIDDEN",
+        "Only a volunteer can start an assisted application.",
+      );
+    if (!state.selectedPersonId)
+      throw controllerError("VALIDATION", "Choose a volunteer persona to act as.");
+    // `selectCase` already puts a presenter on the case workspace, which is
+    // where the office records the intake checks and sends the application.
+    return await startCase({
+      mode: "assisted",
+      personId: state.selectedPersonId,
+      answers: pickAnswers(answers),
+    });
   }
 
   // ---- editing and saving -------------------------------------------------
@@ -793,7 +929,14 @@ export function createController({
         state.retryable = false;
         noteFailure(
           error,
-          error?.code === "CONFLICT" ? { message: CONFLICT_MESSAGE } : undefined,
+          error?.code === "CONFLICT"
+            ? {
+                message:
+                  state.principal?.access === "presenter"
+                    ? STAFF_CONFLICT_MESSAGE
+                    : CONFLICT_MESSAGE,
+              }
+            : undefined,
         );
         if (error?.code === "CONFLICT")
           await loadSelected().catch(() => {});
@@ -802,6 +945,12 @@ export function createController({
       throw error;
     }
   }
+
+  // Who this window is acting as, for an action that carries a persona. A
+  // client acts as themselves and sends none; a presenter sends the persona it
+  // chose, and the server refuses one from anybody else anyway.
+  const actingPersonId = (personId) =>
+    presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
 
   async function saveAnswers() {
     if (!state.savedCase)
@@ -819,7 +968,11 @@ export function createController({
       caseId: state.savedCase.id,
       expectedRevision:
         state.editBaseRevision ?? Number(state.savedCase.revision),
-      personId: null,
+      // A client answers for themselves. The office answering for a walk-in
+      // client sends its own persona: the database accepts SAVE_ANSWERS from a
+      // presenter only with an `admin` person on an owner-less draft, and
+      // refuses a presenter who sends no person at all.
+      personId: actingPersonId(),
       type: "SAVE_ANSWERS",
       payload: { answers: { ...state.draftAnswers } },
     };
@@ -863,16 +1016,171 @@ export function createController({
       actionId: newActionId(),
       caseId: state.savedCase.id,
       expectedRevision: Number(state.savedCase.revision),
-      // A client acts as themselves. A staff persona is sent only by a
-      // presenter, and the server refuses one from anybody else anyway.
-      personId:
-        state.principal?.access === "presenter"
-          ? (personId ?? state.selectedPersonId ?? null)
-          : null,
+      personId: actingPersonId(personId),
       type,
       payload: payload ?? {},
     };
     return await dispatch(action);
+  }
+
+  // Assistance items are not cases: they have their own RPC, their own revision
+  // and their own list, so they get their own dispatch rather than a branch
+  // inside `runAction`. The shape is deliberately the same — an unknown type is
+  // refused here without a call, the expected revision comes from the item this
+  // window is looking at, and a CONFLICT re-reads the list before it is shown —
+  // because the two failures are the same failure to the person reading them.
+  //
+  // It is not retryable: `actAssistance` returns no receipt to the browser, so
+  // a timed-out claim is re-read rather than re-sent.
+  async function runAssistanceAction(type, itemId, note = null) {
+    if (!ASSISTANCE_ACTIONS.includes(type))
+      throw controllerError("VALIDATION", "This step is not available.");
+    const item = state.assistance.find((entry) => entry?.id === itemId);
+    if (!item)
+      throw controllerError("NOT_FOUND", "This request is no longer on screen.");
+    const request = {
+      actionId: newActionId(),
+      itemId: item.id,
+      expectedRevision: Number(item.revision),
+      personId: state.selectedPersonId ?? null,
+      type,
+      // A claim carries no note at all; a resolution says what was done.
+      note: type === "RESOLVE" ? note : null,
+    };
+    state.busy = true;
+    state.error = null;
+    show();
+    try {
+      await store.actAssistance(request);
+      state.busy = false;
+      noteConnected();
+      try {
+        await loadAssistance();
+        state.error = null;
+      } catch (error) {
+        // The action landed. A re-read that fails afterwards is a stale list,
+        // never a failed claim.
+        noteFailure(error);
+      }
+      show();
+      return request;
+    } catch (error) {
+      state.busy = false;
+      noteFailure(
+        error,
+        error?.code === "CONFLICT"
+          ? { message: ASSISTANCE_CONFLICT_MESSAGE }
+          : undefined,
+      );
+      if (error?.code === "CONFLICT") await loadAssistance().catch(() => {});
+      show();
+      throw error;
+    }
+  }
+
+  // ---- the presenter's own controls ---------------------------------------
+  //
+  // Rebuilding the demonstration set, and putting one of its cases back to a
+  // chosen point in the story. Both are presenter work — the database checks
+  // that again before it reserves anything — and both are idempotent: the
+  // envelope is kept while the outcome is unknown, so pressing the button
+  // again re-sends the same action id and the server answers with its stored
+  // receipt instead of resetting twice. A refusal is final, so its envelope is
+  // dropped and the next attempt is a new request.
+
+  function requirePresenter(message) {
+    if (!presenter()) throw controllerError("FORBIDDEN", message);
+  }
+
+  // Everything this window holds about the demonstration set, read again. The
+  // case that was open may simply not exist any more, which `refresh` already
+  // treats as a cleared selection rather than as a failure.
+  async function afterFixtureChange(notice) {
+    const had = state.selectedCaseId;
+    await refresh();
+    try {
+      await loadWorkspace();
+    } catch (error) {
+      noteFailure(error);
+    }
+    if (notice)
+      state.notice = had && !state.selectedCaseId ? FIXTURES_GONE_NOTICE : notice;
+    show();
+  }
+
+  async function resetFixtures() {
+    requirePresenter(
+      "Only the person running the session can reset the sample cases.",
+    );
+    if (!pendingReset) pendingReset = { actionId: newActionId() };
+    const request = pendingReset;
+    state.busy = true;
+    state.error = null;
+    state.notice = null;
+    show();
+    try {
+      await store.resetFixtures(request);
+      pendingReset = null;
+      state.busy = false;
+      noteConnected();
+      await afterFixtureChange(FIXTURES_RESET_NOTICE);
+      return request;
+    } catch (error) {
+      state.busy = false;
+      if (!UNKNOWN_OUTCOME.includes(error?.code)) pendingReset = null;
+      noteFailure(error);
+      show();
+      throw error;
+    }
+  }
+
+  async function loadCheckpoint({ caseId, checkpoint } = {}) {
+    requirePresenter(
+      "Only the person running the session can load a checkpoint.",
+    );
+    if (!CHECKPOINTS.includes(checkpoint))
+      throw controllerError("VALIDATION", "This checkpoint is not available.");
+    const record = state.cases.find((entry) => entry?.id === caseId);
+    if (!record)
+      throw controllerError("NOT_FOUND", "This sample case is no longer on screen.");
+    // A case this class created is somebody's work, never a demonstration
+    // prop. The database says the same thing; this says it without a round
+    // trip and in words a person can read.
+    if (!record.fixture)
+      throw controllerError(
+        "VALIDATION",
+        "Checkpoints belong to the sample cases only.",
+      );
+    if (
+      !pendingCheckpoint ||
+      pendingCheckpoint.caseId !== caseId ||
+      pendingCheckpoint.checkpoint !== checkpoint
+    )
+      pendingCheckpoint = {
+        actionId: newActionId(),
+        caseId,
+        expectedRevision: Number(record.revision),
+        checkpoint,
+      };
+    const request = pendingCheckpoint;
+    state.busy = true;
+    state.error = null;
+    state.notice = null;
+    show();
+    try {
+      await store.loadCheckpoint(request);
+      pendingCheckpoint = null;
+      state.busy = false;
+      noteConnected();
+      await afterFixtureChange();
+      return request;
+    } catch (error) {
+      state.busy = false;
+      if (!UNKNOWN_OUTCOME.includes(error?.code)) pendingCheckpoint = null;
+      noteFailure(error);
+      show();
+      throw error;
+    }
   }
 
   async function retryLast() {
@@ -894,8 +1202,10 @@ export function createController({
       ...state,
       cases: [...state.cases],
       people: [...state.people],
+      assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },
       openPanels: [...state.openPanels],
+      boardFilters: { ...state.boardFilters },
       conflict: state.conflict ? { ...state.conflict } : null,
       error: state.error ? { ...state.error } : null,
       authError: state.authError ? { ...state.authError } : null,
@@ -917,7 +1227,13 @@ export function createController({
     cooldownRemaining,
     selectCase,
     createCase,
+    createAssistedCase,
+    runAssistanceAction,
+    resetFixtures,
+    loadCheckpoint,
     selectPerson,
+    setBoardFilter,
+    clearBoardFilters,
     editAnswers,
     saveAnswers,
     reconcileAnswers,

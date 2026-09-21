@@ -1,11 +1,26 @@
-import { esc, icon, button, stageBadge } from "./ui.mjs";
-import { describeStage } from "./domain.mjs";
+import { esc, icon, button } from "./ui.mjs";
+import {
+  renderStaffBoard,
+  renderStaffCase,
+  decorateStaffCase,
+} from "./staff-views.mjs";
+import {
+  renderAdminBoard,
+  renderAdminCase,
+  closeCaseDialogBody,
+} from "./admin-views.mjs";
+import {
+  renderPresenterPanel,
+  resetDialogBody,
+  checkpointDialogBody,
+} from "./presenter-views.mjs";
 
 // The shared shell: the frame every screen sits in, the dialogs, the two
 // screens that belong to nobody in particular (setup needed, no access), and
-// the read-only staff landing that stands in until the staff work screens
-// arrive. The client screens live in `client-views.mjs`; this file renders no
-// intake, no progress and no workflow button.
+// the staff frame — the persona selector and the `<main>` that the work board
+// or one case workspace sits in. The client screens live in
+// `client-views.mjs` and the staff screens in `staff-views.mjs`; this file
+// renders no intake, no progress and no workflow button of its own.
 
 const when = (condition, html) => (condition ? html : "");
 
@@ -28,8 +43,21 @@ export function connectionNotice(state) {
   }</span></div>`;
 }
 
+// Something worth saying that is not a failure: today, that somebody rebuilt
+// the demonstration cases while this window was looking at one. It is a
+// status, not an alert, and it is dismissed by the same control.
+function noticeBanner(state) {
+  if (!state.notice) return "";
+  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
+}
+
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";
+  // The staff workspace states a failure in place, beside the action that
+  // failed, with the same Try again and Dismiss controls. One announcement is
+  // enough, and that one is the more useful of the two — but only when that
+  // screen is really the one being rendered (see `staffScreen`).
+  if (state.screen === "staff-case" && state.savedCase) return "";
   return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
@@ -38,7 +66,7 @@ export function footer() {
 }
 
 export function page(state, body) {
-  return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
@@ -62,44 +90,113 @@ export function noAccessScreen(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Staff placeholder (Ruling R41)
+// The staff frame
 // ---------------------------------------------------------------------------
 
-// Read-only, on purpose: the board, preparation and review screens are the next
-// task, and until then a presenter can see what exists without acting on it.
-export function renderStaffLanding(cases = [], people = []) {
-  const name = (id) =>
-    people.find((person) => person.id === id)?.name ?? (id ? "Assigned" : "");
-  if (!cases.length)
-    return `<div class="panel empty-state">${icon("folder")}<h2>No applications yet</h2><p>Applications appear here as soon as someone starts one.</p></div>`;
-  return `<div class="application-list">${cases
-    .map(
-      (entry) =>
-        `<div class="application-row static"><span class="application-reference">${esc(entry.reference)}</span><span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${esc(
-          entry.preparerId
-            ? `Preparer: ${name(entry.preparerId)}`
-            : "No preparer yet",
-        )}${esc(entry.reviewerId ? ` · Reviewer: ${name(entry.reviewerId)}` : "")}</span></div>`,
-    )
-    .join("")}</div>`;
-}
+// Which screens a presenter gets is decided by the persona this window is
+// acting as, not by the account: an office administrator works in the follow-up
+// and assistance workspace, everybody else in the preparation/review one
+// (Ruling R55). The choice is a view choice — the database re-checks every
+// capability on every action, so nothing here grants anything.
+const isAdmin = (person) =>
+  Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
 
-function personaPicker(people = [], selectedPersonId = null) {
-  if (!people.length) return "";
-  return `<section class="panel persona-picker" aria-labelledby="persona-title"><h2 id="persona-title">Acting as</h2><p class="field-note">Choose the volunteer this window is working as. The choice is local to this window and travels with staff actions only.</p><div class="persona-row">${people
-    .map((person) =>
-      button(
-        `${icon("user")} ${esc(person.name)}<small>${esc(person.capabilities?.join(", ") ?? "")}</small>`,
-        "select-person",
-        selectedPersonId === person.id ? "secondary selected" : "secondary",
-        `data-person-id="${esc(person.id)}" aria-pressed="${selectedPersonId === person.id}"`,
-      ),
-    )
-    .join("")}</div></section>`;
-}
-
+// A presenter is on one of two screens: the work board, or one case. Both get
+// the presenter panel, because which volunteer this window is acting as is
+// what decides who may do what — and because the person running the session
+// needs their own controls wherever they happen to be standing. The records
+// are decorated here — once, with the roster this screen already holds — so
+// the renderers never see a bare id.
 export function staffScreen(state) {
-  return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>Case overview</h1><p>Staff work screens arrive next. This page lists what the workspace holds so far; nothing here changes a case.</p></div>${personaPicker(state.people, state.selectedPersonId)}<section class="panel"><div class="section-head"><h2>Applications</h2><span class="muted small">${esc(state.cases.length)} in this workspace</span></div>${renderStaffLanding(state.cases, state.people)}</section><p class="field-note">Stage names come from the same table the client sees, so both sides of the demo always agree: ${esc(describeStage("review_ready").label)}, ${esc(describeStage("reviewing").label)}, and so on.</p></main>`;
+  const people = state.people ?? [];
+  const person =
+    people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+  const panel = renderPresenterPanel({
+    principal: state.principal,
+    people,
+    selectedPersonId: state.selectedPersonId,
+    connection: state.connection,
+    workspace: state.workspace,
+    cases: state.cases,
+  });
+  const office = isAdmin(person);
+  const frame = (overline, title, intro, back, body) =>
+    `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
+      back,
+      button(`${icon("back")} Back to the work board`, "open-board", "text"),
+    )}</div>${panel}${body}</main>`;
+  if (state.screen === "staff-case" && state.savedCase) {
+    const record = decorateStaffCase(state.savedCase, people);
+    const ui = {
+      person,
+      busy: state.busy,
+      error: state.error,
+      retryable: state.retryable,
+      draftAnswers: state.draftAnswers,
+      dirty: state.dirty,
+      openPanels: state.openPanels,
+    };
+    return office
+      ? frame(
+          "OFFICE WORKSPACE",
+          "One case",
+          "What the office knows about this case, and the office work you may do on it.",
+          true,
+          renderAdminCase(record, ui),
+        )
+      : frame(
+          "VOLUNTEER WORKSPACE",
+          "One case",
+          "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+          true,
+          renderStaffCase(record, person, ui),
+        );
+  }
+  const cases = (state.cases ?? []).map((record) =>
+    decorateStaffCase(record, people),
+  );
+  return office
+    ? frame(
+        "OFFICE WORKSPACE",
+        "Office work",
+        "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
+        false,
+        renderAdminBoard(
+          cases,
+          (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
+          {
+            person,
+            filters: state.boardFilters,
+            busy: state.busy,
+            openPanels: state.openPanels,
+          },
+        ),
+      )
+    : frame(
+        "VOLUNTEER WORKSPACE",
+        "Work board",
+        "Every case in this workspace, what it is waiting for, and the work you can take on.",
+        false,
+        renderStaffBoard(cases, people, {
+          person,
+          filters: state.boardFilters,
+          busy: state.busy,
+        }),
+      );
+}
+
+// The same id-to-name step `decorateStaffCase` performs, for the one field an
+// assistance item holds: the helper who took it. The store returns ids; no
+// renderer ever sees one.
+function decorateAssistance(item, people = []) {
+  if (!item) return item;
+  return {
+    ...item,
+    assigneeName: item.assigneeId
+      ? (people.find((person) => person?.id === item.assigneeId)?.name ??
+        "Unknown person")
+      : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +215,22 @@ export function dialog(state) {
     title = "Replace the fictional answers?";
     body = `<p>This replaces every answer in this form with a different fictional example, including answers you edited. Your email address, Application ID and current stage do not change.</p><div class="info-note">${icon("help")}<p>Nothing is saved until you save the form, so you can still step back through the form and check it first.</p></div>${button("Replace with another example", "confirm-regenerate", "primary full")}${button("Keep my answers", "close-dialog", "text")}`;
   }
+  if (state.dialog === "close-case") {
+    title = "Close this case?";
+    // The office screens own their own copy; this frame only places it.
+    body = closeCaseDialogBody(state);
+  }
+  if (state.dialog === "reset-fixtures") {
+    title = "Reset the sample cases?";
+    body = resetDialogBody(state);
+  }
+  if (state.dialog === "load-checkpoint") {
+    title = "Load a sample checkpoint";
+    body = checkpointDialogBody(state);
+  }
   if (state.dialog === "print") {
     title = "Your application reference card";
     body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b><p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
   }
-  return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">ViTally · HERE TO HELP</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+  return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">ViTally · HERE TO HELP</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
 }

@@ -125,6 +125,58 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       );
     });
 
+    await t.test("a presenter list summarises the work on each case", async () => {
+      // A board that cannot say who is already on a case, or what is waiting
+      // on a client, is only a list of references (Ruling R56).
+      const claimed = (await presenter.listCases()).find(
+        (row) => row.id === caseId,
+      );
+      assert.deepEqual(claimed.participants, [f.alex]);
+      // One request, already answered and waiting on the preparer, so nothing
+      // is open on the client's side.
+      assert.equal(claimed.openRequests, 0);
+      assert.equal(claimed.openFollowups, 0);
+      assert.deepEqual(claimed.followupAssigneeIds, []);
+      // An unclaimed case carries the same fields, empty.
+      const unclaimed = (await presenter.listCases()).find(
+        (row) => row.id === other.caseId,
+      );
+      assert.deepEqual(unclaimed.participants, []);
+      assert.equal(unclaimed.openFollowups, 0);
+      // The office's own escalation is counted, and it names who owes the call.
+      const chased = await f.assistedCase();
+      await f.act(f.presenter, chased, f.alex, "ESCALATE_CONTACT", {
+        reason: "No response to the document request.",
+      });
+      const waiting = (await presenter.listCases()).find(
+        (row) => row.id === chased,
+      );
+      assert.equal(waiting.openRequests, 1);
+      assert.equal(waiting.openFollowups, 1);
+      assert.deepEqual(waiting.followupAssigneeIds, [f.sam]);
+      assert.deepEqual(waiting.participants, [f.alex]);
+      // A client's own list carries none of it: the summaries are staff work.
+      for (const row of await applicant.listCases())
+        for (const field of [
+          "participants",
+          "openFollowups",
+          "followupAssigneeIds",
+          "openRequests",
+        ])
+          assert.ok(!(field in row), `${field} is absent for an applicant`);
+    });
+
+    await t.test("the workspace read carries the fixture generation", async () => {
+      const workspace = await presenter.getWorkspace();
+      assert.equal(workspace.id, f.workspaceId);
+      assert.equal(typeof workspace.fixtureGeneration, "number");
+      assert.ok(workspace.fixtureGeneration >= 0);
+      assert.equal(workspace.defaultFollowupPersonId, f.sam);
+      // The client reads their own workspace row too — it is how they learn
+      // the demonstration set changed — and it carries nothing private.
+      assert.deepEqual(await createStore(f.applicantA).getWorkspace(), workspace);
+    });
+
     await t.test("an applicant case read loads no staff section", async () => {
       const found = await applicant.getCase(caseId);
       assert.equal(found.id, caseId);
@@ -149,6 +201,59 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       assert.equal(staff.preparerId, f.alex);
       // The one mapping: the fixture helper is this same read.
       assert.deepEqual(await f.readStaffCase(caseId), staff);
+    });
+
+    await t.test("every case carries its created and updated times", async () => {
+      // Migration 008. Both mappers map them, so a client case and a staff case
+      // carry the same two fields — a work board that cannot say when a case
+      // last moved is not a work board.
+      const isoish = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+      const before = await applicant.getCase(draft.caseId);
+      const staff = await presenter.getCase(caseId);
+      for (const record of [before, staff])
+        for (const field of ["createdAt", "updatedAt"]) {
+          assert.equal(typeof record[field], "string", field);
+          assert.match(record[field], isoish, field);
+          assert.ok(!Number.isNaN(new Date(record[field]).getTime()), field);
+        }
+      // The list carries them too: that is what the board actually reads.
+      const listed = (await applicant.listCases()).find(
+        (row) => row.id === draft.caseId,
+      );
+      assert.equal(listed.updatedAt, before.updatedAt);
+      assert.equal(listed.createdAt, before.createdAt);
+
+      // An accepted action moves `updatedAt` and never `createdAt`.
+      await applicant.act({
+        actionId: crypto.randomUUID(),
+        caseId: draft.caseId,
+        expectedRevision: before.revision,
+        personId: null,
+        type: "SAVE_ANSWERS",
+        payload: { answers: { city: "Philadelphia" } },
+      });
+      const after = await applicant.getCase(draft.caseId);
+      assert.equal(after.createdAt, before.createdAt, "creation time never moves");
+      assert.ok(
+        new Date(after.updatedAt) > new Date(before.updatedAt),
+        "an accepted action moves the updated time",
+      );
+
+      // A refused one moves nothing: the whole statement rolls back.
+      await assert.rejects(
+        () =>
+          applicant.act({
+            actionId: crypto.randomUUID(),
+            caseId: draft.caseId,
+            expectedRevision: before.revision,
+            personId: null,
+            type: "SAVE_ANSWERS",
+            payload: { answers: { city: "Camden" } },
+          }),
+        rejected("CONFLICT"),
+      );
+      const refused = await applicant.getCase(draft.caseId);
+      assert.equal(refused.updatedAt, after.updatedAt);
     });
 
     await t.test("another applicant's case and a stranger id are NOT_FOUND", async () => {
@@ -248,23 +353,42 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       assert.equal(claimed.assigneeId, f.sam);
     });
 
-    await t.test("the Task 9 RPCs are called and answer SERVER_ERROR today", async () => {
-      // Both functions arrive with fixture reset and checkpoints. Until then
-      // PostgREST cannot find them, and the shared mapper reports the generic
-      // server failure. Task 9 flips this test.
-      await assert.rejects(
-        () => presenter.resetFixtures({ actionId: crypto.randomUUID() }),
-        rejected("SERVER_ERROR"),
+    await t.test("the adapter resets fixtures and loads a checkpoint", async () => {
+      // Migration 009 installs both. The adapter returns nothing from either —
+      // the browser reacts by re-reading — so what is asserted here is that
+      // the call is accepted and that the database really moved.
+      await presenter.resetFixtures({ actionId: crypto.randomUUID() });
+      const seeded = await f.readFixtureCases();
+      assert.equal(seeded.length, 6);
+      const target = seeded.find((row) => row.fixtureKey === "review_approved");
+      await presenter.loadCheckpoint({
+        actionId: crypto.randomUUID(),
+        caseId: target.id,
+        expectedRevision: target.revision,
+        checkpoint: "intake_ready",
+      });
+      const moved = (await f.readFixtureCases()).find(
+        (row) => row.fixtureKey === "review_approved",
       );
+      assert.equal(moved.id, target.id, "a checkpoint keeps the case it moves");
+      assert.equal(moved.stage, "preparation_ready");
+      assert.equal(moved.revision, target.revision + 1);
+      // A checkpoint on a case a student created is refused as a validation
+      // failure, and an applicant may reset nothing at all.
+      const classCase = await presenter.getCase(caseId);
       await assert.rejects(
         () =>
           presenter.loadCheckpoint({
             actionId: crypto.randomUUID(),
             caseId,
-            expectedRevision: 1,
-            checkpoint: "review_ready",
+            expectedRevision: classCase.revision,
+            checkpoint: "intake_ready",
           }),
-        rejected("SERVER_ERROR"),
+        rejected("VALIDATION"),
+      );
+      await assert.rejects(
+        () => applicant.resetFixtures({ actionId: crypto.randomUUID() }),
+        rejected("FORBIDDEN"),
       );
     });
 

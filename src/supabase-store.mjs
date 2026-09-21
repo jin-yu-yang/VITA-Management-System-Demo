@@ -78,6 +78,10 @@ export const mapCase = (row) => ({
   reviewerId: row.reviewer_id,
   lastRemindedAt: row.last_reminded_at,
   lastRemindedByPersonId: row.last_reminded_by_person_id,
+  // When the case was created, and when the last accepted action committed
+  // (migration 008). Both mappers get them, because both start here.
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export const mapPerson = (row) => ({
@@ -254,6 +258,20 @@ export function createStore(client) {
       };
     },
 
+    // The caller's own workspace row. RLS returns exactly the one workspace
+    // they are a member of, and the row carries the fixture generation — the
+    // number that moves when somebody rebuilds the demonstration cases.
+    async getWorkspace() {
+      const rows = await read(client.from("workspaces").select("*"));
+      const row = rows[0];
+      if (!row) throw createAppError({ code: "VT002" });
+      return {
+        id: row.id,
+        fixtureGeneration: Number(row.fixture_generation),
+        defaultFollowupPersonId: row.default_followup_person_id,
+      };
+    },
+
     async listPeople() {
       await requirePresenter();
       return (
@@ -261,10 +279,55 @@ export function createStore(client) {
       ).map(mapPerson);
     },
 
+    // A client's list is their own cases and nothing more. A presenter's list
+    // is a work board, and a board that cannot say who is already on a case,
+    // what is waiting on a client, or who owes somebody a call is only a list
+    // of references. Those three answers come from three grouped reads over
+    // the same RLS-scoped tables the case screen uses — not from the rows
+    // themselves, which carry no related record at all (Ruling R56).
     async listCases() {
-      return (await read(client.from("cases").select("*").order("reference"))).map(
-        mapCase,
+      const staff = (await access()) === "presenter";
+      const cases = (
+        await read(client.from("cases").select("*").order("reference"))
+      ).map(mapCase);
+      if (!staff || !cases.length) return cases;
+      const ids = cases.map((record) => record.id);
+      const participants = await read(
+        client
+          .from("preparation_participants")
+          .select("case_id,person_id")
+          .in("case_id", ids)
+          .order("person_id"),
       );
+      const followups = await read(
+        client
+          .from("admin_followups")
+          .select("case_id,assignee_person_id")
+          .in("case_id", ids)
+          .eq("status", "open"),
+      );
+      const requests = await read(
+        client
+          .from("document_requests")
+          .select("case_id")
+          .in("case_id", ids)
+          .eq("status", "open"),
+      );
+      const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
+      return cases.map((record) => {
+        const open = forCase(followups, record.id);
+        return {
+          ...record,
+          participants: forCase(participants, record.id).map((row) => row.person_id),
+          openFollowups: open.length,
+          // Who owes this client a call, without the tasks themselves: the
+          // board names people, and the case screen holds the work.
+          followupAssigneeIds: [
+            ...new Set(open.map((row) => row.assignee_person_id)),
+          ],
+          openRequests: forCase(requests, record.id).length,
+        };
+      });
     },
 
     async getCase(id) {

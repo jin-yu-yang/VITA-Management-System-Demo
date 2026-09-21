@@ -51,4 +51,27 @@ export const RPC_SIGNATURES = Object.freeze([
       p_note: "",
     }),
   }),
+  Object.freeze({
+    name: "vitally_reset_fixtures",
+    // The demonstration set belongs to the presenter running the session, and
+    // its whole request is its own identity: there is nothing else to send.
+    signature: "vitally_reset_fixtures(uuid)",
+    authorized: (f) => f.presenter,
+    receiptKeys: Object.freeze(["actionId", "generation", "fixtureCaseIds"]),
+    args: () => ({ p_action_id: crypto.randomUUID() }),
+  }),
+  Object.freeze({
+    name: "vitally_load_checkpoint",
+    signature: "vitally_load_checkpoint(uuid,uuid,bigint,text)",
+    authorized: (f) => f.presenter,
+    receiptKeys: Object.freeze(["actionId", "caseId", "reference", "revision"]),
+    // A seeded fixture case at its current revision: a legitimate request, so
+    // only the missing session makes the anonymous call fail.
+    args: (context) => ({
+      p_action_id: crypto.randomUUID(),
+      p_case_id: context.fixtureCaseId,
+      p_expected_revision: context.fixtureRevision,
+      p_checkpoint: "ready_for_review",
+    }),
+  }),
 ]);

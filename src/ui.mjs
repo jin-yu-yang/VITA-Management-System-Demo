@@ -43,18 +43,72 @@ export const button = (text, action, kind = "primary", extra = "") =>
 export const caseButton = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-case-action="${action}" ${extra}>${text}</button>`;
 
+// The same, as a form's submit control: the named fields around it are what the
+// payload is built from, so the button has to submit the form rather than fire
+// on click (the click handler skips submit buttons for exactly that reason).
+export const caseSubmit = (text, action, kind = "primary", extra = "") =>
+  `<button type="submit" class="btn ${kind}" data-case-action="${action}" ${extra}>${text}</button>`;
+
 // One id per field name, so every control has a real `for` association rather
-// than only a wrapping element.
-export const fieldId = (name) => `field-${name}`;
-export const input = (label, name, value = "", type = "text", extra = "") =>
-  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><input id="${fieldId(name)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
-export const select = (label, name, value, options, extra = "") =>
-  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><select id="${fieldId(name)}" name="${name}" ${extra}><option value="">Select an option</option>${options
+// than only a wrapping element. A `scope` keeps ids unique when the same field
+// name appears in more than one form on a page (one escalation form per open
+// document request, for instance).
+export const fieldId = (name, scope = "") =>
+  `field-${scope ? `${esc(scope)}-` : ""}${name}`;
+export const input = (
+  label,
+  name,
+  value = "",
+  type = "text",
+  extra = "",
+  scope = "",
+) =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><input id="${fieldId(name, scope)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
+export const textarea = (label, name, value = "", extra = "", scope = "") =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><textarea id="${fieldId(name, scope)}" name="${name}" ${extra}>${esc(value)}</textarea></label>`;
+export const select = (label, name, value, options, extra = "", scope = "") =>
+  `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><select id="${fieldId(name, scope)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {
       const [val, txt] = Array.isArray(o) ? o : [o, o];
       return `<option value="${esc(val)}" ${value === val ? "selected" : ""}>${esc(txt)}</option>`;
     })
     .join("")}</select></label>`;
+// One vocabulary for the intake answers, shared by the client's own screens and
+// by the staff summary of the same answers, so the two can never name the same
+// question differently.
+export const ANSWER_LABELS = Object.freeze({
+  service: "Service",
+  year: "Tax year",
+  language: "Preferred language",
+  residenceCity: "City of residence",
+  residenceState: "State of residence",
+  city: "Mailing city",
+  state: "Mailing state",
+  zip: "ZIP code",
+  address: "Mailing address",
+  rideshare: "Uber / Lyft income",
+  other: "Other self-employment",
+  stocks: "More than 10 stock transactions",
+  firstName: "First name",
+  lastName: "Last name",
+  household: "People in your household",
+  helper: "Who is completing this form",
+  documents: "Income documents",
+});
+
+// One time format for every screen. An unusable value renders as nothing at
+// all rather than "Invalid Date".
+export function formatTime(value) {
+  const at = new Date(value ?? "");
+  if (Number.isNaN(at.getTime())) return "";
+  return at.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export const radio = (
   label,
   name,
@@ -84,7 +138,15 @@ export const stageBadge = (stage) =>
   `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage).label)}</span>`;
 
 // Rebuilding the page loses the keyboard, so the wiring layer records where it
-// was first. Only these controls have a text selection at all: `selectionStart`
+// was first — by **id** before name, because a name is not unique on a page any
+// more: a case with two open document requests renders one escalation form per
+// request, each with a `reason` field. Restoring by name alone would move the
+// cursor to the first of them, and the rest of the sentence would be typed
+// into, and sent for, the wrong request. Ids already carry the request they
+// belong to (`fieldId(name, scope)`); the name stays as the fallback for a
+// control that has none.
+//
+// Only these controls have a text selection at all: `selectionStart`
 // is defined on `HTMLInputElement.prototype` for *every* input, so testing
 // `"selectionStart" in element` proves nothing about whether it can be read.
 // The measured behaviour for the rest (radio, checkbox, number, email, date,
@@ -101,20 +163,122 @@ const SELECTABLE_INPUT_TYPES = Object.freeze([
   "password",
 ]);
 
+// A button carries neither an id nor a name — every `data-action` control in
+// this application is in that class — so what it *does* is its stable hook, in
+// the same vocabulary the click handler reads. Without this a keyboard user is
+// sent back to the top of the document by any background update, and there are
+// two of those for every accepted action.
+const ACTION_KEYS = Object.freeze([
+  ["action", "data-action"],
+  ["caseAction", "data-case-action"],
+  ["assistanceAction", "data-assistance-action"],
+]);
+
+// What tells one namesake from another: every "Send sample document" button
+// says RESPOND_DOCUMENT, and only the request id says which request. A filter
+// or a check is the same idea for the staff board.
+const RELATED_KEYS = Object.freeze([
+  ["caseId", "data-case-id"],
+  ["requestId", "data-request-id"],
+  ["itemId", "data-item-id"],
+  ["followupId", "data-followup-id"],
+  ["personId", "data-person-id"],
+  ["check", "data-check"],
+  ["filter", "data-filter"],
+  ["value", "data-value"],
+]);
+
+const attributeValue = (value) =>
+  `"${String(value).replace(/[\\"]/g, (character) => `\\${character}`)}"`;
+
 export function describeFocus(active) {
-  const name = active?.name;
-  if (!name) return null;
+  if (!active) return null;
+  const id = active.id || null;
+  const name = active.name || null;
+  const data = active.dataset ?? {};
+  let action = null;
+  for (const [key, attribute] of ACTION_KEYS)
+    if (data[key]) {
+      action = { attribute, value: data[key] };
+      break;
+    }
+  const related = action
+    ? RELATED_KEYS.filter(([key]) => data[key] != null && data[key] !== "").map(
+        ([key, attribute]) => ({ attribute, value: data[key] }),
+      )
+    : [];
+  // With none of the three there is nothing to find again after the rebuild.
+  if (!id && !name && !action) return null;
+  const description = { id, name, action, related, caret: null };
   const selectable =
     active.tagName === "TEXTAREA" ||
     (active.tagName === "INPUT" &&
       SELECTABLE_INPUT_TYPES.includes(
         String(active.type ?? "text").toLowerCase(),
       ));
-  if (!selectable) return { name, caret: null };
+  if (!selectable) return description;
   try {
     const caret = active.selectionStart;
-    return { name, caret: typeof caret === "number" ? caret : null };
+    return {
+      ...description,
+      caret: typeof caret === "number" ? caret : null,
+    };
   } catch {
-    return { name, caret: null };
+    return description;
   }
+}
+
+// How to find that element again, most specific first: its own id, then its
+// name, then what it does together with the row it belongs to — **or**, for a
+// control that belongs to no row, what it does.
+//
+// A button that named a row is never looked up by what it does alone. The two
+// are alternatives, not a fallback chain: a case can have several open document
+// requests at once, each rendering its own RESPOND_DOCUMENT button that differs
+// only by `data-request-id`. If the focused request is resolved in a background
+// rebuild while another stays open, falling back to the bare action would put
+// the keyboard on a *different* request's live button — and a keyboard user
+// mid-keypress would then send a real workflow action against the wrong
+// request. A row that is gone restores nothing, which is the safe answer.
+export function focusSelectors(focus) {
+  if (!focus) return [];
+  const selectors = [];
+  // Attribute form throughout, so no value needs CSS.escape — which does not
+  // exist outside a browser, and this has to be testable without one.
+  // An id is unique and row-scoped (`fieldId(name, scope)`), so it is the whole
+  // answer when there is one. The name is the fallback for a control that has
+  // no id — never a fallback *from* an id, for the same reason the bare action
+  // is not one: a case with two open document requests renders two `reason`
+  // boxes, and landing in the surviving one would put the rest of a sentence
+  // into, and send it for, the wrong request.
+  if (focus.id) selectors.push(`[id=${attributeValue(focus.id)}]`);
+  else if (focus.name) selectors.push(`[name=${attributeValue(focus.name)}]`);
+  if (focus.action) {
+    const base = `[${focus.action.attribute}=${attributeValue(focus.action.value)}]`;
+    const related = (focus.related ?? [])
+      .map(({ attribute, value }) => `[${attribute}=${attributeValue(value)}]`)
+      .join("");
+    selectors.push(related ? `${base}${related}` : base);
+  }
+  return selectors;
+}
+
+// Opening a dialog has to move the keyboard into it: it is `aria-modal`, and
+// the Tab trap only stops focus leaving from the first or last control, so it
+// can never recover focus that never arrived. A dialog whose body is three
+// paragraphs has only its close button, and a dialog with nothing at all still
+// has the container, which carries `tabindex="-1"` for exactly this.
+const isCloseButton = (element) =>
+  String(element?.className ?? "")
+    .split(/\s+/)
+    .includes("close-btn");
+
+export function dialogFocusTarget(controls = [], container = null) {
+  const usable = controls.filter((control) => control && !control.disabled);
+  return (
+    usable.find((control) => !isCloseButton(control)) ??
+    usable.find(isCloseButton) ??
+    container ??
+    null
+  );
 }
