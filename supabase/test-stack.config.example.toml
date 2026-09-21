@@ -1,0 +1,166 @@
+# Reference `config.toml` for the isolated local Supabase test stack described in
+# docs/setup.md ("Isolated local Supabase test stack"). It contains no secrets and is
+# committed so the Auth/API/Realtime configuration the test suites and the Task 5A/10A
+# browser gates rely on is reproducible from the repository, independent of any one
+# machine's `/private/tmp` stack (per Ruling R48).
+#
+# This file is a REFERENCE, not something the CLI reads directly. To build a stack:
+#
+#   1. Create a fresh temporary working directory and run
+#      `supabase init --workdir <dir>` with the pinned CLI (see docs/setup.md). That
+#      generates a full `<dir>/supabase/config.toml` with every section and every
+#      inline comment the installed CLI version knows about.
+#   2. Edit the generated file so every setting below matches. Sections/keys not
+#      listed here (storage buckets, SMS providers, external OAuth providers, MFA,
+#      edge functions, analytics, experimental features) are left at the generated
+#      defaults; this project's tooling never exercises them, and the stack is
+#      started with `--exclude storage-api,imgproxy,postgres-meta,studio,edge-runtime,
+#      logflare,vector,supavisor` (Realtime stays enabled).
+#   3. Set `project_id` to the *actual* unique instance id you chose (the directory's
+#      own basename is a reasonable choice, and `supabase init` already fills this in
+#      correctly for you) — never the literal placeholder below.
+#   4. Before the first `supabase start`, pin PostgREST to 16.3 (a bug in the CLI
+#      2.117.0 default of 16.2 intermittently rejects freshly issued sessions with
+#      `PGRST303: JWT issued at future`; see docs/setup.md):
+#
+#        mkdir -p <dir>/supabase/.temp
+#        printf %s v16.3 > <dir>/supabase/.temp/rest-version
+#
+# The ports below are the example set docs/setup.md documents and the one the
+# verified run used (all free at the time; choose a different free set if they
+# collide with something else on the machine, and update .vitally-targets.json and
+# .env.test to match).
+
+# A string used to distinguish this Supabase project on the host. MUST be a real,
+# unique value for your stack (e.g. the temp directory's basename) — never this
+# placeholder. The target guard verifies this against the running containers' exact
+# project label, names and published ports before any privileged connection.
+project_id = "vitally-REPLACE-WITH-UNIQUE-INSTANCE-ID"
+
+[api]
+enabled = true
+port = 57321
+# Only the public schema is exposed. The default also adds `graphql_public`; this
+# project uses neither GraphQL nor any schema beyond `public` and `vitally_private`
+# (the latter is never exposed through PostgREST — see the migrations).
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[db]
+port = 57322
+shadow_port = 57320
+health_timeout = "2m"
+major_version = 17
+
+[db.pooler]
+# Disabled: tests and tooling use a single direct `pg` connection per docs/setup.md
+# ("Use one checked-out database connection throughout each transaction").
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[db.migrations]
+# Migrations are applied through `tools/admin/migrate.mjs` (a guarded direct SQL
+# connection with its own checksum ledger), never through `supabase db push` or
+# `supabase db reset`. This section stays at the CLI default and is not exercised.
+enabled = true
+schema_paths = []
+
+[db.seed]
+# This project has no supabase/seed.sql: the six sample cases come from migration
+# 009's `vitally_reset_fixtures` / `vitally_private.seed_fixtures`, invoked through
+# the presenter panel or a privileged test call, not through `supabase db reset`.
+# Left at the CLI default; harmless because `db reset` is never run against this
+# stack.
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[realtime]
+# Required. Task 9's fixture-reset/checkpoint machinery and the Realtime isolation
+# tests need Realtime running; the early Task 5A Auth probe excluded it deliberately
+# and proves nothing about subscriptions. Any stack-start command used by this
+# project's tests must NOT put `realtime` in its `--exclude` list.
+enabled = true
+
+[studio]
+# The service itself is excluded at `supabase start` time (see the --exclude list
+# above); this section only needs a valid port for the CLI to parse.
+enabled = true
+port = 57323
+api_url = "http://127.0.0.1"
+
+# Inbucket, the local mail catcher. No external SMTP is configured for the isolated
+# test stack: Task 5A/10A intercept only the outbound `/auth/v1/otp` request in the
+# browser automation, and the one-time codes used in tests come from
+# `auth.admin.generateLink`, never from reading mail out of this catcher.
+[local_smtp]
+enabled = true
+port = 57324
+smtp_port = 57325
+pop3_port = 57326
+
+[storage]
+enabled = false
+
+[auth]
+enabled = true
+# The app's local dev origin. Must match the app's actual local port so magic-link
+# templates and redirect checks resolve correctly if ever exercised.
+site_url = "http://127.0.0.1:4173"
+additional_redirect_urls = ["http://127.0.0.1:4173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Public sign-up is closed: only the shared initializer provisions accounts (Alex,
+# Morgan, Sam, and — for tests — synthetic applicant users). Direct `signUp` against
+# an unknown address must be rejected (`signup_disabled`); Task 5A/10A verify this.
+enable_signup = false
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+minimum_password_length = 6
+password_requirements = ""
+
+[auth.rate_limit]
+email_sent = 2
+sms_sent = 30
+anonymous_users = 30
+token_refresh = 150
+# TEST-ONLY OVERRIDE — do not copy this value to a classroom/hosted project. The
+# default (30 sign-in/sign-up requests per 5 minutes per IP) is too low for this
+# stack's automated fixtures, which provision many independent password sessions in
+# one test run from one loopback address. Classroom setup keeps the CLI/hosted
+# default and never raises this.
+sign_in_sign_ups = 1000
+token_verifications = 30
+web3 = 30
+
+[auth.email]
+# Email sign-in stays enabled even though top-level [auth] enable_signup is false —
+# verify this resolved behavior on the installed CLI version rather than trusting
+# similarly named settings (Task 5A found that setting both false disabled the email
+# provider entirely on the probed version).
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+secure_password_change = false
+# The minimum interval between two OTP sends to the same address. 60s is the value
+# every cooldown/rate-limit fact in docs/setup.md and docs/demo-script.md is computed
+# from (AUTH_RESEND_COOLDOWN_SECONDS = this value + 5).
+max_frequency = "60s"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
