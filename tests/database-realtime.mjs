@@ -431,6 +431,45 @@ const INTERNAL = Object.freeze([
       return { id: row.id };
     },
   },
+  {
+    // Assistance items are staff work the client never sees (Ruling R12), and
+    // migration 007 publishes the table. No action creates one in this scope,
+    // so the row is written through the privileged connection exactly as
+    // `f.seedAssistance` does — against the applicant's own case, so what
+    // keeps the row from them is the table and not the case.
+    table: "assistance_items",
+    identity: (row) => row.id,
+    commit: async (f, owner) => {
+      const inserted = await f.sql(
+        `insert into public.assistance_items(workspace_id,case_id,title,status,revision,assignee_person_id,language,contact_preference)
+         values($1,$2,$3,'open',1,null,$4,$5) returning id`,
+        [
+          f.workspaceId,
+          owner.caseId,
+          `${f.sampleAssistance.title} ${marker()}`,
+          f.sampleAssistance.language,
+          f.sampleAssistance.contactPreference,
+        ],
+      );
+      return { id: inserted.rows[0].id };
+    },
+  },
+  {
+    // The permanent roster is presenter-only too (`presenter_people`, 001),
+    // and 007 publishes it. Nothing in the product inserts a person either, so
+    // each control adds one test-only person through the Task 4 override
+    // helper under a fresh key — an identical key would be idempotent and
+    // would commit no new row for the control to see.
+    table: "people",
+    identity: (row) => row.id,
+    commit: async (f) => {
+      const key = `probe_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+      const added = await f.enrich({
+        addPeople: [{ key, name: "Realtime probe", capabilities: ["assist"] }],
+      });
+      return { id: added[key] };
+    },
+  },
 ]);
 
 // ---------------------------------------------------------------------------

@@ -720,6 +720,10 @@ test("checkpoints move one demonstration case and nothing else", async (t) => {
         [f.presenter, target.id, target.revision, null, "VT007"],
         // A case a student created is visible but is not a fixture.
         [f.presenter, classCase, Number(classRow.revision), "intake_ready", "VT007"],
+        // Both wrong at once: the conflict is the answer, because CONFLICT
+        // precedes every VALIDATION (contracts, step 5). A caller holding a
+        // stale revision hears about the revision, whatever the target is.
+        [f.presenter, classCase, Number(classRow.revision) + 5, "intake_ready", "VT003"],
         // Absent and other-workspace targets are one indistinguishable answer.
         [f.presenter, crypto.randomUUID(), 1, "intake_ready", "VT002"],
         // A stale revision is a conflict, not a refusal.

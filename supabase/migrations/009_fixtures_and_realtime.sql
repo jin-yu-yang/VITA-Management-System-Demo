@@ -28,9 +28,12 @@
 --     bound owner. Neither holds a second copy of the data.
 --
 -- Everything here is `create or replace` and adds no table, so the file can be
--- re-applied as a whole after `artifacts/rollback-009.mjs`. No object from
--- migrations 001-008 is dropped or replaced, and migration 007 keeps sole
--- ownership of the publication and its flags.
+-- re-applied as a whole: a database that already applied an earlier version of
+-- this migration is either recreated from scratch, or has this file's own
+-- functions and its `schema_migrations` row dropped first by a local script
+-- that is not part of the repository. No object from migrations 001-008 is
+-- dropped or replaced, and migration 007 keeps sole ownership of the
+-- publication and its flags.
 
 -- ---------------------------------------------------------------------------
 -- Readable references
@@ -356,8 +359,11 @@ begin
   end loop;
   v_events=vitally_private.apply_fixture_scenario(v_case,v_key,v_actor);
   -- One entry per recorded step, so the revision a browser sends back matches
-  -- the history the case shows. The generation that produced this set is on
-  -- the first internal entry, which is the only place it is written down.
+  -- the history the case shows. The first internal entry names the generation
+  -- that produced this set as a convenience for anyone reading the timeline;
+  -- `public.workspaces.fixture_generation` is the authoritative record, and a
+  -- later checkpoint on this case deletes every `case_events` row it has —
+  -- this one included.
   insert into public.case_events(workspace_id,case_id,actor_user_id,actor_person_id,action,detail,created_at)
   values(p_workspace_id,v_case.id,null,null,'FIXTURE_SEEDED',
    jsonb_build_object('simulated',true,'fixtureKey',v_key,'generation',p_generation),
@@ -421,6 +427,13 @@ begin
  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_member.workspace_id::text,0));
  -- Fixture rows only. Children cascade from the case; `action_receipts` has no
  -- foreign key to one and is deliberately left where it is.
+ --
+ -- `assistance_items.case_id` is one of those children (`on delete cascade`,
+ -- migration 002), so an item linked to a fixture case goes with the case even
+ -- when the item itself is not marked `fixture`. Latent today: nothing a
+ -- presenter or a client can do creates an assistance item against a fixture
+ -- case — the seeded one is itself a fixture row, and the browser has no
+ -- create-item path at all.
  delete from public.cases where workspace_id=v_member.workspace_id and fixture;
  delete from public.assistance_items where workspace_id=v_member.workspace_id and fixture;
  -- The shared signal, in a row every member of this workspace may read. It
@@ -443,8 +456,8 @@ grant execute on function public.vitally_reset_fixtures(uuid) to authenticated;
 -- the checkpoint's. The ordered checks are the case-action ones: membership,
 -- authority, the caller's receipt, then the target through permitted
 -- visibility (absent, another workspace's and another applicant's case are one
--- NOT_FOUND), then that it is a fixture case at all, then the expected
--- revision.
+-- NOT_FOUND), then the expected revision, then that it is a fixture case at
+-- all — CONFLICT ahead of VALIDATION, as everywhere else.
 create or replace function public.vitally_load_checkpoint(p_action_id uuid,p_case_id uuid,p_expected_revision bigint,p_checkpoint text)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_member public.memberships;
@@ -473,14 +486,18 @@ begin
  if v_receipt.receipt is not null then return v_receipt.receipt;
  end if;
  v_case=vitally_private.lock_case(v_member,p_case_id);
+ -- CONFLICT comes before every VALIDATION (contracts, "SQL errors and
+ -- validation order", step 5; the same order as `006_review.sql`): a caller
+ -- holding a stale revision is told so first, whatever the target turns out to
+ -- be, so a refusal never depends on which of the two a target failed.
+ if v_case.revision<>p_expected_revision then
+  raise sqlstate 'VT003' using message='CONFLICT';
+ end if;
  -- A case a student created is not a demonstration case and is never rewritten
  -- by this. It is visible to the caller, so saying so is a validation answer
  -- rather than the indistinguishable NOT_FOUND above.
  if not v_case.fixture then
   raise sqlstate 'VT007' using message='VALIDATION';
- end if;
- if v_case.revision<>p_expected_revision then
-  raise sqlstate 'VT003' using message='CONFLICT';
  end if;
  perform vitally_private.apply_fixture_scenario(v_case,v_scenario,v_member.user_id);
  -- The one entry that says what really happened: a checkpoint was loaded, and
