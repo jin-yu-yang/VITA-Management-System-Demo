@@ -1,4 +1,8 @@
-import { CASE_ACTIONS, CHECKPOINTS } from "./contracts.mjs";
+import {
+  CASE_ACTIONS,
+  CHECKPOINTS,
+  ASSISTANCE_ACTIONS,
+} from "./contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 import { createWindowState } from "./window-state.mjs";
 
@@ -40,9 +44,8 @@ const UNKNOWN_OUTCOME = Object.freeze(["OFFLINE", "SERVER_ERROR"]);
 
 // Assistance is its own workflow: its own RPC, its own revision and its own
 // list, beside the tax case rather than inside it (Ruling R22). Its two actions
-// therefore have their own vocabulary, checked here exactly as `CASE_ACTIONS`
-// is checked for a case action.
-const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+// therefore have their own vocabulary (`ASSISTANCE_ACTIONS` in contracts.mjs),
+// checked here exactly as `CASE_ACTIONS` is checked for a case action.
 
 const CONFLICT_MESSAGE =
   "Someone else changed this application. The newest version is shown — check it and try again.";
@@ -155,7 +158,11 @@ export function createController({
   let listening = false;
   let started = false;
 
-  const show = () => render?.();
+  // `focus` says this render changed the screen, so the page it drew is a new
+  // one and the keyboard belongs at the top of it. Everything else — a data
+  // refresh, somebody else's Realtime change, a refusal, a dialog — leaves the
+  // keyboard exactly where the person put it.
+  const show = (focus = false) => render?.(focus);
 
   // ---- window-local state ------------------------------------------------
   //
@@ -668,7 +675,8 @@ export function createController({
     state.authMessage = "";
     state.authError = null;
     state.screen = "access";
-    show();
+    // Signing out replaces the whole page with the sign-in screen.
+    show(true);
   }
 
   async function signOut() {
@@ -686,7 +694,7 @@ export function createController({
     state.error = null;
     state.dialog = null;
     persistSession();
-    show();
+    show(true);
   }
 
   function setFormStep(step) {
@@ -776,7 +784,9 @@ export function createController({
       throw error;
     }
     persistSession();
-    show();
+    // Opening a case is a screen change; reading the same case again in place
+    // (`navigate: false`, which is how a board control gets its case) is not.
+    show(move);
   }
 
   // Explicit and idempotent: the pending action id lives in window state until

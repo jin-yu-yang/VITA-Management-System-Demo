@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAuth, NEUTRAL_SEND_MESSAGE } from "../src/auth.mjs";
+import {
+  createAuth,
+  NEUTRAL_SEND_MESSAGE,
+  AUTH_ERROR_CODES,
+  SEND_DIAGNOSTIC_CATEGORIES,
+} from "../src/auth.mjs";
 import {
   AUTH_SEND_EVIDENCE,
   AUTH_SEND_OUTCOMES,
@@ -307,6 +312,62 @@ test("other verification errors and transport failures stay separate and safe", 
       return true;
     },
   );
+});
+
+test("the two declared vocabularies are exactly what this module emits", async () => {
+  // `AUTH_ERROR_CODES` and `SEND_DIAGNOSTIC_CATEGORIES` are this file's stated
+  // vocabulary: the codes a login screen can be handed, and the whole of what a
+  // diagnostic listener can hear. Nothing imports them, so this is what keeps
+  // them honest — a new branch that threw an unlisted code, or reported an
+  // unlisted category, would fail here.
+  const categories = new Set();
+  const sends = [
+    async () => ({ error: null }),
+    ...AUTH_SEND_OUTCOMES.map((outcome) => async () => ({ error: outcome.error })),
+    async () => ({ error: { code: "a_future_code_nobody_has_seen" } }),
+    async () => {
+      throw new TypeError("fetch failed");
+    },
+  ];
+  for (const send of sends) {
+    const auth = createAuth(fakeClient({ send }), {
+      clock: fakeClock().now,
+      onDiagnostic: (category) => categories.add(category),
+    });
+    await auth.sendCode("student@example.com");
+  }
+  assert.deepEqual(
+    [...categories].toSorted(),
+    [...SEND_DIAGNOSTIC_CATEGORIES].toSorted(),
+  );
+
+  const codes = new Set();
+  const collect = async (run) => {
+    try {
+      await run();
+    } catch (error) {
+      codes.add(error.code);
+    }
+  };
+  await collect(() =>
+    createAuth(fakeClient(), { clock: fakeClock().now }).sendCode("not-an-address"),
+  );
+  const verifies = [
+    () => ({ data: { session: null }, error: { code: "otp_expired" } }),
+    () => ({ data: { session: null }, error: { code: "validation_failed" } }),
+    () => ({
+      data: { session: null },
+      error: { name: "AuthRetryableFetchError", status: 0 },
+    }),
+  ];
+  for (const verify of verifies)
+    await collect(() =>
+      createAuth(fakeClient({ verify }), { clock: fakeClock().now }).verifyCode(
+        "student@example.com",
+        "000000",
+      ),
+    );
+  assert.deepEqual([...codes].toSorted(), [...AUTH_ERROR_CODES].toSorted());
 });
 
 test("there is no fixed demo code and no bypass", async () => {

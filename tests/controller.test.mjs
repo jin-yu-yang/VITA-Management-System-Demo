@@ -231,14 +231,17 @@ const idleAuth = () => ({
 });
 
 function build(options = {}) {
-  const renders = { count: 0 };
+  // `focus` records the argument of every render, because it decides whether
+  // the rebuilt page takes the keyboard back to the top.
+  const renders = { count: 0, focus: [] };
   const events = options.windowEvents ?? fakeEvents();
   const sessionStorage = options.sessionStorage ?? fakeSession();
   const controller = createController({
     store: options.store,
     auth: options.auth ?? idleAuth(),
-    render: () => {
+    render: (focus = false) => {
       renders.count += 1;
+      renders.focus.push(focus === true);
     },
     sessionStorage,
     windowEvents: events,
@@ -423,6 +426,54 @@ test("a subscribed change refreshes the affected case, and another case's change
   assert.equal(controller.getState().connection, "offline");
   controller.stop();
   assert.equal(store.released, 1);
+});
+
+test("only a screen change asks the page to take the keyboard back", async () => {
+  // The render argument is how the wiring layer knows a new screen was drawn:
+  // a new screen puts the keyboard at the top of it, and a rebuild of the same
+  // screen — a refresh, somebody else's change, a refused action — must leave
+  // it where the person put it.
+  const store = fakeStore({
+    cases: [
+      { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} },
+      { id: "case-b", reference: "VT-CCCC-DDDD", stage: "draft", revision: 1, answers: {} },
+    ],
+  });
+  const { controller, renders, events } = build({ store });
+  await controller.start();
+  const since = () => renders.focus.slice(mark);
+  let mark = renders.focus.length;
+  controller.navigate("applications");
+  assert.deepEqual(since(), [true], "navigating is a screen change");
+
+  mark = renders.focus.length;
+  await controller.selectCase("case-a");
+  assert.ok(since().includes(true), "opening a case is a screen change");
+
+  // Everything that redraws the screen the person is already on.
+  mark = renders.focus.length;
+  await controller.selectCase("case-b", { navigate: false });
+  await controller.refresh();
+  await events.emit("focus");
+  await store.handlers.onChange({
+    table: "cases",
+    eventType: "UPDATE",
+    id: "case-a",
+    caseId: "case-a",
+  });
+  store.handlers.onConnection("offline");
+  controller.togglePanel("confirmed");
+  controller.openDialog("help");
+  controller.closeDialog();
+  store.failNext = Object.assign(new Error("no"), { code: "CONFLICT" });
+  await assert.rejects(() => controller.runAction("SUBMIT", { confirmed: true }));
+  assert.ok(since().length > 0, "these really did re-render");
+  assert.deepEqual(
+    since().filter(Boolean),
+    [],
+    "a rebuild of the same screen never moves the keyboard",
+  );
+  controller.stop();
 });
 
 test("focus and online events refresh, and stop removes the listeners", async () => {

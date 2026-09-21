@@ -256,7 +256,18 @@ function fakeClient({
                   read.filters.every(([column, value]) => row[column] === value) &&
                   (!read.within || read.within[1].includes(row[read.within[0]])),
               );
-              return { data: matches, error: null };
+              // PostgREST returns the columns that were asked for and no
+              // others, so the double projects them too: a read that names its
+              // columns cannot quietly deliver the rest of the row.
+              if (!read.columns || read.columns === "*")
+                return { data: matches, error: null };
+              const wanted = read.columns.split(",").map((name_) => name_.trim());
+              return {
+                data: matches.map((row) =>
+                  Object.fromEntries(wanted.map((column) => [column, row[column]])),
+                ),
+                error: null,
+              };
             })
             .then(onFulfilled, onRejected),
       };
@@ -487,8 +498,31 @@ test("an applicant case read asks for no staff table at all", async () => {
     "updatedAt",
     "workspaceId",
   ]);
-  assert.equal(found.requests[0].requestedByPersonId, "person-alex");
   assert.equal(found.history[0].message, "Application received.");
+  // Every related read names its columns. `select("*")` would hand the browser
+  // whatever the table holds: the office person who asked for a document, and
+  // — on a staff-recorded one — the presenter's own Auth user id.
+  const related = client.reads.filter((read) =>
+    ["document_requests", "documents", "client_events"].includes(read.table),
+  );
+  assert.equal(related.length, 3);
+  for (const read of related) {
+    assert.notEqual(read.columns, "*", `${read.table} selects everything`);
+    for (const column of [
+      "submitted_by_user_id",
+      "submitted_by_person_id",
+      "requested_by_person_id",
+    ])
+      assert.ok(!read.columns.includes(column), `${read.table} selects ${column}`);
+  }
+  // And what came back carries none of them either.
+  const values = JSON.stringify([found.requests, found.documents, found.history]);
+  for (const name of ["person-alex", "user-1", "submittedBy", "requestedBy"])
+    assert.ok(!values.includes(name), `the client payload carries ${name}`);
+  // What the client's own screens read is still there.
+  assert.equal(found.requests[0].title, "Mileage record");
+  assert.equal(found.requests[0].status, "open");
+  assert.equal(found.documents[0].filename, "demo-mileage-record-2025.pdf");
 });
 
 test("a presenter case read adds exactly the staff sections", async () => {

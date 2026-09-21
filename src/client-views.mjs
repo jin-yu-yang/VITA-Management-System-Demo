@@ -8,6 +8,7 @@ import {
   radio,
   stageBadge,
   formatTime,
+  fieldId,
   ANSWER_LABELS as answerLabels,
 } from "./ui.mjs";
 import {
@@ -293,10 +294,14 @@ function progressTrack(stage) {
   }).join("")}</div>`;
 }
 
+// One card per open request, so every id inside it is scoped to that request:
+// two open requests would otherwise render the same checkbox id twice and both
+// labels would toggle the first box.
 function documentRequest(request, state) {
   const failed = state.openPanels.includes("upload-failed");
   const simulate = state.openPanels.includes("upload-failure");
-  return `<div class="action-card"><div class="action-label">${icon("clock")} ACTION NEEDED</div><h2>${esc(request.title)}</h2><p>${esc(request.message)}</p><div class="upload-zone has-file">${icon("file")}<strong>demo-mileage-record-2025.pdf</strong><span>One fictional sample document. Nothing is uploaded or stored.</span></div><label class="checkbox-row small" for="field-simulate-upload-failure"><input type="checkbox" id="field-simulate-upload-failure" ${simulate ? "checked" : ""} data-action="toggle-upload-failure"><span>Simulate an upload failure</span></label>${when(failed, `<p class="error" role="alert">The sample upload failed. Your request is still open and nothing was sent. Try again.</p>`)}${caseButton(
+  const simulateId = fieldId("simulate-upload-failure", request.id);
+  return `<div class="action-card"><div class="action-label">${icon("clock")} ACTION NEEDED</div><h2>${esc(request.title)}</h2><p>${esc(request.message)}</p><div class="upload-zone has-file">${icon("file")}<strong>demo-mileage-record-2025.pdf</strong><span>One fictional sample document. Nothing is uploaded or stored.</span></div><label class="checkbox-row small" for="${simulateId}"><input type="checkbox" id="${simulateId}" ${simulate ? "checked" : ""} data-action="toggle-upload-failure" data-request-id="${esc(request.id)}"><span>Simulate an upload failure</span></label>${when(failed, `<p class="error" role="alert">The sample upload failed. Your request is still open and nothing was sent. Try again.</p>`)}${caseButton(
     `Send sample document ${icon("arrow")}`,
     "RESPOND_DOCUMENT",
     "primary",
