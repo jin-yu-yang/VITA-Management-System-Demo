@@ -42,6 +42,11 @@ const REALTIME_DEADLINE_MS = 15_000;
 // How long one retry of a warm-up control waits before committing another.
 const CONTROL_ATTEMPT_MS = 2_500;
 
+// The deadline for a promise that has none of its own — a channel's SUBSCRIBED
+// or an adapter's first "online". Everything that waits for a *payload* carries
+// its own rejecting deadline instead (`waitFor` below), because a timer raced
+// against another timer of the same delay is decided by insertion order rather
+// than by what actually happened.
 async function withDeadline(promise, message) {
   let timer;
   try {
@@ -85,6 +90,29 @@ function watchTable(client, bindings, label) {
       errors.push(`${label}: ${status}${error ? ` (${error.message})` : ""}`);
   });
   const rowOf = (payload) => payload?.new ?? payload?.old ?? {};
+  const watching = bindings
+    .map(({ event, table }) => `${event} ${table}`)
+    .join(", ");
+  // One wait, in two shapes. `pending` resolves the first payload the
+  // predicate accepts — including one already collected — and answers `null`
+  // once `ms` has passed; only `controlUntilSeen` is allowed to see that null,
+  // because it retries and then asserts for itself.
+  const pending = (matches, ms) => {
+    const already = payloads.find((payload) => matches(rowOf(payload), payload));
+    if (already) return Promise.resolve(already);
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        clearTimeout(timer);
+        waiters.delete(waiter);
+        resolve(value);
+      };
+      const waiter = (payload) => {
+        if (matches(rowOf(payload), payload)) finish(payload);
+      };
+      const timer = setTimeout(() => finish(null), ms);
+      waiters.add(waiter);
+    });
+  };
   return {
     label,
     channel,
@@ -92,24 +120,20 @@ function watchTable(client, bindings, label) {
     errors,
     subscribed,
     rows: () => payloads.map(rowOf),
-    // Resolves with the first payload the predicate accepts — including one
-    // already collected — or with null once `ms` has passed.
-    waitFor(matches, ms = REALTIME_DEADLINE_MS) {
-      const already = payloads.find((payload) => matches(rowOf(payload), payload));
-      if (already) return Promise.resolve(already);
-      return new Promise((resolve) => {
-        const finish = (value) => {
-          clearTimeout(timer);
-          waiters.delete(waiter);
-          resolve(value);
-        };
-        const waiter = (payload) => {
-          if (matches(rowOf(payload), payload)) finish(payload);
-        };
-        const timer = setTimeout(() => finish(null), ms);
-        waiters.add(waiter);
-      });
+    // The wait every marker and every fence uses. An expired deadline
+    // **throws**: a wait that ran out is a failure, never evidence that
+    // nothing was delivered, and a caller that ignored the return value would
+    // otherwise go on to assert something about silence.
+    async waitFor(matches, what = "a matching change") {
+      const seen = await pending(matches, REALTIME_DEADLINE_MS);
+      if (!seen)
+        throw new Error(
+          `${label} (watching ${watching}) never received ${what} within ${REALTIME_DEADLINE_MS}ms`,
+        );
+      return seen;
     },
+    // The retrying warm-up's shorter, non-throwing attempt.
+    pollFor: pending,
     stop() {
       if (stopped) return;
       stopped = true;
@@ -135,7 +159,7 @@ async function controlUntilSeen(watch, commit, matcherFor, label) {
   do {
     const change = await commit();
     produced.push(change);
-    seen = await watch.waitFor(
+    seen = await watch.pollFor(
       matcherFor(change),
       Math.max(500, Math.min(CONTROL_ATTEMPT_MS, deadline - Date.now())),
     );
@@ -527,9 +551,9 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
 
             // 4. A later fence of B's, on B's same channel.
             const fence = await spec.commit(f, owners.B);
-            const arrived = await withDeadline(
-              watchB.waitFor(exactly(fence)),
-              `B's ${spec.table} ${spec.event} fence never arrived`,
+            const arrived = await watchB.waitFor(
+              exactly(fence),
+              `B's own ${spec.table} ${spec.event} fence`,
             );
             assert.ok(arrived, "the fence arrived");
 
@@ -590,7 +614,10 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           }),
         );
       }
-      const awaitChange = (name, matches, ms = REALTIME_DEADLINE_MS) => {
+      // The adapter's own two shapes of the same wait, exactly as the raw
+      // channels have them: a polling one for the retrying control, and a
+      // throwing one for everything that must not proceed on silence.
+      const pollChange = (name, matches, ms) => {
         const already = collected[name].find(matches);
         if (already) return Promise.resolve(already);
         return new Promise((resolve) => {
@@ -606,6 +633,14 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           waiters[name].add(waiter);
         });
       };
+      const awaitChange = async (name, matches, what) => {
+        const seen = await pollChange(name, matches, REALTIME_DEADLINE_MS);
+        if (!seen)
+          throw new Error(
+            `${name}'s adapter never received ${what} within ${REALTIME_DEADLINE_MS}ms`,
+          );
+        return seen;
+      };
       try {
         await withDeadline(online.A, "A's adapter never came online");
         await withDeadline(online.B, "B's adapter never came online");
@@ -615,7 +650,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           seen.id === change.id && seen.table === "cases";
         const watcher = (name) => ({
           label: `${name} adapter`,
-          waitFor: (matches, ms) => awaitChange(name, matches, ms),
+          pollFor: (matches, ms) => pollChange(name, matches, ms),
         });
         // Control, marked change, fence — the same three steps.
         const control = await controlUntilSeen(
@@ -646,9 +681,10 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         const fence = await f.createCase(owners.B.client, crypto.randomUUID(), {
           answers: makeSampleAnswers(),
         });
-        await withDeadline(
-          awaitChange("B", (change) => change.id === fence.caseId),
-          "B's adapter fence never arrived",
+        await awaitChange(
+          "B",
+          (change) => change.id === fence.caseId,
+          "B's own fence, a case of their own",
         );
         for (const change of collected.B) {
           assert.ok(!mineIds.has(change.id), "B's adapter received A's id");
@@ -665,9 +701,10 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         // row moved, with no case behind it. This is what tells the browser to
         // re-read its own lists after somebody resets the demonstration.
         await f.seedFixtures();
-        const signal = await withDeadline(
-          awaitChange("A", (change) => change.table === "workspaces"),
-          "A's adapter never saw the generation signal",
+        const signal = await awaitChange(
+          "A",
+          (change) => change.table === "workspaces",
+          "the shared generation signal",
         );
         assert.deepEqual(signal, {
           table: "workspaces",
@@ -700,13 +737,13 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           "the generation signal",
         );
         const generation = control.produced.at(-1).generation;
-        const onStaff = await withDeadline(
-          staff.waitFor((row) => Number(row.fixture_generation) === generation),
-          "the presenter never saw the new generation",
+        const onStaff = await staff.waitFor(
+          (row) => Number(row.fixture_generation) === generation,
+          `generation ${generation}`,
         );
-        const onClient = await withDeadline(
-          client.waitFor((row) => Number(row.fixture_generation) === generation),
-          "the applicant never saw the new generation",
+        const onClient = await client.waitFor(
+          (row) => Number(row.fixture_generation) === generation,
+          `generation ${generation}`,
         );
         // Both members get the same row, and the row says nothing private: a
         // workspace id, the default follow-up person, and a number.
@@ -761,9 +798,9 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           );
           // An ordered fence afterwards, on A's own readable table.
           const moved = await saveFor(owners.A);
-          await withDeadline(
-            fence.waitFor(savedCase(moved)),
-            `A's fence after ${spec.table} never arrived`,
+          await fence.waitFor(
+            savedCase(moved),
+            `A's own ordered fence after the ${spec.table} change`,
           );
           assert.deepEqual(
             denied.payloads,
@@ -831,9 +868,9 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         // everything committed before them, the deletion included.
         for (const attempt of [1, 2]) {
           const fence = await saveFor(owners.A);
-          await withDeadline(
-            watch.waitFor(savedCase(fence)),
-            `A's post-reset fence ${attempt} never arrived`,
+          await watch.waitFor(
+            savedCase(fence),
+            `A's post-reset ordered fence ${attempt}`,
           );
         }
         const deletions = watch.payloads.filter(
