@@ -48,7 +48,7 @@ export async function buildVendorBundle() {
   return { sdk, bundler, outfile, bytes: (await stat(outfile)).size };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.filename === process.argv[1]) {
   const result = await buildVendorBundle();
   console.log(
     `Bundled @supabase/supabase-js ${result.sdk} with esbuild ${result.bundler}: ` +

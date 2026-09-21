@@ -10,6 +10,7 @@ import {
   submitVerificationCode,
   APP_COOLDOWN_SECONDS,
 } from "./support/browser-fixture.mjs";
+import { redactAddresses } from "./support/story-pages.mjs";
 import { NEUTRAL_SEND_MESSAGE } from "../src/auth.mjs";
 
 // Task 5A: the early two-engine Auth compatibility gate.
@@ -347,8 +348,11 @@ async function readNeutralAccessScreen({ engine, fixture, address }) {
       seconds > 0 && seconds <= APP_COOLDOWN_SECONDS,
       `countdown out of range: ${seconds}`,
     );
+    // Masked before the text enters this process: the two screens are compared
+    // by equality, so a difference prints both, and the address the page echoes
+    // back is the one thing on them that must never reach a test report.
     const screen = normalizeAccessScreen(
-      await page.locator("#main").innerText(),
+      redactAddresses(await page.locator("#main").innerText()),
       address,
     );
     assert.deepEqual(pageErrors, []);

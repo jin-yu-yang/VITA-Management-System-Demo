@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import {
   createBrowserFixture,
   loginTestUser,
@@ -79,7 +80,7 @@ import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 // Nothing here logs an address, a code or a token, and no screenshot is taken
 // of a screen that carries one.
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SHOTS = screenshotDir(ROOT);
 
 // Enough for a database fixture, two engines, eight windows and the whole
@@ -1360,6 +1361,10 @@ async function runPermutation(t, roles) {
           await release({ pending });
         }
         evidence.regressions.fixedCode = "refused, and the form stays on the code step";
+        assertConsoleQuiet(codeWin, {
+          name: "wrong-code window",
+          allow: REFUSAL_LINES,
+        });
       } finally {
         await codeWin.context.close();
       }
@@ -1386,6 +1391,10 @@ async function runPermutation(t, roles) {
         }
         evidence.regressions.unknownAddress =
           "the same neutral message and the same disabled countdown";
+        assertConsoleQuiet(unknownWin, {
+          name: "unknown-address window",
+          allow: REFUSAL_LINES,
+        });
       } finally {
         await unknownWin.context.close();
       }
@@ -1459,6 +1468,15 @@ async function runPermutation(t, roles) {
       };
       reset.refusalKept = reset.refusalAfter === refusalBefore;
       evidence.regressions.reset = reset;
+      // Both checks below are about what the reset did to the client window,
+      // so they mean nothing until the reset has reached it. This is the sign
+      // that it did: the connection notice the refused save left behind is
+      // gone, which only the re-read that handles the reset can do.
+      assert.equal(
+        reset.clientRecovered,
+        true,
+        "the client window never re-read after the reset, so the checks below prove nothing",
+      );
       assert.equal(
         reset.keyboardAfterSharedUpdate,
         reset.keyboardBeforeSharedUpdate,
