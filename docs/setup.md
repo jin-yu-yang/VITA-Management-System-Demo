@@ -165,3 +165,75 @@ Task 10C does the full documentation pass; these are the pieces Task 5 added.
 **Vendor bundle.** `npm run build:vendor` runs `tools/build.mjs`, which bundles `@supabase/supabase-js` alone into the committed `src/vendor/supabase.mjs` (minified ESM, banner naming the SDK and esbuild versions). There is no runtime build step and no CDN: the static host serves the committed file. Rebuild and commit it whenever the SDK pin changes.
 
 **Realtime publication.** Migration `007_realtime_publication.sql` adds the twelve browser-readable tables (`cases`, `document_requests`, `documents`, `client_events`, `workspaces`, `people`, `preparation_participants`, `admin_followups`, `contact_attempts`, `case_events`, `assistance_items`, `reviews`) to `supabase_realtime` and sets `publish = 'insert, update'`. Publishing exposes a table's write-ahead log to Realtime, which then applies the same RLS policies, so the list stops exactly where browser read permission stops: `action_receipts` and `vitally_private` are never published. DELETE and TRUNCATE are never published, because a removed row cannot be authorized through RLS state it no longer has. The migration is idempotent and fails loudly on a project with no `supabase_realtime` publication. Without it a browser subscription receives nothing while Realtime still reports `SUBSCRIBED`, and one unpublished table in a channel's set drops that channel's whole subscription.
+
+## Task 5A auth gate evidence
+
+`npm run test:auth-browser` (`node --env-file=.env.test --test tests/auth-browser.mjs`) is the early
+cross-browser Auth compatibility gate. It serves the application in-process from this repository — never a
+`.env.local` — configured only from the guarded test target, and drives the real access form in real Chrome and
+real Firefox. Only the exact `/auth/v1/otp` URL of that target is answered by automation, so no automated run
+ever asks a mail server for anything; `/auth/v1/verify` is never intercepted, and no session is ever injected.
+Codes come from `auth.admin.generateLink({type:'magiclink'})` in the Node process, are typed into the real
+field, and the signed-in user id is read back from the session the SDK stored in the page. No address, code or
+token is logged, and the gate takes no screenshots.
+
+Install the second engine with the command-scoped PATH before the first run; the default per-user browser cache
+is used, and nothing is written into the repository:
+
+```sh
+PATH="$VITALLY_NODE_BIN:$PATH" ./node_modules/.bin/playwright install firefox
+```
+
+**Versions in the recorded run (2026-09-21).**
+
+| Component | Observed |
+| --- | --- |
+| Google Chrome (installed channel, `chromium.launch({channel:'chrome'})`) | 153.0.8010.48 |
+| Playwright Firefox (`firefox.launch()`) | 155.0, build 1543 |
+| Playwright | 1.63.0 |
+| Supabase Auth / GoTrue container | `public.ecr.aws/supabase/gotrue:v2.196.0` |
+| PostgREST container | `public.ecr.aws/supabase/postgrest:v16.3` |
+| Realtime / gateway / database / mail catcher containers | `realtime:v2.130.0`, `kong:2.8.1`, `postgres:17.6.1.167`, `mailpit:v1.30.2` |
+
+**Observed sanitized Auth codes.** All from the isolated local stack described above, with `[auth]
+enable_signup=false`, `[auth.email] enable_signup=true` and `max_frequency="60s"`. These are error identifiers,
+never addresses or codes.
+
+| Scenario | Call | Observed |
+| --- | --- | --- |
+| Unknown address, `shouldCreateUser:false` | `signInWithOtp` | `otp_disabled`, and `select count(*) from auth.users` for that address stays 0 |
+| Same unknown address, direct sign-up | `signUp` | `signup_disabled` — public signup is closed |
+| Confirmed address immediately after a `generateLink` | `signInWithOtp` | `over_email_send_rate_limit` (no mail leaves; the catcher is local anyway) |
+| A one-time code that already signed someone in | `verifyOtp` | `otp_expired` |
+| A wrong code (`000000`, and the removed fixed `246810`) | `verifyOtp` | `otp_expired`; the form stays on the code step and shows the invalid/expired copy |
+
+**Repeat generation inside the send interval — the fact the earlier probe did not establish.** Two
+`auth.admin.generateLink({type:'magiclink'})` calls for the *same* confirmed user, 2.7 s and 14.8 s apart in the
+two engines and so well inside the verified 60-second interval, were **both accepted**, and the second call's
+one-time code verified through the real form in both engines. The administrative generation path therefore does
+not enforce `max_frequency` on this stack, although the public `signInWithOtp` path does (the row above). The
+sign-out-and-return test consequently never needed its bounded wait; the wait remains in the test, capped at
+75 seconds, for a target that behaves differently. No limit is ever lowered to pass this gate.
+
+**Interception counts.** Exactly one intercepted `/auth/v1/otp` POST per sign-in, in both engines, asserted on
+its own counter. **Zero** preflight requests reached the route handler in either engine, the same as the earlier
+probe — so the handler's OPTIONS branch, its refusal of an unexpected method, its rejection of a foreign origin
+and its `create_user:false` check are unit-tested directly against a stand-in route instead. The handler
+deliberately carries no `times:1`, because on a runtime that does surface a preflight the OPTIONS would
+otherwise consume the send handler and let the real request through.
+
+**Not observable here, and why.** Real mail delivery (the send is intercepted; hosted SMTP proof is Task 10B).
+`over_request_rate_limit` (would mean exhausting a shared quota). `email_provider_disabled` (a misconfiguration
+the earlier probe already recorded; not reproduced deliberately). Hosted-project gateway behaviour, SMTP
+provider failures and social-only accounts remain unobserved. `tests/fixtures/auth-send-outcomes.mjs` is
+unchanged: no *send* outcome code appeared that it does not already record.
+
+**Known defect this run measured.** While the resend countdown runs, the access screen rebuilds itself once a
+second (`src/app.mjs` `tickCooldown` → `render`, which reassigns `#app.innerHTML`), and the rebuilt code field
+is rendered with an empty value. A code typed in one tick is gone in the next, in both engines: the gate
+measured the survival time at 25 ms to 1.04 s across runs, which is simply whatever was left of the current
+one-second tick. A visitor who takes longer than that between typing the code and pressing **Verify and
+continue** submits an empty field, which the field's own `required` validation silently blocks, so nothing
+happens at all — no request, no message. `tests/support/browser-fixture.mjs` works around it (it re-fills and
+retries, which sends nothing when the field was cleared) and says so in place; the fix belongs in the
+application, and the work-around should be deleted with it.
