@@ -39,6 +39,8 @@ const CASE_ROW = Object.freeze({
   reviewer_id: null,
   last_reminded_at: null,
   last_reminded_by_person_id: null,
+  created_at: "2026-09-10T15:00:00.000Z",
+  updated_at: "2026-09-12T16:30:00.000Z",
 });
 
 // Every related row the staff read assembles, one per table.
@@ -361,6 +363,8 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       reviewerId: null,
       lastRemindedAt: null,
       lastRemindedByPersonId: null,
+      createdAt: "2026-09-10T15:00:00.000Z",
+      updatedAt: "2026-09-12T16:30:00.000Z",
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -385,6 +389,7 @@ test("an applicant case read asks for no staff table at all", async () => {
     assert.ok(!tables.includes(staffTable), staffTable);
   assert.deepEqual(Object.keys(found).toSorted(), [
     "answers",
+    "createdAt",
     "documents",
     "fixture",
     "history",
@@ -400,6 +405,7 @@ test("an applicant case read asks for no staff table at all", async () => {
     "reviewerId",
     "revision",
     "stage",
+    "updatedAt",
     "workspaceId",
   ]);
   assert.equal(found.requests[0].requestedByPersonId, "person-alex");

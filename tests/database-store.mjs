@@ -151,6 +151,59 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       assert.deepEqual(await f.readStaffCase(caseId), staff);
     });
 
+    await t.test("every case carries its created and updated times", async () => {
+      // Migration 008. Both mappers map them, so a client case and a staff case
+      // carry the same two fields — a work board that cannot say when a case
+      // last moved is not a work board.
+      const isoish = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+      const before = await applicant.getCase(draft.caseId);
+      const staff = await presenter.getCase(caseId);
+      for (const record of [before, staff])
+        for (const field of ["createdAt", "updatedAt"]) {
+          assert.equal(typeof record[field], "string", field);
+          assert.match(record[field], isoish, field);
+          assert.ok(!Number.isNaN(new Date(record[field]).getTime()), field);
+        }
+      // The list carries them too: that is what the board actually reads.
+      const listed = (await applicant.listCases()).find(
+        (row) => row.id === draft.caseId,
+      );
+      assert.equal(listed.updatedAt, before.updatedAt);
+      assert.equal(listed.createdAt, before.createdAt);
+
+      // An accepted action moves `updatedAt` and never `createdAt`.
+      await applicant.act({
+        actionId: crypto.randomUUID(),
+        caseId: draft.caseId,
+        expectedRevision: before.revision,
+        personId: null,
+        type: "SAVE_ANSWERS",
+        payload: { answers: { city: "Philadelphia" } },
+      });
+      const after = await applicant.getCase(draft.caseId);
+      assert.equal(after.createdAt, before.createdAt, "creation time never moves");
+      assert.ok(
+        new Date(after.updatedAt) > new Date(before.updatedAt),
+        "an accepted action moves the updated time",
+      );
+
+      // A refused one moves nothing: the whole statement rolls back.
+      await assert.rejects(
+        () =>
+          applicant.act({
+            actionId: crypto.randomUUID(),
+            caseId: draft.caseId,
+            expectedRevision: before.revision,
+            personId: null,
+            type: "SAVE_ANSWERS",
+            payload: { answers: { city: "Camden" } },
+          }),
+        rejected("CONFLICT"),
+      );
+      const refused = await applicant.getCase(draft.caseId);
+      assert.equal(refused.updatedAt, after.updatedAt);
+    });
+
     await t.test("another applicant's case and a stranger id are NOT_FOUND", async () => {
       for (const id of [other.caseId, crypto.randomUUID()])
         await assert.rejects(() => applicant.getCase(id), rejected("NOT_FOUND"));

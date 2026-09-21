@@ -78,6 +78,10 @@ export const mapCase = (row) => ({
   reviewerId: row.reviewer_id,
   lastRemindedAt: row.last_reminded_at,
   lastRemindedByPersonId: row.last_reminded_by_person_id,
+  // When the case was created, and when the last accepted action committed
+  // (migration 008). Both mappers get them, because both start here.
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 });
 
 export const mapPerson = (row) => ({
