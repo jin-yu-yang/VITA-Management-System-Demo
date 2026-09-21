@@ -20,7 +20,8 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "VERIFY_INTAKE",
       {},
-      {},
+      // Four ticked checkboxes, exactly as a form reports them.
+      { interview: "true", identity: "true", documents: "true", consent: "true" },
       {
         checks: {
           interview: true,
@@ -93,7 +94,7 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "CLOSE_CASE",
       {},
-      { reason: "Client moved away" },
+      { reason: "Client moved away", confirmed: "true" },
       { reason: "Client moved away", confirmed: true },
     ],
   ];
@@ -169,6 +170,25 @@ test("a missing required field refuses before anything is sent", () => {
     ["RECORD_REVIEW_CONTACT", {}, { note: "A note" }],
     ["RECORD_REVIEW_CONTACT", {}, { outcome: "reached" }],
     ["CLOSE_CASE", {}, {}],
+    ["CLOSE_CASE", {}, { reason: "Client moved away" }],
+    ["CLOSE_CASE", {}, { confirmed: "true" }],
+    // Three of the four attestations is not an attestation.
+    ["VERIFY_INTAKE", {}, {}],
+    [
+      "VERIFY_INTAKE",
+      {},
+      { interview: "true", identity: "true", documents: "true" },
+    ],
+    [
+      "VERIFY_INTAKE",
+      {},
+      {
+        interview: "true",
+        identity: "true",
+        documents: "true",
+        consent: "false",
+      },
+    ],
   ];
   for (const [type, dataset, values] of missing)
     assert.throws(
@@ -221,10 +241,40 @@ test("a form value never overrides the file name or the confirmation flag", () =
   assert.deepEqual(payloadFor("SUBMIT", {}, { confirmed: "false" }).payload, {
     confirmed: true,
   });
+  // Closing needs the confirmation, and the flag that leaves is always the
+  // literal `true` the contract names: a form can withhold it, never redefine
+  // it as something else.
+  assert.throws(
+    () => payloadFor("CLOSE_CASE", {}, { reason: "r", confirmed: "no" }),
+    invalid,
+  );
+  const closure = payloadFor("CLOSE_CASE", {}, {
+    reason: "r",
+    confirmed: "on",
+  }).payload;
+  assert.deepEqual(Object.keys(closure).toSorted(), ["confirmed", "reason"]);
+  assert.equal(closure.confirmed, true);
+  // The same for the intake checks: a "false" checkbox value is not a tick, and
+  // no extra field can join the four the database accepts.
+  assert.throws(
+    () =>
+      payloadFor("VERIFY_INTAKE", {}, {
+        interview: "true",
+        identity: "true",
+        documents: "true",
+        consent: "no",
+      }),
+    invalid,
+  );
   assert.deepEqual(
-    Object.keys(payloadFor("CLOSE_CASE", {}, { reason: "r", confirmed: "no" }).payload)
-      .toSorted(),
-    ["confirmed", "reason"],
+    payloadFor("VERIFY_INTAKE", {}, {
+      interview: "true",
+      identity: "true",
+      documents: "true",
+      consent: "true",
+      smuggled: "true",
+    }).payload,
+    { checks: { interview: true, identity: true, documents: true, consent: true } },
   );
 });
 

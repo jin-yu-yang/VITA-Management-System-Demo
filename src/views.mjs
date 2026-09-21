@@ -4,6 +4,11 @@ import {
   renderStaffCase,
   decorateStaffCase,
 } from "./staff-views.mjs";
+import {
+  renderAdminBoard,
+  renderAdminCase,
+  closeCaseDialogBody,
+} from "./admin-views.mjs";
 
 // The shared shell: the frame every screen sits in, the dialogs, the two
 // screens that belong to nobody in particular (setup needed, no access), and
@@ -89,6 +94,14 @@ function personaPicker(people = [], selectedPersonId = null) {
     .join("")}</div></section>`;
 }
 
+// Which screens a presenter gets is decided by the persona this window is
+// acting as, not by the account: an office administrator works in the follow-up
+// and assistance workspace, everybody else in the preparation/review one
+// (Ruling R55). The choice is a view choice — the database re-checks every
+// capability on every action, so nothing here grants anything.
+const isAdmin = (person) =>
+  Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
+
 // A presenter is on one of two screens: the work board, or one case. Both get
 // the persona selector, because which volunteer this window is acting as is
 // what decides who may do what. The records are decorated here — once, with the
@@ -98,21 +111,84 @@ export function staffScreen(state) {
   const person =
     people.find((entry) => entry.id === state.selectedPersonId) ?? null;
   const picker = personaPicker(people, state.selectedPersonId);
-  if (state.screen === "staff-case" && state.savedCase)
-    return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>One case</h1><p>Everything this case holds, and the work you may do on it as the volunteer you are acting as.</p>${button(`${icon("back")} Back to the work board`, "open-board", "text")}</div>${picker}${renderStaffCase(
-      decorateStaffCase(state.savedCase, people),
+  const office = isAdmin(person);
+  const frame = (overline, title, intro, back, body) =>
+    `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
+      back,
+      button(`${icon("back")} Back to the work board`, "open-board", "text"),
+    )}</div>${picker}${body}</main>`;
+  if (state.screen === "staff-case" && state.savedCase) {
+    const record = decorateStaffCase(state.savedCase, people);
+    const ui = {
       person,
-      {
-        busy: state.busy,
-        error: state.error,
-        retryable: state.retryable,
-      },
-    )}</main>`;
-  return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">VOLUNTEER WORKSPACE</span><h1>Work board</h1><p>Every case in this workspace, what it is waiting for, and the work you can take on.</p></div>${picker}${renderStaffBoard(
-    (state.cases ?? []).map((record) => decorateStaffCase(record, people)),
-    people,
-    { person, filters: state.boardFilters, busy: state.busy },
-  )}</main>`;
+      busy: state.busy,
+      error: state.error,
+      retryable: state.retryable,
+      draftAnswers: state.draftAnswers,
+      dirty: state.dirty,
+      openPanels: state.openPanels,
+    };
+    return office
+      ? frame(
+          "OFFICE WORKSPACE",
+          "One case",
+          "What the office knows about this case, and the office work you may do on it.",
+          true,
+          renderAdminCase(record, ui),
+        )
+      : frame(
+          "VOLUNTEER WORKSPACE",
+          "One case",
+          "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+          true,
+          renderStaffCase(record, person, ui),
+        );
+  }
+  const cases = (state.cases ?? []).map((record) =>
+    decorateStaffCase(record, people),
+  );
+  return office
+    ? frame(
+        "OFFICE WORKSPACE",
+        "Office work",
+        "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
+        false,
+        renderAdminBoard(
+          cases,
+          (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
+          {
+            person,
+            filters: state.boardFilters,
+            busy: state.busy,
+            openPanels: state.openPanels,
+          },
+        ),
+      )
+    : frame(
+        "VOLUNTEER WORKSPACE",
+        "Work board",
+        "Every case in this workspace, what it is waiting for, and the work you can take on.",
+        false,
+        renderStaffBoard(cases, people, {
+          person,
+          filters: state.boardFilters,
+          busy: state.busy,
+        }),
+      );
+}
+
+// The same id-to-name step `decorateStaffCase` performs, for the one field an
+// assistance item holds: the helper who took it. The store returns ids; no
+// renderer ever sees one.
+function decorateAssistance(item, people = []) {
+  if (!item) return item;
+  return {
+    ...item,
+    assigneeName: item.assigneeId
+      ? (people.find((person) => person?.id === item.assigneeId)?.name ??
+        "Unknown person")
+      : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +206,11 @@ export function dialog(state) {
   if (state.dialog === "regenerate") {
     title = "Replace the fictional answers?";
     body = `<p>This replaces every answer in this form with a different fictional example, including answers you edited. Your email address, Application ID and current stage do not change.</p><div class="info-note">${icon("help")}<p>Nothing is saved until you save the form, so you can still step back through the form and check it first.</p></div>${button("Replace with another example", "confirm-regenerate", "primary full")}${button("Keep my answers", "close-dialog", "text")}`;
+  }
+  if (state.dialog === "close-case") {
+    title = "Close this case?";
+    // The office screens own their own copy; this frame only places it.
+    body = closeCaseDialogBody(state);
   }
   if (state.dialog === "print") {
     title = "Your application reference card";

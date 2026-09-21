@@ -3005,3 +3005,63 @@ textarea::placeholder {
     gap: 8px 10px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The office workspace (Task 8): the follow-up and assistance screens. Built
+   from the same custom properties as everything above, so there is one visual
+   language and no new colour. Colour is never the only signal here either —
+   every badge and every refusal carries its own words.
+   --------------------------------------------------------------------------- */
+
+.checkbox-row.small {
+  font-size: 13px;
+  margin: 10px 0;
+  align-items: flex-start;
+}
+.checkbox-row.small input {
+  margin-top: 1px;
+}
+.staff-form h4,
+.followup-list h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Two forms on one task: the attempt and the resolution are separate steps, so
+   they are separated on screen as well as in the wording. */
+.followup-list .staff-form + .staff-form {
+  border-top-style: dashed;
+}
+.followup-list > li > .detail-row {
+  border: none;
+  padding: 2px 0;
+}
+/* The assistance cards reuse the request card, with room for their own note. */
+.request-card + .request-card {
+  margin-top: 12px;
+}
+.request-card .detail-row {
+  border: none;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.request-card .board-reference {
+  padding: 0;
+  font-size: inherit;
+}
+/* The assisted intake form is the one long staff form, so its boxes get the
+   same two-column grid the client's own steps use. */
+.staff-form .form-grid {
+  gap: 12px 18px;
+  margin-bottom: 14px;
+}
+.staff-form .btn.secondary {
+  margin-bottom: 12px;
+}
+@media (max-width: 760px) {
+  .staff-form .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

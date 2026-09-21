@@ -42,8 +42,10 @@ function fakeStore({
   principal = { userId: "user-1", workspaceId: "w1", access: "applicant" },
   cases = [],
   people = [],
+  assistance = [],
 } = {}) {
   const records = new Map(cases.map((entry) => [entry.id, entry]));
+  const items = new Map(assistance.map((entry) => [entry.id, entry]));
   const store = {
     calls: [],
     writes: [],
@@ -129,6 +131,29 @@ function fakeStore({
         reference: next.reference,
         revision: next.revision,
       };
+    },
+    items,
+    async listAssistance() {
+      store.calls.push("listAssistance");
+      return [...items.values()];
+    },
+    async actAssistance(request) {
+      store.calls.push(`actAssistance:${request.type}`);
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      const current = items.get(request.itemId);
+      items.set(request.itemId, {
+        ...current,
+        revision: current.revision + 1,
+        status: request.type === "CLAIM" ? "assigned" : "resolved",
+        assigneeId:
+          request.type === "CLAIM" ? request.personId : current.assigneeId,
+        resolutionNote: request.note ?? current.resolutionNote,
+      });
     },
     subscribe(handlers) {
       store.subscriptions += 1;
@@ -1065,4 +1090,299 @@ test("an invalid code is a distinct failure and a verified visitor loads their o
   assert.equal(controller.getState().cases.length, 1);
   assert.equal(controller.getState().screen, "applications");
   controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The office: assisted intake and assistance requests (Ruling R52)
+// ---------------------------------------------------------------------------
+
+const officeStore = (extra = {}) =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      {
+        id: "sam",
+        name: "Sam",
+        capabilities: ["admin", "assist", "followup", "receive_documents"],
+      },
+    ],
+    ...extra,
+  });
+
+test("an assisted application is created once, as the chosen office persona", async () => {
+  const store = officeStore();
+  let next = 0;
+  const { controller, sessionStorage } = build({
+    store,
+    newActionId: () => `action-${(next += 1)}`,
+  });
+  await controller.start();
+  controller.selectPerson("sam");
+  const answers = { firstName: "Mei", language: "Mandarin" };
+  // A transport failure keeps the pending action id, exactly like a client's.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(
+    controller.createAssistedCase({ answers }),
+    (error) => error.code === "OFFLINE",
+  );
+  assert.equal(store.writes[0].actionId, "action-1");
+  assert.ok(
+    sessionStorage.raw("vitally:client:v1:p1").includes("action-1"),
+    "the pending action id survives in window state",
+  );
+  // The retry is the same request, and a second click while one is in flight
+  // sends nothing at all.
+  const first = controller.createAssistedCase({ answers });
+  const second = controller.createAssistedCase({ answers });
+  await Promise.all([first, second]);
+  assert.equal(store.writes.length, 2, "a second click while pending is a no-op");
+  assert.deepEqual(store.writes[1], {
+    actionId: "action-1",
+    mode: "assisted",
+    personId: "sam",
+    answers: { firstName: "Mei", language: "Mandarin" },
+  });
+  // The new case is open, on the staff workspace, and the id is spent.
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, state.savedCase.id);
+  assert.equal(state.screen, "staff-case");
+  assert.ok(!sessionStorage.raw("vitally:client:v1:p1").includes("action-1"));
+  // Only intake answers travel: nothing else can be smuggled into a new case.
+  await controller.createAssistedCase({
+    answers: { firstName: "Jordan", ownerUserId: "someone", stage: "closed" },
+  });
+  assert.deepEqual(store.writes[2].answers, { firstName: "Jordan" });
+  assert.equal(store.writes[2].actionId, "action-2");
+  controller.stop();
+});
+
+test("an assisted application needs a presenter with a chosen persona", async () => {
+  const office = officeStore();
+  const { controller } = build({ store: office });
+  await controller.start();
+  await assert.rejects(
+    controller.createAssistedCase({ answers: {} }),
+    (error) => error.code === "VALIDATION",
+  );
+  assert.equal(office.writes.length, 0, "nothing is sent without a persona");
+  controller.stop();
+
+  const client = fakeStore();
+  const asClient = build({ store: client });
+  await asClient.controller.start();
+  await assert.rejects(
+    asClient.controller.createAssistedCase({ answers: {} }),
+    (error) => error.code === "FORBIDDEN",
+  );
+  assert.equal(client.writes.length, 0);
+  asClient.controller.stop();
+});
+
+test("assistance is loaded for a presenter only, and refreshed when its table changes", async () => {
+  const applicant = fakeStore();
+  const asClient = build({ store: applicant });
+  await asClient.controller.start();
+  assert.ok(!applicant.calls.includes("listAssistance"));
+  assert.deepEqual(asClient.controller.getState().assistance, []);
+  asClient.controller.stop();
+
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    1,
+  );
+  assert.equal(controller.getState().assistance[0].id, "item-1");
+  // A change naming the assistance table re-reads the list, and nothing else.
+  store.items.set("item-1", {
+    id: "item-1",
+    title: "Help with the forms",
+    status: "assigned",
+    revision: 2,
+  });
+  const listReads = store.calls.filter((entry) => entry === "listCases").length;
+  await store.handlers.onChange({
+    table: "assistance_items",
+    eventType: "UPDATE",
+    id: "item-1",
+    caseId: null,
+  });
+  assert.equal(controller.getState().assistance[0].status, "assigned");
+  assert.equal(
+    store.calls.filter((entry) => entry === "listCases").length,
+    listReads,
+    "an assistance change is not a case change",
+  );
+  // A reconnect re-reads it too: a subscription is never the only way back.
+  const assistanceReads = store.calls.filter(
+    (entry) => entry === "listAssistance",
+  ).length;
+  await controller.refresh();
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    assistanceReads + 1,
+  );
+  // Signing out drops the list with everything else.
+  await controller.signOut();
+  assert.deepEqual(controller.getState().assistance, []);
+  controller.stop();
+});
+
+test("an assistance action carries the item's own revision and re-reads the list", async () => {
+  const store = officeStore({
+    assistance: [
+      {
+        id: "item-1",
+        title: "Help with the forms",
+        status: "open",
+        revision: 4,
+        assigneeId: null,
+      },
+    ],
+  });
+  let next = 0;
+  const { controller } = build({
+    store,
+    newActionId: () => `action-${(next += 1)}`,
+  });
+  await controller.start();
+  controller.selectPerson("sam");
+  await controller.runAssistanceAction("CLAIM", "item-1");
+  assert.deepEqual(store.writes[0], {
+    actionId: "action-1",
+    itemId: "item-1",
+    expectedRevision: 4,
+    personId: "sam",
+    type: "CLAIM",
+    note: null,
+  });
+  // The list is re-read, so the card now shows the new status and revision.
+  assert.equal(controller.getState().assistance[0].status, "assigned");
+  assert.equal(controller.getState().assistance[0].revision, 5);
+  // A resolution carries the note and the revision the claim produced.
+  await controller.runAssistanceAction("RESOLVE", "item-1", "Filled it in together.");
+  assert.deepEqual(store.writes[1], {
+    actionId: "action-2",
+    itemId: "item-1",
+    expectedRevision: 5,
+    personId: "sam",
+    type: "RESOLVE",
+    note: "Filled it in together.",
+  });
+  assert.equal(controller.getState().assistance[0].status, "resolved");
+  assert.equal(controller.getState().busy, false);
+  // A claim never carries a note, whatever it is handed.
+  store.items.set("item-2", {
+    id: "item-2",
+    title: "Another form",
+    status: "open",
+    revision: 1,
+  });
+  await store.handlers.onChange({
+    table: "assistance_items",
+    eventType: "INSERT",
+    id: "item-2",
+    caseId: null,
+  });
+  await controller.runAssistanceAction("CLAIM", "item-2", "smuggled");
+  assert.equal(store.writes[2].note, null);
+  controller.stop();
+});
+
+test("a stale assistance item is a conflict in the words of the item", async () => {
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  const reads = store.calls.filter((entry) => entry === "listAssistance").length;
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.runAssistanceAction("CLAIM", "item-1"),
+    (error) => error.code === "CONFLICT",
+  );
+  const state = controller.getState();
+  assert.equal(state.error.code, "CONFLICT");
+  assert.match(state.error.message, /Someone else changed this item/);
+  assert.equal(state.retryable, false, "an assistance action is never re-sent");
+  assert.equal(state.busy, false);
+  assert.equal(
+    store.calls.filter((entry) => entry === "listAssistance").length,
+    reads + 1,
+    "the newest version is read before the failure is shown",
+  );
+  controller.stop();
+});
+
+test("an unknown assistance type, or an item that is gone, never reaches the store", async () => {
+  const store = officeStore({
+    assistance: [
+      { id: "item-1", title: "Help with the forms", status: "open", revision: 1 },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  for (const type of ["RELEASE", "claim", "CLOSE_CASE", "toString", ""])
+    await assert.rejects(
+      controller.runAssistanceAction(type, "item-1"),
+      (error) => error.code === "VALIDATION",
+      type,
+    );
+  await assert.rejects(
+    controller.runAssistanceAction("CLAIM", "item-missing"),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.equal(store.writes.length, 0);
+  controller.stop();
+});
+
+test("the office answers for a walk-in client as its own persona", async () => {
+  const store = officeStore({
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "draft",
+        revision: 2,
+        ownerUserId: null,
+        answers: {},
+      },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "Mei" });
+  await controller.saveAnswers();
+  // The database refuses SAVE_ANSWERS from a presenter who sends no person at
+  // all, and accepts it only from an `admin` one on an owner-less draft.
+  assert.equal(store.writes[0].type, "SAVE_ANSWERS");
+  assert.equal(store.writes[0].personId, "sam");
+  assert.equal(store.writes[0].expectedRevision, 2);
+  assert.deepEqual(store.writes[0].payload, { answers: { firstName: "Mei" } });
+  // A client still answers for themselves, with no persona at all.
+  const asClient = build({
+    store: fakeStore({
+      cases: [
+        { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} },
+      ],
+    }),
+  });
+  await asClient.controller.start();
+  await asClient.controller.selectCase("case-a");
+  asClient.controller.editAnswers({ firstName: "Mei" });
+  await asClient.controller.saveAnswers();
+  assert.equal(asClient.controller.getState().savedCase.answers.firstName, "Mei");
+  controller.stop();
+  asClient.controller.stop();
 });

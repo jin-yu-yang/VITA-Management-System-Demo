@@ -35,9 +35,16 @@ import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 // There is no amount, refund, bank or routing field anywhere in this demo, so
 // none is ever rendered: ViTally records the workflow, and the return itself
 // lives in the tax software.
+//
+// The section renderers a second staff screen needs — the header, the answers
+// summary, the requests/documents list and the history — are **exported** (the
+// office workspace in `admin-views.mjs` imports them, Ruling R55). They are
+// shared, not copied: one case can never describe itself two ways depending on
+// which volunteer is looking at it. The same goes for the small vocabularies
+// below and for `explain`, so a refusal reads the same on every screen.
 
-const when = (condition, html) => (condition ? html : "");
-const UNKNOWN_PERSON = "Unknown person";
+export const when = (condition, html) => (condition ? html : "");
+export const UNKNOWN_PERSON = "Unknown person";
 
 // ---------------------------------------------------------------------------
 // Vocabularies (stage words are never redefined here — see describeStage)
@@ -76,7 +83,7 @@ const STAGE_WORK = Object.freeze({
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
 });
 const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null });
-const stageWork = (stage) =>
+export const stageWork = (stage) =>
   Object.hasOwn(STAGE_WORK, stage ?? "") ? STAGE_WORK[stage] : UNKNOWN_WORK;
 
 const ELIGIBILITY_LABELS = Object.freeze({
@@ -84,7 +91,7 @@ const ELIGIBILITY_LABELS = Object.freeze({
   review: "Review eligibility",
 });
 
-const REQUEST_STATUS = Object.freeze({
+export const REQUEST_STATUS = Object.freeze({
   open: "Waiting for the client",
   awaiting_verification: "Received, not verified yet",
   verified: "Verified",
@@ -98,19 +105,19 @@ const REVIEW_STATUS = Object.freeze({
   superseded: "Superseded by a newer version",
 });
 
-const FOLLOWUP_STATUS = Object.freeze({
+export const FOLLOWUP_STATUS = Object.freeze({
   open: "Open with the office",
   resolved: "Resolved",
 });
 
-const CONTACT_OUTCOME_LABELS = Object.freeze({
+export const CONTACT_OUTCOME_LABELS = Object.freeze({
   no_answer: "No answer",
   reached: "Spoke with the client",
   no_further_contact: "Client wants no further contact",
   closure_requested: "Client asked to close the case",
 });
 
-const named = (table, key, fallback = "—") =>
+export const named = (table, key, fallback = "—") =>
   Object.hasOwn(table, key ?? "") ? table[key] : fallback;
 
 // The manual milestone wording, in one place: ViTally never prepares, signs or
@@ -172,7 +179,7 @@ export function decorateStaffCase(caseRecord, people = []) {
 const PREPARATION_WORK_STAGES = Object.freeze(["preparing", "corrections_required"]);
 const UNSETTLED_REQUEST_STATUSES = Object.freeze(["open", "awaiting_verification"]);
 
-const CHOOSE_PERSONA = "Choose a volunteer persona to act as.";
+export const CHOOSE_PERSONA = "Choose a volunteer persona to act as.";
 
 const allowed = { allowed: true, reason: "" };
 const refused = (reason) => ({ allowed: false, reason });
@@ -303,7 +310,7 @@ const openFollowupFor = (record, requestId) =>
   );
 
 // A refusal, said plainly, where the button would have been.
-const explain = (decision, extra = "") =>
+export const explain = (decision, extra = "") =>
   `<p class="staff-reason" role="note">${icon("lock")} ${esc(decision.reason)}${when(extra, ` ${esc(extra)}`)}</p>`;
 
 // ---------------------------------------------------------------------------
@@ -525,13 +532,13 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
 // The selected case
 // ---------------------------------------------------------------------------
 
-const detailRow = (label, value) =>
+export const detailRow = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`;
 
 // A refused or interrupted action, said beside the work it belongs to rather
 // than only in the page-wide banner — with the same two controls, so nothing is
 // lost by announcing it here instead.
-function problemNotice(ui) {
+export function problemNotice(ui) {
   if (!ui?.error) return "";
   return `<div class="notice amber" role="alert">${icon("help")}<div><h3>${esc(
     ui.error.code === "CONFLICT"
@@ -543,7 +550,7 @@ function problemNotice(ui) {
   )}${button("Dismiss", "dismiss-error", "inline")}</div></div></div>`;
 }
 
-function caseHeader(record, person) {
+export function caseHeader(record, person) {
   const described = describeStage(record.stage);
   return `<section class="panel staff-header" aria-labelledby="case-title"><div class="section-head"><h2 id="case-title">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}</div><p>${esc(stageWork(record.stage).work)}</p>${detailRow("Stage", described.label)}${detailRow(
     "Preparation version",
@@ -570,7 +577,7 @@ function caseHeader(record, person) {
   )}</p></section>`;
 }
 
-function answersPanel(record) {
+export function answersPanel(record) {
   const answers = record.answers ?? {};
   const rows = Object.keys(ANSWER_LABELS)
     .filter((key) => String(answers[key] ?? "").trim())
@@ -632,7 +639,7 @@ function requestCard(record, request, rights, ui) {
   )}${verify}${escalate}</div>`;
 }
 
-function documentsPanel(record, rights, ui) {
+export function documentsPanel(record, rights, ui) {
   const requests = record.requests ?? [];
   const busy = ui.busy ? "disabled" : "";
   const form = rights.preparationWork.allowed
@@ -840,7 +847,7 @@ function followupPanel(record) {
   }<p class="field-note">Follow-up calls are recorded on the office screens, not here.</p></section>`;
 }
 
-function historyPanel(record, staffShaped) {
+export function historyPanel(record, staffShaped) {
   const internal = [...(record.internalHistory ?? [])].reverse();
   const client = [...(record.history ?? [])].reverse();
   return `<section class="panel history-panel" aria-labelledby="history-title"><div class="section-head"><h2 id="history-title">History</h2></div>${when(

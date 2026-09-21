@@ -222,6 +222,38 @@ if (!config) {
     );
   }
 
+  // The office's own "fill fictional details". It writes into the boxes on
+  // screen and into the draft that survives a re-render, and it does nothing
+  // else: it never submits the form, never creates a case, and never sends a
+  // message to anybody. The same generator the client's form uses.
+  function fillAssistedIntake() {
+    sampleSeed += 1;
+    const generated = makeSampleAnswers({
+      seed: sampleSeed,
+      scenario: "ordinary",
+    });
+    let boxes = 0;
+    let filled = 0;
+    for (const [name, value] of Object.entries(generated)) {
+      const field = root.querySelector(`#field-assisted-${name}`);
+      if (!field) continue;
+      boxes += 1;
+      // Blank boxes only, exactly like the client's own helper: what a
+      // volunteer typed for a real person in front of them is never replaced.
+      if (field.value) continue;
+      field.value = value ?? "";
+      formDrafts.set(field.id, field.value);
+      filled += 1;
+    }
+    notify(
+      !boxes
+        ? "There is no assisted intake form on screen."
+        : filled
+          ? "Fictional details filled in. Nothing is created or sent yet."
+          : "Every box already has an answer. Nothing was replaced.",
+    );
+  }
+
   async function reconcile(useMine) {
     const state = controller.getState();
     await controller.reconcileAnswers({
@@ -241,6 +273,13 @@ if (!config) {
   // already shows the new state; this is the confirmation that it was this
   // click that changed it.
   const STAFF_NOTICES = Object.freeze({
+    VERIFY_INTAKE: "The simulated intake checks are recorded.",
+    REMIND: "Reminder recorded. No external message sent.",
+    RECORD_CONTACT: "The attempt is recorded. The task is still open.",
+    RESOLVE_FOLLOWUP: "The contact task is resolved. Nothing else changed.",
+    RECORD_DOCUMENT_RESPONSE:
+      "Recorded as staff-recorded, awaiting preparer verification.",
+    CLOSE_CASE: "The case is closed and its pending work is cancelled.",
     CLAIM_PREPARATION: "This case is yours to prepare.",
     CLAIM_REVIEW: "This review is yours.",
     REQUEST_DOCUMENT: "The client was asked for this document.",
@@ -263,8 +302,13 @@ if (!config) {
     const state = controller.getState();
     if (type === "SAVE_ANSWERS") {
       // The controller owns the draft and the revision the edits started from,
-      // so this one is never built from a form.
+      // so this one is never built from a form's payload. The office's assisted
+      // intake form does hand over what its boxes currently say — `editAnswers`
+      // whitelists it into the same draft the client's own form writes to — and
+      // the save itself is still the controller's, with its revision check.
+      if (form) controller.editAnswers(Object.fromEntries(new FormData(form)));
       await controller.saveAnswers();
+      formDrafts.clear();
       notify("Your answers are saved.");
       return;
     }
@@ -291,10 +335,21 @@ if (!config) {
       target.dataset,
       form ? Object.fromEntries(new FormData(form)) : {},
     );
-    await controller.runAction(type, payload);
+    // The receipt is the evidence the action landed. Nothing is announced
+    // without it: a refusal throws before this line, and a `null` would mean
+    // nothing was sent at all.
+    const receipt = await controller.runAction(type, payload);
     // Sent: whatever was typed for it is no longer a draft.
     formDrafts.clear();
+    // Closing is confirmed in a dialog, so the dialog closes when it lands.
+    if (type === "CLOSE_CASE" && receipt) closeDialog();
     if (type === "SUBMIT") {
+      // The office submits an assisted application from the case workspace and
+      // stays there; "progress" is a client screen and a presenter has none.
+      if (controller.getState().principal?.access === "presenter") {
+        notify("The application is with the office. Record the intake checks next.");
+        return;
+      }
       controller.navigate("progress");
       notify("Your application was sent to the office.");
       return;
@@ -311,7 +366,38 @@ if (!config) {
       controller.getState().principal?.access === "presenter"
     )
       controller.navigate("staff-case");
-    if (STAFF_NOTICES[type]) notify(STAFF_NOTICES[type]);
+    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type]);
+  }
+
+  // ---- assistance actions -----------------------------------------------
+
+  // Assistance is its own workflow with its own RPC, so its controls carry
+  // their own attribute and are validated against their own vocabulary — never
+  // translated into a case action.
+  const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+  const ASSISTANCE_NOTICES = Object.freeze({
+    CLAIM: "This request is yours. The client's case is unchanged.",
+    RESOLVE: "The request is recorded as resolved. The client's case is unchanged.",
+  });
+
+  async function runAssistanceAction(target, form = null) {
+    const type = target.dataset.assistanceAction;
+    if (!ASSISTANCE_ACTIONS.includes(type)) return;
+    const values = form ? Object.fromEntries(new FormData(form)) : {};
+    // A claim carries no note at all; a resolution says what was done, and the
+    // database refuses an empty one.
+    const note = type === "RESOLVE" ? String(values.note ?? "").trim() : null;
+    if (type === "RESOLVE" && !note) {
+      notify("Say what you helped with before resolving this request.");
+      return;
+    }
+    const sent = await controller.runAssistanceAction(
+      type,
+      target.dataset.itemId,
+      note,
+    );
+    formDrafts.clear();
+    if (sent) notify(ASSISTANCE_NOTICES[type]);
   }
 
   // ---- navigation actions -----------------------------------------------
@@ -338,6 +424,20 @@ if (!config) {
       case "open-board":
         formDrafts.clear();
         controller.navigate("staff");
+        break;
+      case "toggle-assisted-intake":
+        controller.togglePanel("assisted-intake");
+        break;
+      case "fill-assisted-intake":
+        fillAssistedIntake();
+        break;
+      case "toggle-intake-check":
+        controller.togglePanel(`intake-check-${target.dataset.check}`);
+        // The page is rebuilt around the checkbox, so give it back the focus.
+        root.querySelector(`#field-intake-${target.dataset.check}`)?.focus();
+        break;
+      case "open-close-case":
+        openDialog("close-case");
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
@@ -435,13 +535,16 @@ if (!config) {
 
   root.addEventListener("click", async (event) => {
     const caseTarget = event.target.closest("[data-case-action]");
+    const assistTarget = event.target.closest("[data-assistance-action]");
     // A submit button inside a form is handled by the submit event, where the
     // form's own values are; acting on the click too would send it twice.
-    if (caseTarget?.type === "submit") return;
-    const target = caseTarget ?? event.target.closest("[data-action]");
+    if (caseTarget?.type === "submit" || assistTarget?.type === "submit") return;
+    const target =
+      caseTarget ?? assistTarget ?? event.target.closest("[data-action]");
     if (!target) return;
     try {
       if (caseTarget) await runCaseAction(caseTarget);
+      else if (assistTarget) await runAssistanceAction(assistTarget);
       else await runNavigation(target.dataset.action, target);
     } catch (error) {
       // The controller has already recorded the failure and re-rendered; this
@@ -509,8 +612,24 @@ if (!config) {
       const caseControl = form.querySelector(
         'button[type="submit"][data-case-action]',
       );
+      const assistControl = form.querySelector(
+        'button[type="submit"][data-assistance-action]',
+      );
       if (caseControl) {
         await runCaseAction(caseControl, form);
+      } else if (assistControl) {
+        await runAssistanceAction(assistControl, form);
+      } else if (form.id === "assisted-intake-form") {
+        // Creating a case is not a case action — there is no case yet — so it
+        // is the form's own submit, exactly like the client's "Start a new
+        // application" is its own control.
+        await controller.createAssistedCase({
+          answers: Object.fromEntries(values),
+        });
+        // Opening the new case empties the board's own panels, so the form is
+        // already put away by the time this returns.
+        formDrafts.clear();
+        notify("An assisted application is ready. Nobody was emailed.");
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {

@@ -38,12 +38,20 @@ const STAFF_SCREENS = Object.freeze(["staff", "staff-case"]);
 // final and its expected revision is already stale.
 const UNKNOWN_OUTCOME = Object.freeze(["OFFLINE", "SERVER_ERROR"]);
 
+// Assistance is its own workflow: its own RPC, its own revision and its own
+// list, beside the tax case rather than inside it (Ruling R22). Its two actions
+// therefore have their own vocabulary, checked here exactly as `CASE_ACTIONS`
+// is checked for a case action.
+const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+
 const CONFLICT_MESSAGE =
   "Someone else changed this application. The newest version is shown — check it and try again.";
 // The same event, in the words of the screen it lands on: staff read "case",
 // clients read "application", and neither ever sees a revision number.
 const STAFF_CONFLICT_MESSAGE =
   "Someone else changed this case. The newest version is shown — check it and try again.";
+const ASSISTANCE_CONFLICT_MESSAGE =
+  "Someone else changed this item. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 
@@ -95,6 +103,9 @@ export function createController({
     // Records
     cases: [],
     people: [],
+    // The office's assistance requests. Presenter-only: an applicant never
+    // reads this table, so the list stays empty for them and is never fetched.
+    assistance: [],
     savedCase: null,
     draftAnswers: {},
     editBaseRevision: null,
@@ -237,6 +248,18 @@ export function createController({
     noteConnected();
   }
 
+  // Only a presenter may read the assistance table at all, so only a presenter
+  // ever asks: the adapter would refuse an applicant, and asking is already a
+  // mistake (`supabase-store.mjs`, "an applicant read never names a staff
+  // table").
+  const presenter = () => state.principal?.access === "presenter";
+
+  async function loadAssistance() {
+    if (!presenter()) return;
+    state.assistance = await store.listAssistance();
+    noteConnected();
+  }
+
   async function loadSelected() {
     if (!state.selectedCaseId) return;
     const next = await store.getCase(state.selectedCaseId);
@@ -262,6 +285,13 @@ export function createController({
       await loadList();
     } catch (error) {
       failure = error;
+    }
+    try {
+      // The office board shows these beside the cases, and a reconnect is the
+      // one path a missed subscription change comes back through.
+      await loadAssistance();
+    } catch (error) {
+      failure = failure ?? error;
     }
     try {
       await loadSelected();
@@ -341,10 +371,14 @@ export function createController({
     const touchesList = change.table === "cases";
     const touchesOpen =
       state.selectedCaseId && change.caseId === state.selectedCaseId;
-    if (!touchesList && !touchesOpen) return;
+    // An assistance item belongs to no case, so it is named by its own table
+    // rather than by a case id: a claim in another window has to reach this one.
+    const touchesAssistance = change.table === "assistance_items";
+    if (!touchesList && !touchesOpen && !touchesAssistance) return;
     try {
       if (touchesList) await loadList();
       if (touchesOpen) await loadSelected();
+      if (touchesAssistance) await loadAssistance();
       state.error = null;
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
@@ -407,7 +441,10 @@ export function createController({
     if (!screens().includes(state.screen)) state.screen = homeScreen();
     try {
       await loadList();
-      if (principal.access === "presenter") state.people = await store.listPeople();
+      if (principal.access === "presenter") {
+        state.people = await store.listPeople();
+        await loadAssistance();
+      }
       state.error = null;
     } catch (error) {
       noteFailure(error);
@@ -565,6 +602,7 @@ export function createController({
     state.principal = null;
     state.cases = [];
     state.people = [];
+    state.assistance = [];
     state.selectedPersonId = null;
     state.openPanels = [];
     state.lookup = "";
@@ -692,7 +730,11 @@ export function createController({
   // its receipt arrives, so an offline retry reuses it and a second click while
   // one is in flight does nothing at all. Reopening, refreshing or filling a
   // form never reaches this function.
-  async function createCase() {
+  //
+  // `mode` and `personId` are what distinguish a client's own application from
+  // one the office typed in for a walk-in; the idempotency, the receipt and the
+  // "what happens next" hook are the same for both, so they are written once.
+  async function startCase({ mode, personId, answers }, afterReceipt) {
     if (creating) return null;
     creating = true;
     if (!state.pendingCreateActionId) {
@@ -701,9 +743,9 @@ export function createController({
     }
     const request = {
       actionId: state.pendingCreateActionId,
-      mode: "client",
-      personId: null,
-      answers: {},
+      mode,
+      personId: personId ?? null,
+      answers,
     };
     try {
       const receipt = await store.createCase(request);
@@ -716,7 +758,7 @@ export function createController({
       try {
         await loadList();
         await selectCase(receipt.caseId);
-        state.screen = "reference";
+        afterReceipt?.();
       } catch (error) {
         noteFailure(error);
       }
@@ -732,6 +774,33 @@ export function createController({
     } finally {
       creating = false;
     }
+  }
+
+  async function createCase() {
+    return await startCase({ mode: "client", personId: null, answers: {} }, () => {
+      state.screen = "reference";
+    });
+  }
+
+  // The office types a walk-in client's answers in itself. The case it creates
+  // has no client account at all — the database's `cases_origin_owner` rule
+  // makes an assisted case owner-less — so nobody is emailed, invited or given
+  // a way in, and the office owns the draft until it submits it.
+  async function createAssistedCase({ answers } = {}) {
+    if (!presenter())
+      throw controllerError(
+        "FORBIDDEN",
+        "Only a volunteer can start an assisted application.",
+      );
+    if (!state.selectedPersonId)
+      throw controllerError("VALIDATION", "Choose a volunteer persona to act as.");
+    // `selectCase` already puts a presenter on the case workspace, which is
+    // where the office records the intake checks and sends the application.
+    return await startCase({
+      mode: "assisted",
+      personId: state.selectedPersonId,
+      answers: pickAnswers(answers),
+    });
   }
 
   // ---- editing and saving -------------------------------------------------
@@ -824,6 +893,12 @@ export function createController({
     }
   }
 
+  // Who this window is acting as, for an action that carries a persona. A
+  // client acts as themselves and sends none; a presenter sends the persona it
+  // chose, and the server refuses one from anybody else anyway.
+  const actingPersonId = (personId) =>
+    presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
+
   async function saveAnswers() {
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
@@ -840,7 +915,11 @@ export function createController({
       caseId: state.savedCase.id,
       expectedRevision:
         state.editBaseRevision ?? Number(state.savedCase.revision),
-      personId: null,
+      // A client answers for themselves. The office answering for a walk-in
+      // client sends its own persona: the database accepts SAVE_ANSWERS from a
+      // presenter only with an `admin` person on an owner-less draft, and
+      // refuses a presenter who sends no person at all.
+      personId: actingPersonId(),
       type: "SAVE_ANSWERS",
       payload: { answers: { ...state.draftAnswers } },
     };
@@ -884,16 +963,66 @@ export function createController({
       actionId: newActionId(),
       caseId: state.savedCase.id,
       expectedRevision: Number(state.savedCase.revision),
-      // A client acts as themselves. A staff persona is sent only by a
-      // presenter, and the server refuses one from anybody else anyway.
-      personId:
-        state.principal?.access === "presenter"
-          ? (personId ?? state.selectedPersonId ?? null)
-          : null,
+      personId: actingPersonId(personId),
       type,
       payload: payload ?? {},
     };
     return await dispatch(action);
+  }
+
+  // Assistance items are not cases: they have their own RPC, their own revision
+  // and their own list, so they get their own dispatch rather than a branch
+  // inside `runAction`. The shape is deliberately the same — an unknown type is
+  // refused here without a call, the expected revision comes from the item this
+  // window is looking at, and a CONFLICT re-reads the list before it is shown —
+  // because the two failures are the same failure to the person reading them.
+  //
+  // It is not retryable: `actAssistance` returns no receipt to the browser, so
+  // a timed-out claim is re-read rather than re-sent.
+  async function runAssistanceAction(type, itemId, note = null) {
+    if (!ASSISTANCE_ACTIONS.includes(type))
+      throw controllerError("VALIDATION", "This step is not available.");
+    const item = state.assistance.find((entry) => entry?.id === itemId);
+    if (!item)
+      throw controllerError("NOT_FOUND", "This request is no longer on screen.");
+    const request = {
+      actionId: newActionId(),
+      itemId: item.id,
+      expectedRevision: Number(item.revision),
+      personId: state.selectedPersonId ?? null,
+      type,
+      // A claim carries no note at all; a resolution says what was done.
+      note: type === "RESOLVE" ? note : null,
+    };
+    state.busy = true;
+    state.error = null;
+    show();
+    try {
+      await store.actAssistance(request);
+      state.busy = false;
+      noteConnected();
+      try {
+        await loadAssistance();
+        state.error = null;
+      } catch (error) {
+        // The action landed. A re-read that fails afterwards is a stale list,
+        // never a failed claim.
+        noteFailure(error);
+      }
+      show();
+      return request;
+    } catch (error) {
+      state.busy = false;
+      noteFailure(
+        error,
+        error?.code === "CONFLICT"
+          ? { message: ASSISTANCE_CONFLICT_MESSAGE }
+          : undefined,
+      );
+      if (error?.code === "CONFLICT") await loadAssistance().catch(() => {});
+      show();
+      throw error;
+    }
   }
 
   async function retryLast() {
@@ -915,6 +1044,7 @@ export function createController({
       ...state,
       cases: [...state.cases],
       people: [...state.people],
+      assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },
       openPanels: [...state.openPanels],
       boardFilters: { ...state.boardFilters },
@@ -939,6 +1069,8 @@ export function createController({
     cooldownRemaining,
     selectCase,
     createCase,
+    createAssistedCase,
+    runAssistanceAction,
     selectPerson,
     setBoardFilter,
     clearBoardFilters,

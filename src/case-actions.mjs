@@ -27,6 +27,18 @@ export const FOLLOWUP_RESOLUTION_OUTCOMES = Object.freeze([
   "no_further_contact",
 ]);
 
+// The four simulated intake attestations. They are demo flags: ticking them
+// records that a volunteer said the step happened in the story, and asserts
+// nothing about a real interview, identity check, document check or consent
+// signature. The database accepts the payload only with all four set to true,
+// so a form that offers three of them offers nothing at all.
+export const INTAKE_CHECK_KEYS = Object.freeze([
+  "interview",
+  "identity",
+  "documents",
+  "consent",
+]);
+
 function validation(message) {
   return Object.assign(new Error(message), { code: "VALIDATION" });
 }
@@ -54,19 +66,41 @@ function outcome(values, allowed) {
   return value;
 }
 
+// A ticked checkbox. An unticked one is simply absent from a form's values, but
+// a stale or hand-made value must not read as a tick either, so only the three
+// spellings a real checkbox produces count.
+const TICKED = Object.freeze([true, "true", "on"]);
+const ticked = (values, key) => TICKED.includes(values?.[key]);
+
+// All four attestations, or none: the payload the database accepts has exactly
+// the four keys, all true, so a partly-filled form cannot build a smaller one
+// and cannot silently promote itself into a complete one either.
+function checks(values) {
+  const result = {};
+  for (const key of INTAKE_CHECK_KEYS) {
+    if (!ticked(values, key))
+      throw validation("Tick all four simulated intake checks first.");
+    result[key] = true;
+  }
+  return result;
+}
+
+// Closing a case is deliberate: a written reason and an explicit confirmation.
+// The flag that leaves is always the literal `true` the contract names — a form
+// can withhold the confirmation, never redefine it.
+function confirmation(values) {
+  if (!ticked(values, "confirmed"))
+    throw validation("Confirm that you want to close this case.");
+  return true;
+}
+
 // SAVE_ANSWERS is deliberately absent: it is built by the controller from the
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
   SUBMIT: () => ({ confirmed: true }),
-  // Demo attestations, never a claim that a real identity check happened.
-  VERIFY_INTAKE: () => ({
-    checks: {
-      interview: true,
-      identity: true,
-      documents: true,
-      consent: true,
-    },
-  }),
+  // Demo attestations, never a claim that a real identity check happened, and
+  // never built from a form where one of the four is still unticked.
+  VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values) }),
   CLAIM_PREPARATION: () => ({}),
   SUBMIT_REVIEW: () => ({}),
   CLAIM_REVIEW: () => ({}),
@@ -113,7 +147,7 @@ const BUILDERS = Object.freeze({
   }),
   CLOSE_CASE: (dataset, values) => ({
     reason: text(values, "reason", "A reason"),
-    confirmed: true,
+    confirmed: confirmation(values),
   }),
 });
 
