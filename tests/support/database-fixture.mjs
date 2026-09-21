@@ -457,6 +457,11 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       run.users.add(data.user.id);
       await saveRun(runManifest);
       f[`${actor}UserId`] = data.user.id;
+      // The synthetic address beside the id (Ruling R46). The browser gate
+      // types it into the real sign-in form and generates that user's one-time
+      // code from it, so the actor a test signs in as is the actor the fixture
+      // provisioned. It is never logged, and cleanup still works by id alone.
+      f[`${actor}Email`] = email;
       const client = createClient(
         target.apiUrl,
         target.publishableKey,
