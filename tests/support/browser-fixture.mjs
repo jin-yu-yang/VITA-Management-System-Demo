@@ -136,10 +136,10 @@ export function createSendRoute({ frontendOrigin }) {
  * in: the SDK's stored session is read in the page, and only the user id and
  * two booleans come back — the access token never leaves the browser.
  */
-export async function assertAuthenticatedUser(page, userId) {
+export async function assertAuthenticatedUser(page, userId, { timeout } = {}) {
   await page
     .getByRole("heading", { name: "My applications", exact: true })
-    .waitFor();
+    .waitFor(timeout === undefined ? undefined : { timeout });
   const stored = await page.evaluate(
     ({ stateKey }) => {
       const key = Object.keys(localStorage).find((name) =>
@@ -180,52 +180,66 @@ export async function assertAuthenticatedUser(page, userId) {
   );
 }
 
-// How long one attempt at the code form may take, and how long the whole
-// submission may be retried for.
-const VERIFY_ATTEMPT_TIMEOUT_MS = 5_000;
-const VERIFY_DEADLINE_MS = 45_000;
+// The one bounded wait for a verification to be answered, whichever way.
+const SIGNED_IN_TIMEOUT_MS = 30_000;
 
 /**
- * Enter the code and submit the real form.
+ * Ask for a code through the real form, with only the send intercepted.
  *
- * **Recorded defect this works around.** While the resend countdown runs, the
- * access screen rebuilds itself once a second (`app.mjs` `tickCooldown` →
- * `render`, which reassigns `#app.innerHTML`), and the rebuilt code field is
- * rendered with an empty value. A code typed in one tick is therefore gone in
- * the next, in both engines — measured at roughly 0.8s in Firefox and 1.2s in
- * Chrome. Two consequences, both handled here rather than in `src/`:
+ * Installs the route, fills the address, clicks Send, and waits for the neutral
+ * message and the code field — which render only once the send resolved, so the
+ * route is necessarily still installed when its one POST completes.
  *
- *   * The submitted attempt may carry an empty field. That submits *nothing*:
- *     the field is `required`, so `form.reportValidity()` stops it before any
- *     request leaves. Retrying is therefore safe and can never spend a code
- *     twice, which is why this loop exists instead of one hopeful click.
- *   * The button is destroyed and recreated every second, so Playwright's
- *     stability check never settles. `force` skips that check only; this is
- *     still a real click on the real button, running the real submit handler.
+ * Returns the live route and a `release()`. Because the handler *collects*
+ * assertion failures rather than throwing them (a throw inside a Playwright
+ * route handler leaves the request hanging), a caller's check is the only thing
+ * that surfaces a refused request — so `release()` must be called in a
+ * `finally`, however long the route stays installed afterwards. It unroutes,
+ * re-raises anything the handler collected, and asserts the POST count.
+ */
+export async function requestCode({ page, fixture, address }) {
+  const route = createSendRoute({ frontendOrigin: fixture.appOrigin });
+  await page.route(fixture.sendPattern, route.handler);
+  const unroute = () =>
+    page.unroute(fixture.sendPattern, route.handler).catch(() => {});
+  const release = async ({ posts = 1, pending = null } = {}) => {
+    await unroute();
+    // A failure the handler collected is the precise cause and outranks any
+    // symptom the caller saw, so it is raised even over a pending error.
+    if (route.failures.length) throw route.failures[0];
+    // A counter mismatch must not replace a real failure the caller is already
+    // throwing; it would hide the message that explains it.
+    if (!pending) assert.equal(route.posts, posts);
+  };
+  try {
+    await page.getByLabel("Email address", { exact: true }).fill(address);
+    await page
+      .getByRole("button", { name: "Send verification code", exact: true })
+      .click();
+    await page.getByText(fixture.neutralSendMessage, { exact: true }).waitFor();
+    await page.getByLabel("Verification code", { exact: true }).waitFor();
+  } catch (error) {
+    await unroute();
+    if (route.failures.length) throw route.failures[0];
+    throw error;
+  }
+  return { route, release };
+}
+
+/**
+ * Enter the code and submit the real form: one fill, one click.
  *
- * Both work-arounds must be deleted when the defect is fixed.
+ * The typed code lives in the controller's `state.authCode` and the field is
+ * rendered from it, so a re-render — the countdown, a connection notice, a
+ * realtime change — can no longer empty the field between typing and clicking.
+ * What is submitted is what was typed, so there is nothing here to retry and no
+ * actionability check to skip.
  */
 export async function submitVerificationCode({ page, code }) {
-  const field = page.getByLabel("Verification code", { exact: true });
-  const submit = page.getByRole("button", {
-    name: "Verify and continue",
-    exact: true,
-  });
-  // Either answer ends the attempt: the signed-in screen, or a stated refusal.
-  const settled = page.locator(
-    "#code-form p.error[role='alert'], h1:text-is('My applications')",
-  );
-  const deadline = Date.now() + VERIFY_DEADLINE_MS;
-  for (let attempts = 1; ; attempts += 1) {
-    await field.fill(String(code));
-    await submit.click({ force: true, timeout: VERIFY_ATTEMPT_TIMEOUT_MS });
-    try {
-      await settled.first().waitFor({ timeout: VERIFY_ATTEMPT_TIMEOUT_MS });
-      return attempts;
-    } catch (error) {
-      if (Date.now() >= deadline) throw error;
-    }
-  }
+  await page.getByLabel("Verification code", { exact: true }).fill(String(code));
+  await page
+    .getByRole("button", { name: "Verify and continue", exact: true })
+    .click();
 }
 
 /**
@@ -239,35 +253,26 @@ export async function submitVerificationCode({ page, code }) {
 export async function loginTestUser({ page, actor, fixture, otp }) {
   const code = otp ?? (await fixture.generateOtp(actor.email));
   assert.match(String(code), /^[0-9]+$/);
-  const route = createSendRoute({ frontendOrigin: fixture.appOrigin });
-  await page.route(fixture.sendPattern, route.handler);
+  const { route, release } = await requestCode({
+    page,
+    fixture,
+    address: actor.email,
+  });
+  let pending = null;
   try {
-    await page.getByLabel("Email address", { exact: true }).fill(actor.email);
-    await page
-      .getByRole("button", { name: "Send verification code", exact: true })
-      .click();
-    // The code step only renders once the send resolved, so the route stays
-    // installed until exactly one POST has completed.
-    await page.getByText(fixture.neutralSendMessage, { exact: true }).waitFor();
-    const field = page.getByLabel("Verification code", { exact: true });
-    await field.waitFor();
-    assert.deepEqual(
-      route.failures.map((error) => error.message),
-      [],
-    );
-    assert.equal(route.posts, 1);
-    const attempts = await submitVerificationCode({ page, code });
-    // Real verification: /auth/v1/verify is never intercepted.
-    await assertAuthenticatedUser(page, actor.userId);
-    assert.equal(route.posts, 1);
-    return {
-      posts: route.posts,
-      preflights: route.preflights,
-      attempts,
-      otp: code,
-    };
+    await submitVerificationCode({ page, code });
+    // Real verification: /auth/v1/verify is never intercepted. One bounded wait
+    // covers the whole round trip — the verify, the identity read and the first
+    // case list all happen before the signed-in screen renders.
+    await assertAuthenticatedUser(page, actor.userId, {
+      timeout: SIGNED_IN_TIMEOUT_MS,
+    });
+    return { posts: route.posts, preflights: route.preflights, otp: code };
+  } catch (error) {
+    pending = error;
+    throw error;
   } finally {
-    await page.unroute(fixture.sendPattern, route.handler);
+    await release({ pending });
   }
 }
 

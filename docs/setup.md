@@ -228,12 +228,16 @@ the earlier probe already recorded; not reproduced deliberately). Hosted-project
 provider failures and social-only accounts remain unobserved. `tests/fixtures/auth-send-outcomes.mjs` is
 unchanged: no *send* outcome code appeared that it does not already record.
 
-**Known defect this run measured.** While the resend countdown runs, the access screen rebuilds itself once a
-second (`src/app.mjs` `tickCooldown` → `render`, which reassigns `#app.innerHTML`), and the rebuilt code field
-is rendered with an empty value. A code typed in one tick is gone in the next, in both engines: the gate
-measured the survival time at 25 ms to 1.04 s across runs, which is simply whatever was left of the current
-one-second tick. A visitor who takes longer than that between typing the code and pressing **Verify and
-continue** submits an empty field, which the field's own `required` validation silently blocks, so nothing
-happens at all — no request, no message. `tests/support/browser-fixture.mjs` works around it (it re-fills and
-retries, which sends nothing when the field was cleared) and says so in place; the fix belongs in the
-application, and the work-around should be deleted with it.
+**A defect this gate found, now fixed, and now guarded.** The first two-engine run failed outright in Firefox:
+while the resend countdown ran, the access screen rebuilt itself once a second (`src/app.mjs` `tickCooldown` →
+`render`, which reassigned `#app.innerHTML`) and the rebuilt code field was rendered with an empty value, so a
+code typed in one tick was gone in the next — measured at 25 ms to 1.04 s, simply whatever was left of the
+current second. A visitor slower than that submitted an empty field, which its own `required` validation
+silently blocked: no request, no message, nothing on screen.
+
+The application fix keeps the typed code in `state.authCode`, renders the field from it, and has the tick patch
+only the countdown text and the resend button (`data-role="resend-countdown"`) instead of re-rendering. The
+gate now guards it two ways: signing in is a plain fill-then-click with no retry, so a field that cleared would
+fail the login, and `tests/auth-browser.mjs` additionally types a value, waits — by condition — for the
+countdown to advance two seconds, and asserts the value is still there. Both engines record
+`codeSurvivedCountdownSeconds: 2`.

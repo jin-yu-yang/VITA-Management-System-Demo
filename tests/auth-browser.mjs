@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   createBrowserFixture,
   createSendRoute,
+  requestCode,
   loginTestUser,
   submitVerificationCode,
   APP_COOLDOWN_SECONDS,
@@ -44,6 +45,9 @@ const SEND_INTERVAL_MS = 60_000;
 // margin, and never more than this. Limits are never lowered to pass a test.
 const REPEAT_WAIT_MS = 65_000;
 const REPEAT_WAIT_CEILING_MS = 75_000;
+
+// How long the countdown regression guard waits for two seconds to pass.
+const COUNTDOWN_TICK_TIMEOUT_MS = 10_000;
 
 // Enough for a database fixture, two contexts, and the bounded repeat wait.
 const ENGINE_TIMEOUT_MS = 300_000;
@@ -172,19 +176,13 @@ test("an unexpected method, a second send and a foreign origin are refused", asy
 
 // Scenario 3: wrong codes through the real form, with no fixed-code bypass.
 async function refuseInvalidCodes({ page, actor, fixture, restart }) {
-  const route = createSendRoute({ frontendOrigin: fixture.appOrigin });
-  await page.route(fixture.sendPattern, route.handler);
+  const { release } = await requestCode({
+    page,
+    fixture,
+    address: actor.email,
+  });
+  let pending = null;
   try {
-    await page.getByLabel("Email address", { exact: true }).fill(actor.email);
-    await page
-      .getByRole("button", { name: "Send verification code", exact: true })
-      .click();
-    await page.getByText(NEUTRAL_LITERAL, { exact: true }).waitFor();
-    assert.deepEqual(
-      route.failures.map((error) => error.message),
-      [],
-    );
-    assert.equal(route.posts, 1);
     for (const [index, code] of INVALID_CODES.entries()) {
       // Every attempt after the first starts from a freshly rendered code step
       // (restored from the window's access record), so the refusal asserted
@@ -204,11 +202,7 @@ async function refuseInvalidCodes({ page, actor, fixture, restart }) {
         0,
       );
     }
-    // Recorded while this page is sitting on the code step with the countdown
-    // running: how long a typed code survives the once-a-second rebuild. An
-    // observation for the report, never an assertion — nothing here should keep
-    // the defect alive once it is fixed.
-    const fieldClearedAfterMs = await measureCodeFieldLifetime(page);
+    const survivedSeconds = await assertCodeSurvivesCountdown(page);
     // The same refusal, read at the source, so the sanitized code is observed
     // rather than inferred from the copy.
     const direct = await fixture
@@ -222,30 +216,77 @@ async function refuseInvalidCodes({ page, actor, fixture, restart }) {
     assert.equal(direct.data?.session ?? null, null);
     return {
       code: direct.error.code ?? `status ${direct.error.status}`,
-      fieldClearedAfterMs,
+      survivedSeconds,
     };
+  } catch (error) {
+    pending = error;
+    throw error;
   } finally {
-    await page.unroute(fixture.sendPattern, route.handler);
+    await release({ pending });
   }
 }
 
-// Returns the milliseconds after which the typed code was gone, or null when it
-// survived the whole sample window (which is what a fixed app would do).
-async function measureCodeFieldLifetime(page) {
+// The regression guard for the defect this gate originally found: the resend
+// countdown used to rebuild the whole access screen once a second, and the
+// rebuilt code field was rendered blank, so a code typed in one tick was gone
+// in the next and the form then silently submitted nothing.
+//
+// Run on a page sitting on the code step: type a value, wait — by condition,
+// not by clock — for the countdown to advance at least two seconds, and assert
+// the value is still there. Both halves matter: a countdown that stopped
+// ticking would make the survival prove nothing. Returns the seconds observed.
+async function assertCodeSurvivesCountdown(page) {
   const probe = "135790";
   const field = page.getByLabel("Verification code", { exact: true });
+  const resend = page.locator("[data-action='resend-code']");
+  const secondsLeft = async () =>
+    Number(/\d+/.exec((await resend.innerText()).trim())?.[0] ?? NaN);
   await field.fill(probe);
-  const started = Date.now();
-  for (let sample = 0; sample < 15; sample += 1) {
-    if ((await field.inputValue()) !== probe) return Date.now() - started;
-    await delay(200);
-  }
-  return null;
+  const before = await secondsLeft();
+  assert.ok(
+    Number.isFinite(before) && before > 2,
+    `the resend countdown is not running (${before}), so this proves nothing`,
+  );
+  await page.waitForFunction(
+    (limit) => {
+      const button = document.querySelector("[data-action='resend-code']");
+      const left = Number(/\d+/.exec(button?.textContent ?? "")?.[0] ?? NaN);
+      return Number.isFinite(left) && left <= limit;
+    },
+    before - 2,
+    { timeout: COUNTDOWN_TICK_TIMEOUT_MS },
+  );
+  assert.equal(
+    await field.inputValue(),
+    probe,
+    "the resend countdown cleared the code the visitor typed",
+  );
+  await field.fill("");
+  return before - (await secondsLeft());
 }
 
-// Scenario 6: an address with no account. Nothing may be created by asking.
+// Every row an unknown request could conceivably add, counted over the two
+// workspaces this run owns. Scoped rather than global so a parallel run on the
+// same stack cannot move the numbers.
+async function runOwnedRowCounts(fixture) {
+  const { database } = fixture;
+  const scope = [database.workspaceId, database.foreignWorkspaceId];
+  const { rows } = await database.sql(
+    `select
+       (select count(*) from public.workspaces where id = any($1))::int as workspaces,
+       (select count(*) from public.cases where workspace_id = any($1))::int as cases,
+       (select count(*) from public.people where workspace_id = any($1))::int as people,
+       (select count(*) from public.memberships where workspace_id = any($1))::int as memberships`,
+    [scope],
+  );
+  return rows[0];
+}
+
+// Scenario 6: an address with no account. Nothing may be created by asking —
+// no user, no session, and no case, person, membership or workspace either.
 async function refuseUnknownAddress(fixture) {
   const email = `unknown-${randomUUID()}@vitally.invalid`;
+  const before = await runOwnedRowCounts(fixture);
   const send = await fixture.anonClient().auth.signInWithOtp({
     email,
     options: { shouldCreateUser: false },
@@ -260,6 +301,7 @@ async function refuseUnknownAddress(fixture) {
     "select count(*)::int as count from auth.users where email=$1",
     [email],
   );
+  const after = await runOwnedRowCounts(fixture);
   assert.ok(send.error, "an unknown address was accepted for a code");
   assert.equal(send.data?.session ?? null, null);
   assert.equal(send.data?.user ?? null, null);
@@ -267,9 +309,11 @@ async function refuseUnknownAddress(fixture) {
   assert.equal(signup.data?.session ?? null, null);
   assert.equal(signup.data?.user ?? null, null);
   assert.equal(users.rows[0].count, 0, "an unknown request created a user");
+  assert.deepEqual(after, before, "an unknown request created application rows");
   return {
     send: send.error.code ?? `status ${send.error.status}`,
     signup: signup.error.code ?? `status ${signup.error.status}`,
+    rowsUnchanged: before,
   };
 }
 
@@ -287,21 +331,11 @@ function normalizeAccessScreen(text, address) {
 
 async function readNeutralAccessScreen({ engine, fixture, address }) {
   const { context, page, errors, pageErrors } = await engine.newPage();
-  const route = createSendRoute({ frontendOrigin: fixture.appOrigin });
-  await page.route(fixture.sendPattern, route.handler);
+  const { release } = await requestCode({ page, fixture, address });
+  let pending = null;
   try {
-    await page.getByLabel("Email address", { exact: true }).fill(address);
-    await page
-      .getByRole("button", { name: "Send verification code", exact: true })
-      .click();
     const message = page.getByText(NEUTRAL_LITERAL, { exact: true });
-    await message.waitFor();
     assert.equal((await message.innerText()).trim(), NEUTRAL_LITERAL);
-    assert.deepEqual(
-      route.failures.map((error) => error.message),
-      [],
-    );
-    assert.equal(route.posts, 1);
     // The resend control is disabled and counting down immediately.
     const resend = page.locator("[data-action='resend-code']");
     await resend.waitFor();
@@ -320,8 +354,13 @@ async function readNeutralAccessScreen({ engine, fixture, address }) {
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(errors, []);
     return { screen, seconds };
+  } catch (error) {
+    pending = error;
+    throw error;
   } finally {
-    await page.unroute(fixture.sendPattern, route.handler);
+    // Release before the context goes, so the route's own counters are still
+    // readable and an unroute is still possible.
+    await release({ pending });
     await context.close();
   }
 }
@@ -359,7 +398,6 @@ async function runEngineGate(t, engineName) {
           observed.firstLogin = {
             posts: login.posts,
             preflights: login.preflights,
-            attempts: login.attempts,
           };
         },
       );
@@ -450,7 +488,6 @@ async function runEngineGate(t, engineName) {
           assert.equal(login.posts, 1);
           observed.returnLogin = {
             posts: login.posts,
-            attempts: login.attempts,
             verifiedMs: Date.now() - started,
           };
         },
@@ -468,7 +505,7 @@ async function runEngineGate(t, engineName) {
               restart: () => invalid.page.goto(fixture.appOrigin),
             });
             observed.invalidCode = refusal.code;
-            observed.codeFieldClearedAfterMs = refusal.fieldClearedAfterMs;
+            observed.codeSurvivedCountdownSeconds = refusal.survivedSeconds;
             // The application itself never throws. The only console lines this
             // page may produce are the engine's own notices for the refused
             // verifications, which are the point of the test.
