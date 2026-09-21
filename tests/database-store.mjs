@@ -268,26 +268,33 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       );
     });
 
-    await t.test("every watched table is published to Realtime", async () => {
-      // Realtime delivers nothing for a table that is not a member of the
-      // `supabase_realtime` publication, and **still reports SUBSCRIBED** — so
-      // the silence looks like a calm workspace. Worse, one unpublished table
-      // in a channel's set makes Realtime drop the whole subscription, not
-      // just that table. The precondition is therefore asserted by name
-      // instead of being left to a fifteen-second timeout below.
+    await t.test("the Realtime publication is exactly what the adapter watches", async () => {
+      // Migration 007 owns the published list; `SUBSCRIBED_TABLES` splits it by
+      // access. Asserting they are the same set keeps them from drifting: an
+      // unpublished table in a channel's set silently drops that channel's
+      // whole subscription, while Realtime still answers SUBSCRIBED.
+      const publication = (
+        await f.sql(
+          "select pubinsert, pubupdate, pubdelete, pubtruncate from pg_publication where pubname='supabase_realtime'",
+        )
+      ).rows;
+      assert.equal(publication.length, 1, "the supabase_realtime publication exists");
+      // Never DELETE: a removed row cannot be authorized through the RLS state
+      // it no longer has (spec section 7).
+      assert.deepEqual(publication[0], {
+        pubinsert: true,
+        pubupdate: true,
+        pubdelete: false,
+        pubtruncate: false,
+      });
       const published = (
         await f.sql(
-          "select tablename from pg_publication_tables where pubname='supabase_realtime' and schemaname='public'",
+          "select tablename from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' order by tablename",
         )
       ).rows.map((row) => row.tablename);
-      const missing = SUBSCRIBED_TABLES.presenter.filter(
-        (table) => !published.includes(table),
-      );
-      assert.deepEqual(
-        missing,
-        [],
-        `add these tables to the supabase_realtime publication: ${missing.join(", ")}`,
-      );
+      assert.deepEqual(published, [...SUBSCRIBED_TABLES.presenter].toSorted());
+      // Receipts and the private schema are never published.
+      assert.ok(!published.includes("action_receipts"));
     });
 
     await t.test("a subscription connects, announces a change and is removed", async () => {
