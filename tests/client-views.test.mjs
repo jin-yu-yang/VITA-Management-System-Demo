@@ -15,6 +15,7 @@ import {
   staffScreen,
   connectionNotice,
   unreachableScreen,
+  dialog,
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 
@@ -163,6 +164,23 @@ test("an offline visitor reads the last view behind a connection notice", () => 
     }),
   );
   assert.match(offline, /cannot reach the server/i);
+});
+
+test("a dialog can always take the keyboard, whatever its body holds", () => {
+  // The help dialog's body is prose: its only control is the close button. The
+  // container carries tabindex="-1" so there is somewhere to put the keyboard
+  // even for a future dialog that has neither.
+  const help = dialog(baseState({ dialog: "help" }));
+  assert.match(help, /<section class="modal"[^>]*tabindex="-1"/);
+  assert.match(help, /role="dialog"/);
+  assert.match(help, /aria-modal="true"/);
+  assert.match(help, /class="close-btn"/);
+  assert.equal(dialog(baseState({ dialog: null })), "");
+  // Every dialog this module renders gets the same container.
+  for (const name of ["help", "regenerate", "print"]) {
+    const html = dialog(baseState({ dialog: name, savedCase: caseRecord() }));
+    assert.match(html, /<section class="modal"[^>]*tabindex="-1"/, name);
+  }
 });
 
 test("an unreachable server gets its own screen, not the sign-in form", () => {

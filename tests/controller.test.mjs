@@ -708,6 +708,102 @@ test("panels opened on one application do not follow to another", async () => {
   controller.stop();
 });
 
+test("a refusal nobody has dismissed survives an unrelated background re-read", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "Mei" });
+  store.failNext = Object.assign(
+    new Error("The demo cannot reach the server. Check the connection."),
+    { code: "OFFLINE" },
+  );
+  await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
+  const shown = controller.getState().error;
+  assert.equal(shown.code, "OFFLINE");
+  assert.match(shown.message, /cannot reach the server/);
+
+  // Somebody else's window resets the sample cases. That says nothing about
+  // this person's save, and must not answer for it.
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
+  assert.deepEqual(controller.getState().error, shown, "the reason is still on screen");
+  assert.equal(controller.getState().saveState, "failed");
+
+  // Nor does a reconnect, a window focus or any other re-read.
+  await controller.refresh();
+  assert.deepEqual(controller.getState().error, shown);
+
+  // Their own next action is what clears it.
+  controller.editAnswers({ lastName: "Chen" });
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("each way a person can answer a refusal clears it", async () => {
+  const fresh = async () => {
+    const store = fakeStore({
+      cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+    });
+    const { controller } = build({ store });
+    await controller.start();
+    await controller.selectCase("case-a");
+    store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+    await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }));
+    assert.equal(controller.getState().error.code, "OFFLINE");
+    return { store, controller };
+  };
+
+  const dismissed = await fresh();
+  dismissed.controller.dismissError();
+  assert.equal(dismissed.controller.getState().error, null, "the dismiss control");
+  dismissed.controller.stop();
+
+  const navigated = await fresh();
+  navigated.controller.navigate("applications");
+  assert.equal(navigated.controller.getState().error, null, "navigation");
+  navigated.controller.stop();
+
+  const acted = await fresh();
+  await acted.controller.runAction("SUBMIT", { confirmed: true });
+  assert.equal(acted.controller.getState().error, null, "the next action");
+  acted.controller.stop();
+
+  const saved = await fresh();
+  saved.controller.editAnswers({ firstName: "Mei" });
+  await saved.controller.saveAnswers();
+  assert.equal(saved.controller.getState().error, null, "a save");
+  saved.controller.stop();
+});
+
+test("a conflict explains itself and its own re-read does not erase the explanation", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparing", revision: 3, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  // The office's work moved the revision a moment ago.
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.runAction("RESPOND_DOCUMENT", {
+      requestId: "req-1",
+      filename: "demo-mileage-record-2025.pdf",
+    }),
+    (error) => error.code === "CONFLICT",
+  );
+  // The post-conflict re-read is what shows the newest case; it must not take
+  // the sentence explaining the refusal with it.
+  const after = controller.getState();
+  assert.equal(after.error.code, "CONFLICT");
+  assert.match(after.error.message, /someone else changed this/i);
+  // And a background change arriving afterwards leaves it alone too.
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
+  assert.equal(controller.getState().error.code, "CONFLICT");
+  controller.stop();
+});
+
 test("a rejected action is not retryable and a remote conflict refreshes the case", async () => {
   const store = fakeStore({
     cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],

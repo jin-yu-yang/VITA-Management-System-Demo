@@ -328,8 +328,13 @@ export function createController({
         state.screen = homeScreen();
       } else failure = failure ?? error;
     }
+    // A refusal the person has been shown is theirs to dismiss or to act on.
+    // Re-reading is not an answer to it: an unrelated fixture reset landing in
+    // this window must not quietly replace "the demo cannot reach the server"
+    // with nothing, leaving a click that did nothing and no explanation. The
+    // next deliberate action clears it (every dispatch, save, navigation and
+    // the dismiss control do), and so does a successful identity load.
     if (failure) noteFailure(failure);
-    else state.error = null;
     persistSession();
     show();
   }
@@ -416,7 +421,9 @@ export function createController({
       // legitimately find nothing: a case that is gone must not stop the
       // lists around it from being refreshed.
       if (touchesOpen) await loadSelected();
-      state.error = null;
+      // Deliberately not `state.error = null`: this ran because somebody
+      // else's window did something, and a notice nobody in *this* window has
+      // read is not theirs to erase. See the note in `refresh`.
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
       else {

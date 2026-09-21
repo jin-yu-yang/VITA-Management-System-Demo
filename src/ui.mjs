@@ -163,22 +163,109 @@ const SELECTABLE_INPUT_TYPES = Object.freeze([
   "password",
 ]);
 
+// A button carries neither an id nor a name — every `data-action` control in
+// this application is in that class — so what it *does* is its stable hook, in
+// the same vocabulary the click handler reads. Without this a keyboard user is
+// sent back to the top of the document by any background update, and there are
+// two of those for every accepted action.
+const ACTION_KEYS = Object.freeze([
+  ["action", "data-action"],
+  ["caseAction", "data-case-action"],
+  ["assistanceAction", "data-assistance-action"],
+]);
+
+// What tells one namesake from another: every "Send sample document" button
+// says RESPOND_DOCUMENT, and only the request id says which request. A filter
+// or a check is the same idea for the staff board.
+const RELATED_KEYS = Object.freeze([
+  ["caseId", "data-case-id"],
+  ["requestId", "data-request-id"],
+  ["itemId", "data-item-id"],
+  ["followupId", "data-followup-id"],
+  ["personId", "data-person-id"],
+  ["check", "data-check"],
+  ["filter", "data-filter"],
+  ["value", "data-value"],
+]);
+
+const attributeValue = (value) =>
+  `"${String(value).replace(/[\\"]/g, (character) => `\\${character}`)}"`;
+
 export function describeFocus(active) {
-  const id = active?.id || null;
-  const name = active?.name || null;
-  // With neither there is nothing to find again after the rebuild.
-  if (!id && !name) return null;
+  if (!active) return null;
+  const id = active.id || null;
+  const name = active.name || null;
+  const data = active.dataset ?? {};
+  let action = null;
+  for (const [key, attribute] of ACTION_KEYS)
+    if (data[key]) {
+      action = { attribute, value: data[key] };
+      break;
+    }
+  const related = action
+    ? RELATED_KEYS.filter(([key]) => data[key] != null && data[key] !== "").map(
+        ([key, attribute]) => ({ attribute, value: data[key] }),
+      )
+    : [];
+  // With none of the three there is nothing to find again after the rebuild.
+  if (!id && !name && !action) return null;
+  const description = { id, name, action, related, caret: null };
   const selectable =
     active.tagName === "TEXTAREA" ||
     (active.tagName === "INPUT" &&
       SELECTABLE_INPUT_TYPES.includes(
         String(active.type ?? "text").toLowerCase(),
       ));
-  if (!selectable) return { id, name, caret: null };
+  if (!selectable) return description;
   try {
     const caret = active.selectionStart;
-    return { id, name, caret: typeof caret === "number" ? caret : null };
+    return {
+      ...description,
+      caret: typeof caret === "number" ? caret : null,
+    };
   } catch {
-    return { id, name, caret: null };
+    return description;
   }
+}
+
+// How to find that element again, most specific first: its own id, then its
+// name, then what it does *and* which row it belongs to, and only then what it
+// does. The last one can match several buttons; it resolves to the first, which
+// is why the related id comes before it rather than instead of it.
+export function focusSelectors(focus) {
+  if (!focus) return [];
+  const selectors = [];
+  // Attribute form throughout, so no value needs CSS.escape — which does not
+  // exist outside a browser, and this has to be testable without one.
+  if (focus.id) selectors.push(`[id=${attributeValue(focus.id)}]`);
+  if (focus.name) selectors.push(`[name=${attributeValue(focus.name)}]`);
+  if (focus.action) {
+    const base = `[${focus.action.attribute}=${attributeValue(focus.action.value)}]`;
+    const related = (focus.related ?? [])
+      .map(({ attribute, value }) => `[${attribute}=${attributeValue(value)}]`)
+      .join("");
+    if (related) selectors.push(`${base}${related}`);
+    selectors.push(base);
+  }
+  return selectors;
+}
+
+// Opening a dialog has to move the keyboard into it: it is `aria-modal`, and
+// the Tab trap only stops focus leaving from the first or last control, so it
+// can never recover focus that never arrived. A dialog whose body is three
+// paragraphs has only its close button, and a dialog with nothing at all still
+// has the container, which carries `tabindex="-1"` for exactly this.
+const isCloseButton = (element) =>
+  String(element?.className ?? "")
+    .split(/\s+/)
+    .includes("close-btn");
+
+export function dialogFocusTarget(controls = [], container = null) {
+  const usable = controls.filter((control) => control && !control.disabled);
+  return (
+    usable.find((control) => !isCloseButton(control)) ??
+    usable.find(isCloseButton) ??
+    container ??
+    null
+  );
 }

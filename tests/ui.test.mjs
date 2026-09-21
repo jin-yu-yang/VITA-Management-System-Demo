@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeFocus, esc, stageBadge } from "../src/ui.mjs";
+import {
+  describeFocus,
+  focusSelectors,
+  dialogFocusTarget,
+  esc,
+  stageBadge,
+} from "../src/ui.mjs";
 
 // `describeFocus` is the one piece of the DOM wiring that is worth testing on
 // its own, because the thing it has to get right is invisible: reading
@@ -28,12 +34,12 @@ test("a control with no selection is described without reading its caret", () =>
   // accessor exists on the prototype either way — so the type is what decides.
   for (const type of ["radio", "checkbox", "number", "email", "date", "color", "range", "file"]) {
     const found = describeFocus(element({ type, throws: true, name: `f-${type}` }));
-    assert.deepEqual(found, { id: null, name: `f-${type}`, caret: null }, type);
+    assert.deepEqual(found, { id: null, name: `f-${type}`, action: null, related: [], caret: null }, type);
   }
   // A select has no selection range either, and no `type` worth trusting.
   assert.deepEqual(
     describeFocus({ tagName: "SELECT", name: "residenceState" }),
-    { id: null, name: "residenceState", caret: null },
+    { id: null, name: "residenceState", action: null, related: [], caret: null },
   );
 });
 
@@ -41,17 +47,19 @@ test("a text-like control keeps its caret", () => {
   for (const type of ["text", "search", "url", "tel", "password"])
     assert.deepEqual(
       describeFocus(element({ type, caret: 5 })),
-      { id: null, name: "field", caret: 5 },
+      { id: null, name: "field", action: null, related: [], caret: 5 },
       type,
     );
   assert.deepEqual(
     describeFocus(element({ tagName: "TEXTAREA", type: undefined, caret: 12 })),
-    { id: null, name: "field", caret: 12 },
+    { id: null, name: "field", action: null, related: [], caret: 12 },
   );
   // An input with no type attribute is a text input.
   assert.deepEqual(describeFocus({ tagName: "INPUT", name: "field", selectionStart: 2 }), {
     id: null,
     name: "field",
+    action: null,
+    related: [],
     caret: 2,
   });
 });
@@ -86,11 +94,15 @@ test("the field is described by its id, so a namesake cannot take the cursor", (
   assert.deepEqual(describeFocus(first), {
     id: "field-req-1-reason",
     name: "reason",
+    action: null,
+    related: [],
     caret: 7,
   });
   assert.deepEqual(describeFocus(second), {
     id: "field-req-2-reason",
     name: "reason",
+    action: null,
+    related: [],
     caret: 4,
   });
   assert.notEqual(describeFocus(first).id, describeFocus(second).id);
@@ -116,14 +128,138 @@ test("a caret that cannot be read is never allowed to escape", () => {
   assert.deepEqual(describeFocus(element({ type: "text", throws: true })), {
     id: null,
     name: "field",
+    action: null,
+    related: [],
     caret: null,
   });
   // A non-numeric caret is not a caret.
   assert.deepEqual(describeFocus({ tagName: "INPUT", type: "text", name: "f", selectionStart: null }), {
     id: null,
     name: "f",
+    action: null,
+    related: [],
     caret: null,
   });
+});
+
+// A control the person presses, rather than types into. Every `data-action`
+// button in this application has neither an id nor a name.
+const pressable = (dataset, className = "btn") => ({
+  tagName: "BUTTON",
+  className,
+  dataset,
+});
+
+// What `restoreField` does against the rebuilt page, in one place so the test
+// proves the selectors resolve rather than just that they were produced.
+const resolveAmong = (page, focus) => {
+  for (const selector of focusSelectors(focus)) {
+    const found = page.find((element) => matches(element, selector));
+    if (found) return found;
+  }
+  return null;
+};
+const matches = (element, selector) => {
+  const parts = [...selector.matchAll(/\[([a-z-]+)="((?:[^"\\]|\\.)*)"\]/g)];
+  if (!parts.length) return false;
+  return parts.every(([, attribute, raw]) => {
+    const value = raw.replace(/\\(.)/g, "$1");
+    if (attribute === "id") return (element.id ?? "") === value;
+    if (attribute === "name") return (element.name ?? "") === value;
+    const key = attribute
+      .replace(/^data-/, "")
+      .replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    return (element.dataset?.[key] ?? null) === value;
+  });
+};
+
+test("a button with no id and no name is described by what it does", () => {
+  const help = pressable({ action: "open-help" });
+  assert.deepEqual(describeFocus(help), {
+    id: null,
+    name: null,
+    action: { attribute: "data-action", value: "open-help" },
+    related: [],
+    caret: null,
+  });
+  // It resolves back to itself on the rebuilt page — this is the whole point:
+  // a shared update used to send the keyboard to the top of the document.
+  const page = [pressable({ action: "sign-out" }), help, pressable({ action: "open-applications" })];
+  assert.equal(resolveAmong(page, describeFocus(help)), help);
+
+  // The workflow and assistance vocabularies are described the same way.
+  assert.deepEqual(describeFocus(pressable({ caseAction: "CLAIM_REVIEW" })).action, {
+    attribute: "data-case-action",
+    value: "CLAIM_REVIEW",
+  });
+  assert.deepEqual(describeFocus(pressable({ assistanceAction: "CLAIM" })).action, {
+    attribute: "data-assistance-action",
+    value: "CLAIM",
+  });
+});
+
+test("a related id tells one namesake button from another", () => {
+  // Every open request renders the same button; only the request id differs.
+  const first = pressable({ caseAction: "RESPOND_DOCUMENT", requestId: "req-1" });
+  const second = pressable({ caseAction: "RESPOND_DOCUMENT", requestId: "req-2" });
+  const page = [first, second];
+  assert.equal(resolveAmong(page, describeFocus(second)), second, "the second request");
+  assert.equal(resolveAmong(page, describeFocus(first)), first);
+  assert.deepEqual(describeFocus(second).related, [
+    { attribute: "data-request-id", value: "req-2" },
+  ]);
+  // Ambiguity resolves to the first match only when nothing disambiguates.
+  const plain = pressable({ caseAction: "RESPOND_DOCUMENT" });
+  assert.deepEqual(describeFocus(plain).related, []);
+  assert.equal(resolveAmong(page, describeFocus(plain)), first);
+  // A row that is gone after the rebuild simply is not found, rather than
+  // stealing the keyboard for a different request.
+  assert.equal(resolveAmong([second], describeFocus(first)), second);
+  assert.equal(resolveAmong([], describeFocus(first)), null);
+});
+
+test("focus selectors are ordered id, name, action with its row, then action", () => {
+  assert.deepEqual(
+    focusSelectors({
+      id: "field-req-1-reason",
+      name: "reason",
+      action: { attribute: "data-action", value: "escalate" },
+      related: [{ attribute: "data-request-id", value: "req-1" }],
+      caret: null,
+    }),
+    [
+      '[id="field-req-1-reason"]',
+      '[name="reason"]',
+      '[data-action="escalate"][data-request-id="req-1"]',
+      '[data-action="escalate"]',
+    ],
+  );
+  assert.deepEqual(focusSelectors(null), []);
+  assert.deepEqual(focusSelectors({ id: null, name: null, action: null, related: [] }), []);
+  // A value carrying a quote or a backslash cannot break out of the selector.
+  assert.deepEqual(
+    focusSelectors({ id: null, name: 'we"ird\\', action: null, related: [] }),
+    ['[name="we\\"ird\\\\"]'],
+  );
+});
+
+test("a dialog always has somewhere to put the keyboard", () => {
+  const close = { tagName: "BUTTON", className: "close-btn" };
+  const container = { tagName: "SECTION", className: "modal" };
+  const control = { tagName: "BUTTON", className: "btn primary" };
+  const disabled = { tagName: "BUTTON", className: "btn primary", disabled: true };
+  // The first real control wins.
+  assert.equal(dialogFocusTarget([close, control], container), control);
+  assert.equal(dialogFocusTarget([control, close], container), control);
+  // A dialog whose body is only prose still takes the keyboard, on its close
+  // button — this is the "Need help?" dialog, which used to land on BODY.
+  assert.equal(dialogFocusTarget([close], container), close);
+  // Nothing focusable at all falls back to the container, which is why the
+  // modal carries tabindex="-1".
+  assert.equal(dialogFocusTarget([], container), container);
+  assert.equal(dialogFocusTarget([disabled], container), container);
+  assert.equal(dialogFocusTarget([], null), null);
+  assert.equal(dialogFocusTarget(), null);
 });
 
 test("the shared helpers still escape and name stages", () => {

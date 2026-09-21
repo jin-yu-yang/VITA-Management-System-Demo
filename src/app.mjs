@@ -4,7 +4,7 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
-import { describeFocus } from "./ui.mjs";
+import { describeFocus, focusSelectors, dialogFocusTarget } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
@@ -91,11 +91,16 @@ if (!config) {
     restoreFormDrafts();
     tickCooldown(state);
     if (state.dialog)
-      requestAnimationFrame(() =>
-        root
-          .querySelector(".modal button:not(.close-btn),.modal input,.modal textarea")
-          ?.focus(),
-      );
+      requestAnimationFrame(() => {
+        const modal = root.querySelector(".modal");
+        if (!modal) return;
+        // Something inside the dialog always takes the keyboard, even when the
+        // body is only prose: the close button, or the container itself.
+        dialogFocusTarget(
+          [...modal.querySelectorAll("button,input,textarea,select,a[href]")],
+          modal,
+        )?.focus();
+      });
     else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
@@ -118,9 +123,13 @@ if (!config) {
   // same name — one `reason` box per open document request — and the name alone
   // would put the cursor in the first of them.
   function restoreField(focus) {
-    const field =
-      (focus.id ? root.querySelector(`#${CSS.escape(focus.id)}`) : null) ??
-      (focus.name ? root.querySelector(`[name="${focus.name}"]`) : null);
+    let field = null;
+    // Most specific first; a button that carries only what it does is found by
+    // that, which is what keeps the keyboard on it across a shared update.
+    for (const selector of focusSelectors(focus)) {
+      field = root.querySelector(selector);
+      if (field) break;
+    }
     if (!field) return;
     field.focus();
     if (focus.caret === null || !("setSelectionRange" in field)) return;
