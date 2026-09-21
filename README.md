@@ -64,7 +64,7 @@ npm run test:browser        # the full demonstration story, both engines, both d
 ## Rehearsing the demonstration
 
 [`docs/demo-script.md`](docs/demo-script.md) is the rehearsal script: the two-minute main story,
-the full nine-step story the browser test suite runs, the assisted-intake (walk-in) path, presenter
+the full story the browser test suite runs, the assisted-intake (walk-in) path, presenter
 panel usage, what is simulated versus real, and what to expect and say about the known behaviors
 the test suite has pinned (a stale-revision refusal, the `review_ready` fixture's staff-recorded
 document, and so on).

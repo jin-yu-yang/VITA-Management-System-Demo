@@ -221,8 +221,12 @@ silently skipping.
 
 ## 4. Migrations
 
-Nine migrations, applied in order, each idempotent (`create or replace` for functions,
-conditional guards for schema) so re-running the migrator on an already-migrated stack is safe:
+Nine migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
+but not because the files themselves are re-runnable — `001` and `002` create their tables with a
+plain `create table`, which fails the second time. What makes it safe is the ledger
+`tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
+SHA-256 digest of its text. The migrator reads that row before each file and skips every file
+already applied, so **the migrations are run only through the migrator, never by hand**:
 
 | File | Adds |
 | --- | --- |
@@ -257,6 +261,12 @@ changes to an already-applied migration file (a further change needs a new migra
 never deletes or resets a database. This is also `npm run db:migrate:test` under the same scoped
 `PATH`.
 
+Editing a file that has already been applied changes its digest, and the migrator refuses the
+whole run with `MIGRATION_CHANGED` before it applies anything. On the isolated test stack the
+recovery is the one migration `009`'s own header comment describes: either recreate the stack
+from scratch, or first drop that file's own objects and its `schema_migrations` row with a local
+script that is not part of the repository, then apply again.
+
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
@@ -266,8 +276,8 @@ the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
-| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 204/204 | Pure domain/contract logic, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
-| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 149/149, ~85–90 s | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints. |
+| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 208/208 | Pure domain/contract logic, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
+| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 151/151, ~85–95 s | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints. |
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~75–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
 | Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 51/51, ~180–200 s | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Optional to re-run before every rehearsal, but recommended before a presentation. |
 
@@ -381,3 +391,9 @@ designed for static hosting with no build step (the committed vendor bundle, and
 instead of running `server.mjs`), but until that file exists with real values, any deployed copy —
 including the current GitHub Pages copy of `main` — shows the same "ViTally is not configured yet"
 screen a fresh local checkout does.
+
+Pages serves `main`'s root, so a deployed copy publishes every committed file, not only the page
+and its bundle: the migrations, the admin tooling, the tests and these documents are all fetchable
+at their repository paths. No secret is among them — `.gitignore` excludes `.env*` (except
+`*.example`) and `.vitally-targets*.json` — and whether publishing the rest of the repository is
+acceptable is part of what the hosting task (10D) settles with the user.
