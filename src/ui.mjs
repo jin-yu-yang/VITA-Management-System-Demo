@@ -1,3 +1,5 @@
+import { describeStage } from "./domain.mjs";
+
 export const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -28,15 +30,26 @@ const paths = {
   chevron: "m9 5 7 7-7 7",
   folder: "M2 6h8l2 3h10v12H2V6Zm0 0V3h8l2 3h8v3",
   print: "M6 8V2h12v6M6 17H2V8h20v9h-4M6 13h12v9H6Z",
+  search: "M20 20l-4-4m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
+  signout: "M10 21H4V3h6M16 8l4 4-4 4M20 12H9",
 };
 export const icon = (name, cls = "") =>
   `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
 export const button = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${text}</button>`;
+
+// Workflow buttons name the canonical action directly, so the DOM and the
+// database speak the same vocabulary (contracts.mjs, DOM action convention).
+export const caseButton = (text, action, kind = "primary", extra = "") =>
+  `<button type="button" class="btn ${kind}" data-case-action="${action}" ${extra}>${text}</button>`;
+
+// One id per field name, so every control has a real `for` association rather
+// than only a wrapping element.
+export const fieldId = (name) => `field-${name}`;
 export const input = (label, name, value = "", type = "text", extra = "") =>
-  `<label class="field"><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
+  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><input id="${fieldId(name)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 export const select = (label, name, value, options, extra = "") =>
-  `<label class="field"><span>${label}</span><select name="${name}" ${extra}><option value="">Select an option</option>${options
+  `<label class="field" for="${fieldId(name)}"><span>${esc(label)}</span><select id="${fieldId(name)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {
       const [val, txt] = Array.isArray(o) ? o : [o, o];
       return `<option value="${esc(val)}" ${value === val ? "selected" : ""}>${esc(txt)}</option>`;
@@ -52,14 +65,20 @@ export const radio = (
     ["unsure", "Not sure"],
   ],
 ) =>
-  `<fieldset class="question"><legend>${label}</legend><div class="radio-row">${options.map(([val, text]) => `<label class="radio-card ${value === val ? "selected" : ""}"><input type="radio" name="${name}" value="${val}" ${value === val ? "checked" : ""} required><span>${text}</span></label>`).join("")}</div></fieldset>`;
-export const statuses = {
-  draft: ["Draft", "neutral"],
-  received: ["Application received", "blue"],
-  queued: ["Waiting for preparation", "blue"],
-  preparing: ["In preparation", "blue"],
-  held: ["Waiting for client", "amber"],
-  responded: ["Awaiting verification", "teal"],
-};
-export const badge = (status) =>
-  `<span class="badge ${statuses[status]?.[1] || "neutral"}"><i></i>${esc(statuses[status]?.[0] || status)}</span>`;
+  `<fieldset class="question"><legend>${esc(label)}</legend><div class="radio-row">${options.map(([val, text]) => `<label class="radio-card ${value === val ? "selected" : ""}"><input type="radio" name="${name}" value="${val}" ${value === val ? "checked" : ""} required><span>${esc(text)}</span></label>`).join("")}</div></fieldset>`;
+
+// Colour is never the only signal: every badge carries its own words, and the
+// words come from the one stage table in domain.mjs.
+const STAGE_TONES = Object.freeze({
+  draft: "neutral",
+  received: "blue",
+  preparation_ready: "blue",
+  preparing: "blue",
+  review_ready: "teal",
+  reviewing: "teal",
+  corrections_required: "amber",
+  review_approved: "green",
+  closed: "neutral",
+});
+export const stageBadge = (stage) =>
+  `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage).label)}</span>`;

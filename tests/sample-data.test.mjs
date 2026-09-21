@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeSampleAnswers, fillBlankAnswers } from "../src/sample-data.mjs";
-import { newCase, screening, updateCase } from "../src/domain.mjs";
+import { screening, submissionBlocker } from "../src/domain.mjs";
 
 test("fictional filling preserves edits and excludes identity", () => {
   const sample = makeSampleAnswers({ seed: 21, scenario: "ordinary" });
@@ -55,17 +55,12 @@ test("fictional seed selection is deterministic and returns independent results"
 });
 
 test("ordinary fictional samples satisfy actual submission validation", () => {
-  let application = updateCase(newCase(), {
-    type: "CREATE",
-    contact: { method: "phone", value: "2025550142" },
-  });
-  application = updateCase(application, {
-    type: "ANSWERS",
-    answers: makeSampleAnswers({ seed: 1, scenario: "ordinary" }),
-  });
-  application = updateCase(application, { type: "SUBMIT" });
-
-  assert.equal(application.status, "received");
+  // The server's SUBMIT branch is the authority (tests/database-actions.mjs,
+  // "payload whitelists and server-side screening reject unsupported answers").
+  // This keeps the promise the helper makes locally: a generated ordinary
+  // sample leaves nothing required blank and nothing screened out.
+  const sample = makeSampleAnswers({ seed: 1, scenario: "ordinary" });
+  assert.equal(submissionBlocker(sample), null);
 });
 
 test("exception samples are explicitly unsupported", () => {
