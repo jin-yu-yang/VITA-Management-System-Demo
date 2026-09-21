@@ -319,21 +319,34 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         assert.equal(states[0], "online");
         // An action the applicant may take on their own case, which updates
         // the `cases` row and so must reach their own subscription.
-        await f.act(f.applicantA, draft.caseId, null, "SAVE_ANSWERS", {
-          answers: { city: "Philadelphia" },
-        });
-        assert.deepEqual(
-          await withDeadline(
-            announced.promise,
-            "no change for the applicant's own case arrived",
-          ),
-          {
-            table: "cases",
-            eventType: "UPDATE",
-            id: draft.caseId,
-            caseId: draft.caseId,
-          },
+        const save = () =>
+          f.act(f.applicantA, draft.caseId, null, "SAVE_ANSWERS", {
+            answers: { city: "Philadelphia" },
+          });
+        // Realtime stops a tenant's Postgres Changes streaming once nothing is
+        // subscribed, and drops the tenant entirely once nobody is connected.
+        // On an idle stack the very first change can therefore fall into the
+        // window between SUBSCRIBED and streaming restarting, so the action is
+        // repeated until a change arrives. The deadline still fails the test —
+        // silence is never a pass — and a refused action still throws.
+        let change = null;
+        announced.promise.then((value) => (change = value));
+        const deadline = Date.now() + REALTIME_DEADLINE_MS;
+        await save();
+        while (!change && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (!change && Date.now() < deadline) await save();
+        }
+        assert.ok(
+          change,
+          `no change for the applicant's own case arrived within ${REALTIME_DEADLINE_MS}ms`,
         );
+        assert.deepEqual(change, {
+          table: "cases",
+          eventType: "UPDATE",
+          id: draft.caseId,
+          caseId: draft.caseId,
+        });
       } finally {
         stop();
       }

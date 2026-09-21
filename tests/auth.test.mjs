@@ -322,4 +322,33 @@ test("a missing session reads as null rather than an error", async () => {
   const client = fakeClient();
   client.auth.getSession = async () => ({ data: { session: null }, error: null });
   assert.equal(await createAuth(client).getSession(), null);
+  // The SDK reports a signed-out visitor with a code-less session error too.
+  client.auth.getSession = async () => ({
+    data: { session: null },
+    error: { name: "AuthSessionMissingError", status: 400 },
+  });
+  assert.equal(await createAuth(client).getSession(), null);
+});
+
+test("an unreachable server while reading the session is not a sign-out", async () => {
+  // Refreshing a stale session is a network call, and the SDK returns that
+  // failure rather than throwing it. Reading it as "no session" would sign a
+  // visitor out because their connection dropped.
+  const returned = fakeClient();
+  const failure = {
+    name: "AuthRetryableFetchError",
+    status: 0,
+    message: "Failed to fetch",
+  };
+  returned.auth.getSession = async () => ({ data: { session: null }, error: failure });
+  await assert.rejects(() => createAuth(returned).getSession(), (error) => {
+    assert.equal(error.code, "OFFLINE");
+    assert.equal(error.cause, failure);
+    return true;
+  });
+  const thrown = fakeClient();
+  thrown.auth.getSession = async () => {
+    throw new TypeError("fetch failed");
+  };
+  await assert.rejects(() => createAuth(thrown).getSession(), { code: "OFFLINE" });
 });

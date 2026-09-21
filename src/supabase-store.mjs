@@ -1,4 +1,5 @@
 import { createAppError } from "./errors.mjs";
+import { isAuthTransportError } from "./auth.mjs";
 
 // The one data adapter. Everything the browser knows about the database goes
 // through this file: the five application RPCs, the RLS-scoped SELECT reads,
@@ -233,6 +234,13 @@ export function createStore(client) {
       } catch (cause) {
         throw createAppError(cause);
       }
+      // An Auth call reports an unreachable server by *returning* the failure,
+      // not by throwing it, and that error carries no database code — so the
+      // shared mapper turns it into OFFLINE, which is what a transport failure
+      // is. This branch is what keeps a signed-out visitor out of that path:
+      // their session error is equally code-less and must stay FORBIDDEN.
+      if (isAuthTransportError(identity?.error))
+        throw createAppError(identity.error);
       const user = identity?.data?.user ?? null;
       // No session and no active membership are the same answer: this account
       // has no access, and nothing about the workspace is revealed.

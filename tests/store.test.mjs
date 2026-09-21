@@ -176,12 +176,30 @@ const RELATED_ROWS = Object.freeze({
 
 // A captured supabase-js double: it records every table read, every RPC
 // envelope and every channel, and answers from plain fixture rows.
+// What supabase-js returns from `getUser()` when there is no session: an
+// `AuthSessionMissingError`, which carries a name and a status but no
+// database code. The SDK never answers with a null user and no error.
+const SESSION_MISSING = Object.freeze({
+  name: "AuthSessionMissingError",
+  status: 400,
+  message: "Auth session missing!",
+});
+// What it returns when the request could not reach the server. It is returned,
+// not thrown, and it is just as code-less as the one above.
+const RETRYABLE_FETCH = Object.freeze({
+  name: "AuthRetryableFetchError",
+  status: 0,
+  message: "Failed to fetch",
+});
+
 function fakeClient({
   access = "presenter",
   user = { id: "user-1", email: "student@example.com" },
   rows = {},
   rpc,
   readError,
+  authError,
+  authThrows,
 } = {}) {
   const table = (name) =>
     name === "memberships"
@@ -197,7 +215,15 @@ function fakeClient({
     channels: [],
     removed: [],
     auth: {
-      getUser: async () => ({ data: { user }, error: user ? null : undefined }),
+      // Mirrors the SDK: a failure is returned, never `error: undefined`, and
+      // a null user always comes with the error that explains it.
+      getUser: async () => {
+        if (authThrows) throw authThrows;
+        if (authError) return { data: { user: null }, error: authError };
+        return user
+          ? { data: { user }, error: null }
+          : { data: { user: null }, error: SESSION_MISSING };
+      },
     },
     from(name) {
       const read = { table: name, filters: [], orders: [] };
@@ -285,6 +311,34 @@ test("no membership and no session are both FORBIDDEN", async () => {
   await assert.rejects(
     () => createStore(fakeClient({ user: null })).getPrincipal(),
     { code: "FORBIDDEN" },
+  );
+});
+
+test("an unreachable server is OFFLINE, not a refusal", async () => {
+  // The SDK returns this failure instead of throwing it, and it is as
+  // code-less as a missing session. Telling an offline visitor with a cached
+  // session that they have no access would be the wrong answer, and the wrong
+  // screen.
+  await assert.rejects(
+    () => createStore(fakeClient({ authError: RETRYABLE_FETCH })).getPrincipal(),
+    (error) => {
+      assert.equal(error.code, "OFFLINE");
+      assert.equal(error.cause, RETRYABLE_FETCH);
+      return true;
+    },
+  );
+  // A visitor who is simply signed out still gets the refusal.
+  await assert.rejects(
+    () => createStore(fakeClient({ authError: SESSION_MISSING })).getPrincipal(),
+    { code: "FORBIDDEN" },
+  );
+  // A thrown call stays OFFLINE, as before.
+  await assert.rejects(
+    () =>
+      createStore(
+        fakeClient({ authThrows: new TypeError("fetch failed") }),
+      ).getPrincipal(),
+    { code: "OFFLINE" },
   );
 });
 

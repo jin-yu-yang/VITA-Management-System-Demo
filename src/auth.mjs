@@ -58,6 +58,16 @@ const SEND_CATEGORIES = Object.freeze({
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const EMAIL_MAX_LENGTH = 254;
 
+// supabase-js does **not** throw when an Auth request cannot reach the server:
+// it returns an `AuthRetryableFetchError` in `{error}`. That error carries no
+// database code, and neither does the `AuthSessionMissingError` of a visitor
+// who is simply signed out — so the two have to be told apart by name before
+// either reaches the shared mapper, or being offline and being signed out
+// would give the same answer. Exported because the data adapter calls
+// `client.auth.getUser()` and needs the same rule.
+export const isAuthTransportError = (error) =>
+  error?.name === "AuthRetryableFetchError" || error?.status === 0;
+
 function authError(code, message, cause) {
   return Object.assign(new Error(message, { cause }), { code });
 }
@@ -161,8 +171,18 @@ export function createAuth(
     verifyCode,
     cooldownRemaining,
     async getSession() {
-      const { data } = await client.auth.getSession();
-      return data?.session ?? null;
+      let result;
+      try {
+        result = await client.auth.getSession();
+      } catch (cause) {
+        throw transportError(cause);
+      }
+      // Refreshing a stale session is a network call. Failing it means the
+      // demo cannot reach the server, not that the visitor is signed out, and
+      // the two must not look alike at startup.
+      if (isAuthTransportError(result?.error))
+        throw transportError(result.error);
+      return result?.data?.session ?? null;
     },
     async signOut() {
       await client.auth.signOut();
