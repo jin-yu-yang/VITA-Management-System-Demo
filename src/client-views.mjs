@@ -68,10 +68,15 @@ function emailStep(state) {
 
 function codeStep(state) {
   const waiting = Number(state.resendSeconds) > 0;
+  // The code is rendered from state, never blank. A re-render can arrive at any
+  // moment — the countdown, a connection change, a realtime notification — and
+  // a half-typed code must survive all of them, or the field is silently empty
+  // when the person presses Verify and the required attribute stops the form
+  // with nothing on screen to explain it.
   return `<form id="code-form" class="panel access-panel">${input(
     "Verification code",
     "code",
-    "",
+    state.authCode,
     "text",
     'required inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit code"',
   )}<p class="field-note">${when(state.authEmail, `Signing in as <strong>${esc(state.authEmail)}</strong>. `)}This confirms you can read that inbox. A volunteer verifies taxpayer identity separately.</p>${authFailure(state)}<button class="btn primary full" type="submit">Verify and continue ${icon("arrow")}</button><div class="resend-row"><span>Didn’t receive it?</span>${button(
@@ -79,7 +84,7 @@ function codeStep(state) {
     "resend-code",
     "inline",
     waiting ? "disabled" : "",
-  )}${when(waiting, `<span class="cooldown" role="status">You can request another code in ${esc(state.resendSeconds)} seconds.</span>`)}</div>${button("Use a different email address", "back-to-email", "text")}</form>`;
+  )}<span class="cooldown" role="status" data-role="resend-countdown">${when(waiting, `You can request another code in ${esc(state.resendSeconds)} seconds.`)}</span></div>${button("Use a different email address", "back-to-email", "text")}</form>`;
 }
 
 function authFailure(state) {

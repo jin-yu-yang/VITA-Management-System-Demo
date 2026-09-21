@@ -79,9 +79,11 @@ export function createController({
     connection: "unknown",
     error: null,
     retryable: false,
-    // Sign-in
+    // Sign-in. The half-typed code lives here for the same reason answers do:
+    // a re-render must never be able to empty a field somebody is using.
     authStep: "email",
     authEmail: "",
+    authCode: "",
     authMessage: "",
     authError: null,
     // Records
@@ -509,11 +511,27 @@ export function createController({
     }
   }
 
+  // What the visitor is typing, kept without a re-render: the field already
+  // shows it, and rebuilding the page under the cursor is the defect this
+  // exists to prevent. The address gets the same treatment — a connection
+  // notice arriving mid-typing would otherwise empty that field too.
+  function editAuthCode(value) {
+    state.authCode = String(value ?? "");
+  }
+
+  function editAuthEmail(value) {
+    state.authEmail = String(value ?? "");
+  }
+
+  // The argument wins when given — it is what the field actually showed at
+  // submit time — and is stored, so the state and what was sent always agree.
+  // Called with nothing, the stored value is used.
   async function verifyCode(code) {
+    if (code !== undefined && code !== null) editAuthCode(code);
     state.authError = null;
     show();
     try {
-      await auth.verifyCode(state.authEmail, code);
+      await auth.verifyCode(state.authEmail, state.authCode);
     } catch (error) {
       state.authError = {
         code: error?.code ?? "AUTH_ERROR",
@@ -525,6 +543,7 @@ export function createController({
     }
     dropKey(ACCESS_KEY);
     state.authStep = "email";
+    state.authCode = "";
     state.screen = "applications";
     await load();
   }
@@ -536,6 +555,7 @@ export function createController({
     const record = accessRecord();
     state.authStep = "email";
     state.authEmail = "";
+    state.authCode = "";
     state.authError = null;
     state.authMessage = "";
     if (record.startedAt === undefined) dropKey(ACCESS_KEY);
@@ -561,6 +581,7 @@ export function createController({
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
+    state.authCode = "";
     state.authMessage = "";
     state.authError = null;
     state.screen = "access";
@@ -889,6 +910,8 @@ export function createController({
     refresh,
     sendCode,
     verifyCode,
+    editAuthCode,
+    editAuthEmail,
     restartSignIn,
     signOut,
     cooldownRemaining,
