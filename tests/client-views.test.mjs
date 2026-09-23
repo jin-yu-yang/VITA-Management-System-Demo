@@ -444,6 +444,43 @@ test("progress names the stage, shows client history and answers a document requ
   assert.ok(settled.includes("demo-mileage-record-2025.pdf"));
 });
 
+test("two open requests render two distinct simulate-failure boxes", () => {
+  // A shared id would make both labels address the first box, so clicking the
+  // second request's label would tick the first request's checkbox.
+  const requests = ["req-1", "req-2"].map((id) => ({
+    id,
+    caseId: "case-a",
+    title: `Document ${id}`,
+    message: "Please add the fictional sample.",
+    status: "open",
+  }));
+  const html = progressScreen(
+    baseState({
+      screen: "progress",
+      savedCase: caseRecord({
+        stage: "preparing",
+        revision: 6,
+        intakeVerified: true,
+        requests,
+      }),
+    }),
+  );
+  const boxes = [
+    ...html.matchAll(/<input[^>]*data-action="toggle-upload-failure"[^>]*>/g),
+  ].map(([tag]) => tag);
+  assert.equal(boxes.length, 2);
+  const ids = boxes.map((tag) => /id="([^"]+)"/.exec(tag)[1]);
+  assert.equal(new Set(ids).size, 2, "the two boxes carry the same id");
+  for (const [index, id] of ids.entries()) {
+    assert.ok(id.includes(requests[index].id), "the id names its request");
+    assert.match(boxes[index], /data-request-id="req-[12]"/);
+    assert.ok(
+      html.includes(`<label class="checkbox-row small" for="${id}">`),
+      "each label addresses its own box",
+    );
+  }
+});
+
 test("review progress is plain and never carries findings", () => {
   for (const stage of [
     "review_ready",

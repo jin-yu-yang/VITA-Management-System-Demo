@@ -6,7 +6,9 @@ import {
   dialogFocusTarget,
   esc,
   stageBadge,
+  ANSWER_LABELS,
 } from "../src/ui.mjs";
+import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 
 // `describeFocus` is the one piece of the DOM wiring that is worth testing on
 // its own, because the thing it has to get right is invisible: reading
@@ -320,6 +322,16 @@ test("a dialog always has somewhere to put the keyboard", () => {
   assert.equal(dialogFocusTarget([disabled], container), container);
   assert.equal(dialogFocusTarget([], null), null);
   assert.equal(dialogFocusTarget(), null);
+});
+
+test("every intake answer has a label, and every label an answer", () => {
+  // The office's summary renders `Object.keys(ANSWER_LABELS)` and the forms
+  // send `INTAKE_ANSWER_KEYS`. A key in one and not the other is either an
+  // answer nobody can see or a label for a question nobody is asked.
+  assert.deepEqual(
+    Object.keys(ANSWER_LABELS).toSorted(),
+    [...INTAKE_ANSWER_KEYS].toSorted(),
+  );
 });
 
 test("the shared helpers still escape and name stages", () => {

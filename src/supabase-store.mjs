@@ -147,6 +147,17 @@ export const mapAssistance = (row) => ({
   updatedAt: row.updated_at,
 });
 
+// The columns of the three client-readable related tables that the client's
+// own screens read, and the whole of what an applicant's payload carries.
+// Exported so a test can pin them: what is missing here matters more than what
+// is present — no `submitted_by_user_id`, no staff person id, no internal
+// column that a later migration might add to one of these tables.
+export const CLIENT_COLUMNS = Object.freeze({
+  document_requests: "id,case_id,title,message,status,created_at,updated_at",
+  documents: "id,case_id,request_id,filename,source,created_at",
+  client_events: "id,case_id,action,message,created_at",
+});
+
 // The Case an applicant sees: their own case plus the three client-readable
 // related tables, and nothing else.
 export const mapClientCase = ({ row, requests, documents, history }) => ({
@@ -197,11 +208,11 @@ export function createStore(client) {
 
   // Rows of one case-scoped table, in the order the history and lists are
   // shown: oldest first, with a stable tiebreak.
-  const relatedRows = (table, caseId, tiebreak = "id") =>
+  const relatedRows = (table, caseId, tiebreak = "id", columns = "*") =>
     read(
       client
         .from(table)
-        .select("*")
+        .select(columns)
         .eq("case_id", caseId)
         .order("created_at")
         .order(tiebreak),
@@ -337,11 +348,28 @@ export function createStore(client) {
       // Absent, another workspace's and another applicant's case are one
       // answer, with no reference, name or revision behind it.
       if (!row) throw createAppError({ code: "VT002" });
+      // Row-level security decides which *rows* a client may read; it says
+      // nothing about which columns of them are their business. `select("*")`
+      // hands the browser whatever the table happens to hold — a staff-recorded
+      // document carries the presenter's Auth user id and the office person who
+      // recorded it — so the applicant's reads name their columns instead. The
+      // staff path keeps `*`: its screens read the rest of them.
+      const columns = (table) => (staff ? "*" : CLIENT_COLUMNS[table]);
       const client_ = {
         row,
-        requests: await relatedRows("document_requests", id),
-        documents: await relatedRows("documents", id),
-        history: await relatedRows("client_events", id),
+        requests: await relatedRows(
+          "document_requests",
+          id,
+          "id",
+          columns("document_requests"),
+        ),
+        documents: await relatedRows("documents", id, "id", columns("documents")),
+        history: await relatedRows(
+          "client_events",
+          id,
+          "id",
+          columns("client_events"),
+        ),
       };
       if (!staff) return mapClientCase(client_);
       return mapStaffCase({

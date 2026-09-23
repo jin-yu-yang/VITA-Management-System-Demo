@@ -1,10 +1,15 @@
 import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
-import { CASE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
-import { describeFocus, focusSelectors, dialogFocusTarget } from "./ui.mjs";
+import {
+  describeFocus,
+  focusSelectors,
+  dialogFocusTarget,
+  fieldId,
+} from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
@@ -105,6 +110,16 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+  }
+
+  // What was sent is no longer a draft — and only what was sent. A page holds
+  // one form per open request and per open task, so emptying the whole map
+  // would throw away a half-typed escalation reason for request A because
+  // request B was verified. A control that carries no form (a plain button)
+  // carried no typed text either, so there is nothing of its own to clear.
+  function clearFormDrafts(form) {
+    if (!form) return;
+    for (const field of form.querySelectorAll("[id]")) formDrafts.delete(field.id);
   }
 
   // Staff form fields are not rendered from controller state — they are blank
@@ -365,7 +380,7 @@ if (!config) {
       if (form?.matches?.(ANSWER_FORMS))
         controller.editAnswers(Object.fromEntries(new FormData(form)));
       await controller.saveAnswers();
-      formDrafts.clear();
+      clearFormDrafts(form);
       notify("Your answers are saved.");
       return;
     }
@@ -396,8 +411,8 @@ if (!config) {
     // without it: a refusal throws before this line, and a `null` would mean
     // nothing was sent at all.
     const receipt = await controller.runAction(type, payload);
-    // Sent: whatever was typed for it is no longer a draft.
-    formDrafts.clear();
+    // Sent: whatever was typed *for this action* is no longer a draft.
+    clearFormDrafts(form);
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog();
     if (type === "SUBMIT") {
@@ -428,10 +443,8 @@ if (!config) {
 
   // ---- assistance actions -----------------------------------------------
 
-  // Assistance is its own workflow with its own RPC, so its controls carry
-  // their own attribute and are validated against their own vocabulary — never
-  // translated into a case action.
-  const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+  // Assistance controls carry their own attribute and are validated against
+  // their own shared vocabulary — never translated into a case action.
   const ASSISTANCE_NOTICES = Object.freeze({
     CLAIM: "This request is yours. The client's case is unchanged.",
     RESOLVE: "The request is recorded as resolved. The client's case is unchanged.",
@@ -453,7 +466,7 @@ if (!config) {
       target.dataset.itemId,
       note,
     );
-    formDrafts.clear();
+    clearFormDrafts(form);
     if (sent) notify(ASSISTANCE_NOTICES[type]);
   }
 
@@ -517,10 +530,13 @@ if (!config) {
       case "clear-board-filters":
         controller.clearBoardFilters();
         break;
-      case "start-application":
-        await controller.createCase();
-        notify("A new fictional application is ready.");
+      case "start-application": {
+        // `createCase` answers null when one is already in flight; nothing was
+        // created, so nothing is announced (acceptance 11: no false success).
+        const started = await controller.createCase();
+        if (started) notify("A new fictional application is ready.");
         break;
+      }
       case "continue-intake":
         controller.navigate("intake");
         break;
@@ -548,11 +564,14 @@ if (!config) {
       case "reconcile-server":
         await reconcile(false);
         break;
-      case "toggle-upload-failure":
+      case "toggle-upload-failure": {
         controller.togglePanel("upload-failure");
-        // The page is rebuilt around the checkbox, so give it back the focus.
-        root.querySelector("#field-simulate-upload-failure")?.focus();
+        // The page is rebuilt around the checkbox, so give it back the focus —
+        // the box that was clicked, which is the one scoped to its own request.
+        const box = fieldId("simulate-upload-failure", target.dataset.requestId ?? "");
+        root.querySelector(`#${CSS.escape(box)}`)?.focus();
         break;
+      }
       case "select-person":
         controller.selectPerson(target.dataset.personId);
         break;
@@ -584,10 +603,14 @@ if (!config) {
       case "sign-out":
         await controller.signOut();
         break;
-      case "retry-action":
-        await controller.retryLast();
-        notify("Sent again.");
+      case "retry-action": {
+        // Nothing to retry, or an envelope that no longer matches the draft:
+        // the controller answers null and says so on screen. "Sent again."
+        // would be a claim that something left this window.
+        const sent = await controller.retryLast();
+        if (sent) notify("Sent again.");
         break;
+      }
       case "retry-connection":
         await controller.refresh();
         break;

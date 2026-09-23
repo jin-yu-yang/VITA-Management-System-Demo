@@ -14,6 +14,14 @@ persona switcher in the presenter panel). The cross-browser test suite
 with the browser engines swapped between the two windows — so everything below is a rehearsal of
 what that suite already verified, not a hoped-for behavior.
 
+> **Live email delivery has not been set up yet.** Configuring a real sender and admitting real
+> addresses is Task 10B, a user-owned step that is still pending (see
+> [`docs/setup.md`](setup.md#6-classroom-and-hosted-setup-pending)). Until it happens, a rehearsal
+> runs against the isolated local stack, where the one-time code is caught by the stack's local
+> mail catcher and read from its web UI ([`docs/setup.md`](setup.md#3-isolated-local-supabase-test-stack))
+> rather than arriving in anyone's real inbox. Everything this script says about the sign-in
+> itself — the neutral message, the countdown, the real `verifyOtp` check — is the same either way.
+
 ## What is simulated, and what is real
 
 | | Simulated | Real |
@@ -24,7 +32,7 @@ what that suite already verified, not a hoped-for behavior.
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
 | Intake/document checks | Recorded as demo attestations ("Simulated intake checks are recorded…") | — |
-| Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | Same in a live rehearsal, except nothing is intercepted — a real code goes to a real inbox |
+| Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
 Say this plainly during a presentation: **"The documents, reminders, and tax-preparation steps you
 see are simulated. The sign-in, the shared updates between these two windows, and the review
@@ -141,13 +149,36 @@ have email, or is standing at the desk?":
   "staff-recorded" rather than pretending to be a client upload. If this exact fixture is ever
   bound to a real student's account for a class exercise, that student will correctly see a
   document the office recorded on their behalf.
-- **History rows seeded by a reset or checkpoint are attributed to the workspace's first active
-  presenter** (the lowest-id one — ordinarily Alex), because a seeded row was never actually
-  performed by anyone and needs some actor on record. This is a seeding detail, not a claim that
-  Alex personally did every seeded step.
+- **A seeded history row names the person the scenario says did that step, and no account at
+  all.** Every `case_events` row the scenario itself writes carries `actor_user_id = null` —
+  nobody performed it — and the scenario's own `actor_person_id`: Sam on the intake checks and the
+  recorded call, Alex on claiming preparation and the document request, Morgan on the review
+  steps, and nobody at all on the client's own submission
+  (`009_fixtures_and_realtime.sql:114-160`, `286-289`). The one exception is the single
+  `CHECKPOINT` row a checkpoint load appends to say that a checkpoint was loaded: it carries the
+  loading presenter's own account and no persona (`009:505-507`), and no screen renders it
+  either. So the timeline reads correctly, and every
+  detail on it is marked `simulated`. The workspace's first active presenter membership — the
+  lowest Auth user id, chosen at `009:334-336` — is recorded only where a column requires a real
+  member: `cases.created_by_user_id` (`009:349-351`), `documents.submitted_by_user_id`
+  (`009:234-235`) and `contact_attempts.actor_user_id` (`009:244-245`). Those three are internal,
+  no screen renders any of them, and they name an account, not the persona the story attributes
+  the step to.
 - **An accepted action can produce more than one shared-update notification** for the same case.
   If narrating "watch it update live," the case's own badge/stage text is the reliable signal, not
   a raw update counter.
+- **Most sample cases show "Not recorded for this case" where the office board shows a contact
+  preference.** This demo stores a contact preference on an assistance item and nowhere else, and
+  the seed creates exactly one of those — on the `admin_followup` case
+  (`009_fixtures_and_realtime.sql:377-380`). Every other case therefore has none to show, and the
+  board says so plainly rather than inventing one (`src/admin-views.mjs:365`, `390`).
+- **The resend countdown belongs to the browser window, not to the address.** The moment the last
+  code was requested is kept in that window's session storage
+  (`src/window-state.mjs:132-153`, `src/controller.mjs:544-567`), so reloading the page does not
+  buy another send, and correcting a typo in the address does not either — the wait continues and
+  the corrected address is the one bound and shown. A second window starts its own countdown; the
+  project's own minimum interval between emails (60 s, see [`docs/setup.md`](setup.md#3-isolated-local-supabase-test-stack))
+  is what actually governs sending.
 
 ## The class-member story
 
@@ -174,4 +205,6 @@ What to say when a class member asks "what happens to my stuff":
 - **The old placeholder verification code (`246810`) is gone.** Any six-digit guess, including
   that one, is refused with "That code is invalid or has expired. Request a new code." and the
   form stays on the code-entry step. There is no "use demo code" shortcut anywhere in the shipped
-  UI; every code shown in this document or in rehearsal must come from a real inbox.
+  UI; every code typed in a rehearsal must be one the server really issued and really sent — read
+  from the local stack's mail catcher today, and from the approved inbox it was sent to once live
+  delivery is set up (Task 10B, pending).

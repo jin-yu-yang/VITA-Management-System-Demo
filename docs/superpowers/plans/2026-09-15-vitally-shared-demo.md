@@ -720,7 +720,7 @@ test('admin task and preparation have distinct owners', () => {
 
 ## Task 9: Six seeded cases and presenter-only controls
 
-**Files:** Create `supabase/migrations/007_fixtures_and_realtime.sql`, `src/presenter-views.mjs`, `tests/presenter.test.mjs`; extend `tests/database.mjs`, `src/app.mjs`, `src/supabase-store.mjs`.
+**Files:** Create `supabase/migrations/007_fixtures_and_realtime.sql` (as built: `009` — see the numbering note in section 2), `src/presenter-views.mjs`, `tests/presenter.test.mjs`; extend `tests/database.mjs`, `src/app.mjs`, `src/supabase-store.mjs`.
 
 **Consumes:** Complete workflow and role model. **Produces:** Reset/checkpoint RPCs, six coherent fixture cases plus one assistance item, role panel.
 

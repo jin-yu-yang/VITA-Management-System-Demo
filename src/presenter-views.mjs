@@ -158,7 +158,3 @@ export function checkpointDialogBody(state = {}) {
     "text",
   )}`;
 }
-
-// The vocabulary the dialog offers, exported for the tests and for any screen
-// that needs to name a checkpoint in the same words.
-export { CHECKPOINT_LABELS };
