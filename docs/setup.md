@@ -120,8 +120,13 @@ automated fixtures provision many independent password sessions from one loopbac
 single run — this override must never be copied to a classroom/hosted project, which keeps the
 CLI/hosted default).
 
-Choose unused ports for every enabled service. The example set below (all free at the time, and
-the one the last verified run used) is a reasonable starting point:
+`supabase init` writes the CLI's default ports: API 54321, PostgreSQL 54322, mail catcher web UI
+54324, and so on. Keep them if nothing else on this machine uses them, or change every enabled
+service's port in the stack's `config.toml` to an unused set, such as the one below that this
+project's development runs used. Whichever set the stack runs on, `.vitally-targets.json` must
+record the same API and PostgreSQL ports (see
+[Private test configuration](#private-test-configuration)); a mismatch fails every guarded
+command with `TARGET_REJECTED`.
 
 | Service | Port |
 | --- | --- |
@@ -212,12 +217,28 @@ output — never by hand-typing values into chat or a log:
 }
 ```
 
+The `57321` and `57322` above are the example ports from the table in
+[Create the stack](#create-the-stack), not fixed values. Copy `apiOrigin` and `database.port`
+from your own stack's `API_URL` and `DB_URL` in its `status` output; a stack that kept the CLI
+defaults uses `http://127.0.0.1:54321` and `54322`. `instanceId` is `VITALLY_INSTANCE`, and the
+two container names are that id with the `supabase_kong_` and `supabase_db_` prefixes.
+
 Set both files to mode `600`. Neither is ever printed, committed, or served: `.gitignore` excludes
 `.env*` (except `*.example`) and `.vitally-targets*.json`, and `server.mjs`'s allowlist serves
 only the page, compiled bundle, styles, and `/public-config.json`. No test tool falls back to
 application (`.env.local`) or classroom (`.env.admin`) configuration; a missing or mismatched
 manifest, wrong ports, a stopped stack, or a non-loopback target fails the guard rather than
 silently skipping.
+
+When a guarded command fails with `TARGET_REJECTED`, the guard deliberately does not say which
+check failed. Check, in this order:
+
+1. `apiOrigin` and `database.port` in `.vitally-targets.json` match the host ports `docker ps`
+   shows for the stack's `supabase_kong_` and `supabase_db_` containers. This is the most common
+   cause: copying the example ports while the stack runs on the CLI defaults.
+2. `instanceId` equals `VITALLY_TEST_LOCAL_INSTANCE_ID` and the stack's `project_id`.
+3. `VITALLY_TARGET_MANIFEST` is an absolute path to the file.
+4. The stack is running, and `docker` is on the `PATH` of the command.
 
 ## 4. Migrations
 
