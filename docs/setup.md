@@ -59,7 +59,7 @@ This runs `node --env-file-if-exists=.env.local server.mjs`, so the server start
 
   | Variable | Meaning |
   | --- | --- |
-  | `SUPABASE_URL` | The project's API URL — `http://127.0.0.1:57321` for the isolated local stack below, or `https://<project-ref>.supabase.co` once a hosted project exists. |
+  | `SUPABASE_URL` | The project's API URL: your local stack's `API_URL` from its `status` output (`http://127.0.0.1:54321` with the CLI's default ports), or `https://<project-ref>.supabase.co` once a hosted project exists. |
   | `SUPABASE_PUBLISHABLE_KEY` | The publishable (anonymous) key. A public client identifier, not a secret — the service-role/secret key must never go here. |
   | `AUTH_RESEND_COOLDOWN_SECONDS` | Optional. The project's own minimum email-resend interval plus five seconds (65 for the verified 60-second local setting). Falls back to 65 if missing or non-positive. |
 
@@ -74,6 +74,37 @@ This runs `node --env-file-if-exists=.env.local server.mjs`, so the server start
   `server.mjs`'s allowlist serves only the page, `/src/<name>.(mjs|css|svg)`,
   `/src/vendor/<name>.mjs`, and `/public-config.json`; everything else — including `.env.local`,
   `.env.test`, migrations, and this documentation — is 404.
+
+  If port 4173 is taken (`lsof -nP -iTCP:4173 -sTCP:LISTEN` shows by what, often an older
+  `npm start` still running in another terminal), stop that process or add `PORT=4174` to
+  `.env.local`.
+
+### Signing in locally
+
+A configured app shows the sign-in form, but a code is only sent to an address on a workspace
+roster: every other address gets the same neutral message and nothing else, by design. The test
+suites delete every account they create, so a fresh local stack has nobody on it. To rehearse by
+hand, give the local stack a small permanent roster of fictional addresses with the roster
+command (see [Rosters](#rosters) for the file format):
+
+```sh
+cp tools/admin/roster.example.json .vitally-roster.local.json
+# set "workspaceId" to the output of: node -e "console.log(crypto.randomUUID())"
+PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
+  "$VITALLY_NODE" --env-file=.env.test tools/admin/roster.mjs \
+  --target test --roster .vitally-roster.local.json
+```
+
+Then run `npm start`, open <http://127.0.0.1:4173>, and sign in as the presenter address. The
+local stack never sends real mail: every code lands in its mail catcher's web UI (Mailpit,
+`http://127.0.0.1:54324` with the CLI's default ports; the `[local_smtp]` port otherwise). Open
+the newest message for that address and type its code. As the presenter, press **Reset sample
+cases** in the presenter panel to load the six sample cases, and sign in as a client address in a
+second browser (or a private window) to play the client.
+
+The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
+database suite and the sign-in gate pass with it present. Re-running the command with more
+addresses adds them; nothing is ever removed.
 
 ### The vendor bundle
 
@@ -381,16 +412,78 @@ from `.env.admin.example`, which documents each variable name with no real value
 | `VITALLY_ADMIN_DATABASE_URL` | The classroom project's direct/session-pooler database URL. |
 | `VITALLY_CLASSROOM_PROJECT_REF` | The classroom project's reference id. |
 | `VITALLY_ADMIN_CONFIRMED_PROJECT_REF` | The operator's **explicit, manually typed** confirmation that this is the intended classroom project — never derived automatically from a URL. |
+| `VITALLY_TARGET_MANIFEST` | The absolute path to the same ignored `.vitally-targets.json` the tests use, which gains a `classroom` entry (step 1 below). |
 
 `tools/admin/classroom-target.mjs`'s `assertClassroomTarget()` validates this whole tuple (and
 TLS, and connection mode) before any classroom Auth-admin call, migration, or initialization; it
 rejects any match to the test project's identity, any loopback target, a mismatched API/SQL
-project pair, and a missing confirmation. There is intentionally no one-command classroom
-provisioning path — each step (migrations, the shared `initializeWorkspace` roster/capability
-routine, disabling public sign-up, configuring the OTP email template with `{{ .Token }}`,
-permitted origins) is run individually against the confirmed target, and classroom tooling never
-imports the test suite's cleanup helpers. **Never run privileged test cleanup against the
-classroom project.**
+project pair, and a missing confirmation. Provisioning is a short sequence of separate steps,
+each run against the confirmed target; there is deliberately no single command that does all of
+them, and classroom tooling never imports the test suite's cleanup helpers. **Never run
+privileged test cleanup against the classroom project.**
+
+1. **Record the classroom project's identity** in `.vitally-targets.json`, beside `test`
+   (identity only, never a password or key). Use the project's Session pooler endpoint:
+
+   ```json
+   "classroom": {
+     "projectRef": "<classroom-ref>",
+     "apiOrigin": "https://<classroom-ref>.supabase.co",
+     "database": {
+       "host": "<region-host>.pooler.supabase.com", "port": 5432, "database": "postgres",
+       "user": "postgres.<classroom-ref>", "connectionMode": "session"
+     }
+   }
+   ```
+
+   `VITALLY_ADMIN_DATABASE_URL` is that same Session pooler URL with its password and
+   `?sslmode=verify-full`; the transaction pooler (port 6543) is refused.
+2. **Apply the migrations:**
+
+   ```sh
+   "$VITALLY_NODE" --env-file=.env.admin tools/admin/migrate.mjs --target classroom
+   ```
+
+   Expected output: `Approved classroom migrations applied.`
+3. **Configure Auth in the Supabase dashboard:**
+   - Custom SMTP (Authentication → Emails → SMTP Settings). Gmail: host `smtp.gmail.com`, port
+     465, the full address as username and sender, and a Google *app password* (which requires
+     2-Step Verification, and which a school's Google administrator may have disabled). Resend:
+     host `smtp.resend.com`, port 465, username `resend`, the Resend API key as password, and a
+     sender on the verified domain.
+   - The **Magic Link** email template must contain `{{ .Token }}` (for example "Your ViTally code
+     is {{ .Token }}"): existing users receive that template, and the app asks for the code, not a
+     link.
+   - Turn off new-user sign-ups and anonymous sign-ins; keep the Email provider on; set the Site
+     URL to the hosting address once it exists.
+4. **Admit the roster** with the roster command (format below). Start with one presenter and the
+   one approved test-client address, send that client one real code, and only then add the class:
+
+   ```sh
+   "$VITALLY_NODE" --env-file=.env.admin tools/admin/roster.mjs \
+     --target classroom --roster .vitally-roster.json
+   ```
+
+### Rosters
+
+A roster is a small JSON file; [`tools/admin/roster.example.json`](../tools/admin/roster.example.json)
+is the template. Real rosters hold people's addresses, so they live only in git-ignored files
+matching `.vitally-roster*.json` and are never committed.
+
+| Field | Meaning |
+| --- | --- |
+| `workspaceId` | A lower-case UUID. Generate it once and keep it: re-running the same roster with more addresses adds them to the same workspace. |
+| `presenters` | Group members who run the demonstration. They get the presenter panel and every staff persona. At least one is required. |
+| `applicants` | Classmates who play clients. Each sees only their own applications. |
+| `sampleCaseOwners` | Optional. Maps a sample case (`preparation_ready`, `waiting_documents`, `admin_followup`, `review_ready`, `corrections_required`, `review_approved`) to an applicant address, which then owns that seeded case after every reset. |
+
+For each address the command finds the existing Auth account or creates one already confirmed
+and without a password (sign-in is by one-time code only), then grants presenter or applicant
+access through the shared `initializeWorkspace` routine. Addresses are matched exactly, ignoring
+case. One account belongs to one workspace with one role; the routine refuses a roster that would
+move someone or change their role (`VALIDATION`). The command never removes anyone, and its
+output and errors never print an address — a problem is reported by roster position, such as
+`applicants[3]`.
 
 The `[auth.rate_limit] sign_in_sign_ups = 1000` override used by the isolated test stack above is
 **test-only** and must not be copied into classroom configuration, which keeps the CLI/hosted

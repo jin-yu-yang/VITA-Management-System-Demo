@@ -55,7 +55,7 @@ const SEND_CATEGORIES = Object.freeze({
 // A deliberately simple local shape check, the only rejection allowed before a
 // request: one @, no spaces, and a dotted domain. It decides nothing about
 // whether the address exists.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const EMAIL_MAX_LENGTH = 254;
 
 // supabase-js does **not** throw when an Auth request cannot reach the server:
