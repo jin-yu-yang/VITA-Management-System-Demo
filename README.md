@@ -42,7 +42,9 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). With no local configuration
 setup-needed screen. To sign in and try the client/staff/admin/presenter screens against a real
 (isolated, local-only) Supabase project, follow [`docs/setup.md`](docs/setup.md) end to end — it
 covers the runtime, the isolated local Supabase test stack, `.env.local`, and every test command.
-Stop the server with Ctrl+C.
+Signing in also needs accounts on a roster; [Signing in locally](docs/setup.md#signing-in-locally)
+creates fictional rehearsal accounts whose codes arrive in the local stack's mail catcher. Stop the
+server with Ctrl+C.
 
 ## Tests
 

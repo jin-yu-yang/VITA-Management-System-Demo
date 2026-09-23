@@ -8,3 +8,4 @@ artifacts/
 supabase/.temp/
 supabase/.branches/
 .vitally-runs/
+.vitally-roster*.json

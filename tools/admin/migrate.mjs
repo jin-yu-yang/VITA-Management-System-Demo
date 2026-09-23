@@ -48,10 +48,35 @@ export async function migrate({ target = { kind: "test" } } = {}) {
     await client.end();
   }
 }
-if (process.argv[1] === fileURLToPath(import.meta.url))
-  migrate()
-    .then(() => console.log("Approved test migrations applied."))
-    .catch((error) => {
-      console.error(`Migration failed (${error.code || "SERVER_ERROR"}).`);
-      process.exitCode = 1;
-    });
+// Command line: no arguments or `--target test` for the isolated test stack,
+// `--target classroom` for the classroom project. That target's own guard still
+// decides whether anything runs.
+export function parseMigrateArgs(argv) {
+  if (argv.length === 0) return { kind: "test" };
+  if (
+    argv.length === 2 &&
+    argv[0] === "--target" &&
+    ["test", "classroom"].includes(argv[1])
+  )
+    return { kind: argv[1] };
+  throw Object.assign(
+    new Error("Usage: migrate.mjs [--target test|classroom]"),
+    { code: "MIGRATE_USAGE" },
+  );
+}
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  let target;
+  try {
+    target = parseMigrateArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 2;
+  }
+  if (target)
+    migrate({ target })
+      .then(() => console.log(`Approved ${target.kind} migrations applied.`))
+      .catch((error) => {
+        console.error(`Migration failed (${error.code || "SERVER_ERROR"}).`);
+        process.exitCode = 1;
+      });
+}
