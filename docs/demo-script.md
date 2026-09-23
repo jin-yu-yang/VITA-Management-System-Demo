@@ -150,11 +150,14 @@ have email, or is standing at the desk?":
   bound to a real student's account for a class exercise, that student will correctly see a
   document the office recorded on their behalf.
 - **A seeded history row names the person the scenario says did that step, and no account at
-  all.** Every `case_events` row a reset or checkpoint writes carries `actor_user_id = null` —
+  all.** Every `case_events` row the scenario itself writes carries `actor_user_id = null` —
   nobody performed it — and the scenario's own `actor_person_id`: Sam on the intake checks and the
   recorded call, Alex on claiming preparation and the document request, Morgan on the review
   steps, and nobody at all on the client's own submission
-  (`009_fixtures_and_realtime.sql:114-160`, `286-289`). So the timeline reads correctly, and every
+  (`009_fixtures_and_realtime.sql:114-160`, `286-289`). The one exception is the single
+  `CHECKPOINT` row a checkpoint load appends to say that a checkpoint was loaded: it carries the
+  loading presenter's own account and no persona (`009:505-507`), and no screen renders it
+  either. So the timeline reads correctly, and every
   detail on it is marked `simulated`. The workspace's first active presenter membership — the
   lowest Auth user id, chosen at `009:334-336` — is recorded only where a column requires a real
   member: `cases.created_by_user_id` (`009:349-351`), `documents.submitted_by_user_id`
