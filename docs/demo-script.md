@@ -17,9 +17,10 @@ what that suite already verified, not a hoped-for behavior.
 > **Live email delivery has not been set up yet.** Configuring a real sender and admitting real
 > addresses is Task 10B, a user-owned step that is still pending (see
 > [`docs/setup.md`](setup.md#6-classroom-and-hosted-setup-pending)). Until it happens, a rehearsal
-> runs against the isolated local stack, where the one-time code is caught by the stack's local
-> mail catcher and read from its web UI ([`docs/setup.md`](setup.md#3-isolated-local-supabase-test-stack))
-> rather than arriving in anyone's real inbox. Everything this script says about the sign-in
+> runs against the isolated local stack with its fictional rehearsal accounts, where the one-time
+> code is caught by the stack's local mailbox and read from its web page
+> ([Signing in locally](setup.md#signing-in-locally) in `docs/setup.md` has the steps) rather than
+> arriving in anyone's real inbox. Everything this script says about the sign-in
 > itself — the neutral message, the countdown, the real `verifyOtp` check — is the same either way.
 
 ## What is simulated, and what is real
