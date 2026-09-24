@@ -23,10 +23,10 @@ You can already sign in by hand on the local stack with fictional rehearsal acco
 [Run locally](#run-locally)).
 
 **Not done yet:** there is no hosted Supabase project, no classroom roster admitted to one, and no
-configured SMTP sender or live email delivery (Task 10B — a user-owned setup step), and there is no public hosting
-destination (Task 10D). The GitHub Pages copy of `main` therefore currently shows ViTally's
-"not configured yet" setup screen rather than a working sign-in form, and nothing in this
-repository's documentation claims live delivery or hosted access is working. See
+configured SMTP sender or live email delivery (Task 10B — a user-owned setup step), and there is
+no public hosting destination (Task 10D). The GitHub Pages copy of `main` therefore currently
+shows ViTally's "not configured yet" setup screen rather than a working sign-in form, and nothing
+in this repository's documentation claims live delivery or hosted access is working. See
 [`docs/setup.md`](docs/setup.md#6-classroom-and-hosted-setup-pending) for exactly what remains and
 what it needs from the user.
 
@@ -85,3 +85,9 @@ panel usage, what is simulated versus real, and what to expect and say about the
 the test suite has pinned (a stale-revision refusal, the `review_ready` fixture's staff-recorded
 document, and so on).
 
+## For developers
+
+[`docs/developer/`](docs/developer/README.md) is the guide for front-end, back-end and database
+developers turning this demo into a production system: the architecture and its key decisions,
+the database schema and action API, the browser app's structure, the server-side tooling, and a
+roadmap of what separates the demo from the product described in [`docs/spec.md`](docs/spec.md).
