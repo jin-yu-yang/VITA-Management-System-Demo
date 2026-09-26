@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 1320" width="1760" height="1320" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Tax return lifecycle</title>
+  <style>
+    :root {
+      --bg: #ffffff; --ink: #1f2328; --muted: #59636e; --line: #3d444d;
+      --intake: #e7f0fd; --intake-b: #3b73c4;
+      --work: #f3f4f6; --work-b: #59636e;
+      --file: #e6f4ea; --file-b: #2f8a4c;
+      --amend: #fdf1dc; --amend-b: #b7791f;
+      --exit: #fbe9e9; --exit-b: #b94a48;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --ink: #e6edf3; --muted: #9198a1; --line: #b1bac4;
+        --intake: #13243d; --intake-b: #6ea8fe;
+        --work: #1c2128; --work-b: #9198a1;
+        --file: #12281a; --file-b: #56d364;
+        --amend: #2d2210; --amend-b: #e3b341;
+        --exit: #2d1414; --exit-b: #f47067;
+      }
+    }
+    .bg { fill: var(--bg); }
+    .n rect { stroke-width: 1.6; }
+    .n text { fill: var(--ink); font-size: 15px; text-anchor: middle; dominant-baseline: central; }
+    .n text.sub { fill: var(--muted); font-size: 12.5px; }
+    .intake rect { fill: var(--intake); stroke: var(--intake-b); }
+    .work rect   { fill: var(--work);   stroke: var(--work-b); }
+    .file rect   { fill: var(--file);   stroke: var(--file-b); }
+    .amend rect  { fill: var(--amend);  stroke: var(--amend-b); }
+    .exit rect   { fill: var(--exit);   stroke: var(--exit-b); }
+    .any rect    { fill: none; stroke: var(--muted); stroke-dasharray: 6 5; }
+    .e { fill: none; stroke: var(--line); stroke-width: 1.5; marker-end: url(#arrow); }
+    .lbl { fill: var(--muted); font-size: 13px; font-style: italic; text-anchor: middle;
+           paint-order: stroke; stroke: var(--bg); stroke-width: 7px; stroke-linejoin: round; }
+    .h { fill: var(--ink); font-size: 15px; font-weight: 600; }
+    .title { fill: var(--ink); font-size: 24px; font-weight: 700; }
+    .note { fill: var(--muted); font-size: 13px; }
+    .start { fill: var(--line); }
+    .end-o { fill: none; stroke: var(--line); stroke-width: 1.6; }
+    .end-i { fill: var(--line); }
+    .divider { stroke: var(--muted); stroke-opacity: .35; stroke-dasharray: 4 6; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/>
+    </marker>
+    <g id="end"><circle class="end-o" r="10"/><circle class="end-i" r="5.5"/></g>
+  </defs>
+
+  <rect class="bg" width="1760" height="1320"/>
+  <text class="title" x="40" y="56">Tax return lifecycle</text>
+  <text class="note" x="40" y="80">Main flow (left) · other entries and exits (right)</text>
+
+  <!-- ================= Edges (drawn under nodes) ================= -->
+  <!-- entry -->
+  <circle class="start" cx="600" cy="40" r="8"/>
+  <path class="e" d="M600,48 V84"/>
+  <path class="e" d="M600,134 V192"/>
+
+  <!-- intake outcomes -->
+  <path class="e" d="M480,220 H327"/>
+  <path class="e" d="M505,246 C470,300 400,320 327,320"/>
+  <path class="e" d="M540,246 C505,380 410,420 327,420"/>
+  <path class="e" d="M135,220 H72"/><use href="#end" x="60" y="220"/>
+  <path class="e" d="M135,320 H72"/><use href="#end" x="60" y="320"/>
+  <path class="e" d="M135,420 H72"/><use href="#end" x="60" y="420"/>
+
+  <!-- documents loop -->
+  <path class="e" d="M720,212 C850,212 945,250 945,314"/>
+  <text class="lbl" x="850" y="222">Missing document(s)</text>
+  <path class="e" d="M855,352 C760,352 690,310 668,248"/>
+  <text class="lbl" x="752" y="340">Once submitted</text>
+
+  <!-- hold loop -->
+  <path class="e" d="M1010,364 C1090,380 1180,400 1180,454"/>
+  <text class="lbl" x="1140" y="378">Took a long time for</text>
+  <text class="lbl" x="1140" y="396">the client to respond</text>
+  <path class="e" d="M1105,494 C1010,500 955,450 948,366"/>
+  <text class="lbl" x="1010" y="522">Got in touch with the client</text>
+  <path class="e" d="M1255,480 H1298"/><use href="#end" x="1310" y="480"/>
+
+  <!-- preparation & review -->
+  <path class="e" d="M600,246 V414"/>
+  <text class="lbl" x="600" y="334">All good</text>
+  <path class="e" d="M600,464 V524"/>
+  <text class="lbl" x="600" y="499">Once prepared</text>
+  <path class="e" d="M600,574 V624"/>
+  <path class="e" d="M600,674 V734"/>
+  <path class="e" d="M600,784 V844"/>
+  <text class="lbl" x="600" y="819">Once client signed</text>
+
+  <!-- filing method -->
+  <path class="e" d="M540,894 C540,930 330,915 330,952"/>
+  <path class="e" d="M600,894 V954"/>
+  <path class="e" d="M660,894 C660,930 870,915 870,952"/>
+  <path class="e" d="M330,1006 C330,1070 420,1090 498,1090"/>
+  <path class="e" d="M600,1004 V1064"/>
+  <path class="e" d="M870,1006 C870,1070 780,1090 702,1090"/>
+
+  <!-- IRS outcome -->
+  <path class="e" d="M560,1114 C540,1150 460,1150 452,1174"/>
+  <path class="e" d="M640,1114 C660,1150 750,1150 758,1174"/>
+  <path class="e" d="M450,1224 V1268"/><use href="#end" x="450" y="1280"/>
+
+  <!-- rejection loop -->
+  <path class="e" d="M840,1200 C1110,1200 1110,760 702,760"/>
+  <text class="lbl" x="1040" y="984">Once fixed</text>
+
+  <!-- amendment loop -->
+  <path class="e" d="M370,1200 H287"/>
+  <path class="e" d="M190,1176 V786"/>
+  <path class="e" d="M285,760 H498"/>
+
+  <!-- ================= Nodes ================= -->
+  <g class="n intake">
+    <rect x="490" y="86" width="220" height="48" rx="10"/><text x="600" y="110">Request sent</text>
+    <rect x="480" y="194" width="240" height="52" rx="10"/><text x="600" y="220">Pending intake / filing</text>
+    <rect x="855" y="316" width="210" height="48" rx="10"/><text x="960" y="340">Waiting for documents</text>
+    <rect x="1105" y="456" width="150" height="48" rx="10"/><text x="1180" y="480">Hold</text>
+  </g>
+  <g class="n exit">
+    <rect x="135" y="196" width="190" height="48" rx="10"/><text x="230" y="220">Out of scope</text>
+    <rect x="135" y="296" width="190" height="48" rx="10"/><text x="230" y="320">No need to file</text>
+    <rect x="135" y="396" width="190" height="48" rx="10"/><text x="230" y="420">Duplicate</text>
+  </g>
+  <g class="n work">
+    <rect x="475" y="416" width="250" height="48" rx="10"/><text x="600" y="440">Filing in process (preparing)</text>
+    <rect x="500" y="526" width="200" height="48" rx="10"/><text x="600" y="550">Pending review</text>
+    <rect x="500" y="626" width="200" height="48" rx="10"/><text x="600" y="650">Review in process</text>
+    <rect x="500" y="736" width="200" height="48" rx="10"/><text x="600" y="760">Ready to exit</text>
+  </g>
+  <g class="n file">
+    <rect x="500" y="846" width="200" height="48" rx="10"/><text x="600" y="870">Ready to e-file</text>
+    <rect x="220" y="954" width="220" height="52" rx="10"/><text x="330" y="972">Both e-filed</text><text class="sub" x="330" y="991">(1040 / PA-40)</text>
+    <rect x="500" y="956" width="200" height="48" rx="10"/><text x="600" y="980">E-filed &amp; paper</text>
+    <rect x="760" y="954" width="220" height="52" rx="10"/><text x="870" y="972">Both paper</text><text class="sub" x="870" y="991">(1040 / PA-40)</text>
+    <rect x="500" y="1066" width="200" height="48" rx="10"/><text x="600" y="1090">IRS acknowledged</text>
+    <rect x="370" y="1176" width="160" height="48" rx="10"/><text x="450" y="1200">Accepted</text>
+  </g>
+  <g class="n exit">
+    <rect x="680" y="1176" width="160" height="48" rx="10"/><text x="760" y="1200">Rejected</text>
+  </g>
+  <g class="n amend">
+    <rect x="95" y="1176" width="190" height="48" rx="10"/><text x="190" y="1200">Amendment needed</text>
+    <rect x="95" y="736" width="190" height="48" rx="10"/><text x="190" y="760">Amendment in progress</text>
+  </g>
+
+  <!-- ================= Side panel ================= -->
+  <line class="divider" x1="1370" y1="40" x2="1370" y2="1280"/>
+
+  <text class="h" x="1410" y="56">Other entry points</text>
+  <circle class="start" cx="1560" cy="84" r="8"/>
+  <path class="e" d="M1560,92 V124"/>
+  <g class="n intake">
+    <rect x="1410" y="126" width="300" height="48" rx="10"/><text x="1560" y="150">Same day in process (untracked)</text>
+  </g>
+  <circle class="start" cx="1560" cy="206" r="8"/>
+  <path class="e" d="M1560,214 V246"/>
+  <g class="n intake">
+    <rect x="1410" y="248" width="300" height="64" rx="10"/>
+    <text x="1560" y="270">FSA (Facilitated Self-Assistance)</text>
+    <text class="sub" x="1560" y="292">Self-prep client needs help; no need to prepare</text>
+  </g>
+
+  <text class="h" x="1410" y="386">From any stage</text>
+  <g class="n any">
+    <rect x="1460" y="408" width="200" height="44" rx="22"/><text x="1560" y="430">Any active stage</text>
+  </g>
+  <path class="e" d="M1560,452 V554"/>
+  <text class="lbl" x="1560" y="506">Client unreachable</text>
+  <g class="n exit">
+    <rect x="1460" y="556" width="200" height="48" rx="10"/><text x="1560" y="580">Dismissed</text>
+  </g>
+  <path class="e" d="M1560,604 V648"/><use href="#end" x="1560" y="660"/>
+
+  <text class="h" x="1410" y="736">Other terminal state</text>
+  <g class="n exit">
+    <rect x="1460" y="758" width="200" height="48" rx="10"/><text x="1560" y="782">Withdrawn</text>
+  </g>
+  <path class="e" d="M1560,806 V850"/><use href="#end" x="1560" y="862"/>
+
+  <!-- legend -->
+  <text class="h" x="1410" y="960">Legend</text>
+  <circle class="start" cx="1422" cy="994" r="8"/><text class="note" x="1444" y="998">Entry point</text>
+  <use href="#end" x="1422" y="1028"/><text class="note" x="1444" y="1032">Case closed</text>
+  <g class="n intake"><rect x="1412" y="1052" width="20" height="16" rx="4"/></g><text class="note" x="1444" y="1065">Intake</text>
+  <g class="n work"><rect x="1412" y="1080" width="20" height="16" rx="4"/></g><text class="note" x="1444" y="1093">Preparation &amp; review</text>
+  <g class="n file"><rect x="1412" y="1108" width="20" height="16" rx="4"/></g><text class="note" x="1444" y="1121">Filing</text>
+  <g class="n amend"><rect x="1412" y="1136" width="20" height="16" rx="4"/></g><text class="note" x="1444" y="1149">Amendment</text>
+  <g class="n exit"><rect x="1412" y="1164" width="20" height="16" rx="4"/></g><text class="note" x="1444" y="1177">Stopped or rejected</text>
+</svg>
