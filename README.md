@@ -19,11 +19,14 @@ every workflow action (intake through closure, documents, admin follow-up, assis
 review and corrections), real email (OTP) sign-in, Realtime-driven shared state across two
 browsers, and six seeded sample cases with presenter-only reset/checkpoint controls.
 
-**Not done yet:** there is no hosted Supabase project, no classroom roster, and no configured SMTP
-sender or live email delivery (Task 10B — a user-owned setup step), and there is no public hosting
-destination (Task 10D). The GitHub Pages copy of `main` therefore currently shows ViTally's
-"not configured yet" setup screen rather than a working sign-in form, and nothing in this
-repository's documentation claims live delivery or hosted access is working. See
+You can already sign in by hand on the local stack with fictional rehearsal accounts (see
+[Run locally](#run-locally)).
+
+**Not done yet:** there is no hosted Supabase project, no classroom roster admitted to one, and no
+configured SMTP sender or live email delivery (Task 10B — a user-owned setup step), and there is
+no public hosting destination (Task 10D). The GitHub Pages copy of `main` therefore currently
+shows ViTally's "not configured yet" setup screen rather than a working sign-in form, and nothing
+in this repository's documentation claims live delivery or hosted access is working. See
 [`docs/setup.md`](docs/setup.md#6-classroom-and-hosted-setup-pending) for exactly what remains and
 what it needs from the user.
 
@@ -41,10 +44,21 @@ npm start
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173). With no local configuration, this shows the
 setup-needed screen. To sign in and try the client/staff/admin/presenter screens against a real
 (isolated, local-only) Supabase project, follow [`docs/setup.md`](docs/setup.md) end to end — it
-covers the runtime, the isolated local Supabase test stack, `.env.local`, and every test command.
-Signing in also needs accounts on a roster; [Signing in locally](docs/setup.md#signing-in-locally)
-creates fictional rehearsal accounts whose codes arrive in the local stack's mail catcher. Stop the
-server with Ctrl+C.
+covers the runtime, the isolated local Supabase test stack, `.env.local`, the one-time creation of
+fictional rehearsal accounts ([Signing in locally](docs/setup.md#signing-in-locally)), and every
+test command.
+
+Once that is done, signing in takes five steps:
+
+1. Run `npm start` and open [http://127.0.0.1:4173](http://127.0.0.1:4173).
+2. Type `presenter@example.org` and press **Send verification code**.
+3. Open the local mailbox at [http://127.0.0.1:54324](http://127.0.0.1:54324), open the newest
+   message, and copy the code. Nothing is sent outside your machine.
+4. Paste the code and press **Verify and continue**. You are the presenter.
+5. To play the client too, open the app in a private window and repeat steps 2–4 with
+   `client-a@example.org`.
+
+A new code can be requested about once a minute. Stop the server with Ctrl+C.
 
 ## Tests
 
@@ -71,3 +85,9 @@ panel usage, what is simulated versus real, and what to expect and say about the
 the test suite has pinned (a stale-revision refusal, the `review_ready` fixture's staff-recorded
 document, and so on).
 
+## For developers
+
+[`docs/developer/`](docs/developer/README.md) is the guide for front-end, back-end and database
+developers turning this demo into a production system: the architecture and its key decisions,
+the database schema and action API, the browser app's structure, the server-side tooling, and a
+roadmap of what separates the demo from the product described in [`docs/spec.md`](docs/spec.md).

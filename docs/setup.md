@@ -11,11 +11,13 @@ Everything through the shared demonstration story is implemented and tested agai
 preparation, documents, admin follow-up, assistance, independent review and corrections,
 reminders and closure), Realtime-driven shared state, six seeded sample cases with presenter-only
 reset/checkpoint controls, and the client/staff/admin/presenter browser screens with real email
-(OTP) sign-in.
+(OTP) sign-in. A roster command admits approved addresses to a workspace, so the local stack can
+hold permanent fictional rehearsal accounts for signing in by hand
+([Signing in locally](#signing-in-locally)).
 
-**Not done, and not claimed here:** there is no hosted Supabase project, no classroom roster, no
-configured SMTP sender, and no live email delivery — that is Task 10B, a user-owned step (see
-[Classroom and hosted setup](#6-classroom-and-hosted-setup-pending) below). There is also no public
+**Not done, and not claimed here:** there is no hosted Supabase project, no classroom roster
+admitted to one, no configured SMTP sender, and no live email delivery — that is Task 10B, a
+user-owned step (see [Classroom and hosted setup](#6-classroom-and-hosted-setup-pending) below). There is also no public
 hosting destination yet (Task 10D): the GitHub Pages copy of `main` currently serves the app with
 no `/public-config.json` values set, so it shows the **"ViTally is not configured yet"** setup-needed
 screen, not a working sign-in form. Nothing in this document should be read as claiming otherwise.
@@ -83,28 +85,55 @@ This runs `node --env-file-if-exists=.env.local server.mjs`, so the server start
 
 A configured app shows the sign-in form, but a code is only sent to an address on a workspace
 roster: every other address gets the same neutral message and nothing else, by design. The test
-suites delete every account they create, so a fresh local stack has nobody on it. To rehearse by
-hand, give the local stack a small permanent roster of fictional addresses with the roster
-command (see [Rosters](#rosters) for the file format):
+suites delete every account they create, so a fresh local stack has nobody on it. Rehearsing by
+hand therefore needs a small, permanent roster of fictional **rehearsal accounts**. The local
+stack never sends real mail: every code lands in its local mailbox (Mailpit), a web page at
+`http://127.0.0.1:54324` with the CLI's default ports (the `[local_smtp]` port otherwise).
 
-```sh
-cp tools/admin/roster.example.json .vitally-roster.local.json
-# set "workspaceId" to the output of: node -e "console.log(crypto.randomUUID())"
-PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
-  "$VITALLY_NODE" --env-file=.env.test tools/admin/roster.mjs \
-  --target test --roster .vitally-roster.local.json
-```
+**Create the rehearsal accounts (once per stack).**
 
-Then run `npm start`, open <http://127.0.0.1:4173>, and sign in as the presenter address. The
-local stack never sends real mail: every code lands in its mail catcher's web UI (Mailpit,
-`http://127.0.0.1:54324` with the CLI's default ports; the `[local_smtp]` port otherwise). Open
-the newest message for that address and type its code. As the presenter, press **Reset sample
-cases** in the presenter panel to load the six sample cases, and sign in as a client address in a
-second browser (or a private window) to play the client.
+1. Copy the example roster:
+
+   ```sh
+   cp tools/admin/roster.example.json .vitally-roster.local.json
+   ```
+
+2. Replace `replace-with-a-uuid` in that file with a new ID. This is the only time you need one;
+   the ID stays in the file and every later run reuses it.
+
+   ```sh
+   "$VITALLY_NODE" -e "console.log(crypto.randomUUID())"
+   ```
+
+3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, and two
+   clients, `client-a@example.org` (who owns one sample case) and `client-b@example.org`.
+
+   ```sh
+   PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
+     "$VITALLY_NODE" --env-file=.env.test tools/admin/roster.mjs \
+     --target test --roster .vitally-roster.local.json
+   ```
+
+   It prints how many accounts it created. Running it again is harmless and creates nothing new;
+   to add people, append addresses to the file and run it again. Nobody is ever removed.
+
+**Use them (every time).**
+
+1. Start the app with `PATH="$VITALLY_NODE_BIN:$PATH" npm start` and open
+   <http://127.0.0.1:4173>.
+2. Type `presenter@example.org` and press **Send verification code**.
+3. Open <http://127.0.0.1:54324> in another tab, open the newest message, and copy the code.
+4. Paste it into **Verification code** and press **Verify and continue**. You are signed in as the
+   presenter, with the presenter panel and every staff persona.
+5. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
+   second browser) and repeat steps 2–4 with `client-a@example.org`.
+
+A new code for the same address can be requested only about once a minute; the form shows a
+countdown. **Reset sample cases** in the presenter panel rebuilds the six sample cases at any time
+and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
 
 The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
-database suite and the sign-in gate pass with it present. Re-running the command with more
-addresses adds them; nothing is ever removed.
+database suite and the sign-in gate pass with it present.
 
 ### The vendor bundle
 
@@ -328,7 +357,7 @@ the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
-| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 208/208 | Pure domain/contract logic, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
+| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 215/215 | Pure domain/contract logic, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
 | Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 151/151, ~85–95 s | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints. |
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~75–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
 | Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 51/51, ~180–200 s | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Optional to re-run before every rehearsal, but recommended before a presentation. |
