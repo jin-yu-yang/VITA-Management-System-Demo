@@ -416,6 +416,7 @@ if (!config) {
     clearFormDrafts(form);
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog();
+    if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog();
     if (type === "SUBMIT") {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
@@ -509,6 +510,9 @@ if (!config) {
         break;
       case "open-close-case":
         openDialog("close-case");
+        break;
+      case "open-request-corrections":
+        openDialog("request-corrections");
         break;
       // The presenter's own two controls. Both confirm first: one replaces
       // every sample case on the projector, and the other rewrites one of

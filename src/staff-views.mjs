@@ -171,6 +171,11 @@ export function decorateStaffCase(caseRecord, people = []) {
       ...review,
       reviewerName: nameOf(review?.reviewerId),
     }));
+  if (Array.isArray(caseRecord.internalHistory))
+    decorated.internalHistory = caseRecord.internalHistory.map((entry) => ({
+      ...entry,
+      actorName: nameOf(entry?.actorPersonId),
+    }));
   return decorated;
 }
 
@@ -546,9 +551,85 @@ export function problemNotice(ui) {
   )}${button("Dismiss", "dismiss-error", "inline")}</div></div></div>`;
 }
 
+// ---------------------------------------------------------------------------
+// The case page frame (spec 2026-09-28, section 6)
+// ---------------------------------------------------------------------------
+
+export const CASE_TABS = Object.freeze([
+  ["overview", "Overview"],
+  ["intake", "Intake answers"],
+  ["documents", "Documents"],
+  ["followup", "Follow-up"],
+  ["history", "History"],
+]);
+
+/**
+ * The case page's tabs, following the ARIA tab pattern (spec section 9).
+ * Every panel is rendered and the inactive ones are `hidden`, so each control
+ * keeps its id and hook wherever it lives. The wiring layer handles the keys.
+ *
+ * @param {Array<[string, string, string]>} panels `[key, label, html]`
+ * @param {string} active the key to show; an unknown key shows the first
+ * @param {Record<string, number>} counts optional count per key
+ */
+export function caseTabs(panels, active = "overview", counts = {}) {
+  const current = panels.some(([key]) => key === active) ? active : panels[0][0];
+  const tabs = panels
+    .map(([key, label]) => {
+      const on = key === current;
+      const count = counts[key] ? ` <span class="tab-count">${esc(counts[key])}</span>` : "";
+      return `<button type="button" role="tab" id="case-tab-${key}" aria-controls="case-panel-${key}" aria-selected="${on}" tabindex="${on ? 0 : -1}" class="case-tab${on ? " selected" : ""}" data-action="set-case-tab" data-value="${key}">${esc(label)}${count}</button>`;
+    })
+    .join("");
+  const bodies = panels
+    .map(
+      ([key, , html]) =>
+        `<div role="tabpanel" id="case-panel-${key}" aria-labelledby="case-tab-${key}" class="case-panel" tabindex="0"${key === current ? "" : " hidden"}>${html}</div>`,
+    )
+    .join("");
+  return `<div class="case-tabs" role="tablist" aria-label="Case sections">${tabs}</div>${bodies}`;
+}
+
+// The main path through today's nine stages. Corrections are a loop back into
+// preparation, so they show on the preparation step, marked as amendment.
+const LIFECYCLE = Object.freeze([
+  "draft",
+  "received",
+  "preparation_ready",
+  "preparing",
+  "review_ready",
+  "reviewing",
+  "review_approved",
+  "closed",
+]);
+
+export function lifecycleBar(stage) {
+  const correcting = stage === "corrections_required";
+  const at = LIFECYCLE.indexOf(correcting ? "preparing" : stage);
+  return `<ol class="lifecycle" aria-label="Where this case is">${LIFECYCLE.map((step, index) => {
+    // A case can be closed from any stage, so a closed case marks no step as
+    // done; the History tab shows the path it took.
+    const state =
+      at < 0 ? "todo" : index === at ? "current" : index < at && stage !== "closed" ? "done" : "todo";
+    const amend = correcting && step === "preparing";
+    const label = describeStage(amend ? "corrections_required" : step).label;
+    return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${index === at ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
+  }).join("")}</ol>`;
+}
+
+const namePill = (role, id, name, personId) =>
+  `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
+
 export function caseHeader(record, person) {
+  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
+    person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
+  )}</p></section>`;
+}
+
+/** The facts the old header listed, kept as rows the story and office read. */
+export function caseDetails(record) {
   const described = describeStage(record.stage);
-  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="section-head"><h2 id="case-title">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}</div><p>${esc(stageWork(record.stage).work)}</p>${detailRow("Stage", described.label)}${detailRow(
+  return `<section class="panel case-details" aria-labelledby="details-title"><div class="section-head"><h2 id="details-title">Case details</h2></div>${detailRow("Stage", described.label)}${detailRow(
     "Preparation version",
     record.preparationVersion ? `Version ${record.preparationVersion}` : "Not prepared yet",
   )}${detailRow("Intake checks", record.intakeVerified ? "Recorded" : "Not recorded yet")}${detailRow(
@@ -559,18 +640,13 @@ export function caseHeader(record, person) {
     record.reviewerName ?? (record.reviewerId ? UNKNOWN_PERSON : "Unassigned"),
   )}${when(
     Array.isArray(record.participantNames),
-    detailRow(
-      "Prepared by (all versions)",
-      record.participantNames?.join(", ") || "Nobody yet",
-    ),
+    detailRow("Prepared by (all versions)", record.participantNames?.join(", ") || "Nobody yet"),
   )}${detailRow(
     "Last reminded",
     record.lastRemindedAt
       ? `${formatTime(record.lastRemindedAt)}${record.lastRemindedByName ? ` by ${record.lastRemindedByName}` : ""}`
       : "Not reminded yet",
-  )}${detailRow("Updated", record.updatedAt ? formatTime(record.updatedAt) : "No updates yet")}<p class="field-note">${esc(
-    person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
-  )}</p></section>`;
+  )}${detailRow("Updated", record.updatedAt ? formatTime(record.updatedAt) : "No updates yet")}</section>`;
 }
 
 export function answersPanel(record) {
@@ -678,56 +754,123 @@ function preparationBlockers(record) {
   return blockers;
 }
 
-function preparationPanel(record, rights, ui) {
+/**
+ * The one thing to do next on this case, for the persona this window acts as,
+ * built from the same eligibility rules the database enforces. When there is
+ * nothing to do, it says who the case is waiting on and, where an action was
+ * refused, why.
+ */
+export function nextStep(record, rights, ui = {}) {
   const busy = ui.busy ? "disabled" : "";
   const blockers = preparationBlockers(record);
   const blocked = when(
     blockers.length,
     `<ul class="blocker-list">${blockers.map((line) => `<li>${icon("clock")} ${esc(line)}</li>`).join("")}</ul>`,
   );
+  const approved = (record.reviews ?? []).findLast((review) => review?.status === "approved");
   const corrections = (record.reviews ?? []).findLast(
     (review) => review?.status === "corrections_requested",
   );
   let body = "";
-  if (rights.claimPreparation.allowed)
-    body = caseButton(
-      `${icon("play")} Claim preparation`,
-      "CLAIM_PREPARATION",
-      "primary",
-      busy,
-    );
-  else if (record.stage === "preparation_ready") body = explain(rights.claimPreparation);
-  else if (record.stage === "preparing")
-    body = rights.preparationWork.allowed
-      ? `${blocked}${caseButton(
-          `${icon("check")} Record that preparation is complete in TaxSlayer`,
-          "SUBMIT_REVIEW",
-          "primary",
-          blockers.length || ui.busy ? "disabled" : "",
-        )}`
-      : explain(rights.preparationWork);
-  else if (record.stage === "corrections_required")
-    body = `${when(
-      Boolean(corrections),
-      `<div class="notice amber" role="note">${icon("help")}<div><h3>Corrections the reviewer asked for</h3><p>${esc(corrections?.findings)}</p><small>${esc(corrections?.reviewerName ?? "")} · version ${esc(corrections?.preparationVersion)} · ${esc(formatTime(corrections?.decidedAt))}</small></div></div>`,
-    )}${
-      rights.preparationWork.allowed
-        ? `${blocked}<form class="staff-form">${textarea(
-            "What you corrected in TaxSlayer",
-            "resolution",
-            "",
-            'required maxlength="2000" rows="3"',
-            "resubmit",
-          )}${caseSubmit(
-            `${icon("check")} Record that the corrections are complete in TaxSlayer`,
-            "RESUBMIT_REVIEW",
+  switch (record.stage) {
+    case "preparation_ready":
+      body = rights.claimPreparation.allowed
+        ? caseButton(`${icon("play")} Claim preparation`, "CLAIM_PREPARATION", "primary", busy)
+        : explain(rights.claimPreparation);
+      break;
+    case "preparing":
+      body = rights.preparationWork.allowed
+        ? `${blocked}${caseButton(
+            `${icon("check")} Record that preparation is complete in TaxSlayer`,
+            "SUBMIT_REVIEW",
             "primary",
             blockers.length || ui.busy ? "disabled" : "",
-          )}</form>`
-        : explain(rights.preparationWork)
-    }`;
-  else body = `<p class="muted">${esc(stageWork(record.stage).work)}</p>`;
-  return `<section class="panel" aria-labelledby="preparation-title"><div class="section-head"><h2 id="preparation-title">Preparation milestones</h2></div><p class="field-note">${esc(TAXSLAYER_NOTE)} Nothing here signs or files a return.</p>${body}</section>`;
+          )}`
+        : explain(rights.preparationWork);
+      break;
+    case "corrections_required":
+      body = `${when(
+        Boolean(corrections),
+        `<div class="notice amber" role="note">${icon("help")}<div><h3>Corrections the reviewer asked for</h3><p>${esc(corrections?.findings)}</p><small>${esc(corrections?.reviewerName ?? "")} · version ${esc(corrections?.preparationVersion)} · ${esc(formatTime(corrections?.decidedAt))}</small></div></div>`,
+      )}${
+        rights.preparationWork.allowed
+          ? `${blocked}<form class="staff-form">${textarea(
+              "What you corrected in TaxSlayer",
+              "resolution",
+              "",
+              'required maxlength="2000" rows="3"',
+              "resubmit",
+            )}${caseSubmit(
+              `${icon("check")} Record that the corrections are complete in TaxSlayer`,
+              "RESUBMIT_REVIEW",
+              "primary",
+              blockers.length || ui.busy ? "disabled" : "",
+            )}</form>`
+          : explain(rights.preparationWork)
+      }`;
+      break;
+    case "review_ready":
+      body = rights.claimReview.allowed
+        ? caseButton(`${icon("check")} Claim review`, "CLAIM_REVIEW", "primary", busy)
+        : explain(rights.claimReview);
+      break;
+    case "reviewing":
+      body = rights.reviewDecision.allowed
+        ? `<div class="next-step-actions">${caseButton(
+            `${icon("check")} Approve this review`,
+            "APPROVE_REVIEW",
+            "primary",
+            busy,
+          )}${button(
+            `${icon("back")} Ask the preparer for corrections`,
+            "open-request-corrections",
+            "secondary",
+            busy,
+          )}</div><p class="field-note">Approving records the result of the external review; it is not signing or filing, and it is not an acceptance by any tax authority.</p>`
+        : explain(rights.reviewDecision);
+      break;
+    case "review_approved":
+      body =
+        approved?.clientContactStatus === "pending"
+          ? rights.reviewContact.allowed
+            ? `<form class="staff-form">${select(
+                "What happened",
+                "outcome",
+                "",
+                CONTACT_OUTCOMES.map((value) => [value, CONTACT_OUTCOME_LABELS[value]]),
+                "required",
+                "contact",
+              )}${textarea(
+                "Note for the office",
+                "note",
+                "",
+                'required maxlength="1000" rows="2"',
+                "contact",
+              )}${caseSubmit(
+                `${icon("phone")} Record this conversation`,
+                "RECORD_REVIEW_CONTACT",
+                "primary",
+                busy,
+              )}<p class="field-note">Recording an attempt never closes the case. Closure is the office's own step.</p></form>`
+            : explain(rights.reviewContact)
+          : `<p class="muted">The client conversation for this review is recorded. Nothing further is needed here.</p>`;
+      break;
+    default:
+      body = "";
+  }
+  return `<section class="panel next-step" aria-labelledby="next-step-title"><div class="section-head"><h2 id="next-step-title">Your next step</h2></div><p class="next-step-waiting">${esc(stageWork(record.stage).work)}</p>${body}</section>`;
+}
+
+// What preparation is waiting on. The actions are in "Your next step".
+function preparationPanel(record) {
+  const blockers = ["preparing", "corrections_required"].includes(record.stage)
+    ? preparationBlockers(record)
+    : [];
+  return `<section class="panel" aria-labelledby="preparation-title"><div class="section-head"><h2 id="preparation-title">Preparation milestones</h2></div><p class="field-note">${esc(TAXSLAYER_NOTE)} Nothing here signs or files a return.</p>${
+    blockers.length
+      ? `<ul class="blocker-list">${blockers.map((line) => `<li>${icon("clock")} ${esc(line)}</li>`).join("")}</ul>`
+      : `<p class="muted">${esc(stageWork(record.stage).work)}</p>`
+  }</section>`;
 }
 
 function reviewAttempts(record) {
@@ -759,63 +902,34 @@ function reviewAttempts(record) {
     .join("")}</ol>`;
 }
 
-function reviewPanel(record, rights, ui) {
-  const busy = ui.busy ? "disabled" : "";
-  const approved = (record.reviews ?? []).findLast(
-    (review) => review?.status === "approved",
-  );
-  let body = "";
-  if (record.stage === "review_ready")
-    body = rights.claimReview.allowed
-      ? caseButton(`${icon("check")} Claim review`, "CLAIM_REVIEW", "primary", busy)
-      : explain(rights.claimReview);
-  else if (record.stage === "reviewing")
-    body = rights.reviewDecision.allowed
-      ? `<form class="staff-form">${textarea(
-          "Corrections to send back to the preparer",
-          "findings",
-          "",
-          'required maxlength="2000" rows="3"',
-          "corrections",
-        )}${caseSubmit(
-          `${icon("back")} Ask the preparer for corrections`,
-          "REQUEST_CORRECTIONS",
-          "secondary",
-          busy,
-        )}</form>${caseButton(
-          `${icon("check")} Approve this review`,
-          "APPROVE_REVIEW",
-          "primary",
-          busy,
-        )}<p class="field-note">Approving records the result of the external review; it is not signing or filing, and it is not an acceptance by any tax authority.</p>`
-      : explain(rights.reviewDecision);
-  else if (record.stage === "review_approved")
-    body =
-      approved?.clientContactStatus === "pending"
-        ? rights.reviewContact.allowed
-          ? `<form class="staff-form">${select(
-              "What happened",
-              "outcome",
-              "",
-              CONTACT_OUTCOMES.map((value) => [value, CONTACT_OUTCOME_LABELS[value]]),
-              "required",
-              "contact",
-            )}${textarea(
-              "Note for the office",
-              "note",
-              "",
-              'required maxlength="1000" rows="2"',
-              "contact",
-            )}${caseSubmit(
-              `${icon("phone")} Record this conversation`,
-              "RECORD_REVIEW_CONTACT",
-              "primary",
-              busy,
-            )}<p class="field-note">Recording an attempt never closes the case. Closure is the office's own step.</p></form>`
-          : explain(rights.reviewContact)
-        : `<p class="muted">The client conversation for this review is recorded. Nothing further is needed here.</p>`;
-  else body = `<p class="muted">${esc(stageWork(record.stage).work)}</p>`;
-  return `<section class="panel" aria-labelledby="review-title"><div class="section-head"><h2 id="review-title">Independent review</h2></div><p class="field-note">A reviewer never reviews a case they prepared, at any version.</p>${reviewAttempts(record)}${body}</section>`;
+// Every review attempt on this case. The decision is in "Your next step".
+function reviewPanel(record) {
+  return `<section class="panel" aria-labelledby="review-title"><div class="section-head"><h2 id="review-title">Independent review</h2></div><p class="field-note">A reviewer never reviews a case they prepared, at any version.</p>${reviewAttempts(record)}</section>`;
+}
+
+/**
+ * The Request corrections dialog: the form REQUEST_CORRECTIONS is built from.
+ * A refused send is repeated here, because the page's own notice sits behind
+ * the dialog. It is a status, not a second alert.
+ */
+export function correctionsDialogBody(state = {}) {
+  const refused = state.error
+    ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${esc(
+        state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
+      )}</h3><p>${esc(state.error.message)}</p></div></div>`
+    : "";
+  return `${refused}<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
+    "Corrections to send back to the preparer",
+    "findings",
+    "",
+    'required maxlength="2000" rows="4"',
+    "corrections",
+  )}${caseSubmit(
+    `${icon("back")} Send back for corrections`,
+    "REQUEST_CORRECTIONS",
+    "primary full",
+    state.busy ? "disabled" : "",
+  )}</form>${button("Keep reviewing", "close-dialog", "text")}`;
 }
 
 function followupPanel(record) {
@@ -843,6 +957,41 @@ function followupPanel(record) {
   }<p class="field-note">Follow-up calls are recorded on the office screens, not here.</p></section>`;
 }
 
+// One plain sentence per recorded action (spec section 6). The actor is added
+// when the event names one; an action this table does not know still reads
+// as words, never as a code.
+export const EVENT_SENTENCES = Object.freeze({
+  SAVE_ANSWERS: "saved the intake answers",
+  SUBMIT: "submitted the application",
+  VERIFY_INTAKE: "recorded the intake checks",
+  CLAIM_PREPARATION: "claimed preparation",
+  REQUEST_DOCUMENT: "asked the client for a document",
+  RESPOND_DOCUMENT: "sent a requested document",
+  RECORD_DOCUMENT_RESPONSE: "recorded a document the office took in",
+  VERIFY_DOCUMENT: "verified a document",
+  ESCALATE_CONTACT: "asked the office to contact the client",
+  RECORD_CONTACT: "recorded a call with the client",
+  RESOLVE_FOLLOWUP: "resolved the office follow-up",
+  SUBMIT_REVIEW: "recorded that preparation is complete",
+  CLAIM_REVIEW: "claimed the review",
+  REQUEST_CORRECTIONS: "asked the preparer for corrections",
+  RESUBMIT_REVIEW: "recorded that the corrections are complete",
+  APPROVE_REVIEW: "approved the review",
+  RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
+  REMIND: "sent the client a reminder",
+  CLOSE_CASE: "closed the case",
+});
+
+export function historySentence(entry) {
+  const code = String(entry?.action ?? "");
+  // `??` and `||` cannot be mixed without parentheses.
+  const words =
+    (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
+    "recorded a change";
+  const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 export function historyPanel(record, staffShaped) {
   const internal = [...(record.internalHistory ?? [])].reverse();
   const client = [...(record.history ?? [])].reverse();
@@ -853,7 +1002,7 @@ export function historyPanel(record, staffShaped) {
         ? `<div class="timeline" data-role="internal-history">${internal
             .map(
               (entry) =>
-                `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(entry?.action)}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
+                `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(historySentence(entry))}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
             )
             .join("")}</div>`
         : '<p class="muted">Nothing has been recorded on this case yet.</p>'
@@ -871,12 +1020,13 @@ export function historyPanel(record, staffShaped) {
 }
 
 /**
- * One case, with the preparation and review work the chosen persona may do and
- * the reason for everything they may not.
+ * One case: a header, then five tabs (spec section 6). Overview holds the next
+ * step and the facts; the other tabs hold the rest. Every panel is rendered, so
+ * each control keeps its hook whichever tab is showing.
  *
  * @param {object} caseRecord a decorated staff Case (`decorateStaffCase`)
  * @param {{id:string,name:string,capabilities:string[]}|null} person the persona
- * @param {object} ui `{busy, error}` from the controller snapshot
+ * @param {object} ui `{busy, error, retryable, caseTab}` from the controller snapshot
  */
 export function renderStaffCase(caseRecord, person, ui = {}) {
   const record = caseRecord ?? {};
@@ -884,20 +1034,25 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
   const rights = staffEligibility(record, person);
   // A record with no staff sections is an applicant's Case, or a list row: it
   // cannot be acted on, and no workflow control is offered for it.
-  const staffShaped =
-    Array.isArray(record.participants) && Array.isArray(record.reviews);
+  const staffShaped = Array.isArray(record.participants) && Array.isArray(record.reviews);
+  const notLoaded = `<section class="panel"><div class="section-head"><h2>Staff sections are not loaded</h2></div><p class="muted">This record holds no participation, review or internal history, so no case action is offered here. Open the case from the work board to do the work.</p></section>`;
+  const elsewhere = '<p class="muted">Open the case from the work board to see this.</p>';
+  const panels = [
+    [
+      "overview",
+      "Overview",
+      staffShaped
+        ? `${nextStep(record, rights, view)}${caseDetails(record)}${preparationPanel(record)}${reviewPanel(record)}`
+        : `${caseDetails(record)}${notLoaded}`,
+    ],
+    ["intake", "Intake answers", answersPanel(record)],
+    ["documents", "Documents", staffShaped ? documentsPanel(record, rights, view) : elsewhere],
+    ["followup", "Follow-up", staffShaped ? followupPanel(record) : elsewhere],
+    ["history", "History", historyPanel(record, staffShaped)],
+  ];
   return [
     problemNotice(view),
     caseHeader(record, person),
-    answersPanel(record),
-    when(
-      !staffShaped,
-      `<section class="panel"><div class="section-head"><h2>Staff sections are not loaded</h2></div><p class="muted">This record holds no participation, review or internal history, so no case action is offered here. Open the case from the work board to do the work.</p></section>`,
-    ),
-    when(staffShaped, documentsPanel(record, rights, view)),
-    when(staffShaped, preparationPanel(record, rights, view)),
-    when(staffShaped, reviewPanel(record, rights, view)),
-    when(staffShaped, followupPanel(record)),
-    historyPanel(record, staffShaped),
+    caseTabs(panels, view.caseTab, { documents: (record.requests ?? []).length }),
   ].join("");
 }
