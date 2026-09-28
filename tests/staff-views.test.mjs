@@ -422,12 +422,18 @@ test("the board refuses a self-review with the same words the case does", () => 
     name: "Alex",
     capabilities: ["prepare", "review"],
   };
-  const own = renderStaffBoard(ownPreparation, PEOPLE, { person: capablePreparer });
+  const own = renderStaffBoard(ownPreparation, PEOPLE, {
+    person: capablePreparer,
+    filters: { status: "review" },
+  });
   assert.doesNotMatch(own, /data-case-action="CLAIM_REVIEW"/);
   assert.match(own, /You prepared this case, so you cannot review it\./);
   // Another volunteer sees the button on the very same row.
   assert.match(
-    renderStaffBoard(ownPreparation, PEOPLE, { person: MORGAN }),
+    renderStaffBoard(ownPreparation, PEOPLE, {
+      person: MORGAN,
+      filters: { status: "review" },
+    }),
     /data-case-action="CLAIM_REVIEW"/,
   );
 });
