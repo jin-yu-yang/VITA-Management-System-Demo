@@ -33,6 +33,7 @@ import {
   measureOverflow,
   openBoard,
   openCaseByReference,
+  openCaseTab,
   pageText,
   pressUntil,
   pressUntilEffect,
@@ -554,6 +555,8 @@ async function runPermutation(t, roles) {
 
     await phase("Sam records the call and resolves the task; Alex stays the preparer", async () => {
       await choosePersona(staff, sam);
+      // The follow-up is on the office case page's Follow-up tab.
+      await openCaseTab(staff, "followup");
       await waitForText(staff, "Follow-up with the client", RENDER_MS);
       await actForm(
         staff,
@@ -614,6 +617,8 @@ async function runPermutation(t, roles) {
       await choosePersona(staff, morgan);
       await act(staff, "CLAIM_REVIEW", { detail: { label: "Reviewer", value: "Morgan" } });
       await waitForBadge(staff, "In review");
+      // Corrections are asked for in a dialog; its form is the payload.
+      await clickAction(staff, "open-request-corrections");
       await actForm(
         staff,
         "REQUEST_CORRECTIONS",
