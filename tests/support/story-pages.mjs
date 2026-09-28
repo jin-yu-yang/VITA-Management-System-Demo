@@ -540,6 +540,8 @@ export const readFixtureIndicator = (page) =>
 
 /** Open one case from whichever board is on screen, by its reference. */
 export async function openCaseByReference(page, reference) {
+  // The volunteer board shows one tab at a time; its search reaches every case.
+  if (await page.locator("#field-board-search").count()) await findOnBoard(page, reference);
   await page
     .locator("button.board-reference")
     .filter({ hasText: reference })
@@ -570,6 +572,40 @@ export async function readBoardTotals(page) {
   return match
     ? { shown: Number(match[1]), total: Number(match[2]) }
     : { shown: null, total: null, text };
+}
+
+/** Search the volunteer board for one Application ID and wait for its row. */
+export async function findOnBoard(page, reference) {
+  await waitForQuiet(page);
+  await page.locator("#field-board-search").fill(reference, { timeout: CLICK_MS });
+  await page.locator('#board-search-form button[type="submit"]').click({ timeout: CLICK_MS });
+  await waitFor(
+    page,
+    `${reference} to be found on the board`,
+    (wanted) =>
+      [...document.querySelectorAll("button.board-reference")].some((button) =>
+        button.textContent.includes(wanted),
+      ),
+    reference,
+    ARRIVAL_MS,
+  );
+}
+
+/** Show one of the board's three tabs. */
+export async function showBoardTab(page, value) {
+  await clickAction(page, "set-board-filter", {
+    attributes: `[data-filter="status"][data-value="${value}"]`,
+  });
+  await waitFor(
+    page,
+    `the ${value} tab to be shown`,
+    (wanted) =>
+      document
+        .querySelector(`[data-filter="status"][data-value="${wanted}"]`)
+        ?.getAttribute("aria-pressed") === "true",
+    value,
+    RENDER_MS,
+  );
 }
 
 // ---------------------------------------------------------------------------
