@@ -96,7 +96,7 @@ The six status chips become three tabs. They keep the hook `data-action="set-boa
 - **One source of truth.** A single function, `phaseTab(record)`, beside `describeStage()`, decides a case's tab and returns `null` for stages not on the board.
 - **Default tab.** Available is the default.
 - **Counts.** Each tab shows a count that respects the other filters.
-- **Stages not on the board.** `draft` and `received` are office intake; `review_approved` and `closed` are finished. A line under the table says finished cases will appear on the dashboard (part 8).
+- **Stages not on the board.** `draft` and `received` are office intake; `review_approved` and `closed` are finished. A line under the table says they can be found by Application ID, and will also appear on the dashboard (part 8).
 - **Saved filters.** A saved status value from before (`all`, `mine`, `in_progress`, `waiting`, `done`) falls back to `available`.
 - **Status line.** "In this view: … available, … mine…" is removed; the tab counts replace it.
 
@@ -105,6 +105,14 @@ The six status chips become three tabs. They keep the hook `data-action="set-boa
 - **Filter.** This reuses the `assignment` filter with the values `mine` and `anyone`, and shows only on the two "Waiting" tabs. The default is `anyone`, so reviewers can find returns to claim.
 - **Your own rows.** Rows where you are the preparer or reviewer are tinted and listed first.
 - **Old values.** The `unassigned` value is removed, and a saved `unassigned` falls back to `anyone`.
+
+### Search (amended 2026-09-28)
+
+- **Search box.** The board keeps the designed box, "Find an Application ID". Searching matches the Application ID across every case the window can see, in any stage, including cases that are on no tab (`draft`, `received`, `review_approved`, `closed`).
+- **Results.** While a search is active, results replace the tab's rows. The Language and Service filters still apply; the tab and Mine / Everyone do not.
+- **Leaving search.** Choosing a tab or **Clear search** ends the search.
+- **Saved.** The search is saved with the other board filters (`boardFilters.search`).
+- **Why.** Without it, a volunteer could not reopen a just-submitted, approved or closed case until the dashboards arrive (part 8).
 
 ### Other filters
 
@@ -196,7 +204,7 @@ Language and service stay as chip groups built from the data. They are restyled 
 
 - **All four test suites pass.**
 - **Tests change only where behavior changes on purpose.**
-  - Board tabs (PR 1): `staff-views.test.mjs` status values and counts, the Last reminded board check, and the `controller.test.mjs` status examples.
+  - Board tabs (PR 1): `staff-views.test.mjs` status values and counts, the Last reminded board check, and the `controller.test.mjs` status examples. The browser suite finds cases by searching, and its totals check the whole workspace (`tests/support/story-pages.mjs`, `tests/browser.mjs`).
   - Case tabs (PR 2): the browser suites open a tab before using its controls.
   - Office pool (PR 4).
 - **Run the browser and database suites only when the local Supabase is free.** They reset the local Supabase on port 54321, so run them only when no other project is using it.
@@ -235,7 +243,7 @@ Language and service stay as chip groups built from the data. They are restyled 
 - **Hidden controls on the case page.** The case tabs hide controls the browser tests use. PR 2 updates those tests to open the tab first.
 - **Mixed look between PRs.** Accepted. Shared elements are restyled first to limit it.
 - **Size of `styles.css`.** It has about 3,100 lines. Each PR deletes the rules it replaces, and review checks that the file does not simply grow.
-- **Finished cases leave the volunteer board.** After PR 1, approved and closed cases stay reachable from the office screens, but volunteers see them again only when dashboards arrive (part 8).
+- **Cases leave the volunteer board's tabs.** After PR 1, volunteers reach submitted, approved and closed cases through the search. The browser suite finds cases the same way, and it counts the whole workspace through the "Showing X of Y" total.
 
 ## 11. Out of scope for part 1
 
