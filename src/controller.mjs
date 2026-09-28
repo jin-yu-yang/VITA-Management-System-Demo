@@ -744,7 +744,10 @@ export function createController({
   // selection rather than sent anywhere.
   function setBoardFilter(name, value) {
     if (!name) return;
-    state.boardFilters = { ...state.boardFilters, [name]: String(value ?? "") };
+    const next = { ...state.boardFilters, [name]: String(value ?? "") };
+    // A tab is what the person asked to see, so choosing one ends a search.
+    if (name === "status") delete next.search;
+    state.boardFilters = next;
     persistSession();
     show();
   }

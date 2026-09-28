@@ -1005,7 +1005,11 @@ test("the board's filters are this window's, kept per user and dropped on sign-o
   assert.equal(again.controller.getState().selectedPersonId, "alex");
   again.controller.clearBoardFilters();
   assert.deepEqual(again.controller.getState().boardFilters, {});
-  again.controller.setBoardFilter("status", "mine");
+  again.controller.setBoardFilter("search", "VT-AAAA");
+  assert.equal(again.controller.getState().boardFilters.search, "VT-AAAA");
+  // Choosing a tab is choosing what to see, so it ends the search.
+  again.controller.setBoardFilter("status", "review");
+  assert.deepEqual(again.controller.getState().boardFilters, { status: "review" });
 
   // Signing out drops them with everything else this window held.
   await again.controller.signOut();

@@ -9,9 +9,10 @@ import {
   select,
   stageBadge,
   formatTime,
+  relativeDay,
   ANSWER_LABELS,
 } from "./ui.mjs";
-import { describeStage } from "./domain.mjs";
+import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 
 // The two staff screens for preparers and reviewers — the work board and the
@@ -324,98 +325,73 @@ export const explain = (decision, extra = "") =>
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_BOARD_FILTERS = Object.freeze({
-  status: "all",
+  status: "available",
   assignment: "anyone",
   language: "all",
   service: "all",
+  search: "",
 });
 
-const STATUS_GROUPS = Object.freeze([
-  ["all", "All work"],
-  ["available", "Available"],
-  ["mine", "Mine"],
-  ["in_progress", "In progress"],
-  ["waiting", "Waiting"],
-  ["done", "Done"],
-]);
-const ASSIGNMENT_GROUPS = Object.freeze([
-  ["anyone", "Anyone"],
-  ["unassigned", "No one assigned"],
-  ["mine", "Mine"],
-]);
-
-const IN_PROGRESS_STAGES = Object.freeze(["preparing", "reviewing", "corrections_required"]);
-const WAITING_STAGES = Object.freeze([
-  "draft",
-  "received",
-  "preparation_ready",
-  "review_ready",
-]);
-const DONE_STAGES = Object.freeze(["review_approved", "closed"]);
+const TAB_VALUES = Object.freeze(BOARD_TABS.map(([value]) => value));
+const SCOPE_VALUES = Object.freeze(["anyone", "mine"]);
 
 const mine = (record, personId) =>
   Boolean(personId) &&
   (record?.preparerId === personId || record?.reviewerId === personId);
 
-// The groups deliberately overlap: an unclaimed `preparation_ready` case is
-// both "available" and "waiting". They are filters, not a partition.
-function inStatusGroup(record, group, personId) {
-  switch (group) {
-    case "available":
-      return isAvailableWork(record);
-    case "mine":
-      return mine(record, personId);
-    case "in_progress":
-      return IN_PROGRESS_STAGES.includes(record?.stage);
-    case "waiting":
-      return WAITING_STAGES.includes(record?.stage);
-    case "done":
-      return DONE_STAGES.includes(record?.stage);
-    default:
-      return true;
-  }
+// The board's choices with its own defaults filled in. A value saved by an
+// older version of the board (`in_progress`, `unassigned`…) falls back to the
+// default rather than hiding every case.
+export function boardFilters(filters) {
+  const chosen = { ...DEFAULT_BOARD_FILTERS, ...(filters ?? {}) };
+  if (!TAB_VALUES.includes(chosen.status)) chosen.status = DEFAULT_BOARD_FILTERS.status;
+  if (!SCOPE_VALUES.includes(chosen.assignment))
+    chosen.assignment = DEFAULT_BOARD_FILTERS.assignment;
+  chosen.search = String(chosen.search ?? "").trim();
+  return chosen;
 }
 
-function inAssignmentGroup(record, group, personId) {
-  if (group === "mine") return mine(record, personId);
-  if (group === "unassigned") return !record?.preparerId && !record?.reviewerId;
-  return true;
-}
+const inLanguageAndService = (record, chosen) =>
+  (chosen.language === "all" || (record?.answers?.language ?? "") === chosen.language) &&
+  (chosen.service === "all" || (record?.answers?.service ?? "") === chosen.service);
 
-export const boardFilters = (filters) => ({ ...DEFAULT_BOARD_FILTERS, ...(filters ?? {}) });
+const matchesSearch = (record, search) =>
+  String(record?.reference ?? "")
+    .toUpperCase()
+    .includes(search.toUpperCase());
 
-/** The records one set of filters leaves on screen. */
+const onTab = (record, chosen, personId) =>
+  phaseTab(record) === chosen.status &&
+  (chosen.status === "available" || chosen.assignment === "anyone" || mine(record, personId));
+
+/**
+ * The records one set of choices leaves on screen. A search looks across every
+ * stage, tab or no tab, so a volunteer can reopen a submitted, approved or
+ * closed case by its Application ID.
+ */
 export function filterCases(cases = [], filters, person = null) {
   const chosen = boardFilters(filters);
   const personId = person?.id ?? null;
-  return cases.filter(
-    (record) =>
-      inStatusGroup(record, chosen.status, personId) &&
-      inAssignmentGroup(record, chosen.assignment, personId) &&
-      (chosen.language === "all" ||
-        (record?.answers?.language ?? "") === chosen.language) &&
-      (chosen.service === "all" || (record?.answers?.service ?? "") === chosen.service),
-  );
+  const narrowed = cases.filter((record) => inLanguageAndService(record, chosen));
+  return chosen.search
+    ? narrowed.filter((record) => matchesSearch(record, chosen.search))
+    : narrowed.filter((record) => onTab(record, chosen, personId));
 }
 
-/** Counts over whatever is on screen, so the numbers always match the rows. */
-export function boardCounts(cases = [], person = null) {
-  const personId = person?.id ?? null;
-  return {
-    shown: cases.length,
-    available: cases.filter((record) => isAvailableWork(record)).length,
-    mine: cases.filter((record) => mine(record, personId)).length,
-    inProgress: cases.filter((record) => IN_PROGRESS_STAGES.includes(record?.stage))
-      .length,
-    waiting: cases.filter((record) => WAITING_STAGES.includes(record?.stage)).length,
-    done: cases.filter((record) => DONE_STAGES.includes(record?.stage)).length,
-    reminded: cases.filter((record) => Boolean(record?.lastRemindedAt)).length,
-  };
+/** How many cases each tab would show with the other choices as they are. */
+export function boardCounts(cases = [], filters, person = null) {
+  const chosen = boardFilters(filters);
+  return Object.fromEntries(
+    TAB_VALUES.map((tab) => [
+      tab,
+      filterCases(cases, { ...chosen, status: tab, search: "" }, person).length,
+    ]),
+  );
 }
 
 const FILTER_GROUP_LABELS = Object.freeze({
   status: "Status",
-  assignment: "Assignment",
+  assignment: "Whose cases",
   language: "Language",
   service: "Service",
 });
@@ -447,91 +423,109 @@ const valueOptions = (cases, key, allLabel) => [
     .map((value) => [value, value]),
 ];
 
-const fact = (label, value) =>
-  `<div class="board-fact"><dt>${esc(label)}</dt><dd>${esc(value || "—")}</dd></div>`;
+const SCOPES = Object.freeze([
+  ["anyone", "Everyone"],
+  ["mine", "Mine"],
+]);
+const EMPTY_TAB = Object.freeze({
+  available: "Nothing to claim right now. New work appears here once the office has checked its intake.",
+  preparation: "Nothing is waiting for preparation.",
+  review: "Nothing is waiting for review.",
+});
 
-function boardRow(record, person, ui) {
-  const work = stageWork(record?.stage);
-  const rights = staffEligibility(record, person);
-  const busy = ui.busy ? "disabled" : "";
-  const claims = [];
-  if (rights.claimPreparation.allowed)
-    claims.push(
-      caseButton(
-        `${icon("play")} Claim preparation`,
-        "CLAIM_PREPARATION",
-        "primary",
-        `data-case-id="${esc(record.id)}" ${busy}`,
-      ),
-    );
-  else if (record?.stage === "preparation_ready")
-    claims.push(explain(rights.claimPreparation));
-  if (rights.claimReview.allowed)
-    claims.push(
-      caseButton(
-        `${icon("check")} Claim review`,
-        "CLAIM_REVIEW",
-        "primary",
-        `data-case-id="${esc(record.id)}" ${busy}`,
-      ),
-    );
-  else if (record?.stage === "review_ready") claims.push(explain(rights.claimReview));
-  return `<article class="board-row"><div class="board-row-head"><button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)} ${icon("chevron")}</button>${stageBadge(record.stage)}${when(isAvailableWork(record), '<span class="badge teal"><i></i>Available</span>')}</div><dl class="board-facts">${fact(
-    "Service",
-    record?.answers?.service,
-  )}${fact("Language", record?.answers?.language)}${fact("Work needed", work.work)}${fact(
-    "Requires",
-    work.needs ? ELIGIBILITY_LABELS[work.needs] : "No volunteer qualification",
-  )}${fact(
-    "Preparer",
-    record.preparerName ?? (record.preparerId ? UNKNOWN_PERSON : "Unassigned"),
-  )}${fact(
-    "Reviewer",
-    record.reviewerName ?? (record.reviewerId ? UNKNOWN_PERSON : "Unassigned"),
-  )}${fact(
-    "Last reminded",
-    record.lastRemindedAt ? formatTime(record.lastRemindedAt) : "Not reminded yet",
-  )}${fact(
-    "Updated",
-    record.updatedAt ? formatTime(record.updatedAt) : "No updates yet",
-  )}</dl><div class="board-actions">${claims.join("")}</div></article>`;
+// A tab is a filter button: the same hook as every other board choice, with
+// its count inside so a screen reader hears both.
+function boardTabs(chosen, counts) {
+  return `<div class="board-tabs" role="group" aria-label="Board tab">${BOARD_TABS.map(
+    ([value, label]) => {
+      const on = !chosen.search && chosen.status === value;
+      return button(
+        `${esc(label)} <span class="tab-count">${esc(counts[value])}</span>`,
+        "set-board-filter",
+        on ? "tab selected" : "tab",
+        `data-filter="status" data-value="${value}" aria-pressed="${on}"`,
+      );
+    },
+  ).join("")}</div>`;
 }
 
+function searchForm(chosen) {
+  return `<form id="board-search-form" class="board-search" role="search"><label class="sr-only" for="field-board-search">Find an Application ID</label><input id="field-board-search" name="boardSearch" type="search" value="${esc(chosen.search)}" placeholder="Find an Application ID" autocomplete="off"><button class="btn secondary" type="submit">${icon("search")} Find</button>${when(
+    chosen.search,
+    button("Clear search", "set-board-filter", "text", 'data-filter="search" data-value=""'),
+  )}</form>`;
+}
+
+const who = (id, name, personId) =>
+  !id
+    ? `<span class="unassigned">Unassigned</span>`
+    : id === personId
+      ? `<strong class="you">You</strong>`
+      : esc(name ?? UNKNOWN_PERSON);
+
+function boardRow(record, person, ui) {
+  const rights = staffEligibility(record, person);
+  const busy = ui.busy ? "disabled" : "";
+  const id = esc(record.id);
+  const actions = [];
+  if (rights.claimPreparation.allowed)
+    actions.push(caseButton(`${icon("play")} Claim`, "CLAIM_PREPARATION", "primary", `data-case-id="${id}" ${busy}`));
+  else if (record?.stage === "preparation_ready") actions.push(explain(rights.claimPreparation));
+  if (rights.claimReview.allowed)
+    actions.push(caseButton(`${icon("check")} Claim review`, "CLAIM_REVIEW", "primary", `data-case-id="${id}" ${busy}`));
+  else if (record?.stage === "review_ready") actions.push(explain(rights.claimReview));
+  if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
+    actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
+  const own = mine(record, person?.id);
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row"><button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions">${actions.join("")}</td></tr>`;
+}
+
+// Your own rows first, otherwise in the order the store returned them.
+const yoursFirst = (records, personId) =>
+  [...records].sort((a, b) => Number(mine(b, personId)) - Number(mine(a, personId)));
+
 /**
- * The work board: every case this presenter can see, filtered by four local
- * choices, with the claim a chosen persona may make on each row.
+ * The volunteer work board: three tabs (spec 2026-09-28, section 5), a search
+ * that reaches every stage, and one table of the cases the choices leave.
  *
  * @param {object[]} cases  decorated Cases (see `decorateStaffCase`)
  * @param {object[]} people `listPeople()`, used to resolve `ui.personId`
- * @param {object}   ui     `{person|personId, filters, busy, total}`
+ * @param {object}   ui     `{person|personId, filters, busy, now}`
  */
 export function renderStaffBoard(cases = [], people = [], ui = {}) {
   const roster = Array.isArray(people) ? people : [];
-  const person =
-    ui.person ?? roster.find((entry) => entry?.id === ui.personId) ?? null;
+  const person = ui.person ?? roster.find((entry) => entry?.id === ui.personId) ?? null;
   const chosen = boardFilters(ui.filters);
-  const shown = filterCases(cases, chosen, person);
-  const counts = boardCounts(shown, person);
+  const shown = yoursFirst(filterCases(cases, chosen, person), person?.id ?? null);
+  const counts = boardCounts(cases, chosen, person);
   const total = cases.length;
-  const rows = shown.length
-    ? `<div class="board-list">${shown.map((record) => boardRow(record, person, ui)).join("")}</div>`
-    : `<div class="panel empty-state">${icon("folder")}<h2>Nothing matches these filters</h2><p>Change or clear the filters to see the rest of the workspace.</p>${button("Show all work", "clear-board-filters", "secondary")}</div>`;
-  return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">Work board</h2><span class="muted small">Showing ${esc(counts.shown)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div><p class="board-counts" role="status">In this view: ${esc(counts.available)} available, ${esc(counts.mine)} mine, ${esc(counts.inProgress)} in progress, ${esc(counts.waiting)} waiting, ${esc(counts.done)} done, ${esc(counts.reminded)} reminded.</p><div class="board-filters">${filterChips(
-    "status",
-    STATUS_GROUPS,
-    chosen.status,
-  )}${filterChips("assignment", ASSIGNMENT_GROUPS, chosen.assignment)}${filterChips(
-    "language",
-    valueOptions(cases, "language", "Any language"),
-    chosen.language,
-  )}${filterChips(
+  const narrowed = chosen.language !== "all" || chosen.service !== "all";
+  const emptyText = chosen.search
+    ? `No case matches “${esc(chosen.search)}”.`
+    : narrowed
+      ? "Nothing on this tab matches these filters."
+      : chosen.status !== "available" && chosen.assignment === "mine"
+        ? `Nothing of yours is ${chosen.status === "preparation" ? "waiting for preparation" : "waiting for review"}.`
+        : EMPTY_TAB[chosen.status];
+  const body = shown.length
+    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Application ID</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
+        .map((record) => boardRow(record, person, ui))
+        .join("")}</tbody></table></div>`
+    : `<div class="empty-state">${icon("folder")}<p>${emptyText}</p>${when(
+        narrowed || chosen.search,
+        button("Clear filters", "clear-board-filters", "secondary"),
+      )}</div>`;
+  return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
+    !chosen.search && chosen.status !== "available",
+    filterChips("assignment", SCOPES, chosen.assignment),
+  )}${filterChips("language", valueOptions(cases, "language", "Any language"), chosen.language)}${filterChips(
     "service",
     valueOptions(cases, "service", "Any service"),
     chosen.service,
   )}</div>${when(
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this board is read-only.</p>`,
-  )}${rows}<p class="field-note">This board shows workflow only: no taxpayer names, no addresses and no document contents. Open a case to do the work.</p></section>`;
+  )}${body}<p class="field-note board-note">${icon("lock")} This board shows workflow only: no taxpayer names, no addresses and no document contents. Submitted, approved and closed cases are not on these tabs; find one by its Application ID.</p></section>`;
 }
 
 // ---------------------------------------------------------------------------

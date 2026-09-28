@@ -730,6 +730,8 @@ if (!config) {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
         await controller.verifyCode(String(values.get("code") ?? ""));
+      } else if (form.id === "board-search-form") {
+        controller.setBoardFilter("search", String(values.get("boardSearch") ?? "").trim());
       } else if (form.id === "lookup-form") {
         controller.setLookup(String(values.get("lookup") ?? ""));
         render();

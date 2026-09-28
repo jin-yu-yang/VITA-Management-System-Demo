@@ -8,6 +8,7 @@ import {
   isAvailableWork,
   filterCases,
   boardCounts,
+  boardFilters,
   DEFAULT_BOARD_FILTERS,
 } from "../src/staff-views.mjs";
 import { describeStage } from "../src/domain.mjs";
@@ -197,89 +198,70 @@ test("available work is exactly the two unclaimed states", () => {
     "closed",
   ])
     assert.equal(isAvailableWork({ stage }), false, stage);
-  // The board says so on the row itself, next to the stage badge.
-  const html = board({ person: ALEX });
-  assert.match(html, /VT-AAAA-1111[\s\S]{0,400}Available/);
+  // The Available tab is where unclaimed preparation shows up on the board.
+  assert.ok(shows(board({ person: ALEX }), "VT-AAAA-1111"));
 });
 
-test("the board filters on four axes and counts what it shows", () => {
-  const all = board({ person: ALEX });
-  assert.match(all, /Showing 5 of 5 cases/);
-  for (const reference of ["VT-AAAA-1111", "VT-EEEE-5555"]) assert.ok(shows(all, reference));
-  assert.match(
-    all,
-    /In this view: 2 available, 4 mine, 2 in progress, 2 waiting, 1 done, 1 reminded\./,
-  );
-
-  const available = board({ person: ALEX, filters: { status: "available" } });
-  assert.match(available, /Showing 2 of 5 cases/);
-  assert.ok(shows(available, "VT-AAAA-1111"));
-  assert.ok(shows(available, "VT-CCCC-3333"));
-  assert.ok(!shows(available, "VT-BBBB-2222"));
-  assert.match(available, /In this view: 2 available, 1 mine, 0 in progress/);
-
-  const morgansOwn = board({ person: MORGAN, filters: { status: "mine" } });
-  assert.match(morgansOwn, /Showing 2 of 5 cases/);
-  assert.ok(shows(morgansOwn, "VT-DDDD-4444"));
-  assert.ok(shows(morgansOwn, "VT-EEEE-5555"));
-  assert.ok(!shows(morgansOwn, "VT-AAAA-1111"));
-
-  const unassigned = board({ person: ALEX, filters: { assignment: "unassigned" } });
-  assert.match(unassigned, /Showing 1 of 5 cases/);
-  assert.ok(shows(unassigned, "VT-AAAA-1111"));
-
-  const cantonese = board({ person: ALEX, filters: { language: "Cantonese" } });
-  assert.match(cantonese, /Showing 2 of 5 cases/);
-  assert.ok(shows(cantonese, "VT-BBBB-2222"));
-  assert.ok(!shows(cantonese, "VT-AAAA-1111"));
-
-  const dropOff = board({
-    person: ALEX,
-    filters: { service: "Drop-off", language: "Cantonese" },
+test("the board shows one tab at a time, and search reaches every stage", () => {
+  // BOARD: case-1 available, case-2 preparing (Alex), case-3 review_ready
+  // (prepared by Alex), case-4 reviewing (Alex/Morgan), case-5 closed.
+  assert.deepEqual(DEFAULT_BOARD_FILTERS, {
+    status: "available",
+    assignment: "anyone",
+    language: "all",
+    service: "all",
+    search: "",
   });
-  assert.match(dropOff, /Showing 1 of 5 cases/);
-  assert.ok(shows(dropOff, "VT-CCCC-3333"));
+  const ids = (filters, person = ALEX) =>
+    filterCases(BOARD, filters, person).map((record) => record.id);
 
-  // Nothing left is said plainly, with a way back.
-  const nothing = board({ person: ALEX, filters: { status: "done", language: "Cantonese" } });
-  assert.match(nothing, /Nothing matches these filters/);
-  assert.match(nothing, /data-action="clear-board-filters"/);
+  assert.deepEqual(ids({}), ["case-1"], "Available is the default tab");
+  assert.deepEqual(ids({ status: "preparation" }), ["case-2"]);
+  assert.deepEqual(ids({ status: "review" }), ["case-3", "case-4"]);
+  // Mine / Everyone narrows only the two waiting tabs.
+  assert.deepEqual(ids({ status: "review", assignment: "mine" }, MORGAN), ["case-4"]);
+  assert.deepEqual(ids({ status: "preparation", assignment: "mine" }, MORGAN), []);
+  assert.deepEqual(ids({ status: "available", assignment: "mine" }, MORGAN), ["case-1"]);
+  // Old saved values fall back instead of hiding everything.
+  for (const old of ["all", "mine", "in_progress", "waiting", "done"])
+    assert.deepEqual(ids({ status: old }), ["case-1"], old);
+  assert.equal(boardFilters({ assignment: "unassigned" }).assignment, "anyone");
+  // Language and service still narrow the tab.
+  assert.deepEqual(ids({ status: "review", language: "English" }), ["case-4"]);
+  // Search ignores the tab and the scope, keeps language and service, and
+  // reaches stages that have no tab.
+  assert.deepEqual(ids({ search: "eeee" }), ["case-5"]);
+  assert.deepEqual(ids({ status: "review", assignment: "mine", search: "VT-" }, MORGAN), [
+    "case-1",
+    "case-2",
+    "case-3",
+    "case-4",
+    "case-5",
+  ]);
+  assert.deepEqual(ids({ search: "VT-", language: "Cantonese" }), ["case-2", "case-3"]);
+  assert.deepEqual(ids({ search: "   " }), ["case-1"], "blank search is no search");
 
-  // The chosen filter is the pressed one, and the options come from the records.
-  assert.match(
-    all,
-    /data-action="set-board-filter" data-filter="status" data-value="all" aria-pressed="true"/,
-  );
-  assert.match(
-    available,
-    /data-action="set-board-filter" data-filter="status" data-value="available" aria-pressed="true"/,
-  );
-  assert.match(all, /data-filter="language" data-value="Mandarin"/);
-  assert.ok(!all.includes('data-filter="language" data-value="Polish"'));
-
-  // The pure helpers answer the same way the screen does.
-  assert.equal(filterCases(BOARD, DEFAULT_BOARD_FILTERS, ALEX).length, 5);
-  assert.equal(filterCases(BOARD, { status: "available" }, ALEX).length, 2);
-  assert.deepEqual(boardCounts(BOARD, MORGAN), {
-    shown: 5,
-    available: 2,
-    mine: 2,
-    inProgress: 2,
-    waiting: 2,
-    done: 1,
-    reminded: 1,
+  // Counts: one per tab, respecting language, service and scope.
+  assert.deepEqual(boardCounts(BOARD, {}, ALEX), { available: 1, preparation: 1, review: 2 });
+  assert.deepEqual(boardCounts(BOARD, { assignment: "mine" }, MORGAN), {
+    available: 1,
+    preparation: 0,
+    review: 1,
+  });
+  assert.deepEqual(boardCounts(BOARD, { language: "Cantonese" }, ALEX), {
+    available: 0,
+    preparation: 1,
+    review: 1,
   });
 });
 
 test("the board names the workflow and no taxpayer", () => {
-  const html = board({ person: ALEX });
+  const html = board({ person: ALEX, filters: { status: "review" } });
   assert.match(html, /Drop-off/);
   assert.match(html, /Cantonese/);
   assert.match(html, new RegExp(describeStage("review_ready").label));
-  assert.match(html, /Waiting for an independent reviewer to claim it\./);
-  assert.match(html, /Preparation eligibility/);
-  assert.match(html, /Review eligibility/);
-  // The answers hold a name and a city; the board shows neither, and no money.
+  // Alex prepared case-3, so the review claim is refused in place, with why.
+  assert.match(html, /VT-CCCC-3333[\s\S]*prepared this case/i);
   const withIdentifiers = renderStaffBoard(
     [
       boardCase({
@@ -302,12 +284,69 @@ test("the board names the workflow and no taxpayer", () => {
   assert.doesNotMatch(withIdentifiers, /refund|routing|deposit/i);
 });
 
-test("reminders are shown per case and counted on the board", () => {
-  const html = board({ person: ALEX });
-  assert.match(html, /VT-DDDD-4444[\s\S]{0,900}Last reminded<\/dt><dd>Sep 11/);
-  assert.match(html, /VT-AAAA-1111[\s\S]{0,900}Last reminded<\/dt><dd>Not reminded yet/);
-  assert.match(html, /1 reminded\./);
-  assert.match(board({ person: ALEX, filters: { status: "done" } }), /0 reminded\./);
+test("the board draws tabs with counts, a search box and one table", () => {
+  const now = new Date(2026, 8, 14, 12, 0).getTime();
+  const html = board({ person: ALEX, filters: { status: "review" }, now });
+  // Tabs keep the filter hook and say how many each holds.
+  for (const [value, count] of [["available", 1], ["preparation", 1], ["review", 2]])
+    assert.match(
+      html,
+      new RegExp(
+        `data-action="set-board-filter" data-filter="status" data-value="${value}" aria-pressed="${value === "review"}"[^>]*>[^<]*<span class="tab-count">${count}</span>`,
+      ),
+    );
+  assert.match(html, /Showing 2 of 5 cases/);
+  assert.match(html, /<form id="board-search-form"[^>]*role="search"/);
+  assert.match(html, /<input id="field-board-search" name="boardSearch" type="search"/);
+  assert.match(html, /<table class="board-table">/);
+  assert.equal((html.match(/<tr class="board-row/g) ?? []).length, 2);
+  // Mine / Everyone shows on the waiting tabs only.
+  assert.match(html, /data-filter="assignment" data-value="mine"/);
+  assert.doesNotMatch(board({ person: ALEX }), /data-filter="assignment"/);
+  // The current persona reads as "You", and their rows are marked and first.
+  assert.match(html, /<tr class="board-row own">[\s\S]*?VT-CCCC-3333/);
+  assert.match(html, /<strong class="you">You<\/strong>/);
+  assert.match(html, /Unassigned/);
+  // Dates read as days (built in local time, so any time zone agrees).
+  const dated = renderStaffBoard(
+    [boardCase({ updatedAt: new Date(2026, 8, 12, 9, 0).toISOString() })],
+    PEOPLE,
+    { person: ALEX, now },
+  );
+  assert.match(dated, /2 days ago/);
+  // Actions: Claim review for a reviewer; Open when nothing can be claimed.
+  const morgan = board({ person: MORGAN, filters: { status: "review" }, now });
+  assert.match(morgan, /data-case-action="CLAIM_REVIEW" data-case-id="case-3"/);
+  assert.match(morgan, /data-action="open-case" data-case-id="case-4"[^>]*>Open</);
+  // Dropped columns stay dropped.
+  assert.doesNotMatch(html, /Work needed|Requires|Last reminded/);
+});
+
+test("search results replace the tab, and empty states say what to do", () => {
+  const found = board({ person: ALEX, filters: { status: "review", search: "eeee" } });
+  assert.match(found, /Search results/);
+  assert.match(found, /Showing 1 of 5 cases/);
+  assert.ok(shows(found, "VT-EEEE-5555"), "a closed case is reachable by search");
+  assert.match(found, /aria-pressed="false"[^>]*>Waiting for review/);
+  assert.match(found, /data-action="set-board-filter" data-filter="search" data-value=""/);
+
+  const none = board({ person: ALEX, filters: { search: "ZZZZ" } });
+  assert.match(none, /No case matches “ZZZZ”\./);
+  assert.match(none, /data-action="clear-board-filters"/);
+
+  const quiet = renderStaffBoard([], PEOPLE, { person: ALEX });
+  assert.match(quiet, /Nothing to claim right now/);
+  const mineOnly = board({ person: MORGAN, filters: { status: "preparation", assignment: "mine" } });
+  assert.match(mineOnly, /Nothing of yours is waiting for preparation\./);
+  const narrowed = board({ person: ALEX, filters: { language: "Polish" } });
+  assert.match(narrowed, /Nothing on this tab matches these filters\./);
+  assert.match(narrowed, /data-action="clear-board-filters"/);
+  // The finished-case hint is always there.
+  assert.match(quiet, /find one by its Application ID/);
+});
+
+test("reminders are shown on the case page, not the board", () => {
+  assert.doesNotMatch(board({ person: ALEX, filters: { status: "review" } }), /Last reminded/);
 
   const reminded = renderStaffCase(
     staffCase({
