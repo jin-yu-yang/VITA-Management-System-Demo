@@ -149,6 +149,17 @@ export function relativeDay(value, now = Date.now()) {
   return at.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// The ARIA tab pattern's keys: the arrows move one tab and wrap around, Home
+// and End jump to the ends. Anything else is not a tab key (null).
+export function nextTabIndex(key, at, count) {
+  if (!count) return null;
+  if (key === "ArrowRight") return (at + 1) % count;
+  if (key === "ArrowLeft") return (at - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 export const radio = (
   label,
   name,

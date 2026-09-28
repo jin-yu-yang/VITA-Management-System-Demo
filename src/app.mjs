@@ -9,6 +9,7 @@ import {
   focusSelectors,
   dialogFocusTarget,
   fieldId,
+  nextTabIndex,
 } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
@@ -537,6 +538,10 @@ if (!config) {
       case "toggle-sidebar":
         controller.toggleSidebar();
         break;
+      case "set-case-tab":
+        controller.setCaseTab(target.dataset.value);
+        root.querySelector(`#case-tab-${CSS.escape(target.dataset.value ?? "")}`)?.focus();
+        break;
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
@@ -752,6 +757,20 @@ if (!config) {
     } catch (error) {
       notify(error?.message ?? "Something went wrong.");
     }
+  });
+
+  // The case page's tabs follow the ARIA tab pattern: arrows, Home and End move
+  // to a tab and show it, and the keyboard stays on the tab.
+  root.addEventListener("keydown", (event) => {
+    const tab = event.target.closest?.('[role="tab"][data-action="set-case-tab"]');
+    if (!tab) return;
+    const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')];
+    const next = nextTabIndex(event.key, tabs.indexOf(tab), tabs.length);
+    if (next === null) return;
+    event.preventDefault();
+    const target = tabs[next];
+    controller.setCaseTab(target.dataset.value);
+    root.querySelector(`#${CSS.escape(target.id)}`)?.focus();
   });
 
   // Dialogs keep the keyboard inside them, and Escape always closes.

@@ -54,6 +54,7 @@ const FIELDS = Object.freeze({
   pendingCreateActionId: asString,
   boardFilters: asFilters,
   sidebarOpen: asBoolean,
+  caseTab: asString,
 });
 
 /**
