@@ -143,3 +143,29 @@ export function describeStage(stage) {
       : UNKNOWN_STAGE),
   };
 }
+
+// The volunteer work board's three tabs (spec 2026-09-28, section 5), on
+// today's nine stages. Draft and received cases are the office's intake;
+// approved and closed cases are finished. Neither has a tab, and the board's
+// search is how a volunteer reaches them. Part 3 of the roadmap replaces the
+// stage list, and with it this mapping.
+export const BOARD_TABS = Object.freeze([
+  ["available", "Available"],
+  ["preparation", "Waiting for preparation"],
+  ["review", "Waiting for review"],
+]);
+
+export function phaseTab(record) {
+  switch (record?.stage) {
+    case "preparation_ready":
+      return record?.preparerId ? "preparation" : "available";
+    case "preparing":
+    case "corrections_required":
+      return "preparation";
+    case "review_ready":
+    case "reviewing":
+      return "review";
+    default:
+      return null;
+  }
+}
