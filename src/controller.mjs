@@ -140,6 +140,9 @@ export function createController({
     // The staff board's filters, as chosen in this window. Only the choices a
     // person made are held; the board fills in its own defaults for the rest.
     boardFilters: {},
+    // Whether this window shows the staff sidebar. Open unless the person
+    // closed it.
+    sidebarOpen: true,
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -187,6 +190,7 @@ export function createController({
       openPanels: state.openPanels,
       pendingCreateActionId: state.pendingCreateActionId,
       boardFilters: state.boardFilters,
+      sidebarOpen: state.sidebarOpen,
     });
   }
 
@@ -205,6 +209,7 @@ export function createController({
     if (saved.pendingCreateActionId)
       state.pendingCreateActionId = saved.pendingCreateActionId;
     if (saved.boardFilters) state.boardFilters = saved.boardFilters;
+    if (typeof saved.sidebarOpen === "boolean") state.sidebarOpen = saved.sidebarOpen;
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -668,6 +673,7 @@ export function createController({
     state.dialog = null;
     state.pendingCreateActionId = null;
     state.boardFilters = {};
+    state.sidebarOpen = true;
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -754,6 +760,12 @@ export function createController({
 
   function clearBoardFilters() {
     state.boardFilters = {};
+    persistSession();
+    show();
+  }
+
+  function toggleSidebar() {
+    state.sidebarOpen = !state.sidebarOpen;
     persistSession();
     show();
   }
@@ -1247,6 +1259,7 @@ export function createController({
     selectPerson,
     setBoardFilter,
     clearBoardFilters,
+    toggleSidebar,
     editAnswers,
     saveAnswers,
     reconcileAnswers,

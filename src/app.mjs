@@ -530,6 +530,9 @@ if (!config) {
       case "clear-board-filters":
         controller.clearBoardFilters();
         break;
+      case "toggle-sidebar":
+        controller.toggleSidebar();
+        break;
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).

@@ -1866,3 +1866,25 @@ test("signing out forgets the workspace and the notice with everything else", as
   assert.equal(controller.getState().notice, null);
   controller.stop();
 });
+
+test("the sidebar starts open, toggles, survives a reload and reopens after sign-out", async () => {
+  const shared = fakeSession();
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [],
+  });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  assert.equal(first.controller.getState().sidebarOpen, true);
+  first.controller.toggleSidebar();
+  assert.equal(first.controller.getState().sidebarOpen, false);
+  first.controller.stop();
+
+  const again = build({ store, sessionStorage: shared });
+  await again.controller.start();
+  assert.equal(again.controller.getState().sidebarOpen, false, "a reload keeps it");
+  await again.controller.signOut();
+  assert.equal(again.controller.getState().sidebarOpen, true);
+  again.controller.stop();
+});

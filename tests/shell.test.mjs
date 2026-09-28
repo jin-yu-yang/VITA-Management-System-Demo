@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appShell } from "../src/views.mjs";
+import { appShell, staffSidebar, page } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -33,4 +33,29 @@ test("every named icon draws its own shape rather than the fallback", () => {
     assert.notEqual(icon(name), fallback, name);
   for (const name of ["sidebar", "dashboard", "board", "bell", "label", "pin", "eye", "people", "chart"])
     assert.ok(ICON_NAMES.includes(name), name);
+});
+
+test("the staff sidebar carries the logo, the one screen that exists, and the account", () => {
+  const alex = { id: "alex", name: "Alex", capabilities: ["prepare"] };
+  const html = staffSidebar({ screen: "staff" }, alex, false);
+  assert.match(html, /<img src="src\/pcdc-logo\.png" alt="PCDC"/);
+  assert.match(html, /data-action="open-board"[^>]*aria-current="page"[^>]*>[\s\S]*Work board/);
+  assert.match(html, /Alex/);
+  assert.match(html, /data-action="open-help"/);
+  assert.match(html, /data-action="sign-out"/);
+  assert.match(html, /Sign out/);
+  // Nothing without a screen behind it.
+  assert.doesNotMatch(html, /Dashboard|Schedule|Documents|Messages|Notifications/);
+
+  const office = staffSidebar({ screen: "staff-case" }, { id: "sam", name: "Sam", capabilities: ["admin"] }, true);
+  assert.match(office, /Office work/);
+  assert.doesNotMatch(office, /aria-current/, "on a case, no nav item is current");
+  assert.match(staffSidebar({ screen: "staff" }, null, false), /No persona chosen/);
+});
+
+test("presenters get the sidebar instead of the site header; clients keep the header", () => {
+  const presenter = page({ principal: { access: "presenter" }, connection: "online" }, "<main></main>");
+  assert.doesNotMatch(presenter, /class="site-header"/);
+  const client = page({ principal: { access: "client" }, connection: "online" }, "<main></main>");
+  assert.match(client, /class="site-header"/);
 });

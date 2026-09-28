@@ -40,6 +40,7 @@ const asFilters = (value) =>
         ),
       )
     : undefined;
+const asBoolean = (value) => (typeof value === "boolean" ? value : undefined);
 
 // The stored fields, with the check each one has to pass to be restored. A
 // screen name is restored as a string: which screens exist is the controller's
@@ -52,6 +53,7 @@ const FIELDS = Object.freeze({
   openPanels: asNames,
   pendingCreateActionId: asString,
   boardFilters: asFilters,
+  sidebarOpen: asBoolean,
 });
 
 /**
