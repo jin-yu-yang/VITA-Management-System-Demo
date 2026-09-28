@@ -87,11 +87,6 @@ const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null
 export const stageWork = (stage) =>
   Object.hasOwn(STAGE_WORK, stage ?? "") ? STAGE_WORK[stage] : UNKNOWN_WORK;
 
-const ELIGIBILITY_LABELS = Object.freeze({
-  prepare: "Preparation eligibility",
-  review: "Review eligibility",
-});
-
 export const REQUEST_STATUS = Object.freeze({
   open: "Waiting for the client",
   awaiting_verification: "Received, not verified yet",
@@ -477,7 +472,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row"><button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions">${actions.join("")}</td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row"><button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.

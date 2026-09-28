@@ -2945,9 +2945,6 @@ textarea::placeholder {
    Built from the same custom properties as the client screens; nothing here
    carries meaning by colour alone — every badge and chip has its own words.
    --------------------------------------------------------------------------- */
-.staff-board {
-  padding-top: 18px;
-}
 .board-filters {
   display: flex;
   flex-wrap: wrap;
@@ -3366,6 +3363,11 @@ textarea::placeholder {
   color: var(--vt-primary);
   font-weight: 600;
 }
+/* `.board-tabs` scrolls horizontally, which clips a focus ring drawn outside
+   the button; pull it inside the button's own box so the whole ring shows. */
+.btn.tab:focus-visible {
+  outline-offset: -3px;
+}
 .tab-count {
   margin-left: 2px;
   padding: 1px 7px;
@@ -3419,12 +3421,14 @@ textarea::placeholder {
   color: var(--vt-primary);
 }
 .board-table .board-actions {
+  white-space: normal;
+}
+.board-row-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  white-space: normal;
 }
-.board-table .board-actions .staff-reason {
+.board-row-actions .staff-reason {
   margin: 0;
   max-width: 260px;
   white-space: normal;
@@ -3441,4 +3445,11 @@ textarea::placeholder {
   align-items: center;
   gap: 6px;
   margin: 14px 0 0;
+}
+/* The office board's count line (src/admin-views.mjs). Task 6 only restyled
+   the volunteer board; this serves the office board until PR 4. */
+.board-counts {
+  font-size: 13px;
+  color: var(--vt-muted);
+  margin: 0 0 14px;
 }
