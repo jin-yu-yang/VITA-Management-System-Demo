@@ -74,3 +74,18 @@ test("the stylesheet hides a closed sidebar rather than leaving it to the UA def
   );
   assert.match(css, /\.app-sidebar\[hidden\]\s*\{[^}]*display:\s*none/);
 });
+
+test("an inactive case tab is not displayed", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  // Any author `display` on .case-panel overrides [hidden] unless this exists.
+  assert.match(css, /\.case-panel\[hidden\]\s*\{[^}]*display:\s*none/);
+});
+
+// The old `.case-tabs button` rule (0-1-1) used to beat the new `.case-tab`
+// rule (0-1-0), leaving an inactive tab's label at a legacy green that fails
+// contrast (final whole-branch review, finding 1). Nothing should style tabs
+// through a bare `button` selector any more.
+test("no legacy .case-tabs button selector styles the case tabs", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.doesNotMatch(css, /\.case-tabs\s+button/);
+});

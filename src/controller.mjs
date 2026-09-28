@@ -149,6 +149,8 @@ export function createController({
     // Whether this window shows the staff sidebar. Open unless the person
     // closed it.
     sidebarOpen: true,
+    // Which tab of the case page this window shows. Overview unless chosen.
+    caseTab: "overview",
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -197,6 +199,7 @@ export function createController({
       pendingCreateActionId: state.pendingCreateActionId,
       boardFilters: state.boardFilters,
       sidebarOpen: state.sidebarOpen,
+      caseTab: state.caseTab,
     });
   }
 
@@ -216,6 +219,7 @@ export function createController({
       state.pendingCreateActionId = saved.pendingCreateActionId;
     if (saved.boardFilters) state.boardFilters = saved.boardFilters;
     if (typeof saved.sidebarOpen === "boolean") state.sidebarOpen = saved.sidebarOpen;
+    if (typeof saved.caseTab === "string") state.caseTab = saved.caseTab;
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -679,6 +683,7 @@ export function createController({
     state.dialog = null;
     state.pendingCreateActionId = null;
     state.boardFilters = {};
+    state.caseTab = "overview";
     state.boardSearchDraft = undefined;
     state.sidebarOpen = true;
     state.error = null;
@@ -748,6 +753,8 @@ export function createController({
   // only through `runAction`, and only for a presenter.
   function selectPerson(id) {
     state.selectedPersonId = id ?? null;
+    // Another persona has another next step, so the case page starts over.
+    state.caseTab = "overview";
     persistSession();
     show();
   }
@@ -790,9 +797,18 @@ export function createController({
     show();
   }
 
+  function setCaseTab(value) {
+    state.caseTab = String(value || "overview");
+    persistSession();
+    show();
+  }
+
   // ---- cases -------------------------------------------------------------
 
   async function selectCase(id, { navigate: move = true } = {}) {
+    // Another case opens on its Overview; the same case keeps its tab, which is
+    // what a reload restores.
+    if (state.selectedCaseId !== id) state.caseTab = "overview";
     if (state.savedCase?.id !== id) clearSelection();
     state.selectedCaseId = id;
     persistSession();
@@ -1281,6 +1297,7 @@ export function createController({
     clearBoardFilters,
     setBoardSearchDraft,
     toggleSidebar,
+    setCaseTab,
     editAnswers,
     saveAnswers,
     reconcileAnswers,

@@ -8,6 +8,7 @@ import {
   stageBadge,
   ANSWER_LABELS,
   relativeDay,
+  nextTabIndex,
 } from "../src/ui.mjs";
 import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 
@@ -364,4 +365,15 @@ test("stage badges carry the design's family and keep their words", () => {
   assert.equal(family("closed"), "neutral");
   assert.equal(family("nonsense"), "neutral");
   assert.match(stageBadge("review_approved"), /Review complete/);
+});
+
+test("arrow keys, Home and End move between tabs and wrap around", () => {
+  assert.equal(nextTabIndex("ArrowRight", 0, 5), 1);
+  assert.equal(nextTabIndex("ArrowRight", 4, 5), 0);
+  assert.equal(nextTabIndex("ArrowLeft", 0, 5), 4);
+  assert.equal(nextTabIndex("ArrowLeft", 3, 5), 2);
+  assert.equal(nextTabIndex("Home", 3, 5), 0);
+  assert.equal(nextTabIndex("End", 1, 5), 4);
+  assert.equal(nextTabIndex("Enter", 1, 5), null);
+  assert.equal(nextTabIndex("ArrowRight", 0, 0), null);
 });

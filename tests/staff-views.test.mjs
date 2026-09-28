@@ -10,8 +10,19 @@ import {
   boardCounts,
   boardFilters,
   DEFAULT_BOARD_FILTERS,
+  caseTabs,
+  lifecycleBar,
+  caseHeader,
+  caseDetails,
+  CASE_TABS,
+  nextStep,
+  correctionsDialogBody,
+  historySentence,
+  EVENT_SENTENCES,
+  historyPanel,
 } from "../src/staff-views.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { CASE_ACTIONS } from "../src/contracts.mjs";
 
 // The staff screens are pure functions of one record and one persona, so these
 // tests operate on the HTML string itself. No DOM library, and nothing here may
@@ -699,8 +710,7 @@ test("the assigned reviewer decides, and the decision is never a filing", () => 
     ],
   });
   const forMorgan = renderStaffCase(reviewing, MORGAN);
-  assert.match(forMorgan, /data-case-action="REQUEST_CORRECTIONS"/);
-  assert.match(forMorgan, /name="findings"/);
+  assert.match(forMorgan, /data-action="open-request-corrections"/);
   assert.match(forMorgan, /data-case-action="APPROVE_REVIEW"/);
   assert.match(
     forMorgan,
@@ -844,7 +854,7 @@ test("internal notes stay in the internal history, never in the client's", () =>
     ALEX,
   );
   assert.match(html, /Internal history — staff only/);
-  assert.match(html, /REQUEST_CORRECTIONS/);
+  assert.match(html, /asked the preparer for corrections/i);
   const clientSection = html.slice(html.indexOf('data-role="client-history"'));
   assert.ok(clientSection.length > 0);
   assert.match(clientSection, /No action is needed from you right now\./);
@@ -1042,4 +1052,143 @@ test("eligibility answers the same way for a board row and a full case", () => {
     assert.equal(nobody[decision].allowed, false, decision);
     assert.match(nobody[decision].reason, /Choose a volunteer persona/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The case page frame (Task 2)
+// ---------------------------------------------------------------------------
+
+test("case tabs follow the ARIA tab pattern and keep every panel in the page", () => {
+  assert.deepEqual(CASE_TABS.map(([key]) => key), ["overview", "intake", "documents", "followup", "history"]);
+  const panels = CASE_TABS.map(([key, label]) => [key, label, `<p>${key} body</p>`]);
+  const html = caseTabs(panels, "documents", { documents: 2 });
+  assert.match(html, /<div class="case-tabs" role="tablist" aria-label="Case sections">/);
+  assert.match(html, /<button type="button" role="tab" id="case-tab-documents" aria-controls="case-panel-documents" aria-selected="true" tabindex="0" class="case-tab selected" data-action="set-case-tab" data-value="documents">Documents <span class="tab-count">2<\/span><\/button>/);
+  assert.match(html, /id="case-tab-overview" aria-controls="case-panel-overview" aria-selected="false" tabindex="-1"/);
+  assert.match(html, /<div role="tabpanel" id="case-panel-documents" aria-labelledby="case-tab-documents" class="case-panel" tabindex="0">/);
+  assert.match(html, /<div role="tabpanel" id="case-panel-overview" aria-labelledby="case-tab-overview" class="case-panel" tabindex="0" hidden>/);
+  for (const [key] of CASE_TABS) assert.match(html, new RegExp(`${key} body`));
+  // An unknown tab falls back to the first.
+  assert.match(caseTabs(panels, "nonsense"), /id="case-tab-overview" aria-controls="case-panel-overview" aria-selected="true"/);
+});
+
+test("the lifecycle bar marks done, current and still-to-come steps", () => {
+  const steps = (stage) =>
+    [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(steps("preparing"), ["done", "done", "done", "current", "todo", "todo", "todo", "todo"]);
+  assert.deepEqual(steps("draft")[0], "current");
+  assert.deepEqual(steps("corrections_required")[3], "current amend");
+  assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
+  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?In review/);
+  assert.ok(steps("nonsense").every((s) => s === "todo"));
+  // Closed can happen at any stage, so nothing before it is claimed as done.
+  assert.deepEqual(steps("closed"), ["todo", "todo", "todo", "todo", "todo", "todo", "todo", "current"]);
+});
+
+test("the case header names the case, its stage and its people", () => {
+  const html = caseHeader(staffCase({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan" }), MORGAN);
+  assert.match(html, /<h2 id="case-title" tabindex="-1">VT-AB2C-DE3F<\/h2>/);
+  assert.match(html, /class="badge prep"/);
+  assert.match(html, /<ol class="lifecycle"/);
+  assert.match(html, /Preparer<\/small> Alex/);
+  assert.match(html, /Reviewer<\/small> <strong class="you">You<\/strong>/);
+  assert.match(html, /Acting as Morgan\./);
+  assert.match(caseHeader(staffCase(), null), /Choose a volunteer persona to act as\./);
+});
+
+test("case details keep the rows the story and the office read", () => {
+  const html = caseDetails(staffCase({ intakeVerified: true, lastRemindedAt: "2026-09-11T14:00:00.000Z", lastRemindedByPersonId: "sam" }));
+  for (const label of ["Stage", "Preparation version", "Intake checks", "Preparer", "Reviewer", "Last reminded", "Updated"])
+    assert.match(html, new RegExp(`<div class="detail-row"><span>${label}</span>`), label);
+  assert.match(html, /<span>Intake checks<\/span><strong>Recorded<\/strong>/);
+  assert.match(html, /<span>Preparer<\/span><strong>Alex<\/strong>/);
+});
+
+// ---------------------------------------------------------------------------
+// "Your next step", the corrections dialog and the tabbed case page (Task 3)
+// ---------------------------------------------------------------------------
+
+test("your next step offers the one action that fits, or says who the case waits on", () => {
+  const step = (overrides, person) => {
+    const record = staffCase(overrides);
+    return nextStep(record, staffEligibility(record, person), {});
+  };
+  // Claim preparation.
+  assert.match(step({ stage: "preparation_ready", preparerId: null, participants: [] }, ALEX), /data-case-action="CLAIM_PREPARATION"/);
+  assert.doesNotMatch(step({ stage: "preparation_ready", preparerId: null, participants: [] }, MORGAN), /data-case-action=/);
+  assert.match(step({ stage: "preparation_ready", preparerId: null, participants: [] }, MORGAN), /Needs preparation eligibility\./);
+  // Record preparation complete (the preparer only).
+  assert.match(step({ stage: "preparing" }, ALEX), /data-case-action="SUBMIT_REVIEW"/);
+  // A volunteer who can prepare, but is not this case's preparer.
+  const CASEY = { id: "casey", name: "Casey", capabilities: ["prepare"] };
+  // `esc` turns an apostrophe into `&#39;`, like every other quoted refusal
+  // reason on this page.
+  assert.match(step({ stage: "preparing" }, CASEY), /Only this case&#39;s current preparer can do this work\./);
+  assert.match(step({ stage: "preparing" }, MORGAN), /Needs preparation eligibility\./);
+  // Claim review, and the self-review refusal.
+  assert.match(step({ stage: "review_ready", preparerId: "alex", participants: ["alex"] }, MORGAN), /data-case-action="CLAIM_REVIEW"/);
+  assert.match(step({ stage: "review_ready", preparerId: "alex", participants: ["alex"] }, ALEX), /You prepared this case, so you cannot review it\./);
+  // Decide the review: approve here, corrections through the dialog.
+  const deciding = step({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"] }, MORGAN);
+  assert.match(deciding, /data-case-action="APPROVE_REVIEW"/);
+  assert.match(deciding, /data-action="open-request-corrections"/);
+  assert.doesNotMatch(deciding, /data-case-action="REQUEST_CORRECTIONS"/);
+  // Corrections: the reviewer's words stay visible to everyone on the case.
+  const correcting = step({
+    stage: "corrections_required",
+    reviews: [{ id: "r1", status: "corrections_requested", findings: "Fix the mileage.", preparationVersion: 1 }],
+  }, ALEX);
+  assert.match(correcting, /Corrections the reviewer asked for/);
+  assert.match(correcting, /Fix the mileage\./);
+  assert.match(correcting, /data-case-action="RESUBMIT_REVIEW"/);
+  // Office intake stages and a closed case: no action, just the state.
+  assert.doesNotMatch(step({ stage: "received" }, ALEX), /data-case-action=/);
+  assert.match(step({ stage: "received" }, ALEX), /<h2 id="next-step-title" tabindex="-1">Your next step<\/h2>/);
+  // No persona.
+  assert.match(step({ stage: "preparing" }, null), /Choose a volunteer persona to act as\./);
+});
+
+test("the staff case page is five tabs, with each action in exactly one place", () => {
+  const html = renderStaffCase(staffCase({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"], reviews: [{ id: "r1", status: "open", preparationVersion: 1 }] }), MORGAN, { caseTab: "documents" });
+  assert.match(html, /<h2 id="case-title" tabindex="-1">/);
+  for (const [key] of CASE_TABS) assert.match(html, new RegExp(`id="case-panel-${key}"`));
+  assert.match(html, /id="case-tab-documents" aria-controls="case-panel-documents" aria-selected="true"/);
+  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*Your next step[\s\S]*Case details[\s\S]*Preparation milestones[\s\S]*Independent review/);
+  assert.equal((html.match(/data-case-action="APPROVE_REVIEW"/g) ?? []).length, 1);
+  assert.match(html, /id="case-panel-intake"[^>]*>[\s\S]*What the client told us/);
+  assert.match(html, /id="case-panel-history"[^>]*>[\s\S]*History/);
+});
+
+test("the corrections dialog carries the form the action is built from", () => {
+  const html = correctionsDialogBody({ busy: false });
+  assert.match(html, /<form class="staff-form">/);
+  assert.match(html, /<span>Corrections to send back to the preparer<\/span><textarea id="field-corrections-findings" name="findings"/);
+  assert.match(html, /<button type="submit" class="btn primary full" data-case-action="REQUEST_CORRECTIONS"/);
+  assert.match(html, /data-action="close-dialog"/);
+  assert.match(correctionsDialogBody({ busy: true }), /data-case-action="REQUEST_CORRECTIONS"\s+disabled/);
+  // A refused send is repeated inside the dialog, which would otherwise hide
+  // it (the dialog is aria-modal, so the page's own alert behind it may not
+  // be read); it carries role="alert" and is tied to the textarea.
+  const refused = correctionsDialogBody({ error: { code: "CONFLICT", message: "Someone else changed this case." } });
+  assert.match(refused, /<div class="notice amber" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
+  assert.match(refused, /<textarea id="field-corrections-findings" name="findings" required maxlength="2000" rows="4" aria-describedby="corrections-error">/);
+  assert.doesNotMatch(correctionsDialogBody({}), /role="alert"/);
+  assert.doesNotMatch(correctionsDialogBody({}), /aria-describedby/);
+});
+
+test("internal history reads as sentences, with who did it", () => {
+  const record = staffCase({
+    internalHistory: [
+      { id: "e1", action: "CLAIM_PREPARATION", actorPersonId: "alex", createdAt: "2026-09-12T15:00:00.000Z" },
+      { id: "e2", action: "LOAD_SOMETHING_NEW", actorPersonId: null, createdAt: "2026-09-12T16:00:00.000Z" },
+    ],
+  });
+  assert.equal(record.internalHistory[0].actorName, "Alex");
+  assert.equal(historySentence(record.internalHistory[0]), "Alex claimed preparation.");
+  // An event this table does not know still reads as words, never as a code.
+  assert.equal(historySentence(record.internalHistory[1]), "Load something new.");
+  for (const action of CASE_ACTIONS) assert.ok(EVENT_SENTENCES[action], action);
+  const html = historyPanel(record, true);
+  assert.match(html, /Alex claimed preparation\./);
+  assert.doesNotMatch(html, /CLAIM_PREPARATION/);
 });

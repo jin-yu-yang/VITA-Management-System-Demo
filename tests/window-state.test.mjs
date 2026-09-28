@@ -173,3 +173,12 @@ test("the sidebar choice is kept only when it is a real boolean", () => {
   window.write("user-1", { screen: "staff", sidebarOpen: "no" });
   assert.deepEqual(window.read("user-1"), { screen: "staff" });
 });
+
+test("the case tab is kept as a string", () => {
+  const sessionStorage = fakeSession();
+  const window = createWindowState({ sessionStorage });
+  window.write("user-1", { screen: "staff-case", caseTab: "documents" });
+  assert.deepEqual(window.read("user-1"), { screen: "staff-case", caseTab: "documents" });
+  window.write("user-1", { screen: "staff-case", caseTab: 3 });
+  assert.deepEqual(window.read("user-1"), { screen: "staff-case" });
+});

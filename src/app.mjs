@@ -9,6 +9,7 @@ import {
   focusSelectors,
   dialogFocusTarget,
   fieldId,
+  nextTabIndex,
 } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
@@ -251,10 +252,13 @@ if (!config) {
     controller.openDialog(name);
   }
 
-  function closeDialog() {
+  function closeDialog(fallbackFocusSelector) {
     controller.closeDialog();
-    if (focusBeforeDialog)
-      root.querySelector(`[data-action="${focusBeforeDialog}"]`)?.focus();
+    const opener = focusBeforeDialog
+      ? root.querySelector(`[data-action="${focusBeforeDialog}"]`)
+      : null;
+    if (opener) opener.focus();
+    else if (fallbackFocusSelector) root.querySelector(fallbackFocusSelector)?.focus();
     focusBeforeDialog = null;
   }
 
@@ -414,7 +418,8 @@ if (!config) {
     // Sent: whatever was typed *for this action* is no longer a draft.
     clearFormDrafts(form);
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
-    if (type === "CLOSE_CASE" && receipt) closeDialog();
+    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     if (type === "SUBMIT") {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
@@ -509,6 +514,12 @@ if (!config) {
       case "open-close-case":
         openDialog("close-case");
         break;
+      case "open-request-corrections":
+        // Clear any earlier refusal so the dialog only ever shows the error
+        // from its own send, not a stale one left over from a previous try.
+        controller.dismissError();
+        openDialog("request-corrections");
+        break;
       // The presenter's own two controls. Both confirm first: one replaces
       // every sample case on the projector, and the other rewrites one of
       // them in front of the room.
@@ -536,6 +547,10 @@ if (!config) {
         break;
       case "toggle-sidebar":
         controller.toggleSidebar();
+        break;
+      case "set-case-tab":
+        controller.setCaseTab(target.dataset.value);
+        root.querySelector(`#case-tab-${CSS.escape(target.dataset.value ?? "")}`)?.focus();
         break;
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
@@ -752,6 +767,21 @@ if (!config) {
     } catch (error) {
       notify(error?.message ?? "Something went wrong.");
     }
+  });
+
+  // The case page's tabs follow the ARIA tab pattern: arrows, Home and End move
+  // to a tab and show it, and the keyboard stays on the tab.
+  root.addEventListener("keydown", (event) => {
+    const tab = event.target.closest?.('[role="tab"][data-action="set-case-tab"]');
+    if (!tab) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')];
+    const next = nextTabIndex(event.key, tabs.indexOf(tab), tabs.length);
+    if (next === null) return;
+    event.preventDefault();
+    const target = tabs[next];
+    controller.setCaseTab(target.dataset.value);
+    root.querySelector(`#${CSS.escape(target.id)}`)?.focus();
   });
 
   // Dialogs keep the keyboard inside them, and Escape always closes.

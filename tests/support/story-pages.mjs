@@ -234,8 +234,43 @@ export async function clickAction(page, action, { attributes = "", timeout = CLI
   await page.locator(`[data-action="${action}"]${attributes}`).first().click({ timeout });
 }
 
+/**
+ * Show the case-page tab that holds a control, when it is on a hidden tab. The
+ * case page renders every tab and hides the inactive ones (restyle PR 2), so a
+ * control can exist and still be unreachable until its tab is chosen.
+ */
+export async function revealCaseControl(page, selector) {
+  const panel = await page.evaluate(
+    (wanted) => document.querySelector(wanted)?.closest('[role="tabpanel"][hidden]')?.id ?? null,
+    selector,
+  );
+  if (!panel) return;
+  await page.locator(`[role="tab"][aria-controls="${panel}"]`).click({ timeout: CLICK_MS });
+  await waitFor(
+    page,
+    `the ${panel} tab to be shown`,
+    (id) => document.getElementById(id)?.hidden === false,
+    panel,
+    RENDER_MS,
+  );
+}
+
+/** Show one case-page tab by its key (overview, intake, documents, followup, history). */
+export async function openCaseTab(page, key) {
+  await waitForQuiet(page);
+  await page.locator(`#case-tab-${key}`).click({ timeout: CLICK_MS });
+  await waitFor(
+    page,
+    `the ${key} tab to be shown`,
+    (id) => document.getElementById(id)?.hidden === false,
+    `case-panel-${key}`,
+    RENDER_MS,
+  );
+}
+
 export async function clickCaseAction(page, type, { attributes = "", timeout = CLICK_MS } = {}) {
   await waitForQuiet(page);
+  await revealCaseControl(page, `[data-case-action="${type}"]${attributes}`);
   await page
     .locator(`[data-case-action="${type}"]${attributes}`)
     .first()
@@ -383,6 +418,8 @@ export async function fieldByLabel(form, label, what = "this") {
  */
 export async function submitCaseForm(page, type, fields = {}, { attributes = "" } = {}) {
   const selector = `button[type="submit"][data-case-action="${type}"]${attributes}`;
+  await waitForQuiet(page);
+  await revealCaseControl(page, selector);
   const form = page.locator(`form:has(${selector})`).first();
   await form.waitFor({ state: "visible", timeout: RENDER_MS });
   // Still before the boxes are filled — a rebuild would empty a select, whose
@@ -406,6 +443,7 @@ export async function submitCaseForm(page, type, fields = {}, { attributes = "" 
  */
 export async function tickBox(page, id) {
   await waitForQuiet(page);
+  await revealCaseControl(page, `#${id}`);
   await page.locator(`#${id}`).click({ timeout: CLICK_MS });
   await waitFor(
     page,

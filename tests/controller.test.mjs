@@ -1990,3 +1990,44 @@ test("the sidebar starts open, toggles, survives a reload and reopens after sign
   assert.equal(again.controller.getState().sidebarOpen, true);
   again.controller.stop();
 });
+
+test("the case tab is this window's, and resets for another case, another persona and sign-out", async () => {
+  const shared = fakeSession();
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      { id: "alex", name: "Alex", capabilities: ["prepare"] },
+      { id: "sam", name: "Sam", capabilities: ["admin"] },
+    ],
+    cases: [
+      { id: "case-a", reference: "VT-AAAA-AAAA", stage: "preparing", revision: 1, answers: {} },
+      { id: "case-b", reference: "VT-BBBB-BBBB", stage: "preparing", revision: 1, answers: {} },
+    ],
+  });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  assert.equal(first.controller.getState().caseTab, "overview");
+  await first.controller.selectCase("case-a");
+  first.controller.setCaseTab("documents");
+  assert.equal(first.controller.getState().caseTab, "documents");
+  // Re-opening the same case keeps the tab.
+  await first.controller.selectCase("case-a");
+  assert.equal(first.controller.getState().caseTab, "documents");
+  first.controller.stop();
+
+  // A reload of the same window restores it.
+  const again = build({ store, sessionStorage: shared });
+  await again.controller.start();
+  assert.equal(again.controller.getState().caseTab, "documents");
+  // Another case starts on Overview.
+  await again.controller.selectCase("case-b");
+  assert.equal(again.controller.getState().caseTab, "overview");
+  // Another persona starts on Overview.
+  again.controller.setCaseTab("history");
+  again.controller.selectPerson("sam");
+  assert.equal(again.controller.getState().caseTab, "overview");
+  again.controller.setCaseTab("followup");
+  await again.controller.signOut();
+  assert.equal(again.controller.getState().caseTab, "overview");
+  again.controller.stop();
+});

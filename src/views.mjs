@@ -3,6 +3,7 @@ import {
   renderStaffBoard,
   renderStaffCase,
   decorateStaffCase,
+  correctionsDialogBody,
 } from "./staff-views.mjs";
 import {
   renderAdminBoard,
@@ -169,6 +170,7 @@ export function staffScreen(state) {
         draftAnswers: state.draftAnswers,
         dirty: state.dirty,
         openPanels: state.openPanels,
+        caseTab: state.caseTab,
       };
       return office
         ? frame(
@@ -260,6 +262,10 @@ export function dialog(state) {
     title = "Close this case?";
     // The office screens own their own copy; this frame only places it.
     body = closeCaseDialogBody(state);
+  }
+  if (state.dialog === "request-corrections") {
+    title = "Ask the preparer for corrections";
+    body = correctionsDialogBody(state);
   }
   if (state.dialog === "reset-fixtures") {
     title = "Reset the sample cases?";
