@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { appShell, staffSidebar, page } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
@@ -58,4 +60,17 @@ test("presenters get the sidebar instead of the site header; clients keep the he
   assert.doesNotMatch(presenter, /class="site-header"/);
   const client = page({ principal: { access: "client" }, connection: "online" }, "<main></main>");
   assert.match(client, /class="site-header"/);
+});
+
+// A closed sidebar carries `hidden` (see the `open: false` case above); the
+// stylesheet must actually hide it. `.app-sidebar { display: flex }` used to
+// win over the UA `[hidden]{display:none}` rule because both are author-level
+// specificity 0-1-0 and the flex rule came second, so the fixed overlay could
+// not be dismissed on narrow screens (final review, finding 1).
+test("the stylesheet hides a closed sidebar rather than leaving it to the UA default", () => {
+  const css = readFileSync(
+    fileURLToPath(new URL("../src/styles.css", import.meta.url)),
+    "utf8",
+  );
+  assert.match(css, /\.app-sidebar\[hidden\]\s*\{[^}]*display:\s*none/);
 });
