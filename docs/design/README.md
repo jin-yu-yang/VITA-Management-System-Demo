@@ -15,6 +15,7 @@
 | Case page, preparer view: next step, labels, contact card, household | [case-preparer-view-v3-full-page.png](screens/case-preparer-view-v3-full-page.png) |
 | Case page tabs: Intake answers, Documents, Follow-up, History | [case-tabs-overview.png](screens/case-tabs-overview.png) |
 | Request corrections dialog (reviewer) | [case-corrections-dialog-lav-full-page.png](screens/case-corrections-dialog-lav-full-page.png) |
+| Implemented (part 1, PR 2): case page with tabs and next step, rendered from test fixtures | [implemented-case-page.png](screens/implemented-case-page.png) · [corrections dialog](screens/implemented-corrections-dialog.png) |
 | Client intake, desktop: step 1, standard wording with the senior-version question | [intake-step1-v2-general.png](screens/intake-step1-v2-general.png) |
 | Client intake, desktop: step 2, standard and senior wording, best time to reach | [standard](screens/intake-step2-v2-general.png) · [senior](screens/intake-step2-v2-senior.png) |
 | Client intake, desktop: step 4 (Who multi-select), standard and senior | [standard](screens/intake-step4-v2-general.png) · [senior](screens/intake-step4-v2-senior.png) |
