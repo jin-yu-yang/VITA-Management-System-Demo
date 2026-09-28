@@ -38,7 +38,12 @@
 - Only fictional data. The logo stays the unchanged `src/pcdc-logo.png`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
-**Ruling in this plan (beyond the spec's text):** the case tab also resets to Overview when the persona changes. Each persona gets a different "Your next step" and a different set of office panels, so the page they land on should be Overview. It costs one extra state reset.
+**Rulings in this plan (beyond the spec's text):**
+- **Persona change resets the tab.** The case tab also resets to Overview when the persona changes. Each persona gets a different "Your next step" and a different set of office panels, so the page they land on should be Overview. Cost: one extra state reset.
+- **Closed cases in the lifecycle bar.** A closed case shows only "Closed" as current, and no earlier step as done, because a case can be closed from any stage. The History tab shows the path it took. Cost: a closed case that went through review doesn't show its review as done in the bar.
+- **Corrections dialog errors.** If sending corrections is refused, the dialog stays open and repeats the refusal inside itself (as `role="status"`, so screen readers don't hear two alerts). Otherwise the refusal would sit behind the dialog, unseen.
+
+**Execution note:** Tasks 2 and 3 edit the same functions and are committed together. Give them to one implementer and review them as one unit.
 
 ---
 
@@ -303,6 +308,8 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
   assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?In review/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
+  // Closed can happen at any stage, so nothing before it is claimed as done.
+  assert.deepEqual(steps("closed"), ["todo", "todo", "todo", "todo", "todo", "todo", "todo", "current"]);
 });
 
 test("the case header names the case, its stage and its people", () => {
@@ -391,7 +398,10 @@ export function lifecycleBar(stage) {
   const correcting = stage === "corrections_required";
   const at = LIFECYCLE.indexOf(correcting ? "preparing" : stage);
   return `<ol class="lifecycle" aria-label="Where this case is">${LIFECYCLE.map((step, index) => {
-    const state = at < 0 ? "todo" : index < at ? "done" : index === at ? "current" : "todo";
+    // A case can be closed from any stage, so a closed case marks no step as
+    // done; the History tab shows the path it took.
+    const state =
+      at < 0 ? "todo" : index === at ? "current" : index < at && stage !== "closed" ? "done" : "todo";
     const amend = correcting && step === "preparing";
     const label = describeStage(amend ? "corrections_required" : step).label;
     return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${index === at ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
@@ -454,6 +464,8 @@ Note which ones fail. Task 3 re-runs the file.
   - new `nextStep`
   - new `correctionsDialogBody`
   - `renderStaffCase`
+  - `historyPanel` (plain-language sentences)
+  - `decorateStaffCase` (an `actorName` on each history entry)
 - Modify: `src/views.mjs`:
   - import `correctionsDialogBody`
   - `dialog()` gains a branch
@@ -465,11 +477,12 @@ Note which ones fail. Task 3 re-runs the file.
 - Consumes: `caseTabs`, `CASE_TABS`, `caseHeader`, `caseDetails` (Task 2); `ui.caseTab` (Task 1 via views).
 - Produces:
   - `nextStep(record, rights, ui)` → `section.panel.next-step` whose heading is `h2#next-step-title` "Your next step".
-  - `correctionsDialogBody(state)`.
+  - `correctionsDialogBody(state)`, which also shows a refused send inside the dialog.
+  - `EVENT_SENTENCES` and `historySentence(entry)`.
   - The click action `open-request-corrections`.
   - The dialog name `request-corrections`.
 
-- [ ] **Step 1: Failing tests.** Append to `tests/staff-views.test.mjs`, adding `nextStep, correctionsDialogBody` to the import, and `staffEligibility` if it isn't already imported:
+- [ ] **Step 1: Failing tests.** Append to `tests/staff-views.test.mjs`, adding `nextStep, correctionsDialogBody, historySentence, EVENT_SENTENCES, historyPanel` to the import, and `staffEligibility` if it isn't already imported. Also add `import { CASE_ACTIONS } from "../src/contracts.mjs";`:
 
 ```js
 test("your next step offers the one action that fits, or says who the case waits on", () => {
@@ -528,6 +541,27 @@ test("the corrections dialog carries the form the action is built from", () => {
   assert.match(html, /<button type="submit" class="btn primary full" data-case-action="REQUEST_CORRECTIONS"/);
   assert.match(html, /data-action="close-dialog"/);
   assert.match(correctionsDialogBody({ busy: true }), /data-case-action="REQUEST_CORRECTIONS"\s+disabled/);
+  // A refused send is repeated inside the dialog, which would otherwise hide it.
+  const refused = correctionsDialogBody({ error: { code: "CONFLICT", message: "Someone else changed this case." } });
+  assert.match(refused, /<div class="notice amber" role="status">[\s\S]*Someone else changed this case\./);
+  assert.doesNotMatch(correctionsDialogBody({}), /role="status"/);
+});
+
+test("internal history reads as sentences, with who did it", () => {
+  const record = staffCase({
+    internalHistory: [
+      { id: "e1", action: "CLAIM_PREPARATION", actorPersonId: "alex", createdAt: "2026-09-12T15:00:00.000Z" },
+      { id: "e2", action: "LOAD_SOMETHING_NEW", actorPersonId: null, createdAt: "2026-09-12T16:00:00.000Z" },
+    ],
+  });
+  assert.equal(record.internalHistory[0].actorName, "Alex");
+  assert.equal(historySentence(record.internalHistory[0]), "Alex claimed preparation.");
+  // An event this table does not know still reads as words, never as a code.
+  assert.equal(historySentence(record.internalHistory[1]), "Load something new.");
+  for (const action of CASE_ACTIONS) assert.ok(EVENT_SENTENCES[action], action);
+  const html = historyPanel(record, true);
+  assert.match(html, /Alex claimed preparation\./);
+  assert.doesNotMatch(html, /CLAIM_PREPARATION/);
 });
 ```
 
@@ -667,9 +701,18 @@ function reviewPanel(record) {
   return `<section class="panel" aria-labelledby="review-title"><div class="section-head"><h2 id="review-title">Independent review</h2></div><p class="field-note">A reviewer never reviews a case they prepared, at any version.</p>${reviewAttempts(record)}</section>`;
 }
 
-/** The Request corrections dialog: the form REQUEST_CORRECTIONS is built from. */
+/**
+ * The Request corrections dialog: the form REQUEST_CORRECTIONS is built from.
+ * A refused send is repeated here, because the page's own notice sits behind
+ * the dialog. It is a status, not a second alert.
+ */
 export function correctionsDialogBody(state = {}) {
-  return `<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
+  const refused = state.error
+    ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${esc(
+        state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
+      )}</h3><p>${esc(state.error.message)}</p></div></div>`
+    : "";
+  return `${refused}<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
     "Corrections to send back to the preparer",
     "findings",
     "",
@@ -684,7 +727,59 @@ export function correctionsDialogBody(state = {}) {
 }
 ```
 
-If `select` isn't imported in `src/staff-views.mjs` already, it is (see the import list at the top). Keep the imports as they are.
+`select` is already imported in `src/staff-views.mjs`. Keep the imports as they are, and add `CASE_ACTIONS` from `./contracts.mjs` only if a sentence needs it (the table below doesn't).
+
+Then make the history read as sentences. The internal history is `case_events` rows with `action`, `actorPersonId`, `detail` and `createdAt`, and today the panel prints the raw code, such as `CLAIM_PREPARATION`.
+
+1. In `decorateStaffCase`, after the `reviews` block and in the same style, add:
+   ```js
+     if (Array.isArray(caseRecord.internalHistory))
+       decorated.internalHistory = caseRecord.internalHistory.map((entry) => ({
+         ...entry,
+         actorName: nameOf(entry?.actorPersonId),
+       }));
+   ```
+   It reuses the function's own `nameOf`. A record without `internalHistory` gains none, so no section is invented.
+2. Add, next to `historyPanel`:
+   ```js
+   // One plain sentence per recorded action (spec section 6). The actor is added
+   // when the event names one; an action this table does not know still reads
+   // as words, never as a code.
+   export const EVENT_SENTENCES = Object.freeze({
+     SAVE_ANSWERS: "saved the intake answers",
+     SUBMIT: "submitted the application",
+     VERIFY_INTAKE: "recorded the intake checks",
+     CLAIM_PREPARATION: "claimed preparation",
+     REQUEST_DOCUMENT: "asked the client for a document",
+     RESPOND_DOCUMENT: "sent a requested document",
+     RECORD_DOCUMENT_RESPONSE: "recorded a document the office took in",
+     VERIFY_DOCUMENT: "verified a document",
+     ESCALATE_CONTACT: "asked the office to contact the client",
+     RECORD_CONTACT: "recorded a call with the client",
+     RESOLVE_FOLLOWUP: "resolved the office follow-up",
+     SUBMIT_REVIEW: "recorded that preparation is complete",
+     CLAIM_REVIEW: "claimed the review",
+     REQUEST_CORRECTIONS: "asked the preparer for corrections",
+     RESUBMIT_REVIEW: "recorded that the corrections are complete",
+     APPROVE_REVIEW: "approved the review",
+     RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
+     REMIND: "sent the client a reminder",
+     CLOSE_CASE: "closed the case",
+   });
+
+   export function historySentence(entry) {
+     const code = String(entry?.action ?? "");
+     // `??` and `||` cannot be mixed without parentheses.
+     const words =
+       (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
+       "recorded a change";
+     const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
+     return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+   }
+   ```
+3. In `historyPanel`, change the internal list's `<p>${esc(entry?.action)}</p>` to `<p>${esc(historySentence(entry))}</p>`. Nothing else in the panel changes. The client list is already plain language.
+
+Check the expected sentence for an actor-less unknown event: `"Load something new."` comes from `"load something new"` with its first letter capitalised.
 
 - [ ] **Step 4: Put the staff case in tabs.** Replace `renderStaffCase`:
 
@@ -886,9 +981,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `src/styles.css` (append a block; restyle `.detail-row`, `.modal` and `.modal-backdrop` with tokens)
+- Test: `tests/shell.test.mjs`
 
 **Interfaces:**
 - Consumes: the class names and ids from Tasks 2–4, the `--vt-*` tokens, and `.app-main .narrow` (PR 1).
+
+- [ ] **Step 0: Failing test.** Append to `tests/shell.test.mjs`, which already imports `readFileSync` and `fileURLToPath` and reads the stylesheet for the PR 1 sidebar check:
+
+```js
+test("an inactive case tab is not displayed", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  // Any author `display` on .case-panel overrides [hidden] unless this exists.
+  assert.match(css, /\.case-panel\[hidden\]\s*\{[^}]*display:\s*none/);
+});
+```
+
+Run `node --test tests/shell.test.mjs`. Expected: FAIL.
 
 - [ ] **Step 1: Append the case page block** at the end of `src/styles.css`:
 
@@ -1021,6 +1129,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   display: grid;
   gap: 16px;
 }
+/* The author `display: grid` above beats the browser's own [hidden] rule, so an
+   inactive tab would still show without this (the same trap as the PR 1
+   sidebar). */
+.case-panel[hidden] {
+  display: none;
+}
 .case-panel:focus-visible {
   outline: 2px solid var(--vt-primary);
   outline-offset: 4px;
@@ -1030,7 +1144,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   border-color: var(--vt-line);
   border-radius: var(--vt-radius);
 }
-.next-step {
+.case-panel > .next-step {
+  /* Same specificity as `.case-panel > .panel`, and later, so the accent wins. */
   border-left: 4px solid var(--vt-primary);
 }
 .next-step-waiting {
@@ -1082,6 +1197,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - **Screenshots:** take them at 1440×900 and 390×844 with Puppeteer, using `executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`. Save them under `.superpowers/` (git-ignored scratch).
   - **Checks:**
     - `document.documentElement.scrollWidth === innerWidth` at both sizes.
+    - Only the active panel is displayed: `[...document.querySelectorAll('[role=tabpanel]')].filter(p => getComputedStyle(p).display !== 'none').length === 1`.
+    - The "Your next step" card shows its primary-colored left accent.
     - Compare against `docs/design/screens/case-tabs-overview.png`, `case-preparer-view-v3-full-page.png` and `case-corrections-dialog-lav-full-page.png`. Fix gaps that are in this task's scope; list the rest.
 
 - [ ] **Step 4: Run the unit tests.**
@@ -1092,7 +1209,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add src/styles.css
+git add src/styles.css tests/shell.test.mjs
 git commit -m "Style the case page header, lifecycle bar, tabs, next step and dialog
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
