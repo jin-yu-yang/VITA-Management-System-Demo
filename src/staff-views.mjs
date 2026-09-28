@@ -444,8 +444,9 @@ function boardTabs(chosen, counts) {
   ).join("")}</div>`;
 }
 
-function searchForm(chosen) {
-  return `<form id="board-search-form" class="board-search" role="search"><label class="sr-only" for="field-board-search">Find an Application ID</label><input id="field-board-search" name="boardSearch" type="search" value="${esc(chosen.search)}" placeholder="Find an Application ID" autocomplete="off"><button class="btn secondary" type="submit">${icon("search")} Find</button>${when(
+function searchForm(chosen, ui = {}) {
+  const value = ui.searchDraft !== undefined ? ui.searchDraft : chosen.search;
+  return `<form id="board-search-form" class="board-search" role="search"><label class="sr-only" for="field-board-search">Find an Application ID</label><input id="field-board-search" name="boardSearch" type="search" value="${esc(value)}" placeholder="Find an Application ID" autocomplete="off"><button id="board-search-submit" class="btn secondary" type="submit">${icon("search")} Find</button>${when(
     chosen.search,
     button("Clear search", "set-board-filter", "text", 'data-filter="search" data-value=""'),
   )}</form>`;
@@ -485,7 +486,7 @@ const yoursFirst = (records, personId) =>
  *
  * @param {object[]} cases  decorated Cases (see `decorateStaffCase`)
  * @param {object[]} people `listPeople()`, used to resolve `ui.personId`
- * @param {object}   ui     `{person|personId, filters, busy, now}`
+ * @param {object}   ui     `{person|personId, filters, busy, now, searchDraft}`
  */
 export function renderStaffBoard(cases = [], people = [], ui = {}) {
   const roster = Array.isArray(people) ? people : [];
@@ -510,7 +511,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
         narrowed || chosen.search,
         button("Clear filters", "clear-board-filters", "secondary"),
       )}</div>`;
-  return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
+  return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
   )}${filterChips("language", valueOptions(cases, "language", "Any language"), chosen.language)}${filterChips(

@@ -1018,6 +1018,44 @@ test("the board's filters are this window's, kept per user and dropped on sign-o
   again.controller.stop();
 });
 
+test("the board search draft survives a re-render but not a filter change", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [],
+  });
+  const { controller, sessionStorage } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // Typing sets the draft, like `setLookup` does for the applications lookup.
+  controller.setBoardSearchDraft("VT-Z");
+  assert.equal(controller.getState().boardSearchDraft, "VT-Z");
+
+  // A search submit — `setBoardFilter("search", …)` — sends it and clears the
+  // draft, so the field falls back to reading the saved search.
+  controller.setBoardFilter("search", "VT-Z");
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+  assert.equal(controller.getState().boardFilters.search, "VT-Z");
+
+  // Any other filter choice ends a half-typed search too ("Clear search" is
+  // one of these: `set-board-filter` with `data-filter="search"`).
+  controller.setBoardSearchDraft("something else");
+  controller.setBoardFilter("language", "Cantonese");
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // So does clearing every filter.
+  controller.setBoardSearchDraft("more typing");
+  controller.clearBoardFilters();
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // Never written to window-local storage: only the saved search is.
+  controller.setBoardSearchDraft("not persisted");
+  const stored = sessionStorage.keys().map((key) => sessionStorage.raw(key)).join("\n");
+  assert.doesNotMatch(stored, /not persisted/);
+  controller.stop();
+});
+
 test("starting a new application is explicit, idempotent and selects the new case", async () => {
   const store = fakeStore();
   let next = 0;

@@ -322,6 +322,24 @@ test("the board draws tabs with counts, a search box and one table", () => {
   assert.doesNotMatch(html, /Work needed|Requires|Last reminded/);
 });
 
+// A re-render mid-keystroke (a realtime update, a notice, a persona click)
+// must not wipe out what somebody is typing into the board search box (final
+// review, finding 3): the box shows the draft when the wiring layer passes
+// one, and only falls back to the saved search otherwise.
+test("the search box shows the in-progress draft over the saved search", () => {
+  const withDraft = board({ person: ALEX, filters: { search: "VT-AAAA" }, searchDraft: "VT-Z" });
+  assert.match(withDraft, /<input id="field-board-search" name="boardSearch" type="search" value="VT-Z"/);
+  // An empty draft (every character deleted) still wins over the saved search.
+  const emptyDraft = board({ person: ALEX, filters: { search: "VT-AAAA" }, searchDraft: "" });
+  assert.match(emptyDraft, /<input id="field-board-search" name="boardSearch" type="search" value=""/);
+  // No draft at all: the saved search shows, exactly as before.
+  const noDraft = board({ person: ALEX, filters: { search: "VT-AAAA" } });
+  assert.match(noDraft, /<input id="field-board-search" name="boardSearch" type="search" value="VT-AAAA"/);
+  // The submit button carries a stable id so the wiring layer can restore
+  // focus to the field after a search or a clear.
+  assert.match(noDraft, /<button id="board-search-submit" class="btn secondary" type="submit">/);
+});
+
 test("search results replace the tab, and empty states say what to do", () => {
   const found = board({ person: ALEX, filters: { status: "review", search: "eeee" } });
   assert.match(found, /Search results/);

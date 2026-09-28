@@ -215,6 +215,7 @@ export function staffScreen(state) {
             person,
             filters: state.boardFilters,
             busy: state.busy,
+            searchDraft: state.boardSearchDraft,
           }),
         );
   })();
