@@ -16,8 +16,9 @@
 | Request corrections dialog (reviewer) | [case-corrections-dialog-lav-full-page.png](screens/case-corrections-dialog-lav-full-page.png) |
 | Client intake, desktop: step 1, standard wording with the senior-version question | [intake-step1-v2-general.png](screens/intake-step1-v2-general.png) |
 | Client intake, desktop: step 2, standard and senior wording, best time to reach | [standard](screens/intake-step2-v2-general.png) · [senior](screens/intake-step2-v2-senior.png) |
-| Client intake, desktop: step 4 (Who multi-select) | [intake-step4-situation-lav-full-page.png](screens/intake-step4-situation-lav-full-page.png) |
-| Client intake, desktop: step 5 in Simplified Chinese | [intake-step5-household-zh-v2-lav-full-page.png](screens/intake-step5-household-zh-v2-lav-full-page.png) |
+| Client intake, desktop: step 4 (Who multi-select), standard and senior | [standard](screens/intake-step4-v2-general.png) · [senior](screens/intake-step4-v2-senior.png) |
+| Client intake, desktop: step 6 (income), standard and senior | [standard](screens/intake-step6-v2-general.png) · [senior](screens/intake-step6-v2-senior.png) |
+| Client intake, desktop: step 5 in Simplified Chinese, standard and senior | [standard](screens/intake-step5-zh-v2-general.png) · [senior](screens/intake-step5-zh-v2-senior.png) |
 | Client intake, mobile (after the MVP): all 9 steps | [intake-mobile-all-steps.png](screens/intake-mobile-all-steps.png) |
 | Admin office overview: unclaimed cases by age and language, volunteers and their cases, office activity | [admin-dashboard-v2-full-page.png](screens/admin-dashboard-v2-full-page.png) |
 | Admin Follow-ups queue | [admin-followups-full-page.png](screens/admin-followups-full-page.png) |
