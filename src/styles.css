@@ -3213,6 +3213,12 @@ textarea::placeholder {
 .sidebar-closed .app-main {
   padding-left: 76px;
 }
+.app-main .narrow {
+  width: 100%;
+  max-width: 1240px;
+  padding: 8px 0 40px;
+  min-height: 0;
+}
 @media (max-width: 800px) {
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
