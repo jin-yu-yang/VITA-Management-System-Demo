@@ -226,7 +226,7 @@ Language and service stay as chip groups built from the data. They are restyled 
 **Accessibility:**
 
 - Every control is reachable by keyboard with a visible focus ring.
-- Tabs follow the ARIA pattern.
+- The case-page tabs (PR 2) follow the ARIA tab pattern. The work board's tabs are filter toggle buttons (`aria-pressed` in a labelled group), because they filter one list and keep the `set-board-filter` hook.
 - The dialog and drawer trap focus and return it on close.
 - Color is never the only signal.
 - Client controls are at least 44px, and contrast follows `DESIGN.md`.
