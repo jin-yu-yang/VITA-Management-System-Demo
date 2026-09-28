@@ -325,6 +325,70 @@ test("remote refresh preserves unsaved answers", async () => {
   controller.stop();
 });
 
+// The browser story's two-window conflict, with the re-reads a real window has
+// in flight when the person presses "Keep my edits": Realtime publishes more
+// than one row per action, so a re-read can answer after the choice — and one
+// that left before the other window saved answers with the older revision.
+test("re-reads that land after a reconcile never replace the chosen answers", async () => {
+  let current = { id: "case-a", revision: 1, stage: "draft", answers: { residenceCity: "Base" } };
+  const held = [];
+  let hold = false;
+  const writes = [];
+  const store = {
+    getPrincipal: async () => ({ userId: "a", access: "applicant" }),
+    listCases: async () => [current],
+    getCase: async () => {
+      const snapshot = current;
+      if (!hold) return snapshot;
+      return await new Promise((resolve) => held.push(() => resolve(snapshot)));
+    },
+    act: async (action) => {
+      writes.push(action);
+      return { actionId: action.actionId, caseId: current.id, revision: current.revision + 1 };
+    },
+    subscribe: () => () => {},
+  };
+  const controller = createController({
+    store,
+    auth: { getSession: async () => ({}), subscribe: () => () => {} },
+    render: () => {},
+    sessionStorage: { getItem: () => null, setItem: () => {} },
+  });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ residenceCity: "Keepmine City" });
+
+  // A re-read that leaves before the other window saves, and answers late.
+  hold = true;
+  const stale = controller.refresh();
+  hold = false;
+  current = { ...current, revision: 2, answers: { residenceCity: "Otherwindow City" } };
+  await controller.refresh();
+  assert.equal(controller.getState().conflict?.serverRevision, 2);
+  // One more that sees the other window's save and is still in flight.
+  hold = true;
+  const late = controller.refresh();
+  hold = false;
+
+  await controller.reconcileAnswers({
+    answers: controller.getState().draftAnswers,
+    expectedServerRevision: 2,
+  });
+  for (const release of held.splice(0)) release();
+  await Promise.all([stale, late]);
+
+  const state = controller.getState();
+  assert.equal(state.draftAnswers.residenceCity, "Keepmine City");
+  assert.equal(state.conflict, null);
+  assert.equal(state.dirty, true);
+  assert.equal(state.editBaseRevision, 2);
+  await controller.saveAnswers();
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].expectedRevision, 2);
+  assert.equal(writes[0].payload.answers.residenceCity, "Keepmine City");
+  controller.stop();
+});
+
 // ---------------------------------------------------------------------------
 
 test("start reads the principal before subscribing and makes no staff read as an applicant", async () => {
