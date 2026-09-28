@@ -26,6 +26,8 @@ import {
   detailRow,
   problemNotice,
   caseHeader,
+  caseTabs,
+  caseDetails,
   answersPanel,
   documentsPanel,
   historyPanel,
@@ -1033,22 +1035,42 @@ export function renderAdminCase(caseRecord, ui = {}) {
   // persona is refused there, in the preparer screen's own words.
   const staffRights = staffEligibility(record, person);
   const draftForOffice = record.stage === "draft" && assisted(record);
+  const origin = `<section class="panel" aria-labelledby="origin-title"><div class="section-head"><h2 id="origin-title">How this case reached the office</h2></div>${originRows(
+    record,
+  )}${detailRow("Stage", describeStage(record.stage).label)}<p class="field-note">${esc(
+    OFFICE_NOTE,
+  )}</p></section>`;
+  const openFollowups = (record.followups ?? []).filter((task) => task?.status === "open").length;
+  const panels = [
+    [
+      "overview",
+      "Overview",
+      [
+        origin,
+        intakeChecksPanel(record, rights, view),
+        draftForOffice ? assistedAnswersPanel(record, rights, view) : "",
+        receiptPanel(record, person, view),
+        officeActionsPanel(record, rights, view),
+        caseDetails(record),
+      ].join(""),
+    ],
+    [
+      "intake",
+      "Intake answers",
+      draftForOffice
+        ? '<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>'
+        : answersPanel(record),
+    ],
+    ["documents", "Documents", documentsPanel(record, staffRights, view)],
+    ["followup", "Follow-up", adminFollowupPanel(record, person, view)],
+    ["history", "History", historyPanel(record, Array.isArray(record.internalHistory))],
+  ];
   return [
     problemNotice(view),
     caseHeader(record, person),
-    `<section class="panel" aria-labelledby="origin-title"><div class="section-head"><h2 id="origin-title">How this case reached the office</h2></div>${originRows(
-      record,
-    )}${detailRow("Stage", describeStage(record.stage).label)}<p class="field-note">${esc(
-      OFFICE_NOTE,
-    )}</p></section>`,
-    draftForOffice
-      ? assistedAnswersPanel(record, rights, view)
-      : answersPanel(record),
-    intakeChecksPanel(record, rights, view),
-    documentsPanel(record, staffRights, view),
-    receiptPanel(record, person, view),
-    adminFollowupPanel(record, person, view),
-    officeActionsPanel(record, rights, view),
-    historyPanel(record, Array.isArray(record.internalHistory)),
+    caseTabs(panels, view.caseTab, {
+      documents: (record.requests ?? []).length,
+      followup: openFollowups,
+    }),
   ].join("");
 }

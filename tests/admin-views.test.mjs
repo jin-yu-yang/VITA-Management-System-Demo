@@ -1075,3 +1075,13 @@ test("the close-case dialog is reachable from the shared modal frame", () => {
   assert.match(html, /data-case-action="CLOSE_CASE"/);
   assert.equal(dialog({ dialog: null }), "");
 });
+
+test("the office case page uses the same header and five tabs", () => {
+  const html = renderAdminCase(officeCase(), { person: SAM, caseTab: "followup" });
+  assert.match(html, /<h2 id="case-title">/);
+  assert.match(html, /<ol class="lifecycle"/);
+  assert.match(html, /id="case-tab-followup" aria-controls="case-panel-followup" aria-selected="true"/);
+  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*How this case reached the office[\s\S]*Simulated intake checks[\s\S]*Case details/);
+  assert.match(html, /id="case-panel-documents"[^>]*hidden>[\s\S]*<h2 id="documents-title">Documents<\/h2>/);
+  assert.match(html, /id="case-panel-history"[^>]*hidden>[\s\S]*History/);
+});
