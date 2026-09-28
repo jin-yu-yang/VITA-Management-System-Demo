@@ -418,6 +418,7 @@ export async function fieldByLabel(form, label, what = "this") {
  */
 export async function submitCaseForm(page, type, fields = {}, { attributes = "" } = {}) {
   const selector = `button[type="submit"][data-case-action="${type}"]${attributes}`;
+  await waitForQuiet(page);
   await revealCaseControl(page, selector);
   const form = page.locator(`form:has(${selector})`).first();
   await form.waitFor({ state: "visible", timeout: RENDER_MS });
