@@ -1087,7 +1087,7 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
 
 test("the case header names the case, its stage and its people", () => {
   const html = caseHeader(staffCase({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan" }), MORGAN);
-  assert.match(html, /<h2 id="case-title">VT-AB2C-DE3F<\/h2>/);
+  assert.match(html, /<h2 id="case-title" tabindex="-1">VT-AB2C-DE3F<\/h2>/);
   assert.match(html, /class="badge prep"/);
   assert.match(html, /<ol class="lifecycle"/);
   assert.match(html, /Preparer<\/small> Alex/);
@@ -1143,14 +1143,14 @@ test("your next step offers the one action that fits, or says who the case waits
   assert.match(correcting, /data-case-action="RESUBMIT_REVIEW"/);
   // Office intake stages and a closed case: no action, just the state.
   assert.doesNotMatch(step({ stage: "received" }, ALEX), /data-case-action=/);
-  assert.match(step({ stage: "received" }, ALEX), /<h2 id="next-step-title">Your next step<\/h2>/);
+  assert.match(step({ stage: "received" }, ALEX), /<h2 id="next-step-title" tabindex="-1">Your next step<\/h2>/);
   // No persona.
   assert.match(step({ stage: "preparing" }, null), /Choose a volunteer persona to act as\./);
 });
 
 test("the staff case page is five tabs, with each action in exactly one place", () => {
   const html = renderStaffCase(staffCase({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"], reviews: [{ id: "r1", status: "open", preparationVersion: 1 }] }), MORGAN, { caseTab: "documents" });
-  assert.match(html, /<h2 id="case-title">/);
+  assert.match(html, /<h2 id="case-title" tabindex="-1">/);
   for (const [key] of CASE_TABS) assert.match(html, new RegExp(`id="case-panel-${key}"`));
   assert.match(html, /id="case-tab-documents" aria-controls="case-panel-documents" aria-selected="true"/);
   assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*Your next step[\s\S]*Case details[\s\S]*Preparation milestones[\s\S]*Independent review/);
@@ -1166,10 +1166,14 @@ test("the corrections dialog carries the form the action is built from", () => {
   assert.match(html, /<button type="submit" class="btn primary full" data-case-action="REQUEST_CORRECTIONS"/);
   assert.match(html, /data-action="close-dialog"/);
   assert.match(correctionsDialogBody({ busy: true }), /data-case-action="REQUEST_CORRECTIONS"\s+disabled/);
-  // A refused send is repeated inside the dialog, which would otherwise hide it.
+  // A refused send is repeated inside the dialog, which would otherwise hide
+  // it (the dialog is aria-modal, so the page's own alert behind it may not
+  // be read); it carries role="alert" and is tied to the textarea.
   const refused = correctionsDialogBody({ error: { code: "CONFLICT", message: "Someone else changed this case." } });
-  assert.match(refused, /<div class="notice amber" role="status">[\s\S]*Someone else changed this case\./);
-  assert.doesNotMatch(correctionsDialogBody({}), /role="status"/);
+  assert.match(refused, /<div class="notice amber" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
+  assert.match(refused, /<textarea id="field-corrections-findings" name="findings" required maxlength="2000" rows="4" aria-describedby="corrections-error">/);
+  assert.doesNotMatch(correctionsDialogBody({}), /role="alert"/);
+  assert.doesNotMatch(correctionsDialogBody({}), /aria-describedby/);
 });
 
 test("internal history reads as sentences, with who did it", () => {

@@ -252,10 +252,13 @@ if (!config) {
     controller.openDialog(name);
   }
 
-  function closeDialog() {
+  function closeDialog(fallbackFocusSelector) {
     controller.closeDialog();
-    if (focusBeforeDialog)
-      root.querySelector(`[data-action="${focusBeforeDialog}"]`)?.focus();
+    const opener = focusBeforeDialog
+      ? root.querySelector(`[data-action="${focusBeforeDialog}"]`)
+      : null;
+    if (opener) opener.focus();
+    else if (fallbackFocusSelector) root.querySelector(fallbackFocusSelector)?.focus();
     focusBeforeDialog = null;
   }
 
@@ -415,8 +418,8 @@ if (!config) {
     // Sent: whatever was typed *for this action* is no longer a draft.
     clearFormDrafts(form);
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
-    if (type === "CLOSE_CASE" && receipt) closeDialog();
-    if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog();
+    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     if (type === "SUBMIT") {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
@@ -512,6 +515,9 @@ if (!config) {
         openDialog("close-case");
         break;
       case "open-request-corrections":
+        // Clear any earlier refusal so the dialog only ever shows the error
+        // from its own send, not a stale one left over from a previous try.
+        controller.dismissError();
         openDialog("request-corrections");
         break;
       // The presenter's own two controls. Both confirm first: one replaces
@@ -768,6 +774,7 @@ if (!config) {
   root.addEventListener("keydown", (event) => {
     const tab = event.target.closest?.('[role="tab"][data-action="set-case-tab"]');
     if (!tab) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const tabs = [...tab.parentElement.querySelectorAll('[role="tab"]')];
     const next = nextTabIndex(event.key, tabs.indexOf(tab), tabs.length);
     if (next === null) return;

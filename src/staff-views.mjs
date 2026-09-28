@@ -621,7 +621,7 @@ const namePill = (role, id, name, personId) =>
   `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
 
 export function caseHeader(record, person) {
-  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
+  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
     person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
   )}</p></section>`;
 }
@@ -858,19 +858,19 @@ export function nextStep(record, rights, ui = {}) {
     default:
       body = "";
   }
-  return `<section class="panel next-step" aria-labelledby="next-step-title"><div class="section-head"><h2 id="next-step-title">Your next step</h2></div><p class="next-step-waiting">${esc(stageWork(record.stage).work)}</p>${body}</section>`;
+  return `<section class="panel next-step" aria-labelledby="next-step-title"><div class="section-head"><h2 id="next-step-title" tabindex="-1">Your next step</h2></div><p class="next-step-waiting">${esc(stageWork(record.stage).work)}</p>${body}</section>`;
 }
 
-// What preparation is waiting on. The actions are in "Your next step".
+// The preparation milestones, not the stage sentence or blockers "Your next
+// step" already shows: which version is current and who has prepared it.
 function preparationPanel(record) {
-  const blockers = ["preparing", "corrections_required"].includes(record.stage)
-    ? preparationBlockers(record)
-    : [];
-  return `<section class="panel" aria-labelledby="preparation-title"><div class="section-head"><h2 id="preparation-title">Preparation milestones</h2></div><p class="field-note">${esc(TAXSLAYER_NOTE)} Nothing here signs or files a return.</p>${
-    blockers.length
-      ? `<ul class="blocker-list">${blockers.map((line) => `<li>${icon("clock")} ${esc(line)}</li>`).join("")}</ul>`
-      : `<p class="muted">${esc(stageWork(record.stage).work)}</p>`
-  }</section>`;
+  return `<section class="panel" aria-labelledby="preparation-title"><div class="section-head"><h2 id="preparation-title">Preparation milestones</h2></div><p class="field-note">${esc(TAXSLAYER_NOTE)} Nothing here signs or files a return.</p>${detailRow(
+    "Preparation version",
+    record.preparationVersion ? `Version ${record.preparationVersion}` : "Not prepared yet",
+  )}${when(
+    Array.isArray(record.participantNames),
+    detailRow("Prepared by (all versions)", record.participantNames?.join(", ") || "Nobody yet"),
+  )}</section>`;
 }
 
 function reviewAttempts(record) {
@@ -910,11 +910,12 @@ function reviewPanel(record) {
 /**
  * The Request corrections dialog: the form REQUEST_CORRECTIONS is built from.
  * A refused send is repeated here, because the page's own notice sits behind
- * the dialog. It is a status, not a second alert.
+ * the dialog (aria-modal), so that notice may not be read. This one carries
+ * role="alert" and is tied to the textarea with aria-describedby.
  */
 export function correctionsDialogBody(state = {}) {
   const refused = state.error
-    ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${esc(
+    ? `<div class="notice amber" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
         state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
       )}</h3><p>${esc(state.error.message)}</p></div></div>`
     : "";
@@ -922,7 +923,7 @@ export function correctionsDialogBody(state = {}) {
     "Corrections to send back to the preparer",
     "findings",
     "",
-    'required maxlength="2000" rows="4"',
+    `required maxlength="2000" rows="4"${state.error ? ' aria-describedby="corrections-error"' : ""}`,
     "corrections",
   )}${caseSubmit(
     `${icon("back")} Send back for corrections`,
@@ -970,7 +971,7 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_DOCUMENT_RESPONSE: "recorded a document the office took in",
   VERIFY_DOCUMENT: "verified a document",
   ESCALATE_CONTACT: "asked the office to contact the client",
-  RECORD_CONTACT: "recorded a call with the client",
+  RECORD_CONTACT: "recorded a call attempt",
   RESOLVE_FOLLOWUP: "resolved the office follow-up",
   SUBMIT_REVIEW: "recorded that preparation is complete",
   CLAIM_REVIEW: "claimed the review",
@@ -978,7 +979,7 @@ export const EVENT_SENTENCES = Object.freeze({
   RESUBMIT_REVIEW: "recorded that the corrections are complete",
   APPROVE_REVIEW: "approved the review",
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
-  REMIND: "sent the client a reminder",
+  REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
 });
 
