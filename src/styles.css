@@ -1827,7 +1827,7 @@ textarea::placeholder {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: #152d3c69;
+  background: rgb(42 39 69 / 0.45);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -1842,9 +1842,10 @@ textarea::placeholder {
   max-width: 520px;
   max-height: calc(100vh - 48px);
   overflow-y: auto;
-  background: #fff;
-  border: 1px solid #dce5d9;
-  border-radius: 17px;
+  background: var(--vt-surface);
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  color: var(--vt-ink);
   padding: 36px;
   box-shadow: 0 22px 80px #152c3230;
 }
@@ -3452,4 +3453,186 @@ textarea::placeholder {
   font-size: 13px;
   color: var(--vt-muted);
   margin: 0 0 14px;
+}
+
+/* ---- The case page (restyle PR 2) ---- */
+.staff-header {
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.case-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.case-title-row h2 {
+  margin: 0;
+  font-family: var(--vt-serif);
+  font-size: 30px;
+  font-weight: 400;
+  color: var(--vt-ink);
+}
+.case-people {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.name-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--vt-line);
+  border-radius: 999px;
+  background: var(--vt-surface);
+  font-size: 13px;
+}
+.name-pill small {
+  color: var(--vt-muted);
+}
+.lifecycle {
+  display: flex;
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 8px;
+  overflow-x: auto;
+}
+.lifecycle-step {
+  flex: 1 0 96px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vt-muted);
+  text-align: center;
+}
+.lifecycle-step::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--vt-line);
+}
+.lifecycle-step:first-child::before {
+  display: none;
+}
+.lifecycle-dot {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vt-surface);
+  border: 2px solid var(--vt-primary-line);
+}
+.lifecycle-step.done .lifecycle-dot,
+.lifecycle-step.done::before,
+.lifecycle-step.current::before {
+  background: var(--vt-progress);
+  border-color: var(--vt-progress);
+}
+.lifecycle-step.current .lifecycle-dot {
+  border-color: var(--vt-primary);
+  background: var(--vt-primary);
+  box-shadow: 0 0 0 4px var(--vt-primary-soft);
+}
+.lifecycle-step.current .lifecycle-label {
+  color: var(--vt-ink);
+  font-weight: 600;
+}
+.lifecycle-step.amend .lifecycle-dot {
+  border-color: var(--vt-stage-amend);
+  background: var(--vt-stage-amend);
+  box-shadow: 0 0 0 4px var(--vt-stage-amend-bg);
+}
+.case-tabs {
+  display: flex;
+  gap: 22px;
+  margin: 22px 0 16px;
+  border-bottom: 1px solid var(--vt-line);
+  overflow-x: auto;
+}
+.case-tab {
+  min-height: var(--vt-tap);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  color: var(--vt-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.case-tab:hover {
+  color: var(--vt-ink);
+}
+.case-tab.selected {
+  border-bottom-color: var(--vt-primary);
+  color: var(--vt-primary);
+  font-weight: 600;
+}
+.case-tab:focus-visible {
+  outline-offset: -3px;
+}
+.case-panel {
+  display: grid;
+  gap: 16px;
+}
+/* The author `display: grid` above beats the browser's own [hidden] rule, so an
+   inactive tab would still show without this (the same trap as the PR 1
+   sidebar). */
+.case-panel[hidden] {
+  display: none;
+}
+.case-panel:focus-visible {
+  outline: 2px solid var(--vt-primary);
+  outline-offset: 4px;
+}
+.case-panel > .panel {
+  padding: 18px 20px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.case-panel > .next-step {
+  /* Same specificity as `.case-panel > .panel`, and later, so the accent wins. */
+  border-left: 4px solid var(--vt-primary);
+}
+.next-step-waiting {
+  color: var(--vt-muted);
+  margin: 0 0 12px;
+}
+.next-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.case-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+.case-details .section-head {
+  grid-column: 1 / -1;
+}
+.detail-row {
+  border-bottom-color: var(--vt-line);
+}
+.detail-row span {
+  color: var(--vt-muted);
+}
+.detail-row strong {
+  color: var(--vt-ink);
+}
+@media (max-width: 800px) {
+  .case-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .case-people {
+    margin-left: 0;
+  }
 }
