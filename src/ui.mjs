@@ -134,6 +134,21 @@ export function formatTime(value) {
   });
 }
 
+// How long ago, in days, for lists where the minute does not matter. Dates are
+// compared as calendar days in the viewer's time zone, so a case updated late
+// last night reads "Yesterday", not "Today".
+export function relativeDay(value, now = Date.now()) {
+  const at = new Date(value ?? "");
+  if (Number.isNaN(at.getTime())) return "";
+  const today = new Date(now);
+  const calendarDay = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((calendarDay(today) - calendarDay(at)) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return at.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export const radio = (
   label,
   name,
@@ -147,16 +162,18 @@ export const radio = (
   `<fieldset class="question"><legend>${esc(label)}</legend><div class="radio-row">${options.map(([val, text]) => `<label class="radio-card ${value === val ? "selected" : ""}"><input type="radio" name="${name}" value="${val}" ${value === val ? "checked" : ""} required><span>${esc(text)}</span></label>`).join("")}</div></fieldset>`;
 
 // Colour is never the only signal: every badge carries its own words, and the
-// words come from the one stage table in domain.mjs.
+// words come from the one stage table in domain.mjs. The colour is the stage's
+// family in the redesign (docs/design/DESIGN.md): intake, preparation and
+// review, amendment, filing, or neutral.
 const STAGE_TONES = Object.freeze({
-  draft: "neutral",
-  received: "blue",
-  preparation_ready: "blue",
-  preparing: "blue",
-  review_ready: "teal",
-  reviewing: "teal",
-  corrections_required: "amber",
-  review_approved: "green",
+  draft: "intake",
+  received: "intake",
+  preparation_ready: "prep",
+  preparing: "prep",
+  review_ready: "prep",
+  reviewing: "prep",
+  corrections_required: "amend",
+  review_approved: "filing",
   closed: "neutral",
 });
 export const stageBadge = (stage) =>
