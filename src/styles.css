@@ -31,6 +31,7 @@
   --vt-intake-hint: #5c5c66;
   /* Accents */
   --vt-you: #c53030;
+  --vt-you-soft: #fdf7f7;
   --vt-badge: #dc2626;
   --vt-progress: #2f8a4c;
   --vt-office: #b7791f;
@@ -114,12 +115,12 @@ textarea {
 }
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid #c29743;
+  outline: 3px solid var(--vt-primary);
 }
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid #729a95;
+  outline: 2px solid var(--vt-primary);
   outline-offset: 1px;
 }
 a {
@@ -172,7 +173,7 @@ small,
 .btn {
   border: 1px solid transparent;
   border-radius: 8px;
-  min-height: 48px;
+  min-height: var(--vt-tap);
   padding: 12px 22px;
   display: inline-flex;
   align-items: center;
@@ -188,28 +189,29 @@ small,
   transform: translateY(-1px);
 }
 .btn.primary {
-  background: var(--blue);
+  background: var(--vt-primary);
   color: #fff;
-  box-shadow: 0 3px 5px #193f4910;
+  box-shadow: 0 1px 2px rgb(42 39 69 / 0.12);
 }
 .btn.primary:hover {
-  background: var(--blue-dark);
+  background: var(--vt-primary-hover);
 }
 .btn.secondary {
-  background: #fff;
-  border-color: #cedad5;
-  color: var(--ink);
+  background: var(--vt-surface);
+  border-color: var(--vt-primary-line);
+  color: var(--vt-ink);
 }
 .btn.secondary:hover {
-  background: #f1f5f1;
+  background: var(--vt-background);
 }
 .btn.text {
   background: transparent;
-  color: #54686e;
+  color: var(--vt-muted);
   padding: 10px 12px;
 }
 .btn.text:hover {
-  background: #eef3ef;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
 }
 .btn.inline,
 .inline {
@@ -218,7 +220,7 @@ small,
   gap: 5px;
   background: none;
   border: none;
-  color: var(--blue);
+  color: var(--vt-primary);
   font-size: 14px;
   font-weight: 600;
   padding: 0;
@@ -668,12 +670,12 @@ select,
 textarea {
   width: 100%;
   padding: 13px 14px;
-  border: 1px solid #d3ddd9;
+  border: 1px solid var(--vt-primary-line);
   border-radius: 7px;
   color: var(--ink);
   background: #fff;
   font-size: 16px;
-  min-height: 49px;
+  min-height: var(--vt-tap);
 }
 input::placeholder,
 textarea::placeholder {
@@ -1072,19 +1074,19 @@ textarea::placeholder {
   align-items: center;
   gap: 9px;
   background: #fff;
-  border: 1px solid #dbe4dd;
+  border: 1px solid var(--vt-primary-line);
   border-radius: 7px;
   padding: 10px 17px;
   font-size: 14px;
   cursor: pointer;
-  min-height: 46px;
+  min-height: var(--vt-tap);
 }
 .radio-card.selected {
-  border-color: #73998a;
-  background: #eef4ed;
+  border-color: var(--vt-primary);
+  background: var(--vt-primary-soft);
 }
 .radio-card input {
-  accent-color: var(--blue);
+  accent-color: var(--vt-primary);
   height: 15px;
   width: 15px;
   margin: 0;
@@ -1231,33 +1233,43 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 10px;
+  padding: 3px 9px;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
 }
 .badge i {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
+/* Stage families (docs/design/DESIGN.md). The old tone names stay as aliases
+   while the office screens still write them directly. */
+.badge.intake,
 .badge.blue {
-  background: #eaf1f4;
-  color: #5b7d89;
+  background: var(--vt-stage-intake-bg);
+  color: var(--vt-stage-intake);
 }
-.badge.amber {
-  background: #faf0dd;
-  color: #a07c32;
-}
+.badge.prep,
 .badge.teal {
-  background: #e7f0e7;
-  color: #628366;
+  background: var(--vt-stage-prep-bg);
+  color: var(--vt-stage-prep);
+}
+.badge.amend,
+.badge.amber {
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+}
+.badge.filing,
+.badge.green {
+  background: var(--vt-stage-filing-bg);
+  color: var(--vt-stage-filing);
 }
 .badge.neutral {
-  background: #eff2ee;
-  color: #8d998f;
+  background: var(--vt-primary-soft);
+  color: var(--vt-muted);
 }
 .progress-steps {
   display: flex;
@@ -1802,7 +1814,7 @@ textarea::placeholder {
 .empty-state > .icon {
   height: 44px;
   width: 44px;
-  color: #b6c3a7;
+  color: var(--vt-primary-line);
   margin-bottom: 20px;
 }
 .empty-state h2 {
@@ -1810,6 +1822,7 @@ textarea::placeholder {
 }
 .empty-state p {
   font-size: 14px;
+  color: var(--vt-muted);
 }
 .modal-backdrop {
   position: fixed;
@@ -1966,13 +1979,13 @@ textarea::placeholder {
   left: 50%;
   transform: translate(-50%, 12px);
   z-index: 80;
-  border: 1px solid #c9d8bd;
-  background: #fff;
-  box-shadow: 0 5px 30px #28463218;
-  color: #52753e;
+  border: 1px solid var(--vt-line);
+  background: var(--vt-ink);
+  box-shadow: 0 10px 30px rgb(42 39 69 / 0.25);
+  color: #fff;
   font-size: 13px;
   padding: 13px 23px;
-  border-radius: 8px;
+  border-radius: var(--vt-radius);
   opacity: 0;
   pointer-events: none;
   transition: 0.2s;
@@ -2660,10 +2673,6 @@ textarea::placeholder {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.badge.green {
-  background: #e4f0e6;
-  color: #487a55;
-}
 .who {
   font-size: 11px;
   color: var(--muted);
@@ -2683,20 +2692,18 @@ textarea::placeholder {
   gap: 10px;
   padding: 11px 30px;
   font-size: 13px;
-  background: #faf0dd;
-  color: #7c5a1c;
-  border-bottom: 1px solid #ecdcbc;
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+  border-bottom: 1px solid var(--vt-line);
 }
 .problem-banner {
-  background: #fbeceb;
-  color: #8a3b34;
-  border-bottom-color: #f0d5d2;
+  background: var(--vt-stage-stopped-bg);
+  color: var(--vt-stage-stopped);
 }
 /* Nothing failed here: the demonstration cases were rebuilt. */
 .notice-banner {
-  background: #eaf2f4;
-  color: #29545e;
-  border-bottom-color: #d3e4e8;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
 }
 .connection-notice .icon,
 .notice-banner .icon,
@@ -2941,11 +2948,6 @@ textarea::placeholder {
 .staff-board {
   padding-top: 18px;
 }
-.board-counts {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0 0 14px;
-}
 .board-filters {
   display: flex;
   flex-wrap: wrap;
@@ -2958,20 +2960,6 @@ textarea::placeholder {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.btn.chip {
-  padding: 5px 11px;
-  border-radius: 999px;
-  font-size: 13px;
-  min-height: 0;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  color: var(--ink);
-}
-.btn.chip.selected {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff;
 }
 .board-list {
   display: grid;
@@ -3240,4 +3228,210 @@ textarea::placeholder {
   .sidebar-closed .app-main {
     padding: 72px 16px 24px;
   }
+}
+
+.btn.chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  min-height: 32px;
+  background: var(--vt-surface);
+  border: 1px solid var(--vt-line);
+  color: var(--vt-ink);
+}
+.btn.chip.selected {
+  background: var(--vt-ink);
+  border-color: var(--vt-ink);
+  color: #fff;
+}
+
+/* ---- Staff sidebar (part 1) ---- */
+.app-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+.sidebar-wordmark {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--vt-ink);
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.btn.nav-link {
+  justify-content: flex-start;
+  background: transparent;
+  color: var(--vt-muted);
+  font-weight: 500;
+  padding: 8px 12px;
+}
+.btn.nav-link:hover {
+  background: var(--vt-background);
+  color: var(--vt-ink);
+}
+.btn.nav-link.current {
+  background: var(--vt-primary-soft);
+  color: var(--vt-primary);
+  font-weight: 600;
+}
+.sidebar-account {
+  margin-top: auto;
+  border-top: 1px solid var(--vt-line);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-account .btn.text {
+  justify-content: flex-start;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 10px;
+}
+.account-row strong {
+  display: block;
+  color: var(--vt-ink);
+}
+.account-row small {
+  display: block;
+  color: var(--vt-muted);
+  font-size: 12px;
+}
+
+/* ---- Presenter controls as a slim strip (D10) ---- */
+.app-main .presenter-panel {
+  padding: 10px 16px;
+  border-radius: var(--vt-radius-sm);
+  border-color: var(--vt-line);
+  margin-bottom: 20px;
+}
+.app-main .presenter-panel .field-note {
+  display: none;
+}
+
+/* ---- The volunteer work board ---- */
+.staff-board {
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.board-search {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 16px;
+  max-width: 460px;
+}
+.board-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--vt-line);
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+.btn.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 0;
+  color: var(--vt-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn.tab:hover {
+  color: var(--vt-ink);
+  transform: none;
+}
+.btn.tab.selected {
+  border-bottom-color: var(--vt-primary);
+  color: var(--vt-primary);
+  font-weight: 600;
+}
+.tab-count {
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--vt-primary-soft);
+  font-size: 12px;
+}
+.board-table-wrap {
+  position: relative;
+  overflow-x: auto;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.board-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.board-table thead th {
+  background: var(--vt-background);
+  color: var(--vt-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+.board-table td,
+.board-table tbody th {
+  padding: 12px;
+  border-top: 1px solid var(--vt-line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.board-table .board-row {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: var(--vt-surface);
+}
+.board-table .board-row:hover {
+  background: var(--vt-background);
+}
+.board-table .board-row.own {
+  background: var(--vt-you-soft);
+}
+.board-table .board-reference {
+  color: var(--vt-primary);
+}
+.board-table .board-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: normal;
+}
+.board-table .board-actions .staff-reason {
+  margin: 0;
+  max-width: 260px;
+  white-space: normal;
+}
+.you {
+  color: var(--vt-you);
+}
+.unassigned {
+  color: var(--vt-muted);
+  font-style: italic;
+}
+.board-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 0;
 }
