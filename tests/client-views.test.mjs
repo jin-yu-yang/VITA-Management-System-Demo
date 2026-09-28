@@ -524,6 +524,7 @@ test("a presenter gets the persona selector, the board and one case workspace", 
         { id: "person-2", name: "Morgan", capabilities: ["review"] },
       ],
       selectedPersonId: "person-1",
+      boardFilters: { status: "preparation" },
       ...overrides,
     });
   const board = staffScreen(staffState());

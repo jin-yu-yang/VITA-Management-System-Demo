@@ -7,6 +7,7 @@ import {
   esc,
   stageBadge,
   ANSWER_LABELS,
+  relativeDay,
 } from "../src/ui.mjs";
 import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 
@@ -338,4 +339,29 @@ test("the shared helpers still escape and name stages", () => {
   assert.equal(esc('<a href="x">'), "&lt;a href=&quot;x&quot;&gt;");
   assert.match(stageBadge("corrections_required"), /Corrections in progress/);
   assert.match(stageBadge("nonsense"), /Application/);
+});
+
+test("dates on the board read as days, not timestamps", () => {
+  const now = new Date(2026, 8, 14, 12, 0).getTime();
+  const at = (day, hour = 9) => new Date(2026, 8, day, hour, 0).toISOString();
+  assert.equal(relativeDay(at(14), now), "Today");
+  assert.equal(relativeDay(at(13, 23), now), "Yesterday");
+  assert.equal(relativeDay(at(12), now), "2 days ago");
+  assert.equal(relativeDay(at(8), now), "6 days ago");
+  assert.equal(relativeDay(at(3), now), "Sep 3");
+  assert.equal(relativeDay("not a date", now), "");
+  assert.equal(relativeDay(null, now), "");
+});
+
+test("stage badges carry the design's family and keep their words", () => {
+  const family = (stage) => /class="badge ([a-z]+)"/.exec(stageBadge(stage))?.[1];
+  assert.equal(family("draft"), "intake");
+  assert.equal(family("received"), "intake");
+  for (const stage of ["preparation_ready", "preparing", "review_ready", "reviewing"])
+    assert.equal(family(stage), "prep", stage);
+  assert.equal(family("corrections_required"), "amend");
+  assert.equal(family("review_approved"), "filing");
+  assert.equal(family("closed"), "neutral");
+  assert.equal(family("nonsense"), "neutral");
+  assert.match(stageBadge("review_approved"), /Review complete/);
 });

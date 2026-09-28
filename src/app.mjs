@@ -526,9 +526,16 @@ if (!config) {
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
+        // "Clear search" is the one filter chip that stands in for a field —
+        // give the box the keyboard back, the way a search submit does.
+        if (target.dataset.filter === "search")
+          root.querySelector("#field-board-search")?.focus();
         break;
       case "clear-board-filters":
         controller.clearBoardFilters();
+        break;
+      case "toggle-sidebar":
+        controller.toggleSidebar();
         break;
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
@@ -659,6 +666,7 @@ if (!config) {
       // of any record until the action that carries it is sent.
       formDrafts.set(field.id, field.value);
     } else if (field.name === "lookup") controller.setLookup(field.value);
+    else if (field.name === "boardSearch") controller.setBoardSearchDraft(field.value);
     // Kept in state so a re-render re-renders them rather than blanking them.
     // None of these three re-render: the field already shows what was typed.
     else if (field.name === "code") controller.editAuthCode(field.value);
@@ -730,6 +738,9 @@ if (!config) {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
         await controller.verifyCode(String(values.get("code") ?? ""));
+      } else if (form.id === "board-search-form") {
+        controller.setBoardFilter("search", String(values.get("boardSearch") ?? "").trim());
+        root.querySelector("#field-board-search")?.focus();
       } else if (form.id === "lookup-form") {
         controller.setLookup(String(values.get("lookup") ?? ""));
         render();

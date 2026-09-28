@@ -164,3 +164,12 @@ test("the cooldown is measured from the stored moment, not from this instance", 
   window.writeAccess({ startedAt: now });
   assert.equal(window.cooldownRemaining(undefined), 0);
 });
+
+test("the sidebar choice is kept only when it is a real boolean", () => {
+  const sessionStorage = fakeSession();
+  const window = createWindowState({ sessionStorage });
+  window.write("user-1", { screen: "staff", sidebarOpen: false });
+  assert.deepEqual(window.read("user-1"), { screen: "staff", sidebarOpen: false });
+  window.write("user-1", { screen: "staff", sidebarOpen: "no" });
+  assert.deepEqual(window.read("user-1"), { screen: "staff" });
+});

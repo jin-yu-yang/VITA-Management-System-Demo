@@ -1005,13 +1005,55 @@ test("the board's filters are this window's, kept per user and dropped on sign-o
   assert.equal(again.controller.getState().selectedPersonId, "alex");
   again.controller.clearBoardFilters();
   assert.deepEqual(again.controller.getState().boardFilters, {});
-  again.controller.setBoardFilter("status", "mine");
+  again.controller.setBoardFilter("search", "VT-AAAA");
+  assert.equal(again.controller.getState().boardFilters.search, "VT-AAAA");
+  // Choosing a tab is choosing what to see, so it ends the search.
+  again.controller.setBoardFilter("status", "review");
+  assert.deepEqual(again.controller.getState().boardFilters, { status: "review" });
 
   // Signing out drops them with everything else this window held.
   await again.controller.signOut();
   assert.deepEqual(again.controller.getState().boardFilters, {});
   assert.equal(shared.raw("vitally:client:v1:p1"), null);
   again.controller.stop();
+});
+
+test("the board search draft survives a re-render but not a filter change", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [],
+  });
+  const { controller, sessionStorage } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // Typing sets the draft, like `setLookup` does for the applications lookup.
+  controller.setBoardSearchDraft("VT-Z");
+  assert.equal(controller.getState().boardSearchDraft, "VT-Z");
+
+  // A search submit — `setBoardFilter("search", …)` — sends it and clears the
+  // draft, so the field falls back to reading the saved search.
+  controller.setBoardFilter("search", "VT-Z");
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+  assert.equal(controller.getState().boardFilters.search, "VT-Z");
+
+  // Any other filter choice ends a half-typed search too ("Clear search" is
+  // one of these: `set-board-filter` with `data-filter="search"`).
+  controller.setBoardSearchDraft("something else");
+  controller.setBoardFilter("language", "Cantonese");
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // So does clearing every filter.
+  controller.setBoardSearchDraft("more typing");
+  controller.clearBoardFilters();
+  assert.equal(controller.getState().boardSearchDraft, undefined);
+
+  // Never written to window-local storage: only the saved search is.
+  controller.setBoardSearchDraft("not persisted");
+  const stored = sessionStorage.keys().map((key) => sessionStorage.raw(key)).join("\n");
+  assert.doesNotMatch(stored, /not persisted/);
+  controller.stop();
 });
 
 test("starting a new application is explicit, idempotent and selects the new case", async () => {
@@ -1861,4 +1903,26 @@ test("signing out forgets the workspace and the notice with everything else", as
   assert.equal(controller.getState().workspace, null);
   assert.equal(controller.getState().notice, null);
   controller.stop();
+});
+
+test("the sidebar starts open, toggles, survives a reload and reopens after sign-out", async () => {
+  const shared = fakeSession();
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [],
+  });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  assert.equal(first.controller.getState().sidebarOpen, true);
+  first.controller.toggleSidebar();
+  assert.equal(first.controller.getState().sidebarOpen, false);
+  first.controller.stop();
+
+  const again = build({ store, sessionStorage: shared });
+  await again.controller.start();
+  assert.equal(again.controller.getState().sidebarOpen, false, "a reload keeps it");
+  await again.controller.signOut();
+  assert.equal(again.controller.getState().sidebarOpen, true);
+  again.controller.stop();
 });

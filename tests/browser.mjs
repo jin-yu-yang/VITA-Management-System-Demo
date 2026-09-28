@@ -29,6 +29,7 @@ import {
   choosePersona,
   clickAction,
   clickCaseActionUntil,
+  findOnBoard,
   measureOverflow,
   openBoard,
   openCaseByReference,
@@ -43,6 +44,7 @@ import {
   redactAddresses,
   resetSampleCases,
   screenshotDir,
+  showBoardTab,
   submitCaseFormUntil,
   tickBox,
   waitFor,
@@ -407,8 +409,8 @@ async function runPermutation(t, roles) {
       evidence.story.indicatorBefore = await readFixtureIndicator(staff);
       evidence.story.indicatorAfter = await resetSampleCases(staff);
       const totals = await readBoardTotals(staff);
-      assert.deepEqual(totals, { shown: 6, total: 6 });
-      assert.equal(await staff.locator(".board-row").count(), 6);
+      assert.equal(totals.total, 6);
+      assert.equal(await staff.locator(".board-row").count(), totals.shown);
       samples = await fixtureCases(fixture);
       assert.equal(samples.length, 6);
       assert.deepEqual(
@@ -426,7 +428,7 @@ async function runPermutation(t, roles) {
       assert.equal(classCase.owner_user_id, applicantA.userId);
       assert.equal(classCase.fixture, false);
       // A client's own draft is theirs alone: the staff board cannot see it yet.
-      assert.deepEqual(await readBoardTotals(staff), { shown: 6, total: 6 });
+      assert.equal((await readBoardTotals(staff)).total, 6);
       await fillIntakeToReview(client);
       await waitForText(client, "Check your answers", RENDER_MS);
       await shoot(client, "intake-check-your-answers");
@@ -435,15 +437,13 @@ async function runPermutation(t, roles) {
       // The same reference, on the other engine, with nothing copied by hand.
       await waitFor(
         staff,
-        `the reference ${classReference} to arrive on the staff board`,
-        (wanted) =>
-          [...document.querySelectorAll("button.board-reference")].some((button) =>
-            button.textContent.includes(wanted),
-          ),
-        classReference,
+        "the board to count the new application",
+        () => /of 7 cases/.test(document.querySelector(".staff-board .section-head")?.textContent ?? ""),
+        undefined,
         ARRIVAL_MS,
       );
-      assert.deepEqual(await readBoardTotals(staff), { shown: 7, total: 7 });
+      await findOnBoard(staff, classReference);
+      assert.equal((await readBoardTotals(staff)).total, 7);
       evidence.story.reference = "matched REFERENCE_PATTERN and arrived on the board";
     });
 
@@ -678,6 +678,7 @@ async function runPermutation(t, roles) {
     await phase("a second case takes the short path: claim review, approve", async () => {
       const short = samples.find((row) => row.fixture_key === "review_ready");
       await openBoard(staff, WORK_BOARD_HEADING);
+      await showBoardTab(staff, "review");
       // Claimed from the board row itself, which names the case it belongs to.
       record(
         "CLAIM_REVIEW",

@@ -76,7 +76,10 @@ export function appShell({ sidebar = "", body = "", open = true } = {}) {
 }
 
 export function page(state, body) {
-  return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  // Presenters work in the staff frame, whose sidebar carries the brand, help
+  // and sign-out; the site header is the client's.
+  const top = state?.principal?.access === "presenter" ? "" : header(state);
+  return `<a class="skip" href="#main">Skip to content</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
@@ -111,6 +114,26 @@ export function noAccessScreen(state) {
 const isAdmin = (person) =>
   Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
 
+// What the staff sidebar holds in part 1 of the redesign: the brand, the one
+// screen this persona can go to, and who this window is acting as. Screens that
+// do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
+export function staffSidebar(state, person, office) {
+  const onBoard = state?.screen === "staff";
+  const label = office ? "Office work" : "Work board";
+  return `<div class="sidebar-brand"><img src="src/pcdc-logo.png" alt="PCDC" width="36" height="36"><span class="sidebar-wordmark">ViTally<span class="brand-dot">.</span></span></div><nav class="sidebar-nav" aria-label="Main navigation">${button(
+    `${icon(office ? "people" : "board")} ${label}`,
+    "open-board",
+    `nav-link${onBoard ? " current" : ""}`,
+    onBoard ? 'aria-current="page"' : "",
+  )}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
+    person?.name ?? "No persona chosen",
+  )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
+    `${icon("help")} Need help?`,
+    "open-help",
+    "text",
+  )}${button(`${icon("signout")} Sign out`, "sign-out", "text")}</div>`;
+}
+
 // A presenter is on one of two screens: the work board, or one case. Both get
 // the presenter panel, because which volunteer this window is acting as is
 // what decides who may do what — and because the person running the session
@@ -130,69 +153,77 @@ export function staffScreen(state) {
     cases: state.cases,
   });
   const office = isAdmin(person);
-  const frame = (overline, title, intro, back, body) =>
-    `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
-      back,
-      button(`${icon("back")} Back to the work board`, "open-board", "text"),
-    )}</div>${panel}${body}</main>`;
-  if (state.screen === "staff-case" && state.savedCase) {
-    const record = decorateStaffCase(state.savedCase, people);
-    const ui = {
-      person,
-      busy: state.busy,
-      error: state.error,
-      retryable: state.retryable,
-      draftAnswers: state.draftAnswers,
-      dirty: state.dirty,
-      openPanels: state.openPanels,
-    };
+  const main = (() => {
+    const frame = (overline, title, intro, back, body) =>
+      `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
+        back,
+        button(`${icon("back")} Back to the work board`, "open-board", "text"),
+      )}</div>${panel}${body}</main>`;
+    if (state.screen === "staff-case" && state.savedCase) {
+      const record = decorateStaffCase(state.savedCase, people);
+      const ui = {
+        person,
+        busy: state.busy,
+        error: state.error,
+        retryable: state.retryable,
+        draftAnswers: state.draftAnswers,
+        dirty: state.dirty,
+        openPanels: state.openPanels,
+      };
+      return office
+        ? frame(
+            "OFFICE WORKSPACE",
+            "One case",
+            "What the office knows about this case, and the office work you may do on it.",
+            true,
+            renderAdminCase(record, ui),
+          )
+        : frame(
+            "VOLUNTEER WORKSPACE",
+            "One case",
+            "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+            true,
+            renderStaffCase(record, person, ui),
+          );
+    }
+    const cases = (state.cases ?? []).map((record) =>
+      decorateStaffCase(record, people),
+    );
     return office
       ? frame(
           "OFFICE WORKSPACE",
-          "One case",
-          "What the office knows about this case, and the office work you may do on it.",
-          true,
-          renderAdminCase(record, ui),
+          "Office work",
+          "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
+          false,
+          renderAdminBoard(
+            cases,
+            (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
+            {
+              person,
+              filters: state.boardFilters,
+              busy: state.busy,
+              openPanels: state.openPanels,
+            },
+          ),
         )
       : frame(
           "VOLUNTEER WORKSPACE",
-          "One case",
-          "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
-          true,
-          renderStaffCase(record, person, ui),
-        );
-  }
-  const cases = (state.cases ?? []).map((record) =>
-    decorateStaffCase(record, people),
-  );
-  return office
-    ? frame(
-        "OFFICE WORKSPACE",
-        "Office work",
-        "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
-        false,
-        renderAdminBoard(
-          cases,
-          (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
-          {
+          "Work board",
+          "Every case in this workspace, what it is waiting for, and the work you can take on.",
+          false,
+          renderStaffBoard(cases, people, {
             person,
             filters: state.boardFilters,
             busy: state.busy,
-            openPanels: state.openPanels,
-          },
-        ),
-      )
-    : frame(
-        "VOLUNTEER WORKSPACE",
-        "Work board",
-        "Every case in this workspace, what it is waiting for, and the work you can take on.",
-        false,
-        renderStaffBoard(cases, people, {
-          person,
-          filters: state.boardFilters,
-          busy: state.busy,
-        }),
-      );
+            searchDraft: state.boardSearchDraft,
+          }),
+        );
+  })();
+  return appShell({
+    sidebar: staffSidebar(state, person, office),
+    body: main,
+    open: state.sidebarOpen !== false,
+  });
 }
 
 // The same id-to-name step `decorateStaffCase` performs, for the one field an

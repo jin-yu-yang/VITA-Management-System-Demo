@@ -140,6 +140,15 @@ export function createController({
     // The staff board's filters, as chosen in this window. Only the choices a
     // person made are held; the board fills in its own defaults for the rest.
     boardFilters: {},
+    // The board search box's half-typed text, kept the same way `lookup` is:
+    // a re-render (a realtime change, a notice, a persona click) must not wipe
+    // out what somebody is in the middle of typing. `undefined` means nothing
+    // is being typed, so the box shows the saved search instead. Window-local
+    // only — never written to `windowState`.
+    boardSearchDraft: undefined,
+    // Whether this window shows the staff sidebar. Open unless the person
+    // closed it.
+    sidebarOpen: true,
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -187,6 +196,7 @@ export function createController({
       openPanels: state.openPanels,
       pendingCreateActionId: state.pendingCreateActionId,
       boardFilters: state.boardFilters,
+      sidebarOpen: state.sidebarOpen,
     });
   }
 
@@ -205,6 +215,7 @@ export function createController({
     if (saved.pendingCreateActionId)
       state.pendingCreateActionId = saved.pendingCreateActionId;
     if (saved.boardFilters) state.boardFilters = saved.boardFilters;
+    if (typeof saved.sidebarOpen === "boolean") state.sidebarOpen = saved.sidebarOpen;
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -668,6 +679,8 @@ export function createController({
     state.dialog = null;
     state.pendingCreateActionId = null;
     state.boardFilters = {};
+    state.boardSearchDraft = undefined;
+    state.sidebarOpen = true;
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -744,13 +757,35 @@ export function createController({
   // selection rather than sent anywhere.
   function setBoardFilter(name, value) {
     if (!name) return;
-    state.boardFilters = { ...state.boardFilters, [name]: String(value ?? "") };
+    const next = { ...state.boardFilters, [name]: String(value ?? "") };
+    // A tab is what the person asked to see, so choosing one ends a search.
+    if (name === "status") delete next.search;
+    state.boardFilters = next;
+    // Whatever was half-typed is now either sent (a search submit) or
+    // superseded (any other filter, including "Clear search"), so the box
+    // goes back to showing the saved search.
+    state.boardSearchDraft = undefined;
     persistSession();
     show();
   }
 
   function clearBoardFilters() {
     state.boardFilters = {};
+    state.boardSearchDraft = undefined;
+    persistSession();
+    show();
+  }
+
+  // The board search box's in-progress text, updated on every keystroke. Like
+  // `setLookup`, this does not re-render by itself — the box already shows
+  // what was typed — it only makes sure a render triggered by something else
+  // does not blank it.
+  function setBoardSearchDraft(value) {
+    state.boardSearchDraft = String(value ?? "");
+  }
+
+  function toggleSidebar() {
+    state.sidebarOpen = !state.sidebarOpen;
     persistSession();
     show();
   }
@@ -1244,6 +1279,8 @@ export function createController({
     selectPerson,
     setBoardFilter,
     clearBoardFilters,
+    setBoardSearchDraft,
+    toggleSidebar,
     editAnswers,
     saveAnswers,
     reconcileAnswers,

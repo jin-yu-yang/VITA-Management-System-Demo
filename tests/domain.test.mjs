@@ -7,6 +7,8 @@ import {
   submissionBlocker,
   INTAKE_ANSWER_KEYS,
   REQUIRED_ANSWER_KEYS,
+  phaseTab,
+  BOARD_TABS,
 } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import {
@@ -188,4 +190,27 @@ test("shared case contracts expose readable references and frozen vocabularies",
   assert.equal(Object.isFrozen(CASE_ACTIONS), true);
   assert.equal(Object.isFrozen(ERROR_CODES), true);
   assert.equal(Object.isFrozen(SQLSTATE_ERROR_CODES), true);
+});
+
+test("each of today's stages belongs to exactly one board tab, or none", () => {
+  assert.deepEqual(
+    BOARD_TABS.map(([value]) => value),
+    ["available", "preparation", "review"],
+  );
+  const cases = [
+    [{ stage: "preparation_ready", preparerId: null }, "available"],
+    [{ stage: "preparation_ready", preparerId: "alex" }, "preparation"],
+    [{ stage: "preparing", preparerId: "alex" }, "preparation"],
+    [{ stage: "corrections_required", preparerId: "alex" }, "preparation"],
+    [{ stage: "review_ready", reviewerId: null }, "review"],
+    [{ stage: "reviewing", reviewerId: "morgan" }, "review"],
+    [{ stage: "draft" }, null],
+    [{ stage: "received" }, null],
+    [{ stage: "review_approved" }, null],
+    [{ stage: "closed" }, null],
+    [{ stage: "nonsense" }, null],
+    [null, null],
+  ];
+  for (const [record, tab] of cases)
+    assert.equal(phaseTab(record), tab, JSON.stringify(record));
 });
