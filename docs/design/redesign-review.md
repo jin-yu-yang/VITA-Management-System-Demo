@@ -8,14 +8,14 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 
 | Area | File |
 |---|---|
-| Volunteer dashboard | `volunteer-dashboard-v3.html` |
-| Work board | `staff-board-v6-lav.html` |
-| Add a case | `add-case-v5-lav.html` |
+| Volunteer dashboard | `volunteer-dashboard-v4.html` |
+| Work board | `staff-board-v7.html` (volunteer) · `admin-work-board.html` (admin case pool) |
+| Add a case | `add-case-v6.html` |
 | Case page · reviewer / preparer / corrections dialog | `case-detail-v2-lav.html` · `case-preparer-view-v3.html` · `case-corrections-dialog-lav.html` |
 | Case page · all tabs (preparer, Client #093) | `case-tabs.html` |
-| Client intake, desktop | `intake-step{1,2,3}-lav.html`, `intake-step4-situation-lav.html`, `intake-step5-household-zh-v2-lav.html`, `intake-step6-income-lav.html`, `intake-step7-lav.html`, `intake-step8-fix-lav.html`, `intake-step9-fix-lav.html` |
-| Client intake, mobile | `intake-mobile-step1…9.html` |
-| Admin | `admin-dashboard.html`, `admin-followups.html`, `admin-post-update.html`, `admin-season-settings.html`, `admin-people.html` |
+| Client intake, desktop | `intake-step1-v2.html`, `intake-step2-v2.html`, `intake-step3-lav.html`, `intake-step4-situation-lav.html`, `intake-step5-household-zh-v2-lav.html`, `intake-step6-income-lav.html`, `intake-step7-lav.html`, `intake-step8-fix-lav.html`, `intake-step9-fix-lav.html` |
+| Client intake, mobile (not in the MVP) | `intake-mobile-step1…9.html` |
+| Admin | `admin-dashboard-v2.html`, `admin-followups.html`, `admin-post-update.html`, `admin-season-settings.html`, `admin-people.html` |
 
 ---
 
@@ -72,21 +72,54 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 
 ## 3. Proposed changes to existing functionality
 
-### Questions that need your (group's) decision
-| # | Decision | Why it matters |
+### Decisions (answered by the group, Sep 28, 2026)
+| # | Decision | Answer |
 |---|---|---|
-| D1 | Adopt the ~20-stage lifecycle now, or keep the 9 stages and only restyle? | Database constraints, actions and tests are all built on the 9 stages |
-| D2 | Client numbers: assigned on submit (agreed). Restart at #001 each season, or keep counting? How are returning clients matched? | New column, sequence, and uniqueness rule |
-| D3 | Replace the 17-key intake with the 105-question drafts, and when? Which draft (general or senior) is the product wording? Traditional Chinese: translate, or fall back to Simplified? | Migration, answer types (dates, lists, repeating groups), screening rules |
-| D4 | Real document uploads, or keep simulated documents for the MVP? | Storage, privacy, retention |
-| D5 | Show client phone numbers on the work board (and reword the privacy note), or only inside a case? | Privacy stance of the board |
-| D6 | Which new features are MVP? Labels, groups, pinned cases, notifications and posting, teammate contact card with phone sharing, dashboards, admin People, Season settings, Schedule, Documents, Messages | Scope; Schedule, Documents and Messages are nav items with no designed page |
-| D7 | Case-based messaging: build it later (as designed) and keep phone contact meanwhile? | Placeholder "Coming later" appears in several places |
-| D8 | Contribution graph data: may we derive it from existing case events (completion = preparing; approve or corrections = reviewing)? Drop "refunds", or add a refund field? | ViTally does not record refund amounts |
-| D9 | Best time to reach, the materials checklist, certification levels and usual days are new fields. Who owns them (intake, volunteer, admin)? | Schema and who can edit what |
-| D10 | Presenter controls stay in the product UI (they're demo-only today)? | They occupy the top of every volunteer screen |
-| D11 | Serif font: keep Georgia (no download, what the designs show) or switch to Noto Serif (better Chinese pairing)? | Typography tokens |
-| D12 | Scope of mobile: client intake only for the MVP? | Effort for volunteer and admin responsive work |
+| D1 | Lifecycle stages | **Adopt the ~20-stage lifecycle soon** (`docs/media/return-lifecycle.svg`). The boards group stages into phases (below). |
+| D2 | Client numbers | Assigned **on submit**; **restart at #001 each season**. Returning clients: VITA policy doesn't allow keeping documents, but we may keep **name, phone, date of birth, address and household members**. New feature: in **Add a case**, search last season's cases by name or phone and fill in the match. |
+| D3 | Intake questions | Replace the 17-key intake with the drafts **soon**. Add one question at the start ("Would you like the senior version of this form?") with a short note that the senior version has shorter descriptions and simpler wording; answering yes gives the senior questions. |
+| D4 | Documents | **Keep simulated documents** for now. |
+| D5 | Phone numbers and access | **Masked everywhere on lists:** `(215) 555-1234` shows as `(•••) •••-1234`. **Admins** see every detail of every case (including documents) and can hover or focus to reveal a phone. **Volunteers** see every detail of the cases they claimed; on **available** (unclaimed) cases they can read the intake answers only, with no unmasked phone and no documents. |
+| D6 | MVP scope | **In:** ~20 stages, client numbers, the new intake questions, groups and pinned cases, notifications and posting, the teammate contact card with phone sharing, admin People and Season settings, styling, work board, Add a case, dashboards, email OTP (magic link). **Out:** SMS, the messaging system, Schedule, Documents page, mobile layouts. |
+| D7 | Case messaging | Build later as designed (not in the MVP); phone contact meanwhile. |
+| D8 | Contribution graph | Derive from case events (completing preparation = preparing; approving or requesting corrections = reviewing). **Refunds dropped:** they would need TaxSlayer Pro's weekly report and more admin work. |
+| D9 | New fields | **Best time to reach:** a new intake question; the client, volunteers and admins can edit it. **Materials checklist** (volunteers and admins edit): ID, SSN/ITIN, green card, birth certificate, W-2, 1099-NEC, 1099-MISC, 1099-INT, 1098-T, 1095-A, prior-year return (1040). **Certification levels:** still to be discussed by the group. **Usual days:** later becomes a Schedule tab where volunteers add office hours (e.g. "7–10 PM, Sep 29"); each volunteer edits only their own. |
+| D10 | Presenter controls | **Keep** them; they will be implemented soon. |
+| D11 | Serif font | Answered "Yes"; read as **keep Georgia** (the first option). Confirm if Noto Serif was meant. |
+| D12 | Mobile | Not in the MVP (client intake included). |
+
+**Office contact** for client-facing screens (help text, footers, error states): vita@chinatown-pcdc.org · (215) 922-6156.
+
+### Phases: how the boards group the lifecycle stages
+| Phase | Stages | Volunteer board tab |
+|---|---|---|
+| Available | Pending intake / filing, no preparer | **Available** |
+| Waiting for preparation | Pending intake / filing (claimed), Filing in process (preparing), Same day in process | **Waiting for preparation** (Mine / Everyone) |
+| Waiting on client | Request sent, Waiting for documents, Hold, Ready to exit (signature) | — (shown on the volunteer's dashboard) |
+| Waiting for review | Pending review, Review in process | **Waiting for review** (Mine / Everyone) |
+| Filing | Ready to e-file, Both e-filed, E-filed & paper, Both paper, IRS acknowledged | — |
+| Needs attention | Rejected, Amendment needed, Amendment in progress | — |
+| Done | Accepted, FSA | — |
+| Closed | Out of scope, No need to file, Duplicate, Client unreachable, Dismissed, Withdrawn | — |
+
+The admin case pool shows every phase as a tab.
+
+### Screens redesigned after the decisions
+| Screen | File | What changed |
+|---|---|---|
+| Volunteer work board | `staff-board-v7.html` | Only three tabs (Available, Waiting for preparation, Waiting for review); Mine / Everyone switch; masked phones (lock on cases you haven't claimed, hover to reveal on yours); **Intake** and **Claim** / **Claim review** actions; you can't claim review of a return you prepared |
+| Admin case pool | `admin-work-board.html` | Every case, a tab per phase, filters for stage (all ~25, grouped), labels, language, service type (drop-off, online, same-day), location (Main office, Crane Center, other site), prepared by and reviewed by (including Unassigned); active-filter chips; hover to reveal phones |
+| Volunteer dashboard | `volunteer-dashboard-v4.html` | "Your cases" chart: a bar of all your claimed cases by phase, phase chips that filter the table, a role switch (preparer or reviewer) and "Waiting on you"; the contribution graph moved to the bottom; refunds removed |
+| Admin dashboard | `admin-dashboard-v2.html` | "Not claimed yet": aging tiles (over a week, 3–6 days, under 3 days), sorted by submission date or grouped by language, with Assign (volunteers who speak the language first); "Volunteers and their cases": pick a volunteer to see their cases by phase, with stalled cases flagged; no personal graph (the office activity graph is at the bottom) |
+| Case page tabs | `case-tabs.html`, `case-preparer-view-v3.html` | Review tab removed: Overview, Intake answers, Documents, Follow-up, History |
+| Add a case | `add-case-v6.html` | **Returning client search** (D2) at the top: search earlier seasons by name or phone (phones masked in results) and review the kept details. Each detail has a checkbox so you can leave out anything that changed. It also lists what to ask again (documents, income, filing status, bank account, best time). Filled sections get a "From last season · check" tag; months in the home, student and disability are asked again; old client numbers aren't reused. **Materials received** now uses the D9 checklist. |
+
+| Client intake steps 1–2 | `intake-step1-v2.html`, `intake-step2-v2.html` | **Standard wording is the default** (`intake-questions.md`). A "Senior version" switch in the top bar, and the new first question "Would you like to use the senior version of this form?", switch to the senior wording (`intake-questions-senior-v2.md`). Both versions use the same 113 field IDs, so switching keeps every answer. Step 2 adds **Best time to reach you** (weekday mornings, afternoons or evenings, weekends, any time, plus a note). The help card shows the office phone and email. |
+
+**Intake wording.** Standard wording is the default and senior wording is the switch. The English steps 3–9 still show senior wording, and the Chinese step 5 shows standard wording, so they need the same two-wording treatment when built. Both drafts now include `form_version` (Q0.1) and `best_contact_time` / `best_contact_note` (Q1.8–Q1.9).
+
+**Still to design:** steps 3–9 with both wordings (the pattern is set by steps 1–2).
+
 
 ### Straightforward implementation details (no decision needed)
 - Port the lavender tokens, accents and the near-black intake text rule into `src/styles.css` `:root`, keeping the variable names the CSS already uses where possible (`--ink`, `--blue` → primary, and so on).
@@ -142,7 +175,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 | Notifications, Post an update | none (the notice banner is transient) | — | New table and read acknowledgements |
 | People | `tools/admin/roster.mjs` (CLI roster), `people` rows with capabilities | Workspace roster, capabilities | Certification, languages, days, phone sharing, invite UI |
 | Season settings | none | — | Settings table; the deadline function (already written in the designs' JS) |
-| Dashboards and contribution graph | none | Case events exist (history) | Aggregation query; refunds (D8) |
+| Dashboards and contribution graph | none | Case events exist (history) | Aggregation query over case events (refunds dropped, D8) |
 
 ---
 
@@ -167,7 +200,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 - Logo asset, with the `server.mjs` allowlist updated.
 - New icons in `ui.mjs`.
 - A layout wrapper that can host the sidebar.
-- Decide D11 and D10.
+- Georgia headlines (D11); presenter controls stay (D10).
 
 **Phase 1 · Work board restyle (recommended first screen)**
 - Sidebar shell (with only destinations that exist) and hot-corner toggle.
@@ -189,19 +222,19 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 - The Follow-ups queue built from the existing queues and actions, with the "Log a call" drawer mapped to `RECORD_CONTACT` / `RESOLVE_FOLLOWUP`.
 
 **Phase 5 · Data-model features, per decision** (each needs a migration and tests)
-- Client numbers (D2)
+- Client numbers, restarting each season, plus the returning-client search in Add a case (D2)
 - Lifecycle stages (D1)
 - The new intake questions, with 9-step intake and "Add a case" (D3)
 - Labels, groups and pinned cases (D6)
 - Notifications with Post an update and acknowledgements
 - People (extending the roster) and Season settings
-- Best time and phone sharing (D9, D5)
+- Best time, the materials checklist, phone masking and the access rules (D9, D5)
 
 **Phase 6 · Insight and reach**
 - Dashboards and the contribution graph (D8)
 - Admin office overview
 - i18n with Chinese intake (D3)
-- Mobile intake (D12)
+- Mobile intake (after the MVP, D12)
 - Responsive volunteer and admin layouts
 
 **Phase 7 · Later**

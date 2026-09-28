@@ -346,3 +346,23 @@ One prioritized list of office tasks replacing the old stacked "Office work" sec
 
 ### Admin: People (2026-09-27)
 Summary tiles (ready for the season with a green bar, needs attention in amber and clickable as a filter, roles, language coverage), then the roster: person (avatar, name, email), role chips (Preparer lavender, Reviewer blue, Office admin amber), season readiness (certification level and Standards of Conduct, green check or amber warning), languages, usual days, phone Shared/Hidden, status (Active green, Invited yellow), Edit or Resend invite. Role pills, "Needs attention" and search filter the list. One right-side drawer handles invite and edit (name, email that grants sign-in, roles, certification, languages, usual days); it states that admins cannot reveal a hidden phone, and offers Deactivate (past work is kept) instead of delete.
+
+## 8. Phases, masked phones and access (2026-09-28)
+
+### Phases
+Boards and dashboards group the ~20 lifecycle stages into phases, each with one color (used for tab dots, stacked bars and chips; stage badges keep their family colors):
+Available `#a39bd8` · Waiting for preparation `#6a5acd` · Waiting on client `#b7791f` · Waiting for review `#0ea5e9` · Filing `#5fb37a` · Needs attention `#dc2626` · Done `#23703d` · Closed `#b9b4cc`.
+The volunteer work board shows only three phases as tabs (Available, Waiting for preparation, Waiting for review), with a Mine / Everyone switch on the last two. The admin case pool shows every phase.
+
+### Masked phone
+- Lists always show `(•••) •••-1234` in tabular numerals.
+- When the viewer may see the number (an admin, or a volunteer on their own case), a small lavender `visibility` icon follows; hover or keyboard focus swaps in the full number. There's no click-to-copy, so a shared screen never keeps a number on display.
+- When the viewer may not see it (a volunteer on an unclaimed or someone else's case), the mask is muted with a `lock` icon and the tooltip "Claim this case to see the full number".
+
+### Access
+- **Admins:** every case, every detail, documents included.
+- **Volunteers:** every detail of cases they claimed. On available cases they can read only the intake answers (an **Intake** link); no unmasked phone and no documents.
+- A preparer can never claim the review of a return they prepared.
+
+### Waiting and aging
+Days since submission: under 3 days muted, 3–6 days amber `#8a5a12`, 7 or more days red `#b42318` and bold. Aging bars use green `#5fb37a`, amber `#d69e2e` and red `#dc2626`. A case is "stalled" when it is still open with no update for 5 days.
