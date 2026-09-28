@@ -9,6 +9,7 @@
 |---|---|
 | Volunteer dashboard: your claimed cases by phase, waiting on you, contribution graph | [volunteer-dashboard-v4-full-page.png](screens/volunteer-dashboard-v4-full-page.png) |
 | Volunteer work board: Available, Waiting for preparation, Waiting for review; masked phones; claim | [staff-board-v7-full-page.png](screens/staff-board-v7-full-page.png) |
+| Implemented (part 1, PR 1): work board on today's stages, rendered from test fixtures | [implemented-staff-board.png](screens/implemented-staff-board.png) |
 | Admin case pool: every case, phase tabs, stage/language/service/location/people filters | [admin-work-board-full-page.png](screens/admin-work-board-full-page.png) |
 | Add a case: returning-client search, filled from last season, D9 materials checklist | [add-case-v6-full-page.png](screens/add-case-v6-full-page.png) · [review a match](screens/add-case-v6-returning-client.png) |
 | Case page, preparer view: next step, labels, contact card, household | [case-preparer-view-v3-full-page.png](screens/case-preparer-view-v3-full-page.png) |
