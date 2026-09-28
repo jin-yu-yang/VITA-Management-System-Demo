@@ -10,7 +10,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 |---|---|
 | Volunteer dashboard | `volunteer-dashboard-v4.html` |
 | Work board | `staff-board-v7.html` (volunteer) · `admin-work-board.html` (admin case pool) |
-| Add a case | `add-case-v5-lav.html` |
+| Add a case | `add-case-v6.html` |
 | Case page · reviewer / preparer / corrections dialog | `case-detail-v2-lav.html` · `case-preparer-view-v3.html` · `case-corrections-dialog-lav.html` |
 | Case page · all tabs (preparer, Client #093) | `case-tabs.html` |
 | Client intake, desktop | `intake-step{1,2,3}-lav.html`, `intake-step4-situation-lav.html`, `intake-step5-household-zh-v2-lav.html`, `intake-step6-income-lav.html`, `intake-step7-lav.html`, `intake-step8-fix-lav.html`, `intake-step9-fix-lav.html` |
@@ -112,8 +112,9 @@ The admin case pool shows every phase as a tab.
 | Volunteer dashboard | `volunteer-dashboard-v4.html` | "Your cases" chart: a bar of all your claimed cases by phase, phase chips that filter the table, a role switch (preparer or reviewer) and "Waiting on you"; the contribution graph moved to the bottom; refunds removed |
 | Admin dashboard | `admin-dashboard-v2.html` | "Not claimed yet": aging tiles (over a week, 3–6 days, under 3 days), sorted by submission date or grouped by language, with Assign (volunteers who speak the language first); "Volunteers and their cases": pick a volunteer to see their cases by phase, with stalled cases flagged; no personal graph (the office activity graph is at the bottom) |
 | Case page tabs | `case-tabs.html`, `case-preparer-view-v3.html` | Review tab removed: Overview, Intake answers, Documents, Follow-up, History |
+| Add a case | `add-case-v6.html` | **Returning client search** (D2) at the top: search earlier seasons by name or phone (phones masked in results) and review the kept details. Each detail has a checkbox so you can leave out anything that changed. It also lists what to ask again (documents, income, filing status, bank account, best time). Filled sections get a "From last season · check" tag; months in the home, student and disability are asked again; old client numbers aren't reused. **Materials received** now uses the D9 checklist. |
 
-**Still to design:** the returning-client search in Add a case (D2), the senior-version question (D3), the best-time question and the updated materials checklist (D9), and the office contact on client screens.
+**Still to design:** the senior-version question (D3), the best-time question (D9), and the office contact on client screens.
 
 ### Straightforward implementation details (no decision needed)
 - Port the lavender tokens, accents and the near-black intake text rule into `src/styles.css` `:root`, keeping the variable names the CSS already uses where possible (`--ink`, `--blue` → primary, and so on).

@@ -10,7 +10,7 @@
 | Volunteer dashboard: your claimed cases by phase, waiting on you, contribution graph | [volunteer-dashboard-v4-full-page.png](screens/volunteer-dashboard-v4-full-page.png) |
 | Volunteer work board: Available, Waiting for preparation, Waiting for review; masked phones; claim | [staff-board-v7-full-page.png](screens/staff-board-v7-full-page.png) |
 | Admin case pool: every case, phase tabs, stage/language/service/location/people filters | [admin-work-board-full-page.png](screens/admin-work-board-full-page.png) |
-| Add a case (volunteer drop-off intake, 9 sections) | [add-case-v5-lav-full-page.png](screens/add-case-v5-lav-full-page.png) |
+| Add a case: returning-client search, filled from last season, D9 materials checklist | [add-case-v6-full-page.png](screens/add-case-v6-full-page.png) · [review a match](screens/add-case-v6-returning-client.png) |
 | Case page, preparer view: next step, labels, contact card, household | [case-preparer-view-v3-full-page.png](screens/case-preparer-view-v3-full-page.png) |
 | Case page tabs: Intake answers, Documents, Follow-up, History | [case-tabs-overview.png](screens/case-tabs-overview.png) |
 | Request corrections dialog (reviewer) | [case-corrections-dialog-lav-full-page.png](screens/case-corrections-dialog-lav-full-page.png) |
