@@ -65,6 +65,16 @@ export function footer() {
   return `<footer class="site-footer"><span>ViTally · Philadelphia Chinatown Development Corporation (PCDC)</span><span>Course prototype · Tax year 2025 · No real taxpayer data</span></footer>`;
 }
 
+// The redesigned staff frame: a collapsible sidebar beside the page body, with
+// the toggle pinned to the top-left corner so it is always reachable. Nothing
+// passes a sidebar yet (Phase 0), and without one the body comes back exactly
+// as it went in, so no screen changes until it opts in.
+export function appShell({ sidebar = "", body = "", open = true } = {}) {
+  if (!sidebar) return body;
+  const label = open ? "Hide the sidebar" : "Show the sidebar";
+  return `<div class="app-shell${open ? "" : " sidebar-closed"}"><button type="button" class="sidebar-toggle" data-action="toggle-sidebar" aria-controls="app-sidebar" aria-expanded="${open}" aria-label="${label}" title="${label}">${icon("sidebar")}</button><aside id="app-sidebar" class="app-sidebar" aria-label="Workspace"${open ? "" : " hidden"}>${sidebar}</aside><div class="app-main">${body}</div></div>`;
+}
+
 export function page(state, body) {
   return `<a class="skip" href="#main">Skip to content</a>${header(state)}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }

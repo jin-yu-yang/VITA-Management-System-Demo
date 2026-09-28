@@ -58,6 +58,7 @@ test("the allowlisted browser files are served with their type", async () => {
       ["/src/auth.mjs", "text/javascript; charset=utf-8"],
       ["/src/supabase-store.mjs", "text/javascript; charset=utf-8"],
       ["/src/vendor/supabase.mjs", "text/javascript; charset=utf-8"],
+      ["/src/pcdc-logo.png", "image/png"],
       ["/public-config.json", "application/json; charset=utf-8"],
     ];
     for (const [path, type] of expected) {
