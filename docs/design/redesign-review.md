@@ -13,7 +13,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 | Add a case | `add-case-v6.html` |
 | Case page · reviewer / preparer / corrections dialog | `case-detail-v2-lav.html` · `case-preparer-view-v3.html` · `case-corrections-dialog-lav.html` |
 | Case page · all tabs (preparer, Client #093) | `case-tabs.html` |
-| Client intake, desktop | `intake-step{1,2,3}-lav.html`, `intake-step4-situation-lav.html`, `intake-step5-household-zh-v2-lav.html`, `intake-step6-income-lav.html`, `intake-step7-lav.html`, `intake-step8-fix-lav.html`, `intake-step9-fix-lav.html` |
+| Client intake, desktop | `intake-step1-v2.html`, `intake-step2-v2.html`, `intake-step3-lav.html`, `intake-step4-situation-lav.html`, `intake-step5-household-zh-v2-lav.html`, `intake-step6-income-lav.html`, `intake-step7-lav.html`, `intake-step8-fix-lav.html`, `intake-step9-fix-lav.html` |
 | Client intake, mobile (not in the MVP) | `intake-mobile-step1…9.html` |
 | Admin | `admin-dashboard-v2.html`, `admin-followups.html`, `admin-post-update.html`, `admin-season-settings.html`, `admin-people.html` |
 
@@ -114,7 +114,12 @@ The admin case pool shows every phase as a tab.
 | Case page tabs | `case-tabs.html`, `case-preparer-view-v3.html` | Review tab removed: Overview, Intake answers, Documents, Follow-up, History |
 | Add a case | `add-case-v6.html` | **Returning client search** (D2) at the top: search earlier seasons by name or phone (phones masked in results) and review the kept details. Each detail has a checkbox so you can leave out anything that changed. It also lists what to ask again (documents, income, filing status, bank account, best time). Filled sections get a "From last season · check" tag; months in the home, student and disability are asked again; old client numbers aren't reused. **Materials received** now uses the D9 checklist. |
 
-**Still to design:** the senior-version question (D3), the best-time question (D9), and the office contact on client screens.
+| Client intake steps 1–2 | `intake-step1-v2.html`, `intake-step2-v2.html` | **Standard wording is the default** (`intake-questions.md`). A "Senior version" switch in the top bar, and the new first question "Would you like to use the senior version of this form?", switch to the senior wording (`intake-questions-senior-v2.md`). Both versions use the same 113 field IDs, so switching keeps every answer. Step 2 adds **Best time to reach you** (weekday mornings, afternoons or evenings, weekends, any time, plus a note). The help card shows the office phone and email. |
+
+**Intake wording.** Standard wording is the default and senior wording is the switch. The English steps 3–9 still show senior wording, and the Chinese step 5 shows standard wording, so they need the same two-wording treatment when built. Both drafts now include `form_version` (Q0.1) and `best_contact_time` / `best_contact_note` (Q1.8–Q1.9).
+
+**Still to design:** steps 3–9 with both wordings (the pattern is set by steps 1–2).
+
 
 ### Straightforward implementation details (no decision needed)
 - Port the lavender tokens, accents and the near-black intake text rule into `src/styles.css` `:root`, keeping the variable names the CSS already uses where possible (`--ink`, `--blue` → primary, and so on).

@@ -14,6 +14,8 @@
 | Case page, preparer view: next step, labels, contact card, household | [case-preparer-view-v3-full-page.png](screens/case-preparer-view-v3-full-page.png) |
 | Case page tabs: Intake answers, Documents, Follow-up, History | [case-tabs-overview.png](screens/case-tabs-overview.png) |
 | Request corrections dialog (reviewer) | [case-corrections-dialog-lav-full-page.png](screens/case-corrections-dialog-lav-full-page.png) |
+| Client intake, desktop: step 1, standard wording with the senior-version question | [intake-step1-v2-general.png](screens/intake-step1-v2-general.png) |
+| Client intake, desktop: step 2, standard and senior wording, best time to reach | [standard](screens/intake-step2-v2-general.png) · [senior](screens/intake-step2-v2-senior.png) |
 | Client intake, desktop: step 4 (Who multi-select) | [intake-step4-situation-lav-full-page.png](screens/intake-step4-situation-lav-full-page.png) |
 | Client intake, desktop: step 5 in Simplified Chinese | [intake-step5-household-zh-v2-lav-full-page.png](screens/intake-step5-household-zh-v2-lav-full-page.png) |
 | Client intake, mobile (after the MVP): all 9 steps | [intake-mobile-all-steps.png](screens/intake-mobile-all-steps.png) |

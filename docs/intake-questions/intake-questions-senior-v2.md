@@ -44,6 +44,13 @@
 
 To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者有不当行为，请发邮件举报：ts.voltax@irs.gov
 
+**Q0.1** Do you want to use the senior version of this form? / 您想用长者版的表格吗？
+`form_version` · Single choice · Default `general`
+- `general`: No, use the standard version / 不用，用标准版
+- `senior`: Yes, use the senior version / 要，用长者版
+> Page text: The senior version asks the same questions. The explanations are shorter and the words are easier. You can change back any time with the "Senior version" switch at the top. Your answers will not be lost. / 长者版问的问题一样，只是说明更短、用词更简单。随时可以用页面最上面的"长者版"开关换回来，填好的内容不会丢。
+> Note for developers: both versions use the same field IDs; only the wording changes. The standard version is the default.
+
 ---
 
 ## Section 1: About You / 关于您
@@ -73,6 +80,17 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q1.7** What is your email? (You can skip this.) / 您的电子邮箱是什么？（可以不填）
 `email` · Email · Optional
+
+
+**Q1.8** When is a good time for us to call you? / 什么时候给您打电话比较方便？
+`best_contact_time` · Multi-select · Optional
+- `weekday_morning` Weekday mornings / 平时上午 · `weekday_afternoon` Weekday afternoons / 平时下午 · `weekday_evening` Weekday evenings / 平时晚上 · `weekend` Weekends / 周末 · `any_time` Any time is fine / 什么时候都行
+> Tip: Pick all the times that work for you. A volunteer may call you with a question. / 可以多选。志愿者可能会打电话问您问题。
+
+**Q1.9** Anything else we should know? (You can skip this.) / 还有什么要告诉我们的吗？（可以不填）
+`best_contact_note` · Text · Optional
+> Tip: For example: after 6 PM, or call my daughter. / 比如：晚上 6 点以后，或者打给我女儿。
+> Note for developers: not on the paper form (ViTally addition). The client, volunteers and admins can edit Q1.8–Q1.9.
 
 ---
 
