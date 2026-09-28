@@ -238,6 +238,25 @@ async function clickContinue(page) {
     .click({ timeout: CLICK_MS });
 }
 
+/**
+ * Wait until the intake form is on this step (1-based). The step names are no
+ * signal: the sidebar lists all four on every step, so "Your details" is on
+ * screen before the Continue that leads there has saved anything. The marker
+ * above the heading moves only after `saveAnswers` has resolved.
+ */
+async function waitForStep(page, step) {
+  await waitFor(
+    page,
+    `intake step ${step} of 4`,
+    (wanted) =>
+      (document.querySelector(".page-intro .overline")?.textContent ?? "").includes(
+        wanted,
+      ),
+    `STEP ${step} OF 4`,
+    ARRIVAL_MS,
+  );
+}
+
 /** Start one fictional application and read back the generated reference. */
 async function startApplication(page) {
   await clickAction(page, "start-application");
@@ -251,18 +270,9 @@ async function fillIntakeToReview(page) {
   await clickAction(page, "continue-intake");
   await waitForText(page, "Your visit", RENDER_MS);
   await clickAction(page, "fill-fictional");
-  for (let step = 0; step < 3; step += 1) {
+  for (let step = 2; step <= 4; step += 1) {
     await clickContinue(page);
-    await waitFor(
-      page,
-      `intake step ${step + 2} of 4`,
-      (wanted) =>
-        (document.querySelector(".page-intro .overline")?.textContent ?? "").includes(
-          wanted,
-        ),
-      `STEP ${step + 2} OF 4`,
-      ARRIVAL_MS,
-    );
+    await waitForStep(page, step);
   }
 }
 
@@ -961,7 +971,7 @@ async function runPermutation(t, roles) {
         .getByLabel("City of residence", { exact: true })
         .fill(OTHER_CITY);
       await clickContinue(draftWin.page);
-      await waitForText(draftWin.page, "Your details", ARRIVAL_MS);
+      await waitForStep(draftWin.page, 3);
 
       await waitForText(client, "Someone else changed this application");
       const conflict = await client.locator(".conflict-panel").innerText();
@@ -974,7 +984,7 @@ async function runPermutation(t, roles) {
         MINE_CITY,
       );
       await clickContinue(client);
-      await waitForText(client, "Your details", ARRIVAL_MS);
+      await waitForStep(client, 3);
       const saved = await caseById(fixture, draftCase.id);
       assert.equal(saved.answers.residenceCity, MINE_CITY);
       evidence.regressions.conflict = "REMOTE_CHANGED offered both answers; the chosen one saved";
@@ -1091,7 +1101,7 @@ async function runPermutation(t, roles) {
           "saved, signed out, signed back in, reopened from the list with the same answers";
         // Left on the step the reset phase reads a field from.
         await clickContinue(client);
-        await waitForText(client, "Your details", ARRIVAL_MS);
+        await waitForStep(client, 3);
       },
     );
 
