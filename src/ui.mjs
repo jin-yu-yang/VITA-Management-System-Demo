@@ -32,7 +32,32 @@ const paths = {
   print: "M6 8V2h12v6M6 17H2V8h20v9h-4M6 13h12v9H6Z",
   search: "M20 20l-4-4m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
   signout: "M10 21H4V3h6M16 8l4 4-4 4M20 12H9",
+  // Redesign shell and boards (docs/design/redesign-review.md, Phase 0)
+  sidebar: "M3 4h18v16H3ZM9 4v16M5 8h2M5 11h2",
+  dashboard: "M3 3h8v8H3ZM13 3h8v5h-8ZM13 10h8v11h-8ZM3 13h8v8H3Z",
+  board: "M3 4h18v16H3ZM3 9h18M3 14h18M9 9v11",
+  calendar: "M3 5h18v16H3ZM3 10h18M8 3v4M16 3v4",
+  message: "M4 4h16v12H9l-5 4V4Z",
+  bell: "M6 17V11a6 6 0 0 1 12 0v6l2 2H4l2-2ZM10 21h4",
+  settings:
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1",
+  label: "M3 12V3h9l9 9-9 9-9-9ZM7.5 7.5h.01",
+  pin: "M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6ZM12 14v7",
+  plus: "M12 5v14M5 12h14",
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  filter: "M4 6h16M7 12h10M10 18h4",
+  expand: "m6 9 6 6 6-6",
+  more: "M12 5h.01M12 12h.01M12 19h.01",
+  history: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2",
+  people:
+    "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-2c0-3 3-5 7-5s7 2 7 5v2M16 3a4 4 0 0 1 0 8M22 21v-2c0-2-1-4-4-5",
+  megaphone: "M3 10v4h4l8 5V5L7 10H3ZM18 9a4 4 0 0 1 0 6",
+  chart: "M3 3v18h18M7 15l4-4 3 3 6-7",
 };
+
+// Every name the icon table knows. A name that is not here falls back to the
+// file icon, which is right for data but wrong for a control.
+export const ICON_NAMES = Object.freeze(Object.keys(paths));
 export const icon = (name, cls = "") =>
   `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
 export const button = (text, action, kind = "primary", extra = "") =>

@@ -13,7 +13,7 @@ import path from "node:path";
 // would let `/src/vendor/../app.mjs` slip through as a tidy path; refusing
 // anything that is not literally one of these shapes cannot.
 const PAGE = "/index.html";
-const ASSET = /^\/src\/[a-z-]+\.(?:mjs|css|svg)$/;
+const ASSET = /^\/src\/[a-z-]+\.(?:mjs|css|svg|png)$/;
 const VENDOR = /^\/src\/vendor\/[a-z-]+\.mjs$/;
 const CONFIG = "/public-config.json";
 
@@ -22,6 +22,7 @@ const TYPES = {
   ".css": "text/css; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
 };
 const JSON_TYPE = "application/json; charset=utf-8";
 const DEFAULT_ROOT = path.dirname(fileURLToPath(import.meta.url));

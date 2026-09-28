@@ -11,6 +11,76 @@
   --serif: Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
+
+/* Redesign tokens (docs/design/DESIGN.md). Defined here first and adopted
+   screen by screen: nothing below reads them until a screen is restyled, so
+   adding them changes nothing on its own. */
+:root {
+  /* Brand and surfaces */
+  --vt-primary: #6a5acd;
+  --vt-primary-hover: #5646b5;
+  --vt-primary-soft: #efedfb;
+  --vt-primary-line: #d4cfe8;
+  --vt-background: #f8f7fd;
+  --vt-surface: #fff;
+  --vt-line: #e7e4f2;
+  --vt-ink: #2a2745;
+  --vt-muted: #6c6886;
+  /* Client intake text stays near-black */
+  --vt-intake-ink: #1b1b1f;
+  --vt-intake-hint: #5c5c66;
+  /* Accents */
+  --vt-you: #c53030;
+  --vt-badge: #dc2626;
+  --vt-progress: #2f8a4c;
+  --vt-office: #b7791f;
+  /* Stage families: background / text */
+  --vt-stage-intake-bg: #e6eefa;
+  --vt-stage-intake: #3a6690;
+  --vt-stage-prep-bg: #eeecf6;
+  --vt-stage-prep: #5b5776;
+  --vt-stage-filing-bg: #e3f3e8;
+  --vt-stage-filing: #23703d;
+  --vt-stage-amend-bg: #fdf1dc;
+  --vt-stage-amend: #8a5a12;
+  --vt-stage-stopped-bg: #fdecec;
+  --vt-stage-stopped: #b42318;
+  /* Phases (tab dots, stacked bars) */
+  --vt-phase-available: #a39bd8;
+  --vt-phase-preparation: #6a5acd;
+  --vt-phase-client: #b7791f;
+  --vt-phase-review: #0ea5e9;
+  --vt-phase-filing: #5fb37a;
+  --vt-phase-attention: #dc2626;
+  --vt-phase-done: #23703d;
+  --vt-phase-closed: #b9b4cc;
+  /* Labels: dot / background / text / border */
+  --vt-label-city-tax: #0ea5e9;
+  --vt-label-city-tax-bg: #e0f2fe;
+  --vt-label-city-tax-ink: #075985;
+  --vt-label-city-tax-line: #bae6fd;
+  --vt-label-multi-state: #f59e0b;
+  --vt-label-multi-state-bg: #fef3c7;
+  --vt-label-multi-state-ink: #92400e;
+  --vt-label-multi-state-line: #fde68a;
+  --vt-label-mfs: #ec4899;
+  --vt-label-mfs-bg: #fce7f3;
+  --vt-label-mfs-ink: #9d174d;
+  --vt-label-mfs-line: #fbcfe8;
+  /* Waiting time: under 3 days / 3–6 days / a week or more */
+  --vt-age-fresh: #5fb37a;
+  --vt-age-soon: #d69e2e;
+  --vt-age-late: #dc2626;
+  --vt-age-soon-ink: #8a5a12;
+  --vt-age-late-ink: #b42318;
+  /* Type and shape (Georgia headlines, decision D11) */
+  --vt-serif: var(--serif);
+  --vt-sans: var(--sans);
+  --vt-radius: 12px;
+  --vt-radius-sm: 8px;
+  --vt-sidebar-width: 260px;
+  --vt-tap: 44px;
+}
 * {
   box-sizing: border-box;
 }
@@ -3103,5 +3173,71 @@ textarea::placeholder {
 @media (max-width: 760px) {
   .staff-form .form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* The redesigned staff frame (appShell in views.mjs): a fixed-width sidebar
+   beside the page, and a toggle held in the top-left corner so it stays in
+   the same place whether the sidebar is open or closed. On narrow screens the
+   sidebar lays over the page instead of pushing it. */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--vt-sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--vt-background);
+  color: var(--vt-ink);
+}
+.app-shell.sidebar-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sidebar-toggle {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 40;
+  width: var(--vt-tap);
+  height: var(--vt-tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-surface);
+  color: var(--vt-muted);
+}
+.sidebar-toggle:hover {
+  color: var(--vt-primary);
+  border-color: var(--vt-primary-line);
+}
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 68px 12px 16px;
+  background: var(--vt-surface);
+  border-right: 1px solid var(--vt-line);
+}
+.app-main {
+  min-width: 0;
+  padding: 24px 32px;
+}
+.sidebar-closed .app-main {
+  padding-left: 76px;
+}
+@media (max-width: 800px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(var(--vt-sidebar-width), 85vw);
+    z-index: 30;
+    box-shadow: 0 12px 40px rgb(42 39 69 / 0.18);
+  }
+  .app-main,
+  .sidebar-closed .app-main {
+    padding: 72px 16px 24px;
   }
 }

@@ -194,12 +194,13 @@ The admin case pool shows every phase as a tab.
 - `data-action`, ids, roles and accessible names don't change.
 - Each phase is its own branch and PR.
 
-**Phase 0 · Foundations (no visible behavior change)**
-- Tokens in `styles.css`.
-- Logo asset, with the `server.mjs` allowlist updated.
-- New icons in `ui.mjs`.
-- A layout wrapper that can host the sidebar.
-- Georgia headlines (D11); presenter controls stay (D10).
+**Phase 0 · Foundations (no visible behavior change)** · done
+- Tokens in `styles.css`: a second `:root` block of `--vt-*` tokens (palette, accents, stage families, phases, labels, waiting-time colors, Georgia headlines, sidebar width, 44px tap size). No existing rule reads them yet; each screen adopts them when it is restyled.
+- Logo: `src/pcdc-logo.png` (the PCDC file, unchanged). The `server.mjs` allowlist now also serves `/src/*.png` as `image/png`.
+- Icons in `ui.mjs`: sidebar, dashboard, board, calendar, message, bell, settings, label, pin, plus, eye, filter, expand, more, history, people, megaphone, chart; `ICON_NAMES` lists them.
+- `appShell()` in `views.mjs` with its CSS: sidebar plus corner toggle (`data-action="toggle-sidebar"`, wired in Phase 1). Without a sidebar it returns the page unchanged.
+- D11 (Georgia) and D10 (presenter controls stay) need no code change.
+- Tests: `tests/shell.test.mjs`, plus the logo route in `tests/server.test.mjs`.
 
 **Phase 1 · Work board restyle (recommended first screen)**
 - Sidebar shell (with only destinations that exist) and hot-corner toggle.
