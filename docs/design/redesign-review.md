@@ -207,6 +207,8 @@ The admin case pool shows every phase as a tab.
 
 ## 7. Phased implementation plan (preserving existing functionality)
 
+> **Superseded.** The plan is now `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-restyle-design.md`: a roadmap of eight parts, with part 1 (the visual restyle) specified in full. The phases below are kept for reference.
+
 **Guardrails for every phase:**
 - `npm test`, `npm run test:database`, `npm run test:auth-browser` and `npm run test:browser` stay green.
 - `data-action`, ids, roles and accessible names don't change.
