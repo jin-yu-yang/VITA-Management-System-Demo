@@ -9,6 +9,8 @@ import {
   ANSWER_LABELS,
   relativeDay,
   nextTabIndex,
+  OFFICE_CONTACT,
+  officeContact,
 } from "../src/ui.mjs";
 import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 
@@ -376,4 +378,16 @@ test("arrow keys, Home and End move between tabs and wrap around", () => {
   assert.equal(nextTabIndex("End", 1, 5), 4);
   assert.equal(nextTabIndex("Enter", 1, 5), null);
   assert.equal(nextTabIndex("ArrowRight", 0, 0), null);
+});
+
+test("the office contact is the one real phone number and address, as links", () => {
+  assert.deepEqual({ ...OFFICE_CONTACT }, {
+    phone: "(215) 922-6156",
+    tel: "+12159226156",
+    email: "vita@chinatown-pcdc.org",
+  });
+  const html = officeContact();
+  assert.match(html, /<div class="office-contact">/);
+  assert.match(html, /<a href="tel:\+12159226156"[^>]*>[\s\S]*\(215\) 922-6156<\/a>/);
+  assert.match(html, /<a href="mailto:vita@chinatown-pcdc\.org"[^>]*>[\s\S]*vita@chinatown-pcdc\.org<\/a>/);
 });

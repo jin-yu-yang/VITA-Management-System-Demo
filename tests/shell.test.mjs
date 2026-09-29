@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, page } from "../src/views.mjs";
+import { appShell, staffSidebar, page, clientHeader, languageSwitch } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -55,11 +55,13 @@ test("the staff sidebar carries the logo, the one screen that exists, and the ac
   assert.match(staffSidebar({ screen: "staff" }, null, false), /No persona chosen/);
 });
 
-test("presenters get the sidebar instead of the site header; clients keep the header", () => {
+test("presenters get the sidebar; clients get the client top bar and shell", () => {
   const presenter = page({ principal: { access: "presenter" }, connection: "online" }, "<main></main>");
-  assert.doesNotMatch(presenter, /class="site-header"/);
-  const client = page({ principal: { access: "client" }, connection: "online" }, "<main></main>");
-  assert.match(client, /class="site-header"/);
+  assert.doesNotMatch(presenter, /class="client-bar"/);
+  assert.doesNotMatch(presenter, /class="client-shell"/);
+  const client = page({ principal: { access: "applicant" }, connection: "online", screen: "applications" }, "<main></main>");
+  assert.match(client, /<header class="client-bar">/);
+  assert.match(client, /<div class="client-shell"><main><\/main><\/div>/);
 });
 
 // A closed sidebar carries `hidden` (see the `open: false` case above); the
@@ -88,4 +90,36 @@ test("an inactive case tab is not displayed", () => {
 test("no legacy .case-tabs button selector styles the case tabs", () => {
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   assert.doesNotMatch(css, /\.case-tabs\s+button/);
+});
+
+test("the client top bar: logo home, language, help, save on intake, sign out", () => {
+  const signedIn = { principal: { access: "applicant" }, screen: "applications" };
+  const html = clientHeader(signedIn);
+  assert.match(html, /<button class="client-brand" data-action="open-applications" aria-label="ViTally home">/);
+  assert.match(html, /<img src="src\/pcdc-logo\.png" alt="PCDC"/);
+  assert.match(html, /data-action="open-help"/);
+  assert.match(html, /data-action="sign-out"[^>]*>[\s\S]*Sign out/);
+  assert.doesNotMatch(html, /data-action="save-exit"/, "Save & exit belongs to the intake only");
+  const intake = clientHeader({ ...signedIn, screen: "intake", savedCase: { stage: "draft" } });
+  assert.match(intake, /data-action="save-exit"[^>]*>Save &amp; exit/);
+  const submitted = clientHeader({ ...signedIn, screen: "intake", savedCase: { stage: "received" } });
+  assert.doesNotMatch(submitted, /data-action="save-exit"/);
+  const signedOut = clientHeader({ principal: null, screen: "access" });
+  assert.doesNotMatch(signedOut, /data-action="sign-out"/);
+});
+
+test("the language switch offers English and says Chinese is coming", () => {
+  const html = languageSwitch();
+  assert.match(html, /<div class="language-switch" role="group" aria-label="Language">/);
+  assert.match(html, /<button type="button" class="lang current" lang="en" aria-pressed="true">English<\/button>/);
+  assert.match(html, /lang="zh-Hans" disabled[^>]*>简体中文/);
+  assert.match(html, /lang="zh-Hant" disabled[^>]*>繁體中文/);
+  assert.match(html, /Chinese is coming soon\./);
+  assert.doesNotMatch(html, /data-action=/, "the switch does nothing yet");
+});
+
+test("the help dialog gives the office phone and email", () => {
+  const html = page({ principal: { access: "applicant" }, connection: "online", screen: "applications", dialog: "help" }, "<main></main>");
+  assert.match(html, /href="tel:\+12159226156"/);
+  assert.match(html, /href="mailto:vita@chinatown-pcdc\.org"/);
 });
