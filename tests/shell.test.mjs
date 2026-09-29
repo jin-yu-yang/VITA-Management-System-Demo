@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, page, clientHeader, languageSwitch } from "../src/views.mjs";
+import { appShell, staffSidebar, page, clientHeader, languageSwitch, dialog } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -148,4 +148,68 @@ test("the body behind the restyled frames uses the lavender background, not the 
     css,
     /body:has\(\.client-shell\),\s*body:has\(\.app-shell\)\s*\{\s*background:\s*var\(--vt-background\);/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The office drawers
+// ---------------------------------------------------------------------------
+
+const drawerSam = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup", "assist"] };
+const drawerCase = {
+  id: "c1",
+  reference: "VT-CALL",
+  stage: "preparing",
+  revision: 3,
+  answers: {},
+  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam", attempts: [] }],
+};
+const drawerState = (over = {}) => ({
+  principal: { access: "presenter" },
+  connection: "online",
+  screen: "staff",
+  people: [drawerSam],
+  selectedPersonId: drawerSam.id,
+  cases: [],
+  assistance: [],
+  ...over,
+});
+
+test("while a drawer is open, a refusal is announced once, by the drawer", () => {
+  const error = { code: "VALIDATION", message: "Refused." };
+  const open = page(
+    drawerState({ error, dialog: "log-call", dialogContext: { caseId: "c1" }, savedCase: drawerCase }),
+    "<main></main>",
+  );
+  assert.equal((open.match(/role="alert"/g) ?? []).length, 1);
+  assert.match(open, /role="alert" id="drawer-error"/);
+  assert.doesNotMatch(open, /problem-banner/);
+
+  const closed = page(drawerState({ error, dialog: null }), "<main></main>");
+  assert.equal((closed.match(/role="alert"/g) ?? []).length, 1);
+  assert.match(closed, /class="problem-banner" role="alert"/);
+});
+
+test("the drawer is the modal frame at the edge, and each dialog names its place", () => {
+  const drawer = dialog(
+    drawerState({ dialog: "log-call", dialogContext: { caseId: "c1" }, savedCase: drawerCase }),
+  );
+  assert.match(drawer, /class="modal office-drawer"/);
+  assert.match(drawer, /OFFICE FOLLOW-UP/);
+  assert.match(drawer, /Log a call/);
+  assert.match(drawer, /data-case-action="RECORD_CONTACT"/);
+
+  const help = dialog(
+    drawerState({
+      dialog: "resolve-help",
+      dialogContext: { itemId: "h1" },
+      assistance: [{ id: "h1", status: "assigned", assigneeId: "p-sam", title: "Letter", revision: 1 }],
+    }),
+  );
+  assert.match(help, /class="modal office-drawer"/);
+  assert.match(help, /Resolve a help request/);
+  assert.match(help, /data-assistance-action="RESOLVE" data-item-id="h1"/);
+
+  assert.match(dialog({ dialog: "reset-fixtures", cases: [] }), /PRESENTER CONTROLS/);
+  assert.match(dialog({ dialog: "help" }), /ViTally · HERE TO HELP/);
+  assert.doesNotMatch(dialog({ dialog: "help" }), /office-drawer/);
 });

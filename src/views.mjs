@@ -6,7 +6,11 @@ import {
   correctionsDialogBody,
 } from "./staff-views.mjs";
 import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
-import { renderFollowups } from "./office-views.mjs";
+import {
+  renderFollowups,
+  logCallDrawerBody,
+  resolveHelpDrawerBody,
+} from "./office-views.mjs";
 import {
   renderPresenterPanel,
   resetDialogBody,
@@ -62,6 +66,9 @@ function noticeBanner(state) {
   return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
+// The office's two drawers: the modal frame placed at the right edge.
+const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
+
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";
   // The staff workspace states a failure in place, beside the action that
@@ -69,6 +76,10 @@ function problemBanner(state) {
   // enough, and that one is the more useful of the two — but only when that
   // screen is really the one being rendered (see `staffScreen`).
   if (state.screen === "staff-case" && state.savedCase) return "";
+  // A drawer states its own failure, with the same two controls (see
+  // `drawerError`); a second alert behind an aria-modal dialog would be
+  // announced twice and could not be reached.
+  if (DRAWERS.includes(state.dialog)) return "";
   return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
@@ -261,6 +272,8 @@ function decorateAssistance(item, people = []) {
 // Dialogs
 // ---------------------------------------------------------------------------
 
+const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
+
 export function dialog(state) {
   if (!state.dialog) return "";
   let title = "";
@@ -290,9 +303,35 @@ export function dialog(state) {
     title = "Load a sample checkpoint";
     body = checkpointDialogBody(state);
   }
+  if (DRAWERS.includes(state.dialog)) {
+    const people = state.people ?? [];
+    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const ui = { busy: state.busy, error: state.error, retryable: state.retryable };
+    if (state.dialog === "log-call") {
+      title = "Log a call";
+      body = logCallDrawerBody({
+        record: decorateStaffCase(state.savedCase, people),
+        person,
+        ui,
+        caseId: state.dialogContext?.caseId,
+      });
+    } else {
+      title = "Resolve a help request";
+      const item = (state.assistance ?? []).find(
+        (entry) => entry?.id === state.dialogContext?.itemId,
+      );
+      body = resolveHelpDrawerBody({ item: decorateAssistance(item, people), person, ui });
+    }
+  }
   if (state.dialog === "print") {
     title = "Your application reference card";
     body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b><p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
   }
-  return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">ViTally · HERE TO HELP</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+  const drawer = DRAWERS.includes(state.dialog);
+  const overline = drawer
+    ? "OFFICE FOLLOW-UP"
+    : PRESENTER_DIALOGS.includes(state.dialog)
+      ? "PRESENTER CONTROLS"
+      : "ViTally · HERE TO HELP";
+  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
 }
