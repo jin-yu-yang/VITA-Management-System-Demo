@@ -259,6 +259,7 @@ New cases stay version 1.
   - **Making a version-2 case.** `update public.workspaces set default_intake_version=2 where id=$1` via `f.sql`, create a case, and set the default back to 1 in `finally`.
   - **Version.**
     - A new case in a default-1 workspace has `intake_version` 1, and a default-2 workspace gives 2.
+    - In a default-2 workspace, `vitally_create_case` with non-empty answers (`{ firstName: "Mei" }`) is refused `VALIDATION`, and with `{}` it succeeds.
     - `update public.cases set intake_version=…` is refused.
     - A sample reset with the default at 1 gives version-1 samples.
   - **Version 1 is unchanged.** One save and submit round trip with `makeSampleAnswers()` succeeds exactly as today.
@@ -270,7 +271,7 @@ New cases stay version 1.
     - A valid structured set is stored exactly, with `null` clearing a key.
     - **The size cap:** `select vitally_private.answers_within_limit($1::jsonb)` is true for a realistic full answer set and false for a 70,000-character object (`{"x": "<70000 chars>"}`).
     - `tp_phone` and `best_contact_time` in a save land in `case_contacts` (`phone`, `best_contact_time`) and are absent from `answers`.
-    - Phones are stored as 10 digits.
+    - Phones are stored as 10 digits. Saving `tp_phone: "(215) 555-0100"` succeeds and stores `2155550100`; `"555-0100"` is refused.
   - **Version-2 `SUBMIT`:**
     - An empty case is refused.
     - A complete case, built from the catalogue's required, visible questions, submits and gets a client number. Use a helper that fills every required, visible field with a valid value: single, no household, `inc_self_employed = yes`.
@@ -279,10 +280,13 @@ New cases stay version 1.
   - **Contacts visibility.**
     - Applicant A reads their own `case_contacts` row; applicant B reads none.
     - The presenter reads it once the case is submitted, or on an assisted case, but not on A's unsent draft (002's rule).
+  - **The database is never behind the browser.** In `tests/intake-build.test.mjs`, add: `nextCatalogueMigration(buildCatalogue(<real standard>, <real senior>), readdirSync("supabase/migrations"))` is `null`. That means the newest catalogue migration records the current catalogue's hash. Pass the migration files' texts as the function needs them. This test fails until Step 4 generates 012.
   - **Drift.** The `intake_fields` rows for version 2 equal the catalogue's fields: IDs, types, options, `required_to_submit`, `show_if`, `step`, `group_id`. Build the expected set from `src/intake-catalogue-data.mjs` in the test.
 - [ ] **Step 2: Run to confirm they fail.** Columns and functions are missing.
 - [ ] **Step 3: Write `011_intake_v2.sql`.** Keep it re-apply-safe.
   1. **Version columns** with their checks. A `before insert` trigger on `public.cases` sets `new.intake_version` from the workspace's default. A `before update` trigger raises `VALIDATION` if `intake_version` changes. Keep it separate from 010's `cases_client_number` trigger.
+     - **A version-2 case starts empty.** `vitally_create_case` (001, around line 221) checks creation-time answers against version 1's keys and inserts them, so a version-2 case could otherwise start holding unchecked version-1 answers. The same `before insert` trigger raises `VALIDATION` when the resolved `intake_version` is 2 and `new.answers` is not `'{}'::jsonb`. Version-2 answers arrive only through `SAVE_ANSWERS`.
+     - So 4b's version-2 samples and 4c's Add a case must create the case empty and then save, and 4b's seeder must insert samples with empty answers and then save. Note this in your report for those tasks.
   2. **`vitally_private.intake_fields`**, as in the interfaces above, with no grants.
   3. **`vitally_private.load_intake_catalogue(p_version smallint, p_catalogue jsonb)`:**
      - Delete that version's rows, then insert one row per question, and one per group sub-field.
@@ -291,7 +295,8 @@ New cases stay version 1.
      - `show_if` is the question's parsed list.
      - `sensitive` is `type = 'phone'`.
      - Raise `VALIDATION` if the JSON lacks `steps`.
-  4. **`vitally_private.check_intake_value(field, value)`** implements the Global Constraints types. It returns false on any mismatch. For `group` it checks the array length and, per member, every key against `intake_fields` rows with that `group_id`, and each value recursively.
+  4. **`vitally_private.check_intake_value(field, value)`** implements the Global Constraints types. It returns false on any mismatch.
+     - **For `phone`, it strips every non-digit first** (`regexp_replace(v, '\D', '', 'g')`) and then requires exactly 10 digits, the same as the browser's `checkValue`. So "(215) 555-0100" passes on both sides, and `act_save_answers` stores the stripped digits. For `group` it checks the array length and, per member, every key against `intake_fields` rows with that `group_id`, and each value recursively.
   5. **`vitally_private.intake_visible(p_version, p_field_id, p_answers, p_contact jsonb)`** evaluates `show_if` with the Task 2 semantics.
   6. **`public.case_contacts`** (spec §3.4, including `spouse_phone`):
      - It follows the Global Constraints table conventions: composite FK, RLS, grants, and the `visible_document_requests` policy copied with the name changed.
@@ -327,7 +332,7 @@ New cases stay version 1.
 
 **Files:**
 - Create: `supabase/migrations/013_contact_materials.sql`.
-- Modify: `src/supabase-store.mjs`, `src/contracts.mjs`, `src/case-actions.mjs`, `tests/database-intake.mjs`, `tests/store.test.mjs`, `tests/case-actions.test.mjs`, and any test pinning `CASE_ACTIONS` (`grep -rln CASE_ACTIONS tests/`).
+- Modify: `src/supabase-store.mjs`, `src/contracts.mjs`, `src/case-actions.mjs`, `src/staff-views.mjs` (`EVENT_SENTENCES`), `tests/database-intake.mjs`, `tests/staff-views.test.mjs`, `tests/store.test.mjs`, `tests/case-actions.test.mjs`, and any test pinning `CASE_ACTIONS` (`grep -rln CASE_ACTIONS tests/`).
 
 **Interfaces:**
 - **Produces:**
@@ -367,8 +372,9 @@ New cases stay version 1.
     - The staff and applicant case reads select the contact row; the staff read also selects materials, with explicit column lists in `CLIENT_COLUMNS` style.
     - The applicant adapter never names `case_materials`.
     - `SUBSCRIBED_TABLES`: add `case_contacts` to `CLIENT_TABLES` and `case_materials` to `STAFF_TABLES`. `tests/database-store.mjs` checks this against the publication.
-    - Update `tests/store.test.mjs`'s staff-only table list, so the applicant adapter never names `case_materials`, and its subscription expectations.
+    - Update `tests/store.test.mjs` deliberately: the applicant `SUBSCRIBED_TABLES` list (around line 827) gains `case_contacts`, the staff list gains both, and the staff-only table list gains `case_materials`, so the applicant adapter never names it. 007 warns that one unpublished table in a channel drops that channel's whole subscription, which is why the publication and this list must match.
   - `case-actions.mjs`: builders and payload rules for both actions, following `REMIND` / `RECORD_CONTACT`.
+  - `staff-views.mjs` `EVENT_SENTENCES` (around line 964): `UPDATE_CONTACT: "updated the best time to reach"` and `RECORD_MATERIALS: "recorded the materials received"`, with a unit test that `historySentence` reads each.
 - [ ] **Step 5: Run.** Apply with `npm run db:migrate:test`, then `node --env-file=.env.test --test tests/database-intake.mjs`, `npm test`, and `npm run test:database`. Expected: PASS.
 - [ ] **Step 6: Commit** ("Contacts and materials actions; map the new case data").
 

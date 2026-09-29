@@ -54,7 +54,7 @@ The build accepts exactly this. Anything else fails with the line number.
   | `longtext` | string | ≤ 5,000 characters |
   | `signature` | string | ≤ 200 characters |
   | `email` | string | ≤ 254 characters, one `@` |
-  | `phone` | string | 10 digits, formatting stripped |
+  | `phone` | string | 10 digits once every non-digit is stripped, on both browser and server; stored as the 10 digits |
   | `zip` | string | 5 digits |
   | `date` | string | `YYYY-MM-DD`, a real date |
   | `year` | string | 4 digits |
@@ -136,7 +136,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 ### 3.1 Versions
 - `cases.intake_version smallint not null default 1`, with `check (intake_version in (1, 2))`.
 - `workspaces.default_intake_version smallint not null default 1`, with `check (… in (1, 2))`.
-- A `before insert` trigger on `public.cases` sets `intake_version` from the workspace's default. That covers `vitally_create_case` and `seed_fixtures` without replacing either. A `before update` trigger refuses any change to it.
+- A `before insert` trigger on `public.cases` sets `intake_version` from the workspace's default. The same trigger refuses a version-2 case created with non-empty answers: `vitally_create_case` checks creation answers against version 1's keys, so version-2 answers arrive only through `SAVE_ANSWERS`, and 4b's samples and 4c's Add a case create empty and then save. That covers `vitally_create_case` and `seed_fixtures` without replacing either. A `before update` trigger refuses any change to it.
 - **Version-2 sample answers are 4b's.** In 4a the default stays 1, so no sample is ever version 2. 4b adds version-2 fixture answers when it switches the default.
 
 ### 3.2 `vitally_private.intake_fields`
