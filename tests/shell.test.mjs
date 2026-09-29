@@ -213,3 +213,29 @@ test("the drawer is the modal frame at the edge, and each dialog names its place
   assert.match(dialog({ dialog: "help" }), /ViTally · HERE TO HELP/);
   assert.doesNotMatch(dialog({ dialog: "help" }), /office-drawer/);
 });
+
+// PR 4 (the office screens) styles its new containers in one marked block of
+// the stylesheet, on the design tokens only.
+const stylesheet = () =>
+  readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+
+test("the office drawer is the modal frame placed at the right edge", () => {
+  const css = stylesheet();
+  assert.match(css, /\.modal\.office-drawer\s*\{/);
+  assert.match(css, /\.modal-backdrop:has\(\.office-drawer\)\s*\{[^}]*justify-content:\s*flex-end/);
+});
+
+test("the shared dialog notes read the tokens, so the help dialog's note is legible", () => {
+  const css = stylesheet();
+  assert.match(css, /\.modal \.info-note p\s*\{[^}]*color:\s*var\(--vt-/);
+});
+
+test("the office block of the stylesheet uses tokens, not hex colors", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* PR 4: office screens */");
+  const end = css.indexOf("/* end PR 4 */");
+  assert.ok(start >= 0 && end > start, "the PR 4 block is marked");
+  const block = css.slice(start, end);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+});

@@ -2882,23 +2882,6 @@ textarea::placeholder {
   flex-wrap: wrap;
   gap: 6px;
 }
-.board-list {
-  display: grid;
-  gap: 14px;
-}
-.board-row {
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 15px 16px;
-  background: var(--paper);
-}
-.board-row-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin-bottom: 11px;
-}
 .board-reference {
   background: none;
   border: 0;
@@ -3370,13 +3353,6 @@ textarea::placeholder {
   gap: 6px;
   margin: 14px 0 0;
 }
-/* The office board's count line (src/admin-views.mjs). Task 6 only restyled
-   the volunteer board; this serves the office board until PR 4. */
-.board-counts {
-  font-size: 13px;
-  color: var(--vt-muted);
-  margin: 0 0 14px;
-}
 
 /* ---- The case page (restyle PR 2) ---- */
 .staff-header {
@@ -3692,3 +3668,470 @@ textarea::placeholder {
     padding: 10px 16px;
   }
 }
+
+/* PR 4: office screens */
+/* Everything below is scoped to the office's own containers (Follow-ups,
+   the drawer, Add a case, the case pool) or to the shared modal notes, and
+   reads the --vt-* tokens only. */
+
+/* ---- The page header's actions (Add a case) ---- */
+.page-intro:has(> .page-actions) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+}
+.page-intro:has(> .page-actions) > * {
+  grid-column: 1;
+}
+.page-intro:has(> .page-actions) > .page-actions {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+}
+.page-intro .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+@media (max-width: 800px) {
+  .page-intro:has(> .page-actions) > .page-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: 16px;
+  }
+}
+
+/* ---- Follow-ups: the office queue ---- */
+.office-queue,
+.case-pool {
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.office-queue .section-head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-bottom: 16px;
+}
+.office-queue .section-head > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.office-queue .section-head h2 {
+  font-size: 17px;
+  letter-spacing: 0;
+}
+.office-queue .muted,
+.office-queue .staff-reason,
+.office-queue .board-note,
+.case-pool .board-note {
+  color: var(--vt-muted);
+}
+.office-queue .board-filters {
+  border-bottom-color: var(--vt-line);
+}
+.office-queue .board-filters:has(+ .board-filters) {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 10px;
+}
+.office-queue .filter-group,
+.case-pool .filter-group {
+  flex-wrap: wrap;
+}
+/* A count inside a selected (dark) chip keeps its own light pill. */
+.office-queue .btn.chip .tab-count,
+.case-pool .btn.chip .count {
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+  font-size: 12px;
+}
+.office-queue .queue-table td,
+.office-queue .queue-table tbody th {
+  vertical-align: top;
+  padding: 12px 10px;
+}
+.office-queue .queue-table thead th {
+  padding: 10px;
+  white-space: normal;
+}
+.office-queue .queue-table td {
+  white-space: normal;
+}
+.office-queue .queue-table tbody th .board-reference {
+  display: flex;
+  width: max-content;
+  margin-bottom: 6px;
+}
+.office-queue .queue-needed {
+  min-width: 200px;
+  max-width: 340px;
+}
+.office-queue .queue-needed small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+.office-queue .queue-waiting {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.office-queue .queue-waiting.aging {
+  color: var(--vt-stage-amend);
+}
+.office-queue .queue-waiting.late {
+  color: var(--vt-stage-stopped);
+}
+.office-queue .queue-action {
+  text-align: right;
+  white-space: nowrap;
+}
+.office-queue .queue-action .btn {
+  min-height: 36px;
+  padding: 6px 12px;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.office-queue .queue-action .btn .icon {
+  width: 16px;
+  height: 16px;
+}
+.office-queue .queue-action .staff-reason {
+  margin: 0 0 0 auto;
+  max-width: 240px;
+  text-align: left;
+  white-space: normal;
+}
+
+/* The task kind: an icon and words, each on its own soft pair. */
+.kind-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.kind-pill .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.kind-pill.intake {
+  background: var(--vt-stage-intake-bg);
+  color: var(--vt-stage-intake);
+}
+.kind-pill.call {
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+}
+.kind-pill.help {
+  background: var(--vt-primary-soft);
+  color: var(--vt-primary-hover);
+}
+.kind-pill.unclaimed {
+  background: var(--vt-background);
+  border-color: var(--vt-line);
+  color: var(--vt-muted);
+}
+
+/* ---- The office drawer: the modal frame at the right edge ---- */
+.modal-backdrop:has(.office-drawer) {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+.modal.office-drawer {
+  max-width: 480px;
+  height: 100vh;
+  max-height: 100vh;
+  border-radius: var(--vt-radius) 0 0 var(--vt-radius);
+  border-right: 0;
+  overflow-y: auto;
+  padding: 32px 28px;
+}
+.office-drawer h2 {
+  font-size: 28px;
+}
+.office-drawer .drawer-case {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.office-drawer .drawer-case .btn.text {
+  margin-left: auto;
+}
+.office-drawer .drawer-task {
+  border-top: 1px solid var(--vt-line);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+.office-drawer .drawer-task h3 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+.office-drawer .detail-row > span,
+.office-drawer h4,
+.office-drawer .field-note,
+.office-drawer .muted,
+.office-drawer .staff-reason,
+.office-drawer .attempt-list small {
+  color: var(--vt-muted);
+}
+.office-drawer .staff-form,
+.office-drawer .attempt-list {
+  border-color: var(--vt-line);
+}
+.office-drawer .notice.amber {
+  background: var(--vt-stage-amend-bg);
+  border: 1px solid var(--vt-stage-amend);
+  color: var(--vt-stage-amend);
+  margin: 16px 0;
+}
+.office-drawer .notice.amber h3,
+.office-drawer .notice.amber p {
+  color: var(--vt-stage-amend);
+}
+
+/* ---- Add a case ---- */
+/* Only renderAddCase emits the pill, so the class is its own scope. */
+.fiction-pill {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 2px 6px 2px 12px;
+  border: 1px dashed var(--vt-primary-line);
+  border-radius: 999px;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+  font-size: 13px;
+  margin: 0 0 20px;
+}
+.fiction-pill > .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--vt-primary);
+}
+.fiction-pill .btn.text {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--vt-primary-hover);
+  text-decoration: underline;
+}
+.add-case-form.staff-form {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.add-case-form .add-case-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+.add-case-form .add-case-section {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+/* The legend sits inside the card, not across its border. */
+.add-case-form .add-case-section legend {
+  float: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin: 0 0 18px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.add-case-form .add-case-section legend + * {
+  clear: both;
+}
+.add-case-form .section-num {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--vt-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.add-case-form .add-case-section .form-grid {
+  gap: 16px 18px;
+  margin-bottom: 0;
+}
+.add-case-form .add-case-section .field {
+  margin-bottom: 0;
+}
+.add-case-form .field > span {
+  color: var(--vt-ink);
+}
+.add-case-form .field-note,
+.add-case-form .detail-row > span {
+  color: var(--vt-muted);
+}
+.add-case-form .add-case-side {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 16px;
+}
+.add-case-form .add-case-side .panel {
+  padding: 18px 20px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.add-case-form .add-case-side h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
+  margin-bottom: 8px;
+}
+.add-case-form .add-case-side p {
+  font-size: 14px;
+  color: var(--vt-ink);
+  margin: 0;
+}
+.add-case-form .add-case-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 4px;
+  padding: 14px 22px;
+  background: var(--vt-surface);
+  border-top: 1px solid var(--vt-line);
+  box-shadow: 0 -6px 20px rgb(42 39 69 / 0.06);
+}
+.add-case-form .add-case-bar .field-note {
+  flex: 1 1 240px;
+  margin: 0;
+  text-align: right;
+}
+.add-case-form .add-case-bar .btn.primary {
+  margin: 0;
+}
+@media (max-width: 1024px) {
+  .add-case-form .add-case-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .add-case-form .add-case-side {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .add-case-form .add-case-section {
+    padding: 18px 16px;
+  }
+  .add-case-form .add-case-bar {
+    padding: 12px 16px;
+  }
+  .add-case-form .add-case-bar .field-note {
+    text-align: left;
+  }
+}
+
+/* ---- The case pool ---- */
+.case-pool h2 {
+  font-size: 17px;
+  letter-spacing: 0;
+  margin-bottom: 14px;
+}
+.case-pool > .filter-group {
+  margin-bottom: 16px;
+}
+.case-pool .pool-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.case-pool .pool-filter {
+  flex: 1 1 160px;
+  min-width: 0;
+  margin: 0;
+}
+.case-pool .pool-filter > span {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--vt-muted);
+}
+.case-pool .pool-filter select {
+  height: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--vt-ink);
+}
+.case-pool .pool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--vt-muted);
+  margin: 0 0 12px;
+}
+.case-pool .pool-summary .field-note {
+  margin: 0;
+  color: var(--vt-muted);
+}
+.case-pool .pool-phase {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+.case-pool .pool-table td,
+.case-pool .pool-table tbody th {
+  vertical-align: top;
+}
+
+/* ---- Every dialog's notes (presenter, help, sample data) ---- */
+.modal .info-note {
+  background: var(--vt-primary-soft);
+  border-color: var(--vt-line);
+  color: var(--vt-muted);
+}
+.modal .info-note > .icon {
+  color: var(--vt-primary);
+  flex: none;
+}
+.modal .info-note p {
+  color: var(--vt-muted);
+}
+.modal .info-note strong {
+  color: var(--vt-ink);
+}
+/* end PR 4 */
