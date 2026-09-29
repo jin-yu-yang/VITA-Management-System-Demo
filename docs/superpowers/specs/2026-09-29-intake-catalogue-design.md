@@ -70,7 +70,23 @@ The build accepts exactly this. Anything else fails with the line number.
   - `field = value`, `field ≠ value`, `field is filled`;
   - joined by `AND`;
   - `field` may name any question in the catalogue, and `value` must be one of its options.
+- **Every question states Required or Optional.** The flag goes on the ID line, and for a question with a show-if rule, Required means required when shown. There is no default.
 - **Rewriting today's drafts.** 4a rewrites the drafts once, in both files, wherever they use another form. Known cases are "Dropdown / Text", "Who (multi-select)", "Single choice: …" with the options inline, "Yes (是) / No (否) / Prefer not to answer (不愿回答)", "Date (MM/DD/YYYY)", "Date (auto-fill today)", "Text (5 digits)", "Text (e-signature)" and "Multi-select (same options as Q12.5)". The wording doesn't change, only the type line and options.
+- **Required or optional, decided with the group on 2026-09-29.** 4a writes the flag into every question in both drafts:
+  - **Optional:**
+    - `tp_middle_name`, `email`, `best_contact_time`, `best_contact_note`, `addr_apt`, `sp_middle_name`, `sp_phone` and `additional_notes`;
+    - every question in Section 12 (statistics only);
+    - the Form 15080 consent and its signature and date fields (Section 14, which the draft calls optional);
+    - `inc_wages_job_count`, `refund_method_other`, `inc_other_desc`, `evt_other_desc`, `irs_language`, and `language_other` (below).
+  - **Required when shown:** everything else. Questions offering "I'm not sure" or "No one" can always be answered, so requiring them never blocks a client who doesn't know.
+- **Questions added to Section 0 of both drafts.** The work board, office queue and case pool filter and display `answers.service` and `answers.language`, so version 2 keeps both, under the same field IDs as version 1:
+  - **Q0.2** `service` · choice · Required: `same_day` Same-day / 当天办理, `drop_off` Drop-off / 送件办理, `online` Online / 线上办理.
+  - **Q0.3** `language` · choice · Required: `english` English / 英语, `cantonese` Cantonese / 粤语, `mandarin` Mandarin / 普通话, `other` Other / 其他.
+  - **Q0.4** `language_other` · text · Optional · Show if `language = other`.
+  - These are not the IRS-letter language questions (`irs_language_pref`, `irs_language`), which stay as drafted.
+  - The group should review the Chinese wording of Q0.2–Q0.4, which is new rather than taken from the drafts. The senior draft uses the same wording until the group writes a simpler one.
+  - **Values are stored lowercase** (`drop_off`), while version 1 stores labels ("Drop-off"). Wherever the boards group or display a case's service or language, they use a shared label lookup, so both versions read "Drop-off" and filter together. 4a adds the lookup (`serviceLabel(value)`, `languageLabel(value)` in `src/intake/catalogue.mjs`) and switches the board, queue and pool to it, with no visible change for version-1 cases.
+- **The standard or senior choice** is the answer `form_version` (Q0.1): `general` or `senior`, stored in the case's answers like any other answer, and Optional because it defaults to `general`. 4b's switch at the top of the form saves it through `SAVE_ANSWERS`. Staff see which wording the client last used through the answer views (4c).
 
 ### 2.3 Steps
 
@@ -94,7 +110,11 @@ Section 0's page text becomes step 1's intro. Every other section heading become
 
 `node tools/build-intake-catalogue.mjs` writes:
 - **`src/intake/catalogue.json`:** `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
-- **`supabase/catalogue/intake-v2.sql`:** statements loading `vitally_private.intake_fields` (§3.2) for version 2. A migration includes it (§3.5).
+- **A catalogue migration, only when the catalogue changed.** The build hashes the catalogue (SHA-256 of the canonical JSON) and reads the hash recorded in the newest `supabase/migrations/NNN_intake_catalogue_<hash8>.sql`.
+  - If the hashes differ, or no catalogue migration exists, it writes the next-numbered migration, `NNN_intake_catalogue_<hash8>.sql`. That file holds a `-- catalogue-hash: <full hash>` line and one statement, `select vitally_private.load_intake_catalogue(2, '<catalogue json>'::jsonb);`.
+  - If they match, it writes nothing.
+  - An existing migration is never rewritten. A wording change later makes a new migration, and the migrator applies it after the earlier ones.
+- There is no separate SQL copy of the catalogue. The browser reads `catalogue.json`, and the database reads the newest catalogue migration.
 
 ### 2.5 Reading it in the browser
 
@@ -142,7 +162,11 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - No client role may insert, update or delete it directly. Only the action RPCs write it.
 - `UPDATE_CONTACT` (case action):
   - Payload `{ bestContactTime?, bestContactNote? }`, each checked by its field's type.
-  - Allowed for the case's owner while the case is a draft, and for staff personas who may act on the case (the same eligibility as the office's follow-up work). A volunteer may do it on a case they prepare or review.
+  - Allowed for:
+    - the case's owner (the client), while the case is a draft;
+    - office staff (a persona with the `followup` or `admin` capability), on any case;
+    - a volunteer, only on a case they are preparing or reviewing (`preparer_id` or `reviewer_id` is them).
+  - Refused for anyone else, including a volunteer on an unclaimed (available) case. This fits D5: volunteers see only intake answers on available cases, with no contact details.
   - It never changes either phone. Phones are edited only through the form (`SAVE_ANSWERS`), per D9 (best time only).
   - It is recorded in history as "updated the best time to reach".
 
@@ -156,8 +180,9 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - It is recorded in history as "recorded the materials received".
 
 ### 3.6 Loading the catalogue
-- `011_intake_v2.sql` includes the generated `supabase/catalogue/intake-v2.sql` inline. The build writes it into a marked region of the migration.
-- A later wording or question change ships as a new migration that reloads `intake_fields` for version 2. A committed migration's text is never edited once applied.
+- `011_intake_v2.sql` holds only the schema and `vitally_private.load_intake_catalogue(p_version smallint, p_catalogue jsonb)`. That function replaces every `intake_fields` row for `p_version` with the fields in `p_catalogue`, in one transaction, and refuses a catalogue that fails its own shape checks.
+- 011 contains no questions. The first build writes `012_intake_catalogue_<hash8>.sql`.
+- Loading never changes an existing case's answers. A field removed from the catalogue stays in old answers and is simply not accepted in new saves.
 
 ## 4. Browser side
 - `src/intake/catalogue.json` and `src/intake/catalogue.mjs` (§2.4–2.5).
@@ -171,7 +196,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 ## 5. Testing and acceptance
 
 **Unit:**
-- A fresh build equals the committed `catalogue.json` and `intake-v2.sql`.
+- A fresh build equals the committed `catalogue.json`, and its hash equals the hash recorded in the newest `NNN_intake_catalogue_*.sql`, so the database is never behind the browser.
 - The two drafts have equal IDs, types, options, required flags and show-if rules.
 - Every show-if condition names a real field and option.
 - Every step has at least one question, and every section maps to exactly one step.
@@ -179,6 +204,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - `isVisible` works with `=`, `≠`, "is filled" and `AND`.
 - `missingToSubmit` works on an empty set, a complete set, and a set where a hidden required field is skipped.
 - The store maps `intakeVersion`, `contact` and `materials`.
+- `serviceLabel` and `languageLabel` give the same label for version 1's stored labels and version 2's values, and the board, queue and pool filters group both versions together.
 - The pinned store shapes are updated deliberately.
 
 **Database:**
@@ -201,6 +227,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - The owner after submission is refused.
   - A staff persona who may act is allowed.
   - Another applicant is refused.
+  - A volunteer on an unclaimed case is refused, and on a case they prepare is allowed.
   - Neither phone can be changed through it.
 - **`RECORD_MATERIALS`:** staff only, the item list is enforced, and the full set replaces the old one.
 - **Visibility:** an applicant sees their own contact row and never materials. Staff see both.
