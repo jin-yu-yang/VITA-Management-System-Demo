@@ -1,17 +1,5 @@
-:root {
-  --ink: #213d45;
-  --muted: #738087;
-  --blue: #214d59;
-  --teal: #326858;
-  --line: #e1e7e4;
-  --canvas: #f8faf8;
-  --serif: Georgia, "Times New Roman", serif;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-}
-
-/* Redesign tokens (docs/design/DESIGN.md). Defined here first and adopted
-   screen by screen: nothing below reads them until a screen is restyled, so
-   adding them changes nothing on its own. */
+/* Design tokens (docs/design/DESIGN.md). Every color and font in this
+   stylesheet reads one of these. */
 :root {
   /* Brand and surfaces */
   --vt-primary: #6a5acd;
@@ -72,8 +60,8 @@
   --vt-age-soon-ink: #8a5a12;
   --vt-age-late-ink: #b42318;
   /* Type and shape (Georgia headlines, decision D11) */
-  --vt-serif: var(--serif);
-  --vt-sans: var(--sans);
+  --vt-serif: Georgia, "Times New Roman", serif;
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   --vt-radius: 12px;
   --vt-radius-sm: 8px;
   --vt-sidebar-width: 260px;
@@ -84,9 +72,9 @@
 }
 body {
   margin: 0;
-  font-family: var(--sans);
-  color: var(--ink);
-  background: var(--canvas);
+  font-family: var(--vt-sans);
+  color: var(--vt-ink);
+  background: var(--vt-background);
   font-size: 16px;
   line-height: 1.5;
 }
@@ -161,7 +149,7 @@ small,
   font-size: 13px;
 }
 .muted {
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .block {
   display: block;
@@ -299,7 +287,7 @@ small,
   background: #6d9578;
 }
 .hero h1 {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 66px;
   font-weight: 400;
   line-height: 1.09;
@@ -499,7 +487,7 @@ small,
 }
 .panel {
   background: white;
-  border: 1px solid var(--line);
+  border: 1px solid var(--vt-line);
   border-radius: 13px;
   box-shadow: 0 2px 8px #29453603;
 }
@@ -524,7 +512,7 @@ textarea {
   padding: 13px 14px;
   border: 1px solid var(--vt-primary-line);
   border-radius: 7px;
-  color: var(--ink);
+  color: var(--vt-ink);
   background: #fff;
   font-size: 16px;
   min-height: var(--vt-tap);
@@ -650,7 +638,7 @@ textarea::placeholder {
 }
 .intake-sidebar h2,
 .volunteer-sidebar h2 {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 29px;
   font-weight: 400;
   line-height: 1.3;
@@ -1030,7 +1018,7 @@ textarea::placeholder {
 .checkbox-row input {
   height: 17px;
   width: 17px;
-  accent-color: var(--blue);
+  accent-color: var(--vt-primary);
   flex-shrink: 0;
 }
 .checkbox-row + .field-note {
@@ -1064,7 +1052,7 @@ textarea::placeholder {
   margin-bottom: 35px;
 }
 .dashboard-intro h1 {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 45px;
   font-weight: 400;
 }
@@ -1355,7 +1343,7 @@ textarea::placeholder {
   margin-bottom: 20px;
 }
 .help-card h3 {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 25px;
   font-weight: 400;
   margin-bottom: 9px;
@@ -1643,7 +1631,7 @@ textarea::placeholder {
   box-shadow: 0 22px 80px #152c3230;
 }
 .modal h2 {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 32px;
   font-weight: 400;
   line-height: 1.25;
@@ -2435,7 +2423,7 @@ textarea::placeholder {
   cursor: default;
 }
 .application-reference {
-  font-family: var(--serif);
+  font-family: var(--vt-serif);
   font-size: 16px;
   letter-spacing: 0.4px;
 }
@@ -2554,8 +2542,8 @@ textarea::placeholder {
    workspace and sample set is on the projector. */
 .presenter-panel {
   margin-bottom: 20px;
-  border-color: var(--teal);
-  box-shadow: inset 0 2px 0 var(--teal);
+  border-color: var(--vt-primary);
+  box-shadow: inset 0 2px 0 var(--vt-primary);
 }
 .presenter-panel .section-head h2 {
   display: inline-flex;
@@ -2564,7 +2552,7 @@ textarea::placeholder {
 }
 .presenter-panel .connection-line {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--vt-muted);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2591,15 +2579,15 @@ textarea::placeholder {
 .persona-row .btn small {
   display: block;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .persona-row .btn.selected {
-  border-color: var(--teal);
-  box-shadow: inset 0 0 0 1px var(--teal);
+  border-color: var(--vt-primary);
+  box-shadow: inset 0 0 0 1px var(--vt-primary);
 }
 .setup-panel pre {
   background: #f2f5f2;
-  border: 1px solid var(--line);
+  border: 1px solid var(--vt-line);
   border-radius: 7px;
   padding: 13px 15px;
   overflow-x: auto;
@@ -2642,7 +2630,7 @@ textarea::placeholder {
   flex-wrap: wrap;
   gap: 8px 18px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--vt-line);
   margin-bottom: 18px;
 }
 .filter-group {
@@ -2657,7 +2645,7 @@ textarea::placeholder {
   font: inherit;
   font-weight: 600;
   letter-spacing: 0.4px;
-  color: var(--blue);
+  color: var(--vt-primary);
   cursor: pointer;
   text-decoration: underline;
   display: inline-flex;
@@ -2680,7 +2668,7 @@ textarea::placeholder {
   gap: 7px;
   margin: 10px 0 0;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .staff-reason .icon {
   width: 15px;
@@ -2693,8 +2681,8 @@ textarea::placeholder {
   color: var(--vt-muted);
 }
 .request-card {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--blue);
+  border: 1px solid var(--vt-line);
+  border-left: 3px solid var(--vt-primary);
   border-radius: 8px;
   padding: 14px 15px;
   margin-bottom: 14px;
@@ -2720,27 +2708,27 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .document-list small,
 .attempt-list small {
   display: block;
-  color: var(--muted);
+  color: var(--vt-muted);
   font-size: 12px;
 }
 .followup-list > li,
 .review-attempt {
-  border: 1px solid var(--line);
+  border: 1px solid var(--vt-line);
   border-radius: 8px;
   padding: 12px 14px;
 }
 .attempt-list {
   margin: 8px 0 0;
   padding-left: 14px;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--vt-line);
 }
 .staff-form {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--vt-line);
   padding-top: 15px;
   margin-top: 15px;
 }
@@ -2778,7 +2766,7 @@ textarea::placeholder {
   font-size: 13px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 /* Two forms on one task: the attempt and the resolution are separate steps, so
    they are separated on screen as well as in the wording. */
@@ -2896,10 +2884,10 @@ textarea::placeholder {
 }
 
 .btn.chip {
-  padding: 5px 12px;
+  padding: 4px 14px;
   border-radius: 999px;
   font-size: 13px;
-  min-height: 32px;
+  min-height: var(--vt-tap);
   background: var(--vt-surface);
   border: 1px solid var(--vt-line);
   color: var(--vt-ink);
@@ -3491,13 +3479,6 @@ textarea::placeholder {
 .office-queue .filter-group,
 .case-pool .filter-group {
   flex-wrap: wrap;
-}
-/* The office's filter chips are staff controls: the 44px minimum, with the
-   base chip's padding so they stay pills rather than buttons. */
-.office-queue .btn.chip,
-.case-pool .btn.chip {
-  min-height: var(--vt-tap);
-  padding: 4px 14px;
 }
 /* A count inside a selected (dark) chip keeps its own light pill. */
 .office-queue .btn.chip .tab-count,
