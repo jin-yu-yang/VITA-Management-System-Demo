@@ -276,6 +276,7 @@ export function staffScreen(state) {
             filters: state.boardFilters,
             busy: state.busy,
             searchDraft: state.boardSearchDraft,
+            currentSeason: state.workspace?.currentSeason ?? null,
           }),
         );
   })();

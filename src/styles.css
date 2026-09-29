@@ -3925,3 +3925,24 @@ textarea::placeholder {
   height: 16px;
 }
 /* end PR 4 */
+
+/* Part 2: client numbers */
+.client-number {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--vt-ink);
+}
+.client-number.none {
+  font-weight: 400;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+.case-client-number {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-muted);
+}
+/* end part 2 */

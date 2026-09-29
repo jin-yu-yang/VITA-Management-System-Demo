@@ -441,3 +441,15 @@ test("Add a case's side card names who creates it", () => {
   assert.match(html, /Application ID<\/span><strong>Assigned when the case is created/);
   assert.match(html, /Created by<\/span><strong>Sam</);
 });
+
+test("a queue row and the Log a call drawer show the client number", () => {
+  const html = page([kase({ id: "n", reference: "VT-NUM", clientNumber: 93, season: 2025 })]);
+  assert.match(rowOf(html, "n"), /<span class="client-number">#093<\/span><button class="board-reference"/);
+  const drawer = logCallDrawerBody({
+    record: { ...called([task()]), clientNumber: 93, season: 2025 },
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(drawer, /#093 · VT-CALL <span class="badge/);
+});

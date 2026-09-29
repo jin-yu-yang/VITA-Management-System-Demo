@@ -157,3 +157,9 @@ test("references and languages are escaped, and the footnote says what is not sh
   assert.match(html, /class="board-table pool-table"/);
   assert.match(html, /This pool shows workflow only: no taxpayer names, no addresses and no document contents\./);
 });
+
+test("the pool's first column is the client number, before the reference", () => {
+  const html = render({}, [rec("N", "received", { clientNumber: 93, season: 2025 })]);
+  assert.match(html, /<th scope="col">Client<\/th>/);
+  assert.match(html, /<span class="client-number">#093<\/span><button class="board-reference"/);
+});
