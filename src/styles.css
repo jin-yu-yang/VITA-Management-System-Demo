@@ -3795,7 +3795,7 @@ textarea::placeholder {
   white-space: nowrap;
 }
 .office-queue .queue-action .btn {
-  min-height: 36px;
+  min-height: var(--vt-tap);
   padding: 6px 12px;
   gap: 6px;
   font-size: 13px;
@@ -3929,7 +3929,8 @@ textarea::placeholder {
   color: var(--vt-primary);
 }
 .fiction-pill .btn.text {
-  min-height: 32px;
+  min-height: var(--vt-tap);
+  margin: -6px 0;
   padding: 4px 8px;
   font-size: 13px;
   color: var(--vt-primary-hover);
@@ -4032,6 +4033,12 @@ textarea::placeholder {
   background: var(--vt-surface);
   border-top: 1px solid var(--vt-line);
   box-shadow: 0 -6px 20px rgb(42 39 69 / 0.06);
+}
+/* The bar sits under the sections column only, clear of the side cards. */
+@media (min-width: 1025px) {
+  .add-case-form .add-case-bar {
+    margin-right: calc(300px + 24px);
+  }
 }
 .add-case-form .add-case-bar .field-note {
   flex: 1 1 240px;

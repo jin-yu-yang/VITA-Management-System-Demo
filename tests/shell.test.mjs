@@ -239,3 +239,7 @@ test("the office block of the stylesheet uses tokens, not hex colors", () => {
   const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
   assert.deepEqual(hexes, []);
 });
+
+test("the queue's row actions keep the 44px staff control minimum", () => {
+  assert.match(stylesheet(), /\.office-queue \.queue-action \.btn\s*\{[^}]*min-height:\s*var\(--vt-tap\)/);
+});
