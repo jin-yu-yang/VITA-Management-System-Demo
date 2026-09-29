@@ -1022,12 +1022,17 @@ textarea::placeholder {
   background: var(--vt-surface);
 }
 .question legend {
+  float: left;
+  width: 100%;
   font-size: 16px;
   line-height: 1.6;
   font-weight: 550;
-  margin-bottom: 13px;
+  margin: 0 0 12px;
   padding: 0;
   color: var(--vt-intake-ink);
+}
+.question > .radio-row {
+  clear: both;
 }
 .radio-row {
   display: flex;
@@ -3601,7 +3606,8 @@ textarea::placeholder {
   color: var(--vt-intake-ink);
   font-weight: 600;
   text-decoration: none;
-  word-break: break-all;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 .office-contact a:hover {
   color: var(--vt-primary);

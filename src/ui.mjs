@@ -169,7 +169,7 @@ export const OFFICE_CONTACT = Object.freeze({
 });
 
 export const officeContact = () =>
-  `<div class="office-contact"><a href="tel:${OFFICE_CONTACT.tel}">${icon("phone")} ${OFFICE_CONTACT.phone}</a><a href="mailto:${OFFICE_CONTACT.email}">${icon("mail")} ${OFFICE_CONTACT.email}</a></div>`;
+  `<div class="office-contact"><a href="tel:${OFFICE_CONTACT.tel}">${icon("phone")} ${OFFICE_CONTACT.phone}</a><a href="mailto:${OFFICE_CONTACT.email}">${icon("mail")} ${OFFICE_CONTACT.email.replace("@", "@<wbr>")}</a></div>`;
 
 export const radio = (
   label,

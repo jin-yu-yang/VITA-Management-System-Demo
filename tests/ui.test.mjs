@@ -389,5 +389,5 @@ test("the office contact is the one real phone number and address, as links", ()
   const html = officeContact();
   assert.match(html, /<div class="office-contact">/);
   assert.match(html, /<a href="tel:\+12159226156"[^>]*>[\s\S]*\(215\) 922-6156<\/a>/);
-  assert.match(html, /<a href="mailto:vita@chinatown-pcdc\.org"[^>]*>[\s\S]*vita@chinatown-pcdc\.org<\/a>/);
+  assert.match(html, /<a href="mailto:vita@chinatown-pcdc\.org"[^>]*>[\s\S]*vita@(?:<wbr>)?chinatown-pcdc\.org<\/a>/);
 });
