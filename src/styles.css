@@ -2772,6 +2772,8 @@ textarea::placeholder {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+.client-shell .conflict-choices {
   margin-bottom: 16px;
 }
 /* The presenter's own panel: their controls, their persona, and which class
