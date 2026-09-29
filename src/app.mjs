@@ -64,7 +64,19 @@ if (!config) {
 
   let toastTimer = null;
   let cooldownTimer = null;
+  // Where the keyboard was when a dialog opened (a `describeFocus` record), so
+  // closing it returns to that very control — the row's own Log a call button,
+  // not the first one on the page.
   let focusBeforeDialog = null;
+  // The dialog the last render drew. Only a dialog that has just opened takes
+  // the keyboard; a re-render of one already open (its own busy state, the
+  // re-read after an action, another window's change) leaves the caret where
+  // the person is typing.
+  let shownDialog = null;
+  // A control inside the open dialog that its own action disabled while it was
+  // in flight: the keyboard goes back to it once the action lands, rather than
+  // being left on the dialog container.
+  let heldInDialog = null;
   let quiet = false;
   let sampleSeed = 0;
   // What is half-typed into a staff form, by field id. A re-render can arrive
@@ -96,7 +108,11 @@ if (!config) {
     root.innerHTML = views.page(state, screenFor(state));
     restoreFormDrafts();
     tickCooldown(state);
-    if (state.dialog)
+    const opened = Boolean(state.dialog) && state.dialog !== shownDialog;
+    shownDialog = state.dialog ?? null;
+    const held = heldInDialog;
+    heldInDialog = null;
+    if (opened)
       requestAnimationFrame(() => {
         const modal = root.querySelector(".modal");
         if (!modal) return;
@@ -107,7 +123,19 @@ if (!config) {
           modal,
         )?.focus();
       });
-    else if (focus) {
+    else if (state.dialog) {
+      // Already open: put the keyboard back where it was, looked up inside the
+      // dialog only — the drawer's "Open the case" has a twin in the queue
+      // behind it. If that control is gone or disabled, the dialog itself
+      // keeps the keyboard, so it never falls out behind an aria-modal.
+      const modal = root.querySelector(".modal");
+      const scope = modal ?? root;
+      const wanted = keyboard ?? held;
+      if (!(wanted && restoreField(wanted, scope))) {
+        modal?.focus();
+        if (wanted && findField(wanted, scope)?.disabled) heldInDialog = wanted;
+      }
+    } else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
@@ -138,22 +166,29 @@ if (!config) {
   // The id decides which field that is: a page can hold several fields with the
   // same name — one `reason` box per open document request — and the name alone
   // would put the cursor in the first of them.
-  function restoreField(focus) {
-    let field = null;
+  function findField(focus, scope = root) {
     // Most specific first; a button that carries only what it does is found by
     // that, which is what keeps the keyboard on it across a shared update.
     for (const selector of focusSelectors(focus)) {
-      field = root.querySelector(selector);
-      if (field) break;
+      const field = scope.querySelector(selector);
+      if (field) return field;
     }
-    if (!field) return;
+    return null;
+  }
+
+  // Answers whether the keyboard really landed (a disabled button refuses it).
+  function restoreField(focus, scope = root) {
+    const field = findField(focus, scope);
+    if (!field) return false;
     field.focus();
-    if (focus.caret === null || !("setSelectionRange" in field)) return;
+    const landed = document.activeElement === field;
+    if (focus.caret === null || !("setSelectionRange" in field)) return landed;
     try {
       field.setSelectionRange(focus.caret, focus.caret);
     } catch {
       // Some input types refuse a selection range; the focus is what matters.
     }
+    return landed;
   }
 
   // The countdown is the only thing on the page that changes by itself, so it
@@ -247,18 +282,29 @@ if (!config) {
     refreshOfficeDraft();
   }
 
-  function openDialog(name) {
-    focusBeforeDialog = document.activeElement?.dataset?.action ?? null;
-    controller.openDialog(name);
+  // `opener` is passed when the control was described before an await (the
+  // Log a call button, captured before its case is loaded); otherwise it is
+  // whatever holds the keyboard now.
+  function openDialog(name, context = null, opener = null) {
+    const active = document.activeElement;
+    focusBeforeDialog = opener ?? (active?.closest?.("#app") ? describeFocus(active) : null);
+    controller.openDialog(name, context);
   }
 
+  // Back to the very control that opened the dialog — matched on its row
+  // (`data-case-id`, `data-item-id`) as well as what it does — or, when that
+  // row has gone, to the fallback. A drawer's row can go while it is open
+  // (another window resolved the task), so a drawer always has one: the queue.
   function closeDialog(fallbackFocusSelector) {
+    const fallback =
+      fallbackFocusSelector ??
+      (["log-call", "resolve-help"].includes(controller.getState().dialog)
+        ? "#office-queue-title"
+        : null);
     controller.closeDialog();
-    const opener = focusBeforeDialog
-      ? root.querySelector(`[data-action="${focusBeforeDialog}"]`)
-      : null;
+    const opener = findField(focusBeforeDialog);
     if (opener) opener.focus();
-    else if (fallbackFocusSelector) root.querySelector(fallbackFocusSelector)?.focus();
+    else if (fallback) root.querySelector(fallback)?.focus();
     focusBeforeDialog = null;
   }
 
@@ -420,6 +466,10 @@ if (!config) {
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
+    // Resolving the task finishes the drawer's work; recording an attempt does
+    // not, and the new attempt shows in it because the action re-read the case.
+    if (type === "RESOLVE_FOLLOWUP" && receipt && controller.getState().dialog === "log-call")
+      closeDialog("#office-queue-title");
     if (type === "SUBMIT") {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
@@ -472,6 +522,8 @@ if (!config) {
       note,
     );
     clearFormDrafts(form);
+    if (sent && type === "RESOLVE" && controller.getState().dialog === "resolve-help")
+      closeDialog("#office-queue-title");
     if (sent) notify(ASSISTANCE_NOTICES[type]);
   }
 
@@ -494,6 +546,11 @@ if (!config) {
       case "open-case":
         // Another case is another set of forms; nothing half-typed follows it.
         formDrafts.clear();
+        // From inside a drawer: the drawer must not stay open over the case.
+        if (state.dialog) {
+          focusBeforeDialog = null;
+          controller.closeDialog();
+        }
         await controller.selectCase(target.dataset.caseId);
         break;
       case "open-board":
@@ -513,6 +570,22 @@ if (!config) {
         break;
       case "open-close-case":
         openDialog("close-case");
+        break;
+      case "open-log-call": {
+        // Described before the await: by the time the case has loaded, the
+        // page has been rebuilt and the keyboard may be anywhere.
+        const opener = describeFocus(target);
+        const caseId = target.dataset.caseId;
+        controller.dismissError();
+        // A queue row carries no follow-up tasks, so the case is read in place.
+        await controller.selectCase(caseId, { navigate: false });
+        if (controller.getState().savedCase?.id === caseId)
+          openDialog("log-call", { caseId }, opener);
+        break;
+      }
+      case "open-resolve-help":
+        controller.dismissError();
+        openDialog("resolve-help", { itemId: target.dataset.itemId }, describeFocus(target));
         break;
       case "open-request-corrections":
         // Clear any earlier refusal so the dialog only ever shows the error
@@ -795,7 +868,7 @@ if (!config) {
     if (event.key !== "Tab") return;
     const focusable = [
       ...document.querySelectorAll(
-        ".modal button:not([disabled]),.modal input,.modal textarea,.modal a[href]",
+        '.modal button:not([disabled]),.modal input:not([type="hidden"]),.modal select,.modal textarea,.modal a[href]',
       ),
     ];
     if (!focusable.length) return;
