@@ -54,6 +54,7 @@
 - Colors come from the `--vt-*` tokens. Add no new hex values in rules this plan writes; white `#fff` is allowed.
 - Client controls are at least `var(--vt-tap)` (44px), except inline text links.
 - Intake and client text use `--vt-intake-ink` (#1b1b1f), and hints use `--vt-intake-hint`.
+- Don't add a blanket `.client-shell small` (or similar element-wide) color rule. It ties on specificity with rules like `.action-card small`, and whichever comes later wins, so a later rule would recolor small text on the amber action card and the dark reference card. Recolor small text component by component instead.
 - Any rule that gives an element with a `hidden` attribute a `display` must be paired with `[hidden] { display: none; }`. That was PR 1's bug.
 - Only fictional data. The logo is the unchanged `src/pcdc-logo.png`, referenced by the relative path `src/pcdc-logo.png`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -354,9 +355,9 @@ Expected: FAIL.
   - **Keep `.brand-dot`.** The staff sidebar wordmark and the client wordmark both use it.
   - **Check first** that each class is gone from the markup:
     ```bash
-    grep -rn 'class="[^"]*\b\(site-header\|brand\|brand-mark\|season\|who\|header-divider\)\b' src/*.mjs
+    grep -rnoE 'class="[^"]*"' src/*.mjs | grep -E '(^|[ "])(site-header|brand|brand-mark|season|who|header-divider)([ "]|$)'
     ```
-    Expected: no hits, except `brand-dot`.
+    Expected: no hits. `brand-dot`, `client-brand` and `sidebar-brand` are different classes and must stay.
 
 - [ ] **Step 4: Append the client frame block** at the end of `src/styles.css`:
 
@@ -400,7 +401,7 @@ Expected: FAIL.
   background: var(--vt-background);
 }
 .language-switch .lang {
-  min-height: 38px;
+  min-height: var(--vt-tap);
   padding: 4px 12px;
   border: 0;
   border-radius: 6px;
@@ -422,8 +423,7 @@ Expected: FAIL.
   background: var(--vt-background);
 }
 .client-shell .field-note,
-.client-shell .page-intro p,
-.client-shell small {
+.client-shell .page-intro p {
   color: var(--vt-intake-hint);
 }
 .office-contact {
@@ -490,7 +490,9 @@ Expected: FAIL.
   - **Screenshots:** take them at 1440×900, 1024×800 and 390×844 with Puppeteer, from `/private/tmp/claude-501/-Users-jinyuyang-VITA-Management-System-Demo/7080c849-06b7-44fd-86dd-2744fba82067/scratchpad/capture/node_modules` with `executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"`.
   - **Check each page:**
     - `document.documentElement.scrollWidth === innerWidth`
-    - every `button`, `a[href]`, `input:not([type=checkbox]):not([type=radio])` and `select` in `.client-shell` and `.client-bar` has a `getBoundingClientRect().height` of at least 44, except inline text links inside paragraphs; list any that aren't
+    - every `button`, `a[href]`, `input:not([type=checkbox]):not([type=radio])` and `select` in `.client-shell` and `.client-bar` has a `getBoundingClientRect().height` of at least 44. List any that aren't. Two kinds are exempt:
+      - inline text links, meaning `a` elements inside a paragraph, and `.btn.inline` controls such as "Edit visit" and "Resend code". These are a shared style, so don't enlarge them here.
+      - disabled controls.
     - the computed `color` of `.page-intro h1` and of a `.question legend` is `rgb(27, 27, 31)`
   - **Compare** against the design references and the "before" captures. Fix gaps within this task's scope, and list the rest.
 
