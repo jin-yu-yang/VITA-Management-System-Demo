@@ -3492,6 +3492,13 @@ textarea::placeholder {
 .case-pool .filter-group {
   flex-wrap: wrap;
 }
+/* The office's filter chips are staff controls: the 44px minimum, with the
+   base chip's padding so they stay pills rather than buttons. */
+.office-queue .btn.chip,
+.case-pool .btn.chip {
+  min-height: var(--vt-tap);
+  padding: 4px 14px;
+}
 /* A count inside a selected (dark) chip keeps its own light pill. */
 .office-queue .btn.chip .tab-count,
 .case-pool .btn.chip .count {
@@ -3605,7 +3612,9 @@ textarea::placeholder {
 .modal.office-drawer {
   max-width: 480px;
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   border-radius: var(--vt-radius) 0 0 var(--vt-radius);
   border-right: 0;
   overflow-y: auto;

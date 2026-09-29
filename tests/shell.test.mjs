@@ -243,3 +243,21 @@ test("the office block of the stylesheet uses tokens, not hex colors", () => {
 test("the queue's row actions keep the 44px staff control minimum", () => {
   assert.match(stylesheet(), /\.office-queue \.queue-action \.btn\s*\{[^}]*min-height:\s*var\(--vt-tap\)/);
 });
+
+test("the queue's and the pool's filter chips keep the 44px staff minimum, the base chip stays", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* PR 4: office screens */");
+  const end = css.indexOf("/* end PR 4 */");
+  const block = css.slice(start, end);
+  assert.match(
+    block,
+    /\.office-queue \.btn\.chip,\s*\.case-pool \.btn\.chip\s*\{[^}]*min-height:\s*var\(--vt-tap\)/,
+  );
+  assert.match(css, /\n\.btn\.chip\s*\{[^}]*min-height:\s*32px/);
+});
+
+test("the office drawer fills the dynamic viewport, with 100vh as the fallback", () => {
+  const rule = stylesheet().match(/\.modal\.office-drawer\s*\{([^}]*)\}/)[1];
+  assert.match(rule, /height:\s*100vh;\s*height:\s*100dvh;/);
+  assert.match(rule, /max-height:\s*100vh;\s*max-height:\s*100dvh;/);
+});
