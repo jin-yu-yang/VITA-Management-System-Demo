@@ -11,6 +11,9 @@ import {
   nextTabIndex,
   OFFICE_CONTACT,
   officeContact,
+  formatClientNumber,
+  clientNumberLabel,
+  clientNumberTag,
 } from "../src/ui.mjs";
 import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 
@@ -390,4 +393,27 @@ test("the office contact is the one real phone number and address, as links", ()
   assert.match(html, /<div class="office-contact">/);
   assert.match(html, /<a href="tel:\+12159226156"[^>]*>[\s\S]*\(215\) 922-6156<\/a>/);
   assert.match(html, /<a href="mailto:vita@chinatown-pcdc\.org"[^>]*>[\s\S]*vita@(?:<wbr>)?chinatown-pcdc\.org<\/a>/);
+});
+
+test("client numbers read as #, padded to three digits", () => {
+  assert.equal(formatClientNumber(93), "#093");
+  assert.equal(formatClientNumber(1), "#001");
+  assert.equal(formatClientNumber(101), "#101");
+  assert.equal(formatClientNumber(1000), "#1000");
+  assert.equal(formatClientNumber(null), null);
+  assert.equal(formatClientNumber(undefined), null);
+});
+
+test("a case without a number says why", () => {
+  assert.equal(clientNumberLabel({ clientNumber: 93, stage: "received" }), "#093");
+  assert.equal(clientNumberLabel({ clientNumber: null, stage: "draft" }), "No number yet");
+  assert.equal(clientNumberLabel({ clientNumber: null, stage: "closed" }), "Never sent");
+  assert.equal(
+    clientNumberTag({ clientNumber: 93, stage: "received" }),
+    '<span class="client-number">#093</span>',
+  );
+  assert.equal(
+    clientNumberTag({ clientNumber: null, stage: "closed" }),
+    '<span class="client-number none">Never sent</span>',
+  );
 });
