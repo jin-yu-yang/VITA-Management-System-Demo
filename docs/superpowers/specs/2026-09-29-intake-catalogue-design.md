@@ -87,7 +87,7 @@ The build accepts exactly this. Anything else fails with the line number.
   - **Q0.4** `language_other` · text · Optional · Show if `language = other`.
   - These are not the IRS-letter language questions (`irs_language_pref`, `irs_language`), which stay as drafted.
   - The group should review the Chinese wording of Q0.2–Q0.4, which is new rather than taken from the drafts. The senior draft uses the same wording until the group writes a simpler one.
-  - **Values are stored lowercase** (`drop_off`), while version 1 stores labels ("Drop-off"). Wherever the boards group or display a case's service or language, they use a shared label lookup, so both versions read "Drop-off" and filter together. 4a adds the lookup (`serviceLabel(value)`, `languageLabel(value)` in `src/intake/catalogue.mjs`) and switches the board, queue and pool to it, with no visible change for version-1 cases.
+  - **Values are stored lowercase** (`drop_off`), while version 1 stores labels ("Drop-off"). Wherever the boards group or display a case's service or language, they use a shared label lookup, so both versions read "Drop-off" and filter together. 4a adds the lookup (`serviceLabel(value)`, `languageLabel(value)` in `src/intake-catalogue.mjs`) and switches the board, queue and pool to it, with no visible change for version-1 cases.
 - **The standard or senior choice** is the answer `form_version` (Q0.1): `general` or `senior`, stored in the case's answers like any other answer, and Optional because it defaults to `general`. 4b's switch at the top of the form saves it through `SAVE_ANSWERS`. Staff see which wording the client last used through the answer views (4c).
 
 ### 2.3 Steps
@@ -111,16 +111,16 @@ Section 0's page text becomes step 1's intro. Every other section heading become
 ### 2.4 The build and its outputs
 
 `node tools/build-intake-catalogue.mjs` writes:
-- **`src/intake/catalogue.json`:** `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
+- **`src/intake-catalogue-data.mjs`:** a generated module, `export default` the catalogue: `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
 - **A catalogue migration, only when the catalogue changed.** The build hashes the catalogue (SHA-256 of the canonical JSON) and reads the hash recorded in the newest `supabase/migrations/NNN_intake_catalogue_<hash8>.sql`.
   - If the hashes differ, or no catalogue migration exists, it writes the next-numbered migration, `NNN_intake_catalogue_<hash8>.sql`. That file holds a `-- catalogue-hash: <full hash>` line and one statement, `select vitally_private.load_intake_catalogue(2, '<catalogue json>'::jsonb);`.
   - If they match, it writes nothing.
   - An existing migration is never rewritten. A wording change later makes a new migration, and the migrator applies it after the earlier ones.
-- There is no separate SQL copy of the catalogue. The browser reads `catalogue.json`, and the database reads the newest catalogue migration.
+- There is no separate SQL copy of the catalogue. The browser reads `intake-catalogue-data.mjs`, and the database reads the newest catalogue migration.
 
 ### 2.5 Reading it in the browser
 
-`src/intake/catalogue.mjs`:
+`src/intake-catalogue.mjs`:
 - `stepsFor(version)` and `questionsFor(version, step)`.
 - `wording(question, { variant, lang })`, where `variant` is `"general"` or `"senior"` and `lang` is `"en"` or `"zh"`.
 - `isVisible(question, answers)`.
@@ -155,7 +155,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - The contact fields (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`) are not stored in `answers`. They go to `case_contacts` (§3.4), in the same transaction. Both phones are there, so part 5 masks phones in one place.
 - **`SUBMIT` on a version-2 case:** refused (`VALIDATION`) only if a `required_to_submit` field whose show-if holds is unanswered, counting the contact fields from `case_contacts`. Otherwise the case moves to `received` as today, and 010's trigger numbers it.
 - **No screening in version 2.** The intake never turns a client away, including clients with self-employment income. A volunteer decides after reviewing the case, and tells the client in person if the site can't help. Version 1 keeps today's screening (`screening()` and `act_submit`'s checks) for its existing cases. A later part may add labels or highlights, such as "self-employment", to help volunteers choose which cases to claim; that is not in part 4.
-- The browser's `missingToSubmit` and `checkValue` implement the same rules from `catalogue.json`. The two are kept equal by the drift test (§5).
+- The browser's `missingToSubmit` and `checkValue` implement the same rules from `intake-catalogue-data.mjs`. The two are kept equal by the drift test (§5).
 
 ### 3.4 `public.case_contacts`
 - Columns: `(workspace_id, case_id primary key references cases on delete cascade, phone text, spouse_phone text, best_contact_time text[], best_contact_note text, updated_at)`.
@@ -186,7 +186,8 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - Loading never changes an existing case's answers. A field removed from the catalogue stays in old answers and is simply not accepted in new saves.
 
 ## 4. Browser side
-- `src/intake/catalogue.json` and `src/intake/catalogue.mjs` (§2.4–2.5).
+- **Why flat file names and a JS module rather than JSON:** the local server (`server.mjs`) serves only `/src/<name>.(mjs|css|svg|png)`, with no subfolders and no `.json`, as a deliberate allowlist. So the catalogue ships as a generated `.mjs` beside the other modules, and the allowlist stays as it is.
+- `src/intake-catalogue-data.mjs` and `src/intake-catalogue.mjs` (§2.4–2.5).
 - **Store mapping:**
   - `cases.intake_version` → `intakeVersion`.
   - The `case_contacts` row → `contact: { phone, spousePhone, bestContactTime, bestContactNote }`, on staff reads and on the applicant's own case.
@@ -197,7 +198,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 ## 5. Testing and acceptance
 
 **Unit:**
-- A fresh build equals the committed `catalogue.json`, and its hash equals the hash recorded in the newest `NNN_intake_catalogue_*.sql`, so the database is never behind the browser.
+- A fresh build equals the committed `intake-catalogue-data.mjs`, and its hash equals the hash recorded in the newest `NNN_intake_catalogue_*.sql`, so the database is never behind the browser.
 - The two drafts have equal IDs, types, options, required flags and show-if rules.
 - Every show-if condition names a real field and option.
 - Every step has at least one question, and every section maps to exactly one step.
@@ -236,7 +237,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - `default_intake_version` decides a new case's version.
   - Samples follow it (with the default at 1 in 4a).
   - The version can't be changed after insert.
-- **Drift:** the `intake_fields` rows equal `catalogue.json`'s fields.
+- **Drift:** the `intake_fields` rows equal `intake-catalogue-data.mjs`'s fields.
 
 **Done when:**
 - All four suites pass.

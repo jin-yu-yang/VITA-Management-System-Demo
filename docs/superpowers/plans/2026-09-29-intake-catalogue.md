@@ -4,19 +4,19 @@
 
 **Goal:** The version-2 intake exists as data and server rules, but nothing is visible yet:
 - the two drafts are normalized;
-- a build turns them into `catalogue.json` and catalogue migrations;
+- a build turns them into `intake-catalogue-data.mjs` and catalogue migrations;
 - the server stores and checks version-2 answers, contacts and materials;
 - the browser can read all of it.
 
 New cases stay version 1.
 
 **Architecture:**
-- `tools/build-intake-catalogue.mjs` parses the drafts. It writes `src/intake/catalogue.json`, and, when the catalogue's hash has changed, the next `NNN_intake_catalogue_<hash8>.sql`, which calls a loader.
+- `tools/build-intake-catalogue.mjs` parses the drafts. It writes `src/intake-catalogue-data.mjs`, and, when the catalogue's hash has changed, the next `NNN_intake_catalogue_<hash8>.sql`, which calls a loader.
 - **Migrations:**
   - `011_intake_v2.sql` adds the schema, the version triggers, the field table and its loader, `case_contacts`, and version-2 `SAVE_ANSWERS` / `SUBMIT` checks, via `check_related` and `act_submit`.
   - `012_intake_catalogue_<hash8>.sql` is the first generated load.
   - `013_contact_materials.sql` adds `case_materials` and the `UPDATE_CONTACT` / `RECORD_MATERIALS` actions.
-- **Browser:** `src/intake/catalogue.mjs` reads the JSON. The store maps the new data, and the boards display service and language through label lookups.
+- **Browser:** `src/intake-catalogue.mjs` reads the JSON. The store maps the new data, and the boards display service and language through label lookups.
 
 **Tech Stack:**
 - Node ES modules; the build script has no dependencies.
@@ -57,6 +57,15 @@ New cases stay version 1.
 
   Never edit migrations 001–010.
 - **Replacing an existing function** (`check_related`, `act_submit`, `check_operation_authority`, `check_authority`, `check_payload`, `vitally_apply_action`): copy its **latest** definition verbatim and change only the lines the task names. Find the latest one with `grep -n "function vitally_private.<name>\|function public.<name>" supabase/migrations/*.sql`, taking the highest-numbered file.
+- **New public tables follow 002's conventions exactly:**
+  - a `workspace_id` column, with `foreign key (workspace_id, case_id) references public.cases(workspace_id, id) on delete cascade`;
+  - RLS enabled;
+  - `grant select … to authenticated` and `grant select, insert, update, delete … to service_role`;
+  - a select policy copied verbatim from 002 with only the table name changed. `case_contacts` copies `visible_document_requests` (the client-visible template). `case_materials` copies `presenter_admin_followups` (the presenter-only template).
+
+  So a presenter never sees the contact row of an applicant's own unsent draft, just as with the other workflow tables.
+- **New tables join the realtime publication** in the migration that creates them, with 007's `if not exists … alter publication supabase_realtime add table` pattern. They also join `SUBSCRIBED_TABLES` in `src/supabase-store.mjs`: `case_contacts` in `CLIENT_TABLES`, `case_materials` in `STAFF_TABLES`. `tests/database-store.mjs` ("the Realtime publication is exactly what the adapter watches") requires both.
+- **New tables join the table lists in `tests/database.mjs`:** `case_contacts` in `CLIENT_VISIBLE_TABLES` (Task 3) and `case_materials` in `PRESENTER_ONLY_TABLES` (Task 4). Their existing RLS, grant and visibility checks then cover the new tables. Those checks create rows only for their own fixture cases, so read what each loop expects, and seed a `case_contacts` or `case_materials` row for the fixture cases they use if needed.
 - **Test stack:** the Docker Supabase `vitally-task2.M5anE7XP` on 54321 (`.env.test`). If it's down, start it with `docker start $(docker ps -aq --filter name=vitally-task2)`. Never run `npx supabase start` from the repo root.
 - **Shell PATH:** prefix node, npm and docker commands with `PATH=/Users/jinyuyang/.nvm/versions/node/v24.21.0/bin:/Applications/Docker.app/Contents/Resources/bin:$PATH`.
 - **Test imports:** a test file that imports a name its module doesn't export fails to load as a whole, and that is the expected RED when a step adds such an import.
@@ -77,8 +86,8 @@ New cases stay version 1.
 |---|---|
 | `docs/intake-questions/*.md` | Normalized to the grammar; Q0.2–Q0.4; required flags; `Q6.G` |
 | `tools/build-intake-catalogue.mjs` (new) | Parser, catalogue JSON, catalogue migration writer |
-| `src/intake/catalogue.json` (new, generated) | The catalogue |
-| `src/intake/catalogue.mjs` (new) | Reader: steps, questions, wording, visibility, value checks, missing-to-submit, labels |
+| `src/intake-catalogue-data.mjs` (new, generated) | The catalogue, as `export default {…}` |
+| `src/intake-catalogue.mjs` (new) | Reader: steps, questions, wording, visibility, value checks, missing-to-submit, labels |
 | `supabase/migrations/011_intake_v2.sql` (new) | Versions, `intake_fields`, loader, `case_contacts`, version-2 save/submit |
 | `supabase/migrations/012_intake_catalogue_<hash8>.sql` (new, generated) | First catalogue load |
 | `supabase/migrations/013_contact_materials.sql` (new) | `case_materials`, `UPDATE_CONTACT`, `RECORD_MATERIALS` |
@@ -94,7 +103,7 @@ New cases stay version 1.
 
 **Files:**
 - Modify: both drafts.
-- Create: `tools/build-intake-catalogue.mjs`, `src/intake/catalogue.json`, `tests/intake-build.test.mjs`.
+- Create: `tools/build-intake-catalogue.mjs`, `src/intake-catalogue-data.mjs`, `tests/intake-build.test.mjs`.
 - Modify: `package.json`.
 
 **Interfaces:**
@@ -105,7 +114,7 @@ New cases stay version 1.
   - `nextCatalogueMigration(catalogue, migrationsDirEntries)` → `null` if the newest `NNN_intake_catalogue_*.sql` records the same hash; otherwise `{ name, text }`.
     - `name` is the next three-digit number after the highest migration, then `_intake_catalogue_<first 8 hex>.sql`.
     - `text` holds `-- catalogue-hash: <full hash>` and `select vitally_private.load_intake_catalogue(2, '<json with single quotes doubled>'::jsonb);`.
-  - A CLI (`node tools/build-intake-catalogue.mjs`) that writes `src/intake/catalogue.json` (pretty, two-space) and, only if `nextCatalogueMigration` is non-null **and** `supabase/migrations/011_intake_v2.sql` exists, writes the migration. Otherwise it prints what it would write.
+  - A CLI (`node tools/build-intake-catalogue.mjs`) that writes `src/intake-catalogue-data.mjs` as `// Generated by tools/build-intake-catalogue.mjs from docs/intake-questions — do not edit.\nexport default <pretty two-space JSON>;\n` and, only if `nextCatalogueMigration` is non-null **and** `supabase/migrations/011_intake_v2.sql` exists, writes the migration. Otherwise it prints what it would write.
 - **The catalogue shape** is spec §2.4, plus:
   - each question also carries `showIf` parsed to `[{ field, op: "eq" | "ne" | "filled", value? }]`, an AND list;
   - `number` questions carry `min` / `max`;
@@ -128,7 +137,7 @@ New cases stay version 1.
     - `parseDraft` rejects an unknown type, a missing Required/Optional flag, a show-if naming an unknown field, and a show-if value not among the field's options, each with a `file:line` message.
   - **Drift between drafts.** Changing one option value in the senior fixture makes `buildCatalogue` throw with the field ID.
   - **The real drafts.**
-    - `buildCatalogue(readFile(standard), readFile(senior))` deep-equals the committed `src/intake/catalogue.json`.
+    - `buildCatalogue(readFile(standard), readFile(senior))` deep-equals the default export of the committed `src/intake-catalogue-data.mjs` (import it).
     - The catalogue has 9 steps with the spec §2.3 section mapping.
     - Every question has `required` true or false.
     - The optional set equals the Global Constraints list; compute it from the catalogue and compare as a sorted array.
@@ -156,10 +165,10 @@ New cases stay version 1.
   - Map `Who (multi-select)` to `who`, and `Yes / No / Not sure` to `yesno` with `not_sure`.
   - Canonical JSON for the hash: recursively sort object keys, then `JSON.stringify` with no spacing.
   - Wire the CLI, and add `"build:intake"` to `package.json`.
-- [ ] **Step 6: Generate and run.** `npm run build:intake` writes `catalogue.json`; no migration yet, because 011 doesn't exist. Then `node --test tests/intake-build.test.mjs` and `npm test`. Expected: PASS.
+- [ ] **Step 6: Generate and run.** `npm run build:intake` writes `intake-catalogue-data.mjs`; no migration yet, because 011 doesn't exist. Then `node --test tests/intake-build.test.mjs` and `npm test`. Expected: PASS.
 - [ ] **Step 7: Commit.**
   ```bash
-  git add tools/build-intake-catalogue.mjs src/intake/catalogue.json tests/intake-build.test.mjs package.json
+  git add tools/build-intake-catalogue.mjs src/intake-catalogue-data.mjs tests/intake-build.test.mjs package.json
   git commit -m "Build the intake catalogue from the drafts
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -170,12 +179,13 @@ New cases stay version 1.
 ### Task 2: The catalogue reader and the service/language labels
 
 **Files:**
-- Create: `src/intake/catalogue.mjs`, `tests/intake-catalogue.test.mjs`.
+- Create: `src/intake-catalogue.mjs`, `tests/intake-catalogue.test.mjs`.
 - Modify: `src/staff-views.mjs`, `src/office-views.mjs`, `src/pool-views.mjs`, and their tests.
 
 **Interfaces:**
-- **Consumes:** `src/intake/catalogue.json` (Task 1). Import it with `import catalogue from "./catalogue.json" with { type: "json" };`, and check that Node 24 and the browser build (`tools/build.mjs`, esbuild) both accept it. If the browser path doesn't, generate `catalogue.mjs`'s data as a JS module in the build instead, and say so.
-- **Produces** from `src/intake/catalogue.mjs`:
+- **Consumes:** `src/intake-catalogue-data.mjs` (Task 1), with `import CATALOGUE_DATA from "./intake-catalogue-data.mjs";`.
+  - The files are flat under `src/` and plain `.mjs`, because the local server (`server.mjs`) serves only `/src/<name>.(mjs|css|svg|png)`. Don't change that allowlist.
+- **Produces** from `src/intake-catalogue.mjs`:
   - `CATALOGUE` (the object).
   - `stepsFor(version)` → steps, or `[]` for version 1.
   - `questionsFor(version, step)`.
@@ -212,7 +222,7 @@ New cases stay version 1.
   - `serviceLabel("drop_off") === "Drop-off"`, `serviceLabel("Drop-off") === "Drop-off"`, and `languageLabel("cantonese") === "Cantonese"`.
   - In the board test files: a version-2 case (`answers.service = "drop_off"`) and a version-1 case (`"Drop-off"`) both show "Drop-off". The service filter groups them under one chip.
 - [ ] **Step 2: Run to confirm they fail.** The file fails to load; the board assertions fail.
-- [ ] **Step 3: Implement** `src/intake/catalogue.mjs`. Then, in the board (`staff-views.mjs`), queue (`office-views.mjs`) and pool (`pool-views.mjs`):
+- [ ] **Step 3: Implement** `src/intake-catalogue.mjs`. Then, in the board (`staff-views.mjs`), queue (`office-views.mjs`) and pool (`pool-views.mjs`):
   - display service and language through `serviceLabel` / `languageLabel`;
   - build filter options from the labels;
   - match the filter against the record's label.
@@ -258,8 +268,10 @@ New cases stay version 1.
     - A complete case, built from the catalogue's required, visible questions, submits and gets a client number. Use a helper that fills every required, visible field with a valid value: single, no household, `inc_self_employed = yes`.
     - Hiding a required field via its show-if (not married) doesn't block.
     - A missing `hh[0].dob` blocks.
-  - **Contacts visibility.** Applicant A reads their own `case_contacts` row; applicant B reads none; staff read it.
-  - **Drift.** The `intake_fields` rows for version 2 equal the catalogue's fields: IDs, types, options, `required_to_submit`, `show_if`, `step`, `group_id`. Build the expected set from `src/intake/catalogue.json` in the test.
+  - **Contacts visibility.**
+    - Applicant A reads their own `case_contacts` row; applicant B reads none.
+    - The presenter reads it once the case is submitted, or on an assisted case, but not on A's unsent draft (002's rule).
+  - **Drift.** The `intake_fields` rows for version 2 equal the catalogue's fields: IDs, types, options, `required_to_submit`, `show_if`, `step`, `group_id`. Build the expected set from `src/intake-catalogue-data.mjs` in the test.
 - [ ] **Step 2: Run to confirm they fail.** Columns and functions are missing.
 - [ ] **Step 3: Write `011_intake_v2.sql`.** Keep it re-apply-safe.
   1. **Version columns** with their checks. A `before insert` trigger on `public.cases` sets `new.intake_version` from the workspace's default. A `before update` trigger raises `VALIDATION` if `intake_version` changes. Keep it separate from 010's `cases_client_number` trigger.
@@ -274,8 +286,8 @@ New cases stay version 1.
   4. **`vitally_private.check_intake_value(field, value)`** implements the Global Constraints types. It returns false on any mismatch. For `group` it checks the array length and, per member, every key against `intake_fields` rows with that `group_id`, and each value recursively.
   5. **`vitally_private.intake_visible(p_version, p_field_id, p_answers, p_contact jsonb)`** evaluates `show_if` with the Task 2 semantics.
   6. **`public.case_contacts`** (spec §3.4, including `spouse_phone`):
-     - RLS enabled, with a select policy that mirrors `public.cases`' select policy. Read that policy in 001 and reuse its expression.
-     - Grant select to authenticated, and all to service_role.
+     - It follows the Global Constraints table conventions: composite FK, RLS, grants, and the `visible_document_requests` policy copied with the name changed.
+     - Add it to the realtime publication, and add `case_contacts` to `CLIENT_VISIBLE_TABLES` in `tests/database.mjs`.
   7. **The answer checks move to `check_related`,** because `check_payload` is `immutable` and doesn't know the case, so it can't read `intake_fields` or tell the versions apart.
      - **Replace `check_payload`** (latest, 006). Change only its `SAVE_ANSWERS` branch: keep `payload_keys = ['answers']` and `answers` must be an object, and remove the per-key conditions.
      - **Replace `check_related`** (latest, 004) and add a `SAVE_ANSWERS` branch at its start. It runs right after `check_payload`, before any handler.
@@ -325,7 +337,7 @@ New cases stay version 1.
     - `case-actions.test.mjs`: payload rules and the builders for both actions.
 - [ ] **Step 2: Run to confirm they fail.**
 - [ ] **Step 3: Write `013_contact_materials.sql`.**
-  - The `case_materials` table (spec §3.5), with RLS select for presenter members only. Mirror an existing presenter-only table's policy, such as `admin_followups`.
+  - The `case_materials` table (spec §3.5), following the Global Constraints table conventions: composite FK, RLS, grants, and the `presenter_admin_followups` policy copied with the name changed. Add it to the realtime publication, and to `PRESENTER_ONLY_TABLES` in `tests/database.mjs`.
   - `vitally_private.materials_items()`.
   - Replace, each from its latest definition, adding only the new branches:
     - `check_operation_authority`:
@@ -346,7 +358,8 @@ New cases stay version 1.
     - `mapCase` adds `intakeVersion: Number(row.intake_version ?? 1)`.
     - The staff and applicant case reads select the contact row; the staff read also selects materials, with explicit column lists in `CLIENT_COLUMNS` style.
     - The applicant adapter never names `case_materials`.
-    - Add `case_contacts` to the subscribed tables for both, and `case_materials` for presenters.
+    - `SUBSCRIBED_TABLES`: add `case_contacts` to `CLIENT_TABLES` and `case_materials` to `STAFF_TABLES`. `tests/database-store.mjs` checks this against the publication.
+    - Update `tests/store.test.mjs`'s staff-only table list, so the applicant adapter never names `case_materials`, and its subscription expectations.
   - `case-actions.mjs`: builders and payload rules for both actions, following `REMIND` / `RECORD_CONTACT`.
 - [ ] **Step 5: Run.** Apply with `npm run db:migrate:test`, then `node --env-file=.env.test --test tests/database-intake.mjs`, `npm test`, and `npm run test:database`. Expected: PASS.
 - [ ] **Step 6: Commit** ("Contacts and materials actions; map the new case data").
