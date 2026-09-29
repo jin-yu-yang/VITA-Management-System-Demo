@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   renderAdminCase,
-  renderAdminBoard,
   closeCaseDialogBody,
   adminEligibility,
   ASSISTED_ANSWERS_FORM_ID,
@@ -136,347 +135,6 @@ const openRequest = (overrides = {}) => ({
 const caseActions = (html) => [
   ...html.matchAll(/data-case-action="([A-Z_]+)"/g),
 ].map((match) => match[1]);
-
-// One board section, by the heading id it is labelled with. The board's
-// sections do not nest, so the next closing tag is this one's.
-function sectionOf(html, id) {
-  const start = html.indexOf(`aria-labelledby="${id}"`);
-  assert.notEqual(start, -1, `no section labelled ${id}`);
-  const end = html.indexOf("</section>", start);
-  assert.notEqual(end, -1, `section ${id} is never closed`);
-  return html.slice(start, end);
-}
-
-// ---------------------------------------------------------------------------
-// The board
-// ---------------------------------------------------------------------------
-
-test("a case that has just arrived is reachable from the office board", () => {
-  const arrived = boardCase({
-    id: "case-new",
-    reference: "VT-EEEE-5555",
-    stage: "received",
-    intakeVerified: false,
-    answers: { service: "Drop-off", language: "Mandarin" },
-  });
-  const claimable = boardCase(); // preparation_ready, intake checks recorded
-  const html = renderAdminBoard(
-    [arrived, claimable],
-    [item({ caseId: "case-new" })],
-    { person: SAM },
-  );
-  const section = sectionOf(html, "arrived-title");
-  // The office's first step in the demonstration, so it is the first section.
-  assert.ok(
-    html.indexOf('aria-labelledby="arrived-title"') <
-      html.indexOf('aria-labelledby="available-title"'),
-  );
-  // Its reference, and the same control every other section opens a case with.
-  assert.match(section, /VT-EEEE-5555/);
-  assert.match(section, /data-action="open-case" data-case-id="case-new"/);
-  // The count is the number of arrived cases, and the summary line agrees.
-  assert.match(section, /Intake checks needed<\/h2><span class="muted small">Waiting: 1/);
-  assert.match(html, /1 waiting for intake checks, 1 waiting to be claimed/);
-  // Language and contact preference read the same way the follow-up cards do.
-  assert.match(section, /<span>Language<\/span><strong>Mandarin<\/strong>/);
-  assert.match(section, /Prefers calls from the main office/);
-  // A case past its intake checks is not here, and the arrived one is not in
-  // "Available work": nobody can claim it until the checks are recorded.
-  assert.doesNotMatch(section, /VT-AAAA-1111/);
-  assert.doesNotMatch(sectionOf(html, "available-title"), /VT-EEEE-5555/);
-  assert.doesNotMatch(sectionOf(html, "calls-title"), /VT-EEEE-5555/);
-  // The row carries no workflow action: the four attestations live on the case.
-  assert.deepEqual(caseActions(section), []);
-  assert.match(section, /Open the case to record the simulated intake checks\./);
-  // With nothing new, the section says so rather than disappearing.
-  const quiet = renderAdminBoard([claimable], [], { person: SAM });
-  assert.match(
-    sectionOf(quiet, "arrived-title"),
-    /Nothing new has arrived\./,
-  );
-  assert.match(quiet, /0 waiting for intake checks/);
-});
-
-test("an assisted draft the office has not sent is reachable too", () => {
-  const draft = boardCase({
-    id: "case-draft",
-    reference: "VT-FFFF-6666",
-    stage: "draft",
-    ownerUserId: null,
-    intakeVerified: false,
-    answers: { service: "Drop-off", language: "Cantonese" },
-  });
-  // A client's own draft is theirs; the office is not waiting on it, and the
-  // presenter's RLS policy does not show it in the first place.
-  const clientDraft = boardCase({
-    id: "case-theirs",
-    reference: "VT-GGGG-7777",
-    stage: "draft",
-    ownerUserId: "owner-1",
-  });
-  const html = renderAdminBoard([draft, clientDraft], [], { person: SAM });
-  const section = sectionOf(html, "arrived-title");
-  assert.match(section, /VT-FFFF-6666/);
-  assert.match(section, /data-action="open-case" data-case-id="case-draft"/);
-  assert.match(section, /The office started this one and has not sent it yet\./);
-  assert.match(section, /Assisted drafts: 1/);
-  assert.doesNotMatch(section, /VT-GGGG-7777/);
-  // An assisted draft is not an arrived application, so the waiting count and
-  // the summary line stay honest about what is actually owed intake checks.
-  assert.match(section, /Waiting: 0/);
-  assert.match(html, /0 waiting for intake checks/);
-  // Its stage is named, so nobody reads it as an application that has arrived.
-  assert.match(section, new RegExp(`VT-FFFF-6666[^]{0,400}${describeStage("draft").label}`));
-  // With no assisted draft the extra count line is absent rather than zero.
-  assert.doesNotMatch(
-    sectionOf(renderAdminBoard([clientDraft], [], { person: SAM }), "arrived-title"),
-    /Assisted drafts/,
-  );
-});
-
-test("the arrived section filters and escapes like the rest of the board", () => {
-  const nasty = '<script>alert("x")</script>';
-  const cases = [
-    boardCase({
-      id: "case-new",
-      reference: nasty,
-      stage: "received",
-      intakeVerified: false,
-      answers: { service: "Drop-off", language: nasty },
-    }),
-    boardCase({
-      id: "case-other",
-      reference: "VT-HHHH-8888",
-      stage: "received",
-      intakeVerified: false,
-      answers: { service: "Drop-off", language: "Cantonese" },
-    }),
-  ];
-  const html = renderAdminBoard(cases, [item({ caseId: "case-new", contactPreference: nasty })], {
-    person: SAM,
-  });
-  assert.doesNotMatch(html, /<script>/);
-  assert.match(html, /&lt;script&gt;/);
-  assert.match(sectionOf(html, "arrived-title"), /Waiting: 2/);
-  // The board's one stored filter applies here as it does everywhere else.
-  const filtered = renderAdminBoard(cases, [], {
-    person: SAM,
-    filters: { language: "Cantonese" },
-  });
-  const section = sectionOf(filtered, "arrived-title");
-  assert.match(section, /VT-HHHH-8888/);
-  assert.match(section, /Waiting: 1/);
-});
-
-test("the board counts what each of its sections is showing", () => {
-  const cases = [
-    boardCase(),
-    boardCase({
-      id: "case-2",
-      reference: "VT-BBBB-2222",
-      stage: "review_ready",
-      preparerId: "alex",
-      answers: { service: "Drop-off", language: "Cantonese" },
-    }),
-    boardCase({
-      id: "case-3",
-      reference: "VT-CCCC-3333",
-      stage: "preparing",
-      preparerId: "alex",
-      followups: [openTask({ id: "task-3" })],
-      requests: [openRequest()],
-    }),
-    boardCase({
-      id: "case-4",
-      reference: "VT-DDDD-4444",
-      stage: "closed",
-      followups: [openTask({ id: "task-4", status: "resolved" })],
-    }),
-  ].map((record) => decorateStaffCase(record, PEOPLE));
-  const html = renderAdminBoard(cases, [item(), item({ id: "item-2", status: "resolved" })], {
-    person: SAM,
-  });
-  // Two cases are unclaimed work, one is waiting for a call, one assistance
-  // request is unclaimed. Every number is derived from the records on screen.
-  assert.match(
-    html,
-    /2 waiting to be claimed, 1 waiting for a call, 1 assistance request unclaimed/,
-  );
-  assert.match(html, /Available work<\/h2><span class="muted small">Waiting: 2/);
-  assert.match(html, /Follow-up needed<\/h2><span class="muted small">Cases: 1/);
-  assert.match(html, /Assistance requests<\/h2><span class="muted small">Requests: 2/);
-  // The resolved task's case is not waiting for a call.
-  assert.doesNotMatch(html, /VT-DDDD-4444/);
-  // A case waiting for a call shows the language and the recorded preference.
-  assert.match(html, /VT-CCCC-3333[^]*Prefers calls from the main office/);
-  assert.match(html, /No taxpayer name/i);
-  for (const forbidden of ["Mei", "19107", "Sample address"])
-    assert.doesNotMatch(html, new RegExp(forbidden));
-});
-
-test("the language filter is the board's one stored choice", () => {
-  const cases = [
-    boardCase(),
-    boardCase({
-      id: "case-2",
-      reference: "VT-BBBB-2222",
-      answers: { service: "Drop-off", language: "Cantonese" },
-    }),
-  ];
-  const all = renderAdminBoard(cases, [], { person: SAM });
-  assert.match(all, /VT-AAAA-1111/);
-  assert.match(all, /VT-BBBB-2222/);
-  const one = renderAdminBoard(cases, [], {
-    person: SAM,
-    filters: { language: "Cantonese" },
-  });
-  assert.doesNotMatch(one, /VT-AAAA-1111/);
-  assert.match(one, /VT-BBBB-2222/);
-  // The chips use the work board's own filter action and key, not a second one.
-  assert.match(
-    one,
-    /data-action="set-board-filter" data-filter="language" data-value="Cantonese" aria-pressed="true"/,
-  );
-});
-
-test("a reminder is offered on available work only, and says what it did not do", () => {
-  const waiting = boardCase();
-  const claimed = boardCase({
-    id: "case-2",
-    reference: "VT-BBBB-2222",
-    stage: "preparing",
-    preparerId: "alex",
-  });
-  const html = renderAdminBoard([waiting, claimed], [], { person: SAM });
-  assert.match(html, /data-case-action="REMIND" data-case-id="case-1"/);
-  assert.doesNotMatch(html, /data-case-action="REMIND" data-case-id="case-2"/);
-  // The claimed case is not even in the available section.
-  assert.doesNotMatch(html, /VT-BBBB-2222/);
-  // Ineligible personas see the reason rather than a missing button.
-  const forAlex = renderAdminBoard([waiting], [], { person: ALEX });
-  assert.doesNotMatch(forAlex, /data-case-action="REMIND"/);
-  assert.match(forAlex, /Needs office administrator access\./);
-  // "Recently reminded" is derived from the record, so it can only appear once
-  // a reminder really landed.
-  assert.doesNotMatch(html, /Reminder recorded\./);
-  const reminded = renderAdminBoard(
-    [
-      decorateStaffCase(
-        {
-          ...waiting,
-          lastRemindedAt: "2026-09-13T09:00:00.000Z",
-          lastRemindedByPersonId: "sam",
-        },
-        PEOPLE,
-      ),
-    ],
-    [],
-    { person: SAM },
-  );
-  assert.match(reminded, /Reminder recorded\. No external message sent\./);
-  assert.match(reminded, /Last reminded [^<]*by Sam/);
-});
-
-test("the assisted intake entry point opens a form that creates nothing by itself", () => {
-  const closed = renderAdminBoard([], [], { person: SAM });
-  assert.match(closed, /data-action="toggle-assisted-intake"/);
-  assert.doesNotMatch(closed, /id="assisted-intake-form"/);
-  const open = renderAdminBoard([], [], {
-    person: SAM,
-    openPanels: ["assisted-intake"],
-  });
-  assert.match(open, /<form id="assisted-intake-form" class="staff-form">/);
-  assert.match(open, /data-action="fill-assisted-intake"/);
-  // Every intake answer has a labelled box, with the client's own wording.
-  for (const [name, label] of [
-    ["service", "Service"],
-    ["language", "Preferred language"],
-    ["firstName", "First name"],
-    ["household", "People in your household"],
-  ]) {
-    assert.match(open, new RegExp(`for="field-assisted-${name}"`));
-    assert.match(open, new RegExp(`<span>${label}</span>`));
-  }
-  // It is a plain form submit: creating a case is not a case action, and no
-  // workflow or assistance action is dispatched from here.
-  assert.deepEqual(caseActions(open), []);
-  assert.doesNotMatch(open, /data-assistance-action/);
-  assert.match(open, /no client account/i);
-  // A persona without the office role is told why, not shown the form.
-  const forMorgan = renderAdminBoard([], [], {
-    person: MORGAN,
-    openPanels: ["assisted-intake"],
-  });
-  assert.doesNotMatch(forMorgan, /id="assisted-intake-form"/);
-  assert.match(forMorgan, /Needs office administrator access\./);
-});
-
-// ---------------------------------------------------------------------------
-// Assistance
-// ---------------------------------------------------------------------------
-
-test("assistance cards offer the one action their status allows", () => {
-  const items = [
-    item(),
-    item({ id: "item-2", status: "assigned", assigneeId: "sam", assigneeName: "Sam" }),
-    item({
-      id: "item-3",
-      status: "resolved",
-      assigneeId: "sam",
-      assigneeName: "Sam",
-      resolutionNote: "Walked through the form at the desk.",
-    }),
-  ];
-  const html = renderAdminBoard([], items, { person: SAM });
-  assert.match(html, /data-assistance-action="CLAIM" data-item-id="item-1"/);
-  assert.doesNotMatch(html, /data-assistance-action="RESOLVE" data-item-id="item-1"/);
-  assert.match(html, /data-assistance-action="RESOLVE" data-item-id="item-2"/);
-  assert.doesNotMatch(html, /data-assistance-action="CLAIM" data-item-id="item-2"/);
-  // Resolving carries a note; claiming carries none.
-  assert.match(html, /for="field-assist-item-2-note"/);
-  assert.doesNotMatch(html, /for="field-assist-item-1-note"/);
-  // A resolved item offers nothing and shows what was done.
-  assert.doesNotMatch(html, /data-assistance-action="[A-Z]+" data-item-id="item-3"/);
-  assert.match(html, /Walked through the form at the desk\./);
-  assert.match(html, /Waiting for a helper/);
-  assert.match(html, /Being helped/);
-  // Assistance is not case work: the card says so.
-  assert.match(html, /resolving a request changes nothing about the case/i);
-});
-
-test("an assistance item somebody else holds is refused, with the reason", () => {
-  const held = item({
-    id: "item-2",
-    status: "assigned",
-    assigneeId: "sam",
-    assigneeName: "Sam",
-  });
-  const helper = { id: "casey", name: "Casey", capabilities: ["assist"] };
-  const html = renderAdminBoard([], [held], { person: helper });
-  assert.doesNotMatch(html, /data-assistance-action/);
-  assert.match(html, /Only the helper holding this request resolves it\./);
-  // No assistance capability at all is a different, earlier refusal.
-  const forAlex = renderAdminBoard([], [item()], { person: ALEX });
-  assert.doesNotMatch(forAlex, /data-assistance-action/);
-  assert.match(forAlex, /Needs client assistance access\./);
-});
-
-test("a linked case is shown as a case, never as an assistance status", () => {
-  const linked = boardCase({ id: "case-9", reference: "VT-ZZZZ-9999", stage: "preparing" });
-  const html = renderAdminBoard([linked], [item({ caseId: "case-9" })], {
-    person: SAM,
-  });
-  assert.match(
-    html,
-    /<span>Linked case<\/span><strong><button class="board-reference" data-action="open-case" data-case-id="case-9">VT-ZZZZ-9999/,
-  );
-  // The case keeps its own stage label and the item keeps its own status word.
-  assert.match(html, new RegExp(`VT-ZZZZ-9999[^]*${describeStage("preparing").label}`));
-  assert.doesNotMatch(html, /VT-ZZZZ-9999[^]*<\/strong>[^]*Waiting for a helper<\/span>/);
-  // An item with no case says so rather than inventing one.
-  const unlinked = renderAdminBoard([linked], [item()], { person: SAM });
-  assert.match(unlinked, /<span>Linked case<\/span><strong>Not linked to a case/);
-});
 
 // ---------------------------------------------------------------------------
 // Intake checks
@@ -916,9 +574,6 @@ test("a window with no persona is offered nothing at all", () => {
   assert.doesNotMatch(html, /data-assistance-action/);
   assert.doesNotMatch(html, /data-action="open-close-case"/);
   assert.match(html, /Choose a volunteer persona to act as\./);
-  const board = renderAdminBoard([boardCase()], [item()], {});
-  assert.deepEqual(caseActions(board), []);
-  assert.doesNotMatch(board, /data-assistance-action/);
 });
 
 test("a persona without the office roles gets explanations, not office actions", () => {
@@ -981,13 +636,6 @@ test("notes, reasons and titles are escaped wherever they are shown", () => {
   const html = renderAdminCase(record, { person: SAM });
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
-  const board = renderAdminBoard(
-    [boardCase({ followups: [openTask({ reason: nasty })], answers: { language: nasty } })],
-    [item({ title: nasty, contactPreference: nasty, resolutionNote: nasty })],
-    { person: SAM },
-  );
-  assert.doesNotMatch(board, /<script>/);
-  assert.match(board, /&lt;script&gt;/);
   assert.doesNotMatch(closeCaseDialogBody({ savedCase: officeCase({ reference: nasty }) }), /<script>/);
 });
 
@@ -1038,18 +686,18 @@ test("the persona decides which workspace a presenter is in", () => {
     retryable: false,
   };
   const office = staffScreen(state);
-  assert.match(office, /OFFICE WORKSPACE/);
-  assert.match(office, /Office work<\/h2>/);
-  assert.match(office, /Assistance requests/);
+  assert.match(office, />OFFICE</);
+  assert.match(office, /Office queue<\/h2>/);
+  assert.match(office, /data-kind="help"/);
   // The helper is named, not shown as an id.
-  assert.match(office, /<span>Helper<\/span><strong>Sam<\/strong>/);
+  assert.match(office, /Helper: Sam/);
   assert.doesNotMatch(office, /Work board<\/h2>/);
 
   // Anyone else keeps the preparation and review board.
   const preparer = staffScreen({ ...state, selectedPersonId: "alex" });
   assert.match(preparer, /VOLUNTEER WORKSPACE/);
   assert.match(preparer, /Work board<\/h2>/);
-  assert.doesNotMatch(preparer, /Assistance requests/);
+  assert.doesNotMatch(preparer, /Office queue/);
 
   // The same rule on one case.
   const onCase = {

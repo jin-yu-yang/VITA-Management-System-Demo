@@ -50,7 +50,7 @@ test("the staff sidebar carries the logo, the one screen that exists, and the ac
   assert.doesNotMatch(html, /Dashboard|Schedule|Documents|Messages|Notifications/);
 
   const office = staffSidebar({ screen: "staff-case" }, { id: "sam", name: "Sam", capabilities: ["admin"] }, true);
-  assert.match(office, /Office work/);
+  assert.match(office, /Follow-ups/);
   assert.doesNotMatch(office, /aria-current/, "on a case, no nav item is current");
   assert.match(staffSidebar({ screen: "staff" }, null, false), /No persona chosen/);
 });

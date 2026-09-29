@@ -8,11 +8,10 @@ import {
   textarea,
   select,
   fieldId,
-  stageBadge,
   formatTime,
   ANSWER_LABELS,
 } from "./ui.mjs";
-import { describeStage, INTAKE_ANSWER_KEYS, submissionBlocker } from "./domain.mjs";
+import { INTAKE_ANSWER_KEYS, submissionBlocker } from "./domain.mjs";
 import {
   CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
@@ -33,8 +32,6 @@ import {
   historyPanel,
   staffEligibility,
   isAvailableWork,
-  boardFilters,
-  stageWork,
   REQUEST_STATUS,
   FOLLOWUP_STATUS,
   CONTACT_OUTCOME_LABELS,
@@ -247,28 +244,17 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
 // Small shared pieces
 // ---------------------------------------------------------------------------
 
-const ASSISTANCE_STATUS = Object.freeze({
-  open: "Waiting for a helper",
-  assigned: "Being helped",
-  resolved: "Resolved",
-});
-const ASSISTANCE_TONE = Object.freeze({
-  open: "blue",
-  assigned: "amber",
-  resolved: "green",
-});
-
 const outcomeOptions = (values) =>
   values.map((value) => [value, named(CONTACT_OUTCOME_LABELS, value, value)]);
 
-const openFollowups = (record) =>
+export const openFollowups = (record) =>
   (record?.followups ?? []).filter((task) => task?.status === "open");
 
 // A board row is a scalar Case and carries no follow-up records at all, so the
 // count comes from the summary the presenter list attaches instead (Ruling
 // R56). An opened case carries the records themselves and is counted from
 // them, which is always the more exact of the two.
-const openFollowupCount = (record) =>
+export const openFollowupCount = (record) =>
   Array.isArray(record?.followups)
     ? openFollowups(record).length
     : Number(record?.openFollowups ?? 0);
@@ -305,163 +291,13 @@ const originRows = (record) =>
 // A reminder is recorded, never sent. The sentence appears exactly when a
 // reminder really landed, because `lastRemindedAt` is what an accepted REMIND
 // writes — so it can never announce a refused one.
-const remindedNote = (record) =>
+export const remindedNote = (record) =>
   when(
     record?.lastRemindedAt,
     `<p class="staff-reason" role="status">${icon("clock")} Reminder recorded. No external message sent. Last reminded ${esc(
       formatTime(record?.lastRemindedAt),
     )}${when(record?.lastRemindedByName, ` by ${esc(record?.lastRemindedByName)}`)}.</p>`,
   );
-
-// ---------------------------------------------------------------------------
-// The office board
-// ---------------------------------------------------------------------------
-
-const boardCard = (record, body) =>
-  `<article class="board-row"><div class="board-row-head"><button class="board-reference" data-action="open-case" data-case-id="${esc(
-    record.id,
-  )}">${esc(record.reference ?? "This case")} ${icon("chevron")}</button>${stageBadge(
-    record.stage,
-  )}</div>${body}</article>`;
-
-function availableCard(record, rights, ui) {
-  const busy = ui.busy ? "disabled" : "";
-  return boardCard(
-    record,
-    `<p>${esc(stageWork(record.stage).work)}</p>${detailRow(
-      "Language",
-      record?.answers?.language,
-    )}${detailRow(
-      "Waiting since",
-      record.updatedAt ? formatTime(record.updatedAt) : "—",
-    )}${remindedNote(record)}<div class="board-actions">${
-      rights.remind.allowed
-        ? caseButton(
-            `${icon("clock")} Send a reminder`,
-            "REMIND",
-            "secondary",
-            `data-case-id="${esc(record.id)}" ${busy}`,
-          )
-        : explain(rights.remind)
-    }</div>`,
-  );
-}
-
-// A case the office has to pick up before anyone else can: one that has just
-// arrived and still needs its simulated intake checks, or an assisted draft the
-// office started and has not sent yet. Neither is "available work" — nobody can
-// claim either for preparation — so without this card there is no control on
-// any office screen that opens them at all.
-//
-// The row carries no workflow action. `VERIFY_INTAKE` and `SUBMIT` live on the
-// case workspace, where the four attestations and the answers are, and this is
-// the way in to it.
-function arrivedCard(record, item, waiting, next = "") {
-  return boardCard(
-    record,
-    `<p>${esc(waiting)}</p>${detailRow(
-      "Language",
-      record?.answers?.language || item?.language,
-    )}${detailRow(
-      "Contact preference",
-      item?.contactPreference || "Not recorded for this case",
-    )}${detailRow(
-      "Waiting since",
-      record.updatedAt ? formatTime(record.updatedAt) : "—",
-    )}${when(next, `<p class="field-note">${esc(next)}</p>`)}`,
-  );
-}
-
-// A case waiting for a call. The language is the client's own intake answer;
-// the contact preference is the one the office recorded when this client asked
-// for help with their forms — an assistance item is the only place this demo
-// stores one, so it is read from the item linked to the same case and says so
-// plainly when there is none.
-function followupCard(record, item) {
-  const tasks = openFollowups(record);
-  // A board row knows how many calls are owed and who owes them; the reasons
-  // are on the case itself, which is where the call is recorded anyway.
-  const owed = record?.followupAssigneeNames ?? [];
-  return boardCard(
-    record,
-    `${detailRow("Open tasks", `${openFollowupCount(record)}`)}${detailRow(
-      "Language",
-      record?.answers?.language || item?.language,
-    )}${detailRow(
-      "Contact preference",
-      item?.contactPreference || "Not recorded for this case",
-    )}${
-      tasks.length
-        ? tasks
-            .map(
-              (task) =>
-                `<p class="field-note">${icon("phone")} ${esc(task?.reason)} <small>${esc(
-                  task?.assigneeName ?? UNKNOWN_PERSON,
-                )}</small></p>`,
-            )
-            .join("")
-        : when(
-            owed.length,
-            `<p class="field-note">${icon("phone")} Waiting on ${esc(owed.join(", "))}.</p>`,
-          )
-    }<p class="field-note">Open the case to record a call or resolve the task.</p>`,
-  );
-}
-
-function assistanceCard(item, cases, rights, ui) {
-  const busy = ui.busy ? "disabled" : "";
-  const linked = (cases ?? []).find((record) => record?.id === item?.caseId) ?? null;
-  const scope = `assist-${item?.id ?? "item"}`;
-  const claim = when(
-    item?.status === "open",
-    rights.claimAssistance.allowed
-      ? `<button type="button" class="btn primary" data-assistance-action="CLAIM" data-item-id="${esc(
-          item.id,
-        )}" ${busy}>${icon("user")} Take this request</button>`
-      : explain(rights.claimAssistance),
-  );
-  const resolve = when(
-    item?.status === "assigned",
-    rights.resolveAssistance.allowed
-      ? `<form class="staff-form">${textarea(
-          "What you helped with",
-          "note",
-          "",
-          'required maxlength="1000" rows="2"',
-          scope,
-        )}<button type="submit" class="btn primary" data-assistance-action="RESOLVE" data-item-id="${esc(
-          item.id,
-        )}" ${busy}>${icon("check")} Record this as resolved</button></form>`
-      : explain(rights.resolveAssistance),
-  );
-  return `<article class="request-card"><div class="section-head"><h3>${esc(
-    item?.title,
-  )}</h3><span class="badge ${named(ASSISTANCE_TONE, item?.status, "neutral")}"><i></i>${esc(
-    named(ASSISTANCE_STATUS, item?.status, "Request"),
-  )}</span></div>${detailRow("Language", item?.language)}${detailRow(
-    "Contact preference",
-    item?.contactPreference,
-  )}${detailRow(
-    "Helper",
-    item?.assigneeName ?? (item?.assigneeId ? UNKNOWN_PERSON : "Nobody yet"),
-  )}${
-    // The linked case is shown as a case — its own reference and its own stage
-    // label. An assistance status is never rendered as a case stage, and a case
-    // stage never as an assistance status: they are two different workflows.
-    item?.caseId
-      ? linked
-        ? `<div class="detail-row"><span>Linked case</span><strong><button class="board-reference" data-action="open-case" data-case-id="${esc(
-            linked.id,
-          )}">${esc(linked.reference)} ${icon("chevron")}</button> ${esc(
-            describeStage(linked.stage).label,
-          )}</strong></div>`
-        : detailRow("Linked case", "A case in this workspace")
-      : detailRow("Linked case", "Not linked to a case")
-  }${when(
-    item?.resolutionNote,
-    `<p class="field-note">${icon("check")} ${esc(item.resolutionNote)}</p>`,
-  )}<p class="field-note">Requested ${esc(formatTime(item?.createdAt))}</p>${claim}${resolve}</article>`;
-}
 
 function assistedIntakePanel(ui) {
   const open = (ui.openPanels ?? []).includes("assisted-intake");
@@ -543,157 +379,6 @@ function assistedIntakeForm(ui) {
   ).join(
     "",
   )}</div><button type="submit" class="btn primary" ${busy}>${icon("arrow")} Create this application</button><p class="field-note">Creating it saves a draft the office owns. You still record the intake checks and send it to the office from the case itself.</p></form>`;
-}
-
-const countLine = (label, value) =>
-  `<span class="muted small">${esc(label)}: ${esc(value)}</span>`;
-
-/**
- * The office board: the applications waiting for their intake checks, the work
- * waiting to be nudged, the cases waiting for a call, the assistance requests,
- * and the way in to an assisted application.
- *
- * The first section is deliberately first: recording the intake checks is the
- * office's first step in the demonstration, and it is the only way a case
- * leaves `received`.
- *
- * @param {object[]} cases      decorated Cases (`decorateStaffCase`)
- * @param {object[]} assistance `listAssistance()`, decorated with helper names
- * @param {object}   ui         `{person, filters, busy, openPanels}`
- */
-export function renderAdminBoard(cases = [], assistance = [], ui = {}) {
-  const view = ui ?? {};
-  const person = view.person ?? null;
-  const records = Array.isArray(cases) ? cases : [];
-  const items = Array.isArray(assistance) ? assistance : [];
-  // One stored filter, read through the board's own defaults, so this screen
-  // adds no second key scheme of its own (the window state holds it already).
-  const language = boardFilters(view.filters).language;
-  const inLanguage = (record) =>
-    language === "all" || (record?.answers?.language ?? "") === language;
-  const languages = [
-    ...new Set(
-      records.map((record) => String(record?.answers?.language ?? "").trim()).filter(Boolean),
-    ),
-  ].sort();
-
-  // The office's own first step. A case at `received` is claimable by nobody
-  // and owed to nobody, so it matches none of the other sections; the intake
-  // checks are what move it on, and they are only offered on the case itself.
-  // (`intakeVerified` cannot be true at this stage — VERIFY_INTAKE sets both in
-  // one statement — so the second test is belt and braces, not a filter.)
-  const arrived = records.filter(
-    (record) =>
-      record?.stage === "received" && !record?.intakeVerified && inLanguage(record),
-  );
-  // An assisted draft belongs to the office too: it has no client account to
-  // send it, so it waits here until the office does (the spec: a staff-created
-  // intake draft stays reachable by authorised staff).
-  const officeDrafts = records.filter(
-    (record) => record?.stage === "draft" && assisted(record) && inLanguage(record),
-  );
-  const available = records.filter((record) => isAvailableWork(record) && inLanguage(record));
-  const needsCall = records.filter(
-    (record) => openFollowupCount(record) && inLanguage(record),
-  );
-  const itemFor = (record) =>
-    items.find((item) => item?.caseId === record?.id) ?? null;
-  const rights = adminEligibility({}, person);
-  const panelUi = { ...view, rights };
-
-  const chips = `<div class="board-filters"><div class="filter-group" role="group" aria-label="Language">${[
-    ["all", "Any language"],
-    ...languages.map((value) => [value, value]),
-  ]
-    .map(([value, label]) =>
-      button(
-        esc(label),
-        "set-board-filter",
-        language === value ? "chip selected" : "chip",
-        `data-filter="language" data-value="${esc(value)}" aria-pressed="${language === value}"`,
-      ),
-    )
-    .join("")}</div></div>`;
-
-  return `<section class="panel staff-board" aria-labelledby="office-title"><div class="section-head"><h2 id="office-title">Office work</h2>${countLine(
-    "Cases",
-    records.length,
-  )}</div><p class="board-counts" role="status">${esc(
-    arrived.length,
-  )} waiting for intake checks, ${esc(available.length)} waiting to be claimed, ${esc(
-    needsCall.length,
-  )} waiting for a call, ${esc(
-    items.filter((item) => item?.status === "open").length,
-  )} assistance ${
-    items.filter((item) => item?.status === "open").length === 1 ? "request" : "requests"
-  } unclaimed.</p>${chips}${when(
-    !person,
-    `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this board is read-only.</p>`,
-  )}<p class="field-note">This board shows workflow only: no taxpayer names, no addresses and no document contents.</p></section><section class="panel" aria-labelledby="arrived-title"><div class="section-head"><h2 id="arrived-title">Intake checks needed</h2>${countLine(
-    "Waiting",
-    arrived.length,
-  )}${when(
-    officeDrafts.length,
-    countLine("Assisted drafts", officeDrafts.length),
-  )}</div><p class="field-note">An application that has just arrived waits here until the office records its simulated intake checks. Nobody can claim it for preparation until then.</p>${
-    arrived.length || officeDrafts.length
-      ? `<div class="board-list">${[
-          ...arrived.map((record) =>
-            arrivedCard(
-              record,
-              itemFor(record),
-              stageWork(record.stage).work,
-              "Open the case to record the simulated intake checks.",
-            ),
-          ),
-          ...officeDrafts.map((record) =>
-            arrivedCard(
-              record,
-              itemFor(record),
-              "The office started this one and has not sent it yet. Open it to finish the answers and send it.",
-            ),
-          ),
-        ].join("")}</div>`
-      : '<p class="muted">Nothing new has arrived. Every application the office has is past its intake checks.</p>'
-  }</section><section class="panel" aria-labelledby="available-title"><div class="section-head"><h2 id="available-title">Available work</h2>${countLine(
-    "Waiting",
-    available.length,
-  )}</div><p class="field-note">${esc(
-    OFFICE_NOTE,
-  )} A reminder records a nudge in ViTally so the next volunteer sees it.</p>${
-    available.length
-      ? `<div class="board-list">${available
-          .map((record) =>
-            availableCard(record, adminEligibility({ caseRecord: record }, person), view),
-          )
-          .join("")}</div>`
-      : '<p class="muted">Every case is claimed. Nothing needs a nudge right now.</p>'
-  }</section><section class="panel" aria-labelledby="calls-title"><div class="section-head"><h2 id="calls-title">Follow-up needed</h2>${countLine(
-    "Cases",
-    needsCall.length,
-  )}</div>${
-    needsCall.length
-      ? `<div class="board-list">${needsCall
-          .map((record) => followupCard(record, itemFor(record)))
-          .join("")}</div>`
-      : '<p class="muted">No case on this board is waiting for a call. Each case lists its own office tasks.</p>'
-  }</section><section class="panel" aria-labelledby="assistance-title"><div class="section-head"><h2 id="assistance-title">Assistance requests</h2>${countLine(
-    "Requests",
-    items.length,
-  )}</div><p class="field-note">Helping a client with their own forms is separate from preparing a return: resolving a request changes nothing about the case's intake, stage or preparer.</p>${
-    items.length
-      ? items
-          .map((item) =>
-            assistanceCard(
-              item,
-              records,
-              adminEligibility({ item }, person),
-              view,
-            ),
-          )
-          .join("")
-      : '<p class="muted">No client has asked the office for help with their forms.</p>'
-  }</section>${assistedIntakePanel(panelUi)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -882,21 +567,17 @@ function attemptList(task) {
     .join("")}</ul>`;
 }
 
-function followupTask(record, task, person, ui) {
+// The two forms an assignee uses on an open task: record an attempt, then
+// resolve it. Shared by the case page's Follow-up tab and the office queue's
+// Log a call drawer, so the two can never ask for different things.
+export function followupForms(record, task, person, ui = {}) {
   const busy = ui.busy ? "disabled" : "";
   const rights = adminEligibility({ caseRecord: record, followup: task }, person);
-  const request = requestById(record, task?.requestId);
+  if (!rights.recordContact.allowed) return explain(rights.recordContact);
   const contactScope = `contact-${task?.id ?? "task"}`;
   const resolveScope = `resolve-${task?.id ?? "task"}`;
   const hidden = `<input type="hidden" name="followupId" value="${esc(task?.id ?? "")}">`;
-  const answered = when(
-    task?.status === "open" && request?.status === "awaiting_verification",
-    `<p class="field-note" role="status">${icon(
-      "file",
-    )} The client responded; awaiting preparer verification. Resolving this task does not verify the document.</p>`,
-  );
-  const forms = rights.recordContact.allowed
-    ? `<form class="staff-form"><h4>Record a call</h4>${hidden}${select(
+  return `<form class="staff-form"><h4>Record a call</h4>${hidden}${select(
         "What happened",
         "outcome",
         "",
@@ -932,8 +613,17 @@ function followupTask(record, task, person, ui) {
         "RESOLVE_FOLLOWUP",
         "primary",
         `data-followup-id="${esc(task?.id ?? "")}" ${busy}`,
-      )}<p class="field-note">Resolving closes the office's contact task only. It does not verify a document, change the preparer, or close the case.</p></form>`
-    : explain(rights.recordContact);
+      )}<p class="field-note">Resolving closes the office's contact task only. It does not verify a document, change the preparer, or close the case.</p></form>`;
+}
+
+function followupTask(record, task, person, ui) {
+  const request = requestById(record, task?.requestId);
+  const answered = when(
+    task?.status === "open" && request?.status === "awaiting_verification",
+    `<p class="field-note" role="status">${icon(
+      "file",
+    )} The client responded; awaiting preparer verification. Resolving this task does not verify the document.</p>`,
+  );
   return `<li><div class="section-head"><h3>${esc(
     request?.title ?? "Contact the client",
   )}</h3><span class="badge ${task?.status === "open" ? "amber" : "green"}"><i></i>${esc(
@@ -949,7 +639,7 @@ function followupTask(record, task, person, ui) {
     `<p class="field-note">${icon("check")} ${esc(
       named(CONTACT_OUTCOME_LABELS, task?.resolutionOutcome, "Resolved"),
     )} — ${esc(task.resolutionNote)}</p>`,
-  )}${when(task?.status === "open", forms)}</li>`;
+  )}${when(task?.status === "open", followupForms(record, task, person, ui))}</li>`;
 }
 
 function adminFollowupPanel(record, person, ui) {

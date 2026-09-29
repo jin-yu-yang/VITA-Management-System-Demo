@@ -5,11 +5,8 @@ import {
   decorateStaffCase,
   correctionsDialogBody,
 } from "./staff-views.mjs";
-import {
-  renderAdminBoard,
-  renderAdminCase,
-  closeCaseDialogBody,
-} from "./admin-views.mjs";
+import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
+import { renderFollowups } from "./office-views.mjs";
 import {
   renderPresenterPanel,
   resetDialogBody,
@@ -135,7 +132,7 @@ const isAdmin = (person) =>
 // do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
   const onBoard = state?.screen === "staff";
-  const label = office ? "Office work" : "Work board";
+  const label = office ? "Follow-ups" : "Work board";
   return `<div class="sidebar-brand"><img src="src/pcdc-logo.png" alt="PCDC" width="36" height="36"><span class="sidebar-wordmark">ViTally<span class="brand-dot">.</span></span></div><nav class="sidebar-nav" aria-label="Main navigation">${button(
     `${icon(office ? "people" : "board")} ${label}`,
     "open-board",
@@ -170,11 +167,13 @@ export function staffScreen(state) {
   });
   const office = isAdmin(person);
   const main = (() => {
-    const frame = (overline, title, intro, back, body) =>
+    // Wired in Task 3; until then the click reaches runNavigation's default.
+    const addCaseAction = button(`${icon("plus")} Add a case`, "open-add-case", "primary");
+    const frame = (overline, title, intro, back, body, actions = "") =>
       `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
         back,
         button(`${icon("back")} Back to the work board`, "open-board", "text"),
-      )}</div>${panel}${body}</main>`;
+      )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${panel}${body}</main>`;
     if (state.screen === "staff-case" && state.savedCase) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
@@ -208,20 +207,21 @@ export function staffScreen(state) {
     );
     return office
       ? frame(
-          "OFFICE WORKSPACE",
-          "Office work",
-          "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
+          "OFFICE",
+          "Follow-ups",
+          "Everything waiting on the office, most urgent first.",
           false,
-          renderAdminBoard(
+          renderFollowups(
             cases,
             (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
             {
               person,
               filters: state.boardFilters,
               busy: state.busy,
-              openPanels: state.openPanels,
+              now: Date.now(),
             },
           ),
+          addCaseAction,
         )
       : frame(
           "VOLUNTEER WORKSPACE",
