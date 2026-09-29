@@ -58,6 +58,7 @@ They show later parts' data: client numbers, labels, best time to reach, locatio
 - **Scope new CSS to the new containers.** Use `.office-queue`, `.office-drawer`, `.add-case`, `.case-pool` and `.modal`. Don't change a shared rule (`.board-table`, `.chip`, `.tab`, `.info-note`, `.modal`) at its base unless the change is meant for every screen that uses it. The re-review of PR 3 caught exactly this: an unscoped margin leaked into a staff notice.
 - Only fictional data. The logo is the unchanged `src/pcdc-logo.png`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **Test imports.** A test file that imports a name its module doesn't export fails to load as a whole: `node --test` reports one failed file and runs none of its tests. So a test file imports a name only in the step that writes its first test, and when a "failing" step adds an import, the expected failure is the whole file. Never report "the other tests pass" from a run where the file didn't load.
 
 **Out of scope, and why:**
 - **Best time to reach, location, phone reveal, client numbers, labels, groups and pins.** Their data doesn't exist yet (parts 2–5). The queue shows the assistance item's contact preference where there is one.
@@ -133,7 +134,6 @@ import {
   queueCounts,
   waitingDays,
   waitingLabel,
-  renderFollowups,
 } from "../src/office-views.mjs";
 
 const NOW = Date.parse("2026-09-27T15:00:00");
@@ -293,9 +293,9 @@ export function queueCounts(rows, chosen) {
 
   Resolved help requests leave the queue on purpose; the queue lists work still to do. The old board listed them; its test for that case moves to "offers no action", below.
 
-- [ ] **Step 5: Run the model tests.** Expected: the four model tests PASS; `renderFollowups` is still missing.
+- [ ] **Step 5: Run the model tests.** Expected: the four model tests PASS.
 
-- [ ] **Step 6: Write the failing renderer tests.** Add these to `tests/office-views.test.mjs`. They carry over every behavior the old board tests in `tests/admin-views.test.mjs` checked; delete those old tests in the same commit:
+- [ ] **Step 6: Write the failing renderer tests.** First add `renderFollowups` to the file's import list. Until it exists, the whole file fails to load with `SyntaxError: … does not provide an export named 'renderFollowups'`, and none of its tests run, the model tests included. That is this step's expected failure. Then add these to `tests/office-views.test.mjs`. They carry over every behavior the old board tests in `tests/admin-views.test.mjs` checked; delete those old tests in the same commit:
   - "a case that has just arrived is reachable from the office board"
   - "an assisted draft the office has not sent is reachable too"
   - "the arrived section filters and escapes like the rest of the board"
@@ -465,6 +465,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
    - Today only REMIND leaves a case selected while on the board, and the board *is* home, so nobody noticed.
    - With the drawer, a presenter who logged a call and then went to **Add a case** or **All cases** is thrown back to Follow-ups when the sample cases are reset, mid-typing on Add a case.
    - Fix: leave the screen alone unless it's one that shows the selected case. See Step 2b.
+8. **A refusal would be announced twice.**
+   - `problemBanner` (`src/views.mjs` around line 68) hides the page's `role="alert"` banner only on the case page, where failures are stated in place.
+   - The queue is the `staff` screen, so a refused `RECORD_CONTACT`, `RESOLVE_FOLLOWUP` or help-request `RESOLVE` would render two alerts: the banner behind the drawer, and the drawer's own `#drawer-error`. Screen readers announce both. The banner's Try again and Dismiss would also sit behind an `aria-modal` dialog, where nobody can reach them.
+   - Fix: while a drawer is open, the drawer states the failure and carries those two controls, and the banner steps aside. See Step 4 and Step 5.
+   - (The polite `#toast` from the click and submit handlers is the case page's existing pattern alongside its in-place alert, and stays.)
 
 - [ ] **Step 1: Controller tests (failing).** In `tests/controller.test.mjs`, using that file's existing controller setup helpers:
   - `openDialog("log-call", { caseId: "c1" })` sets `dialog` and `dialogContext: { caseId: "c1" }`.
@@ -498,7 +503,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - Keep the realtime handler's `FIXTURES_GONE_NOTICE` line as it is.
   - `reference` belongs in the list: the client's `referenceScreen` renders `state.savedCase` (`src/client-views.mjs` around line 137).
 
-- [ ] **Step 3: Drawer body tests (failing)** in `tests/office-views.test.mjs`:
+- [ ] **Step 3: Drawer body tests (failing)** in `tests/office-views.test.mjs`. Add `logCallDrawerBody` and `resolveHelpDrawerBody` to the file's import list. The expected failure is the whole file failing to load with "does not provide an export named …"; Task 1's tests in it don't run until Step 4 adds the exports.
   - **Sam's own open task.** With the decorated case carrying one open task assigned to Sam, `logCallDrawerBody` renders:
     - the case reference and stage badge
     - the task's reason, "Calls so far" and the attempt list
@@ -508,17 +513,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - **Two open tasks.** They render two sections with distinct field ids (the scopes are per task).
   - **No open task left.** It renders "No open follow-up is left on this case." and a `close-dialog` button.
   - **Wrong case, or none.** If the loaded case is not `caseId` (`record?.id !== caseId`), it renders "This case could not be opened. Close this and try again." and no form.
-  - **A refusal.** With `ui.error`, it renders `<div class="notice amber" role="alert" id="drawer-error">` with the error message.
+  - **A refusal.** With `ui.error`, it renders `<div class="notice amber" role="alert" id="drawer-error">` with the error message and a `dismiss-error` button. With `ui.retryable` it also has `retry-action`; without it, no `retry-action`.
   - **Help drawer.** `resolveHelpDrawerBody` for an assigned item renders the textarea "What you helped with" (`maxlength="1000"`, `required`) and `data-assistance-action="RESOLVE"` with the item id. It's a submit button inside a `.staff-form`, exactly as the old assistance card built it. It also shows the item's title, language and contact preference, and the sentence "Helping a client with their own forms is separate from preparing a return: resolving a request changes nothing about the case's intake, stage or preparer."
 
 - [ ] **Step 4: Write both bodies** in `src/office-views.mjs`:
 
 ```js
+// The one announcement of a failure while a drawer is open (pitfall 8): the
+// page banner steps aside, so its two controls live here instead.
 const drawerError = (ui) =>
   ui?.error
     ? `<div class="notice amber" role="alert" id="drawer-error">${icon("help")}<div><h3>${esc(
         ui.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
-      )}</h3><p>${esc(ui.error.message)}</p></div></div>`
+      )}</h3><p>${esc(ui.error.message)}</p><div class="conflict-choices">${when(
+        ui.retryable,
+        button("Try again", "retry-action", "secondary"),
+      )}${button("Dismiss", "dismiss-error", "text")}</div></div></div>`
     : "";
 
 export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
@@ -549,7 +559,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
     - Title "Log a call".
     - Decorate `state.savedCase` with `decorateStaffCase(state.savedCase, state.people)`.
     - Find the persona as `staffScreen` does.
-    - Call `logCallDrawerBody({ record, person, ui: { busy: state.busy, error: state.error }, caseId: state.dialogContext?.caseId })`.
+    - Call `logCallDrawerBody({ record, person, ui: { busy: state.busy, error: state.error, retryable: state.retryable }, caseId: state.dialogContext?.caseId })`. Pass the same `ui` to `resolveHelpDrawerBody`.
   - For `resolve-help`:
     - Title "Resolve a help request".
     - Find the item in `state.assistance` by `state.dialogContext?.itemId`, decorated with `decorateAssistance`.
@@ -558,6 +568,17 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
     - `OFFICE FOLLOW-UP` for the two drawers
     - `PRESENTER CONTROLS` for `reset-fixtures` and `load-checkpoint`
     - `ViTally · HERE TO HELP` for the rest
+  - **The banner steps aside** (pitfall 8). In `problemBanner`, after the case-page line, add:
+    ```js
+    // A drawer states its own failure, with the same two controls (see
+    // `drawerError`); a second alert behind an aria-modal dialog would be
+    // announced twice and could not be reached.
+    if (DRAWERS.includes(state.dialog)) return "";
+    ```
+    Define `const DRAWERS = Object.freeze(["log-call", "resolve-help"]);` beside `problemBanner`. When the drawer closes with the error still unread, the banner comes back on the queue, which is where it belongs.
+  - Add a `tests/shell.test.mjs` test that `page(state, "<main></main>")` for a presenter on `staff`, with `error: { code: "VALIDATION", message: "Refused." }`, gives:
+    - `dialog: "log-call"` (with a matching `savedCase` and `dialogContext`): exactly **one** `role="alert"` (count the matches), and it is `#drawer-error`.
+    - `dialog: null`: exactly one `role="alert"`, the `problem-banner`.
   - Add a `tests/shell.test.mjs` test:
     - `dialog({ dialog: "log-call", dialogContext: { caseId: "c1" }, savedCase: …, people: [sam], selectedPersonId: sam.id })` contains `class="modal office-drawer"` and `OFFICE FOLLOW-UP`.
     - `dialog({ dialog: "reset-fixtures", cases: [] })` contains `PRESENTER CONTROLS`.
@@ -627,7 +648,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `renderAddCase(ui)`, where `ui = {person, busy}`.
   - `ADD_CASE_SECTIONS` (`[[key, title, answerKeys], …]`).
 
-- [ ] **Step 1: Failing tests.**
+- [ ] **Step 1: Failing tests.** Add `renderAddCase` and `ADD_CASE_SECTIONS` to `tests/office-views.test.mjs`'s imports. As in Task 2, the expected failure is the whole file failing to load, not just the new tests.
   - In `tests/controller.test.mjs`, a presenter can `navigate("office-add-case")` and `navigate("office-cases")`. A restored window state holding either screen is kept for a presenter. A client principal restoring either falls back to its own home screen.
   - In `tests/office-views.test.mjs`:
     1. The keys of `ADD_CASE_SECTIONS`, flattened, equal `INTAKE_ANSWER_KEYS` exactly, in the same order, so no answer is lost or doubled.
@@ -842,7 +863,7 @@ export function poolCounts(cases = [], chosen) {
 }
 ```
 
-- [ ] **Step 3: Failing renderer tests** (same file). `renderCasePool(cases, people, { filters, now })`:
+- [ ] **Step 3: Failing renderer tests** (same file). Add `renderCasePool` to the file's import list; the expected failure is the whole file failing to load. `renderCasePool(cases, people, { filters, now })`:
   1. **Tabs.** Seven tab toggles with `data-action="set-board-filter" data-filter="poolPhase"`, counts and `aria-pressed`, in `role="group" aria-label="Case phase"`.
   2. **Filter dropdowns.** Five `<select>`s with `data-board-filter` of `poolStage`, `poolLanguage`, `poolService`, `poolPreparer` and `poolReviewer`. Each has a visible `<label>`. None has a blank "Select an option". The first option is "Any stage" / "Any language" / "Any service" / "Anyone".
      - Prepared by and Reviewed by list "Unassigned" second, then the roster's people by name.
