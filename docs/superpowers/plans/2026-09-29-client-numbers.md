@@ -304,6 +304,12 @@ select vitally_private.backfill_client_numbers();
 revoke all on all functions in schema vitally_private from public,anon,authenticated,service_role;
 ```
 
+  All of this except `act_submit` and the backfill function was dry-run against the local test stack while the plan was checked, inside a transaction that rolled back:
+  - it compiles, including the `return query update … returning`;
+  - two calls return 1 then 2;
+  - moving a draft to `received` numbers it;
+  - changing the number afterwards is refused with `VALIDATION`.
+
   The `…` inside `act_submit` means: paste 003's lines from `if p_case.stage<>'draft' then` through the last screening `end if;`, unchanged. Don't retype them; they are the server's submission rules.
 
 - [ ] **Step 5: Apply and run.**
@@ -405,6 +411,8 @@ export const clientNumberTag = (record) =>
   In `src/supabase-store.mjs`:
   - `mapCase` adds `season: row.season ?? null, clientNumber: row.client_number ?? null` after `reviewerId`.
   - `getWorkspace` adds `currentSeason: Number(row.current_season)`.
+  - In `src/contracts.mjs`, add `season, clientNumber` to the documented Case shape (the comment around line 79).
+  - In `tests/store.test.mjs`, add `season: 2025, client_number: 93` to `CASE_ROW`, so the existing key-list tests cover the new fields.
 
 - [ ] **Step 4: Run.** `node --test tests/ui.test.mjs tests/store.test.mjs`, then `npm test`. Expected: PASS.
 
@@ -453,8 +461,9 @@ test("the board search finds a client number in the current season, or an Applic
     - A draft row shows "No number yet".
   - **Search box:** its `<label>` and placeholder read "Find a client # or Application ID", and it keeps `id="field-board-search"`.
   - **`caseHeader`:**
-    - It renders `<p class="case-client-number">Client #093</p>` before the `<h2 id="case-title" …>`, and `#case-title`'s text is still exactly the reference.
-    - A draft shows `<p class="case-client-number">No number yet</p>`.
+    - It renders `<div class="case-client-number">Client #093</div>` before the `<h2 id="case-title" …>`, and `#case-title`'s text is still exactly the reference.
+    - A draft shows `<div class="case-client-number">No number yet</div>`.
+    - It must be a `<div>`, not a `<p>`. `src/styles.css` has `.staff-header p:first-of-type` (PR 4's muted "Acting as" line), and a `<p>` before it would become the first `<p>`, stealing that style.
   - **`historySentence`:** `historySentence({ action: "SUBMIT", actorName: "Sam", detail: { clientNumber: 93 } })` gives `"Sam submitted the application. Client #093 assigned."`, and without `detail.clientNumber` it's unchanged from today.
 
   In `tests/office-views.test.mjs`:
@@ -491,7 +500,7 @@ export function matchesBoardSearch(record, search, currentSeason = null) {
     - Thread `currentSeason` through `filterCases`, `boardCounts` and `renderStaffBoard` (reading `ui.currentSeason`).
     - `boardRow`'s first cell becomes `<th scope="row">${clientNumberTag(record)}<button class="board-reference" …>${esc(record.reference)}</button></th>`, and the header cell becomes `Client`.
     - `searchForm`'s label and placeholder become "Find a client # or Application ID".
-    - `caseHeader` puts `<p class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</p>` first inside the section.
+    - `caseHeader` puts `<div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>` first inside the section. Use a `<div>`, not a `<p>`: see the test above.
     - `historySentence` appends `` ` Client ${formatClientNumber(n)} assigned.` `` when `code === "SUBMIT"` and `entry?.detail?.clientNumber` is a number.
   - **`office-views.mjs`:** `queueRow`'s client cell puts `clientNumberTag(record)` before the reference button when there is a record. `logCallDrawerBody`'s case line starts with `${esc(clientNumberLabel(record))} · ` before the reference.
   - **`pool-views.mjs`:** the first header becomes `Client`, and each row's first cell puts `clientNumberTag(record)` before its reference button.
@@ -577,11 +586,13 @@ export function matchesBoardSearch(record, search, currentSeason = null) {
 - Modify: `tests/browser.mjs` (and `tests/support/story-pages.mjs` if a helper helps), `docs/design/redesign-review.md` (status line), `docs/design/README.md`
 - Add: `docs/design/screens/implemented-client-numbers-board.png`, `implemented-client-numbers-progress.png`
 
-- [ ] **Step 1: Add to the story.** In the phase "a new application is submitted and reaches the staff board", after applicant A submits:
+- [ ] **Step 1: Add to the story.**
+  - In the phase "a new application is submitted and reaches the staff board", applicant A submits, and the phase then runs `findOnBoard(staff, classReference)`. The case is at `received`, which is on no board tab, so its row is only visible through that search.
+  - Put the new steps **after** that call, and end them by running `findOnBoard(staff, classReference)` again, so the rest of the phase starts from exactly the state it had:
   1. Read the client number from the client window's `.id-pill` (the `strong` after `CLIENT NUMBER`), matching `/^#\d{3,}$/`.
   2. Assert the class case's row in the staff window carries the same `.client-number` text.
   3. Search the volunteer board for that number without the `#` (for example "093"), using the existing search form (`#field-board-search`, `#board-search-form button[type="submit"]`), and wait for exactly one `button.board-reference` with the class reference.
-  4. Clear the search (`set-board-filter` with `data-filter="search" data-value=""`) so the phase continues from where it was.
+  4. Run `findOnBoard(staff, classReference)` again, which restores the search the rest of the phase expects.
   5. Record `evidence.story.clientNumber`.
 
   Read the phase before editing, and keep its evidence and `shoot` calls.
