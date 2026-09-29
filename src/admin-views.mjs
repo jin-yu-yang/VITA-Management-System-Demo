@@ -551,7 +551,7 @@ function receiptPanel(record, person, ui) {
   )}${body}</section>`;
 }
 
-function attemptList(task) {
+export function attemptList(task) {
   const attempts = task?.attempts ?? [];
   if (!attempts.length)
     return '<p class="muted">No call has been recorded on this task yet.</p>';

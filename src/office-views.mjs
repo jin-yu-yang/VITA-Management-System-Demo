@@ -1,8 +1,17 @@
-import { esc, icon, button, caseButton, stageBadge } from "./ui.mjs";
-import { adminEligibility, openFollowupCount, remindedNote } from "./admin-views.mjs";
+import { esc, icon, button, caseButton, stageBadge, textarea } from "./ui.mjs";
+import {
+  adminEligibility,
+  attemptList,
+  followupForms,
+  openFollowups,
+  openFollowupCount,
+  remindedNote,
+} from "./admin-views.mjs";
 import {
   when,
   explain,
+  detailRow,
+  UNKNOWN_PERSON,
   stageWork,
   isAvailableWork,
   boardFilters,
@@ -227,4 +236,71 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this queue is read-only.</p>`,
   )}${shown.length ? table : empty}<p class="field-note board-note">Waiting turns amber at 3 days and red at 5. This queue shows workflow only: no taxpayer names, no addresses and no document contents.</p></section>`;
+}
+
+// ---------------------------------------------------------------------------
+// The two drawers: Log a call, and Resolve a help request
+// ---------------------------------------------------------------------------
+
+// The one announcement of a failure while a drawer is open (pitfall 8): the
+// page banner steps aside, so its two controls live here instead.
+const drawerError = (ui) =>
+  ui?.error
+    ? `<div class="notice amber" role="alert" id="drawer-error">${icon("help")}<div><h3>${esc(
+        ui.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
+      )}</h3><p>${esc(ui.error.message)}</p><div class="conflict-choices">${when(
+        ui.retryable,
+        button("Try again", "retry-action", "secondary"),
+      )}${button("Dismiss", "dismiss-error", "text")}</div></div></div>`
+    : "";
+
+/**
+ * The Log a call drawer: every open follow-up task on one case, each with the
+ * same two forms the case page's Follow-up tab uses.
+ *
+ * @param {object} args `{record, person, ui, caseId}` — `record` is the loaded
+ *   case, decorated (`decorateStaffCase`); `caseId` is the case the drawer was
+ *   opened for, so a different or missing case is never shown in its place.
+ */
+export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
+  if (!record || record.id !== caseId)
+    return `<p>This case could not be opened. Close this and try again.</p>${button("Close", "close-dialog", "secondary")}`;
+  const tasks = openFollowups(record);
+  const head = `<div class="drawer-case">${esc(record.reference)} ${stageBadge(record.stage)}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
+  if (!tasks.length)
+    return `${head}<p>No open follow-up is left on this case.</p>${button("Close", "close-dialog", "secondary")}`;
+  return `${head}${drawerError(ui)}${tasks
+    .map(
+      (task) =>
+        `<section class="drawer-task"><h3>${esc(task.reason)}</h3>${detailRow("Assigned to", task.assigneeName ?? UNKNOWN_PERSON)}<h4>Calls so far</h4>${attemptList(task)}${followupForms(record, task, person, ui)}</section>`,
+    )
+    .join("")}`;
+}
+
+/**
+ * The Resolve a help request drawer: one assigned request, resolved with a
+ * note, exactly as the office's old assistance card resolved it.
+ *
+ * @param {object} args `{item, person, ui}` — `item` decorated with its helper.
+ */
+export function resolveHelpDrawerBody({ item, person, ui = {} } = {}) {
+  if (!item || item.status !== "assigned")
+    return `<p>This request is no longer open.</p>${button("Close", "close-dialog", "secondary")}`;
+  const busy = ui?.busy ? "disabled" : "";
+  const rights = adminEligibility({ item }, person);
+  const resolve = rights.resolveAssistance.allowed
+    ? `<form class="staff-form">${textarea(
+        "What you helped with",
+        "note",
+        "",
+        'required maxlength="1000" rows="3"',
+        `assist-${item.id}`,
+      )}<button type="submit" class="btn primary" data-assistance-action="RESOLVE" data-item-id="${esc(
+        item.id,
+      )}" ${busy}>${icon("check")} Record this as resolved</button></form>`
+    : explain(rights.resolveAssistance);
+  return `<h3>${esc(item.title)}</h3>${drawerError(ui)}${detailRow("Language", item.language)}${detailRow(
+    "Contact preference",
+    item.contactPreference,
+  )}<p class="field-note">Helping a client with their own forms is separate from preparing a return: resolving a request changes nothing about the case's intake, stage or preparer.</p>${resolve}`;
 }

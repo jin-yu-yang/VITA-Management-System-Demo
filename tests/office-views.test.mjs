@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   followupQueue,
+  logCallDrawerBody,
   officeFilters,
+  resolveHelpDrawerBody,
   queueCounts,
   renderFollowups,
   waitingDays,
@@ -241,4 +243,134 @@ test("references, titles and languages are escaped", () => {
   );
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+// ---------------------------------------------------------------------------
+// The two drawers
+// ---------------------------------------------------------------------------
+
+const task = (over = {}) => ({
+  id: "f1",
+  status: "open",
+  reason: "Ask for the missing W-2",
+  assigneeId: "p-sam",
+  assigneeName: "Sam",
+  attempts: [
+    { outcome: "no_answer", actorName: "Sam", createdAt: daysAgo(1), note: "Rang twice" },
+  ],
+  ...over,
+});
+const called = (followups) =>
+  kase({ id: "c1", reference: "VT-CALL", stage: "preparing", followups });
+const count = (html, pattern) => (html.match(pattern) ?? []).length;
+
+test("the Log a call drawer holds Sam's own task and both of its forms", () => {
+  const html = logCallDrawerBody({ record: called([task()]), person: sam, ui: {}, caseId: "c1" });
+  assert.match(html, /VT-CALL/);
+  assert.match(html, /class="badge/);
+  assert.match(html, /Ask for the missing W-2/);
+  assert.match(html, /Calls so far/);
+  assert.match(html, /class="attempt-list"/);
+  assert.match(html, /Rang twice/);
+  assert.match(html, /data-case-action="RECORD_CONTACT"[^>]*data-followup-id="f1"/);
+  assert.match(html, /data-case-action="RESOLVE_FOLLOWUP"[^>]*data-followup-id="f1"/);
+  assert.match(html, /data-action="open-case"[^>]*data-case-id="c1"[^>]*>Open the case</);
+});
+
+test("a task assigned to someone else shows the reason and no form", () => {
+  const html = logCallDrawerBody({
+    record: called([task({ assigneeId: "p-jo", assigneeName: "Jo" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(html, /The office assigned this task to someone else\./);
+  assert.doesNotMatch(html, /RECORD_CONTACT/);
+});
+
+test("two open tasks are two sections with their own field ids", () => {
+  const html = logCallDrawerBody({
+    record: called([task(), task({ id: "f2", reason: "Confirm the address" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.equal(count(html, /<section class="drawer-task">/g), 2);
+  const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length, "every field id is unique");
+  assert.match(html, /data-followup-id="f2"/);
+});
+
+test("a case with no open task left says so and offers to close", () => {
+  const html = logCallDrawerBody({
+    record: called([task({ status: "resolved" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(html, /No open follow-up is left on this case\./);
+  assert.match(html, /data-action="close-dialog"/);
+  assert.doesNotMatch(html, /RECORD_CONTACT/);
+});
+
+test("a drawer for another case, or none, opens nothing", () => {
+  for (const record of [called([task()]), null]) {
+    const html = logCallDrawerBody({ record, person: sam, ui: {}, caseId: "c2" });
+    assert.match(html, /This case could not be opened\. Close this and try again\./);
+    assert.doesNotMatch(html, /<form/);
+  }
+});
+
+test("a refusal is stated once in the drawer, with its own controls", () => {
+  const error = { code: "VALIDATION", message: "The note is too long." };
+  const retry = logCallDrawerBody({
+    record: called([task()]),
+    person: sam,
+    ui: { error, retryable: true },
+    caseId: "c1",
+  });
+  assert.match(retry, /<div class="notice amber" role="alert" id="drawer-error">/);
+  assert.match(retry, /The note is too long\./);
+  assert.match(retry, /data-action="dismiss-error"/);
+  assert.match(retry, /data-action="retry-action"/);
+  const final = logCallDrawerBody({ record: called([task()]), person: sam, ui: { error }, caseId: "c1" });
+  assert.match(final, /id="drawer-error"/);
+  assert.doesNotMatch(final, /data-action="retry-action"/);
+});
+
+test("the help drawer resolves one assigned request, as the old card did", () => {
+  const item = {
+    id: "h2",
+    status: "assigned",
+    assigneeId: "p-sam",
+    assigneeName: "Sam",
+    title: "Help reading a letter",
+    language: "Mandarin",
+    contactPreference: "Phone call",
+    revision: 2,
+  };
+  const html = resolveHelpDrawerBody({ item, person: sam, ui: {} });
+  assert.match(html, /Help reading a letter/);
+  assert.match(html, /Mandarin/);
+  assert.match(html, /Phone call/);
+  assert.match(
+    html,
+    /Helping a client with their own forms is separate from preparing a return: resolving a request changes nothing about the case's intake, stage or preparer\./,
+  );
+  const form = html.match(/<form class="staff-form">[\s\S]*?<\/form>/)?.[0] ?? "";
+  assert.match(form, /What you helped with/);
+  assert.match(form, /<textarea[^>]*maxlength="1000"/);
+  assert.match(form, /<textarea[^>]*required/);
+  assert.match(form, /<button type="submit"[^>]*data-assistance-action="RESOLVE" data-item-id="h2"/);
+
+  // Somebody else's request: the reason, and nothing to submit.
+  const jo = resolveHelpDrawerBody({ item: { ...item, assigneeId: "p-jo" }, person: sam, ui: {} });
+  assert.match(jo, /Only the helper holding this request resolves it\./);
+  assert.doesNotMatch(jo, /data-assistance-action="RESOLVE"/);
+  // Gone, or no longer assigned.
+  for (const gone of [null, { ...item, status: "resolved" }])
+    assert.match(resolveHelpDrawerBody({ item: gone, person: sam, ui: {} }), /This request is no longer open\./);
+  // Its own refusal.
+  const refused = resolveHelpDrawerBody({ item, person: sam, ui: { error: { code: "VALIDATION", message: "No." } } });
+  assert.match(refused, /id="drawer-error"/);
 });
