@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
+import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -1080,6 +1081,19 @@ test("the board's filters are this window's, kept per user and dropped on sign-o
   assert.deepEqual(again.controller.getState().boardFilters, {});
   assert.equal(shared.raw("vitally:client:v1:p1"), null);
   again.controller.stop();
+});
+
+test("clearing named board filters keeps the others", async () => {
+  const { controller } = build({ store: fakeStore() });
+  await controller.start();
+  controller.setBoardFilter("status", "review");
+  controller.setBoardFilter("poolLanguage", "Mandarin");
+  controller.setBoardFilter("poolPhase", "closed");
+  controller.clearBoardFilters(POOL_FILTER_KEYS);
+  assert.deepEqual(controller.getState().boardFilters, { status: "review" });
+  controller.clearBoardFilters();
+  assert.deepEqual(controller.getState().boardFilters, {});
+  controller.stop();
 });
 
 test("the board search draft survives a re-render but not a filter change", async () => {

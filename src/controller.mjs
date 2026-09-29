@@ -787,9 +787,17 @@ export function createController({
     show();
   }
 
-  function clearBoardFilters() {
-    state.boardFilters = {};
-    state.boardSearchDraft = undefined;
+  // With a list of names, only those filters go (the office pool clears its
+  // own without touching the volunteer board's); with none, every filter does.
+  function clearBoardFilters(keys) {
+    if (Array.isArray(keys)) {
+      const next = { ...state.boardFilters };
+      for (const key of keys) delete next[key];
+      state.boardFilters = next;
+    } else {
+      state.boardFilters = {};
+      state.boardSearchDraft = undefined;
+    }
     persistSession();
     show();
   }

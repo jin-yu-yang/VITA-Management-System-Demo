@@ -736,3 +736,41 @@ test("the office case page uses the same header and five tabs", () => {
   assert.match(html, /id="case-panel-documents"[^>]*hidden>[\s\S]*<h2 id="documents-title">Documents<\/h2>/);
   assert.match(html, /id="case-panel-history"[^>]*hidden>[\s\S]*History/);
 });
+
+test("the office pool and the add-a-case page route by persona, and the sidebar follows", () => {
+  const state = {
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: PEOPLE,
+    selectedPersonId: "sam",
+    cases: [boardCase()],
+    assistance: [],
+    savedCase: null,
+    screen: "office-cases",
+    boardFilters: {},
+    openPanels: [],
+    draftAnswers: {},
+    busy: false,
+    error: null,
+    retryable: false,
+  };
+  const navItem = (html, label) =>
+    html.match(new RegExp(`<button[^>]*>[^<]*(?:<svg.*?</svg>)?\\s*${label}</button>`))?.[0] ?? "";
+
+  const pool = staffScreen(state);
+  assert.match(pool, /Case pool/);
+  assert.match(pool, /<h2 id="pool-title">All cases<\/h2>/);
+  assert.match(navItem(pool, "All cases"), /aria-current="page"/);
+  assert.doesNotMatch(navItem(pool, "Follow-ups"), /aria-current/);
+  assert.match(navItem(pool, "Follow-ups"), /data-action="open-board"/);
+
+  // A volunteer chosen while the pool is open gets the work board.
+  const volunteer = staffScreen({ ...state, selectedPersonId: "alex" });
+  assert.match(volunteer, /Work board<\/h2>/);
+  assert.doesNotMatch(volunteer, /Case pool/);
+  assert.match(navItem(volunteer, "Work board"), /aria-current="page"/);
+  assert.doesNotMatch(volunteer, /All cases/);
+
+  const adding = staffScreen({ ...state, screen: "office-add-case" });
+  assert.match(adding, /Add a case<\/h1>/);
+  assert.doesNotMatch(adding, /aria-current="page"/);
+});

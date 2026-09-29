@@ -12,6 +12,7 @@ import {
   logCallDrawerBody,
   resolveHelpDrawerBody,
 } from "./office-views.mjs";
+import { renderCasePool } from "./pool-views.mjs";
 import {
   renderPresenterPanel,
   resetDialogBody,
@@ -144,13 +145,22 @@ const isAdmin = (person) =>
 // do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
   const onBoard = state?.screen === "staff";
+  const onPool = state?.screen === "office-cases";
   const label = office ? "Follow-ups" : "Work board";
+  const pool = office
+    ? button(
+        `${icon("folder")} All cases`,
+        "open-cases",
+        `nav-link${onPool ? " current" : ""}`,
+        onPool ? 'aria-current="page"' : "",
+      )
+    : "";
   return `<div class="sidebar-brand"><img src="src/pcdc-logo.png" alt="PCDC" width="36" height="36"><span class="sidebar-wordmark">ViTally<span class="brand-dot">.</span></span></div><nav class="sidebar-nav" aria-label="Main navigation">${button(
     `${icon(office ? "people" : "board")} ${label}`,
     "open-board",
     `nav-link${onBoard ? " current" : ""}`,
     onBoard ? 'aria-current="page"' : "",
-  )}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
+  )}${pool}  )}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
     person?.name ?? "No persona chosen",
   )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
     `${icon("help")} Need help?`,
@@ -229,6 +239,15 @@ export function staffScreen(state) {
     const cases = (state.cases ?? []).map((record) =>
       decorateStaffCase(record, people),
     );
+    if (screen === "office-cases")
+      return frame(
+        "OFFICE · ALL CASES",
+        "Case pool",
+        "Every case in this workspace, in every stage.",
+        "",
+        renderCasePool(cases, people, { filters: state.boardFilters, now: Date.now() }),
+        addCaseAction,
+      );
     return office
       ? frame(
           "OFFICE",

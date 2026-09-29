@@ -14,6 +14,7 @@ import {
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
+import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -557,6 +558,13 @@ if (!config) {
         formDrafts.clear();
         controller.navigate("staff");
         break;
+      case "open-cases":
+        formDrafts.clear();
+        controller.navigate("office-cases");
+        break;
+      case "clear-pool-filters":
+        controller.clearBoardFilters(POOL_FILTER_KEYS);
+        break;
       case "open-add-case":
         formDrafts.clear();
         controller.navigate("office-add-case");
@@ -764,6 +772,11 @@ if (!config) {
 
   root.addEventListener("change", (event) => {
     const field = event.target;
+    if (field.matches?.("select[data-board-filter]")) {
+      controller.setBoardFilter(field.dataset.boardFilter, field.value);
+      root.querySelector(`#${field.id}`)?.focus();
+      return;
+    }
     if (field.id === "field-confirmed") {
       controller.togglePanel("confirmed");
       root.querySelector("#field-confirmed")?.focus();
