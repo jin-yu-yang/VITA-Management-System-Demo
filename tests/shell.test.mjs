@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, page, clientHeader, languageSwitch } from "../src/views.mjs";
+import { appShell, staffSidebar, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -50,7 +50,7 @@ test("the staff sidebar carries the logo, the one screen that exists, and the ac
   assert.doesNotMatch(html, /Dashboard|Schedule|Documents|Messages|Notifications/);
 
   const office = staffSidebar({ screen: "staff-case" }, { id: "sam", name: "Sam", capabilities: ["admin"] }, true);
-  assert.match(office, /Office work/);
+  assert.match(office, /Follow-ups/);
   assert.doesNotMatch(office, /aria-current/, "on a case, no nav item is current");
   assert.match(staffSidebar({ screen: "staff" }, null, false), /No persona chosen/);
 });
@@ -148,4 +148,124 @@ test("the body behind the restyled frames uses the lavender background, not the 
     css,
     /body:has\(\.client-shell\),\s*body:has\(\.app-shell\)\s*\{\s*background:\s*var\(--vt-background\);/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The office drawers
+// ---------------------------------------------------------------------------
+
+const drawerSam = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup", "assist"] };
+const drawerCase = {
+  id: "c1",
+  reference: "VT-CALL",
+  stage: "preparing",
+  revision: 3,
+  answers: {},
+  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam", attempts: [] }],
+};
+const drawerState = (over = {}) => ({
+  principal: { access: "presenter" },
+  connection: "online",
+  screen: "staff",
+  people: [drawerSam],
+  selectedPersonId: drawerSam.id,
+  cases: [],
+  assistance: [],
+  ...over,
+});
+
+test("while a drawer is open, a refusal is announced once, by the drawer", () => {
+  const error = { code: "VALIDATION", message: "Refused." };
+  const open = page(
+    drawerState({ error, dialog: "log-call", dialogContext: { caseId: "c1" }, savedCase: drawerCase }),
+    "<main></main>",
+  );
+  assert.equal((open.match(/role="alert"/g) ?? []).length, 1);
+  assert.match(open, /role="alert" id="drawer-error"/);
+  assert.doesNotMatch(open, /problem-banner/);
+
+  const closed = page(drawerState({ error, dialog: null }), "<main></main>");
+  assert.equal((closed.match(/role="alert"/g) ?? []).length, 1);
+  assert.match(closed, /class="problem-banner" role="alert"/);
+});
+
+test("the drawer is the modal frame at the edge, and each dialog names its place", () => {
+  const drawer = dialog(
+    drawerState({ dialog: "log-call", dialogContext: { caseId: "c1" }, savedCase: drawerCase }),
+  );
+  assert.match(drawer, /class="modal office-drawer"/);
+  assert.match(drawer, /OFFICE FOLLOW-UP/);
+  assert.match(drawer, /Log a call/);
+  assert.match(drawer, /data-case-action="RECORD_CONTACT"/);
+
+  const help = dialog(
+    drawerState({
+      dialog: "resolve-help",
+      dialogContext: { itemId: "h1" },
+      assistance: [{ id: "h1", status: "assigned", assigneeId: "p-sam", title: "Letter", revision: 1 }],
+    }),
+  );
+  assert.match(help, /class="modal office-drawer"/);
+  assert.match(help, /Resolve a help request/);
+  assert.match(help, /data-assistance-action="RESOLVE" data-item-id="h1"/);
+
+  assert.match(dialog({ dialog: "reset-fixtures", cases: [] }), /PRESENTER CONTROLS/);
+  assert.match(dialog({ dialog: "help" }), /ViTally · HERE TO HELP/);
+  assert.doesNotMatch(dialog({ dialog: "help" }), /office-drawer/);
+});
+
+test("the drawer list is exported once, for the renderer and app.mjs's focus fallback alike", () => {
+  assert.deepEqual([...DRAWERS], ["log-call", "resolve-help"]);
+  assert.ok(Object.isFrozen(DRAWERS));
+  const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
+  assert.doesNotMatch(app, /\["log-call",\s*"resolve-help"\]/);
+  assert.match(app, /views\.DRAWERS\.includes\(/);
+});
+
+// PR 4 (the office screens) styles its new containers in one marked block of
+// the stylesheet, on the design tokens only.
+const stylesheet = () =>
+  readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+
+test("the office drawer is the modal frame placed at the right edge", () => {
+  const css = stylesheet();
+  assert.match(css, /\.modal\.office-drawer\s*\{/);
+  assert.match(css, /\.modal-backdrop:has\(\.office-drawer\)\s*\{[^}]*justify-content:\s*flex-end/);
+});
+
+test("the shared dialog notes read the tokens, so the help dialog's note is legible", () => {
+  const css = stylesheet();
+  assert.match(css, /\.modal \.info-note p\s*\{[^}]*color:\s*var\(--vt-/);
+});
+
+test("the office block of the stylesheet uses tokens, not hex colors", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* PR 4: office screens */");
+  const end = css.indexOf("/* end PR 4 */");
+  assert.ok(start >= 0 && end > start, "the PR 4 block is marked");
+  const block = css.slice(start, end);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+});
+
+test("the queue's row actions keep the 44px staff control minimum", () => {
+  assert.match(stylesheet(), /\.office-queue \.queue-action \.btn\s*\{[^}]*min-height:\s*var\(--vt-tap\)/);
+});
+
+test("the queue's and the pool's filter chips keep the 44px staff minimum, the base chip stays", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* PR 4: office screens */");
+  const end = css.indexOf("/* end PR 4 */");
+  const block = css.slice(start, end);
+  assert.match(
+    block,
+    /\.office-queue \.btn\.chip,\s*\.case-pool \.btn\.chip\s*\{[^}]*min-height:\s*var\(--vt-tap\)/,
+  );
+  assert.match(css, /\n\.btn\.chip\s*\{[^}]*min-height:\s*32px/);
+});
+
+test("the office drawer fills the dynamic viewport, with 100vh as the fallback", () => {
+  const rule = stylesheet().match(/\.modal\.office-drawer\s*\{([^}]*)\}/)[1];
+  assert.match(rule, /height:\s*100vh;\s*height:\s*100dvh;/);
+  assert.match(rule, /max-height:\s*100vh;\s*max-height:\s*100dvh;/);
 });

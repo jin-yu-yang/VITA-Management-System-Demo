@@ -29,6 +29,7 @@ import {
   choosePersona,
   clickAction,
   clickCaseActionUntil,
+  fieldByLabel,
   findOnBoard,
   measureOverflow,
   openBoard,
@@ -98,6 +99,7 @@ const REQUEST_MESSAGE = "Please add the fictional sample mileage record.";
 const ESCALATION_REASON =
   "The fictional client has not sent the sample yet; the office can ask about it.";
 const CONTACT_NOTE = "Simulated call: the fictional client will send the sample.";
+const HELP_NOTE = "Simulated help: walked the fictional client through the intake forms.";
 const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 // Internal staff text. It must never appear in a client window.
 const FINDINGS = "Internal only: recheck the simulated mileage total before approval.";
@@ -483,13 +485,13 @@ async function runPermutation(t, roles) {
         assert.deepEqual(after, before, "the staff window moved the client window");
 
         // …and the client window is not frozen: the next office step arrives.
-        // The office opens it from its own board — "Intake checks needed" is
-        // the first section, and a case at `received` is claimable by nobody,
-        // so this is the only control on any office screen that reaches it.
+        // The office opens it from its own queue — an intake row, and a case
+        // at `received` is claimable by nobody, so this row's way in is the
+        // only control on any office screen that reaches it.
         await choosePersona(staff, sam);
         await waitForText(staff, OFFICE_BOARD_HEADING, RENDER_MS);
         const arrived = staff
-          .locator('section[aria-labelledby="arrived-title"] .board-row')
+          .locator('tr.queue-row[data-kind="intake"]')
           .filter({ hasText: classReference })
           .first();
         await arrived.waitFor({ state: "visible", timeout: RENDER_MS });
@@ -555,15 +557,273 @@ async function runPermutation(t, roles) {
 
     await phase("Sam records the call and resolves the task; Alex stays the preparer", async () => {
       await choosePersona(staff, sam);
-      // The follow-up is on the office case page's Follow-up tab.
+      // The attempt goes through the queue's Log a call drawer; the resolution
+      // below goes through the case page's Follow-up tab, so both stay covered.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      const callRow = staff
+        .locator('tr.queue-row[data-kind="call"]')
+        .filter({ hasText: classReference })
+        .first();
+      await callRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForQuiet(staff);
+      await callRow.locator('[data-action="open-log-call"]').click({ timeout: CLICK_MS });
+      const drawer = staff.locator(".modal.office-drawer");
+      await drawer.waitFor({ state: "visible", timeout: ARRIVAL_MS });
+      const contactForm = drawer
+        .locator('form:has(button[type="submit"][data-case-action="RECORD_CONTACT"])')
+        .first();
+      await contactForm.waitFor({ state: "visible", timeout: RENDER_MS });
+
+      // Half a note, and a change from elsewhere that rebuilds the page but not
+      // the drawer: the keyboard, the text and the caret all have to survive.
+      await waitForQuiet(staff);
+      const noteField = await fieldByLabel(contactForm, "Note for the office", "RECORD_CONTACT");
+      await noteField.click({ timeout: CLICK_MS });
+      await noteField.pressSequentially("Reached the client", { timeout: CLICK_MS });
+      const typed = await noteField.evaluate((field) => {
+        field.setSelectionRange(7, 7);
+        window.__drawerBeforeChange = document.querySelector(".modal.office-drawer");
+        return { id: field.id, value: field.value, caret: field.selectionStart };
+      });
+      // A no-op update on a sample case: the staff window re-reads its list and
+      // re-renders, exactly as it does for another window's work, and nothing
+      // the drawer shows has moved.
+      await fixture.database.sql("update public.cases set revision=revision where id=$1", [
+        samples[0].id,
+      ]);
+      await waitFor(
+        staff,
+        "a re-render from the other change to rebuild the drawer",
+        () => {
+          const now = document.querySelector(".modal.office-drawer");
+          return Boolean(now) && now !== window.__drawerBeforeChange;
+        },
+        undefined,
+        ARRIVAL_MS,
+      );
+      await waitForQuiet(staff);
+      const kept = await staff.evaluate(() => {
+        const field = document.activeElement;
+        return {
+          id: field?.id ?? null,
+          value: field?.value ?? null,
+          caret: field?.selectionStart ?? null,
+          inDrawer: Boolean(field?.closest?.(".modal.office-drawer")),
+        };
+      });
+      assert.deepEqual(
+        kept,
+        { ...typed, inDrawer: true },
+        "a re-render took the half-typed note, its caret or the keyboard",
+      );
+      evidence.regressions.drawerCaret = { typed, kept };
+
+      const attempt = record(
+        "RECORD_CONTACT",
+        await submitCaseFormUntil(
+          staff,
+          "RECORD_CONTACT",
+          { "What happened": "reached", "Note for the office": CONTACT_NOTE },
+          {
+            ready: (note) =>
+              [...document.querySelectorAll(".modal.office-drawer .attempt-list li")].some(
+                (entry) => entry.textContent.includes(note),
+              ),
+            arg: CONTACT_NOTE,
+            what: "the recorded call in the drawer's list of calls",
+            safeToRepeat: await unmovedSince(),
+          },
+        ),
+      );
+      // Recording an attempt keeps the drawer open, and the keyboard goes back
+      // to the very button that was pressed — not merely somewhere in the
+      // drawer: before the fix each re-render moved it to the first dropdown.
+      await waitForQuiet(staff);
+      const afterAttempt = await staff.evaluate(() => {
+        const active = document.activeElement;
+        return {
+          caseAction: active?.dataset?.caseAction ?? null,
+          inDrawer: Boolean(active?.closest?.(".modal.office-drawer")),
+        };
+      });
+      assert.deepEqual(
+        afterAttempt,
+        { caseAction: "RECORD_CONTACT", inDrawer: true },
+        "the keyboard left the Record this attempt button when the attempt landed",
+      );
+      // Escape closes the drawer and gives the keyboard back to this row's
+      // Log a call button.
+      await staff.keyboard.press("Escape");
+      await waitFor(
+        staff,
+        "the Log a call drawer to close",
+        () => document.querySelector(".modal") === null,
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(
+        await staff.evaluate(
+          (id) =>
+            document.activeElement?.dataset?.action === "open-log-call" &&
+            document.activeElement.dataset.caseId === id,
+          classCase.id,
+        ),
+        true,
+        "Escape did not give the keyboard back to the row's Log a call button",
+      );
+      evidence.regressions.logCallDrawer = { attempt, afterAttempt, escape: "back on the row" };
+
+      // The Resolve a help request drawer: Sam takes the sample help request
+      // on the queue, resolves it there, and the row leaves the queue with the
+      // keyboard on the queue's title rather than on the page.
+      const helpClaim = staff
+        .locator('tr.queue-row[data-kind="help"] [data-assistance-action="CLAIM"]')
+        .first();
+      await helpClaim.waitFor({ state: "visible", timeout: RENDER_MS });
+      const helpItemId = await helpClaim.getAttribute("data-item-id");
+      const helpRevision = async () =>
+        Number(
+          (
+            await fixture.database.sql(
+              "select revision from public.assistance_items where id=$1",
+              [helpItemId],
+            )
+          ).rows[0].revision,
+        );
+      const helpUnmoved = async () => {
+        const before = await helpRevision();
+        return async () => (await helpRevision()) === before;
+      };
+      const helpResolve = `[data-action="open-resolve-help"][data-item-id="${helpItemId}"]`;
+      const helpClaimed = record(
+        "CLAIM (assistance)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            await staff
+              .locator(`[data-assistance-action="CLAIM"][data-item-id="${helpItemId}"]`)
+              .click({ timeout: CLICK_MS });
+          },
+          ready: (selector) => Boolean(document.querySelector(selector)),
+          arg: helpResolve,
+          what: "the queue row's Record as resolved button",
+          safeToRepeat: await helpUnmoved(),
+        }),
+      );
+      await waitForQuiet(staff);
+      await staff.locator(helpResolve).click({ timeout: CLICK_MS });
+      const helpDrawer = staff.locator(".modal.office-drawer");
+      await helpDrawer.waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForText(staff, "Resolve a help request", RENDER_MS);
+      const helpForm = helpDrawer
+        .locator('form:has(button[type="submit"][data-assistance-action="RESOLVE"])')
+        .first();
+      await helpForm.waitFor({ state: "visible", timeout: RENDER_MS });
+      await shoot(staff, "office-resolve-help");
+      const helpResolved = record(
+        "RESOLVE (assistance)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            const note = await fieldByLabel(helpForm, "What you helped with", "RESOLVE");
+            await note.fill(HELP_NOTE, { timeout: CLICK_MS });
+            await waitForQuiet(staff);
+            await helpForm
+              .locator('button[type="submit"][data-assistance-action="RESOLVE"]')
+              .click({ timeout: CLICK_MS });
+          },
+          ready: () => document.querySelector(".modal") === null,
+          what: "the Resolve a help request drawer to close",
+          safeToRepeat: await helpUnmoved(),
+        }),
+      );
+      await waitFor(
+        staff,
+        "the resolved help request to leave the queue",
+        (id) =>
+          !document.querySelector(`tr.queue-row [data-item-id="${id}"]`) &&
+          document.activeElement?.id === "office-queue-title",
+        helpItemId,
+        RENDER_MS,
+      );
+      const helpRow = await one(
+        fixture,
+        "select status, resolution_note from public.assistance_items where id=$1",
+        [helpItemId],
+      );
+      assert.equal(helpRow.status, "resolved", "the help request was not resolved");
+      evidence.regressions.resolveHelpDrawer = {
+        claim: helpClaimed,
+        resolve: helpResolved,
+        focus: "#office-queue-title",
+        rowGone: true,
+      };
+
+      // An empty queue's own buttons go with the empty state: "Show all
+      // languages" and "Show every task" leave the keyboard on the chip that
+      // now shows that choice. A kind with rows, in a language with none of
+      // that kind, empties the queue.
+      const emptyPair = await staff.evaluate(() => {
+        const rows = [...document.querySelectorAll("tr.queue-row")].map((row) => ({
+          kind: row.dataset.kind,
+          language: row.cells[3]?.textContent.trim(),
+        }));
+        const languages = [
+          ...document.querySelectorAll('[data-filter="language"]:not([data-value="all"])'),
+        ].map((chip) => chip.dataset.value);
+        for (const kind of new Set(rows.map((row) => row.kind)))
+          for (const language of languages)
+            if (!rows.some((row) => row.kind === kind && row.language === language))
+              return { kind, language };
+        return null;
+      });
+      const chip = (filter, value) =>
+        `.filter-group [data-action="set-board-filter"][data-filter="${filter}"][data-value="${value}"]`;
+      const emptyButton = (filter) =>
+        `.office-queue .empty-state [data-action="set-board-filter"][data-filter="${filter}"][data-value="all"]`;
+      if (emptyPair) {
+        const narrow = async () => {
+          await clickAction(staff, "set-board-filter", {
+            attributes: `[data-filter="language"][data-value="${emptyPair.language}"]`,
+          });
+          await clickAction(staff, "set-board-filter", {
+            attributes: `[data-filter="officeKind"][data-value="${emptyPair.kind}"]`,
+          });
+          await staff
+            .locator(emptyButton("language"))
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+        };
+        await narrow();
+        await waitForQuiet(staff);
+        await staff.locator(emptyButton("language")).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          'the keyboard on the "Any language" chip after "Show all languages"',
+          (wanted) => document.activeElement?.matches?.(wanted) ?? false,
+          chip("language", "all"),
+          RENDER_MS,
+        );
+        await narrow();
+        await waitForQuiet(staff);
+        await staff.locator(emptyButton("officeKind")).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          'the keyboard on the "All" chip after "Show every task"',
+          (wanted) => document.activeElement?.matches?.(wanted) ?? false,
+          chip("officeKind", "all"),
+          RENDER_MS,
+        );
+        await clickAction(staff, "set-board-filter", {
+          attributes: '[data-filter="language"][data-value="all"]',
+        });
+        evidence.regressions.queueEmptyStateFocus = { ...emptyPair, focus: "on the chip" };
+      } else evidence.regressions.queueEmptyStateFocus = "no kind and language left the queue empty";
+
+      // The resolution is on the office case page's Follow-up tab.
+      await openCaseByReference(staff, classReference);
       await openCaseTab(staff, "followup");
       await waitForText(staff, "Follow-up with the client", RENDER_MS);
-      await actForm(
-        staff,
-        "RECORD_CONTACT",
-        { "What happened": "reached", "Note for the office": CONTACT_NOTE },
-        { text: CONTACT_NOTE },
-      );
+      await waitForText(staff, CONTACT_NOTE, RENDER_MS);
       // Recording a call never resolves the task.
       await waitForBadge(staff, "Open with the office");
       await shoot(staff, "office-case-followup");
@@ -1225,8 +1485,10 @@ async function runPermutation(t, roles) {
     await phase("the office takes in a walk-in client's application and its document", async () => {
       await choosePersona(staff, sam);
       await openBoard(staff, OFFICE_BOARD_HEADING);
-      await clickAction(staff, "toggle-assisted-intake");
-      await waitForText(staff, "A walk-in client's answers", RENDER_MS);
+      await clickAction(staff, "open-add-case");
+      await staff
+        .locator("#assisted-intake-form")
+        .waitFor({ state: "visible", timeout: RENDER_MS });
       await clickAction(staff, "fill-assisted-intake");
       await waitFor(
         staff,
@@ -1264,6 +1526,69 @@ async function runPermutation(t, roles) {
         { badge: "Received" },
         { ...onAssisted, attributes: '[data-role="assisted-submit"]' },
       );
+
+      // The case pool, while the new case is still in intake with nobody
+      // preparing it: its phase tab, a narrowing filter, and clearing it.
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await clickAction(staff, "set-board-filter", {
+        attributes: '[data-filter="poolPhase"][data-value="intake"]',
+      });
+      await waitFor(
+        staff,
+        "the pool's Intake tab to show the assisted case",
+        (wanted) =>
+          document
+            .querySelector('[data-filter="poolPhase"][data-value="intake"]')
+            ?.getAttribute("aria-pressed") === "true" &&
+          [...document.querySelectorAll("tr.pool-row")].some((row) =>
+            row.textContent.includes(wanted),
+          ),
+        assistedReference,
+        RENDER_MS,
+      );
+      await waitForQuiet(staff);
+      await staff
+        .locator('select[data-board-filter="poolPreparer"]')
+        .selectOption("unassigned", { timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the Unassigned filter to still show the assisted case",
+        (wanted) =>
+          document.querySelector('select[data-board-filter="poolPreparer"]')?.value ===
+            "unassigned" &&
+          /Showing [1-9]\d* of \d+ cases/.test(
+            document.querySelector('.case-pool [role="status"]')?.textContent ?? "",
+          ) &&
+          [...document.querySelectorAll("tr.pool-row")].some((row) =>
+            row.textContent.includes(wanted),
+          ),
+        assistedReference,
+        RENDER_MS,
+      );
+      await clickAction(staff, "clear-pool-filters");
+      await waitFor(
+        staff,
+        "the pool's filters to be cleared",
+        () =>
+          document.querySelector('select[data-board-filter="poolPreparer"]')?.value === "all" &&
+          document.querySelector('[data-action="clear-pool-filters"]') === null,
+        undefined,
+        RENDER_MS,
+      );
+      // "Clear filters" went with the filters; the keyboard went to the first
+      // filter, not out to the page.
+      await waitFor(
+        staff,
+        "the keyboard on the Stage filter after Clear filters",
+        () => document.activeElement?.id === "field-poolStage",
+        undefined,
+        RENDER_MS,
+      );
+      await shoot(staff, "office-case-pool");
+      // Back to the case from the pool's own row.
+      await openCaseByReference(staff, assistedReference);
+
       for (const check of ["interview", "identity", "documents", "consent"])
         await tickBox(staff, `field-intake-${check}`);
       await actForm(

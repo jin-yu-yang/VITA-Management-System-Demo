@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
+import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -1082,6 +1083,19 @@ test("the board's filters are this window's, kept per user and dropped on sign-o
   again.controller.stop();
 });
 
+test("clearing named board filters keeps the others", async () => {
+  const { controller } = build({ store: fakeStore() });
+  await controller.start();
+  controller.setBoardFilter("status", "review");
+  controller.setBoardFilter("poolLanguage", "Mandarin");
+  controller.setBoardFilter("poolPhase", "closed");
+  controller.clearBoardFilters(POOL_FILTER_KEYS);
+  assert.deepEqual(controller.getState().boardFilters, { status: "review" });
+  controller.clearBoardFilters();
+  assert.deepEqual(controller.getState().boardFilters, {});
+  controller.stop();
+});
+
 test("the board search draft survives a re-render but not a filter change", async () => {
   const store = fakeStore({
     principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
@@ -2030,4 +2044,97 @@ test("the case tab is this window's, and resets for another case, another person
   await again.controller.signOut();
   assert.equal(again.controller.getState().caseTab, "overview");
   again.controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The office drawers
+// ---------------------------------------------------------------------------
+
+test("a dialog can carry what it is about, and every way out forgets it", async () => {
+  const store = presenterStore({ cases: [sampleCase({ id: "c1" })] });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.openDialog("log-call", { caseId: "c1" });
+  assert.equal(controller.getState().dialog, "log-call");
+  assert.deepEqual(controller.getState().dialogContext, { caseId: "c1" });
+  controller.closeDialog();
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(controller.getState().dialogContext, null);
+
+  controller.openDialog("log-call", { caseId: "c1" });
+  controller.navigate("staff");
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(controller.getState().dialogContext, null);
+
+  controller.openDialog("help");
+  assert.equal(controller.getState().dialog, "help");
+  assert.equal(controller.getState().dialogContext, null);
+  controller.stop();
+});
+
+test("a case that is gone only moves a window that was showing it", async () => {
+  const store = presenterStore({ cases: [sampleCase({ id: "c1" })] });
+  const { controller } = build({ store });
+  await controller.start();
+
+  // Elsewhere on purpose: the selection is cleared and the screen stays.
+  await controller.selectCase("c1", { navigate: false });
+  controller.navigate("office-cases");
+  store.records.delete("c1");
+  await controller.refresh();
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().savedCase, null);
+  assert.equal(controller.getState().screen, "office-cases");
+
+  // On the case page itself, the page has nothing left to show.
+  store.records.set("c1", sampleCase({ id: "c1" }));
+  await controller.selectCase("c1");
+  assert.equal(controller.getState().screen, "staff-case");
+  store.records.delete("c1");
+  await controller.refresh();
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "staff");
+
+  // Opening a gone case in place from elsewhere leaves the screen alone too.
+  controller.navigate("office-cases");
+  await assert.rejects(
+    () => controller.selectCase("c1", { navigate: false }),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "office-cases");
+  controller.stop();
+});
+
+test("the office screens are a presenter's, and a client falls back home", async () => {
+  const shared = fakeSession();
+  const presenter = build({ store: presenterStore(), sessionStorage: shared });
+  await presenter.controller.start();
+  presenter.controller.navigate("office-add-case");
+  assert.equal(presenter.controller.getState().screen, "office-add-case");
+  presenter.controller.navigate("office-cases");
+  assert.equal(presenter.controller.getState().screen, "office-cases");
+  presenter.controller.stop();
+
+  // A reload keeps either one for a presenter.
+  for (const screen of ["office-add-case", "office-cases"]) {
+    const store = presenterStore();
+    const first = build({ store, sessionStorage: shared });
+    await first.controller.start();
+    first.controller.navigate(screen);
+    first.controller.stop();
+    const again = build({ store: presenterStore(), sessionStorage: shared });
+    await again.controller.start();
+    assert.equal(again.controller.getState().screen, screen);
+    again.controller.stop();
+  }
+
+  // A client principal restoring either screen lands on its own home.
+  const client = build({
+    store: fakeStore({ principal: { userId: "p1", workspaceId: "w1", access: "applicant" } }),
+    sessionStorage: shared,
+  });
+  await client.controller.start();
+  assert.equal(client.controller.getState().screen, "applications");
+  client.controller.stop();
 });

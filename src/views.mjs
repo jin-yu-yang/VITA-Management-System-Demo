@@ -5,11 +5,14 @@ import {
   decorateStaffCase,
   correctionsDialogBody,
 } from "./staff-views.mjs";
+import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
 import {
-  renderAdminBoard,
-  renderAdminCase,
-  closeCaseDialogBody,
-} from "./admin-views.mjs";
+  renderAddCase,
+  renderFollowups,
+  logCallDrawerBody,
+  resolveHelpDrawerBody,
+} from "./office-views.mjs";
+import { renderCasePool } from "./pool-views.mjs";
 import {
   renderPresenterPanel,
   resetDialogBody,
@@ -65,6 +68,9 @@ function noticeBanner(state) {
   return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
+// The office's two drawers: the modal frame placed at the right edge.
+export const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
+
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";
   // The staff workspace states a failure in place, beside the action that
@@ -72,6 +78,10 @@ function problemBanner(state) {
   // enough, and that one is the more useful of the two — but only when that
   // screen is really the one being rendered (see `staffScreen`).
   if (state.screen === "staff-case" && state.savedCase) return "";
+  // A drawer states its own failure, with the same two controls (see
+  // `drawerError`); a second alert behind an aria-modal dialog would be
+  // announced twice and could not be reached.
+  if (DRAWERS.includes(state.dialog)) return "";
   return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
 
@@ -135,13 +145,22 @@ const isAdmin = (person) =>
 // do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
   const onBoard = state?.screen === "staff";
-  const label = office ? "Office work" : "Work board";
+  const onPool = state?.screen === "office-cases";
+  const label = office ? "Follow-ups" : "Work board";
+  const pool = office
+    ? button(
+        `${icon("folder")} All cases`,
+        "open-cases",
+        `nav-link${onPool ? " current" : ""}`,
+        onPool ? 'aria-current="page"' : "",
+      )
+    : "";
   return `<div class="sidebar-brand"><img src="src/pcdc-logo.png" alt="PCDC" width="36" height="36"><span class="sidebar-wordmark">ViTally<span class="brand-dot">.</span></span></div><nav class="sidebar-nav" aria-label="Main navigation">${button(
     `${icon(office ? "people" : "board")} ${label}`,
     "open-board",
     `nav-link${onBoard ? " current" : ""}`,
     onBoard ? 'aria-current="page"' : "",
-  )}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
+  )}${pool}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
     person?.name ?? "No persona chosen",
   )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
     `${icon("help")} Need help?`,
@@ -156,6 +175,8 @@ export function staffSidebar(state, person, office) {
 // needs their own controls wherever they happen to be standing. The records
 // are decorated here — once, with the roster this screen already holds — so
 // the renderers never see a bare id.
+const OFFICE_SCREENS = ["office-cases", "office-add-case"];
+
 export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
@@ -169,13 +190,17 @@ export function staffScreen(state) {
     cases: state.cases,
   });
   const office = isAdmin(person);
+  // A volunteer chosen while an office screen is open gets the work board.
+  const screen =
+    !office && OFFICE_SCREENS.includes(state.screen) ? "staff" : state.screen;
   const main = (() => {
-    const frame = (overline, title, intro, back, body) =>
+    const addCaseAction = button(`${icon("plus")} Add a case`, "open-add-case", "primary");
+    const frame = (overline, title, intro, backLabel, body, actions = "") =>
       `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
-        back,
-        button(`${icon("back")} Back to the work board`, "open-board", "text"),
-      )}</div>${panel}${body}</main>`;
-    if (state.screen === "staff-case" && state.savedCase) {
+        backLabel,
+        button(`${icon("back")} ${backLabel}`, "open-board", "text"),
+      )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${panel}${body}</main>`;
+    if (screen === "staff-case" && state.savedCase) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
         person,
@@ -192,42 +217,60 @@ export function staffScreen(state) {
             "OFFICE WORKSPACE",
             "One case",
             "What the office knows about this case, and the office work you may do on it.",
-            true,
+            "Back to Follow-ups",
             renderAdminCase(record, ui),
           )
         : frame(
             "VOLUNTEER WORKSPACE",
             "One case",
             "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
-            true,
+            "Back to the work board",
             renderStaffCase(record, person, ui),
           );
     }
+    if (screen === "office-add-case")
+      return frame(
+        "OFFICE · ADD A CASE",
+        "Add a case",
+        "Enter a walk-in client's answers yourself. The case has no client account: the office owns it.",
+        "Back to Follow-ups",
+        renderAddCase({ person, busy: state.busy }),
+      );
     const cases = (state.cases ?? []).map((record) =>
       decorateStaffCase(record, people),
     );
+    if (screen === "office-cases")
+      return frame(
+        "OFFICE · ALL CASES",
+        "Case pool",
+        "Every case in this workspace, in every stage.",
+        "",
+        renderCasePool(cases, people, { filters: state.boardFilters, now: Date.now() }),
+        addCaseAction,
+      );
     return office
       ? frame(
-          "OFFICE WORKSPACE",
-          "Office work",
-          "Work waiting to be claimed, clients waiting for a call, and the requests for help with forms.",
-          false,
-          renderAdminBoard(
+          "OFFICE",
+          "Follow-ups",
+          "Everything waiting on the office, most urgent first.",
+          "",
+          renderFollowups(
             cases,
             (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
             {
               person,
               filters: state.boardFilters,
               busy: state.busy,
-              openPanels: state.openPanels,
+              now: Date.now(),
             },
           ),
+          addCaseAction,
         )
       : frame(
           "VOLUNTEER WORKSPACE",
           "Work board",
           "Every case in this workspace, what it is waiting for, and the work you can take on.",
-          false,
+          "",
           renderStaffBoard(cases, people, {
             person,
             filters: state.boardFilters,
@@ -237,7 +280,7 @@ export function staffScreen(state) {
         );
   })();
   return appShell({
-    sidebar: staffSidebar(state, person, office),
+    sidebar: staffSidebar({ ...state, screen }, person, office),
     body: main,
     open: state.sidebarOpen !== false,
   });
@@ -260,6 +303,8 @@ function decorateAssistance(item, people = []) {
 // ---------------------------------------------------------------------------
 // Dialogs
 // ---------------------------------------------------------------------------
+
+const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
 
 export function dialog(state) {
   if (!state.dialog) return "";
@@ -290,9 +335,35 @@ export function dialog(state) {
     title = "Load a sample checkpoint";
     body = checkpointDialogBody(state);
   }
+  if (DRAWERS.includes(state.dialog)) {
+    const people = state.people ?? [];
+    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const ui = { busy: state.busy, error: state.error, retryable: state.retryable };
+    if (state.dialog === "log-call") {
+      title = "Log a call";
+      body = logCallDrawerBody({
+        record: decorateStaffCase(state.savedCase, people),
+        person,
+        ui,
+        caseId: state.dialogContext?.caseId,
+      });
+    } else {
+      title = "Resolve a help request";
+      const item = (state.assistance ?? []).find(
+        (entry) => entry?.id === state.dialogContext?.itemId,
+      );
+      body = resolveHelpDrawerBody({ item: decorateAssistance(item, people), person, ui });
+    }
+  }
   if (state.dialog === "print") {
     title = "Your application reference card";
     body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b><p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
   }
-  return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">ViTally · HERE TO HELP</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+  const drawer = DRAWERS.includes(state.dialog);
+  const overline = drawer
+    ? "OFFICE FOLLOW-UP"
+    : PRESENTER_DIALOGS.includes(state.dialog)
+      ? "PRESENTER CONTROLS"
+      : "ViTally · HERE TO HELP";
+  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
 }

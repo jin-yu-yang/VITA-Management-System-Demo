@@ -545,7 +545,7 @@ export const readAlerts = async (page) =>
 // ---------------------------------------------------------------------------
 
 export const WORK_BOARD_HEADING = "Work board";
-export const OFFICE_BOARD_HEADING = "Office work";
+export const OFFICE_BOARD_HEADING = "Office queue";
 
 /** Act as one volunteer in this window, and wait for the screen to agree. */
 export async function choosePersona(page, personId) {

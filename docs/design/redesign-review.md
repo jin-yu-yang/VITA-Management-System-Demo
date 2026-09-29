@@ -7,7 +7,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 **Status (updated Sep 28, 2026).**
 - The group answered all twelve decisions (section 3), and the screens they affected were redesigned the same day.
 - Phase 0 of the plan is implemented on the `phase-0-foundations` branch.
-- Part 1 PR 1 (work board) and PR 2 (case page) are merged; PR 3 (client screens) is in review.
+- Part 1 PRs 1–3 (work board, case page, client screens) are merged; PR 4 (office screens) is in review, and part 1 is done when it merges.
 - Still open: certification levels (D9) and a confirmation of the serif font (D11).
 
 **Canonical design files** (everything else in `.stitch/designs` is an earlier iteration):

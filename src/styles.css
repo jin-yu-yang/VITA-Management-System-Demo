@@ -2,12 +2,9 @@
   --ink: #213d45;
   --muted: #738087;
   --blue: #214d59;
-  --blue-dark: #173d49;
   --teal: #326858;
   --line: #e1e7e4;
-  --paper: #fff;
   --canvas: #f8faf8;
-  --amber: #996924;
   --serif: Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
@@ -329,51 +326,6 @@ small,
 .trust-line .icon {
   width: 18px;
 }
-.community-note {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 47px 0 30px;
-  padding-top: 27px;
-  border-top: 1px solid var(--line);
-  max-width: 370px;
-}
-.community-note p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.8;
-  color: #8c9692;
-}
-.community-note strong {
-  font-weight: 500;
-  color: #596c65;
-}
-.avatar-stack {
-  display: flex;
-  padding-left: 0;
-}
-.avatar-stack span {
-  margin-left: -7px;
-  border: 3px solid var(--canvas);
-  height: 37px;
-  width: 37px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #e5c7b6;
-  color: #815c40;
-  font-family: var(--serif);
-  font-size: 15px;
-}
-.avatar-stack span:first-child {
-  margin-left: 0;
-  background: #bfcfbd;
-  color: #546b4f;
-}
-.avatar-stack span:last-child {
-  background: #e4dbbe;
-  color: #918054;
-}
 .welcome-panel {
   padding-top: 0;
   max-width: 495px;
@@ -399,40 +351,6 @@ small,
   margin-bottom: 26px;
   letter-spacing: -0.8px;
 }
-.entry-card {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  gap: 15px;
-  width: 100%;
-  padding: 21px 17px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--ink);
-  margin-bottom: 13px;
-  transition: 0.15s;
-}
-.entry-card:hover {
-  border-color: #839c94;
-  box-shadow: 0 3px 10px #214d590b;
-  transform: translateY(-2px);
-}
-.entry-card strong {
-  display: block;
-  font-size: 16px;
-}
-.entry-card small {
-  display: block;
-  color: #8a9594;
-  font-size: 11px;
-  margin-top: 6px;
-}
-.entry-card > .icon {
-  margin-left: auto;
-  width: 17px;
-  color: #81958c;
-}
 .entry-icon {
   display: grid;
   place-items: center;
@@ -443,11 +361,6 @@ small,
   flex-shrink: 0;
   color: #6b8276;
 }
-.entry-card.start-card {
-  background: #214d59;
-  border-color: #214d59;
-  color: white;
-}
 .start-card .entry-icon {
   color: #dbe7dc;
   background: #ffffff12;
@@ -457,23 +370,6 @@ small,
 }
 .start-card > .icon {
   color: #d8e3da;
-}
-.welcome-help {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  border-top: 1px solid var(--line);
-  padding-top: 21px;
-  margin-top: 24px;
-  font-size: 11px;
-  color: #8a9594;
-}
-.welcome-help > .icon {
-  width: 16px;
-}
-.welcome-help .inline {
-  font-size: 11px;
-  min-height: 0;
 }
 .landing-bottom {
   grid-column: 1/-1;
@@ -645,26 +541,6 @@ textarea::placeholder {
   margin-top: -7px;
   margin-bottom: 23px;
 }
-.segmented {
-  display: flex;
-  background: #f2f5f2;
-  padding: 4px;
-  border-radius: 8px;
-  margin-bottom: 23px;
-  gap: 4px;
-}
-.segmented .btn {
-  flex: 1;
-  background: transparent;
-  min-height: 42px;
-  font-size: 13px;
-  color: #89978f;
-}
-.segmented .selected {
-  background: #fff;
-  color: var(--ink);
-  box-shadow: 0 2px 5px #173f490d;
-}
 .resend-row {
   font-size: 13px;
   color: var(--vt-intake-hint);
@@ -768,9 +644,6 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-}
-.volunteer-sidebar {
-  border-right: 1px solid var(--line);
 }
 .intake-sidebar {
   border-right: 1px solid var(--vt-line);
@@ -1576,12 +1449,6 @@ textarea::placeholder {
   grid-template-columns: 245px 1fr;
   min-height: calc(100vh - 238px);
 }
-.volunteer-sidebar {
-  padding: 44px 26px 30px 22px;
-}
-.volunteer-sidebar h2 {
-  font-size: 30px;
-}
 .volunteer-nav {
   padding: 14px 13px;
   border-radius: 7px;
@@ -1603,14 +1470,6 @@ textarea::placeholder {
   padding: 0 7px;
   font-size: 10px;
 }
-.volunteer-person {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-top: 27px;
-  padding-top: 23px;
-  border-top: 1px solid var(--line);
-}
 .avatar {
   display: grid;
   place-items: center;
@@ -1622,17 +1481,6 @@ textarea::placeholder {
   font-size: 10px;
   flex-shrink: 0;
 }
-.volunteer-person strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-}
-.volunteer-person small {
-  display: block;
-  font-size: 9px;
-  color: #9aa58e;
-  margin-top: 3px;
-}
 .volunteer-main {
   padding: 43px 40px 45px;
 }
@@ -1641,33 +1489,6 @@ textarea::placeholder {
 }
 .volunteer-main .page-intro p {
   font-size: 14px;
-}
-.worklist-summary {
-  display: flex;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  margin: 0 0 25px;
-}
-.worklist-summary > div {
-  padding: 20px 25px;
-  flex: 1;
-  border-right: 1px solid var(--line);
-}
-.worklist-summary > div:last-child {
-  border: 0;
-}
-.worklist-summary small {
-  display: block;
-  font-size: 8px;
-  letter-spacing: 1.2px;
-  color: #9ca68f;
-  margin-bottom: 9px;
-}
-.worklist-summary strong {
-  font-family: var(--serif);
-  font-size: 28px;
-  font-weight: 400;
 }
 .case-row {
   display: flex;
@@ -2011,16 +1832,6 @@ textarea::placeholder {
   .welcome-card {
     padding: 25px;
   }
-  .entry-card {
-    padding: 17px 13px;
-    gap: 10px;
-  }
-  .entry-card strong {
-    font-size: 14px;
-  }
-  .entry-card small {
-    font-size: 10px;
-  }
   .demo-fiction {
     display: none;
   }
@@ -2072,9 +1883,6 @@ textarea::placeholder {
   .desktop-only {
     display: none;
   }
-  .community-note {
-    display: none;
-  }
   .welcome-panel {
     max-width: none;
     margin-top: 10px;
@@ -2092,15 +1900,6 @@ textarea::placeholder {
   }
   .welcome-card h2 {
     font-size: 27px;
-  }
-  .entry-card strong {
-    font-size: 15px;
-  }
-  .entry-card small {
-    font-size: 11px;
-  }
-  .entry-card {
-    padding: 20px 15px;
   }
   .hero-copy br {
     display: none;
@@ -2264,20 +2063,8 @@ textarea::placeholder {
   .volunteer-layout {
     display: block;
   }
-  .volunteer-sidebar {
-    display: none;
-  }
   .volunteer-main {
     padding: 30px 22px;
-  }
-  .worklist-summary > div {
-    padding: 16px;
-  }
-  .worklist-summary small {
-    font-size: 7px;
-  }
-  .worklist-summary strong {
-    font-size: 25px;
   }
   .case-row {
     padding: 14px;
@@ -2345,28 +2132,9 @@ textarea::placeholder {
   .welcome-card .overline {
     font-size: 8px;
   }
-  .entry-card {
-    padding: 17px 12px;
-    gap: 11px;
-  }
-  .entry-card strong {
-    font-size: 13px;
-  }
-  .entry-card small {
-    font-size: 9px;
-  }
   .entry-icon {
     height: 36px;
     width: 32px;
-  }
-  .entry-card > .icon {
-    width: 14px;
-  }
-  .welcome-help {
-    font-size: 9px;
-  }
-  .welcome-help .inline {
-    font-size: 9px;
   }
   .hero .eyebrow {
     font-size: 8px;
@@ -2882,23 +2650,6 @@ textarea::placeholder {
   flex-wrap: wrap;
   gap: 6px;
 }
-.board-list {
-  display: grid;
-  gap: 14px;
-}
-.board-row {
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 15px 16px;
-  background: var(--paper);
-}
-.board-row-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin-bottom: 11px;
-}
 .board-reference {
   background: none;
   border: 0;
@@ -2916,22 +2667,6 @@ textarea::placeholder {
 .board-reference .icon {
   width: 15px;
   height: 15px;
-}
-.board-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px 18px;
-  margin: 0 0 12px;
-}
-.board-fact dt {
-  font-size: 10px;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.board-fact dd {
-  margin: 2px 0 0;
-  font-size: 14px;
 }
 .board-actions {
   display: flex;
@@ -2955,7 +2690,7 @@ textarea::placeholder {
 }
 .staff-header p:first-of-type {
   margin-top: 0;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .request-card {
   border: 1px solid var(--line);
@@ -3017,9 +2752,6 @@ textarea::placeholder {
   min-height: 78px;
 }
 @media (max-width: 760px) {
-  .board-facts {
-    grid-template-columns: 1fr 1fr;
-  }
   .board-filters {
     gap: 8px 10px;
   }
@@ -3370,13 +3102,6 @@ textarea::placeholder {
   gap: 6px;
   margin: 14px 0 0;
 }
-/* The office board's count line (src/admin-views.mjs). Task 6 only restyled
-   the volunteer board; this serves the office board until PR 4. */
-.board-counts {
-  font-size: 13px;
-  color: var(--vt-muted);
-  margin: 0 0 14px;
-}
 
 /* ---- The case page (restyle PR 2) ---- */
 .staff-header {
@@ -3692,3 +3417,530 @@ textarea::placeholder {
     padding: 10px 16px;
   }
 }
+
+/* PR 4: office screens */
+/* Everything below is scoped to the office's own containers (Follow-ups,
+   the drawer, Add a case, the case pool) or to the shared modal notes, and
+   reads the --vt-* tokens only. */
+
+/* ---- The page header's actions (Add a case) ---- */
+.page-intro:has(> .page-actions) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+}
+.page-intro:has(> .page-actions) > * {
+  grid-column: 1;
+}
+.page-intro:has(> .page-actions) > .page-actions {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+}
+.page-intro .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+@media (max-width: 800px) {
+  .page-intro:has(> .page-actions) > .page-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: 16px;
+  }
+}
+
+/* ---- Follow-ups: the office queue ---- */
+.office-queue,
+.case-pool {
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.office-queue .section-head {
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-bottom: 16px;
+}
+.office-queue .section-head > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.office-queue .section-head h2 {
+  font-size: 17px;
+  letter-spacing: 0;
+}
+.office-queue .muted,
+.office-queue .staff-reason,
+.office-queue .board-note,
+.case-pool .board-note {
+  color: var(--vt-muted);
+}
+.office-queue .board-filters {
+  border-bottom-color: var(--vt-line);
+}
+.office-queue .board-filters:has(+ .board-filters) {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 10px;
+}
+.office-queue .filter-group,
+.case-pool .filter-group {
+  flex-wrap: wrap;
+}
+/* The office's filter chips are staff controls: the 44px minimum, with the
+   base chip's padding so they stay pills rather than buttons. */
+.office-queue .btn.chip,
+.case-pool .btn.chip {
+  min-height: var(--vt-tap);
+  padding: 4px 14px;
+}
+/* A count inside a selected (dark) chip keeps its own light pill. */
+.office-queue .btn.chip .tab-count,
+.case-pool .btn.chip .count {
+  margin-left: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+  font-size: 12px;
+}
+.office-queue .queue-table td,
+.office-queue .queue-table tbody th {
+  vertical-align: top;
+  padding: 12px 10px;
+}
+.office-queue .queue-table thead th {
+  padding: 10px;
+  white-space: normal;
+}
+.office-queue .queue-table td {
+  white-space: normal;
+}
+.office-queue .queue-table tbody th .board-reference {
+  display: flex;
+  width: max-content;
+  margin-bottom: 6px;
+}
+.office-queue .queue-needed {
+  min-width: 200px;
+  max-width: 340px;
+}
+.office-queue .queue-needed small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+.office-queue .queue-waiting {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.office-queue .queue-waiting.aging {
+  color: var(--vt-stage-amend);
+}
+.office-queue .queue-waiting.late {
+  color: var(--vt-stage-stopped);
+}
+.office-queue .queue-action {
+  text-align: right;
+  white-space: nowrap;
+}
+.office-queue .queue-action .btn {
+  min-height: var(--vt-tap);
+  padding: 6px 12px;
+  gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.office-queue .queue-action .btn .icon {
+  width: 16px;
+  height: 16px;
+}
+.office-queue .queue-action .staff-reason {
+  margin: 0 0 0 auto;
+  max-width: 240px;
+  text-align: left;
+  white-space: normal;
+}
+
+/* The task kind: an icon and words, each on its own soft pair. */
+.kind-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.kind-pill .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.kind-pill.intake {
+  background: var(--vt-stage-intake-bg);
+  color: var(--vt-stage-intake);
+}
+.kind-pill.call {
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+}
+.kind-pill.help {
+  background: var(--vt-primary-soft);
+  color: var(--vt-primary-hover);
+}
+.kind-pill.unclaimed {
+  background: var(--vt-background);
+  border-color: var(--vt-line);
+  color: var(--vt-muted);
+}
+
+/* ---- The office drawer: the modal frame at the right edge ---- */
+.modal-backdrop:has(.office-drawer) {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+.modal.office-drawer {
+  max-width: 480px;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  border-radius: var(--vt-radius) 0 0 var(--vt-radius);
+  border-right: 0;
+  overflow-y: auto;
+  padding: 32px 28px;
+}
+.office-drawer h2 {
+  font-size: 28px;
+}
+.office-drawer .drawer-case {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.office-drawer .drawer-case .btn.text {
+  margin-left: auto;
+}
+.office-drawer .drawer-task {
+  border-top: 1px solid var(--vt-line);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+.office-drawer .drawer-task h3 {
+  font-size: 17px;
+  margin-bottom: 4px;
+}
+.office-drawer .detail-row > span,
+.office-drawer h4,
+.office-drawer .field-note,
+.office-drawer .muted,
+.office-drawer .staff-reason,
+.office-drawer .attempt-list small {
+  color: var(--vt-muted);
+}
+.office-drawer .staff-form,
+.office-drawer .attempt-list {
+  border-color: var(--vt-line);
+}
+.office-drawer .notice.amber {
+  background: var(--vt-stage-amend-bg);
+  border: 1px solid var(--vt-stage-amend);
+  color: var(--vt-stage-amend);
+  margin: 16px 0;
+}
+.office-drawer .notice.amber h3,
+.office-drawer .notice.amber p {
+  color: var(--vt-stage-amend);
+}
+
+/* ---- Add a case ---- */
+/* Only renderAddCase emits the pill, so the class is its own scope. */
+.fiction-pill {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 2px 6px 2px 12px;
+  border: 1px dashed var(--vt-primary-line);
+  border-radius: 999px;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+  font-size: 13px;
+  margin: 0 0 20px;
+}
+.fiction-pill > .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--vt-primary);
+}
+.fiction-pill .btn.text {
+  min-height: var(--vt-tap);
+  margin: -6px 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--vt-primary-hover);
+  text-decoration: underline;
+}
+.add-case-form.staff-form {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+.add-case-form .add-case-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+.add-case-form .add-case-section {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 20px 22px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+/* The legend sits inside the card, not across its border. */
+.add-case-form .add-case-section legend {
+  float: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin: 0 0 18px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.add-case-form .add-case-section legend + * {
+  clear: both;
+}
+.add-case-form .section-num {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--vt-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.add-case-form .add-case-section .form-grid {
+  gap: 16px 18px;
+  margin-bottom: 0;
+}
+.add-case-form .add-case-section .field {
+  margin-bottom: 0;
+}
+.add-case-form .field > span {
+  color: var(--vt-ink);
+}
+.add-case-form .field-note,
+.add-case-form .detail-row > span {
+  color: var(--vt-muted);
+}
+.add-case-form .add-case-side {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 16px;
+}
+.add-case-form .add-case-side .panel {
+  padding: 18px 20px;
+  border-color: var(--vt-line);
+  border-radius: var(--vt-radius);
+}
+.add-case-form .add-case-side h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
+  margin-bottom: 8px;
+}
+.add-case-form .add-case-side p {
+  font-size: 14px;
+  color: var(--vt-ink);
+  margin: 0;
+}
+.add-case-form .add-case-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 4px;
+  padding: 14px 22px;
+  background: var(--vt-surface);
+  border-top: 1px solid var(--vt-line);
+  box-shadow: 0 -6px 20px rgb(42 39 69 / 0.06);
+}
+/* The bar sits under the sections column only, clear of the side cards. */
+@media (min-width: 1025px) {
+  .add-case-form .add-case-bar {
+    margin-right: calc(300px + 24px);
+  }
+}
+.add-case-form .add-case-bar .field-note {
+  flex: 1 1 240px;
+  margin: 0;
+  text-align: right;
+}
+.add-case-form .add-case-bar .btn.primary {
+  margin: 0;
+}
+@media (max-width: 1024px) {
+  .add-case-form .add-case-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .add-case-form .add-case-side {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .add-case-form .add-case-section {
+    padding: 18px 16px;
+  }
+  .add-case-form .add-case-bar {
+    padding: 12px 16px;
+  }
+  .add-case-form .add-case-bar .field-note {
+    text-align: left;
+  }
+}
+
+/* ---- The case pool ---- */
+.case-pool h2 {
+  font-size: 17px;
+  letter-spacing: 0;
+  margin-bottom: 14px;
+}
+.case-pool > .filter-group {
+  margin-bottom: 16px;
+}
+.case-pool .pool-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.case-pool .pool-filter {
+  flex: 1 1 160px;
+  min-width: 0;
+  margin: 0;
+}
+.case-pool .pool-filter > span {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--vt-muted);
+}
+.case-pool .pool-filter select {
+  height: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--vt-ink);
+}
+.case-pool .pool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--vt-muted);
+  margin: 0 0 12px;
+}
+.case-pool .pool-summary .field-note {
+  margin: 0;
+  color: var(--vt-muted);
+}
+.case-pool .pool-phase {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+.case-pool .pool-table td,
+.case-pool .pool-table tbody th {
+  vertical-align: top;
+}
+
+/* ---- Every dialog's notes (presenter, help, sample data) ---- */
+.modal .info-note {
+  background: var(--vt-primary-soft);
+  border-color: var(--vt-line);
+  color: var(--vt-muted);
+}
+.modal .info-note > .icon {
+  color: var(--vt-primary);
+  flex: none;
+}
+.modal .info-note p {
+  color: var(--vt-muted);
+}
+.modal .info-note strong {
+  color: var(--vt-ink);
+}
+/* ---- The staff frame on tokens: the page overline and presenter strip ---- */
+/* These change every staff screen (work board, case page, office screens) on
+   purpose: part 1 ends with the whole staff frame on the --vt-* tokens. */
+.app-main .page-intro .overline,
+.app-main .muted,
+.app-main .field-note {
+  color: var(--vt-muted);
+}
+.app-main .presenter-panel {
+  box-shadow: none;
+}
+.app-main .presenter-panel .section-head .muted,
+.app-main .presenter-panel .connection-line,
+.app-main .presenter-panel .persona-row .btn small {
+  color: var(--vt-muted);
+}
+.app-main .presenter-panel .connection-line .icon {
+  color: var(--vt-progress);
+}
+.app-main .presenter-panel .persona-row .btn small {
+  font-size: 11px;
+}
+.app-main .presenter-panel .persona-row .btn.selected {
+  border-color: var(--vt-primary);
+  box-shadow: inset 0 0 0 1px var(--vt-primary);
+}
+/* The sample-data button was drawn for the old dark demo bar; here it is a
+   plain text button on the strip's white surface. */
+.app-main .presenter-panel .btn.demo {
+  min-height: var(--vt-tap);
+  padding: 10px 12px;
+  font-size: 14px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--vt-primary-hover);
+}
+.app-main .presenter-panel .btn.demo:hover:not(:disabled) {
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+}
+.app-main .presenter-panel .btn.demo .icon {
+  width: 16px;
+  height: 16px;
+}
+/* end PR 4 */
