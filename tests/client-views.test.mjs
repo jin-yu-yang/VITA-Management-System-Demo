@@ -365,6 +365,23 @@ test("intake keeps residence and mailing separate, explains screening and offers
   assert.match(check, /data-case-action="SUBMIT"/);
 });
 
+test("the intake rail marks the current step and gives the office contact", () => {
+  const state = { ...baseState(), screen: "intake", savedCase: { id: "c1", reference: "VT-AAAA-AAAA", stage: "draft", answers: {}, revision: 1 }, draftAnswers: {}, formStep: 1 };
+  const html = intakeScreen(state);
+  assert.match(html, /<li class="active" aria-current="step">/);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
+  // Save & exit lives in the top bar now; the form keeps Back and Continue.
+  assert.doesNotMatch(html, /data-action="save-exit"/);
+  assert.match(html, /STEP 2 OF 4/);
+});
+
+test("sign-in and progress point to the office by phone and email", () => {
+  assert.match(accessScreen({ ...baseState(), authStep: "email" }), /class="office-contact"/);
+  const progress = progressScreen({ ...baseState(), screen: "progress", savedCase: { id: "c1", reference: "VT-AAAA-AAAA", stage: "received", answers: { firstName: "Mei" }, requests: [], documents: [], history: [] } });
+  assert.match(progress, /class="help-card"[\s\S]*class="office-contact"/);
+});
+
 test("the save state is named in words and a failed save keeps a retry", () => {
   assert.match(saveStatus(baseState({ saveState: "unsaved", dirty: true })), /unsaved/i);
   assert.match(saveStatus(baseState({ saveState: "saving" })), /saving/i);

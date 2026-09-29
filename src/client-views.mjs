@@ -9,6 +9,7 @@ import {
   stageBadge,
   formatTime,
   fieldId,
+  officeContact,
   ANSWER_LABELS as answerLabels,
 } from "./ui.mjs";
 import {
@@ -46,7 +47,7 @@ const row = (label, value) =>
 
 // Identical for every visitor. It names no roster, no account and no delivery
 // channel, so reading it tells nobody whether an address is known here.
-const troubleshooting = `<div class="support-note">${icon("help")}<div><strong>Didn’t get a code?</strong><p>A code can take a minute to arrive. Check the junk or spam folder, make sure the address is the one the office approved for this demo, and request another code once the timer ends.</p><p>Still stuck? A volunteer at the PCDC office can help in person.</p>${button("Get help from the office", "open-help", "inline")}</div></div>`;
+const troubleshooting = `<div class="support-note">${icon("help")}<div><strong>Didn’t get a code?</strong><p>A code can take a minute to arrive. Check the junk or spam folder, make sure the address is the one the office approved for this demo, and request another code once the timer ends.</p><p>Still stuck? Call or email the PCDC office.</p>${officeContact()}${button("Get help from the office", "open-help", "inline")}</div></div>`;
 
 function emailStep(state) {
   return `<form id="email-form" class="panel access-panel">${input(
@@ -247,16 +248,16 @@ export function intakeScreen(state) {
   return `<main id="main" class="workspace" tabindex="-1"><aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">YOUR APPLICATION</span><h2>A few steps.<br>We’re here to help.</h2><ol class="step-list">${steps
     .map(
       (label, index) =>
-        `<li class="${index === state.formStep ? "active" : index < state.formStep ? "complete" : ""}"><span>${index < state.formStep ? icon("check") : String(index + 1).padStart(2, "0")}</span><div>${label}${index === state.formStep ? "<small>YOU ARE HERE</small>" : ""}</div></li>`,
+        `<li class="${index === state.formStep ? "active" : index < state.formStep ? "complete" : ""}"${index === state.formStep ? ' aria-current="step"' : ""}><span>${index < state.formStep ? icon("check") : String(index + 1).padStart(2, "0")}</span><div>${label}${index === state.formStep ? "<small>YOU ARE HERE</small>" : ""}</div></li>`,
     )
-    .join("")}</ol></div><div class="sidebar-help">${icon("help")}<h3>Prefer to talk it through?</h3><p>Our volunteers can help you at the PCDC office.</p>${button("Contact the office", "open-help", "inline")}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(record.reference)}</span>${saveStatus(state)}</div>${conflictForm(state)}<div class="page-intro"><span class="overline">STEP ${state.formStep + 1} OF 4</span><h1>${esc(steps[state.formStep] ?? steps[0])}</h1><p>${
+    .join("")}</ol></div><div class="sidebar-help">${icon("help")}<h3>Prefer to talk it through?</h3><p>Our volunteers can help at the PCDC office, or by phone.</p>${officeContact()}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(record.reference)}</span>${saveStatus(state)}</div>${conflictForm(state)}<div class="page-intro"><span class="overline">STEP ${state.formStep + 1} OF 4</span><h1>${esc(steps[state.formStep] ?? steps[0])}</h1><p>${
     [
       "How would you like to work with our volunteers?",
       "A few questions help us understand how we can help.",
       "Tell us a little about yourself and what you have ready.",
       "Take a moment to make sure everything looks right.",
     ][state.formStep] ?? ""
-  }</p></div>${fictionalTools}<form id="intake-form">${intakeBody(state)}${when(state.error, `<p class="error" role="alert">${esc(state.error?.message)}</p>`)}<div class="form-actions"><div>${when(state.formStep, button(`${icon("back")} Back`, "back-step", "text"))}${button("Save and exit", "save-exit", "text")}</div>${
+  }</p></div>${fictionalTools}<form id="intake-form">${intakeBody(state)}${when(state.error, `<p class="error" role="alert">${esc(state.error?.message)}</p>`)}<div class="form-actions"><div>${when(state.formStep, button(`${icon("back")} Back`, "back-step", "text"))}</div>${
     state.formStep === 3
       ? caseButton(
           `Submit application ${icon("arrow")}`,
@@ -346,7 +347,7 @@ export function progressScreen(state) {
           )
           .join("")}</div>`
       : '<p class="muted">Updates from the office appear here.</p>'
-  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">AT A GLANCE</span><h3>Your service details</h3>${row("Tax year", "2025")}${row("Service", answers.service)}${row("Language", answers.language)}${row("Application ID", record.reference)}<div class="gentle-note">${icon("lock")} Your application is private to you and the site team.</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>We’re here for you.</h3><p>Questions about your application? Our volunteers can help.</p>${button("Contact the office", "open-help", "secondary")}</div>${button("Back to my applications", "open-applications", "text")}</aside></div></main>`;
+  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">AT A GLANCE</span><h3>Your service details</h3>${row("Tax year", "2025")}${row("Service", answers.service)}${row("Language", answers.language)}${row("Application ID", record.reference)}<div class="gentle-note">${icon("lock")} Your application is private to you and the site team.</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>We’re here for you.</h3><p>Questions about your application? Our volunteers can help.</p>${officeContact()}${button("Contact the office", "open-help", "secondary")}</div>${button("Back to my applications", "open-applications", "text")}</aside></div></main>`;
 }
 
 // ---------------------------------------------------------------------------
