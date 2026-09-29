@@ -160,7 +160,7 @@ export function staffSidebar(state, person, office) {
     "open-board",
     `nav-link${onBoard ? " current" : ""}`,
     onBoard ? 'aria-current="page"' : "",
-  )}${pool}  )}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
+  )}${pool}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
     person?.name ?? "No persona chosen",
   )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
     `${icon("help")} Need help?`,

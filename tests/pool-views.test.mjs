@@ -85,7 +85,7 @@ test("the pool shows seven phase tabs with counts and pressed state", () => {
   for (const tab of tabs) assert.match(tab, /data-action="set-board-filter"/);
   assert.match(html, /data-value="review"[^>]*aria-pressed="true"/);
   assert.match(html, /data-value="all"[^>]*aria-pressed="false"/);
-  assert.match(html, /All cases[^<]*<[^>]*>\s*5|All cases \(?5/);
+  assert.match(html, /data-value="all"[^>]*>All cases <span class="count">5<\/span><\/button>/);
 });
 
 test("five filter dropdowns each have a label and no blank choice", () => {

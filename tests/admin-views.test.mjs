@@ -774,3 +774,17 @@ test("the office pool and the add-a-case page route by persona, and the sidebar 
   assert.match(adding, /Add a case<\/h1>/);
   assert.doesNotMatch(adding, /aria-current="page"/);
 });
+
+test("the staff sidebar nav holds nothing but its buttons", () => {
+  const state = {
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: PEOPLE, selectedPersonId: "sam", cases: [], assistance: [],
+    savedCase: null, screen: "staff", boardFilters: {}, openPanels: [],
+    draftAnswers: {}, busy: false, error: null, retryable: false,
+  };
+  for (const selectedPersonId of ["sam", "alex"]) {
+    const html = staffScreen({ ...state, selectedPersonId });
+    const nav = html.match(/<nav class="sidebar-nav"[^>]*>(.*?)<\/nav>/s)[1];
+    assert.equal(nav.replace(/<button[^>]*>.*?<\/button>/gs, "").trim(), "", selectedPersonId);
+  }
+});
