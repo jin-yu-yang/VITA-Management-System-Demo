@@ -40,7 +40,7 @@ Migration `supabase/migrations/010_client_numbers.sql` makes these changes.
 - Add `season smallint` and `client_number integer`.
 - Constraint `cases_client_number_pair`: `(season is null and client_number is null) or (season is not null and client_number is not null and client_number > 0)`.
 - Constraint `cases_client_number_key`: `unique (workspace_id, season, client_number)`.
-- Trigger `cases_client_number_immutable`: before update, if `old.client_number is not null` and (`new.client_number is distinct from old.client_number` or `new.season is distinct from old.season`), raise an exception. It applies to every role.
+- Trigger `cases_client_number` (before update, every role): if `old.client_number is not null` and (`new.client_number is distinct from old.client_number` or `new.season is distinct from old.season`), raise an exception. The same trigger assigns numbers (below).
 
 **`vitally_private.client_number_counters`**
 - Columns:
@@ -57,12 +57,10 @@ Migration `supabase/migrations/010_client_numbers.sql` makes these changes.
 
 The update's row lock serializes concurrent submits, so there is no retry loop.
 
-**`act_submit`**
-- After the stage update, set `season` and `client_number` from `next_client_number(p_case.workspace_id)`.
-- Add `"clientNumber": <n>` to the SUBMIT event's `detail`.
-
-**`seed_fixtures`**
-- Each sample it creates is numbered through `next_client_number`, in `fixture_keys()` order.
+**Where the number is assigned.** A `before update` trigger on `public.cases` assigns it: when a case leaves `draft` for any stage except `closed`, and has no number yet, it takes `next_client_number(workspace_id)`. That one rule covers both paths:
+- **`act_submit`** moves the case to `received`, and the trigger numbers it in the same transaction. `act_submit` is replaced only to read the number back (`returning client_number`) and add `"clientNumber": <n>` to the SUBMIT event's `detail`.
+- **`seed_fixtures`** inserts each sample as a `draft` and then updates it to its scenario stage, in `fixture_keys()` order, so the trigger numbers the samples in that order without the seeder being replaced.
+- **Closing** an unowned draft (`draft` → `closed`) is the one exit that is not a submission, so the trigger skips it (rule 1).
 
 **Backfill** (in the same migration):
 1. Number every case that has a `SUBMIT` row in `case_events` and no number, per workspace, in `current_season`.
@@ -96,7 +94,7 @@ The update's row lock serializes concurrent submits, so there is no retry loop.
 | Client progress page | "Client #093" beside the Application ID once submitted. |
 | My applications | Each submitted row shows its number. |
 | Printed reference card (the `print` dialog) | The line "CLIENT NUMBER #093" under the Application ID, once submitted. |
-| Case history | The submit sentence becomes "Sent to the office · Client #093 assigned" when the event's detail carries `clientNumber`. |
+| Case history | The submit sentence keeps its words ("Sam submitted the application.") and adds "Client #093 assigned." when the event's detail carries `clientNumber`. |
 
 **Search:**
 - The volunteer board's search keeps `#field-board-search` and `#board-search-form`, and its label and placeholder become "Find a client # or Application ID".
