@@ -1241,9 +1241,12 @@ test("the board search box asks for a client number or an Application ID", () =>
   assert.match(html, /id="field-board-search"[^>]*placeholder="Find a client # or Application ID"/);
 });
 
-test("the case header leads with the client number, in a div", () => {
+test("the case header shows the client number above the heading, after it in reading order", () => {
   const html = caseHeader(staffCase({ clientNumber: 93, season: 2025 }), MORGAN);
-  assert.match(html, /<div class="case-client-number">Client #093<\/div><div class="case-title-row"><h2 id="case-title" tabindex="-1">VT-AB2C-DE3F<\/h2>/);
+  // The heading comes first in the DOM so heading navigation lands on it and
+  // reads the number next; CSS lifts the number above it on screen.
+  assert.match(html, /<div class="case-title-row"><h2 id="case-title" tabindex="-1">VT-AB2C-DE3F<\/h2><div class="case-client-number">Client #093<\/div>/);
+  assert.doesNotMatch(html, /case-client-number[\s\S]*<h2 id="case-title"/);
   const draft = caseHeader(staffCase({ stage: "draft", clientNumber: null }), MORGAN);
   assert.match(draft, /<div class="case-client-number">No number yet<\/div>/);
 });

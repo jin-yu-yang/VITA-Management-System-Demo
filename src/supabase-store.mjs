@@ -282,7 +282,7 @@ export function createStore(client) {
         id: row.id,
         fixtureGeneration: Number(row.fixture_generation),
         defaultFollowupPersonId: row.default_followup_person_id,
-        currentSeason: Number(row.current_season),
+        currentSeason: row.current_season == null ? null : Number(row.current_season),
       };
     },
 

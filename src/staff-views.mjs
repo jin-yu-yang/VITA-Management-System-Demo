@@ -634,7 +634,7 @@ const namePill = (role, id, name, personId) =>
   `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
 
 export function caseHeader(record, person) {
-  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
+  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
     person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
   )}</p></section>`;
 }

@@ -470,6 +470,20 @@ test("the workspace read carries the fixture generation", async () => {
   );
 });
 
+test("a workspace row without a season column reads as any season", async () => {
+  // A database from before migration 010 has no current_season: the board
+  // then searches client numbers across every season rather than none.
+  const client = fakeClient({
+    access: "presenter",
+    rows: {
+      workspaces: [
+        { id: "workspace-1", default_followup_person_id: null, fixture_generation: 1 },
+      ],
+    },
+  });
+  assert.equal((await createStore(client).getWorkspace()).currentSeason, null);
+});
+
 test("an applicant case read asks for no staff table at all", async () => {
   const client = fakeClient({ access: "applicant" });
   const found = await createStore(client).getCase("case-1");

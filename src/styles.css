@@ -3939,8 +3939,13 @@ textarea::placeholder {
   font-size: 12px;
   color: var(--vt-muted);
 }
+/* After the heading in the DOM (so heading navigation reads it next), but
+   lifted onto its own line above the heading inside the wrapping flex row.
+   The negative margin takes the row gap (10px) back down to 4px. */
 .case-client-number {
-  margin: 0 0 4px;
+  order: -1;
+  flex-basis: 100%;
+  margin: 0 0 -6px;
   font-size: 13px;
   font-weight: 600;
   color: var(--vt-muted);
