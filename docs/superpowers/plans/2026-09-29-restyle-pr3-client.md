@@ -52,7 +52,7 @@
   - `tests/client-views.test.mjs` "the brand is ViTally, attributed to PCDC, for tax year 2025": the page still contains "ViTally", "PCDC" and "2025", and a `sign-out` action.
 - Office contact, exactly: phone **(215) 922-6156** (`tel:+12159226156`), email **vita@chinatown-pcdc.org** (`mailto:`).
 - Colors come from the `--vt-*` tokens. Add no new hex values in rules this plan writes; white `#fff` is allowed.
-- Client controls are at least `var(--vt-tap)` (44px), except inline text links.
+- Client controls are at least `var(--vt-tap)` (44px), except inline text links (`a` inside a paragraph) and disabled controls. That includes the `.btn.inline` buttons on client screens and client banners, which are raised by a client-scoped rule; the shared 30px style for staff screens stays.
 - Intake and client text use `--vt-intake-ink` (#1b1b1f), and hints use `--vt-intake-hint`.
 - Don't add a blanket `.client-shell small` (or similar element-wide) color rule. It ties on specificity with rules like `.action-card small`, and whichever comes later wins, so a later rule would recolor small text on the amber action card and the dark reference card. Recolor small text component by component instead.
 - Any rule that gives an element with a `hidden` attribute a `display` must be paired with `[hidden] { display: none; }`. That was PR 1's bug.
@@ -448,6 +448,16 @@ Expected: FAIL.
 .office-contact .icon {
   color: var(--vt-primary);
 }
+/* Inline buttons are real actions on client screens (Resend code, Edit
+   visit/screening/details, Try again, Dismiss, Get help from the office), so
+   they meet the 44px client floor here. Staff screens keep the shared 30px
+   style. The banners come right after the client bar in page(). */
+.client-shell .btn.inline,
+.client-bar ~ .connection-notice .btn.inline,
+.client-bar ~ .notice-banner .btn.inline,
+.client-bar ~ .problem-banner .btn.inline {
+  min-height: var(--vt-tap);
+}
 @media (max-width: 800px) {
   .client-bar {
     padding: 10px 16px;
@@ -491,8 +501,10 @@ Expected: FAIL.
   - **Check each page:**
     - `document.documentElement.scrollWidth === innerWidth`
     - every `button`, `a[href]`, `input:not([type=checkbox]):not([type=radio])` and `select` in `.client-shell` and `.client-bar` has a `getBoundingClientRect().height` of at least 44. List any that aren't. Two kinds are exempt:
-      - inline text links, meaning `a` elements inside a paragraph, and `.btn.inline` controls such as "Edit visit" and "Resend code". These are a shared style, so don't enlarge them here.
+      - inline text links, meaning `a` elements inside a paragraph.
       - disabled controls.
+
+      `.btn.inline` buttons such as "Resend code", "Edit visit" and "Try again" are **not** exempt. The client block above raises them to 44px on client screens only, so check them too, including the banners' "Try again" and "Dismiss".
     - the computed `color` of `.page-intro h1` and of a `.question legend` is `rgb(27, 27, 31)`
   - **Compare** against the design references and the "before" captures. Fix gaps within this task's scope, and list the rest.
 
