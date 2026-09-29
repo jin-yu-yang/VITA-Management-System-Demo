@@ -1063,18 +1063,32 @@ textarea::placeholder {
   margin: 25px 0;
 }
 .notice.amber {
-  background: var(--vt-stage-amend-bg);
-  border: 1px solid var(--vt-stage-amend);
-  color: var(--vt-stage-amend);
+  background: #faf2e4;
+  border: 1px solid #ebd8b5;
+  color: #a58344;
 }
 .notice h3 {
   margin-bottom: 8px;
-  color: var(--vt-stage-amend);
+  color: #886428;
 }
 .notice p {
   font-size: 13px;
-  color: var(--vt-stage-amend);
+  color: #98815a;
   line-height: 1.8;
+}
+/* The intake form's own amber notice reads the client tokens; the same
+   component on staff screens (problemNotice, corrections notices) keeps its
+   existing look. */
+.client-shell .notice.amber {
+  background: var(--vt-stage-amend-bg);
+  border-color: var(--vt-stage-amend);
+  color: var(--vt-stage-amend);
+}
+.client-shell .notice.amber h3 {
+  color: var(--vt-stage-amend);
+}
+.client-shell .notice.amber p {
+  color: var(--vt-stage-amend);
 }
 .review-block {
   padding: 6px 0 22px;
