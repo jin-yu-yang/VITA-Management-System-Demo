@@ -374,3 +374,26 @@ test("the help drawer resolves one assigned request, as the old card did", () =>
   const refused = resolveHelpDrawerBody({ item, person: sam, ui: { error: { code: "VALIDATION", message: "No." } } });
   assert.match(refused, /id="drawer-error"/);
 });
+
+test("the Log a call drawer states a refusal once in every branch without a task", () => {
+  const ui = { error: { code: "VALIDATION", message: "Refused here." } };
+  for (const [record, caseId] of [
+    [called([task()]), "c2"], // another case
+    [null, "c1"], // none loaded
+    [called([task({ status: "resolved" })]), "c1"], // no open task left
+  ]) {
+    const html = logCallDrawerBody({ record, person: sam, ui, caseId });
+    assert.equal(count(html, /role="alert"/g), 1);
+    assert.match(html, /id="drawer-error"[\s\S]*Refused here\./);
+  }
+});
+
+test("the help drawer states a refusal once in every branch", () => {
+  const ui = { error: { code: "VALIDATION", message: "Refused here." } };
+  const item = { id: "h2", status: "assigned", assigneeId: "p-sam", title: "Letter", revision: 2 };
+  for (const current of [null, { ...item, status: "resolved" }, { ...item, assigneeId: "p-jo" }]) {
+    const html = resolveHelpDrawerBody({ item: current, person: sam, ui });
+    assert.equal(count(html, /role="alert"/g), 1);
+    assert.match(html, /id="drawer-error"[\s\S]*Refused here\./);
+  }
+});

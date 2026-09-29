@@ -243,7 +243,8 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
 // ---------------------------------------------------------------------------
 
 // The one announcement of a failure while a drawer is open (pitfall 8): the
-// page banner steps aside, so its two controls live here instead.
+// page banner steps aside, so its two controls live here instead — in every
+// branch of both drawers, or a failure would be announced nowhere.
 const drawerError = (ui) =>
   ui?.error
     ? `<div class="notice amber" role="alert" id="drawer-error">${icon("help")}<div><h3>${esc(
@@ -264,11 +265,11 @@ const drawerError = (ui) =>
  */
 export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   if (!record || record.id !== caseId)
-    return `<p>This case could not be opened. Close this and try again.</p>${button("Close", "close-dialog", "secondary")}`;
+    return `${drawerError(ui)}<p>This case could not be opened. Close this and try again.</p>${button("Close", "close-dialog", "secondary")}`;
   const tasks = openFollowups(record);
   const head = `<div class="drawer-case">${esc(record.reference)} ${stageBadge(record.stage)}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
   if (!tasks.length)
-    return `${head}<p>No open follow-up is left on this case.</p>${button("Close", "close-dialog", "secondary")}`;
+    return `${head}${drawerError(ui)}<p>No open follow-up is left on this case.</p>${button("Close", "close-dialog", "secondary")}`;
   return `${head}${drawerError(ui)}${tasks
     .map(
       (task) =>
@@ -285,7 +286,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
  */
 export function resolveHelpDrawerBody({ item, person, ui = {} } = {}) {
   if (!item || item.status !== "assigned")
-    return `<p>This request is no longer open.</p>${button("Close", "close-dialog", "secondary")}`;
+    return `${drawerError(ui)}<p>This request is no longer open.</p>${button("Close", "close-dialog", "secondary")}`;
   const busy = ui?.busy ? "disabled" : "";
   const rights = adminEligibility({ item }, person);
   const resolve = rights.resolveAssistance.allowed
