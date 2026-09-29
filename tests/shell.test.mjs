@@ -123,3 +123,12 @@ test("the help dialog gives the office phone and email", () => {
   assert.match(html, /href="tel:\+12159226156"/);
   assert.match(html, /href="mailto:vita@chinatown-pcdc\.org"/);
 });
+
+test("the old site header's styles are gone and the client shell sets its ink", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.doesNotMatch(css, /\.site-header\b/);
+  assert.doesNotMatch(css, /\.header-divider\b/);
+  assert.match(css, /\.client-shell\s*\{[^}]*color:\s*var\(--vt-intake-ink\)/);
+  assert.match(css, /\.client-bar\s*\{/);
+  assert.match(css, /\.office-contact\s*\{/);
+});

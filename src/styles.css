@@ -245,68 +245,8 @@ small,
 .skip:focus {
   top: 8px;
 }
-.site-header {
-  height: 100px;
-  border-bottom: 1px solid var(--line);
-  padding: 0 max(32px, calc((100vw - 1320px) / 2));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-}
-.brand {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--ink);
-}
-.brand-mark {
-  width: 44px;
-  height: 46px;
-  background: var(--blue-dark);
-  color: #fafaf5;
-  display: grid;
-  place-items: center;
-  border-radius: 8px 8px 17px 8px;
-}
-.brand-mark .icon {
-  width: 28px;
-  height: 28px;
-}
-.brand strong {
-  font-size: 29px;
-  letter-spacing: -1px;
-  line-height: 1.1;
-}
 .brand-dot {
   color: #b29461;
-}
-.brand small {
-  display: block;
-  font-size: 8px;
-  font-weight: 650;
-  letter-spacing: 1.5px;
-  margin-top: 5px;
-}
-.site-header nav {
-  display: flex;
-  align-items: center;
-  gap: 23px;
-}
-.season {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: #8b9699;
-}
-.header-divider {
-  height: 21px;
-  width: 1px;
-  background: var(--line);
 }
 .overline {
   display: block;
@@ -616,11 +556,11 @@ small,
   width: 61px;
   height: 61px;
   border-radius: 18px;
-  background: #e9efea;
+  background: var(--vt-primary-soft);
   display: grid;
   place-items: center;
   margin: 0 auto 23px;
-  color: #517867;
+  color: var(--vt-primary);
 }
 .center-icon .icon {
   height: 27px;
@@ -628,7 +568,8 @@ small,
 }
 .center-icon.success {
   border-radius: 50%;
-  background: #e6f0e5;
+  background: var(--vt-stage-filing-bg);
+  color: var(--vt-progress);
 }
 .page-intro {
   margin-bottom: 29px;
@@ -711,7 +652,7 @@ textarea::placeholder {
 }
 .resend-row {
   font-size: 13px;
-  color: #89948f;
+  color: var(--vt-intake-hint);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -721,11 +662,11 @@ textarea::placeholder {
   margin: 26px 10px;
   display: flex;
   gap: 13px;
-  color: #7e9288;
+  color: var(--vt-intake-hint);
 }
 .support-note strong {
   font-size: 13px;
-  color: #60786b;
+  color: var(--vt-intake-ink);
 }
 .support-note p {
   font-size: 12px;
@@ -735,11 +676,11 @@ textarea::placeholder {
   font-size: 12px;
 }
 .reference-card {
-  background: #214d59;
+  background: var(--vt-primary);
   color: #fff;
-  border-radius: 13px;
+  border-radius: var(--vt-radius);
   padding: 27px;
-  box-shadow: 0 12px 25px #214d5914;
+  box-shadow: 0 12px 25px color-mix(in srgb, var(--vt-primary) 20%, transparent);
   position: relative;
   overflow: hidden;
 }
@@ -748,7 +689,7 @@ textarea::placeholder {
   position: absolute;
   width: 190px;
   height: 190px;
-  border: 1px solid #ffffff10;
+  border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 50%;
   right: -70px;
   top: -80px;
@@ -761,12 +702,12 @@ textarea::placeholder {
   font-size: 7px;
   letter-spacing: 1px;
   margin-left: 9px;
-  color: #b3cccb;
+  color: rgb(255 255 255 / 0.75);
 }
 .reference-card > p {
   font-size: 9px;
   letter-spacing: 2px;
-  color: #aac5c5;
+  color: rgb(255 255 255 / 0.7);
   margin: 32px 0 9px;
 }
 .reference-card > strong {
@@ -779,8 +720,8 @@ textarea::placeholder {
   justify-content: space-between;
   margin-top: 29px;
   font-size: 9px;
-  color: #a6c4c3;
-  border-top: 1px solid #ffffff1a;
+  color: rgb(255 255 255 / 0.75);
+  border-top: 1px solid rgb(255 255 255 / 0.15);
   padding-top: 16px;
 }
 .card-tools {
@@ -795,7 +736,7 @@ textarea::placeholder {
 .footnote {
   text-align: center;
   font-size: 11px;
-  color: #9aa39f;
+  color: var(--vt-intake-hint);
   margin-top: 21px;
   line-height: 1.9;
 }
@@ -809,10 +750,15 @@ textarea::placeholder {
 .intake-sidebar,
 .volunteer-sidebar {
   padding: 49px 35px 35px 20px;
-  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+.volunteer-sidebar {
+  border-right: 1px solid var(--line);
+}
+.intake-sidebar {
+  border-right: 1px solid var(--vt-line);
 }
 .intake-sidebar h2,
 .volunteer-sidebar h2 {
@@ -832,7 +778,7 @@ textarea::placeholder {
   display: flex;
   gap: 13px;
   align-items: center;
-  color: #9aa7a2;
+  color: var(--vt-intake-hint);
   min-height: 74px;
   position: relative;
   font-size: 14px;
@@ -842,7 +788,7 @@ textarea::placeholder {
   position: absolute;
   width: 1px;
   height: 25px;
-  background: #e0e8df;
+  background: var(--vt-line);
   left: 16px;
   bottom: -12px;
 }
@@ -852,27 +798,27 @@ textarea::placeholder {
 .step-list li > span {
   height: 34px;
   width: 34px;
-  border: 1px solid #dbe4df;
+  border: 1px solid var(--vt-line);
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-size: 10px;
   flex-shrink: 0;
-  background: var(--canvas);
+  background: var(--vt-surface);
 }
 .step-list li.active {
-  color: var(--ink);
+  color: var(--vt-intake-ink);
   font-weight: 600;
 }
 .step-list li.active > span {
-  background: var(--blue);
+  background: var(--vt-primary);
   color: #fff;
-  border-color: var(--blue);
+  border-color: var(--vt-primary);
 }
 .step-list li.complete > span {
-  color: #5d826c;
-  background: #e9f0e7;
-  border-color: #e9f0e7;
+  color: #fff;
+  background: var(--vt-progress);
+  border-color: var(--vt-progress);
 }
 .step-list .icon {
   height: 15px;
@@ -880,18 +826,18 @@ textarea::placeholder {
 }
 .step-list small {
   display: block;
-  color: #92a098;
+  color: var(--vt-intake-hint);
   letter-spacing: 1px;
   font-size: 8px;
   margin-top: 5px;
 }
 .sidebar-help {
   padding-top: 25px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--vt-line);
   margin-top: 50px;
 }
 .sidebar-help > .icon {
-  color: #6e8b7c;
+  color: var(--vt-primary);
   width: 19px;
 }
 .sidebar-help h3 {
@@ -916,7 +862,7 @@ textarea::placeholder {
   justify-content: space-between;
   font-size: 10px;
   letter-spacing: 0.6px;
-  color: #929e98;
+  color: var(--vt-intake-hint);
   margin-bottom: 30px;
 }
 .save-status {
@@ -948,9 +894,9 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 16px;
-  background: white;
-  border: 1px solid #dde5de;
-  border-radius: 9px;
+  background: var(--vt-surface);
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
   padding: 20px;
   cursor: pointer;
   position: relative;
@@ -962,22 +908,21 @@ textarea::placeholder {
   height: 1px;
 }
 .service-card:has(input:focus-visible) {
-  outline: 2px solid #75998c;
+  outline: 2px solid var(--vt-primary);
   outline-offset: 3px;
 }
 .service-card.selected {
-  border-color: #6e9286;
-  box-shadow: 0 0 0 1px #6e928614;
-  background: #f0f5ef;
+  border-color: var(--vt-primary);
+  background: var(--vt-primary-soft);
 }
 .service-icon {
-  color: #7c9588;
-  background: #f1f5ef;
+  color: var(--vt-primary);
+  background: var(--vt-primary-soft);
   height: 39px;
   width: 39px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: var(--vt-radius-sm);
 }
 .service-card strong {
   display: block;
@@ -985,7 +930,7 @@ textarea::placeholder {
 }
 .service-card small {
   display: block;
-  color: #8a9790;
+  color: var(--vt-intake-hint);
   font-size: 12px;
   margin-top: 3px;
 }
@@ -994,11 +939,11 @@ textarea::placeholder {
   width: 17px;
   margin-left: auto;
   border-radius: 50%;
-  border: 1px solid #d2ddd3;
+  border: 1px solid var(--vt-line);
 }
 .service-card.selected i {
-  border: 5px solid #568170;
-  background: white;
+  border: 5px solid var(--vt-primary);
+  background: var(--vt-surface);
 }
 .form-grid {
   display: grid;
@@ -1037,8 +982,24 @@ textarea::placeholder {
   font-size: 10px;
   color: #8c9a92;
 }
+/* The intake form's own info notes read the client tokens; the same
+   component in a shared dialog (help, sample data) keeps its neutral look. */
+.client-shell .info-note {
+  background: var(--vt-primary-soft);
+  border-color: var(--vt-primary-line);
+  color: var(--vt-intake-hint);
+}
+.client-shell .info-note p {
+  color: var(--vt-intake-hint);
+}
+.client-shell .info-note strong {
+  color: var(--vt-intake-ink);
+}
+.client-shell .info-note small {
+  color: var(--vt-intake-hint);
+}
 .form-actions {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--vt-line);
   padding-top: 23px;
   margin-top: 31px;
   display: flex;
@@ -1054,9 +1015,11 @@ textarea::placeholder {
   font-size: 13px;
 }
 .question {
-  border: 0;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
   margin: 0 0 24px;
-  padding: 0;
+  padding: 20px 22px 22px;
+  background: var(--vt-surface);
 }
 .question legend {
   font-size: 16px;
@@ -1064,6 +1027,7 @@ textarea::placeholder {
   font-weight: 550;
   margin-bottom: 13px;
   padding: 0;
+  color: var(--vt-intake-ink);
 }
 .radio-row {
   display: flex;
@@ -1099,23 +1063,23 @@ textarea::placeholder {
   margin: 25px 0;
 }
 .notice.amber {
-  background: #faf2e4;
-  border: 1px solid #ebd8b5;
-  color: #a58344;
+  background: var(--vt-stage-amend-bg);
+  border: 1px solid var(--vt-stage-amend);
+  color: var(--vt-stage-amend);
 }
 .notice h3 {
   margin-bottom: 8px;
-  color: #886428;
+  color: var(--vt-stage-amend);
 }
 .notice p {
   font-size: 13px;
-  color: #98815a;
+  color: var(--vt-stage-amend);
   line-height: 1.8;
 }
 .review-block {
   padding: 6px 0 22px;
   margin-bottom: 23px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--vt-line);
 }
 .review-block h3 {
   font-size: 16px;
@@ -1166,9 +1130,15 @@ textarea::placeholder {
   margin-top: -9px;
   font-size: 11px;
 }
+.client-shell .checkbox-row {
+  color: var(--vt-intake-ink);
+}
+.client-shell .checkbox-row input {
+  accent-color: var(--vt-primary);
+}
 .error {
-  background: #faeee9;
-  color: #a44d39;
+  background: var(--vt-stage-stopped-bg);
+  color: var(--vt-stage-stopped);
   padding: 14px;
   border-radius: 7px;
   font-size: 13px;
@@ -1198,17 +1168,17 @@ textarea::placeholder {
   display: flex;
   gap: 12px;
   align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
   padding: 15px 20px;
-  background: white;
+  background: var(--vt-surface);
 }
 .id-pill > .icon {
-  color: #8d9e93;
+  color: var(--vt-primary);
 }
 .id-pill small {
   display: block;
-  color: #9aa99c;
+  color: var(--vt-intake-hint);
   font-size: 8px;
   letter-spacing: 1.3px;
   margin-bottom: 4px;
@@ -1275,7 +1245,7 @@ textarea::placeholder {
   display: flex;
   padding: 15px 0 23px;
   margin-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--vt-line);
 }
 .progress-steps > div {
   flex: 1;
@@ -1284,12 +1254,12 @@ textarea::placeholder {
   align-items: center;
   gap: 10px;
   position: relative;
-  color: #b2beb6;
+  color: var(--vt-intake-hint);
 }
 .progress-steps > div:after {
   content: "";
   height: 1px;
-  background: #e0e7e0;
+  background: var(--vt-line);
   position: absolute;
   width: calc(100% - 40px);
   top: 17px;
@@ -1301,8 +1271,8 @@ textarea::placeholder {
 .progress-steps > div > span {
   height: 35px;
   width: 35px;
-  border: 1px solid #e0e7e0;
-  background: #fafcf8;
+  border: 1px solid var(--vt-line);
+  background: var(--vt-surface);
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -1312,18 +1282,17 @@ textarea::placeholder {
   font-size: 11px;
 }
 .progress-steps .current {
-  color: #3c6254;
+  color: var(--vt-intake-ink);
 }
 .progress-steps .current > span {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: white;
-  box-shadow: 0 0 0 5px #ecf1e9;
+  background: var(--vt-primary);
+  border-color: var(--vt-primary);
+  color: #fff;
 }
 .progress-steps .done > span {
-  background: #e9f1e6;
-  color: #638365;
-  border-color: #e9f1e6;
+  background: var(--vt-progress);
+  color: #fff;
+  border-color: var(--vt-progress);
 }
 .progress-steps .icon {
   height: 15px;
@@ -1331,16 +1300,16 @@ textarea::placeholder {
 }
 .status-explanation {
   font-size: 13px;
-  color: #8a988e;
+  color: var(--vt-intake-hint);
   line-height: 1.75;
   margin: 0;
 }
 .action-card {
   margin-top: 22px;
   padding: 27px 30px;
-  background: #fbf4e6;
-  border: 1px solid #eddcb9;
-  border-radius: 12px;
+  background: var(--vt-stage-amend-bg);
+  border: 1px solid var(--vt-stage-amend);
+  border-radius: var(--vt-radius);
 }
 .action-label {
   display: flex;
@@ -1348,7 +1317,7 @@ textarea::placeholder {
   gap: 8px;
   letter-spacing: 1.4px;
   font-size: 9px;
-  color: #a98944;
+  color: var(--vt-stage-amend);
   margin-bottom: 18px;
 }
 .action-label .icon {
@@ -1356,18 +1325,18 @@ textarea::placeholder {
 }
 .action-card h2 {
   font-size: 25px;
-  color: #6c572d;
+  color: var(--vt-stage-amend);
   margin-bottom: 11px;
 }
 .action-card p {
   font-size: 15px;
   line-height: 1.8;
-  color: #9a8661;
+  color: var(--vt-stage-amend);
   max-width: 490px;
 }
 .action-card small {
   display: block;
-  color: #ac9d7e;
+  color: var(--vt-stage-amend);
   font-size: 10px;
   margin-top: 15px;
 }
@@ -1416,21 +1385,21 @@ textarea::placeholder {
   display: flex;
   gap: 17px;
   padding: 25px 30px;
-  background: #f0f4ec;
-  border: 1px solid #e1e8da;
-  border-radius: 12px;
+  background: var(--vt-primary-soft);
+  border: 1px solid var(--vt-primary-line);
+  border-radius: var(--vt-radius);
   margin-top: 22px;
-  color: #91a285;
+  color: var(--vt-intake-hint);
 }
 .next-card h3 {
   margin: 0 0 6px;
   font-size: 15px;
-  color: #56714d;
+  color: var(--vt-intake-ink);
 }
 .next-card p {
   font-size: 12px;
   margin: 0;
-  color: #899b80;
+  color: var(--vt-intake-hint);
 }
 .summary-panel {
   padding: 25px;
@@ -1441,13 +1410,13 @@ textarea::placeholder {
 }
 .summary-panel .detail-row {
   font-size: 12px;
-  border-bottom: 1px solid #f0f3ed;
+  border-bottom: 1px solid var(--vt-line);
 }
 .gentle-note {
   margin-top: 22px;
   font-size: 10px;
   line-height: 1.8;
-  color: #9aa697;
+  color: var(--vt-intake-hint);
   display: flex;
   align-items: start;
   gap: 8px;
@@ -1458,20 +1427,20 @@ textarea::placeholder {
   margin-top: 3px;
 }
 .help-card {
-  border: 1px solid #e1e6dd;
+  border: 1px solid var(--vt-line);
   padding: 25px;
-  background: #f1f4ec;
-  border-radius: 12px;
+  background: var(--vt-primary-soft);
+  border-radius: var(--vt-radius);
   margin-top: 22px;
 }
 .help-card-icon {
-  background: #e3ebdb;
+  background: var(--vt-surface);
   display: grid;
   place-items: center;
   width: 38px;
   height: 38px;
   border-radius: 11px;
-  color: #8c9c7e;
+  color: var(--vt-primary);
   margin-bottom: 20px;
 }
 .help-card h3 {
@@ -1479,11 +1448,12 @@ textarea::placeholder {
   font-size: 25px;
   font-weight: 400;
   margin-bottom: 9px;
+  color: var(--vt-intake-ink);
 }
 .help-card p {
   font-size: 12px;
   line-height: 1.8;
-  color: #8d9b82;
+  color: var(--vt-intake-hint);
 }
 .help-card .btn {
   font-size: 12px;
@@ -1545,6 +1515,21 @@ textarea::placeholder {
 .timeline-item small {
   font-size: 9px;
   color: #a3afa0;
+}
+/* The client history timeline reads the client tokens; the staff timeline
+   (case history) keeps its existing look. */
+.client-shell .timeline-dot {
+  border-color: var(--vt-primary);
+  background: var(--vt-surface);
+}
+.client-shell .timeline-item:before {
+  background: var(--vt-line);
+}
+.client-shell .timeline-item p {
+  color: var(--vt-intake-hint);
+}
+.client-shell .timeline-item small {
+  color: var(--vt-intake-hint);
 }
 .volunteer-layout {
   max-width: 1340px;
@@ -1702,10 +1687,10 @@ textarea::placeholder {
   align-items: center;
   gap: 10px;
   padding: 13px 0;
-  border-bottom: 1px solid #edf1e7;
+  border-bottom: 1px solid var(--vt-line);
 }
 .document-row > .icon {
-  color: #9aac8b;
+  color: var(--vt-intake-hint);
   width: 18px;
 }
 .document-row > div {
@@ -1720,19 +1705,19 @@ textarea::placeholder {
 .document-row small {
   display: block;
   font-size: 9px;
-  color: #9aaa89;
+  color: var(--vt-intake-hint);
   margin-top: 5px;
 }
 .document-check {
   margin-left: auto;
-  color: #83a06f;
+  color: var(--vt-progress);
 }
 .document-check .icon {
   width: 14px;
   height: 14px;
 }
 .document-check.pending {
-  color: #b39d64;
+  color: var(--vt-stage-amend);
 }
 .request-summary {
   padding: 16px;
@@ -1840,10 +1825,10 @@ textarea::placeholder {
   align-items: center;
   gap: 15px;
   padding: 21px 0;
-  border-bottom: 1px solid #eef1e8;
+  border-bottom: 1px solid var(--vt-line);
 }
 .contact-option > .icon {
-  color: #9eae8c;
+  color: var(--vt-primary);
 }
 .contact-option strong {
   font-size: 14px;
@@ -1852,7 +1837,7 @@ textarea::placeholder {
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: #a0ac90;
+  color: var(--vt-muted);
 }
 .contact-option + .info-note {
   margin-top: 24px;
@@ -1860,10 +1845,10 @@ textarea::placeholder {
 }
 .print-card {
   padding: 25px;
-  border: 1px solid #ccd9c2;
-  border-radius: 10px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
   margin: 20px 0;
-  background: #f7f9f2;
+  background: var(--vt-background);
 }
 .print-card strong {
   display: block;
@@ -1873,7 +1858,7 @@ textarea::placeholder {
   display: block;
   letter-spacing: 1px;
   font-size: 9px;
-  color: #9caa8c;
+  color: var(--vt-intake-hint);
   margin-top: 30px;
 }
 .print-card b {
@@ -1885,13 +1870,13 @@ textarea::placeholder {
 }
 .print-card p {
   font-size: 10px;
-  color: #94a281;
+  color: var(--vt-intake-hint);
   margin-top: 20px;
 }
 .upload-zone {
-  border: 1px dashed #b6c7a8;
-  border-radius: 12px;
-  background: #f8faf4;
+  border: 1px dashed var(--vt-primary-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-primary-soft);
   text-align: center;
   padding: 30px 15px;
   margin: 22px 0;
@@ -1901,7 +1886,7 @@ textarea::placeholder {
   width: 30px;
   height: 30px;
   margin: 0 auto 16px;
-  color: #95ae82;
+  color: var(--vt-primary);
 }
 .upload-zone strong {
   display: block;
@@ -1911,7 +1896,7 @@ textarea::placeholder {
 .upload-zone > span {
   display: block;
   font-size: 11px;
-  color: #9eae8c;
+  color: var(--vt-intake-hint);
   margin: 8px 0 18px;
 }
 .upload-zone .btn {
@@ -1920,7 +1905,7 @@ textarea::placeholder {
 }
 .upload-zone.has-file {
   border-style: solid;
-  background: #f1f6e9;
+  background: var(--vt-primary-soft);
 }
 .modal .checkbox-row.small {
   font-size: 11px;
@@ -1978,9 +1963,6 @@ textarea::placeholder {
   }
 }
 @media (max-width: 1150px) {
-  .site-header {
-    padding: 0 25px;
-  }
   .landing {
     gap: 35px;
     padding: 45px 35px 0;
@@ -2035,36 +2017,6 @@ textarea::placeholder {
   }
 }
 @media (max-width: 800px) {
-  .site-header {
-    height: 82px;
-    padding: 0 20px;
-  }
-  .season,
-  .header-divider {
-    display: none;
-  }
-  .site-header nav {
-    gap: 0;
-  }
-  .site-header nav .btn {
-    font-size: 11px;
-    padding: 6px 9px;
-    min-height: 35px;
-  }
-  .brand strong {
-    font-size: 25px;
-  }
-  .brand small {
-    font-size: 6px;
-    letter-spacing: 1px;
-  }
-  .brand-mark {
-    width: 35px;
-    height: 38px;
-  }
-  .brand {
-    gap: 8px;
-  }
   .landing {
     grid-template-columns: 1fr;
     max-width: 620px;
@@ -2337,21 +2289,6 @@ textarea::placeholder {
   }
 }
 @media (max-width: 450px) {
-  .site-header nav .btn:last-child {
-    font-size: 0;
-    gap: 0;
-    padding: 5px;
-  }
-  .site-header nav .btn:last-child:after {
-    content: "Staff";
-    font-size: 11px;
-  }
-  .site-header nav .btn:last-child .icon {
-    display: none;
-  }
-  .brand small {
-    font-size: 5.5px;
-  }
   .hero h1 {
     font-size: 50px;
   }
@@ -2562,22 +2499,22 @@ textarea::placeholder {
 }
 .status-explanation {
   font-size: 15px;
-  color: #667b70;
+  color: var(--vt-intake-hint);
 }
 .action-card p {
   font-size: 17px;
-  color: #887346;
+  color: var(--vt-stage-amend);
 }
-.timeline-item p {
+.client-shell .timeline-item p {
   font-size: 12px;
-  color: #75876c;
+  color: var(--vt-intake-hint);
 }
 .summary-panel .detail-row {
   font-size: 13px;
 }
 .help-card p {
   font-size: 14px;
-  color: #778969;
+  color: var(--vt-intake-hint);
 }
 @media (max-width: 450px) {
   .demo-actions {
@@ -2618,17 +2555,6 @@ textarea::placeholder {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-.who {
-  font-size: 11px;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.who .icon {
-  width: 15px;
-  height: 15px;
 }
 .connection-notice,
 .notice-banner,
@@ -2687,13 +2613,13 @@ textarea::placeholder {
   width: 100%;
   text-align: left;
   padding: 15px 17px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  background: var(--vt-surface);
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
   color: inherit;
 }
 .application-row:hover {
-  border-color: #c3d3cc;
+  border-color: var(--vt-primary-line);
 }
 .application-row.static {
   cursor: default;
@@ -2705,15 +2631,15 @@ textarea::placeholder {
 }
 .application-when {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .application-row > .icon {
   width: 18px;
   height: 18px;
-  color: var(--muted);
+  color: var(--vt-primary);
 }
 .start-row {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--vt-line);
   padding-top: 20px;
 }
 .start-row .field-note {
@@ -2723,28 +2649,28 @@ textarea::placeholder {
   display: block;
   width: 100%;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .save-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .save-chip .icon {
   width: 14px;
   height: 14px;
 }
 .save-chip.unsaved {
-  color: var(--amber);
+  color: var(--vt-stage-amend);
 }
 .save-chip.failed {
-  color: #a3463c;
+  color: var(--vt-stage-stopped);
   flex-wrap: wrap;
 }
 .save-chip.saved {
-  color: var(--teal);
+  color: var(--vt-progress);
 }
 .fiction-tools {
   display: flex;
@@ -2753,31 +2679,32 @@ textarea::placeholder {
   flex-wrap: wrap;
   padding: 11px 13px;
   margin-bottom: 20px;
-  border: 1px dashed #cfdbd4;
-  border-radius: 9px;
-  background: #f5f8f5;
+  border: 1px dashed var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-background);
 }
 .fiction-tools .demo-fiction {
   border-left: 0;
   padding-left: 0;
   margin: 0 auto 0 0;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .fiction-tools .btn.demo {
-  background: var(--paper);
-  border-color: var(--line);
-  color: var(--ink);
+  min-height: var(--vt-tap);
+  background: var(--vt-surface);
+  border-color: var(--vt-line);
+  color: var(--vt-intake-ink);
 }
 .fiction-tools .btn.demo:hover {
-  background: #eef3ef;
+  background: var(--vt-primary-soft);
 }
 .fiction-tools .btn.demo.subtle {
   border-color: transparent;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .conflict-panel {
-  border-color: #e7cf9f;
-  background: #fffdf7;
+  border-color: var(--vt-stage-amend);
+  background: var(--vt-stage-amend-bg);
   margin-bottom: 20px;
 }
 .conflict-table {
@@ -2790,14 +2717,14 @@ textarea::placeholder {
 .conflict-table td {
   text-align: left;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--vt-line);
   vertical-align: top;
 }
 .conflict-table thead th {
   font-size: 10px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--vt-intake-hint);
 }
 .conflict-choices {
   display: flex;
@@ -3579,5 +3506,107 @@ textarea::placeholder {
   }
   .case-people {
     margin-left: 0;
+  }
+}
+
+/* ---- Client frame (restyle PR 3) ---- */
+.client-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding: 10px 28px;
+  background: var(--vt-surface);
+  border-bottom: 1px solid var(--vt-line);
+}
+.client-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--vt-tap);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--vt-intake-ink);
+}
+.client-wordmark {
+  font-weight: 700;
+  font-size: 19px;
+}
+.client-bar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.language-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-background);
+}
+.language-switch .lang {
+  min-height: var(--vt-tap);
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vt-intake-hint);
+  font-size: 14px;
+}
+.language-switch .lang.current {
+  background: var(--vt-surface);
+  color: var(--vt-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgb(42 39 69 / 0.12);
+}
+.language-switch .lang:disabled {
+  opacity: 0.55;
+}
+.client-shell {
+  color: var(--vt-intake-ink);
+  background: var(--vt-background);
+}
+.client-shell .field-note,
+.client-shell .page-intro p {
+  color: var(--vt-intake-hint);
+}
+.office-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+.office-contact a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--vt-tap);
+  color: var(--vt-intake-ink);
+  font-weight: 600;
+  text-decoration: none;
+  word-break: break-all;
+}
+.office-contact a:hover {
+  color: var(--vt-primary);
+}
+.office-contact .icon {
+  color: var(--vt-primary);
+}
+/* Inline buttons are real actions on client screens (Resend code, Edit
+   visit/screening/details, Try again, Dismiss, Get help from the office), so
+   they meet the 44px client floor here. Staff screens keep the shared 30px
+   style. The banners come right after the client bar in page(). */
+.client-shell .btn.inline,
+.client-bar ~ .connection-notice .btn.inline,
+.client-bar ~ .notice-banner .btn.inline,
+.client-bar ~ .problem-banner .btn.inline {
+  min-height: var(--vt-tap);
+}
+@media (max-width: 800px) {
+  .client-bar {
+    padding: 10px 16px;
   }
 }
