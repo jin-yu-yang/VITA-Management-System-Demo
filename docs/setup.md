@@ -302,7 +302,7 @@ check failed. Check, in this order:
 
 ## 4. Migrations
 
-Nine migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
+Ten migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
 but not because the files themselves are re-runnable — `001` and `002` create their tables with a
 plain `create table`, which fails the second time. What makes it safe is the ledger
 `tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
@@ -320,6 +320,7 @@ already applied, so **the migrations are run only through the migrator, never by
 | `007_realtime_publication.sql` | Adds the twelve browser-readable tables to `supabase_realtime`, `publish = 'insert, update'` |
 | `008_case_timestamps.sql` | `cases.created_at`/`updated_at`, maintained by every action/create path |
 | `009_fixtures_and_realtime.sql` | `vitally_reset_fixtures`, `vitally_load_checkpoint`; the six seeded sample cases and one assistance item |
+| `010_client_numbers.sql` | `workspaces.current_season`; `cases.season`/`client_number`, one number per submitted case in each workspace and season; the private `client_number_counters`; the `cases_client_number` trigger that assigns on submit and refuses any change; `backfill_client_numbers` for cases submitted before it; SUBMIT's `detail.clientNumber` |
 
 > **Migration numbering as built.** The original plan sketched fixtures/Realtime as a single
 > migration named `007`. As implemented, the Realtime publication landed first as its own
