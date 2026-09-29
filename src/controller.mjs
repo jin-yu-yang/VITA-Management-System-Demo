@@ -136,6 +136,10 @@ export function createController({
     openPanels: [],
     lookup: "",
     dialog: null,
+    // What the open dialog is about — the case a Log a call drawer was opened
+    // from, the help request being resolved. Window-local and never persisted:
+    // a reload closes every dialog.
+    dialogContext: null,
     pendingCreateActionId: null,
     // The staff board's filters, as chosen in this window. Only the choices a
     // person made are held; the board fills in its own defaults for the rest.
@@ -187,6 +191,14 @@ export function createController({
 
   // Where "back to the list" goes for whoever is signed in.
   const homeScreen = () => screens()[0];
+
+  // Screens that are about the selected case. Anywhere else, a case that has
+  // gone only clears the selection: the person is somewhere else on purpose.
+  const CASE_SCREENS = Object.freeze(["staff-case", "intake", "progress", "reference"]);
+  function forgetGoneCase() {
+    clearSelection();
+    if (CASE_SCREENS.includes(state.screen)) state.screen = homeScreen();
+  }
 
   function persistSession() {
     if (!state.principal) return;
@@ -345,10 +357,8 @@ export function createController({
     } catch (error) {
       // A case that is gone is not a failure to report: the fixtures were
       // reset, or it was closed and removed. Fall back to the list.
-      if (error?.code === "NOT_FOUND") {
-        clearSelection();
-        state.screen = homeScreen();
-      } else failure = failure ?? error;
+      if (error?.code === "NOT_FOUND") forgetGoneCase();
+      else failure = failure ?? error;
     }
     // A refusal the person has been shown is theirs to dismiss or to act on.
     // Re-reading is not an answer to it: an unrelated fixture reset landing in
@@ -449,8 +459,7 @@ export function createController({
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
       else {
-        clearSelection();
-        state.screen = homeScreen();
+        forgetGoneCase();
         // The case that was open is gone. Somebody reset the demonstration
         // set, and this is the only place this window can be told so.
         if (touchesWorkspace) state.notice = FIXTURES_GONE_NOTICE;
@@ -524,10 +533,8 @@ export function createController({
       try {
         await loadSelected();
       } catch (error) {
-        if (error?.code === "NOT_FOUND") {
-          clearSelection();
-          state.screen = homeScreen();
-        } else noteFailure(error);
+        if (error?.code === "NOT_FOUND") forgetGoneCase();
+        else noteFailure(error);
       }
     }
     persistSession();
@@ -681,6 +688,7 @@ export function createController({
     state.openPanels = [];
     state.lookup = "";
     state.dialog = null;
+    state.dialogContext = null;
     state.pendingCreateActionId = null;
     state.boardFilters = {};
     state.caseTab = "overview";
@@ -711,6 +719,7 @@ export function createController({
     state.screen = screen;
     state.error = null;
     state.dialog = null;
+    state.dialogContext = null;
     persistSession();
     show(true);
   }
@@ -733,13 +742,15 @@ export function createController({
     state.lookup = String(value ?? "");
   }
 
-  function openDialog(name) {
+  function openDialog(name, context = null) {
     state.dialog = name;
+    state.dialogContext = context ? { ...context } : null;
     show();
   }
 
   function closeDialog() {
     state.dialog = null;
+    state.dialogContext = null;
     show();
   }
 
@@ -825,10 +836,7 @@ export function createController({
               ? "intake"
               : "progress";
     } catch (error) {
-      if (error?.code === "NOT_FOUND") {
-        clearSelection();
-        state.screen = homeScreen();
-      }
+      if (error?.code === "NOT_FOUND") forgetGoneCase();
       noteFailure(error);
       persistSession();
       show();

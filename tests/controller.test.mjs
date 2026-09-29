@@ -2031,3 +2031,63 @@ test("the case tab is this window's, and resets for another case, another person
   assert.equal(again.controller.getState().caseTab, "overview");
   again.controller.stop();
 });
+
+// ---------------------------------------------------------------------------
+// The office drawers
+// ---------------------------------------------------------------------------
+
+test("a dialog can carry what it is about, and every way out forgets it", async () => {
+  const store = presenterStore({ cases: [sampleCase({ id: "c1" })] });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.openDialog("log-call", { caseId: "c1" });
+  assert.equal(controller.getState().dialog, "log-call");
+  assert.deepEqual(controller.getState().dialogContext, { caseId: "c1" });
+  controller.closeDialog();
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(controller.getState().dialogContext, null);
+
+  controller.openDialog("log-call", { caseId: "c1" });
+  controller.navigate("staff");
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(controller.getState().dialogContext, null);
+
+  controller.openDialog("help");
+  assert.equal(controller.getState().dialog, "help");
+  assert.equal(controller.getState().dialogContext, null);
+  controller.stop();
+});
+
+test("a case that is gone only moves a window that was showing it", async () => {
+  const store = presenterStore({ cases: [sampleCase({ id: "c1" })] });
+  const { controller } = build({ store });
+  await controller.start();
+
+  // Elsewhere on purpose: the selection is cleared and the screen stays.
+  await controller.selectCase("c1", { navigate: false });
+  controller.navigate("office-cases");
+  store.records.delete("c1");
+  await controller.refresh();
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().savedCase, null);
+  assert.equal(controller.getState().screen, "office-cases");
+
+  // On the case page itself, the page has nothing left to show.
+  store.records.set("c1", sampleCase({ id: "c1" }));
+  await controller.selectCase("c1");
+  assert.equal(controller.getState().screen, "staff-case");
+  store.records.delete("c1");
+  await controller.refresh();
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "staff");
+
+  // Opening a gone case in place from elsewhere leaves the screen alone too.
+  controller.navigate("office-cases");
+  await assert.rejects(
+    () => controller.selectCase("c1", { navigate: false }),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal(controller.getState().screen, "office-cases");
+  controller.stop();
+});
