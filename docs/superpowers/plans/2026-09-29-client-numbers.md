@@ -41,7 +41,7 @@
   - Never run `npx supabase start` from the repo root.
 - **Migrations:** apply them with `npm run db:migrate:test` before the database, auth-browser and browser suites. The migrator stores a SHA-256 of every applied file and **refuses a file whose text changed after it was applied** ("Applied migration differs").
   - So `010` is written to be safe to re-apply: `if not exists`, `create or replace`, `drop … if exists` before `add`, and a backfill that only touches unnumbered rows.
-  - If `010` must change after it has been applied to the **local test stack**, forget it there and re-apply:
+  - If `010` must change after it has been applied to the **local test stack**, forget it there and re-apply. First confirm the database container's name with `docker ps --format '{{.Names}}' | grep supabase_db_vitally-task2`; it was `supabase_db_vitally-task2.M5anE7XP` when this plan was written:
     ```bash
     docker exec supabase_db_vitally-task2.M5anE7XP psql -U postgres -c "delete from vitally_private.schema_migrations where name='010_client_numbers.sql'"
     npm run db:migrate:test
@@ -161,6 +161,7 @@
       - An INSERT doesn't fire the `before update` trigger, so they start unnumbered. Satisfy the `public.cases` constraints in `001_identity_and_cases.sql` (the reference format, `created_by_user_id`, and `cases_origin_owner` for an ownerless row; `created_by_person_id` = Sam's person id works for an assisted row). Read them before writing the insert.
       - Call `select vitally_private.backfill_client_numbers($1)` with the workspace id. It returns 2.
       - The 09:00 case gets `before + 1` and the 10:00 case `before + 2`. The closed case stays `null`, and the counter ends at `before + 2`.
+      - Add a second part for samples. Insert two raw sample rows (`fixture=true`, `origin='fixture'`, `fixture_key` `'review_ready'` and `'preparation_ready'`, each with a SUBMIT row, where the `review_ready` one is timed earlier). Backfill numbers `preparation_ready` before `review_ready`, because that is the `fixture_keys()` order, whatever their SUBMIT times. The fixture keys are unique per workspace, so run this part in a workspace whose samples aren't seeded, or delete that workspace's samples first. Read the `fixture_key` constraints in 009 before writing it.
   12. **An applicant reads their own number.** Through applicant A's client (`f.applicantA.from("cases").select("client_number").eq("id", id)`), their submitted case shows its number. Applicant B's same query returns no row (RLS unchanged).
 
 - [ ] **Step 3: Run it to confirm it fails.**
@@ -206,6 +207,13 @@ create table if not exists vitally_private.client_number_counters (
  primary key (workspace_id, season)
 );
 revoke all on vitally_private.client_number_counters from public, anon, authenticated, service_role;
+
+-- `create or replace` cannot change a function's return type, so a re-apply
+-- during development drops the two table-returning functions first. Nothing
+-- stores a reference to them: the trigger body names next_client_number by
+-- text and resolves it when it runs.
+drop function if exists vitally_private.next_client_number(uuid);
+drop function if exists vitally_private.backfill_client_numbers(uuid);
 
 -- The next number in the workspace's current season. The UPDATE locks the
 -- counter row until the calling transaction ends, so two submits at once
@@ -257,7 +265,8 @@ create trigger cases_client_number before update on public.cases
  for each row execute function vitally_private.cases_client_number();
 
 -- Numbers every case that was submitted (a SUBMIT row in its history) or is a
--- sample past draft, and has none yet — in the order it was submitted. A
+-- sample past draft, and has none yet: samples first in fixture_keys() order,
+-- then the rest in the order they were submitted. A
 -- closed draft the office never sent has no SUBMIT row and stays unnumbered.
 -- `p_workspace_id` null means every workspace. Returns how many it numbered.
 create or replace function vitally_private.backfill_client_numbers(p_workspace_id uuid default null)
@@ -274,7 +283,12 @@ begin
   where c.client_number is null and c.stage <> 'draft'
    and (s.at is not null or c.fixture)
    and (p_workspace_id is null or c.workspace_id = p_workspace_id)
-  order by c.workspace_id, coalesce(s.at, c.created_at), c.reference
+  -- Samples first, in fixture_keys() order, exactly as a reset numbers them:
+  -- their seeded SUBMIT times depend on each scenario's history length, so
+  -- history order would not match. Then everything else in submit order.
+  order by c.workspace_id, (not c.fixture),
+   array_position(vitally_private.fixture_keys(), c.fixture_key) nulls last,
+   coalesce(s.at, c.created_at), c.reference
  loop
   select * into v from vitally_private.next_client_number(r.workspace_id);
   update public.cases set season = v.season, client_number = v.client_number where id = r.id;
@@ -322,10 +336,12 @@ revoke all on all functions in schema vitally_private from public,anon,authentic
   - If any existing database test compares the SUBMIT event's `detail` exactly (`grep -rn "screening" tests/database*.mjs`), update it to expect `clientNumber` too. That's a deliberate change.
 
 - [ ] **Step 6: Run the whole database suite.**
-  ```bash
-  npm run test:database
-  ```
-  Expected: all pass (151 before this task, plus the new file).
+  - `tests/database-realtime.mjs` (around line 791) asserts that the realtime `workspaces` row has exactly `default_followup_person_id`, `fixture_generation` and `id`. Adding `current_season` breaks it, so update that key list to include `"current_season"`, sorted. This is a deliberate change: the row still says nothing private, since a season is only a year. Extend the comment above it to say so.
+  - Then run:
+    ```bash
+    npm run test:database
+    ```
+    Expected: all pass (151 before this task, plus the new file).
 
 - [ ] **Step 7: Update `docs/setup.md` §4 Migrations.** "Nine migrations" becomes "Ten migrations". Add a line for `010_client_numbers.sql`, in the style of the others: client numbers per workspace and season, the private counter, the trigger, and the backfill.
 
@@ -414,11 +430,15 @@ export const clientNumberTag = (record) =>
   - In `src/contracts.mjs`, add `season, clientNumber` to the documented Case shape (the comment around line 79).
   - In `tests/store.test.mjs`, add `season: 2025, client_number: 93` to `CASE_ROW`, so the existing key-list tests cover the new fields.
 
-- [ ] **Step 4: Run.** `node --test tests/ui.test.mjs tests/store.test.mjs`, then `npm test`. Expected: PASS.
+- [ ] **Step 4: Update the two store tests that pin exact shapes.** Both are deliberate changes:
+  - `tests/store.test.mjs` (around line 456) compares `getWorkspace()`'s whole return value. Add `currentSeason: 2025`, and add `current_season: 2025` to that test's fake workspace row.
+  - `tests/store.test.mjs` (around lines 480-500) lists the applicant case's keys exactly. Add `"clientNumber"` and `"season"` in sorted position.
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 5: Run.** `node --test tests/ui.test.mjs tests/store.test.mjs`, then `npm test`. Expected: PASS.
+
+- [ ] **Step 6: Commit.**
   ```bash
-  git add src/ui.mjs src/supabase-store.mjs tests/ui.test.mjs tests/store.test.mjs
+  git add src/ui.mjs src/supabase-store.mjs src/contracts.mjs tests/ui.test.mjs tests/store.test.mjs
   git commit -m "Map client numbers and the workspace season; one way to read them
 
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -501,6 +521,7 @@ export function matchesBoardSearch(record, search, currentSeason = null) {
     - `boardRow`'s first cell becomes `<th scope="row">${clientNumberTag(record)}<button class="board-reference" …>${esc(record.reference)}</button></th>`, and the header cell becomes `Client`.
     - `searchForm`'s label and placeholder become "Find a client # or Application ID".
     - `caseHeader` puts `<div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>` first inside the section. Use a `<div>`, not a `<p>`: see the test above.
+    - Samples never show "Client #… assigned" in their history, because their seeded SUBMIT detail (009 `fixture_history`) is fixed text with no `clientNumber`. That is expected, not a bug, and the sentence falls back to today's words.
     - `historySentence` appends `` ` Client ${formatClientNumber(n)} assigned.` `` when `code === "SUBMIT"` and `entry?.detail?.clientNumber` is a number.
   - **`office-views.mjs`:** `queueRow`'s client cell puts `clientNumberTag(record)` before the reference button when there is a record. `logCallDrawerBody`'s case line starts with `${esc(clientNumberLabel(record))} · ` before the reference.
   - **`pool-views.mjs`:** the first header becomes `Client`, and each row's first cell puts `clientNumberTag(record)` before its reference button.
@@ -562,7 +583,7 @@ export function matchesBoardSearch(record, search, currentSeason = null) {
 - [ ] **Step 2: Run to confirm they fail.** `node --test tests/client-views.test.mjs tests/shell.test.mjs`.
 
 - [ ] **Step 3: Implement.**
-  - **`progressScreen`:** inside `.id-pill`, after the Application ID `<div>`, add ``${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}``.
+  - **`progressScreen`:** keep the Application ID first in `.id-pill`. The story's `readClientPlace` (`tests/support/story-pages.mjs` around line 699) reads the **first** `.id-pill strong` as the Application ID. So inside `.id-pill`, *after* the Application ID `<div>`, add ``${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}``.
   - **`applicationRow`:** after `.application-reference`, add ``${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}``.
   - **The `print` dialog in `views.mjs`:** after `<b>${esc(state.savedCase?.reference)}</b>`, add `` `<span>CLIENT NUMBER</span><b>${esc(formatClientNumber(…))}</b>` `` when there's a number.
   - **CSS:** add to the part 2 block `.client-shell .id-pill` spacing for two entries, and `.application-number { font-weight: 700; color: var(--vt-intake-ink); }`. Check `.print-card b` already styles the second `b`.
