@@ -45,7 +45,6 @@ The build accepts exactly this. Anything else fails with the line number.
   - **Options:** one or more lines of ``` `value` English / 中文 ``` items, one per bullet or several separated by ` · ` on one bullet line.
   - `> Tip: English / 中文`, or `> Tip (show if …): English / 中文`, for a tip shown only under that condition.
   - `**Show if** <condition>`.
-  - `> Out of scope if <condition>: English / 中文`. This is the reason shown to the client, and submitting is refused while the condition holds.
   - `> Note for developers: …`, which the build ignores.
 - **Types:**
 
@@ -67,7 +66,7 @@ The build accepts exactly this. Anything else fails with the line number.
   | `group` | array of objects | ≤ 10 members; each member's keys are the group's sub-fields, each checked by its own type |
 
   A `group` question's sub-fields are the questions written under it, numbered `Qn.m` inside the group's section and marked by the group's show-if line ("Repeatable group"). The build records them as the group's `fields`.
-- **Conditions:**
+- **Conditions** (show-if rules only):
   - `field = value`, `field ≠ value`, `field is filled`;
   - joined by `AND`;
   - `field` may name any question in the catalogue, and `value` must be one of its options.
@@ -94,7 +93,7 @@ Section 0's page text becomes step 1's intro. Every other section heading become
 ### 2.4 The build and its outputs
 
 `node tools/build-intake-catalogue.mjs` writes:
-- **`src/intake/catalogue.json`:** `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, outOfScope?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
+- **`src/intake/catalogue.json`:** `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
 - **`supabase/catalogue/intake-v2.sql`:** statements loading `vitally_private.intake_fields` (§3.2) for version 2. A migration includes it (§3.5).
 
 ### 2.5 Reading it in the browser
@@ -105,7 +104,6 @@ Section 0's page text becomes step 1's intro. Every other section heading become
 - `isVisible(question, answers)`.
 - `checkValue(question, value)` returns `null` or a reason, using the §2.2 type checks.
 - `missingToSubmit(version, answers)` lists required, visible, unanswered field IDs.
-- `outOfScope(version, answers)` lists the reasons that currently hold.
 
 Version 1 is not in the catalogue. Its existing code (`INTAKE_ANSWER_KEYS`, `REQUIRED_ANSWER_KEYS`, `screening()`) is untouched.
 
@@ -125,7 +123,6 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - `group_id` names the group a sub-field belongs to.
   - `sensitive` is true for `tp_phone` and `sp_phone`, and part 5 builds on it.
 - Not granted to any client role.
-- `vitally_private.intake_out_of_scope (version, condition jsonb, message_en, message_zh)` holds the §2.2 out-of-scope rules. The current drafts define none, so version 2 starts with an empty table.
 
 ### 3.3 Answers
 - **A version-1 case:** exactly today's rules. Its answers are strings, its keys come from `intake_answer_keys()`, and its submit rules come from `act_submit`.
@@ -135,8 +132,9 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - `null` clears a field.
   - The merged answers must be ≤ 64 KB, `pg_column_size` of the jsonb.
   - The contact fields (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`) are not stored in `answers`. They go to `case_contacts` (§3.4), in the same transaction. Both phones are there, so part 5 masks phones in one place.
-- **`SUBMIT` on a version-2 case:** refused (`VALIDATION`) if any `required_to_submit` field whose show-if holds is unanswered, counting the contact fields from `case_contacts`, or if any out-of-scope rule holds. Otherwise the case moves to `received` as today, and 010's trigger numbers it.
-- The browser's `missingToSubmit`, `outOfScope` and `checkValue` implement the same rules from `catalogue.json`. The two are kept equal by the drift test (§5).
+- **`SUBMIT` on a version-2 case:** refused (`VALIDATION`) only if a `required_to_submit` field whose show-if holds is unanswered, counting the contact fields from `case_contacts`. Otherwise the case moves to `received` as today, and 010's trigger numbers it.
+- **No screening in version 2.** The intake never turns a client away, including clients with self-employment income. A volunteer decides after reviewing the case, and tells the client in person if the site can't help. Version 1 keeps today's screening (`screening()` and `act_submit`'s checks) for its existing cases. A later part may add labels or highlights, such as "self-employment", to help volunteers choose which cases to claim; that is not in part 4.
+- The browser's `missingToSubmit` and `checkValue` implement the same rules from `catalogue.json`. The two are kept equal by the drift test (§5).
 
 ### 3.4 `public.case_contacts`
 - Columns: `(workspace_id, case_id primary key references cases on delete cascade, phone text, spouse_phone text, best_contact_time text[], best_contact_note text, updated_at)`.
@@ -175,12 +173,11 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 **Unit:**
 - A fresh build equals the committed `catalogue.json` and `intake-v2.sql`.
 - The two drafts have equal IDs, types, options, required flags and show-if rules.
-- Every show-if and out-of-scope condition names a real field and option.
+- Every show-if condition names a real field and option.
 - Every step has at least one question, and every section maps to exactly one step.
 - For each type, a valid value passes and a bad one fails. That includes each length limit at the limit and one over it, among them 5,000 characters on `longtext`.
 - `isVisible` works with `=`, `≠`, "is filled" and `AND`.
 - `missingToSubmit` works on an empty set, a complete set, and a set where a hidden required field is skipped.
-- `outOfScope` returns nothing with today's drafts.
 - The store maps `intakeVersion`, `contact` and `materials`.
 - The pinned store shapes are updated deliberately.
 
@@ -198,7 +195,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - **Version-2 `SUBMIT`:**
   - A missing required visible field is refused.
   - A hidden required field doesn't block.
-  - A complete case submits and gets a client number.
+  - A complete case submits and gets a client number, including one that reports self-employment income (`inc_self_employed = yes`); version 2 never refuses on screening.
 - **`UPDATE_CONTACT`:**
   - The owner's own draft is allowed.
   - The owner after submission is refused.
