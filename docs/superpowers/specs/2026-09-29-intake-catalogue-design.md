@@ -65,13 +65,15 @@ The build accepts exactly this. Anything else fails with the line number.
   | `yesno` | string | `yes` or `no`, plus `not_sure` if the question lists it |
   | `group` | array of objects | ≤ 10 members; each member's keys are the group's sub-fields, each checked by its own type |
 
-  A `group` question's sub-fields are the questions written under it, numbered `Qn.m` inside the group's section and marked by the group's show-if line ("Repeatable group"). The build records them as the group's `fields`.
+  - `number` may carry a range, `Number 0–12`, which sets its minimum and maximum instead of "≤ 6 digits".
+  - **Groups.** A group is declared as a question of its own, `**Qn.G** English / 中文` with the ID line `` `hh` · Group · Required|Optional ``, followed by its show-if line. The questions after it whose IDs are written `` `hh[i].name` `` are its sub-fields, up to the next section. The build records them as the group's `fields` (`first_name`, `dob`, …), each with its own type and required flag.
+  - Today's Section 6 declares the household group in a note ("Repeatable group …"); 4a rewrites that note into a `Q6.G` question, `hh`, shown if `has_household_members = yes`.
 - **Conditions** (show-if rules only):
   - `field = value`, `field ≠ value`, `field is filled`;
   - joined by `AND`;
   - `field` may name any question in the catalogue, and `value` must be one of its options.
 - **Every question states Required or Optional.** The flag goes on the ID line, and for a question with a show-if rule, Required means required when shown. There is no default.
-- **Rewriting today's drafts.** 4a rewrites the drafts once, in both files, wherever they use another form. Known cases are "Dropdown / Text", "Who (multi-select)", "Single choice: …" with the options inline, "Yes (是) / No (否) / Prefer not to answer (不愿回答)", "Date (MM/DD/YYYY)", "Date (auto-fill today)", "Text (5 digits)", "Text (e-signature)" and "Multi-select (same options as Q12.5)". The wording doesn't change, only the type line and options.
+- **Rewriting today's drafts.** 4a rewrites the drafts once, in both files, wherever they use another form. That includes options written inline as `Label (中文)` without a backticked value (the rewrite gives each a snake_case value), "Dropdown", "Married (已婚) / Single (未婚)", and "Number 0–12" (kept, as a range). Other known cases are "Dropdown / Text", "Who (multi-select)", "Single choice: …" with the options inline, "Yes (是) / No (否) / Prefer not to answer (不愿回答)", "Date (MM/DD/YYYY)", "Date (auto-fill today)", "Text (5 digits)", "Text (e-signature)" and "Multi-select (same options as Q12.5)". The wording doesn't change, only the type line and options.
 - **Required or optional, decided with the group on 2026-09-29.** 4a writes the flag into every question in both drafts:
   - **Optional:**
     - `tp_middle_name`, `email`, `best_contact_time`, `best_contact_note`, `addr_apt`, `sp_middle_name`, `sp_phone` and `additional_notes`;
@@ -132,11 +134,10 @@ Version 1 is not in the catalogue. Its existing code (`INTAKE_ANSWER_KEYS`, `REQ
 Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 010.
 
 ### 3.1 Versions
-- `cases.intake_version smallint not null default 1`, with `check (intake_version in (1, 2))`. It is set on insert and never changed (guarded by a trigger like 010's).
+- `cases.intake_version smallint not null default 1`, with `check (intake_version in (1, 2))`.
 - `workspaces.default_intake_version smallint not null default 1`, with `check (… in (1, 2))`.
-- `vitally_create_case` and `seed_fixtures` set a new case's `intake_version` from its workspace's default.
-  - Version-2 samples need version-2 fixture answers. 4a adds them to `fixture_answers` keyed by version.
-  - The seeder uses them only when the default is 2.
+- A `before insert` trigger on `public.cases` sets `intake_version` from the workspace's default. That covers `vitally_create_case` and `seed_fixtures` without replacing either. A `before update` trigger refuses any change to it.
+- **Version-2 sample answers are 4b's.** In 4a the default stays 1, so no sample is ever version 2. 4b adds version-2 fixture answers when it switches the default.
 
 ### 3.2 `vitally_private.intake_fields`
 - Columns: `(version smallint, field_id text, type text, options text[], max_length int, required_to_submit bool, step smallint, group_id text null, sensitive bool, primary key (version, field_id))`.
@@ -233,7 +234,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - **Visibility:** an applicant sees their own contact row and never materials. Staff see both.
 - **Versions:**
   - `default_intake_version` decides a new case's version.
-  - Samples follow it, using version-2 fixture answers when it is 2.
+  - Samples follow it (with the default at 1 in 4a).
   - The version can't be changed after insert.
 - **Drift:** the `intake_fields` rows equal `catalogue.json`'s fields.
 
