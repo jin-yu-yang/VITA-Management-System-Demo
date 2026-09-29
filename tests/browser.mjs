@@ -99,6 +99,7 @@ const REQUEST_MESSAGE = "Please add the fictional sample mileage record.";
 const ESCALATION_REASON =
   "The fictional client has not sent the sample yet; the office can ask about it.";
 const CONTACT_NOTE = "Simulated call: the fictional client will send the sample.";
+const HELP_NOTE = "Simulated help: walked the fictional client through the intake forms.";
 const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 // Internal staff text. It must never appear in a client window.
 const FINDINGS = "Internal only: recheck the simulated mileage total before approval.";
@@ -671,6 +672,152 @@ async function runPermutation(t, roles) {
         "Escape did not give the keyboard back to the row's Log a call button",
       );
       evidence.regressions.logCallDrawer = { attempt, afterAttempt, escape: "back on the row" };
+
+      // The Resolve a help request drawer: Sam takes the sample help request
+      // on the queue, resolves it there, and the row leaves the queue with the
+      // keyboard on the queue's title rather than on the page.
+      const helpClaim = staff
+        .locator('tr.queue-row[data-kind="help"] [data-assistance-action="CLAIM"]')
+        .first();
+      await helpClaim.waitFor({ state: "visible", timeout: RENDER_MS });
+      const helpItemId = await helpClaim.getAttribute("data-item-id");
+      const helpRevision = async () =>
+        Number(
+          (
+            await fixture.database.sql(
+              "select revision from public.assistance_items where id=$1",
+              [helpItemId],
+            )
+          ).rows[0].revision,
+        );
+      const helpUnmoved = async () => {
+        const before = await helpRevision();
+        return async () => (await helpRevision()) === before;
+      };
+      const helpResolve = `[data-action="open-resolve-help"][data-item-id="${helpItemId}"]`;
+      const helpClaimed = record(
+        "CLAIM (assistance)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            await staff
+              .locator(`[data-assistance-action="CLAIM"][data-item-id="${helpItemId}"]`)
+              .click({ timeout: CLICK_MS });
+          },
+          ready: (selector) => Boolean(document.querySelector(selector)),
+          arg: helpResolve,
+          what: "the queue row's Record as resolved button",
+          safeToRepeat: await helpUnmoved(),
+        }),
+      );
+      await waitForQuiet(staff);
+      await staff.locator(helpResolve).click({ timeout: CLICK_MS });
+      const helpDrawer = staff.locator(".modal.office-drawer");
+      await helpDrawer.waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForText(staff, "Resolve a help request", RENDER_MS);
+      const helpForm = helpDrawer
+        .locator('form:has(button[type="submit"][data-assistance-action="RESOLVE"])')
+        .first();
+      await helpForm.waitFor({ state: "visible", timeout: RENDER_MS });
+      await shoot(staff, "office-resolve-help");
+      const helpResolved = record(
+        "RESOLVE (assistance)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            const note = await fieldByLabel(helpForm, "What you helped with", "RESOLVE");
+            await note.fill(HELP_NOTE, { timeout: CLICK_MS });
+            await waitForQuiet(staff);
+            await helpForm
+              .locator('button[type="submit"][data-assistance-action="RESOLVE"]')
+              .click({ timeout: CLICK_MS });
+          },
+          ready: () => document.querySelector(".modal") === null,
+          what: "the Resolve a help request drawer to close",
+          safeToRepeat: await helpUnmoved(),
+        }),
+      );
+      await waitFor(
+        staff,
+        "the resolved help request to leave the queue",
+        (id) =>
+          !document.querySelector(`tr.queue-row [data-item-id="${id}"]`) &&
+          document.activeElement?.id === "office-queue-title",
+        helpItemId,
+        RENDER_MS,
+      );
+      const helpRow = await one(
+        fixture,
+        "select status, resolution_note from public.assistance_items where id=$1",
+        [helpItemId],
+      );
+      assert.equal(helpRow.status, "resolved", "the help request was not resolved");
+      evidence.regressions.resolveHelpDrawer = {
+        claim: helpClaimed,
+        resolve: helpResolved,
+        focus: "#office-queue-title",
+        rowGone: true,
+      };
+
+      // An empty queue's own buttons go with the empty state: "Show all
+      // languages" and "Show every task" leave the keyboard on the chip that
+      // now shows that choice. A kind with rows, in a language with none of
+      // that kind, empties the queue.
+      const emptyPair = await staff.evaluate(() => {
+        const rows = [...document.querySelectorAll("tr.queue-row")].map((row) => ({
+          kind: row.dataset.kind,
+          language: row.cells[3]?.textContent.trim(),
+        }));
+        const languages = [
+          ...document.querySelectorAll('[data-filter="language"]:not([data-value="all"])'),
+        ].map((chip) => chip.dataset.value);
+        for (const kind of new Set(rows.map((row) => row.kind)))
+          for (const language of languages)
+            if (!rows.some((row) => row.kind === kind && row.language === language))
+              return { kind, language };
+        return null;
+      });
+      const chip = (filter, value) =>
+        `.filter-group [data-action="set-board-filter"][data-filter="${filter}"][data-value="${value}"]`;
+      const emptyButton = (filter) =>
+        `.office-queue .empty-state [data-action="set-board-filter"][data-filter="${filter}"][data-value="all"]`;
+      if (emptyPair) {
+        const narrow = async () => {
+          await clickAction(staff, "set-board-filter", {
+            attributes: `[data-filter="language"][data-value="${emptyPair.language}"]`,
+          });
+          await clickAction(staff, "set-board-filter", {
+            attributes: `[data-filter="officeKind"][data-value="${emptyPair.kind}"]`,
+          });
+          await staff
+            .locator(emptyButton("language"))
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+        };
+        await narrow();
+        await waitForQuiet(staff);
+        await staff.locator(emptyButton("language")).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          'the keyboard on the "Any language" chip after "Show all languages"',
+          (wanted) => document.activeElement?.matches?.(wanted) ?? false,
+          chip("language", "all"),
+          RENDER_MS,
+        );
+        await narrow();
+        await waitForQuiet(staff);
+        await staff.locator(emptyButton("officeKind")).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          'the keyboard on the "All" chip after "Show every task"',
+          (wanted) => document.activeElement?.matches?.(wanted) ?? false,
+          chip("officeKind", "all"),
+          RENDER_MS,
+        );
+        await clickAction(staff, "set-board-filter", {
+          attributes: '[data-filter="language"][data-value="all"]',
+        });
+        evidence.regressions.queueEmptyStateFocus = { ...emptyPair, focus: "on the chip" };
+      } else evidence.regressions.queueEmptyStateFocus = "no kind and language left the queue empty";
 
       // The resolution is on the office case page's Follow-up tab.
       await openCaseByReference(staff, classReference);
@@ -1426,6 +1573,15 @@ async function runPermutation(t, roles) {
         () =>
           document.querySelector('select[data-board-filter="poolPreparer"]')?.value === "all" &&
           document.querySelector('[data-action="clear-pool-filters"]') === null,
+        undefined,
+        RENDER_MS,
+      );
+      // "Clear filters" went with the filters; the keyboard went to the first
+      // filter, not out to the page.
+      await waitFor(
+        staff,
+        "the keyboard on the Stage filter after Clear filters",
+        () => document.activeElement?.id === "field-poolStage",
         undefined,
         RENDER_MS,
       );

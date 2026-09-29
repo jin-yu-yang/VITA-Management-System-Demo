@@ -564,6 +564,10 @@ if (!config) {
         break;
       case "clear-pool-filters":
         controller.clearBoardFilters(POOL_FILTER_KEYS);
+        // "Clear filters" goes once nothing is narrowed; the keyboard goes to
+        // the first filter rather than falling out to the page.
+        if (!root.querySelector('[data-action="clear-pool-filters"]'))
+          root.querySelector("#field-poolStage")?.focus();
         break;
       case "open-add-case":
         formDrafts.clear();
@@ -623,6 +627,17 @@ if (!config) {
         // give the box the keyboard back, the way a search submit does.
         if (target.dataset.filter === "search")
           root.querySelector("#field-board-search")?.focus();
+        // An empty state's "Show every task" or "Show all languages" goes with
+        // the empty state. If the keyboard fell out with it, it lands on the
+        // chip that now shows that choice ("All", "Any language").
+        else if (!root.contains(document.activeElement))
+          root
+            .querySelector(
+              `.filter-group [data-action="set-board-filter"][data-filter="${CSS.escape(
+                target.dataset.filter ?? "",
+              )}"][data-value="${CSS.escape(target.dataset.value ?? "")}"]`,
+            )
+            ?.focus();
         break;
       case "clear-board-filters":
         controller.clearBoardFilters();
