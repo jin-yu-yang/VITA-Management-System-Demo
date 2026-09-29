@@ -637,6 +637,6 @@ test("my applications shows the client number on submitted rows only", () => {
     ],
   }));
   const rows = html.split('<button class="application-row"').slice(1);
-  assert.ok(rows[0].includes('<span class="application-number">#093</span>'));
+  assert.match(rows[0], /<span class="application-id"><span class="application-reference">VT-AB2C-DE3F<\/span><span class="application-number">#093<\/span><\/span>/);
   assert.ok(!rows[1].includes("application-number"));
 });

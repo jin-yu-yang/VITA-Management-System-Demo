@@ -3945,8 +3945,14 @@ textarea::placeholder {
   font-weight: 600;
   color: var(--vt-muted);
 }
-.client-shell .id-pill {
-  gap: 24px;
+.client-shell .id-pill > div + div {
+  margin-left: 12px;
+}
+.application-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 .application-number {
   font-weight: 700;

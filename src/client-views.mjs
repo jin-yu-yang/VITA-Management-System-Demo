@@ -100,7 +100,7 @@ export function accessScreen(state) {
 // ---------------------------------------------------------------------------
 
 function applicationRow(entry, updatedAt) {
-  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}<span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${updatedAt ? `Updated ${esc(updatedAt)}` : "No updates yet"}</span>${icon("chevron")}</button>`;
+  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${updatedAt ? `Updated ${esc(updatedAt)}` : "No updates yet"}</span>${icon("chevron")}</button>`;
 }
 
 export function applicationsScreen(state) {
