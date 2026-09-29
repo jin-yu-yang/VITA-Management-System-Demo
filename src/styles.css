@@ -3945,4 +3945,11 @@ textarea::placeholder {
   font-weight: 600;
   color: var(--vt-muted);
 }
+.client-shell .id-pill {
+  gap: 24px;
+}
+.application-number {
+  font-weight: 700;
+  color: var(--vt-intake-ink);
+}
 /* end part 2 */

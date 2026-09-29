@@ -281,3 +281,10 @@ test("the client-number block of the stylesheet uses tokens, not hex colors", ()
   const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
   assert.deepEqual(hexes, []);
 });
+
+test("the print card shows the client number only when there is one", () => {
+  const withNumber = dialog({ dialog: "print", savedCase: { reference: "VT-AB2C-DE3F", clientNumber: 93 } });
+  assert.ok(withNumber.includes("CLIENT NUMBER") && withNumber.includes("#093"));
+  const without = dialog({ dialog: "print", savedCase: { reference: "VT-AB2C-DE3F" } });
+  assert.ok(!without.includes("CLIENT NUMBER") && !without.includes("#0"));
+});
