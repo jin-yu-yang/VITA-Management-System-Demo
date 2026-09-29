@@ -10,6 +10,7 @@ import {
   formatTime,
   fieldId,
   officeContact,
+  formatClientNumber,
   ANSWER_LABELS as answerLabels,
 } from "./ui.mjs";
 import {
@@ -99,7 +100,7 @@ export function accessScreen(state) {
 // ---------------------------------------------------------------------------
 
 function applicationRow(entry, updatedAt) {
-  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-reference">${esc(entry.reference)}</span><span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${updatedAt ? `Updated ${esc(updatedAt)}` : "No updates yet"}</span>${icon("chevron")}</button>`;
+  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage)}</span><span class="application-when">${updatedAt ? `Updated ${esc(updatedAt)}` : "No updates yet"}</span>${icon("chevron")}</button>`;
 }
 
 export function applicationsScreen(state) {
@@ -326,7 +327,7 @@ export function progressScreen(state) {
   );
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${answers.firstName ? `Hello, ${esc(answers.firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div></div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${answers.firstName ? `Hello, ${esc(answers.firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${
     open.length
       ? open.map((request) => documentRequest(request, state)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>You’re all set for now.</h3><p>Your next action appears here if the office needs anything else.</p></div></div>`

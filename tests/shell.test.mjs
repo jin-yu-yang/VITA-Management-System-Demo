@@ -270,3 +270,21 @@ test("the office drawer fills the dynamic viewport, with 100vh as the fallback",
   assert.match(rule, /height:\s*100vh;\s*height:\s*100dvh;/);
   assert.match(rule, /max-height:\s*100vh;\s*max-height:\s*100dvh;/);
 });
+
+test("the client-number block of the stylesheet uses tokens, not hex colors", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* Part 2: client numbers */");
+  const end = css.indexOf("/* end part 2 */");
+  assert.ok(start >= 0 && end > start, "the part 2 block is marked");
+  const block = css.slice(start, end);
+  assert.match(block, /\.client-number\s*\{/);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+});
+
+test("the print card shows the client number only when there is one", () => {
+  const withNumber = dialog({ dialog: "print", savedCase: { reference: "VT-AB2C-DE3F", clientNumber: 93 } });
+  assert.ok(withNumber.includes("CLIENT NUMBER") && withNumber.includes("#093"));
+  const without = dialog({ dialog: "print", savedCase: { reference: "VT-AB2C-DE3F" } });
+  assert.ok(!without.includes("CLIENT NUMBER") && !without.includes("#0"));
+});

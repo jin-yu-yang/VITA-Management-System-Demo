@@ -37,6 +37,8 @@ const CASE_ROW = Object.freeze({
   intake_verified: true,
   preparer_id: "person-alex",
   reviewer_id: null,
+  season: 2025,
+  client_number: 93,
   last_reminded_at: null,
   last_reminded_by_person_id: null,
   created_at: "2026-09-10T15:00:00.000Z",
@@ -378,6 +380,8 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       intakeVerified: true,
       preparerId: "person-alex",
       reviewerId: null,
+      season: 2025,
+      clientNumber: 93,
       lastRemindedAt: null,
       lastRemindedByPersonId: null,
       createdAt: "2026-09-10T15:00:00.000Z",
@@ -449,6 +453,7 @@ test("the workspace read carries the fixture generation", async () => {
           id: "workspace-1",
           default_followup_person_id: "person-sam",
           fixture_generation: "7",
+          current_season: 2025,
         },
       ],
     },
@@ -457,11 +462,26 @@ test("the workspace read carries the fixture generation", async () => {
     id: "workspace-1",
     fixtureGeneration: 7,
     defaultFollowupPersonId: "person-sam",
+    currentSeason: 2025,
   });
   await assert.rejects(
     () => createStore(fakeClient({ rows: { workspaces: [] } })).getWorkspace(),
     { code: "NOT_FOUND" },
   );
+});
+
+test("a workspace row without a season column reads as any season", async () => {
+  // A database from before migration 010 has no current_season: the board
+  // then searches client numbers across every season rather than none.
+  const client = fakeClient({
+    access: "presenter",
+    rows: {
+      workspaces: [
+        { id: "workspace-1", default_followup_person_id: null, fixture_generation: 1 },
+      ],
+    },
+  });
+  assert.equal((await createStore(client).getWorkspace()).currentSeason, null);
 });
 
 test("an applicant case read asks for no staff table at all", async () => {
@@ -479,6 +499,7 @@ test("an applicant case read asks for no staff table at all", async () => {
     assert.ok(!tables.includes(staffTable), staffTable);
   assert.deepEqual(Object.keys(found).toSorted(), [
     "answers",
+    "clientNumber",
     "createdAt",
     "documents",
     "fixture",
@@ -494,6 +515,7 @@ test("an applicant case read asks for no staff table at all", async () => {
     "requests",
     "reviewerId",
     "revision",
+    "season",
     "stage",
     "updatedAt",
     "workspaceId",
@@ -877,4 +899,13 @@ test("unsubscribing before the channel opens never opens one", async () => {
   await settle();
   assert.deepEqual(client.channels, []);
   assert.deepEqual(client.removed, []);
+});
+
+test("mapCase carries the season and the client number, null until submitted", () => {
+  const mapped = mapCase(CASE_ROW);
+  assert.equal(mapped.season, 2025);
+  assert.equal(mapped.clientNumber, 93);
+  const draft = mapCase({ ...CASE_ROW, season: null, client_number: null });
+  assert.equal(draft.season, null);
+  assert.equal(draft.clientNumber, null);
 });

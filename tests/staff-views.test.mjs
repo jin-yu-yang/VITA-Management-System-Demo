@@ -7,6 +7,7 @@ import {
   staffEligibility,
   isAvailableWork,
   filterCases,
+  matchesBoardSearch,
   boardCounts,
   boardFilters,
   DEFAULT_BOARD_FILTERS,
@@ -1191,4 +1192,69 @@ test("internal history reads as sentences, with who did it", () => {
   const html = historyPanel(record, true);
   assert.match(html, /Alex claimed preparation\./);
   assert.doesNotMatch(html, /CLAIM_PREPARATION/);
+});
+
+// ---------------------------------------------------------------------------
+// Part 2: client numbers on the staff screens.
+// ---------------------------------------------------------------------------
+test("the board search finds a client number in the current season, or an Application ID", () => {
+  const c = { reference: "VT-AB2C-DE3F", clientNumber: 93, season: 2025 };
+  for (const q of ["93", "093", "#093", " #93 "]) assert.equal(matchesBoardSearch(c, q, 2025), true, q);
+  assert.equal(matchesBoardSearch(c, "9", 2025), false);
+  assert.equal(matchesBoardSearch(c, "93", 2026), false);
+  assert.equal(matchesBoardSearch(c, "93", null), true);
+  assert.equal(matchesBoardSearch(c, "ab2c", 2025), true);
+  assert.equal(matchesBoardSearch({ reference: "VT-AAAA-AAAA", clientNumber: null }, "93", 2025), false);
+});
+
+test("searching a client number through the board finds a case on no tab", () => {
+  const numbered = [
+    boardCase({ id: "n-1", reference: "VT-NNNN-0093", stage: "received", clientNumber: 93, season: 2025 }),
+    boardCase({ id: "n-2", reference: "VT-NNNN-0094", stage: "received", clientNumber: 94, season: 2025 }),
+  ];
+  const html = renderStaffBoard(numbered, PEOPLE, {
+    person: ALEX,
+    filters: { search: "093" },
+    currentSeason: 2025,
+  });
+  assert.ok(html.includes("VT-NNNN-0093"));
+  assert.ok(!html.includes("VT-NNNN-0094"));
+});
+
+test("a board row shows the client number before the reference, a draft says none yet", () => {
+  const rows = [
+    boardCase({ id: "n-1", reference: "VT-NNNN-0093", stage: "preparation_ready", clientNumber: 93, season: 2025 }),
+    boardCase({ id: "n-2", reference: "VT-NNNN-0095", stage: "draft", clientNumber: null }),
+  ];
+  const html = renderStaffBoard(rows, PEOPLE, { person: ALEX, filters: { search: "VT-NNNN" } });
+  assert.match(html, /<th scope="col">Client<\/th>/);
+  assert.match(
+    html,
+    /<span class="client-number">#093<\/span><button class="board-reference" data-action="open-case" data-case-id="n-1">VT-NNNN-0093<\/button>/,
+  );
+  assert.match(html, /No number yet/);
+});
+
+test("the board search box asks for a client number or an Application ID", () => {
+  const html = board({ person: ALEX });
+  assert.match(html, /<label class="sr-only" for="field-board-search">Find a client # or Application ID<\/label>/);
+  assert.match(html, /id="field-board-search"[^>]*placeholder="Find a client # or Application ID"/);
+});
+
+test("the case header shows the client number above the heading, after it in reading order", () => {
+  const html = caseHeader(staffCase({ clientNumber: 93, season: 2025 }), MORGAN);
+  // The heading comes first in the DOM so heading navigation lands on it and
+  // reads the number next; CSS lifts the number above it on screen.
+  assert.match(html, /<div class="case-title-row"><h2 id="case-title" tabindex="-1">VT-AB2C-DE3F<\/h2><div class="case-client-number">Client #093<\/div>/);
+  assert.doesNotMatch(html, /case-client-number[\s\S]*<h2 id="case-title"/);
+  const draft = caseHeader(staffCase({ stage: "draft", clientNumber: null }), MORGAN);
+  assert.match(draft, /<div class="case-client-number">No number yet<\/div>/);
+});
+
+test("a submit entry names the client number the server assigned", () => {
+  assert.equal(
+    historySentence({ action: "SUBMIT", actorName: "Sam", detail: { clientNumber: 93 } }),
+    "Sam submitted the application. Client #093 assigned.",
+  );
+  assert.equal(historySentence({ action: "SUBMIT", actorName: "Sam" }), "Sam submitted the application.");
 });

@@ -78,7 +78,7 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
-//         preparerId, reviewerId, requests, documents, history }
+//         preparerId, reviewerId, season, clientNumber, requests, documents, history }
 // Staff case additionally includes participants, reviews, followups,
 // internalHistory. These are never loaded by the applicant adapter.
 // Action: { actionId, caseId, expectedRevision, personId, type, payload }

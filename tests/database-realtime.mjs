@@ -785,10 +785,12 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
           `generation ${generation}`,
         );
         // Both members get the same row, and the row says nothing private: a
-        // workspace id, the default follow-up person, and a number.
+        // workspace id, the default follow-up person, a number, and the
+        // current season, which is only a year (migration 010).
         for (const seen of [onStaff, onClient]) {
           assert.equal(seen.eventType, "UPDATE");
           assert.deepEqual(Object.keys(seen.new).toSorted(), [
+            "current_season",
             "default_followup_person_id",
             "fixture_generation",
             "id",

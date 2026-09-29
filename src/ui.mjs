@@ -134,6 +134,17 @@ export function formatTime(value) {
   });
 }
 
+// Client numbers (part 2): "#" and at least three digits. A case without one
+// is a draft ("No number yet") or an assisted draft the office closed before
+// sending it ("Never sent") — a closed case with no number was never submitted.
+export const formatClientNumber = (n) =>
+  n === null || n === undefined ? null : `#${String(n).padStart(3, "0")}`;
+export const clientNumberLabel = (record) =>
+  formatClientNumber(record?.clientNumber) ??
+  (record?.stage === "closed" ? "Never sent" : "No number yet");
+export const clientNumberTag = (record) =>
+  `<span class="client-number${record?.clientNumber == null ? " none" : ""}">${esc(clientNumberLabel(record))}</span>`;
+
 // How long ago, in days, for lists where the minute does not matter. Dates are
 // compared as calendar days in the viewer's time zone, so a case updated late
 // last night reads "Yesterday", not "Today".

@@ -76,6 +76,8 @@ export const mapCase = (row) => ({
   intakeVerified: row.intake_verified,
   preparerId: row.preparer_id,
   reviewerId: row.reviewer_id,
+  season: row.season ?? null,
+  clientNumber: row.client_number ?? null,
   lastRemindedAt: row.last_reminded_at,
   lastRemindedByPersonId: row.last_reminded_by_person_id,
   // When the case was created, and when the last accepted action committed
@@ -280,6 +282,7 @@ export function createStore(client) {
         id: row.id,
         fixtureGeneration: Number(row.fixture_generation),
         defaultFollowupPersonId: row.default_followup_person_id,
+        currentSeason: row.current_season == null ? null : Number(row.current_season),
       };
     },
 

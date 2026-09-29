@@ -618,3 +618,25 @@ test("the brand is ViTally, attributed to PCDC, for tax year 2025", () => {
   assert.ok(html.includes("2025"));
   assert.match(html, /data-action="sign-out"/);
 });
+
+test("the progress page shows the client number after the Application ID", () => {
+  const record = { id: "c1", reference: "VT-AAAA-AAAA", stage: "received", answers: { firstName: "Mei" }, requests: [], documents: [], history: [] };
+  const numbered = progressScreen({ ...baseState(), screen: "progress", savedCase: { ...record, clientNumber: 93 } });
+  const pill = numbered.match(/<div class="id-pill">[\s\S]*?<\/div><\/div>(?=<\/div>)/)[0];
+  assert.ok(pill.includes("<small>CLIENT NUMBER</small><strong>#093</strong>"));
+  assert.ok(pill.indexOf("VT-AAAA-AAAA") < pill.indexOf("#093"));
+  const plain = progressScreen({ ...baseState(), screen: "progress", savedCase: { ...record, clientNumber: null } });
+  assert.ok(!plain.includes("CLIENT NUMBER"));
+});
+
+test("my applications shows the client number on submitted rows only", () => {
+  const html = applicationsScreen(baseState({
+    cases: [
+      caseRecord({ id: "case-a", reference: "VT-AB2C-DE3F", stage: "received", clientNumber: 93 }),
+      caseRecord({ id: "case-b", reference: "VT-KK44-MM55", stage: "draft", clientNumber: null }),
+    ],
+  }));
+  const rows = html.split('<button class="application-row"').slice(1);
+  assert.match(rows[0], /<span class="application-id"><span class="application-reference">VT-AB2C-DE3F<\/span><span class="application-number">#093<\/span><\/span>/);
+  assert.ok(!rows[1].includes("application-number"));
+});

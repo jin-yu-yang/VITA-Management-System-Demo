@@ -1,5 +1,5 @@
 import { phaseTab, describeStage } from "./domain.mjs";
-import { esc, icon, button, relativeDay, stageBadge } from "./ui.mjs";
+import { esc, icon, button, relativeDay, stageBadge, clientNumberTag } from "./ui.mjs";
 
 export const POOL_TABS = Object.freeze([
   ["all", "All cases"],
@@ -106,7 +106,7 @@ const who = (name, id) => (id ? esc(name ?? "Unknown") : `<span class="unassigne
 
 function poolRow(record, now) {
   const phase = TAB_LABELS[poolPhase(record)];
-  return `<tr class="pool-row"><th scope="row"><button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}${
+  return `<tr class="pool-row"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}${
     phase ? `<span class="pool-phase">${esc(phase)}</span>` : ""
   }</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
     record.updatedAt ? relativeDay(record.updatedAt, now) : "No updates yet",
@@ -144,7 +144,7 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
       : `<span class="field-note">No filters. Showing every case this season.</span>`
   }</p>`;
   const body = shown.length
-    ? `<div class="board-table-wrap"><table class="board-table pool-table"><thead><tr><th scope="col">Application ID</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th></tr></thead><tbody>${shown
+    ? `<div class="board-table-wrap"><table class="board-table pool-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th></tr></thead><tbody>${shown
         .map((record) => poolRow(record, now))
         .join("")}</tbody></table></div>`
     : `<div class="empty-state"><p>No case matches these filters.</p></div>`;

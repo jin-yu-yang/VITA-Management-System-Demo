@@ -11,6 +11,9 @@ import {
   formatTime,
   relativeDay,
   ANSWER_LABELS,
+  formatClientNumber,
+  clientNumberLabel,
+  clientNumberTag,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -355,10 +358,20 @@ const inLanguageAndService = (record, chosen) =>
   (chosen.language === "all" || (record?.answers?.language ?? "") === chosen.language) &&
   (chosen.service === "all" || (record?.answers?.service ?? "") === chosen.service);
 
-const matchesSearch = (record, search) =>
-  String(record?.reference ?? "")
-    .toUpperCase()
-    .includes(search.toUpperCase());
+// A query of digits (optionally after one "#") is a client number, matched
+// exactly and only in the current season once the workspace has told us which
+// that is (part 7 adds season changes). Anything else is an Application ID.
+const CLIENT_NUMBER_QUERY = /^#?(\d+)$/;
+export function matchesBoardSearch(record, search, currentSeason = null) {
+  const query = String(search ?? "").trim();
+  const number = CLIENT_NUMBER_QUERY.exec(query);
+  if (number)
+    return (
+      record?.clientNumber === Number(number[1]) &&
+      (currentSeason == null || record?.season === currentSeason)
+    );
+  return String(record?.reference ?? "").toUpperCase().includes(query.toUpperCase());
+}
 
 const onTab = (record, chosen, personId) =>
   phaseTab(record) === chosen.status &&
@@ -369,22 +382,22 @@ const onTab = (record, chosen, personId) =>
  * stage, tab or no tab, so a volunteer can reopen a submitted, approved or
  * closed case by its Application ID.
  */
-export function filterCases(cases = [], filters, person = null) {
+export function filterCases(cases = [], filters, person = null, currentSeason = null) {
   const chosen = boardFilters(filters);
   const personId = person?.id ?? null;
   const narrowed = cases.filter((record) => inLanguageAndService(record, chosen));
   return chosen.search
-    ? narrowed.filter((record) => matchesSearch(record, chosen.search))
+    ? narrowed.filter((record) => matchesBoardSearch(record, chosen.search, currentSeason))
     : narrowed.filter((record) => onTab(record, chosen, personId));
 }
 
 /** How many cases each tab would show with the other choices as they are. */
-export function boardCounts(cases = [], filters, person = null) {
+export function boardCounts(cases = [], filters, person = null, currentSeason = null) {
   const chosen = boardFilters(filters);
   return Object.fromEntries(
     TAB_VALUES.map((tab) => [
       tab,
-      filterCases(cases, { ...chosen, status: tab, search: "" }, person).length,
+      filterCases(cases, { ...chosen, status: tab, search: "" }, person, currentSeason).length,
     ]),
   );
 }
@@ -451,7 +464,7 @@ function boardTabs(chosen, counts) {
 
 function searchForm(chosen, ui = {}) {
   const value = ui.searchDraft !== undefined ? ui.searchDraft : chosen.search;
-  return `<form id="board-search-form" class="board-search" role="search"><label class="sr-only" for="field-board-search">Find an Application ID</label><input id="field-board-search" name="boardSearch" type="search" value="${esc(value)}" placeholder="Find an Application ID" autocomplete="off"><button id="board-search-submit" class="btn secondary" type="submit">${icon("search")} Find</button>${when(
+  return `<form id="board-search-form" class="board-search" role="search"><label class="sr-only" for="field-board-search">Find a client # or Application ID</label><input id="field-board-search" name="boardSearch" type="search" value="${esc(value)}" placeholder="Find a client # or Application ID" autocomplete="off"><button id="board-search-submit" class="btn secondary" type="submit">${icon("search")} Find</button>${when(
     chosen.search,
     button("Clear search", "set-board-filter", "text", 'data-filter="search" data-value=""'),
   )}</form>`;
@@ -478,7 +491,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row"><button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.
@@ -497,8 +510,8 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   const roster = Array.isArray(people) ? people : [];
   const person = ui.person ?? roster.find((entry) => entry?.id === ui.personId) ?? null;
   const chosen = boardFilters(ui.filters);
-  const shown = yoursFirst(filterCases(cases, chosen, person), person?.id ?? null);
-  const counts = boardCounts(cases, chosen, person);
+  const shown = yoursFirst(filterCases(cases, chosen, person, ui.currentSeason ?? null), person?.id ?? null);
+  const counts = boardCounts(cases, chosen, person, ui.currentSeason ?? null);
   const total = cases.length;
   const narrowed = chosen.language !== "all" || chosen.service !== "all";
   const emptyText = chosen.search
@@ -509,7 +522,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
         ? `Nothing of yours is ${chosen.status === "preparation" ? "waiting for preparation" : "waiting for review"}.`
         : EMPTY_TAB[chosen.status];
   const body = shown.length
-    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Application ID</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
+    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
         .map((record) => boardRow(record, person, ui))
         .join("")}</tbody></table></div>`
     : `<div class="empty-state">${icon("folder")}<p>${emptyText}</p>${when(
@@ -621,7 +634,7 @@ const namePill = (role, id, name, personId) =>
   `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
 
 export function caseHeader(record, person) {
-  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
+  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
     person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
   )}</p></section>`;
 }
@@ -990,7 +1003,11 @@ export function historySentence(entry) {
     (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
     "recorded a change";
   const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
-  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+  const assigned =
+    code === "SUBMIT" && typeof entry?.detail?.clientNumber === "number"
+      ? ` Client ${formatClientNumber(entry.detail.clientNumber)} assigned.`
+      : "";
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.${assigned}`;
 }
 
 export function historyPanel(record, staffShaped) {

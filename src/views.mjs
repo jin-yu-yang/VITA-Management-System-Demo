@@ -1,4 +1,4 @@
-import { esc, icon, button, officeContact } from "./ui.mjs";
+import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
 import {
   renderStaffBoard,
   renderStaffCase,
@@ -276,6 +276,7 @@ export function staffScreen(state) {
             filters: state.boardFilters,
             busy: state.busy,
             searchDraft: state.boardSearchDraft,
+            currentSeason: state.workspace?.currentSeason ?? null,
           }),
         );
   })();
@@ -357,7 +358,7 @@ export function dialog(state) {
   }
   if (state.dialog === "print") {
     title = "Your application reference card";
-    body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b><p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
+    body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b>${state.savedCase?.clientNumber != null ? `<span>CLIENT NUMBER</span><b>${esc(formatClientNumber(state.savedCase.clientNumber))}</b>` : ""}<p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
   }
   const drawer = DRAWERS.includes(state.dialog);
   const overline = drawer

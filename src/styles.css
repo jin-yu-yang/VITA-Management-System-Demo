@@ -3925,3 +3925,42 @@ textarea::placeholder {
   height: 16px;
 }
 /* end PR 4 */
+
+/* Part 2: client numbers */
+.client-number {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--vt-ink);
+}
+.client-number.none {
+  font-weight: 400;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--vt-muted);
+}
+/* After the heading in the DOM (so heading navigation reads it next), but
+   lifted onto its own line above the heading inside the wrapping flex row.
+   The negative margin takes the row gap (10px) back down to 4px. */
+.case-client-number {
+  order: -1;
+  flex-basis: 100%;
+  margin: 0 0 -6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-muted);
+}
+.client-shell .id-pill > div + div {
+  margin-left: 12px;
+}
+.application-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.application-number {
+  font-weight: 700;
+  color: var(--vt-intake-ink);
+}
+/* end part 2 */
