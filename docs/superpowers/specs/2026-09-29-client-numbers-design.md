@@ -82,7 +82,7 @@ The update's row lock serializes concurrent submits, so there is no retry loop.
 - `null` or `undefined` gives `null`. Callers then render one of two words, by stage:
   - "Never sent" on a `closed` case (an assisted draft closed before it was submitted).
   - "No number yet" otherwise (a draft).
-- One helper decides the words, `clientNumberLabel(record)` in `src/ui.mjs`, which returns the formatted number, "Never sent" or "No number yet". Every place in the table below uses it.
+- One helper decides the words, `clientNumberLabel(record)` in `src/ui.mjs`, which returns the formatted number, "Never sent" or "No number yet". The staff places in the table below use it; the client places show the number only once the application is submitted.
 
 | Place | Shows |
 |---|---|

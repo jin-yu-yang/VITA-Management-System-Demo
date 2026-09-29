@@ -29,6 +29,6 @@
 | Admin Season settings | [admin-season-settings-full-page.png](screens/admin-season-settings-full-page.png) |
 | Admin People | [admin-people-full-page.png](screens/admin-people-full-page.png) |
 | Implemented (part 1, PR 4): office screens on today's data, rendered from test fixtures | [follow-ups](screens/implemented-office-followups.png) · [log a call](screens/implemented-office-log-call.png) · [add a case](screens/implemented-office-add-case.png) · [case pool](screens/implemented-office-case-pool.png) |
-| Implemented (part 2): client numbers on the work board and the client's progress page | [board](screens/implemented-client-numbers-board.png) · [progress](screens/implemented-client-numbers-progress.png) |
+| Implemented (part 2): client numbers on the work board, office queue, case pool, case header and the client's progress page (case header rendered from test fixtures; the rest from the browser story) | [board](screens/implemented-client-numbers-board.png) · [queue](screens/implemented-client-numbers-queue.png) · [pool](screens/implemented-client-numbers-pool.png) · [case](screens/implemented-client-numbers-case.png) · [progress](screens/implemented-client-numbers-progress.png) |
 
 All names, phone numbers and data in these screens are fictional. The logo is PCDC's own file (`docs/media/Shao-Transparent BLUE.png`).

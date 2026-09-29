@@ -279,7 +279,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       }
     });
 
-    await t.test("numbers never change", async () => {
+    await t.test("numbers never change: an update is refused, even for the database owner", async () => {
       const caseId = await submittedCase(f);
       const set = await numberOf(f, caseId);
       await assert.rejects(
