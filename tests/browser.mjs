@@ -483,21 +483,44 @@ async function runPermutation(t, roles) {
         .locator(".board-row")
         .filter({ has: staff.locator("button.board-reference", { hasText: classReference }) });
       assert.equal((await classRow.locator(".client-number").innerText()).trim(), clientNumber);
+      // Clear the reference search first: it already shows exactly this one
+      // row, so a number search that did nothing would otherwise pass.
+      await clickAction(staff, "set-board-filter", { attributes: '[data-filter="search"]' });
+      await waitFor(
+        staff,
+        "the board to leave its search results",
+        () => document.querySelector("h2#board-title")?.textContent.trim() === "Work board",
+        undefined,
+        ARRIVAL_MS,
+      );
+      const digits = clientNumber.slice(1);
       await waitForQuiet(staff);
-      await staff.locator("#field-board-search").fill(clientNumber.slice(1), { timeout: CLICK_MS });
+      await staff.locator("#field-board-search").fill(digits, { timeout: CLICK_MS });
       await staff.locator('#board-search-form button[type="submit"]').click({ timeout: CLICK_MS });
       await waitFor(
         staff,
-        `only ${classReference} to be found by ${clientNumber}`,
-        (wanted) => {
+        `only ${classReference} to be found by ${digits}`,
+        ([wanted, typed]) => {
           const found = [...document.querySelectorAll("button.board-reference")];
-          return found.length === 1 && found[0].textContent.includes(wanted);
+          return (
+            document.querySelector("#board-title")?.textContent.trim() === "Search results" &&
+            document.querySelector("#field-board-search")?.value === typed &&
+            found.length === 1 &&
+            found[0].textContent.trim() === wanted
+          );
         },
-        classReference,
+        [classReference, digits],
         ARRIVAL_MS,
       );
       // Back to the Application ID search the rest of the phase expects.
       await findOnBoard(staff, classReference);
+      await waitFor(
+        staff,
+        `the board search to hold ${classReference} again`,
+        (wanted) => document.querySelector("#field-board-search")?.value === wanted,
+        classReference,
+        ARRIVAL_MS,
+      );
       evidence.story.clientNumber = clientNumber;
       assert.equal((await readBoardTotals(staff)).total, 7);
       evidence.story.reference = "matched REFERENCE_PATTERN and arrived on the board";

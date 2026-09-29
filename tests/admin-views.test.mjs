@@ -788,3 +788,29 @@ test("the staff sidebar nav holds nothing but its buttons", () => {
     assert.equal(nav.replace(/<button[^>]*>.*?<\/button>/gs, "").trim(), "", selectedPersonId);
   }
 });
+
+test("the volunteer board searches client numbers in the workspace's current season", () => {
+  const state = {
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: PEOPLE,
+    selectedPersonId: "alex",
+    workspace: { currentSeason: 2025 },
+    cases: [
+      boardCase({ id: "case-now", reference: "VT-NOWW-2025", clientNumber: 93, season: 2025 }),
+      boardCase({ id: "case-then", reference: "VT-THEN-2024", clientNumber: 93, season: 2024 }),
+    ],
+    assistance: [],
+    savedCase: null,
+    screen: "staff",
+    boardFilters: { search: "093" },
+    openPanels: [],
+    draftAnswers: {},
+    busy: false,
+    error: null,
+    retryable: false,
+  };
+  const html = staffScreen(state);
+  assert.match(html, /Search results<\/h2>/);
+  assert.match(html, /VT-NOWW-2025/);
+  assert.doesNotMatch(html, /VT-THEN-2024/);
+});
