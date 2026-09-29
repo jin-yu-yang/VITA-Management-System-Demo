@@ -456,6 +456,49 @@ async function runPermutation(t, roles) {
         ARRIVAL_MS,
       );
       await findOnBoard(staff, classReference);
+      // Submitting numbered the case: the client sees the number on their
+      // progress page, the staff row carries the same one, and the board finds
+      // the case by that number typed without its "#".
+      await waitFor(
+        client,
+        "the client number on the progress page",
+        () =>
+          [...document.querySelectorAll(".id-pill > div")].some(
+            (part) =>
+              part.querySelector("small")?.textContent.trim() === "CLIENT NUMBER" &&
+              part.querySelector("strong")?.textContent.trim(),
+          ),
+        undefined,
+        ARRIVAL_MS,
+      );
+      const clientNumber = (
+        await client
+          .locator(".id-pill > div")
+          .filter({ has: client.locator("small", { hasText: "CLIENT NUMBER" }) })
+          .locator("strong")
+          .innerText()
+      ).trim();
+      assert.match(clientNumber, /^#\d{3,}$/);
+      const classRow = staff
+        .locator(".board-row")
+        .filter({ has: staff.locator("button.board-reference", { hasText: classReference }) });
+      assert.equal((await classRow.locator(".client-number").innerText()).trim(), clientNumber);
+      await waitForQuiet(staff);
+      await staff.locator("#field-board-search").fill(clientNumber.slice(1), { timeout: CLICK_MS });
+      await staff.locator('#board-search-form button[type="submit"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        `only ${classReference} to be found by ${clientNumber}`,
+        (wanted) => {
+          const found = [...document.querySelectorAll("button.board-reference")];
+          return found.length === 1 && found[0].textContent.includes(wanted);
+        },
+        classReference,
+        ARRIVAL_MS,
+      );
+      // Back to the Application ID search the rest of the phase expects.
+      await findOnBoard(staff, classReference);
+      evidence.story.clientNumber = clientNumber;
       assert.equal((await readBoardTotals(staff)).total, 7);
       evidence.story.reference = "matched REFERENCE_PATTERN and arrived on the board";
     });

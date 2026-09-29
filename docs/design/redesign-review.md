@@ -4,10 +4,11 @@
 
 Scope: the static pages and screenshots in `.stitch/designs` (current set listed under `currentScreens` in `.stitch/metadata.json`), compared with the running app (`src/*.mjs`, `src/styles.css`, the Supabase schema). `.stitch/captures` (the "before" screenshots) is kept for the presentation.
 
-**Status (updated Sep 28, 2026).**
+**Status (updated Sep 29, 2026).**
 - The group answered all twelve decisions (section 3), and the screens they affected were redesigned the same day.
 - Phase 0 of the plan is implemented on the `phase-0-foundations` branch.
-- Part 1 PRs 1–3 (work board, case page, client screens) are merged; PR 4 (office screens) is in review, and part 1 is done when it merges.
+- Part 1 (work board, case page, client screens, office screens) is merged.
+- Part 2 (client numbers: one number per submitted case in each workspace and season, shown to the client and on the staff screens, and searchable from the work board) is in review.
 - Still open: certification levels (D9) and a confirmation of the serif font (D11).
 
 **Canonical design files** (everything else in `.stitch/designs` is an earlier iteration):
