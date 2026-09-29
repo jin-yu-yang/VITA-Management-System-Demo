@@ -93,6 +93,12 @@ body {
   font-size: 16px;
   line-height: 1.5;
 }
+/* The restyled frames paint the page lavender; the body behind them must
+   match, or the old canvas shows below the footer on short pages. */
+body:has(.client-shell),
+body:has(.app-shell) {
+  background: var(--vt-background);
+}
 button,
 input,
 select,

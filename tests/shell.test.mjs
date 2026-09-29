@@ -141,3 +141,11 @@ test("staff case history keeps its own unscoped timeline text size, separate fro
     "an unscoped .timeline-item p rule at 12px must still exist for staff screens",
   );
 });
+
+test("the body behind the restyled frames uses the lavender background, not the old canvas", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(
+    css,
+    /body:has\(\.client-shell\),\s*body:has\(\.app-shell\)\s*\{\s*background:\s*var\(--vt-background\);/,
+  );
+});
