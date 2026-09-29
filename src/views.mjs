@@ -7,6 +7,7 @@ import {
 } from "./staff-views.mjs";
 import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
 import {
+  renderAddCase,
   renderFollowups,
   logCallDrawerBody,
   resolveHelpDrawerBody,
@@ -164,6 +165,8 @@ export function staffSidebar(state, person, office) {
 // needs their own controls wherever they happen to be standing. The records
 // are decorated here — once, with the roster this screen already holds — so
 // the renderers never see a bare id.
+const OFFICE_SCREENS = ["office-cases", "office-add-case"];
+
 export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
@@ -177,15 +180,17 @@ export function staffScreen(state) {
     cases: state.cases,
   });
   const office = isAdmin(person);
+  // A volunteer chosen while an office screen is open gets the work board.
+  const screen =
+    !office && OFFICE_SCREENS.includes(state.screen) ? "staff" : state.screen;
   const main = (() => {
-    // Wired in Task 3; until then the click reaches runNavigation's default.
     const addCaseAction = button(`${icon("plus")} Add a case`, "open-add-case", "primary");
-    const frame = (overline, title, intro, back, body, actions = "") =>
+    const frame = (overline, title, intro, backLabel, body, actions = "") =>
       `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
-        back,
-        button(`${icon("back")} Back to the work board`, "open-board", "text"),
+        backLabel,
+        button(`${icon("back")} ${backLabel}`, "open-board", "text"),
       )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${panel}${body}</main>`;
-    if (state.screen === "staff-case" && state.savedCase) {
+    if (screen === "staff-case" && state.savedCase) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
         person,
@@ -202,17 +207,25 @@ export function staffScreen(state) {
             "OFFICE WORKSPACE",
             "One case",
             "What the office knows about this case, and the office work you may do on it.",
-            true,
+            "Back to Follow-ups",
             renderAdminCase(record, ui),
           )
         : frame(
             "VOLUNTEER WORKSPACE",
             "One case",
             "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
-            true,
+            "Back to the work board",
             renderStaffCase(record, person, ui),
           );
     }
+    if (screen === "office-add-case")
+      return frame(
+        "OFFICE · ADD A CASE",
+        "Add a case",
+        "Enter a walk-in client's answers yourself. The case has no client account: the office owns it.",
+        "Back to Follow-ups",
+        renderAddCase({ person, busy: state.busy }),
+      );
     const cases = (state.cases ?? []).map((record) =>
       decorateStaffCase(record, people),
     );
@@ -221,7 +234,7 @@ export function staffScreen(state) {
           "OFFICE",
           "Follow-ups",
           "Everything waiting on the office, most urgent first.",
-          false,
+          "",
           renderFollowups(
             cases,
             (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
@@ -238,7 +251,7 @@ export function staffScreen(state) {
           "VOLUNTEER WORKSPACE",
           "Work board",
           "Every case in this workspace, what it is waiting for, and the work you can take on.",
-          false,
+          "",
           renderStaffBoard(cases, people, {
             person,
             filters: state.boardFilters,
@@ -248,7 +261,7 @@ export function staffScreen(state) {
         );
   })();
   return appShell({
-    sidebar: staffSidebar(state, person, office),
+    sidebar: staffSidebar({ ...state, screen }, person, office),
     body: main,
     open: state.sidebarOpen !== false,
   });

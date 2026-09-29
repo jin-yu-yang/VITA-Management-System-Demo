@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 import {
+  ADD_CASE_SECTIONS,
   followupQueue,
   logCallDrawerBody,
   officeFilters,
   resolveHelpDrawerBody,
   queueCounts,
+  renderAddCase,
   renderFollowups,
   waitingDays,
   waitingLabel,
@@ -396,4 +399,43 @@ test("the help drawer states a refusal once in every branch", () => {
     assert.equal(count(html, /role="alert"/g), 1);
     assert.match(html, /id="drawer-error"[\s\S]*Refused here\./);
   }
+});
+
+test("the add-a-case sections hold every intake answer exactly once, in order", () => {
+  assert.deepEqual(
+    ADD_CASE_SECTIONS.flatMap(([, , keys]) => keys),
+    [...INTAKE_ANSWER_KEYS],
+  );
+});
+
+test("Add a case is one form with every intake field", () => {
+  const html = renderAddCase({ person: sam });
+  assert.match(html, /<form id="assisted-intake-form" class="staff-form add-case-form">/);
+  for (const key of INTAKE_ANSWER_KEYS)
+    assert.match(html, new RegExp(`id="field-assisted-${key}"`), key);
+  const legends = [...html.matchAll(/<fieldset class="panel add-case-section"><legend>.*?<\/span> (.*?)<\/legend>/g)].map((m) => m[1]);
+  assert.deepEqual(legends, ["Visit", "2025 situation", "Client details", "Paperwork"]);
+  assert.match(html, /data-action="fill-assisted-intake"/);
+  assert.equal((html.match(/type="submit"/g) ?? []).length, 1);
+  assert.match(html, /type="submit"[^>]*>[^]*?Create case<\/button>/);
+  assert.match(html, /<button[^>]*data-action="open-board"[^>]*>/);
+  assert.match(html.match(/<button[^>]*data-action="open-board"[^>]*>/)[0], /type="button"/);
+  assert.match(html, /Creating it saves a draft the office owns\. Nobody is emailed or invited\./);
+  assert.match(html, /Mailing city/);
+});
+
+test("Add a case refuses a persona without the right, and asks for a persona", () => {
+  const volunteer = { id: "p-al", name: "Alex", capabilities: ["prepare"] };
+  const refused = renderAddCase({ person: volunteer });
+  assert.match(refused, /staff-reason/);
+  assert.doesNotMatch(refused, /<form/);
+  const none = renderAddCase({ person: null });
+  assert.match(none, /Choose a volunteer persona to act as\./);
+  assert.doesNotMatch(none, /<form/);
+});
+
+test("Add a case's side card names who creates it", () => {
+  const html = renderAddCase({ person: sam });
+  assert.match(html, /Application ID<\/span><strong>Assigned when the case is created/);
+  assert.match(html, /Created by<\/span><strong>Sam</);
 });

@@ -61,7 +61,7 @@ import {
 // filing. The intake checks are simulated attestations, a reminder records a
 // nudge and sends nothing, and closure closes ViTally's own workflow only.
 
-const OFFICE_NOTE =
+export const OFFICE_NOTE =
   "ViTally records office work only. It sends no email, no letter and no text message.";
 
 // ---------------------------------------------------------------------------
@@ -299,29 +299,12 @@ export const remindedNote = (record) =>
     )}${when(record?.lastRemindedByName, ` by ${esc(record?.lastRemindedByName)}`)}.</p>`,
   );
 
-function assistedIntakePanel(ui) {
-  const open = (ui.openPanels ?? []).includes("assisted-intake");
-  const rights = ui.rights;
-  return `<section class="panel" aria-labelledby="assisted-title"><div class="section-head"><h2 id="assisted-title">Assisted intake</h2></div><p>Enter a walk-in client's answers yourself. The case has no client account: the office owns it, and nobody is emailed or invited.</p>${
-    rights.assistedIntake.allowed
-      ? button(
-          open
-            ? `${icon("close")} Hide the assisted intake form`
-            : `${icon("user")} Start an assisted application`,
-          "toggle-assisted-intake",
-          open ? "secondary" : "primary",
-          `aria-expanded="${open}" ${ui.busy ? "disabled" : ""}`,
-        )
-      : explain(rights.assistedIntake)
-  }${when(open && rights.assistedIntake.allowed, assistedIntakeForm(ui))}</section>`;
-}
-
 // The intake questions, as one flat staff form. The labels are the client's own
 // (`ANSWER_LABELS`) and the order is `INTAKE_ANSWER_KEYS`, so the office and the
 // client can never name the same question differently. Every control is a text
 // box or a select — never a radio — so "Fill fictional details" can fill them
 // all the same way, and so a half-typed form survives a re-render by id.
-const ASSISTED_OPTIONS = Object.freeze({
+export const ASSISTED_OPTIONS = Object.freeze({
   service: ["Same-day", "Drop-off", "Online"],
   year: ["2025"],
   language: ["English", "Cantonese", "Mandarin"],
@@ -353,7 +336,7 @@ const ASSISTED_OPTIONS = Object.freeze({
   ],
 });
 
-const answerField = (key, value, scope) =>
+export const answerField = (key, value, scope) =>
   Object.hasOwn(ASSISTED_OPTIONS, key)
     ? select(
         ANSWER_LABELS[key],
@@ -364,22 +347,6 @@ const answerField = (key, value, scope) =>
         scope,
       )
     : input(ANSWER_LABELS[key], key, value ?? "", "text", 'maxlength="200"', scope);
-
-function assistedIntakeForm(ui) {
-  const busy = ui.busy ? "disabled" : "";
-  return `<form id="assisted-intake-form" class="staff-form"><h3>A walk-in client's answers</h3><p class="field-note">These are fictional demo answers. ${esc(
-    OFFICE_NOTE,
-  )}</p>${button(
-    `${icon("spark")} Fill fictional details`,
-    "fill-assisted-intake",
-    "secondary",
-    busy,
-  )}<div class="form-grid">${INTAKE_ANSWER_KEYS.map((key) =>
-    answerField(key, "", "assisted"),
-  ).join(
-    "",
-  )}</div><button type="submit" class="btn primary" ${busy}>${icon("arrow")} Create this application</button><p class="field-note">Creating it saves a draft the office owns. You still record the intake checks and send it to the office from the case itself.</p></form>`;
-}
 
 // ---------------------------------------------------------------------------
 // The office view of one case

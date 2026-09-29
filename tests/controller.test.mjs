@@ -2091,3 +2091,36 @@ test("a case that is gone only moves a window that was showing it", async () => 
   assert.equal(controller.getState().screen, "office-cases");
   controller.stop();
 });
+
+test("the office screens are a presenter's, and a client falls back home", async () => {
+  const shared = fakeSession();
+  const presenter = build({ store: presenterStore(), sessionStorage: shared });
+  await presenter.controller.start();
+  presenter.controller.navigate("office-add-case");
+  assert.equal(presenter.controller.getState().screen, "office-add-case");
+  presenter.controller.navigate("office-cases");
+  assert.equal(presenter.controller.getState().screen, "office-cases");
+  presenter.controller.stop();
+
+  // A reload keeps either one for a presenter.
+  for (const screen of ["office-add-case", "office-cases"]) {
+    const store = presenterStore();
+    const first = build({ store, sessionStorage: shared });
+    await first.controller.start();
+    first.controller.navigate(screen);
+    first.controller.stop();
+    const again = build({ store: presenterStore(), sessionStorage: shared });
+    await again.controller.start();
+    assert.equal(again.controller.getState().screen, screen);
+    again.controller.stop();
+  }
+
+  // A client principal restoring either screen lands on its own home.
+  const client = build({
+    store: fakeStore({ principal: { userId: "p1", workspaceId: "w1", access: "applicant" } }),
+    sessionStorage: shared,
+  });
+  await client.controller.start();
+  assert.equal(client.controller.getState().screen, "applications");
+  client.controller.stop();
+});

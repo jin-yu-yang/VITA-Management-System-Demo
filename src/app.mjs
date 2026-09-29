@@ -557,8 +557,9 @@ if (!config) {
         formDrafts.clear();
         controller.navigate("staff");
         break;
-      case "toggle-assisted-intake":
-        controller.togglePanel("assisted-intake");
+      case "open-add-case":
+        formDrafts.clear();
+        controller.navigate("office-add-case");
         break;
       case "fill-assisted-intake":
         fillAssistedIntake();

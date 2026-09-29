@@ -35,7 +35,7 @@ const CLIENT_SCREENS = Object.freeze([
   "intake",
   "progress",
 ]);
-const STAFF_SCREENS = Object.freeze(["staff", "staff-case"]);
+const STAFF_SCREENS = Object.freeze(["staff", "staff-case", "office-cases", "office-add-case"]);
 
 // An action whose answer never arrived may or may not have been applied. Those
 // are the only failures worth retrying with the same envelope; a refusal is
