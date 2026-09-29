@@ -151,7 +151,7 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
   - Each key must be a version-2 `field_id` that is not a group sub-field.
   - Each value must pass its type's check from §2.2 against `intake_fields`, and a group's members are checked field by field.
   - `null` clears a field.
-  - The merged answers must be ≤ 64 KB, `pg_column_size` of the jsonb.
+  - The merged answers must be ≤ 64 KB, measured as `octet_length(answers::text)`. This is a backstop: valid answers stay well under it, since every field has a length limit and the household holds at most 10 people.
   - The contact fields (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`) are not stored in `answers`. They go to `case_contacts` (§3.4), in the same transaction. Both phones are there, so part 5 masks phones in one place.
 - **`SUBMIT` on a version-2 case:** refused (`VALIDATION`) only if a `required_to_submit` field whose show-if holds is unanswered, counting the contact fields from `case_contacts`. Otherwise the case moves to `received` as today, and 010's trigger numbers it.
 - **No screening in version 2.** The intake never turns a client away, including clients with self-employment income. A volunteer decides after reviewing the case, and tells the client in person if the site can't help. Version 1 keeps today's screening (`screening()` and `act_submit`'s checks) for its existing cases. A later part may add labels or highlights, such as "self-employment", to help volunteers choose which cases to claim; that is not in part 4.

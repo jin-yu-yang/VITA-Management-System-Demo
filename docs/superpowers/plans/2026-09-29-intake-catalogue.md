@@ -56,6 +56,13 @@ New cases stay version 1.
   3. `npm run db:migrate:test`.
 
   Never edit migrations 001–010.
+- **One catalogue migration per branch.** Only migrations on `main` are immutable. If the drafts change on this branch after `012_intake_catalogue_*.sql` was generated (for example, in a fix round):
+  1. Delete that file.
+  2. Forget it on the local test stack (the recipe above, with its name).
+  3. Re-run `npm run build:intake`, which regenerates it as 012 with the new hash.
+  4. Re-apply.
+
+  Never let the build write a second catalogue migration on this branch: it would take number 013 and collide with `013_contact_materials.sql`.
 - **Replacing an existing function** (`check_related`, `act_submit`, `check_operation_authority`, `check_authority`, `check_payload`, `vitally_apply_action`): copy its **latest** definition verbatim and change only the lines the task names. Find the latest one with `grep -n "function vitally_private.<name>\|function public.<name>" supabase/migrations/*.sql`, taking the highest-numbered file.
 - **New public tables follow 002's conventions exactly:**
   - a `workspace_id` column, with `foreign key (workspace_id, case_id) references public.cases(workspace_id, id) on delete cascade`;
@@ -259,8 +266,9 @@ New cases stay version 1.
     - These are refused `VALIDATION`:
       - an unknown key (`firstName`, a version-1 key);
       - a bad value for each type: text over 200, longtext over 5,000, a bad choice, a bad date, `who` `["none","me"]`, `months_lived` 13 inside a group member, a group member with an unknown key, 11 group members;
-      - a save whose merged answers exceed 64 KB. Build it from several `longtext` fields at 5,000 characters plus a large household.
+      - (the 64 KB cap is tested directly, below, because valid answers can't reach it through `SAVE_ANSWERS`: every field has a length limit and the household holds at most 10 people.)
     - A valid structured set is stored exactly, with `null` clearing a key.
+    - **The size cap:** `select vitally_private.answers_within_limit($1::jsonb)` is true for a realistic full answer set and false for a 70,000-character object (`{"x": "<70000 chars>"}`).
     - `tp_phone` and `best_contact_time` in a save land in `case_contacts` (`phone`, `best_contact_time`) and are absent from `answers`.
     - Phones are stored as 10 digits.
   - **Version-2 `SUBMIT`:**
@@ -300,7 +308,7 @@ New cases stay version 1.
      - A version-2 case:
        - splits the contact keys (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`) into `insert … on conflict (case_id) do update` on `case_contacts`, storing phones as their 10 digits;
        - merges the rest into `answers`, removing keys whose value is `null`;
-       - raises `VALIDATION` if `pg_column_size(new answers) > 65536`.
+       - raises `VALIDATION` unless `vitally_private.answers_within_limit(new answers)`. That's a new function in 011, `octet_length(p_answers::text) <= 65536`, which measures the stored text rather than `pg_column_size`, which can report a compressed size.
      - Its history detail still lists the saved field keys.
   9. **`act_submit`: replace it** (latest, 010).
      - Version 1 stays byte-identical in its branch.
