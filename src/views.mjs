@@ -1,4 +1,4 @@
-import { esc, icon, button } from "./ui.mjs";
+import { esc, icon, button, officeContact } from "./ui.mjs";
 import {
   renderStaffBoard,
   renderStaffCase,
@@ -25,11 +25,24 @@ import {
 
 const when = (condition, html) => (condition ? html : "");
 
-export function header(state) {
-  return `<header class="site-header"><button class="brand" data-action="open-applications" aria-label="ViTally home"><span class="brand-mark">${icon("home")}</span><span><strong>ViTally<span class="brand-dot">.</span></strong><small>PCDC COMMUNITY TAX ASSISTANCE</small></span></button><nav aria-label="Main navigation"><span class="season">2025 TAX SEASON</span>${button(`${icon("help")} Need help?`, "open-help", "text")}${when(
-    state.principal,
-    `<span class="header-divider"></span><span class="who">${icon("user")} ${esc(state.principal?.access === "presenter" ? "Volunteer" : "Signed in")}</span>${button(`${icon("signout")} Sign out`, "sign-out", "text")}`,
-  )}</nav></header>`;
+// The switcher shows what the client form will offer. Only English works until
+// the intake is translated (roadmap part 4), so the others are visibly off.
+export function languageSwitch() {
+  return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="lang-note">Chinese coming soon</span></div>`;
+}
+
+// The client frame's top bar (spec section 7): the logo takes you home, then
+// the language, help, Save & exit while a draft is open, and sign out.
+export function clientHeader(state) {
+  const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
+  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch()}${button(
+    `${icon("help")} Need help?`,
+    "open-help",
+    "text",
+  )}${when(onDraft, button("Save &amp; exit", "save-exit", "secondary"))}${when(
+    state?.principal,
+    button(`${icon("signout")} Sign out`, "sign-out", "text"),
+  )}</div></header>`;
 }
 
 // A lost connection is stated plainly, and what is on screen stays readable.
@@ -78,9 +91,11 @@ export function appShell({ sidebar = "", body = "", open = true } = {}) {
 
 export function page(state, body) {
   // Presenters work in the staff frame, whose sidebar carries the brand, help
-  // and sign-out; the site header is the client's.
-  const top = state?.principal?.access === "presenter" ? "" : header(state);
-  return `<a class="skip" href="#main">Skip to content</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${body}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  // and sign-out. Everyone else gets the client frame.
+  const presenter = state?.principal?.access === "presenter";
+  const top = presenter ? "" : clientHeader(state);
+  const main = presenter ? body : `<div class="client-shell">${body}</div>`;
+  return `<a class="skip" href="#main">Skip to content</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
@@ -252,7 +267,7 @@ export function dialog(state) {
   let body = "";
   if (state.dialog === "help") {
     title = "A real person can help.";
-    body = `<p>Contact the PCDC office if you need help with your application, cannot find your Application ID, or cannot read the inbox you signed up with.</p><div class="contact-option">${icon("home")}<div><strong>Visit the PCDC office</strong><small>Address and opening hours are shown in the live service.</small></div></div><div class="info-note">${icon("shield")}<p>Volunteers follow the site’s identity-check process before restoring access or changing contact details.</p></div>`;
+    body = `<p>Contact the PCDC office if you need help with your application, cannot find your Application ID, or cannot read the inbox you signed up with.</p><div class="contact-option">${icon("home")}<div><strong>Call or email the PCDC office</strong>${officeContact()}</div></div><div class="info-note">${icon("shield")}<p>Volunteers follow the site’s identity-check process before restoring access or changing contact details.</p></div>`;
   }
   if (state.dialog === "regenerate") {
     title = "Replace the fictional answers?";

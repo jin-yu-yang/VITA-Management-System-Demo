@@ -160,6 +160,17 @@ export function nextTabIndex(key, at, count) {
   return null;
 }
 
+// The PCDC office's own contact details, given everywhere a client is told to
+// reach the office. Links, so a phone can call and a laptop can write.
+export const OFFICE_CONTACT = Object.freeze({
+  phone: "(215) 922-6156",
+  tel: "+12159226156",
+  email: "vita@chinatown-pcdc.org",
+});
+
+export const officeContact = () =>
+  `<div class="office-contact"><a href="tel:${OFFICE_CONTACT.tel}">${icon("phone")} ${OFFICE_CONTACT.phone}</a><a href="mailto:${OFFICE_CONTACT.email}">${icon("mail")} ${OFFICE_CONTACT.email.replace("@", "@<wbr>")}</a></div>`;
+
 export const radio = (
   label,
   name,

@@ -22,6 +22,7 @@
 | Client intake, desktop: step 6 (income), standard and senior | [standard](screens/intake-step6-v2-general.png) · [senior](screens/intake-step6-v2-senior.png) |
 | Client intake, desktop: step 5 in Simplified Chinese, standard and senior | [standard](screens/intake-step5-zh-v2-general.png) · [senior](screens/intake-step5-zh-v2-senior.png) |
 | Client intake, mobile (after the MVP): all 9 steps | [intake-mobile-all-steps.png](screens/intake-mobile-all-steps.png) |
+| Implemented (part 1, PR 3): client screens on today's 4-step intake, rendered from test fixtures | [intake](screens/implemented-client-intake.png) · [progress](screens/implemented-client-progress.png) · [sign-in](screens/implemented-client-sign-in.png) |
 | Admin office overview: unclaimed cases by age and language, volunteers and their cases, office activity | [admin-dashboard-v2-full-page.png](screens/admin-dashboard-v2-full-page.png) |
 | Admin Follow-ups queue | [admin-followups-full-page.png](screens/admin-followups-full-page.png) |
 | Admin Post an update | [admin-post-update-full-page.png](screens/admin-post-update-full-page.png) |
