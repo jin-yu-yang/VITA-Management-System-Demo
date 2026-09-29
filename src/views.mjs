@@ -28,7 +28,7 @@ const when = (condition, html) => (condition ? html : "");
 // The switcher shows what the client form will offer. Only English works until
 // the intake is translated (roadmap part 4), so the others are visibly off.
 export function languageSwitch() {
-  return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="sr-only">Chinese is coming soon.</span></div>`;
+  return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="lang-note">Chinese coming soon</span></div>`;
 }
 
 // The client frame's top bar (spec section 7): the logo takes you home, then

@@ -261,9 +261,10 @@ small,
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: #8a9797;
+  color: var(--vt-muted);
   font-size: 11px;
-  border-top: 1px solid var(--line);
+  background: var(--vt-background);
+  border-top: 1px solid var(--vt-line);
   margin-bottom: 80px;
 }
 .landing {
@@ -549,6 +550,14 @@ small,
   margin: auto;
   min-height: calc(100vh - 238px);
 }
+/* The 238px above assumed the old, taller header rule that has since been
+   removed. The client bar is ~73px and the footer ~73px, so on client
+   screens (the only place .narrow still renders — staff overrides this to 0
+   via .app-main .narrow) the main column only needs to reserve that much to
+   keep the footer at the bottom of a short page. */
+.client-shell .narrow {
+  min-height: calc(100vh - 147px);
+}
 .back-link {
   margin: 0 0 22px -12px;
 }
@@ -699,15 +708,15 @@ textarea::placeholder {
   font-size: 21px;
 }
 .reference-card > span small {
-  font-size: 7px;
+  font-size: 11px;
   letter-spacing: 1px;
   margin-left: 9px;
-  color: rgb(255 255 255 / 0.75);
+  color: #fff;
 }
 .reference-card > p {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 2px;
-  color: rgb(255 255 255 / 0.7);
+  color: #fff;
   margin: 32px 0 9px;
 }
 .reference-card > strong {
@@ -719,8 +728,8 @@ textarea::placeholder {
   display: flex;
   justify-content: space-between;
   margin-top: 29px;
-  font-size: 9px;
-  color: rgb(255 255 255 / 0.75);
+  font-size: 11px;
+  color: #fff;
   border-top: 1px solid rgb(255 255 255 / 0.15);
   padding-top: 16px;
 }
@@ -1409,6 +1418,10 @@ textarea::placeholder {
   border-radius: var(--vt-radius);
   margin-top: 22px;
   color: var(--vt-intake-hint);
+}
+.sent-panel {
+  padding: 27px 30px;
+  margin-top: 22px;
 }
 .next-card h3 {
   margin: 0 0 6px;
@@ -2380,14 +2393,14 @@ textarea::placeholder {
     letter-spacing: 2px;
   }
   .reference-bottom {
-    font-size: 8px;
+    font-size: 11px;
     gap: 10px;
   }
   .reference-card {
     padding: 23px;
   }
   .reference-card > span small {
-    font-size: 6px;
+    font-size: 11px;
   }
   .card-tools .btn {
     font-size: 11px;
@@ -2523,6 +2536,10 @@ textarea::placeholder {
 .action-card p {
   font-size: 17px;
   color: var(--vt-stage-amend);
+}
+.timeline-item p {
+  font-size: 12px;
+  color: #75876c;
 }
 .client-shell .timeline-item p {
   font-size: 12px;
@@ -2663,6 +2680,7 @@ textarea::placeholder {
 }
 .start-row .field-note {
   text-align: center;
+  margin-top: 12px;
 }
 .cooldown {
   display: block;
@@ -2689,7 +2707,7 @@ textarea::placeholder {
   flex-wrap: wrap;
 }
 .save-chip.saved {
-  color: var(--vt-progress);
+  color: var(--vt-stage-filing);
 }
 .fiction-tools {
   display: flex;
@@ -2725,12 +2743,17 @@ textarea::placeholder {
   border-color: var(--vt-stage-amend);
   background: var(--vt-stage-amend-bg);
   margin-bottom: 20px;
+  padding: 24px;
+}
+.conflict-panel > p {
+  color: var(--vt-intake-ink);
 }
 .conflict-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   margin: 14px 0;
+  color: var(--vt-intake-ink);
 }
 .conflict-table th,
 .conflict-table td {
@@ -2749,6 +2772,7 @@ textarea::placeholder {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 /* The presenter's own panel: their controls, their persona, and which class
    workspace and sample set is on the projector. */
@@ -3584,12 +3608,38 @@ textarea::placeholder {
 .language-switch .lang:disabled {
   opacity: 0.55;
 }
+.language-switch .lang-note {
+  align-self: center;
+  margin-left: 8px;
+  padding-right: 6px;
+  font-size: 12px;
+  color: var(--vt-intake-hint);
+  white-space: nowrap;
+}
 .client-shell {
   color: var(--vt-intake-ink);
   background: var(--vt-background);
 }
 .client-shell .field-note,
 .client-shell .page-intro p {
+  color: var(--vt-intake-hint);
+}
+.client-shell .overline,
+.client-shell .detail-row > span,
+.client-shell .muted {
+  color: var(--vt-intake-hint);
+}
+.client-shell .field > span {
+  color: var(--vt-intake-ink);
+}
+.client-shell input,
+.client-shell select,
+.client-shell textarea {
+  color: var(--vt-intake-ink);
+}
+.client-shell .support-note p,
+.client-shell .sidebar-help p,
+.client-shell .review-panel p {
   color: var(--vt-intake-hint);
 }
 .office-contact {
@@ -3624,6 +3674,10 @@ textarea::placeholder {
 .client-bar ~ .notice-banner .btn.inline,
 .client-bar ~ .problem-banner .btn.inline {
   min-height: var(--vt-tap);
+}
+.client-shell .resend-row .btn.inline:disabled {
+  opacity: 1;
+  color: var(--vt-intake-hint);
 }
 @media (max-width: 800px) {
   .client-bar {

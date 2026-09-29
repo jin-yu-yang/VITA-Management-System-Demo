@@ -114,7 +114,7 @@ test("the language switch offers English and says Chinese is coming", () => {
   assert.match(html, /<button type="button" class="lang current" lang="en" aria-pressed="true">English<\/button>/);
   assert.match(html, /lang="zh-Hans" disabled[^>]*>简体中文/);
   assert.match(html, /lang="zh-Hant" disabled[^>]*>繁體中文/);
-  assert.match(html, /Chinese is coming soon\./);
+  assert.match(html, /<span class="lang-note">Chinese coming soon<\/span>/);
   assert.doesNotMatch(html, /data-action=/, "the switch does nothing yet");
 });
 
@@ -131,4 +131,13 @@ test("the old site header's styles are gone and the client shell sets its ink", 
   assert.match(css, /\.client-shell\s*\{[^}]*color:\s*var\(--vt-intake-ink\)/);
   assert.match(css, /\.client-bar\s*\{/);
   assert.match(css, /\.office-contact\s*\{/);
+});
+
+test("staff case history keeps its own unscoped timeline text size, separate from the client override", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(
+    css,
+    /(?<![.\w-])\.timeline-item p\s*\{\s*font-size:\s*12px;\s*color:\s*#75876c;\s*\}/,
+    "an unscoped .timeline-item p rule at 12px must still exist for staff screens",
+  );
 });

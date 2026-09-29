@@ -332,7 +332,7 @@ export function progressScreen(state) {
       : `<div class="next-card">${icon("shield")}<div><h3>You’re all set for now.</h3><p>Your next action appears here if the office needs anything else.</p></div></div>`
   }${when(
     documents.length,
-    `<section class="panel"><div class="section-head"><h2>What you sent</h2></div>${documents
+    `<section class="panel sent-panel"><div class="section-head"><h2>What you sent</h2></div>${documents
       .map(
         (document) =>
           `<div class="document-row">${icon("file")}<div><strong>${esc(document.filename)}</strong><small>Waiting for a volunteer to check it</small></div><span class="document-check pending">${icon("clock")}</span></div>`,
