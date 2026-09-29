@@ -92,10 +92,7 @@ const page = (cases, help = [], person = sam, filters = {}) =>
 const rowOf = (html, id) => {
   const rows = html.split('<tr class="queue-row"').slice(1);
   const found = rows.find(
-    (row) =>
-      row.includes(`data-case-id="${id}"`) ||
-      row.includes(`data-item-id="${id}"`) ||
-      row.includes(`>${id}<`),
+    (row) => row.includes(`data-case-id="${id}"`) || row.includes(`data-item-id="${id}"`),
   );
   assert.ok(found, `no row for ${id}`);
   return found.slice(0, found.indexOf("</tr>"));
@@ -139,7 +136,7 @@ test("a call row opens the log-a-call drawer and says who owes the call", () => 
 test("a help row offers the one action its status allows", () => {
   const items = [
     { id: "h1", status: "open", title: "Forms", createdAt: daysAgo(1) },
-    { id: "h2", status: "assigned", assigneeId: "p-sam", assigneeName: "Sam", title: "h2", createdAt: daysAgo(1) },
+    { id: "h2", status: "assigned", assigneeId: "p-sam", assigneeName: "Sam", title: "Second request", createdAt: daysAgo(1) },
   ];
   const html = page([], items);
   assert.match(rowOf(html, "h1"), /data-assistance-action="CLAIM" data-item-id="h1"/);
@@ -147,9 +144,11 @@ test("a help row offers the one action its status allows", () => {
   assert.match(rowOf(html, "h2"), /Helper: Sam/);
   assert.doesNotMatch(rowOf(html, "h2"), /data-assistance-action="CLAIM"/);
   // Somebody else holds h2: the reason, no button.
+  // A refused row carries no id attribute, so find it by its title.
   const forCasey = page([], items, casey);
-  assert.match(rowOf(forCasey, "h2"), /Only the helper holding this request resolves it\./);
-  assert.doesNotMatch(rowOf(forCasey, "h2"), /open-resolve-help/);
+  const refused = forCasey.split('<tr class="queue-row"').find((row) => row.includes("Second request"));
+  assert.match(refused, /Only the helper holding this request resolves it\./);
+  assert.doesNotMatch(refused, /open-resolve-help/);
   // A linked case is shown as a case, with its own stage, not the request status.
   const linked = page(
     [kase({ id: "k", reference: "VT-LINK", stage: "preparing" })],
@@ -204,10 +203,12 @@ test("empty and read-only states explain themselves", () => {
   const empty = page([]);
   assert.match(empty, /class="empty-state"/);
   assert.match(empty, /Nothing is waiting on the office right now\./);
-  assert.doesNotMatch(empty, /Show everything/);
+  assert.doesNotMatch(empty, /Show every task|Show all languages/);
   const none = page([kase({ id: "a" })], [], sam, { officeKind: "help" });
   assert.match(none, /Nothing here matches these filters\./);
-  assert.match(none, /Show everything/);
+  assert.match(none, /Show every task/);
+  assert.match(none, /data-filter="officeKind" data-value="all"/);
+  assert.doesNotMatch(none, /Show all languages/);
   assert.doesNotMatch(none, /clear-board-filters/);
   const noPerson = page(
     [kase({ id: "d", stage: "preparation_ready", preparerId: null })],
@@ -218,6 +219,18 @@ test("empty and read-only states explain themselves", () => {
   assert.deepEqual(actions(noPerson), []);
   assert.doesNotMatch(noPerson, /data-assistance-action/);
   assert.match(noPerson, /class="staff-reason"/);
+});
+
+test("an empty queue offers to undo exactly the filters that emptied it", () => {
+  const cases = [kase({ id: "a" })];
+  const byLanguage = page(cases, [], sam, { language: "Mandarin" });
+  assert.match(byLanguage, /Nothing here matches these filters\./);
+  assert.match(byLanguage, /data-filter="language" data-value="all"[^>]*>Show all languages/);
+  assert.doesNotMatch(byLanguage, /Show every task/);
+  const both = page(cases, [], sam, { language: "Mandarin", officeKind: "help" });
+  assert.match(both, /Show every task/);
+  assert.match(both, /Show all languages/);
+  assert.doesNotMatch(both, /clear-board-filters/);
 });
 
 test("references, titles and languages are escaped", () => {

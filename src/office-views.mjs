@@ -205,12 +205,18 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
     )
     .join("")}</div></div>`;
 
-  const filtered = chosen.kind !== "all" || chosen.language !== "all";
+  const kindOn = chosen.kind !== "all";
+  const languageOn = chosen.language !== "all";
+  // Each button undoes one filter. `clear-board-filters` would also wipe the
+  // volunteer board's saved choices, so it is never used here.
   const empty = `<div class="empty-state">${icon("check")}<p>${
-    filtered ? "Nothing here matches these filters." : "Nothing is waiting on the office right now."
+    kindOn || languageOn ? "Nothing here matches these filters." : "Nothing is waiting on the office right now."
   }</p>${when(
-    filtered,
-    button("Show everything", "set-board-filter", "secondary", 'data-filter="officeKind" data-value="all"'),
+    kindOn,
+    button("Show every task", "set-board-filter", "secondary", 'data-filter="officeKind" data-value="all"'),
+  )}${when(
+    languageOn,
+    button("Show all languages", "set-board-filter", "secondary", 'data-filter="language" data-value="all"'),
   )}</div>`;
 
   const table = `<div class="board-table-wrap"><table class="board-table queue-table"><thead><tr><th scope="col">Task</th><th scope="col">Client</th><th scope="col">What's needed</th><th scope="col">Language</th><th scope="col">Contact preference</th><th scope="col">Waiting</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead><tbody>${shown
