@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, page, clientHeader, languageSwitch, dialog } from "../src/views.mjs";
+import { appShell, staffSidebar, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -212,6 +212,14 @@ test("the drawer is the modal frame at the edge, and each dialog names its place
   assert.match(dialog({ dialog: "reset-fixtures", cases: [] }), /PRESENTER CONTROLS/);
   assert.match(dialog({ dialog: "help" }), /ViTally · HERE TO HELP/);
   assert.doesNotMatch(dialog({ dialog: "help" }), /office-drawer/);
+});
+
+test("the drawer list is exported once, for the renderer and app.mjs's focus fallback alike", () => {
+  assert.deepEqual([...DRAWERS], ["log-call", "resolve-help"]);
+  assert.ok(Object.isFrozen(DRAWERS));
+  const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
+  assert.doesNotMatch(app, /\["log-call",\s*"resolve-help"\]/);
+  assert.match(app, /views\.DRAWERS\.includes\(/);
 });
 
 // PR 4 (the office screens) styles its new containers in one marked block of

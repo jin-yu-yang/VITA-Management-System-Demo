@@ -69,7 +69,7 @@ function noticeBanner(state) {
 }
 
 // The office's two drawers: the modal frame placed at the right edge.
-const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
+export const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
 
 function problemBanner(state) {
   if (!state.error || state.saveState === "failed") return "";

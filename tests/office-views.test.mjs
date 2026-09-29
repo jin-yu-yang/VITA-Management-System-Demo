@@ -202,6 +202,8 @@ test("waiting is shown in words and marked amber at 3 days, red at 5", () => {
   assert.match(rowOf(html, "b"), /class="queue-waiting aging">3 days</);
   assert.match(rowOf(html, "c"), /class="queue-waiting ">1 day</);
   assert.match(html, /3 open · 2 over 3 days/);
+  // Rebuilt on every render, so it is not a live region: it would re-announce.
+  assert.match(html, /<span class="muted small">3 open · 2 over 3 days<\/span>/);
 });
 
 test("empty and read-only states explain themselves", () => {

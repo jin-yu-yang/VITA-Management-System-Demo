@@ -299,7 +299,7 @@ if (!config) {
   function closeDialog(fallbackFocusSelector) {
     const fallback =
       fallbackFocusSelector ??
-      (["log-call", "resolve-help"].includes(controller.getState().dialog)
+      (views.DRAWERS.includes(controller.getState().dialog)
         ? "#office-queue-title"
         : null);
     controller.closeDialog();
