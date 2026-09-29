@@ -67,7 +67,7 @@ The update's row lock serializes concurrent submits, so there is no retry loop.
    - Stage is not the test. A closed assisted draft is not a draft, but it was never submitted, so it stays unnumbered (rule 1).
    - The sample cases qualify, because the seeded sample history records a `SUBMIT` for each sample (009 `fixture_history`).
    - If a sample past draft turns out to have no `SUBMIT` row in `case_events`, number it anyway: samples are submitted by construction. The plan checks which table the seeded history writes to.
-2. Order by the `created_at` of its `SUBMIT` row in `case_events`, falling back to the case's `created_at` (for a sample with no row) and then `reference`.
+2. Samples come first, in `fixture_keys()` order, the same order a reset numbers them in. Their seeded SUBMIT times depend on each scenario's history length, so history order wouldn't match. Every other case follows, ordered by the `created_at` of its `SUBMIT` row in `case_events`, then `reference`.
 3. Set each workspace's counter to the highest number it used.
 
 **Store** (`src/supabase-store.mjs`)
