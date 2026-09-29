@@ -71,7 +71,7 @@ They show later parts' data: client numbers, labels, best time to reach, locatio
 
 | File | Change |
 |---|---|
-| `src/office-views.mjs` (new) | Queue model (`followupQueue`, `officeFilters`, `queueCounts`, `waitingDays`), `renderFollowups`, `logCallDrawerBody`, `resolveHelpDrawerBody`, `renderAddCase` and the assisted-intake form moved from `admin-views.mjs` |
+| `src/office-views.mjs` (new) | Queue model (`followupQueue`, `officeFilters`, `queueCounts`, `waitingDays`), `renderFollowups`, `logCallDrawerBody`, `resolveHelpDrawerBody`, `renderAddCase`. It imports `ASSISTED_OPTIONS`, `answerField` and `OFFICE_NOTE` from `admin-views.mjs`; the office case page uses them too. Imports only go office-views → admin-views, never back. |
 | `src/pool-views.mjs` (new) | `POOL_TABS`, `POOL_STAGES`, `poolPhase`, `poolFilters`, `filterPool`, `poolCounts`, `POOL_FILTER_KEYS`, `renderCasePool` |
 | `src/admin-views.mjs` | Delete the old board (`renderAdminBoard` and its cards, `assistedIntakePanel`, `assistedIntakeForm`, `ASSISTED_OPTIONS`, `answerField`, `countLine`). Export `openFollowups`, `openFollowupCount`, `remindedNote` and a new `followupForms(record, task, person, ui)`, which `followupTask` now uses. |
 | `src/views.mjs` | `staffSidebar` office nav (Follow-ups, All cases); `staffScreen` routes the office screens and passes header actions; `dialog()` renders the drawer variant and the presenter overline |
@@ -91,7 +91,7 @@ They show later parts' data: client numbers, labels, best time to reach, locatio
 **Interfaces:**
 - Consumes:
   - From `admin-views.mjs`: `adminEligibility`, and after this task's exports, `openFollowupCount`, `remindedNote`.
-  - From `staff-views.mjs`: `when`, `named`, `explain`, `stageWork`, `isAvailableWork`, `boardFilters`, `CHOOSE_PERSONA`, `UNKNOWN_PERSON`.
+  - From `staff-views.mjs`: `when`, `named`, `explain`, `detailRow`, `stageWork`, `isAvailableWork`, `boardFilters`, `CHOOSE_PERSONA`, `UNKNOWN_PERSON`.
   - From `ui.mjs`: `esc`, `icon`, `button`, `caseButton`, `stageBadge`.
 - Produces:
   - `QUEUE_KINDS` (`[[value, label], …]` for `intake`, `call`, `help`, `unclaimed`).
@@ -368,9 +368,13 @@ function rowAction(row, person, ui) {
 
 function queueRow(row, person, ui) {
   const { kind, record, item } = row;
+  // A help request can name a case this window's list doesn't hold; say so
+  // rather than claiming there is no case.
   const client = record
     ? `<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference ?? "This case")}</button>${stageBadge(record.stage)}`
-    : '<span class="muted">No case yet</span>';
+    : item?.caseId
+      ? '<span class="muted">A case in this workspace</span>'
+      : '<span class="muted">No case yet</span>';
   return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${esc(rowLanguage(row) || "—")}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${waitingTone(row.days)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
 }
 ```
@@ -403,7 +407,13 @@ function queueRow(row, person, ui) {
 
 - [ ] **Step 10: Update the tests that named the old board.**
   - In `tests/shell.test.mjs:53`, `/Office work/` becomes `/Follow-ups/`.
-  - In `tests/admin-views.test.mjs`, "the persona decides which workspace a presenter is in" expects `Office queue` for Sam.
+  - In `tests/admin-views.test.mjs`, "the persona decides which workspace a presenter is in" (around line 1024) asserts four things about Sam's board that change: `OFFICE WORKSPACE`, `Office work</h2>`, `Assistance requests`, and `<span>Helper</span><strong>Sam</strong>`. Replace them with:
+    - `/>OFFICE</` for the overline
+    - `/Office queue<\/h2>/`
+    - the help row `/data-kind="help"/`
+    - `/Helper: Sam/`, so the helper is still named, not shown as an id
+
+    The Alex half keeps asserting `Work board</h2>`, and now also `doesNotMatch(/Office queue/)`.
   - Run `npm test`. Expected: PASS.
 
 - [ ] **Step 11: Commit.**
@@ -445,6 +455,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 3. **The focus trap skips `select`.** The trap's selector lists button, input, textarea and `a[href]`. The drawer's first field is a select ("What happened"), so add `.modal select`. This also fixes the checkpoint dialog, which has two selects.
 4. **Stale errors.** Call `controller.dismissError()` before opening the drawer, as `open-request-corrections` does, so the drawer only shows an error from its own send.
 5. **"Open the case" inside the drawer.** `open-case` must close the dialog first, or the drawer stays open over the case page.
+6. **Every re-render snatches focus inside an open dialog.**
+   - `render()` in `src/app.mjs` (around line 99) runs `dialogFocusTarget(...)?.focus()` whenever `state.dialog` is set, on *every* render, not just the first.
+   - The drawer stays open while other things move: the action's own `busy` render, the re-read after it, and realtime updates from other windows. A note half-typed in "Note for the office" would lose the keyboard to the first dropdown mid-sentence. (Its text survives through `formDrafts`, but the caret doesn't.)
+   - The corrections dialog has the same latent bug; it's just shorter-lived.
+   - Fix: move focus into the dialog only when it has just opened, and otherwise restore the field as for the page. See Step 6.
+7. **A case that disappears throws the window onto the home screen.**
+   - After `selectCase(id, { navigate: false })`, the case stays selected. Every refresh re-reads it, and every refresh path treats `NOT_FOUND` as "clear the selection **and** set `state.screen = homeScreen()`". The paths are `refresh`, the realtime handler, `load`, and `selectCase`'s own catch.
+   - Today only REMIND leaves a case selected while on the board, and the board *is* home, so nobody noticed.
+   - With the drawer, a presenter who logged a call and then went to **Add a case** or **All cases** is thrown back to Follow-ups when the sample cases are reset, mid-typing on Add a case.
+   - Fix: leave the screen alone unless it's one that shows the selected case. See Step 2b.
 
 - [ ] **Step 1: Controller tests (failing).** In `tests/controller.test.mjs`, using that file's existing controller setup helpers:
   - `openDialog("log-call", { caseId: "c1" })` sets `dialog` and `dialogContext: { caseId: "c1" }`.
@@ -457,7 +477,26 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `openDialog(name, context = null)` sets `state.dialogContext = context ? { ...context } : null`.
   - `closeDialog` and `navigate` set it to `null`.
   - Don't persist it; a reload closes every dialog today.
+  - Every other place that sets `state.dialog = null` (around lines 683 and 713) also sets `state.dialogContext = null`. `dialog()` only reads the context for its own dialog name, so a stale one is harmless, but don't leave it lying around.
   - Run the controller tests. Expected: PASS.
+
+- [ ] **Step 2b: A gone case only moves a window that was showing it.**
+  - **Failing controller test first.** Build a presenter controller whose store's `getCase` rejects with `{ code: "NOT_FOUND" }` for `c1`, using the file's existing fake-store helpers.
+    - With `screen: "office-cases"` and `selectedCaseId: "c1"`, `refresh()` clears `selectedCaseId` and `savedCase`, and the screen **stays** `office-cases`.
+    - With `screen: "staff-case"`, the same refresh moves to `staff`, as today.
+    - `selectCase("c1", { navigate: false })` from `office-cases` also stays put.
+  - **Then** add one helper in `src/controller.mjs` and use it at all four `NOT_FOUND` sites (in `refresh`, the realtime handler, `load`, and `selectCase`'s catch):
+    ```js
+    // Screens that are about the selected case. Anywhere else, a case that has
+    // gone only clears the selection: the person is somewhere else on purpose.
+    const CASE_SCREENS = Object.freeze(["staff-case", "intake", "progress", "reference"]);
+    function forgetGoneCase() {
+      clearSelection();
+      if (CASE_SCREENS.includes(state.screen)) state.screen = homeScreen();
+    }
+    ```
+  - Keep the realtime handler's `FIXTURES_GONE_NOTICE` line as it is.
+  - `reference` belongs in the list: the client's `referenceScreen` renders `state.savedCase` (`src/client-views.mjs` around line 137).
 
 - [ ] **Step 3: Drawer body tests (failing)** in `tests/office-views.test.mjs`:
   - **Sam's own open task.** With the decorated case carrying one open task assigned to Sam, `logCallDrawerBody` renders:
@@ -548,6 +587,19 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   - **`open-case`**: before `selectCase`, add `if (state.dialog) controller.closeDialog();`.
   - **`runCaseAction`**: after the receipt, add `if (type === "RESOLVE_FOLLOWUP" && receipt && controller.getState().dialog === "log-call") closeDialog("#office-queue-title");`. `RECORD_CONTACT` leaves the drawer open, and the new attempt appears there because the accepted action re-reads the case.
   - **`runAssistanceAction`**: when `sent`, add `if (type === "RESOLVE" && controller.getState().dialog === "resolve-help") closeDialog("#office-queue-title");`.
+  - **Focus on re-render (pitfall 6).** In `render()`, keep a closure variable `let shownDialog = null;` beside `focusBeforeDialog`, and replace the dialog branch with:
+    ```js
+    const opened = state.dialog && state.dialog !== shownDialog;
+    shownDialog = state.dialog ?? null;
+    if (opened)
+      requestAnimationFrame(() => { /* today's dialogFocusTarget block, unchanged */ });
+    else if (state.dialog && keyboard) restoreField(keyboard);
+    else if (!state.dialog && focus) { /* today's #main focus + scrollTo, unchanged */ }
+    else if (keyboard) restoreField(keyboard);
+    ```
+    - The keyboard inside the modal is described before the rebuild like any other field, because the modal is inside `#app`.
+    - The drawer's submit button (`data-case-action` + `data-followup-id`) is found again after the re-read.
+    - If the described element is gone, focus falls back to the modal container: add `else if (state.dialog) root.querySelector(".modal")?.focus();` when `restoreField` finds nothing. `restoreField` returns nothing today, so have it return `true` when it focused something.
   - **Focus trap**: its selector becomes `.modal button:not([disabled]),.modal input:not([type="hidden"]),.modal select,.modal textarea,.modal a[href]`. Hidden inputs can't take focus, and the old selector counted them as `last`.
 
 - [ ] **Step 7: Run the unit tests.** Expected: `npm test` PASS. The wiring is checked end to end in Task 6.
@@ -590,8 +642,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     3. A persona without the assisted-intake right gets the `staff-reason` explanation and no form. With no persona, it gets the `CHOOSE_PERSONA` note and no form.
     4. The side card says the Application ID is "Assigned when the case is created" and names the persona under "Created by".
 
-- [ ] **Step 2: Move and restyle the form.**
-  - Move `ASSISTED_OPTIONS`, `answerField` and `OFFICE_NOTE` (import it back if the case page still uses it) from `admin-views.mjs` into `office-views.mjs`.
+- [ ] **Step 2: Build the page from the existing form parts.**
+  - **Don't move** `ASSISTED_OPTIONS`, `answerField` or `OFFICE_NOTE`. The office case page's assisted-answers panel (`assistedAnswersPanel`, `src/admin-views.mjs` around line 786) and its other panels use them too.
+  - Moving them into `office-views.mjs` would force `admin-views.mjs` to import from `office-views.mjs`, which already imports from `admin-views.mjs`. That circular import can hit a temporal-dead-zone error on a `const` at load time.
+  - Instead, add `export` to all three in `admin-views.mjs`, and import them into `office-views.mjs`.
   - Delete `assistedIntakePanel` and `assistedIntakeForm`.
   - Then:
 
@@ -623,7 +677,8 @@ export const ADD_CASE_SECTIONS = Object.freeze([
   - **`views.mjs` routing:**
     - `const OFFICE_SCREENS = ["office-cases", "office-add-case"];`
     - `const screen = !office && OFFICE_SCREENS.includes(state.screen) ? "staff" : state.screen;`
-    - A volunteer persona chosen while an office screen is open gets the work board, never a blank page. Use `screen` for routing and for the sidebar's current item.
+    - A volunteer persona chosen while an office screen is open gets the work board, never a blank page.
+    - Use `screen` for routing, and call `staffSidebar({ ...state, screen }, person, office)`. `staffSidebar` reads `state.screen` for the current item, so passing the raw state would mark nothing current on the fallback board.
     - `office-add-case` renders `frame("OFFICE · ADD A CASE", "Add a case", "Enter a walk-in client's answers yourself. The case has no client account: the office owns it.", false, renderAddCase({ person, busy: state.busy }))`.
   - **Back link:** `frame`'s fourth parameter changes from a boolean `back` to a label string (`""` means no back button). The button keeps `data-action="open-board"`:
     - The office case page and Add a case pass `"Back to Follow-ups"`.
@@ -934,7 +989,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   2. Click `tr.queue-row[data-kind="call"]` for the class reference: its `[data-action="open-log-call"]`.
   3. Wait for `.modal.office-drawer`.
   4. Fill "What happened" and "Note for the office", then click the drawer's `RECORD_CONTACT` submit.
-  5. Wait for the attempt to appear in the drawer's attempt list.
+  5. Wait for the attempt to appear in the drawer's attempt list. Then assert that the keyboard is back on the button that was pressed: `document.activeElement?.dataset.caseAction === "RECORD_CONTACT"`, inside `.modal.office-drawer`. This is the regression check for Task 2's focus-on-re-render fix. The accepted action re-renders twice, and before the fix each re-render moved focus to the drawer's first dropdown. That dropdown is also inside the drawer, so "focus is in the drawer" alone wouldn't catch the bug.
   6. Press Escape, and assert focus is back on that row's Log a call button:
      ```js
      document.activeElement?.dataset?.action === "open-log-call" &&
