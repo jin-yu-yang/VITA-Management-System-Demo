@@ -2938,7 +2938,7 @@ textarea::placeholder {
 }
 .staff-header p:first-of-type {
   margin-top: 0;
-  color: var(--muted);
+  color: var(--vt-muted);
 }
 .request-card {
   border: 1px solid var(--line);
@@ -4133,5 +4133,49 @@ textarea::placeholder {
 }
 .modal .info-note strong {
   color: var(--vt-ink);
+}
+/* ---- The staff frame on tokens: the page overline and presenter strip ---- */
+/* These change every staff screen (work board, case page, office screens) on
+   purpose: part 1 ends with the whole staff frame on the --vt-* tokens. */
+.app-main .page-intro .overline,
+.app-main .muted,
+.app-main .field-note {
+  color: var(--vt-muted);
+}
+.app-main .presenter-panel {
+  box-shadow: none;
+}
+.app-main .presenter-panel .section-head .muted,
+.app-main .presenter-panel .connection-line,
+.app-main .presenter-panel .persona-row .btn small {
+  color: var(--vt-muted);
+}
+.app-main .presenter-panel .connection-line .icon {
+  color: var(--vt-progress);
+}
+.app-main .presenter-panel .persona-row .btn small {
+  font-size: 11px;
+}
+.app-main .presenter-panel .persona-row .btn.selected {
+  border-color: var(--vt-primary);
+  box-shadow: inset 0 0 0 1px var(--vt-primary);
+}
+/* The sample-data button was drawn for the old dark demo bar; here it is a
+   plain text button on the strip's white surface. */
+.app-main .presenter-panel .btn.demo {
+  min-height: var(--vt-tap);
+  padding: 10px 12px;
+  font-size: 14px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--vt-primary-hover);
+}
+.app-main .presenter-panel .btn.demo:hover:not(:disabled) {
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+}
+.app-main .presenter-panel .btn.demo .icon {
+  width: 16px;
+  height: 16px;
 }
 /* end PR 4 */
