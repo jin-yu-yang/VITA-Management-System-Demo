@@ -2,12 +2,9 @@
   --ink: #213d45;
   --muted: #738087;
   --blue: #214d59;
-  --blue-dark: #173d49;
   --teal: #326858;
   --line: #e1e7e4;
-  --paper: #fff;
   --canvas: #f8faf8;
-  --amber: #996924;
   --serif: Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
@@ -329,51 +326,6 @@ small,
 .trust-line .icon {
   width: 18px;
 }
-.community-note {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 47px 0 30px;
-  padding-top: 27px;
-  border-top: 1px solid var(--line);
-  max-width: 370px;
-}
-.community-note p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.8;
-  color: #8c9692;
-}
-.community-note strong {
-  font-weight: 500;
-  color: #596c65;
-}
-.avatar-stack {
-  display: flex;
-  padding-left: 0;
-}
-.avatar-stack span {
-  margin-left: -7px;
-  border: 3px solid var(--canvas);
-  height: 37px;
-  width: 37px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #e5c7b6;
-  color: #815c40;
-  font-family: var(--serif);
-  font-size: 15px;
-}
-.avatar-stack span:first-child {
-  margin-left: 0;
-  background: #bfcfbd;
-  color: #546b4f;
-}
-.avatar-stack span:last-child {
-  background: #e4dbbe;
-  color: #918054;
-}
 .welcome-panel {
   padding-top: 0;
   max-width: 495px;
@@ -399,40 +351,6 @@ small,
   margin-bottom: 26px;
   letter-spacing: -0.8px;
 }
-.entry-card {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  gap: 15px;
-  width: 100%;
-  padding: 21px 17px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--ink);
-  margin-bottom: 13px;
-  transition: 0.15s;
-}
-.entry-card:hover {
-  border-color: #839c94;
-  box-shadow: 0 3px 10px #214d590b;
-  transform: translateY(-2px);
-}
-.entry-card strong {
-  display: block;
-  font-size: 16px;
-}
-.entry-card small {
-  display: block;
-  color: #8a9594;
-  font-size: 11px;
-  margin-top: 6px;
-}
-.entry-card > .icon {
-  margin-left: auto;
-  width: 17px;
-  color: #81958c;
-}
 .entry-icon {
   display: grid;
   place-items: center;
@@ -443,11 +361,6 @@ small,
   flex-shrink: 0;
   color: #6b8276;
 }
-.entry-card.start-card {
-  background: #214d59;
-  border-color: #214d59;
-  color: white;
-}
 .start-card .entry-icon {
   color: #dbe7dc;
   background: #ffffff12;
@@ -457,23 +370,6 @@ small,
 }
 .start-card > .icon {
   color: #d8e3da;
-}
-.welcome-help {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  border-top: 1px solid var(--line);
-  padding-top: 21px;
-  margin-top: 24px;
-  font-size: 11px;
-  color: #8a9594;
-}
-.welcome-help > .icon {
-  width: 16px;
-}
-.welcome-help .inline {
-  font-size: 11px;
-  min-height: 0;
 }
 .landing-bottom {
   grid-column: 1/-1;
@@ -645,26 +541,6 @@ textarea::placeholder {
   margin-top: -7px;
   margin-bottom: 23px;
 }
-.segmented {
-  display: flex;
-  background: #f2f5f2;
-  padding: 4px;
-  border-radius: 8px;
-  margin-bottom: 23px;
-  gap: 4px;
-}
-.segmented .btn {
-  flex: 1;
-  background: transparent;
-  min-height: 42px;
-  font-size: 13px;
-  color: #89978f;
-}
-.segmented .selected {
-  background: #fff;
-  color: var(--ink);
-  box-shadow: 0 2px 5px #173f490d;
-}
 .resend-row {
   font-size: 13px;
   color: var(--vt-intake-hint);
@@ -768,9 +644,6 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-}
-.volunteer-sidebar {
-  border-right: 1px solid var(--line);
 }
 .intake-sidebar {
   border-right: 1px solid var(--vt-line);
@@ -1576,12 +1449,6 @@ textarea::placeholder {
   grid-template-columns: 245px 1fr;
   min-height: calc(100vh - 238px);
 }
-.volunteer-sidebar {
-  padding: 44px 26px 30px 22px;
-}
-.volunteer-sidebar h2 {
-  font-size: 30px;
-}
 .volunteer-nav {
   padding: 14px 13px;
   border-radius: 7px;
@@ -1603,14 +1470,6 @@ textarea::placeholder {
   padding: 0 7px;
   font-size: 10px;
 }
-.volunteer-person {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-top: 27px;
-  padding-top: 23px;
-  border-top: 1px solid var(--line);
-}
 .avatar {
   display: grid;
   place-items: center;
@@ -1622,17 +1481,6 @@ textarea::placeholder {
   font-size: 10px;
   flex-shrink: 0;
 }
-.volunteer-person strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-}
-.volunteer-person small {
-  display: block;
-  font-size: 9px;
-  color: #9aa58e;
-  margin-top: 3px;
-}
 .volunteer-main {
   padding: 43px 40px 45px;
 }
@@ -1641,33 +1489,6 @@ textarea::placeholder {
 }
 .volunteer-main .page-intro p {
   font-size: 14px;
-}
-.worklist-summary {
-  display: flex;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  margin: 0 0 25px;
-}
-.worklist-summary > div {
-  padding: 20px 25px;
-  flex: 1;
-  border-right: 1px solid var(--line);
-}
-.worklist-summary > div:last-child {
-  border: 0;
-}
-.worklist-summary small {
-  display: block;
-  font-size: 8px;
-  letter-spacing: 1.2px;
-  color: #9ca68f;
-  margin-bottom: 9px;
-}
-.worklist-summary strong {
-  font-family: var(--serif);
-  font-size: 28px;
-  font-weight: 400;
 }
 .case-row {
   display: flex;
@@ -2011,16 +1832,6 @@ textarea::placeholder {
   .welcome-card {
     padding: 25px;
   }
-  .entry-card {
-    padding: 17px 13px;
-    gap: 10px;
-  }
-  .entry-card strong {
-    font-size: 14px;
-  }
-  .entry-card small {
-    font-size: 10px;
-  }
   .demo-fiction {
     display: none;
   }
@@ -2072,9 +1883,6 @@ textarea::placeholder {
   .desktop-only {
     display: none;
   }
-  .community-note {
-    display: none;
-  }
   .welcome-panel {
     max-width: none;
     margin-top: 10px;
@@ -2092,15 +1900,6 @@ textarea::placeholder {
   }
   .welcome-card h2 {
     font-size: 27px;
-  }
-  .entry-card strong {
-    font-size: 15px;
-  }
-  .entry-card small {
-    font-size: 11px;
-  }
-  .entry-card {
-    padding: 20px 15px;
   }
   .hero-copy br {
     display: none;
@@ -2264,20 +2063,8 @@ textarea::placeholder {
   .volunteer-layout {
     display: block;
   }
-  .volunteer-sidebar {
-    display: none;
-  }
   .volunteer-main {
     padding: 30px 22px;
-  }
-  .worklist-summary > div {
-    padding: 16px;
-  }
-  .worklist-summary small {
-    font-size: 7px;
-  }
-  .worklist-summary strong {
-    font-size: 25px;
   }
   .case-row {
     padding: 14px;
@@ -2345,28 +2132,9 @@ textarea::placeholder {
   .welcome-card .overline {
     font-size: 8px;
   }
-  .entry-card {
-    padding: 17px 12px;
-    gap: 11px;
-  }
-  .entry-card strong {
-    font-size: 13px;
-  }
-  .entry-card small {
-    font-size: 9px;
-  }
   .entry-icon {
     height: 36px;
     width: 32px;
-  }
-  .entry-card > .icon {
-    width: 14px;
-  }
-  .welcome-help {
-    font-size: 9px;
-  }
-  .welcome-help .inline {
-    font-size: 9px;
   }
   .hero .eyebrow {
     font-size: 8px;
@@ -2900,22 +2668,6 @@ textarea::placeholder {
   width: 15px;
   height: 15px;
 }
-.board-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px 18px;
-  margin: 0 0 12px;
-}
-.board-fact dt {
-  font-size: 10px;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.board-fact dd {
-  margin: 2px 0 0;
-  font-size: 14px;
-}
 .board-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3000,9 +2752,6 @@ textarea::placeholder {
   min-height: 78px;
 }
 @media (max-width: 760px) {
-  .board-facts {
-    grid-template-columns: 1fr 1fr;
-  }
   .board-filters {
     gap: 8px 10px;
   }
