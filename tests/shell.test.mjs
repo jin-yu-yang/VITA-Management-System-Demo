@@ -252,16 +252,17 @@ test("the queue's row actions keep the 44px staff control minimum", () => {
   assert.match(stylesheet(), /\.office-queue \.queue-action \.btn\s*\{[^}]*min-height:\s*var\(--vt-tap\)/);
 });
 
-test("the queue's and the pool's filter chips keep the 44px staff minimum, the base chip stays", () => {
+test("every filter chip, on every staff screen, keeps the 44px staff minimum", () => {
+  // One base rule for the volunteer board, the office queue and the pool.
+  assert.match(stylesheet(), /\n\.btn\.chip\s*\{[^}]*min-height:\s*var\(--vt-tap\)/);
+});
+
+test("the old palette is gone: every color and font reads a --vt-* token", () => {
   const css = stylesheet();
-  const start = css.indexOf("/* PR 4: office screens */");
-  const end = css.indexOf("/* end PR 4 */");
-  const block = css.slice(start, end);
-  assert.match(
-    block,
-    /\.office-queue \.btn\.chip,\s*\.case-pool \.btn\.chip\s*\{[^}]*min-height:\s*var\(--vt-tap\)/,
-  );
-  assert.match(css, /\n\.btn\.chip\s*\{[^}]*min-height:\s*32px/);
+  for (const name of ["ink", "muted", "blue", "teal", "line", "canvas", "serif", "sans"]) {
+    assert.doesNotMatch(css, new RegExp(`var\\(--${name}\\)`), `var(--${name}) is still read`);
+    assert.doesNotMatch(css, new RegExp(`\\n\\s*--${name}:`), `--${name} is still defined`);
+  }
 });
 
 test("the office drawer fills the dynamic viewport, with 100vh as the fallback", () => {
