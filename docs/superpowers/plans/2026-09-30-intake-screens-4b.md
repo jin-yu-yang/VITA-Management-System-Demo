@@ -47,7 +47,10 @@
      - a `change` of a text field with `drivesVisibility(id)` (today only `gcf_sp_signature`), and only when `needsRedraw(renderedIds, step, answers)` is true.
 
      The comparison is **the ids rendered on the page against the ids the draft makes visible**, never draft-before against draft-after: rule 2 has already put the typed value in the draft. A `change`-caused redraw is queued with `setTimeout(…, 0)`.
-  4. **Every redraw restores focus, caret and scroll.** Focus and caret use the existing `describeFocus`/`restoreField`; the scroll (`scrollX`/`scrollY`) is new, for the version-2 form only. A redraw requested during IME composition waits for `compositionend`.
+  4. **A redraw that keeps the same place restores focus, caret and scroll.** "The same place" means the same screen, case and `formStep` before and after.
+     - Focus and caret use the existing `describeFocus`/`restoreField`.
+     - Scroll (`scrollX`/`scrollY`) is new, for the version-2 form only.
+     - A redraw that changes the step or leaves the form scrolls to the top and focuses `#main` instead. It is recognised by comparing the place inside `render()`, because step changes also arrive as `show()` → `render(false)`. A redraw requested during IME composition waits for `compositionend`.
 - **No browser validation blocks Continue.** The spec says the form warns but always moves on.
   - The `submit` handler handles `#intake-v2-form` before its `form.reportValidity()` call. `reportValidity` ignores `novalidate`, and `type="email"` alone would block Continue on a half-typed address.
   - The renderer emits no `required`, `min`, `max` or `pattern` attributes; ranges are shown as text.
@@ -379,7 +382,12 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `heldRender` starts as `null` and holds `false`/`true` while a render is waiting.
     - `render()` itself sets it to `null` whenever it goes on to replace the page. `flushHeld` therefore draws only if nothing else drew in between, and a second flush finds `null` and does nothing.
     - The `quiet` early return stays first, so a quiet edit neither draws nor clears a held request.
-    - **Scroll:** when the version-2 form is on the page and `focus` is false, record `window.scrollX`/`scrollY` before `root.innerHTML = …` and `window.scrollTo(x, y)` after `restoreField`.
+    - **Scroll and place:** keep `let lastPlace = null` in the wiring layer. In `render()`, compute `place = \`${state.screen}|${state.selectedCaseId}|${state.formStep}\`` and read `wasV2 = v2OnPage()` before replacing the page. After replacing it, when the version-2 form was on the page before or is on it now, and `focus` is false:
+      - **`place === lastPlace`:** record `scrollX`/`scrollY` before `root.innerHTML = …`, then `restoreField(keyboard)` and `window.scrollTo(x, y)` after it.
+      - **otherwise (the step changed, or the form was entered or left):** `root.querySelector("#main")?.focus({ preventScroll: true })` and `window.scrollTo(0, 0)`; no `restoreField`.
+      - Then set `lastPlace = place`, on every render.
+      - Version-1 screens (neither before nor after on the version-2 form) keep today's branch exactly.
+      - Test it in Task 6 (item 4 below): after scrolling to the bottom of step 2 and one click on Continue, `scrollY` is 0 and `document.activeElement.id` is `main`.
     - Version-1 screens never reach these branches.
   - **`input`:** a `[data-control]` inside `#intake-v2-form` that has `data-q` → `controller.editAnswers(readField(control))`.
     - Always pass the event's own target. `readField` reads the ticked option from that element and hands it to `valuesFromControls` as `changed`, which is what makes "No one" clear the others and another option clear "No one".
@@ -423,25 +431,35 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 - [ ] **Step 1: Add one phase to the story.** Put it after "a reset rebuilds the samples…" and before "nothing threw…". The reset phase compares case sets, so the new case must come after it. The console phase must still see only allowed lines.
   1. `fixture.database.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`, using the id the story already has.
   2. In a fresh client window, sign in as `applicantB` with `loginTestUser`, as the story does at `tests/browser.mjs:1137`. Start an application and land on "STEP 1 OF 9".
-  3. **Focus survives a realtime redraw:**
+     - Step 1 is catalogue section 0 only (`form_version`, `service`, `language`, `language_other`).
+     - Choose a service and a language, then Continue to "STEP 2 OF 9".
+     - Step 2 (sections 1–2) holds `tp_first_name`, `email` and the other required text questions every item below uses.
+  3. **On step 2, focus survives a realtime redraw:**
      1. scroll the window down a little;
-     2. type `Xia` into the first name (focus left in it);
+     2. type `Xia` into `tp_first_name` (focus left in it);
      3. set the caret to 2 (`el.setSelectionRange(2, 2)`);
      4. record `scrollY`;
      5. force a redraw with `fixture.database.sql("update public.cases set revision=revision where id=$1", …)`, as the story does at `:657`, and wait for `#app` to be rebuilt (a marker property set on the old form is gone);
      6. check that `document.activeElement.id` is the same field, `selectionStart === 2`, the value is `Xia`, and `scrollY` is unchanged.
-  4. **In place:**
-     1. Continue once, and come back with Back, so step 1 is visited.
-     2. Clear a required text question and set a marker property on its note node.
-     3. Check that the note reads "Needs an answer" and the rail status is `is-needs`.
-     4. Type an answer, and check the note is empty, the rail status changed, and the marker is still on the same node (not replaced).
-  5. **Continue after typing (real mouse):** go to the step holding the email question (with the rail), type `not-an-email` into it, focus left in it, then **one** `locator.click()` on Continue.
+  4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, type `mei lin@example.com` into `email`, focus left in it.
+     - The browser's `type="email"` check rejects the space, but the server's deliberately loose check accepts it: one `@`, not at either end. So this also proves the browser check is bypassed.
+     - Scroll to the bottom of the page, then **one** `locator.click()` on Continue.
      - Don't use `clickAction`, `waitForQuiet`, `pressUntil…` or any retry: they wait for stillness or re-press, and would hide a lost click.
-     - The step advances ("STEP n+1 OF 9"), even though the email is invalid, and the saved answers hold the typed value (query `answers->>'<email id>'`).
-  6. **Rail link after typing (real mouse):** type in a text field, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
-  7. **Long answer count:** go to the step with the "Anything else" longtext and set a marker property on `#intake-v2-form`. Then `locator.fill` 4,600 characters and type one more with `press`. The count reads "4,601 of 5,000 characters", and the marker is still on the form, so no redraw happened.
-  8. Go to step 1 with the rail. Use Fill fictional details, then walk steps 1–8 with Continue.
-  9. **Show-if and spouse:** on step 3, choose married and check a spouse question appears. Use Fill fictional details again. Because the draft now says married, the generator makes a married person (`married: true`), so the blank spouse questions are filled. Check a spouse question now has a value, then continue. It stays married for item 11.
+     - Check that:
+       - the page shows "STEP 3 OF 9";
+       - `answers->>'email'` is `mei lin@example.com` (query the case);
+       - `scrollY` is 0;
+       - `document.activeElement.id` is `main`.
+  5. **Rail link after typing (real mouse):** click Back once to return to step 2. Type into `tp_job_title`, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
+  6. Go to step 1 with the rail. Use Fill fictional details (it fills every blank on every step), then walk steps 1–8 with Continue.
+  7. **In place, after the fill, on step 2** (reached with the rail; visited already, and every required question now answered, so its mark is `is-done`):
+     1. Clear `tp_first_name`.
+     2. Check that its note reads "Needs an answer" and `#rail-step-1-status` has `is-needs`: this step now has exactly one missing question.
+     3. Set a marker property on that note node.
+     4. Type `Mei`.
+     5. Check that the note is empty, `#rail-step-1-status` has `is-done` and "Done", and the marker is still on the same node (not replaced).
+  8. **Long answer count:** go to step 8 (`additional_notes`, the only longtext) and set a marker property on `#intake-v2-form`. Then `locator.fill` 4,600 characters and type one more with `press`. The count reads "4,601 of 5,000 characters", and the marker is still on the form, so no redraw happened. Clear the box again.
+  9. **Show-if and spouse:** go to step 3 with the rail, choose married and check a spouse question appears. Use Fill fictional details again. Because the draft now says married, the generator makes a married person (`married: true`), so the blank spouse questions are filled. Check a spouse question now has a value, then go to step 9 with the rail. It stays married for item 11.
   10. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
   11. **Step 9, the text driver (real mouse):**
       1. check "Everything required is answered.";
@@ -464,7 +482,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
 - [ ] **Step 2: Prove the click test catches the fault (temporary change, not committed).**
   1. In `app.mjs`'s version-2 `change` handler, temporarily make every `change` (text fields included) call `render()` at once: no queue, no `needsRedraw` check, bypassing the hold. That is the old rule.
-  2. Run `npm run test:browser`. Expected: it FAILs at item 5, "Continue after typing": the step doesn't advance after one click. It may fail at item 6 or 11 first; any of the three counts. Record which assertion failed and its message.
+  2. Run `npm run test:browser`. Expected: it FAILs at item 4, "Continue after typing": the step doesn't advance after one click. It may fail at item 5 or 11 first; any of the three counts. Record which assertion failed and its message.
   3. Restore the handler (`git diff src/app.mjs` shows nothing from this step) and run `npm run test:browser` again. Expected: PASS.
   4. If step 2 did **not** fail, the test isn't catching lost presses. Stop and report; don't go on.
 

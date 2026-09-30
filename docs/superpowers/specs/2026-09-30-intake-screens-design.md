@@ -100,6 +100,8 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
    - focus and caret, through the app's existing `describeFocus` / `restoreField` path, which already records the focused control's id and `selectionStart`;
    - the scroll position, `window.scrollX`/`scrollY` recorded before the redraw and restored after it. This is new, and applies to the version-2 form only.
 
+   **Scroll is restored only when the redraw keeps the same place:** the same screen, the same case and the same `formStep` before and after. That covers realtime redraws and a choice's show-if redraw on the same step. A redraw that changes the step (Continue, Back, a rail jump) or leaves the form (Submit, Save & exit) doesn't restore: it scrolls to the top and puts focus on `#main`, so the next step opens at its start. The place is compared inside `render()`, not inferred from what called it, because step changes arrive through the controller's `show()` → `render(false)`, the same path as a realtime redraw.
+
    One narrow wait remains: a redraw requested during IME composition (`compositionstart` until `compositionend`) runs after `compositionend`, because replacing a field mid-composition discards the half-composed characters. This matters for Chinese input (4d) and costs nothing in English.
 
    Restoring was chosen over deferring the redraw for as long as a field has focus. A client can keep a field focused indefinitely, and a deferred redraw would hide the office's change, and the conflict banner, until they left it.
