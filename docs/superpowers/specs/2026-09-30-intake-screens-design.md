@@ -78,6 +78,8 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
 1. **A press never loses its target.** No button or link may be replaced or moved between `mousedown` and `mouseup`. A browser delivers `click` only when both land on the same element, so a redraw in between swallows the click.
    - This is why a text field's `change` (which fires on the `mousedown` that takes focus away) must never redraw on the spot.
    - While a pointer is down on the page (`pointerdown` until `pointerup` or `pointercancel`), every requested redraw waits. It runs in a task queued from `pointerup`/`pointercancel` (`setTimeout(…, 0)`), so after the `click` has been delivered.
+   - **The hold is also released** on `contextmenu`, window `blur` and `visibilitychange`, and by a 2-second safety timer started at `pointerdown`, so a press whose `pointerup` never arrives (right-click, Ctrl+click, a context menu) can't hold redraws forever.
+   - **A held redraw is dropped once any real redraw runs.** Every render that actually replaces the page first clears the held request, so a queued flush can never draw a second time.
 2. **`input` updates in place, never redraws.** Each `input` event writes the question's value to the draft (§2.2) and updates these things in the existing page, and nothing else:
    - the question's note container (§2.1): its text ("Needs an answer" or empty) and its `is-missing` class;
    - the current step's mark in the rail (§3.2): its status class and text;
@@ -87,8 +89,9 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
 3. **A full redraw happens only when the visible questions change.** That is:
    - a radio, checkbox or `<select>` changes (on `change`, which for these fires after the click);
    - a text field that drives a `showIf` changes (on `change`), and only when the questions **on the page** differ from the questions **the draft makes visible**. Today the catalogue has one such field, `gcf_sp_signature` (it shows `gcf_sp_date`).
+     - **Checked: only `gcf_sp_signature`.** Every kind of condition was searched: question and household `showIf`s, tip conditions (only `refund_method`, a choice) and `fixedOptions.who.spouseShowIf` (`marital_status`, a choice). No other text field drives anything.
      - **The comparison is page against draft, never draft before against draft after.** By the time `change` fires, rule 2 has already put every keystroke in the draft, so a before/after comparison of the draft always finds no difference, and `gcf_sp_date` would never appear.
-     - "On the page" is the set of `data-q` ids rendered in the current step. "The draft makes visible" is `isVisible` over the step's questions, evaluated against the draft.
+     - "On the page" is the set of unique `data-q` values rendered in the current step, including `hh` (household controls all carry `data-q="hh"`). "The draft makes visible" is the set of top-level question ids on the step that `isVisible` passes against the draft, which uses the same kind of id (`hh` for the household group).
      - Using the page as the "before" also catches a change typed and then undone before `change` fires: page and draft agree, so no redraw happens.
 
    Everything else (Continue, Back, a rail jump, the senior switch, Add / Remove a person, Fill fictional details, a save's result) is a redraw the person asked for with a press, and runs from the `click` handler, after the press is complete.
@@ -151,6 +154,8 @@ That migration loads the same field rows as 012, because step titles aren't stor
 - The Saved / Unsaved chip and the retained-envelope retry work as today.
 - **The two-window conflict screen needs a version-2 branch.** Today's `conflictForm` compares only version 1's 17 keys, with `String()`. For version 2 it compares every catalogue field and the four contact fields by value (deep equality for arrays and household members), labels each row with the question's wording, and shows both sides with `formatAnswer`. "Keep my edits" and "Use the office's values" work as today.
 - **Fill fictional details** uses a new fictional version-2 generator: `makeSampleAnswers` in `src/sample-data.mjs` gains a `version` option (`{ seed, scenario, version: 2 }`), and version 1 stays the default. It fills only blank fields, and every value passes `checkValue`.
+  - **The generated person follows the draft's marital status.** When the draft already says `married`, the fill generates a married person, spouse answers included (`makeSampleAnswers({ …, married: true })`). Otherwise it generates the default never-married person.
+  - So a client who chose "married" and then presses Fill gets the spouse questions answered, and nothing required is left missing.
 
 ### 3.4 Behaviour
 

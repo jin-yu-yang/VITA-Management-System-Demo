@@ -34,7 +34,10 @@
   - inside a household member, empty sub-fields are omitted, never `null`.
 - **Saves merge on the server** (`answers || payload`, with `null` clearing). So a save sends the whole version-2 draft, `null`s included, and a cleared field reaches the server.
 - **Redraw rules: spec §2.4 is the contract.** It applies while `#intake-v2-form` is on the page; version-1 screens keep today's `render()` behaviour exactly.
-  1. **A press never loses its target.** Between `pointerdown` and `pointerup`/`pointercancel`, a requested redraw is held. It runs from a `setTimeout(…, 0)` queued on `pointerup`/`pointercancel`, after the `click`.
+  1. **A press never loses its target.**
+     - Between `pointerdown` and `pointerup`/`pointercancel`, a requested redraw is held. It runs from a `setTimeout(…, 0)` queued on `pointerup`/`pointercancel`, after the `click`.
+     - The hold is also released on `contextmenu`, window `blur`, `visibilitychange`, and by a 2-second safety timer.
+     - Every real render clears the held request first, so a flush can't draw twice.
   2. **`input` never redraws.** It writes the draft (`readField`) and sets only `className`/`textContent` on:
      - the question's note (`field-<scope>-<id>-note`);
      - the current step's rail status (`rail-step-<n>-status`);
@@ -125,14 +128,21 @@ renderQuestion(question, value, { variant = "general", lang = "en", scope, answe
 // A control descriptor is plain data, so the reading rules are testable in Node:
 //   { q, member?, sub?, part?, type, value, checked }
 //   q = question id; member/sub for household controls; part = "month"|"day"|"year".
-valuesFromControls(descriptors) → { [id]: value }        // pure; every question present in the list
+valuesFromControls(descriptors, { changed } = {}) → { [id]: value }
+                                                         // pure; every question present in the list. `changed` is { q, value } for the
+                                                         // checkbox option just ticked, and drives the "No one" rule (below)
 describeControl(element) → descriptor                    // DOM, reads data-* and value/checked
-readField(element) → { [id]: value }                     // DOM: describes every control of the element's question (or, in the household, of the whole group) and calls valuesFromControls
-readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form
+readField(element) → { [id]: value }                     // DOM: describes every control of the element's question (or, in the household, of the
+                                                         // whole group) and calls valuesFromControls(descriptors, { changed }), where
+                                                         // changed = element.type === "checkbox" && element.checked
+                                                         //   ? { q: element.dataset.q, value: element.value } : undefined
+readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form; passes no `changed`
 mergeIntoDraft(draft, patch) → newDraft                  // field by field; never drops keys absent from patch; never mutates
-drivesVisibility(id) → boolean                           // true when some showIf in the catalogue names this field
-visibleIds(step, answers) → string[]                     // top-level question ids on step (0–8) that isVisible makes visible, in order
-needsRedraw(renderedIds, step, answers) → boolean        // spec §2.4 rule 3: page ids vs visibleIds(step, answers), as sets
+drivesVisibility(id) → boolean                           // true when a question/household showIf, a tip's showIf or fixedOptions.who.spouseShowIf names
+                                                         // this field. Of text fields, only gcf_sp_signature (checked; spec §2.4 rule 3)
+visibleIds(step, answers) → Set<string>                  // top-level question ids on step (0–8) that isVisible passes; the household group is "hh"
+needsRedraw(renderedIds, step, answers) → boolean        // spec §2.4 rule 3: renderedIds (a Set of the step's unique data-q values, "hh" included)
+                                                         // differs from visibleIds(step, answers)
 noteState(question, value, { showMissing }) → { text: string, className: string }
                                                          // "Needs an answer"/"is-missing" when showMissing, required and !isAnswered; else "" / ""
 countText(value) → string                                // "4,612 of 5,000 characters" when length > 4500, else ""
@@ -172,12 +182,17 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - **`needsRedraw`** (step 9 is index 8):
       - with answers `{ gcf_consent: "yes", marital_status: "married", gcf_sp_signature: "Mei Lin" }` and rendered ids that lack `gcf_sp_date`, it is **true**;
       - with the same answers and rendered ids equal to `visibleIds(8, answers)`, it is **false**;
-      - with `gcf_sp_signature: ""` and rendered ids lacking `gcf_sp_date`, it is **false**.
+      - with `gcf_sp_signature: ""` and rendered ids lacking `gcf_sp_date`, it is **false**;
+      - **household ids match:** on step 5 (index 4), with `has_household_members: "yes"`, `visibleIds(4, answers)` contains `"hh"`, and `needsRedraw(new Set(visibleIds(4, answers)), 4, answers)` is **false**.
+    - **`drivesVisibility`** is also true for `refund_method` (a tip condition). A unit test walks the whole catalogue: the only text-like field (`text`, `longtext`, `signature`, `email`, `phone`, `zip`, `year`, `number`, `date`) for which it returns true is `gcf_sp_signature`.
     - **Every question** (answered or not, `showMissing` or not) has `id="field-client-<id>-note"` with `aria-live="polite"`, and the control's `aria-describedby` contains it.
     - `noteState` on an unanswered required question with `showMissing` gives "Needs an answer"/`is-missing`; answered, optional, or `showMissing` false gives empty text and no class. The rendered note carries the same text and class.
     - **`stepStatus`:** a step whose visible required questions are all answered is `done`; a visited step with one missing is `needs`; an unvisited step with one missing is `none`.
     - The senior variant renders the senior wording for a question whose wordings differ (find one in the catalogue).
-  - **`multi`/`who` "No one":** descriptors with "No one" and "Me" both checked, where "No one" is the one just changed, read as `["none"]` (use the catalogue's value for "No one"). The rule lives in `valuesFromControls`, which takes an optional `{ changed: value }` hint.
+  - **`multi`/`who` "No one"** (`who`'s value is `none`). The rule lives in `valuesFromControls`, and `readField` supplies `changed` from the element it was called with (see the interface):
+    - `none` and `me` both checked, `changed: { q, value: "none" }` → `["none"]`;
+    - the same, but `changed: { q, value: "me" }` → `["me"]` (ticking another option unticks "No one");
+    - no `changed` (as from `readForm`) → returned as checked, unchanged.
   - **Round trip:** render with a value, build descriptors from the rendered HTML's option values and checked state (a small regex helper in the test file), read back, and get the same value.
     - dates: `"1961-04-12"`;
     - `who`: `["me", "spouse"]` when married;
@@ -213,7 +228,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Interfaces:**
 - **Consumes:** `CONTACT_FIELDS`, `findQuestion`, `stepsFor`, `checkValue`, `missingToSubmit` (reader); `mergeIntoDraft` (Task 2).
 - **Produces:**
-  - `makeSampleAnswers({ seed, scenario, version: 2 })` → a version-2 draft (the answers plus the four contact fields). Every value passes `checkValue`, and `missingToSubmit(2, answers, contact)` is `[]`.
+  - `makeSampleAnswers({ seed, scenario, version: 2, married = false })` → a version-2 draft (the answers plus the four contact fields). Every value passes `checkValue`, and `missingToSubmit(2, answers, contact)` is `[]`.
+    - `married: false` (the default): a never-married person.
+    - `married: true`: `marital_status: "married"` plus every spouse answer the catalogue requires when married, including `sp_phone`.
   - Controller:
     - `pickAnswers(source, version)`: version 1 behaves as today; version 2 keeps catalogue top-level IDs and structured values, including `null`.
     - `editAnswers(patch)` merges through `mergeIntoDraft` for a version-2 case, and applies the spouse clear.
@@ -223,8 +240,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 
 - [ ] **Step 1: Failing tests.**
   - **`tests/sample-data.test.mjs`:**
-    - version 2 output passes `checkValue` for every key;
-    - `missingToSubmit(2, …)` is `[]`;
+    - version 2 output, with `married` false and true, passes `checkValue` for every key, and `missingToSubmit(2, …)` is `[]`;
+    - the fill a client gets after choosing married: `fillBlankAnswers(unmarried output with marital_status set to "married" and the spouse keys removed, married output, 2)` has `missingToSubmit(2, …)` equal to `[]`;
     - it is deterministic for a seed;
     - version 1 output is unchanged (deep-equal to today's for seed 0).
   - **`tests/controller.test.mjs`** (use its existing fake store and helpers):
@@ -244,6 +261,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - a phone `2155550100`–`2155550199` chosen by seed, and a best time `["weekday_evening"]` (use the catalogue's real option values);
     - the name and birth date varied by seed from small fictional lists;
     - `form_version` left out.
+    - With `married: true`, the same person plus `marital_status: "married"` and a fictional spouse: every spouse question the catalogue shows and requires when married, and `sp_phone`. Filing status and the other answers stay valid for a married person.
 
     Then add answers until the test's `missingToSubmit(2, …)` is `[]`. Don't generate values by walking the catalogue: a text question has no "first valid value". Keep version 1's code path exactly.
   - **`fillBlankAnswers(current, generated, version = 1)`:**
@@ -334,19 +352,38 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - **The redraw hold** (spec §2.4 rules 1 and 4), inside `render()` and only while `#intake-v2-form` is on the page:
     ```js
     let pointerHeld = false, composing = false, heldRender = null; // heldRender: the `focus` argument of the held call
-    // in render(focus): if (v2OnPage() && (pointerHeld || composing)) { heldRender = heldRender || focus; return; }
-    root.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
-    const release = () => { pointerHeld = false; setTimeout(flushHeld, 0); };  // after the click
+    let holdTimer = null;
+    // At the top of render(focus):
+    //   if (v2OnPage() && (pointerHeld || composing)) { heldRender = heldRender || focus; return; }
+    //   heldRender = null;   // a real render: any held request is now satisfied (spec §2.4 rule 1)
+    root.addEventListener("pointerdown", () => {
+      pointerHeld = true;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(release, 2000);            // safety: a pointerup that never arrives
+    }, true);
+    function release() {
+      if (!pointerHeld) return;
+      pointerHeld = false;
+      clearTimeout(holdTimer);
+      setTimeout(flushHeld, 0);                         // after the click
+    }
     window.addEventListener("pointerup", release, true);
     window.addEventListener("pointercancel", release, true);
+    window.addEventListener("contextmenu", release, true);   // right-click, Ctrl+click
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", release);
     root.addEventListener("compositionstart", () => { composing = true; });
     root.addEventListener("compositionend", () => { composing = false; setTimeout(flushHeld, 0); });
-    function flushHeld() { if (heldRender === null || pointerHeld || composing) return; const f = heldRender; heldRender = null; render(f); }
+    function flushHeld() { if (heldRender === null || pointerHeld || composing) return; render(heldRender); }
     ```
     - `heldRender` starts as `null` and holds `false`/`true` while a render is waiting.
+    - `render()` itself sets it to `null` whenever it goes on to replace the page. `flushHeld` therefore draws only if nothing else drew in between, and a second flush finds `null` and does nothing.
+    - The `quiet` early return stays first, so a quiet edit neither draws nor clears a held request.
     - **Scroll:** when the version-2 form is on the page and `focus` is false, record `window.scrollX`/`scrollY` before `root.innerHTML = …` and `window.scrollTo(x, y)` after `restoreField`.
     - Version-1 screens never reach these branches.
   - **`input`:** a `[data-control]` inside `#intake-v2-form` that has `data-q` → `controller.editAnswers(readField(control))`.
+    - Always pass the event's own target. `readField` reads the ticked option from that element and hands it to `valuesFromControls` as `changed`, which is what makes "No one" clear the others and another option clear "No one".
+    - The same `readField(event.target)` call serves `change`.
     - It runs quietly, as `editAnswerField` does, followed by `refreshSaveChip()`.
     - Then the **in-place updates**, setting only `className` and `textContent`:
       - the question's note from `noteState(question, value, { showMissing: stepVisited })`;
@@ -356,7 +393,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - Checkboxes are included, unlike version 1.
   - **`change`:** the same read. A redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
     - a radio, checkbox or select;
-    - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds` is the `data-q` values of `#intake-v2-form [data-q]` wrappers outside the household group.
+    - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds = new Set([...form.querySelectorAll("[data-q]")].map((el) => el.dataset.q))`. That is the step's unique `data-q` values, with `"hh"` included once, the same kind of id `visibleIds` returns.
 
     Focus comes back through `render()`'s own `describeFocus`/`restoreField`, taken at flush time, so a Tab's new target is restored, not the field that was left.
   - **`submit` of `#intake-v2-form` (Continue):** handled before `form.reportValidity()`. It runs `editAnswers(readForm(form))`, then `goToStep(formStep + 1)`.
@@ -366,7 +403,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `toggle-senior`: `editAnswers({ form_version: current === "senior" ? "general" : "senior" })`.
     - `add-member`: append `{}` (up to 10).
     - `remove-member`: remove that index.
-    - **`fill-fictional` and `confirm-regenerate`:** `fictional()` branches on `savedCase.intakeVersion`. For version 2, first `editAnswers(readForm(form))`. Then `makeSampleAnswers({ version: 2, seed })`, with `fillBlankAnswers(draft, generated, 2)` for a fill, or the generated set plus `null` for every other catalogue key already in the draft, for a regenerate.
+    - **`fill-fictional` and `confirm-regenerate`:** `fictional()` branches on `savedCase.intakeVersion`. For version 2, first `editAnswers(readForm(form))`. Then `makeSampleAnswers({ version: 2, seed, married: draft.marital_status === "married" })` (spec §3.3), with `fillBlankAnswers(draft, generated, 2)` for a fill, or the generated set plus `null` for every other catalogue key already in the draft, for a regenerate.
     - `save-exit` on a version-2 case: `editAnswers(readForm(form))` first, then as today.
   - **Step 9's Submit saves first.** In `runCaseAction`, for `SUBMIT` on a version-2 case:
     1. `editAnswers(readForm(form))`;
@@ -404,17 +441,20 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   6. **Rail link after typing (real mouse):** type in a text field, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
   7. **Long answer count:** go to the step with the "Anything else" longtext and set a marker property on `#intake-v2-form`. Then `locator.fill` 4,600 characters and type one more with `press`. The count reads "4,601 of 5,000 characters", and the marker is still on the form, so no redraw happened.
   8. Go to step 1 with the rail. Use Fill fictional details, then walk steps 1–8 with Continue.
-  9. **Show-if and spouse:** on step 3, choose married and check a spouse question appears. Use Fill fictional details again (a fill only fills blanks) to answer the spouse questions, then continue. It stays married for item 11.
+  9. **Show-if and spouse:** on step 3, choose married and check a spouse question appears. Use Fill fictional details again. Because the draft now says married, the generator makes a married person (`married: true`), so the blank spouse questions are filled. Check a spouse question now has a value, then continue. It stays married for item 11.
   10. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
   11. **Step 9, the text driver (real mouse):**
       1. check "Everything required is answered.";
       2. choose consent "yes" (`gcf_consent`), without pressing Continue;
-      3. type the spouse signature into `gcf_sp_signature`, focus left in it;
-      4. **one** `locator.click()` on `#field-confirmed`.
+      3. type the primary signature into `gcf_tp_signature`;
+      4. type the spouse signature into `gcf_sp_signature`, focus left in it;
+      5. **one** `locator.click()` on `#field-confirmed`.
 
       The box is ticked, and `[data-q="gcf_sp_date"]` has appeared: the `change` fired on that press, and its queued redraw ran after the click.
+
+      **Catalogue check (done while planning):** every question in section 14 is optional, including `gcf_consent`, `gcf_tp_signature`, `gcf_tp_date`, `gcf_sp_signature` and `gcf_sp_date`. Consent "yes" makes `gcf_tp_signature` visible, not required, so leaving it blank doesn't disable Submit. The test still types a primary signature into `gcf_tp_signature` in item 11 (before the spouse signature), so the saved case looks like a real consent. Item 13 checks it too.
   12. Submit with one click.
-  13. **Submit saved first:** query the case and expect `answers->>'gcf_consent' = 'yes'` and `answers->>'gcf_sp_signature'` equal to the typed name.
+  13. **Submit saved first:** query the case and expect `answers->>'gcf_consent' = 'yes'`, and `answers->>'gcf_tp_signature'` and `answers->>'gcf_sp_signature'` equal to the typed names.
   14. On the progress page, check a client number.
   15. In `finally`: set the workspace back to 1 and close the window.
   16. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
@@ -422,7 +462,14 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 
 
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
-- [ ] **Step 2: Run all four suites** in the foreground (up to 10 minutes each), with output to `/tmp`:
+- [ ] **Step 2: Prove the click test catches the fault (temporary change, not committed).**
+  1. In `app.mjs`'s version-2 `change` handler, temporarily make every `change` (text fields included) call `render()` at once: no queue, no `needsRedraw` check, bypassing the hold. That is the old rule.
+  2. Run `npm run test:browser`. Expected: it FAILs at item 5, "Continue after typing": the step doesn't advance after one click. It may fail at item 6 or 11 first; any of the three counts. Record which assertion failed and its message.
+  3. Restore the handler (`git diff src/app.mjs` shows nothing from this step) and run `npm run test:browser` again. Expected: PASS.
+  4. If step 2 did **not** fail, the test isn't catching lost presses. Stop and report; don't go on.
+
+  The result goes in Step 6's commit message, for example: "Checked: with change redrawing at once, 'Continue after typing' failed (<message>); restored, it passes."
+- [ ] **Step 3: Run all four suites** in the foreground (up to 10 minutes each), with output to `/tmp`:
   ```bash
   npm run db:migrate:test
   npm test
@@ -433,8 +480,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   Expected: all pass.
   - "Synthetic Auth provisioning failed" is test-user setup: re-run once and report both runs.
   - Known browser flake: "a press reached nothing at all and had to be sent again".
-- [ ] **Step 3: Screenshots.** Copy the phase's 720px shots to `docs/design/screens/implemented-intake-v2-step2.png`, `-step6.png`, `-senior.png`, `-step9.png`. Look at each first.
-- [ ] **Step 4: Docs.**
+- [ ] **Step 4: Screenshots.** Copy the phase's 720px shots to `docs/design/screens/implemented-intake-v2-step2.png`, `-step6.png`, `-senior.png`, `-step9.png`. Look at each first.
+- [ ] **Step 5: Docs.**
   - Add a README row "Implemented (part 4b): the client's nine-step intake (reachable once 4c switches the default)" beside the other Implemented rows.
   - Update the `redesign-review.md` status line: 4a merged, and 4b in review.
-- [ ] **Step 5: Commit** ("Walk the version-2 client intake in the browser; screenshots").
+- [ ] **Step 6: Commit** ("Walk the version-2 client intake in the browser; screenshots"). The message body includes Step 2's result.
