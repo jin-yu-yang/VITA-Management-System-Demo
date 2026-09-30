@@ -830,6 +830,7 @@ test("a subscription watches only the tables its principal may read", async () =
     "documents",
     "client_events",
     "workspaces",
+    "case_contacts",
   ]);
 });
 

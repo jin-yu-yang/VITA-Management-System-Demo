@@ -25,6 +25,7 @@ const CLIENT_TABLES = Object.freeze([
   "documents",
   "client_events",
   "workspaces",
+  "case_contacts",
 ]);
 const STAFF_TABLES = Object.freeze([
   ...CLIENT_TABLES,

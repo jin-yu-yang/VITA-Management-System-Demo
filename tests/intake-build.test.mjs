@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   parseDraft,
   buildCatalogue,
   catalogueHash,
   nextCatalogueMigration,
+  readMigrationEntries,
 } from "../tools/build-intake-catalogue.mjs";
 import COMMITTED from "../src/intake-catalogue-data.mjs";
 
@@ -532,6 +534,11 @@ test("the real catalogue keeps service, language, form_version, hh and the phone
 
 // ---------------------------------------------------------------------------
 // The hash and the migration writer.
+
+test("the database is never behind the browser: the newest catalogue migration records this catalogue", () => {
+  const entries = readMigrationEntries(fileURLToPath(new URL("../supabase/migrations/", import.meta.url)));
+  assert.equal(nextCatalogueMigration(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT), entries), null);
+});
 
 test("catalogueHash is the SHA-256 of the key-sorted, unspaced JSON", () => {
   const expected = createHash("sha256").update('{"a":[{"x":1,"y":2}],"b":1}').digest("hex");
