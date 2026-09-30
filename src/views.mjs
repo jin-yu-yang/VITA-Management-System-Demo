@@ -34,11 +34,21 @@ export function languageSwitch() {
   return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="lang-note">Chinese coming soon</span></div>`;
 }
 
+// The version-2 form's wording switch (spec 2026-09-30 §3.2, §3.4): it edits
+// form_version, so the wording changes at once and the answers stay as they are.
+function seniorSwitch(pressed) {
+  return `<button type="button" class="senior-switch" data-action="toggle-senior" aria-pressed="${pressed ? "true" : "false"}"><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>Senior version</button>`;
+}
+
 // The client frame's top bar (spec section 7): the logo takes you home, then
 // the language, help, Save & exit while a draft is open, and sign out.
 export function clientHeader(state) {
   const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
-  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch()}${button(
+  const onV2Draft = onDraft && Number(state?.savedCase?.intakeVersion) === 2;
+  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch()}${when(
+    onV2Draft,
+    seniorSwitch(state?.draftAnswers?.form_version === "senior"),
+  )}${button(
     `${icon("help")} Need help?`,
     "open-help",
     "text",
