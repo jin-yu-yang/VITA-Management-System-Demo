@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   parseDraft,
   buildCatalogue,
   catalogueHash,
+  LOADER_VERSION,
   nextCatalogueMigration,
   readMigrationEntries,
 } from "../tools/build-intake-catalogue.mjs";
@@ -540,9 +541,34 @@ test("the database is never behind the browser: the newest catalogue migration r
   assert.equal(nextCatalogueMigration(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT), entries), null);
 });
 
-test("catalogueHash is the SHA-256 of the key-sorted, unspaced JSON", () => {
-  const expected = createHash("sha256").update('{"a":[{"x":1,"y":2}],"b":1}').digest("hex");
+test("the one catalogue migration is 012, named by the real catalogue's hash under the current loader", () => {
+  const names = readdirSync(fileURLToPath(new URL("../supabase/migrations/", import.meta.url))).filter((name) =>
+    /_intake_catalogue_/.test(name),
+  );
+  const hash = catalogueHash(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT));
+  assert.deepEqual(names, [`012_intake_catalogue_${hash.slice(0, 8)}.sql`]);
+});
+
+test("catalogueHash is the SHA-256 of the key-sorted, unspaced JSON of the loader version and catalogue", () => {
+  assert.equal(LOADER_VERSION, 1);
+  const expected = createHash("sha256")
+    .update('{"catalogue":{"a":[{"x":1,"y":2}],"b":1},"loaderVersion":1}')
+    .digest("hex");
   assert.equal(catalogueHash({ b: 1, a: [{ y: 2, x: 1 }] }), expected);
+});
+
+test("bumping LOADER_VERSION changes the hash, and so writes a new catalogue migration, for the same catalogue", () => {
+  const catalogue = buildCatalogue(STANDARD, SENIOR);
+  const current = catalogueHash(catalogue);
+  const bumped = catalogueHash(catalogue, LOADER_VERSION + 1);
+  assert.notEqual(bumped, current);
+  assert.equal(catalogueHash(catalogue, LOADER_VERSION), current);
+  const recorded = nextCatalogueMigration(catalogue, ["011_intake_v2.sql"]);
+  const entries = ["011_intake_v2.sql", recorded];
+  assert.equal(nextCatalogueMigration(catalogue, entries), null);
+  const next = nextCatalogueMigration(catalogue, entries, { loaderVersion: LOADER_VERSION + 1 });
+  assert.equal(next.name, `013_intake_catalogue_${bumped.slice(0, 8)}.sql`);
+  assert.match(next.text, new RegExp(`^-- catalogue-hash: ${bumped}$`, "m"));
 });
 
 test("nextCatalogueMigration names, skips and round-trips catalogue migrations", () => {

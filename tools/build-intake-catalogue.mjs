@@ -9,8 +9,9 @@
 //   - `src/intake-catalogue-data.mjs`, the catalogue as `export default {…}`
 //     (a module, not JSON, because server.mjs serves only /src/<name>.mjs|css|svg|png);
 //   - the next `supabase/migrations/NNN_intake_catalogue_<hash8>.sql`, only when
-//     the catalogue's hash differs from the newest catalogue migration's and
-//     `011_intake_v2.sql` (which defines the loader) exists.
+//     the hash of the catalogue and LOADER_VERSION differs from the newest
+//     catalogue migration's and `011_intake_v2.sql` (which defines the loader)
+//     exists.
 //
 // Run with:
 //   node tools/build-intake-catalogue.mjs        (npm run build:intake)
@@ -500,9 +501,19 @@ const canonical = (value) =>
         )
       : value;
 
-/** SHA-256 hex of the catalogue's canonical JSON (keys sorted, no whitespace). */
-export function catalogueHash(catalogue) {
-  return createHash("sha256").update(JSON.stringify(canonical(catalogue))).digest("hex");
+// Bump when 011's load_intake_catalogue or the intake_fields columns change.
+// It is part of the hash, so a bump makes the build write a new catalogue
+// migration even though the catalogue itself is unchanged.
+export const LOADER_VERSION = 1;
+
+/**
+ * SHA-256 hex of the canonical JSON (keys sorted, no whitespace) of
+ * `{ loaderVersion, catalogue }`, so the hash covers the loader too.
+ */
+export function catalogueHash(catalogue, loaderVersion = LOADER_VERSION) {
+  return createHash("sha256")
+    .update(JSON.stringify(canonical({ loaderVersion, catalogue })))
+    .digest("hex");
 }
 
 const CATALOGUE_MIGRATION = /^(\d{3})_intake_catalogue_([0-9a-f]{8})\.sql$/;
@@ -512,10 +523,11 @@ const CATALOGUE_MIGRATION = /^(\d{3})_intake_catalogue_([0-9a-f]{8})\.sql$/;
  * `{ name, text }`. A catalogue migration given with its text is compared by
  * its `-- catalogue-hash:` line; given by name only, by the name's hash8.
  * Returns `null` if the newest catalogue migration records this catalogue's
- * hash, otherwise the next migration as `{ name, text }`.
+ * hash (under `loaderVersion`, default LOADER_VERSION), otherwise the next
+ * migration as `{ name, text }`.
  */
-export function nextCatalogueMigration(catalogue, migrationsDirEntries) {
-  const hash = catalogueHash(catalogue);
+export function nextCatalogueMigration(catalogue, migrationsDirEntries, { loaderVersion = LOADER_VERSION } = {}) {
+  const hash = catalogueHash(catalogue, loaderVersion);
   const entries = migrationsDirEntries
     .map((entry) => (typeof entry === "string" ? { name: entry } : entry))
     .filter((entry) => /^\d{3}_.*\.sql$/.test(entry.name))
