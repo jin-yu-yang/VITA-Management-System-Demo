@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import { validateTestTarget } from "../tools/admin/test-target.mjs";
 import { assertClassroomTarget } from "../tools/admin/classroom-target.mjs";
 import { parseMigrateArgs, isMigrationFile } from "../tools/admin/migrate.mjs";
@@ -231,9 +232,10 @@ test("guards reject missing config without fallback to application variables", (
 });
 
 test("the migrator applies numbered migrations, including generated catalogue loads", () => {
-  for (const name of ["001_identity_and_cases.sql", "011_intake_v2.sql", "012_intake_catalogue_0a1b2c3d.sql"])
+  const committed = readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((name) => name.endsWith(".sql"));
+  for (const name of [...committed, "001_identity_and_cases.sql", "011_intake_v2.sql", "013_contact_materials.sql", "012_intake_catalogue_0a1b2c3d.sql"])
     assert.equal(isMigrationFile(name), true, name);
-  for (const name of ["README.md", "notes.sql", "012_Intake.sql", "012_intake.sql.bak"])
+  for (const name of ["README.md", "notes.sql", "012_Intake.sql", "012_intake.sql.bak", "12_x.sql", "012_9abc.sql", "012_x.SQL", "0012_x.sql", "012_.sql"])
     assert.equal(isMigrationFile(name), false, name);
 });
 

@@ -1,9 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { openDatabase, databaseError } from "./database.mjs";
-// A migration is a numbered `.sql` file. Names may carry digits after the
-// number, as the generated `NNN_intake_catalogue_<hash8>.sql` loads do.
-export const isMigrationFile = (name) => /^\d+_[a-z0-9_]+\.sql$/.test(name);
+// A migration is a three-digit number, `_`, a lower-case name starting with a
+// letter, and `.sql`. The name may carry digits later on, as the generated
+// `NNN_intake_catalogue_<hash8>.sql` loads do.
+export const isMigrationFile = (name) => /^\d{3}_[a-z][a-z0-9_]*\.sql$/.test(name);
 export async function migrate({ target = { kind: "test" } } = {}) {
   const client = await openDatabase(target);
   try {
