@@ -209,9 +209,10 @@ keepLocalOnly(previousDraft, server, version) → draft    // server's answers, 
 countText(value) → string                                // "4,612 of 5,000 characters" when length > 4500, else ""
 stepStatus(step, answers, visited, revealed) → { key: "done"|"needs"|"none", text: "Done"|"Needs answers"|"" }
                                                          // answers is the draft with contact fields; missing = missingToSubmit(2, answers)
-                                                         // (no contact argument: spec §2.5), limited to the step; invalid = invalidAnswers.
-                                                         // needs: visited with any missing or invalid, or any revealed invalid on the step
-                                                         // done: no visible required question unanswered; needs: visited with some; none otherwise
+                                                         // (no contact argument: spec §2.5), limited to the step;
+                                                         // shownInvalid = invalidAnswers(step, answers) ∩ revealed (unrevealed invalid never counts)
+                                                         // needs: (visited and any missing) or any shownInvalid
+                                                         // done: not needs, no missing and no shownInvalid; none otherwise
 renderRichText(text) → string                            // intros and tips: escape, then **bold**, "- " lists, blank-line paragraphs
 formatAnswer(question, value, { variant = "general", lang = "en" }) → string | null
 ```
@@ -268,7 +269,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - **`stepStatus`:**
       - a step whose visible required questions are all answered and valid is `done`;
       - a visited step with one missing is `needs`;
-      - a visited step with all answered but one invalid is `needs`;
+      - a visited step with all answered but one invalid **not revealed** is `done` (it's being typed), and with it revealed is `needs`;
+      - an unvisited step with a revealed invalid answer is `needs`;
+      - **typing never flips it:** on a visited, done step, `stepStatus` with an `email` of `"m"` (invalid, not revealed) is still `done`;
       - an unvisited step with one missing is `none`.
     - **Email with an inner space:** `checkValue(email, "mei lin@example.com")` is "Enter a valid email address." (the one intended JS/SQL difference, spec §2.5).
     - The senior variant renders the senior wording for a question whose wordings differ (find one in the catalogue).
@@ -302,7 +305,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - Tips render under the question; a tip with a condition renders only while it holds; upload tips show text only.
   - A `group` renders one card per member, reusing `renderQuestion` for each sub-question with `scope` `<scope>-hh-<n>`.
   - **`src/intake-catalogue.mjs`:** the email case also returns "Enter a valid email address." when `/\s/.test(value)`. Update the comment above `checkValue`, which today says `"a b@c"` passes: the browser check now rejects spaces, and the server check doesn't (spec §2.5).
-  - `renderQuestion` takes `revealed` (a Set of ids) and computes the note with `noteState(question, value, { showMissing, showInvalid: showMissing || revealed.has(question.id) })`.
+  - `renderQuestion` takes `revealed` (a Set of ids) and computes the note with `noteState(question, value, { showMissing, showInvalid: revealed.has(id) })`, where `id` is the question id or, for a household sub-field, `hh[<n>].<sub>`. A visited step doesn't show an unrevealed error: `goToStep` has already revealed the step's invalid answers when the person left it, and a new bad value typed later shows only after `change`.
   - `noteState`, `invalidAnswers` and `stepStatus` apply `checkValue`/`isAnswered` to `sendable(value)`.
   - `stepStatus(step, answers, visited, revealed)` is `needs` also for an unvisited step holding a revealed invalid answer.
 - [ ] **Step 4:** Run `node --test tests/intake-form.test.mjs tests/intake-catalogue.test.mjs`, then `npm test`, then `npm run test:database` (for the contract table's SQL side). Expected: PASS.
@@ -362,7 +365,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - reopening another case resets `visitedSteps`;
     - **withholding:** with a draft `{ tp_first_name: "Mei", email: "a@", addr_zip: " 19107 " }`, `saveAnswers` sends `{ tp_first_name: "Mei", addr_zip: "19107" }`, and the draft still holds `" 19107 "` and `"a@"`.
     - **`dirty`:**
-      - from a saved state, `editAnswers({ email: "a@" })` (valid → invalid) leaves `dirty` false, and `saveStatus` reads "1 answer needs checking" at once;
+      - from a saved state, `editAnswers({ email: "a@" })` (valid → invalid) leaves `dirty` false and the chip at "Saved" (not yet revealed). After `revealInvalid("email")` (what leaving the field does), `saveStatus` reads "1 answer needs checking";
       - `editAnswers({ email: "a@b" })` then `editAnswers({ email: "a@" })` on an already-invalid email stays not dirty;
       - `editAnswers({ tp_first_name: "Mei " })` over a saved `"Mei"` stays not dirty;
       - `editAnswers({ tp_first_name: "Ming" })` sets it, and pins `editBaseRevision`;
@@ -543,7 +546,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
       - for a `longtext`, its count from `countText(value)`.
     - `readField` on a household control returns the whole `hh` array. The draft is replaced, never mutated.
     - Checkboxes are included, unlike version 1.
-  - **`change`:** the same read.
+  - **`change`:** the same read, but **quiet**: `quiet = true` around `controller.editAnswers(readField(control))` and `controller.revealInvalid(id)`, exactly as the `input` path, so neither `show()` asks for a render.
+    - The only full redraw on `change` is the queued one below (a radio, checkbox or select, or a show-if field when `needsRedraw`). Leaving an ordinary text field, by Tab or by a press, never redraws.
+    - Test: Task 6 item 3.6a (Tab after typing leaves a marker on `#intake-v2-form` in place).
     - **At once (state only, nothing on screen moves):** if `checkValue(question, sendable(question, value))` fails, call `controller.revealInvalid(id)` quietly, so the error survives any later redraw (spec §2.5), even on an unvisited step.
     - **Then, through the hold,** `afterPress(() => { … })` does the in-place error update:
       - the note from `noteState(question, value, { showMissing: stepVisited, showInvalid: true })`;
@@ -605,6 +610,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
      4. record `scrollY`;
      5. force a redraw with `fixture.database.sql("update public.cases set revision=revision where id=$1", …)`, as the story does at `:657`, and wait for `#app` to be rebuilt (a marker property set on the old form is gone);
      6. check that `document.activeElement.id` is the same field, `selectionStart === 2`, the value is `Xia`, and `scrollY` is unchanged.
+     6a. **Leaving a text field doesn't redraw:** set a marker property on `#intake-v2-form`, press Tab, and check the marker is still there and focus is on the next control.
      7. **A trailing space survives a redraw that rebuilds the draft (spec §2.5).** This has to run with the draft **not** dirty. A dirty draft is never rebuilt by `applyCase` when the revision is unchanged, and `set revision=revision` leaves it unchanged, so a dirty draft would pass whether or not `keepLocalOnly` works.
         1. Click Continue, then Back. This saves `Xia`, so the draft matches the server. Check `answers->>'tp_first_name'` is `Xia`.
         2. Click at the end of `tp_first_name` and type ` ` (a space), so it holds `Xia `.

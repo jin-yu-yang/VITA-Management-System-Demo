@@ -46,7 +46,7 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 - **Tips** render under their question. A tip with a condition renders only while the condition holds. Upload tips show text only.
 - **Every question has a fixed note container:** `<p id="field-<scope>-<id>-note" class="q-note" aria-live="polite">`, rendered for every question, whether or not it has a message. Household sub-questions use `field-<scope>-hh-<n>-<sub>-note`. The control's `aria-describedby` always references it.
 - **`showMissing`:** a required question that is unanswered (`isAnswered`) gets the text "Needs an answer" and the class `is-missing` in its note container.
-- **Invalid values** (§2.5): an answered value that fails `checkValue` gets the `checkValue` message and the class `is-invalid` instead, when the note is shown: after `change`, on a visited step, or for a question already revealed (§2.5). The check uses the `sendable` value.
+- **Invalid values** (§2.5): an answered value that fails `checkValue` gets the `checkValue` message and the class `is-invalid` instead, exactly when its id is in the revealed list (§2.5), whether or not the step is visited. Ids are revealed on `change` and when the person leaves the step. The check uses the `sendable` value.
 - Both come from one function, `noteState`. Otherwise the container is empty and has no class. The container stays fixed and `aria-live="polite"` in every state. Because the container always exists, the text can change in place (§2.4) without replacing any node.
 
 ### 2.2 `readField(control, question)` and `readForm(formElement, version)`
@@ -173,7 +173,7 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - **Survives redraws:** every render reads the list, so a realtime redraw keeps a shown error, on a visited step or not.
   - The `change` case's on-screen update waits for any press in progress to finish (§2.4 rule 1), because a note gaining text pushes the controls below it down.
   - The list resets with the rest of the record when another case is opened.
-  - The rail counts a revealed invalid answer as "Needs answers", even on an unvisited step.
+  - The rail counts only revealed invalid answers. A visited step shows "Needs answers" for any missing answer, or for a revealed invalid one; an unvisited step shows it for a revealed invalid one. An invalid value being typed and not yet revealed never changes the mark.
 - **Household errors belong to the member's sub-field.**
   - `invalidAnswers` returns an id per invalid sub-field, `hh[<n>].<sub>` (the same form `missingToSubmit` uses), never the bare `hh`. The revealed list uses the same ids.
   - The error shows in that sub-question's own note (`field-<scope>-hh-<n>-<sub>-note`), with the sub-field's own `checkValue` message ("Enter a real date as YYYY-MM-DD."), never the group check's text ("dob: …").
@@ -226,8 +226,8 @@ That migration loads the same field rows as 012, because step titles aren't stor
 - **Strip under the bar:** the Application ID, and the Saved / Unsaved chip.
 - **Left rail:**
   - The nine steps (catalogue titles). A step shows:
-    - a check when it has no unanswered required question and no invalid answer;
-    - "Needs answers" once visited with some left, counting invalid answers (§2.5) as well as missing ones;
+    - a check when it has no unanswered required question and no revealed invalid answer;
+    - "Needs answers" once visited with some left, counting revealed invalid answers (§2.5) as well as missing ones;
     - "You are here" for the current step.
   - Every step is a link.
   - **Each step's mark is one fixed element,** `<span id="rail-step-<n>-status" class="rail-status is-done|is-needs|is-none">`, holding the text "Done", "Needs answers" or nothing. The current step is marked separately with `aria-current="step"` and "You are here", which a step change redraws.
