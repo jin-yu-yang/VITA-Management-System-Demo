@@ -280,6 +280,40 @@ async function fillIntakeToReview(page) {
 }
 
 // ---------------------------------------------------------------------------
+// The version-2 form (PR 4b): reachable only in the phase that switches the
+// story's workspace to version 2 for its length
+// ---------------------------------------------------------------------------
+
+// 4,600 characters of fictional text: 400 short of the long-answer limit, so
+// its count is showing.
+const LONG_NOTE = "A fictional note for the volunteer. ".repeat(128).slice(0, 4600);
+
+/** One answer as the server holds it, as text. */
+const caseAnswer = async (fixture, caseId, key) =>
+  (
+    await one(fixture, "select answers->>($2::text) as value from public.cases where id=$1", [
+      caseId,
+      key,
+    ])
+  )?.value ?? null;
+
+/**
+ * Wait until the version-2 form is on this step (1-based). Like `waitForStep`,
+ * it reads the marker above the heading, which moves only once the step change
+ * (and the save before it) has landed.
+ */
+async function waitForStepOf9(page, step) {
+  await waitFor(
+    page,
+    `intake step ${step} of 9`,
+    (wanted) =>
+      (document.querySelector(".page-intro .overline")?.textContent ?? "").trim() === wanted,
+    `STEP ${step} OF 9`,
+    ARRIVAL_MS,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // One permutation: client in one engine, staff in the other
 // ---------------------------------------------------------------------------
 
@@ -1897,6 +1931,481 @@ async function runPermutation(t, roles) {
       // The client's own window still lists their own application, unchanged.
       await clickAction(client, "open-applications");
       await waitForText(client, classReference, ARRIVAL_MS);
+    });
+
+    // After the reset, which compares case sets. PR 4b's nine-step form is
+    // reached only on a version-2 workspace, and nothing switches one yet, so
+    // this phase switches the story's own workspace for its length and always
+    // sets it back. The case it makes is never opened on a staff screen.
+    //
+    // Typing rule: text goes in with `fill`, or `focus` then the keyboard.
+    // Nothing clicks into a field, because that click is itself a press, and it
+    // fires the `change` of the field left behind: the only press after typing
+    // is the one a check is about, and it is sent once, with no retry helper.
+    await phase("a client walks the nine-step intake on a version-2 workspace", async () => {
+      const { workspaceId } = fixture.database;
+      let v2Win = null;
+      try {
+        await fixture.database.sql(
+          "update public.workspaces set default_intake_version=2 where id=$1",
+          [workspaceId],
+        );
+        v2Win = await openWindow(clientEngine);
+        const page = v2Win.page;
+        const box = (id) => page.locator(`#field-client-${id}`);
+        const continueButton = page.locator('#intake-v2-form button[type="submit"]');
+        const submitButton = page.locator('#intake-v2-form [data-case-action="SUBMIT"]');
+        const backButton = page.locator('[data-action="back-step"]');
+        const railLink = (index) => page.locator(`.rail-link[data-step="${index}"]`);
+        const confirmBox = page.locator("#field-confirmed");
+        // A step change no check is about: wait for stillness, press, arrive.
+        const goTo = async (control, step) => {
+          await waitForQuiet(page);
+          await control.click({ timeout: CLICK_MS });
+          await waitForStepOf9(page, step);
+        };
+        // A radio redraws the page around itself, so it is read back, not
+        // `check()`ed: the element Playwright pressed is gone by then.
+        const choose = async (id, value) => {
+          await waitForQuiet(page);
+          await page.locator(`label[for="field-client-${id}-${value}"]`).click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            `${id} to come back as ${value}`,
+            (selector) => document.querySelector(selector)?.checked === true,
+            `#field-client-${id}-${value}`,
+            RENDER_MS,
+          );
+        };
+        const confirmTicked = (wanted) =>
+          waitFor(
+            page,
+            `the confirmation to come back ${wanted ? "ticked" : "unticked"}`,
+            (ticked) => document.querySelector("#field-confirmed")?.checked === ticked,
+            wanted,
+            RENDER_MS,
+          );
+        const keyboardNow = () =>
+          page.evaluate(() => ({
+            id: document.activeElement?.id ?? null,
+            value: document.activeElement?.value ?? null,
+            caret: document.activeElement?.selectionStart ?? null,
+            scrollY: window.scrollY,
+          }));
+        const readNode = (id) =>
+          page.evaluate((wanted) => {
+            const node = document.getElementById(wanted);
+            return { className: node?.className ?? null, text: node?.textContent.trim() ?? null };
+          }, id);
+        const note = (id) => readNode(`field-client-${id}-note`);
+        const rail = (index) => readNode(`rail-step-${index}-status`);
+        const chip = async () =>
+          (await page.locator(".application-meta .save-chip").innerText()).trim();
+        // A marker is a property on a node: it survives an in-place update and
+        // dies with a redraw. Set only once the page is still, because a late
+        // realtime refresh from an earlier save is a legitimate redraw.
+        const mark = (selector, name) =>
+          page.evaluate(([wanted, key]) => {
+            document.querySelector(wanted)[key] = true;
+          }, [selector, name]);
+        const marked = (selector, name) =>
+          page.evaluate(
+            ([wanted, key]) => document.querySelector(wanted)?.[key] === true,
+            [selector, name],
+          );
+        const stillToAnswer = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll(".still-step")].map((group) => ({
+              step: group.querySelector("h3")?.textContent.trim() ?? null,
+              items: [...group.querySelectorAll(".still-item")].map((item) => ({
+                question: item.querySelector(".still-q")?.textContent.trim() ?? null,
+                flag: item.querySelector(".still-flag")?.textContent.trim() ?? null,
+                step: item.dataset.step ?? null,
+                kind: item.className,
+              })),
+            })),
+          );
+
+        // Applicant B already has cases from earlier phases (a version-1 draft
+        // among them), so this is a new one, and every query below uses its id.
+        await loginTestUser({ page, actor: applicantB, fixture });
+        const reference = await startApplication(page);
+        const own = await caseByReference(fixture, reference);
+        assert.ok(own, "the generated reference names no case");
+        const answer = (key) => caseAnswer(fixture, own.id, key);
+        const redrawFromElsewhere = async () => {
+          await mark("#intake-v2-form", "__beforeRedraw");
+          await fixture.database.sql("update public.cases set revision=revision where id=$1", [
+            own.id,
+          ]);
+          await waitFor(
+            page,
+            "a realtime change to rebuild the form",
+            () => {
+              const form = document.querySelector("#intake-v2-form");
+              return Boolean(form) && form.__beforeRedraw !== true;
+            },
+            undefined,
+            ARRIVAL_MS,
+          );
+          await waitForQuiet(page);
+        };
+        assert.equal(
+          Number(
+            (await one(fixture, "select intake_version from public.cases where id=$1", [own.id]))
+              .intake_version,
+          ),
+          2,
+        );
+        await clickAction(page, "continue-intake");
+        await waitForStepOf9(page, 1);
+        await choose("service", "same_day");
+        await choose("language", "english");
+        await goTo(continueButton, 2);
+
+        // Step 2: a realtime redraw keeps the keyboard, the caret and the scroll.
+        await waitForQuiet(page);
+        await page.evaluate(() => window.scrollBy(0, 160));
+        await box("tp_first_name").focus();
+        await page.keyboard.type("Xia");
+        await waitForQuiet(page);
+        const typed = await page.evaluate(() => {
+          document.activeElement.setSelectionRange(2, 2);
+          return {
+            id: document.activeElement.id,
+            value: document.activeElement.value,
+            caret: document.activeElement.selectionStart,
+            scrollY: window.scrollY,
+          };
+        });
+        assert.equal(typed.id, "field-client-tp_first_name");
+        assert.ok(typed.scrollY > 0, "the page never scrolled, so keeping the scroll proves nothing");
+        await redrawFromElsewhere();
+        assert.deepEqual(
+          await keyboardNow(),
+          typed,
+          "a realtime redraw moved the keyboard, the caret or the scroll",
+        );
+
+        // Leaving a text field doesn't redraw.
+        await waitForQuiet(page);
+        await mark("#intake-v2-form", "__beforeTab");
+        await page.keyboard.press("Tab");
+        await waitForQuiet(page);
+        assert.equal(
+          await marked("#intake-v2-form", "__beforeTab"),
+          true,
+          "leaving a text field redrew the page",
+        );
+        assert.equal((await keyboardNow()).id, "field-client-tp_middle_name");
+
+        // A trailing space survives a redraw that rebuilds the draft (spec
+        // §2.5). The draft must not be dirty: a dirty draft is never rebuilt
+        // when the revision is unchanged, and would pass without the rule.
+        await goTo(continueButton, 3);
+        await goTo(backButton, 2);
+        assert.equal(await answer("tp_first_name"), "Xia");
+        await waitForQuiet(page);
+        await box("tp_first_name").focus();
+        // The caret to the end by hand: macOS's End key doesn't move it in a
+        // text box, in either engine.
+        await page.evaluate(() => {
+          const field = document.activeElement;
+          field.setSelectionRange(field.value.length, field.value.length);
+        });
+        await page.keyboard.type(" ");
+        assert.doesNotMatch(await chip(), /Unsaved changes/, "a trailing space made the draft dirty");
+        await redrawFromElsewhere();
+        const spaced = await keyboardNow();
+        assert.deepEqual(
+          { id: spaced.id, value: spaced.value, caret: spaced.caret },
+          { id: "field-client-tp_first_name", value: "Xia ", caret: 4 },
+          "a redraw that rebuilt the draft lost the trailing space or the caret",
+        );
+        await page.keyboard.type("o");
+        assert.equal(await box("tp_first_name").inputValue(), "Xia o");
+
+        // Continue after typing, with a real mouse and one press: the `change`
+        // of the field left behind fires on that press and must not swallow it.
+        await waitForQuiet(page);
+        await box("email").fill("mei.lin@example.com");
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await continueButton.click({ timeout: CLICK_MS });
+        await waitForStepOf9(page, 3);
+        assert.equal(await answer("email"), "mei.lin@example.com");
+        await waitForQuiet(page);
+        const opened = await keyboardNow();
+        assert.equal(opened.scrollY, 0, "the new step did not open at the top");
+        assert.equal(opened.id, "main", "the new step did not put the keyboard on main");
+
+        // A rail link after typing, the same way.
+        await goTo(backButton, 2);
+        await waitForQuiet(page);
+        await box("tp_job_title").fill("Teacher");
+        await railLink(3).click({ timeout: CLICK_MS });
+        await waitForStepOf9(page, 4);
+        assert.equal(await answer("tp_job_title"), "Teacher");
+
+        // Every blank on every step, then the walk to step 9.
+        await goTo(railLink(0), 1);
+        await clickAction(page, "fill-fictional");
+        for (let step = 2; step <= 9; step += 1) {
+          await goTo(continueButton, step);
+          if (step === 6) await shoot(page, "intake-v2-step6");
+        }
+
+        // In place on step 2: its note and its rail mark follow the typing,
+        // and the note is the same node throughout.
+        await goTo(railLink(1), 2);
+        assert.deepEqual(await rail(1), { className: "rail-status is-done", text: "Done" });
+        await waitForQuiet(page);
+        await box("tp_first_name").fill("");
+        assert.equal((await note("tp_first_name")).text, "Needs an answer");
+        assert.match((await rail(1)).className, /\bis-needs\b/);
+        await waitForQuiet(page);
+        await mark("#field-client-tp_first_name-note", "__kept");
+        await page.keyboard.type("Mei");
+        assert.equal(await box("tp_first_name").inputValue(), "Mei");
+        assert.deepEqual(await note("tp_first_name"), { className: "q-note", text: "" });
+        assert.deepEqual(await rail(1), { className: "rail-status is-done", text: "Done" });
+        assert.equal(
+          await marked("#field-client-tp_first_name-note", "__kept"),
+          true,
+          "typing replaced the note instead of updating it",
+        );
+        await shoot(page, "intake-v2-step2");
+
+        // A long answer's count, with no redraw.
+        await goTo(railLink(7), 8);
+        await waitForQuiet(page);
+        await mark("#intake-v2-form", "__beforeLong");
+        const notes = box("additional_notes");
+        await notes.fill(LONG_NOTE);
+        await notes.press("s");
+        assert.equal(
+          (await page.locator("#field-client-additional_notes-count").textContent()).trim(),
+          "4,601 of 5,000 characters",
+        );
+        assert.equal(await marked("#intake-v2-form", "__beforeLong"), true, "a long answer redrew the page");
+        await notes.fill("");
+
+        // Invalid values (spec §2.5). One press near the top edge of Continue:
+        // anything that fills the email's note during the press moves the
+        // button out from under the release.
+        await goTo(railLink(1), 2);
+        await waitForQuiet(page);
+        await box("tp_job_title").fill("Baker");
+        await box("email").fill("not-an-email");
+        await continueButton.scrollIntoViewIfNeeded();
+        const edge = await continueButton.boundingBox();
+        await page.mouse.move(edge.x + edge.width / 2, edge.y + 4);
+        await page.mouse.down();
+        await page.mouse.up();
+        await waitForStepOf9(page, 3);
+        await waitForQuiet(page);
+        const flagged = await rail(1);
+        assert.match(flagged.className, /\bis-needs\b/);
+        assert.equal(flagged.text, "Needs answers");
+        assert.equal(await chip(), "1 answer needs checking");
+        assert.equal(await answer("tp_job_title"), "Baker", "the rest of step 2 was not saved");
+        assert.equal(await answer("email"), "mei.lin@example.com", "an invalid email reached the server");
+
+        await goTo(railLink(8), 9);
+        assert.deepEqual(await stillToAnswer(), [
+          {
+            step: "Step 2: About you",
+            items: [
+              {
+                question: "Email (optional)",
+                flag: "Needs a change",
+                step: "1",
+                kind: "still-item is-invalid",
+              },
+            ],
+          },
+        ]);
+        await tickBox(page, "field-confirmed");
+        assert.equal(await submitButton.isDisabled(), true, "Submit was on with an invalid email");
+        await waitForQuiet(page);
+        await confirmBox.click({ timeout: CLICK_MS });
+        await confirmTicked(false);
+
+        await goTo(page.locator('.still-item.is-invalid[data-step="1"]'), 2);
+        assert.deepEqual(await note("email"), {
+          className: "q-note is-invalid",
+          text: "Enter a valid email address.",
+        });
+        assert.equal(await box("email").inputValue(), "not-an-email");
+        const emailNoteHeight = await page
+          .locator("#field-client-email-note")
+          .evaluate((node) => node.offsetHeight);
+        await waitForQuiet(page);
+        await mark("#field-client-email-note", "__kept");
+        await mark("#intake-v2-form", "__beforeFix");
+        await box("email").fill("mei.lin@example.org");
+        assert.deepEqual(await note("email"), { className: "q-note", text: "" });
+        assert.equal(await marked("#field-client-email-note", "__kept"), true, "fixing the email replaced its note");
+        assert.equal(await marked("#intake-v2-form", "__beforeFix"), true, "fixing the email redrew the page");
+        assert.match((await rail(1)).className, /\bis-done\b/);
+        await continueButton.click({ timeout: CLICK_MS });
+        await waitForStepOf9(page, 3);
+        assert.equal(await answer("email"), "mei.lin@example.org");
+        await waitForQuiet(page);
+        assert.doesNotMatch(await chip(), /checking/);
+
+        // Show-if, and a fill that follows the draft to a married example.
+        await goTo(railLink(2), 3);
+        await choose("marital_status", "married");
+        await waitFor(
+          page,
+          "the spouse's questions",
+          () => Boolean(document.querySelector("#field-client-sp_first_name")),
+          undefined,
+          RENDER_MS,
+        );
+        await clickAction(page, "fill-fictional");
+        await waitFor(
+          page,
+          "the spouse's first name to be filled",
+          () => (document.querySelector("#field-client-sp_first_name")?.value ?? "").trim() !== "",
+          undefined,
+          RENDER_MS,
+        );
+        await goTo(railLink(8), 9);
+
+        // The senior switch changes the wording on the step it is flipped on.
+        const consentTitle = (wanted) =>
+          waitFor(
+            page,
+            `the consent section to be titled ${JSON.stringify(wanted)}`,
+            (title) => document.querySelector("#q-section-14-title")?.textContent.trim() === title,
+            wanted,
+            RENDER_MS,
+          );
+        const senior = page.locator('[data-action="toggle-senior"]');
+        await consentTitle("Consent to Disclose Tax Return Information (Form 15080)");
+        await clickAction(page, "toggle-senior");
+        await consentTitle("Permission to Share Your Tax Information Next Year (Form 15080)");
+        assert.equal(await senior.getAttribute("aria-pressed"), "true");
+        await shoot(page, "intake-v2-senior");
+        await clickAction(page, "toggle-senior");
+        await consentTitle("Consent to Disclose Tax Return Information (Form 15080)");
+        assert.equal(await senior.getAttribute("aria-pressed"), "false");
+
+        // Step 9: the spouse's signature is the one text field that shows
+        // another question. Its `change` fires on the press on the
+        // confirmation, and the redraw it asks for waits for that click.
+        await waitForText(page, "Everything required is answered.", RENDER_MS);
+        await choose("gcf_consent", "yes");
+        await waitFor(
+          page,
+          "both signature boxes",
+          () =>
+            Boolean(document.querySelector("#field-client-gcf_tp_signature")) &&
+            Boolean(document.querySelector("#field-client-gcf_sp_signature")),
+          undefined,
+          RENDER_MS,
+        );
+        await waitForQuiet(page);
+        await box("gcf_tp_signature").fill("Mei Lin");
+        await box("gcf_sp_signature").fill("Wei Lin");
+        assert.equal(
+          await page.locator('[data-q="gcf_sp_date"]').count(),
+          0,
+          "the spouse's date was on the page before any redraw",
+        );
+        await confirmBox.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "the confirmation ticked and the spouse's date shown",
+          () =>
+            document.querySelector("#field-confirmed")?.checked === true &&
+            Boolean(document.querySelector('[data-q="gcf_sp_date"]')),
+          undefined,
+          RENDER_MS,
+        );
+
+        // The Submit guard (spec §2.5: nothing invalid is ever submitted).
+        // Typing never redraws, so Submit is still drawn on after Feb 30.
+        assert.equal(await confirmBox.isChecked(), true);
+        // Still first: a redraw arriving mid-typing (the echo of the tick) would
+        // draw Submit off before the press, and the guard would go untested.
+        await waitForQuiet(page);
+        await box("gcf_tp_date-month").fill("02");
+        await box("gcf_tp_date-day").fill("30");
+        await box("gcf_tp_date-year").fill("2026");
+        await submitButton.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "the refused Submit to turn itself off",
+          () =>
+            document.querySelector('#intake-v2-form [data-case-action="SUBMIT"]')?.disabled === true,
+          undefined,
+          RENDER_MS,
+        );
+        assert.deepEqual(await stillToAnswer(), [
+          {
+            step: "Step 9: Permission & review",
+            items: [{ question: "Date", flag: "Needs a change", step: "8", kind: "still-item is-invalid" }],
+          },
+        ]);
+        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid date was submitted");
+        await box("gcf_tp_date-month").fill("");
+        await box("gcf_tp_date-day").fill("");
+        await box("gcf_tp_date-year").fill("");
+        await confirmBox.click({ timeout: CLICK_MS });
+        await confirmTicked(false);
+        await confirmBox.click({ timeout: CLICK_MS });
+        await confirmTicked(true);
+        assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
+        await shoot(page, "intake-v2-step9");
+
+        // Submit saves step 9's answers first, then numbers the case.
+        await waitForQuiet(page);
+        await submitButton.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "the client number on the progress page",
+          () =>
+            [...document.querySelectorAll(".id-pill > div")].some(
+              (part) =>
+                part.querySelector("small")?.textContent.trim() === "CLIENT NUMBER" &&
+                part.querySelector("strong")?.textContent.trim(),
+            ),
+          undefined,
+          ARRIVAL_MS,
+        );
+        const submitted = await caseById(fixture, own.id);
+        assert.equal(submitted.stage, "received");
+        assert.equal(submitted.answers.gcf_consent, "yes");
+        assert.equal(submitted.answers.gcf_tp_signature, "Mei Lin");
+        assert.equal(submitted.answers.gcf_sp_signature, "Wei Lin");
+        const clientNumber = (
+          await page
+            .locator(".id-pill > div")
+            .filter({ has: page.locator("small", { hasText: "CLIENT NUMBER" }) })
+            .locator("strong")
+            .innerText()
+        ).trim();
+        assert.match(clientNumber, /^#\d{3,}$/);
+        await shoot(page, "intake-v2-progress");
+        evidence.story.versionTwo = {
+          intakeVersion: 2,
+          emailNoteHeight,
+          clientNumber,
+          submitted: "consent and both signatures saved before the submit",
+          consoleLines: assertConsoleQuiet(v2Win, {
+            name: "version-2 client window",
+            allow: REFUSAL_LINES,
+          }),
+        };
+      } finally {
+        await fixture.database.sql(
+          "update public.workspaces set default_intake_version=1 where id=$1",
+          [workspaceId],
+        );
+        await v2Win?.context.close();
+      }
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {
