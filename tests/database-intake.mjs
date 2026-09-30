@@ -9,6 +9,7 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import {
   checkValue,
+  isAnswered,
   isVisible,
   missingToSubmit,
 } from "../src/intake-catalogue.mjs";
@@ -286,12 +287,15 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         tp_first_name: null,
         inc_wages_job_count: "  ",
         us_citizen: [],
+        // No-break spaces are blank to JavaScript's trim, so this clears too.
+        tp_dob: "\u00A0\u00A0",
         tp_last_name: "Lin",
       });
       const {
         tp_first_name: _first,
         inc_wages_job_count: _count,
         us_citizen: _citizen,
+        tp_dob: _dob,
         ...rest
       } = answers;
       assert.deepEqual((await caseRow(f, caseId)).answers, {
@@ -305,7 +309,7 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         )
       ).rows;
       assert.deepEqual(event.detail, {
-        fields: ["inc_wages_job_count", "tp_first_name", "tp_last_name", "us_citizen"],
+        fields: ["inc_wages_job_count", "tp_dob", "tp_first_name", "tp_last_name", "us_citizen"],
       });
     });
 
@@ -494,6 +498,12 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       assert.deepEqual(sort(actual), sort(expected));
       const sensitive = actual.filter((row) => row.sensitive).map((row) => row.field_id);
       assert.deepEqual(sensitive.toSorted(), ["sp_phone", "tp_phone"]);
+      // The loader stores each question's own options; the browser checks
+      // `who` against fixedOptions. They must be the same list.
+      const who = CATALOGUE.fixedOptions.who.options.map((o) => o.value);
+      const whoRows = actual.filter((row) => row.type === "who");
+      assert.ok(whoRows.length > 0);
+      for (const row of whoRows) assert.deepEqual(row.options, who, row.field_id);
       assert.deepEqual(
         (
           await f.sql(
@@ -578,7 +588,29 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         ).rows[0].ok;
         assert.equal(server, checkValue(byId.get(id), value) === null, `${id} ${JSON.stringify(value).slice(0, 60)}`);
       }
+      // "Answered" is JavaScript's trim on both sides, every whitespace included.
+      const blanks = [
+        "  ",
+        "\uFEFF",
+        " \u3000 ",
+        "\u00A0\u00A0",
+        "\t\n\v\f\r",
+        "\u1680\u2000\u200A\u2028\u2029\u202F\u205F",
+        "\u200B",
+        "x",
+        "",
+      ];
+      for (const value of blanks) {
+        const server = (
+          await f.sql("select vitally_private.intake_answered($1::jsonb) as answered", [
+            JSON.stringify(value),
+          ])
+        ).rows[0].answered;
+        assert.equal(server, isAnswered(value), JSON.stringify(value));
+      }
       const sets = [
+        [{ ...completeAnswers(), tp_first_name: "\u00A0\u00A0" }, {}],
+        [{ ...completeAnswers(), tp_last_name: " \u3000 " }, {}],
         [{}, {}],
         [completeAnswers(), {}],
         [completeAnswers({ marital_status: "married" }), {}],
@@ -602,6 +634,31 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
           JSON.stringify(answers).slice(0, 80),
         );
       }
+    });
+
+    await t.test("intake_visible reads show-if against answers and contacts", async () => {
+      const visible = async (id, answers, contact = {}) =>
+        (
+          await f.sql(
+            "select vitally_private.intake_visible(2::smallint, $1, $2::jsonb, $3::jsonb) as shown",
+            [id, JSON.stringify(answers), JSON.stringify(contact)],
+          )
+        ).rows[0].shown;
+      assert.equal(await visible("sp_first_name", { marital_status: "never_married" }), false);
+      assert.equal(await visible("sp_first_name", { marital_status: "married" }), true);
+      assert.equal(await visible("sp_first_name", {}), false);
+      assert.equal(await visible("tp_first_name", {}), true);
+      assert.equal(await visible("irs_language", { irs_language_pref: ["none"] }), false);
+      assert.equal(await visible("irs_language", { irs_language_pref: ["me"] }), true);
+      assert.equal(await visible("irs_language", {}), false);
+      assert.equal(await visible("gcf_sp_date", { gcf_sp_signature: "\u00A0" }), false);
+      assert.equal(await visible("gcf_sp_date", { gcf_sp_signature: "Mei" }), true);
+      for (const [id, answers] of [
+        ["sp_first_name", { marital_status: "married" }],
+        ["irs_language", { irs_language_pref: ["none"] }],
+        ["gcf_sp_date", { gcf_sp_signature: "\u00A0" }],
+      ])
+        assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), id);
     });
 
     await t.test("the loader refuses a catalogue without steps", async () => {

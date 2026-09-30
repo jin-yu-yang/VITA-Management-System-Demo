@@ -171,12 +171,20 @@ $$;
 -- 4. Value checks (spec §2.2), mirroring checkValue.
 
 -- Answered: not null, not a string that is empty after trimming, not an empty
--- array (isAnswered).
+-- array (isAnswered). "Trimming" is JavaScript's String.prototype.trim, whose
+-- whitespace is spelled out here, because [[:space:]] leaves out some of it
+-- (U+00A0 among others): tab, line feed, vertical tab, form feed, carriage
+-- return (U+0009-U+000D), space, no-break space (U+00A0), U+1680,
+-- U+2000-U+200A, line and paragraph separators (U+2028, U+2029), U+202F,
+-- U+205F, U+3000, and the byte-order mark (U+FEFF). Every server decision
+-- about "empty" goes through this function: the save's clear rule, the
+-- answer checks and the submit check.
 create or replace function vitally_private.intake_answered(p_value jsonb) returns boolean
 language sql immutable security definer set search_path='' as $$
  select case
   when p_value is null or pg_catalog.jsonb_typeof(p_value) = 'null' then false
-  when pg_catalog.jsonb_typeof(p_value) = 'string' then (p_value#>>'{}') !~ '^[[:space:]]*$'
+  when pg_catalog.jsonb_typeof(p_value) = 'string' then (p_value#>>'{}')
+   !~ '^[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*$'
   when pg_catalog.jsonb_typeof(p_value) = 'array' then pg_catalog.jsonb_array_length(p_value) > 0
   else true end
 $$;
