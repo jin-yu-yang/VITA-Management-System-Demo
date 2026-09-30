@@ -1480,7 +1480,7 @@ export default {
     {
       "n": 5,
       "title": {
-        "en": "Household",
+        "en": "Household members",
         "zh": "家庭成员"
       },
       "sections": [
@@ -2687,8 +2687,8 @@ export default {
     {
       "n": 7,
       "title": {
-        "en": "Expenses & events",
-        "zh": "支出与事项"
+        "en": "Expenses & life events",
+        "zh": "支出与生活事项"
       },
       "sections": [
         {
@@ -4351,8 +4351,8 @@ export default {
     {
       "n": 9,
       "title": {
-        "en": "Consent",
-        "zh": "同意书"
+        "en": "Permission & review",
+        "zh": "授权与确认"
       },
       "sections": [
         {

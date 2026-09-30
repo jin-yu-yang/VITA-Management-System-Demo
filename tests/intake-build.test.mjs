@@ -395,11 +395,11 @@ test("the real catalogue has the nine steps of spec 2.3", () => {
       [2, "About you", [1, 2]],
       [3, "Marriage & spouse", [3, 4]],
       [4, "Your 2025 situation", [5]],
-      [5, "Household", [6]],
+      [5, "Household members", [6]],
       [6, "Income", [9]],
-      [7, "Expenses & events", [10, 11]],
+      [7, "Expenses & life events", [10, 11]],
       [8, "Refund & preferences", [7, 8, 12, 13]],
-      [9, "Consent", [14]],
+      [9, "Permission & review", [14]],
     ],
   );
   for (const step of COMMITTED.steps) {
@@ -409,6 +409,13 @@ test("the real catalogue has the nine steps of spec 2.3", () => {
       `step ${step.n} has a question`,
     );
   }
+});
+
+test("steps 5, 7 and 9 carry the designs' titles, in both languages", () => {
+  const title = (n) => COMMITTED.steps.find((step) => step.n === n).title;
+  assert.deepEqual(title(5), { en: "Household members", zh: "家庭成员" });
+  assert.deepEqual(title(7), { en: "Expenses & life events", zh: "支出与生活事项" });
+  assert.deepEqual(title(9), { en: "Permission & review", zh: "授权与确认" });
 });
 
 test("every real question states required, and the optional set is the agreed list", () => {
@@ -541,12 +548,15 @@ test("the database is never behind the browser: the newest catalogue migration r
   assert.equal(nextCatalogueMigration(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT), entries), null);
 });
 
-test("the one catalogue migration is 012, named by the real catalogue's hash under the current loader", () => {
-  const names = readdirSync(fileURLToPath(new URL("../supabase/migrations/", import.meta.url))).filter((name) =>
-    /_intake_catalogue_/.test(name),
-  );
+test("the newest catalogue migration is 014, named by the real catalogue's hash under the current loader", () => {
+  const names = readdirSync(fileURLToPath(new URL("../supabase/migrations/", import.meta.url)))
+    .filter((name) => /_intake_catalogue_/.test(name))
+    .sort();
   const hash = catalogueHash(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT));
-  assert.deepEqual(names, [`012_intake_catalogue_${hash.slice(0, 8)}.sql`]);
+  // 012 is the applied original and stays as it was; 014 carries the step-title change.
+  assert.equal(names.length, 2);
+  assert.match(names[0], /^012_intake_catalogue_[0-9a-f]{8}\.sql$/);
+  assert.equal(names[1], `014_intake_catalogue_${hash.slice(0, 8)}.sql`);
 });
 
 test("catalogueHash is the SHA-256 of the key-sorted, unspaced JSON of the loader version and catalogue", () => {
