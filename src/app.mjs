@@ -474,6 +474,11 @@ if (!config) {
   function sweepV2Form() {
     const form = root.querySelector("#intake-v2-form");
     if (!form) return;
+    // A held redraw means the draft has moved on (a realtime change landed
+    // during the press) and the boxes still show the old values: sweeping them
+    // would write those back over the office's edit. Every keystroke is
+    // already in the draft through `input`; the sweep only catches autofill.
+    if (heldRender !== null) return;
     quiet = true;
     try {
       controller.editAnswers(readForm(form));
@@ -577,7 +582,14 @@ if (!config) {
       const cleared = Object.fromEntries(
         Object.keys(draft)
           // The senior switch is the person's choice of wording, not an answer.
-          .filter((key) => key !== "form_version" && findQuestion(2, key) && !(key in generated))
+          .filter(
+            (key) =>
+              key !== "form_version" &&
+              // The email is the person's own, as version 1 keeps the verified one.
+              key !== "email" &&
+              findQuestion(2, key) &&
+              !(key in generated),
+          )
           .map((key) => [key, null]),
       );
       controller.editAnswers(
@@ -660,6 +672,9 @@ if (!config) {
     await controller.reconcileAnswers({
       answers: useMine ? state.draftAnswers : (state.savedCase?.answers ?? {}),
       expectedServerRevision: state.savedCase?.revision,
+      // Version 2: the office's side also holds the four contact fields,
+      // which the server keeps outside `answers`.
+      fromServer: !useMine,
     });
     notify(
       useMine
@@ -742,6 +757,13 @@ if (!config) {
           quiet = false;
         }
         render();
+        notify("Some answers still need a change before you can send.");
+        // Submit is now disabled: the keyboard goes to the list of what to fix.
+        const heading = root.querySelector("#still-title");
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus();
+        } else root.querySelector("#main")?.focus();
         return;
       }
       if (controller.getState().dirty) await controller.saveAnswers();

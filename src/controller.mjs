@@ -256,6 +256,8 @@ export function createController({
   // What the save state was before an edit made a version-2 draft dirty
   // ("idle" or "saved"), so an undo can put it back.
   let stateBeforeEdit = "idle";
+  // A version-2 step change is waiting for its save (`goToStep`).
+  let stepSaveInFlight = false;
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
   let pendingReset = null;
@@ -1165,6 +1167,9 @@ export function createController({
   // and the form moves on even when that save fails: the chip and the banner
   // say so, and the draft is still here.
   async function goToStep(step) {
+    // One step change at a time: a second press during the first one's save
+    // would send the same expected revision and meet a false conflict.
+    if (caseVersion() === 2 && stepSaveInFlight) return;
     const last = caseVersion() === 2 ? STEP_COUNT - 1 : Number.MAX_SAFE_INTEGER;
     const target = Math.min(last, Math.max(0, Math.trunc(Number(step) || 0)));
     const leaving = state.formStep;
@@ -1184,11 +1189,18 @@ export function createController({
       state.visitedSteps = [...state.visitedSteps, leaving].sort((a, b) => a - b);
     persistSession();
     if (state.dirty) {
+      const caseId = state.selectedCaseId;
+      const guarded = caseVersion() === 2;
+      if (guarded) stepSaveInFlight = true;
       try {
         await saveAnswers();
       } catch {
         // Already on screen: the save state is "failed" and the error is set.
+      } finally {
+        if (guarded) stepSaveInFlight = false;
       }
+      // Another case was opened during the save: this step belongs to the old one.
+      if (state.selectedCaseId !== caseId) return;
     }
     state.formStep = target;
     persistSession();
@@ -1327,7 +1339,9 @@ export function createController({
   // A deliberate choice between two sets of answers, and nothing more: it takes
   // a fresh look at the server, refuses if the case moved again, and leaves the
   // result unsaved so the save still goes through the database revision check.
-  async function reconcileAnswers({ answers, expectedServerRevision }) {
+  // `fromServer` (version 2): take the office's side from the fresh record,
+  // its answers plus the contact record's four fields, not from `answers`.
+  async function reconcileAnswers({ answers, expectedServerRevision, fromServer = false }) {
     if (!state.selectedCaseId)
       throw controllerError("NOT_FOUND", "Open an application first.");
     const latest = await store.getCase(state.selectedCaseId);
@@ -1340,7 +1354,10 @@ export function createController({
         "This application changed again. Check the newest values and choose once more.",
       );
     }
-    state.draftAnswers = pickAnswers(answers, latest.intakeVersion);
+    state.draftAnswers =
+      fromServer && isVersionTwo(latest)
+        ? serverAnswersOf(latest)
+        : pickAnswers(answers, latest.intakeVersion);
     pruneRevealed();
     state.editBaseRevision = Number(latest.revision);
     state.dirty = true;

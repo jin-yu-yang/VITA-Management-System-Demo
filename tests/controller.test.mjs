@@ -2284,6 +2284,105 @@ test("goToStep still moves when its save fails", async () => {
   controller.stop();
 });
 
+// Holds every `act` until `release()`, so a test can act during a save.
+function holdSaves(store) {
+  const act = store.act;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  store.actCalls = 0;
+  store.act = async (action) => {
+    store.actCalls += 1;
+    await gate;
+    return act(action);
+  };
+  return () => release();
+}
+
+test("a second step change during the first one's save is ignored, so no false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const first = controller.goToStep(1);
+  const second = controller.goToStep(5);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([first, second]);
+  assert.equal(store.actCalls, 1);
+  assert.equal(controller.getState().formStep, 1);
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().conflict, null);
+  await controller.goToStep(5);
+  assert.equal(controller.getState().formStep, 5, "the guard is gone once the save lands");
+  controller.stop();
+});
+
+test("a step change whose save outlives its case leaves the newly opened case's step alone", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToStep(4);
+  await controller.selectCase("case-w");
+  const opened = controller.getState().formStep;
+  release();
+  await moving;
+  assert.equal(controller.getState().selectedCaseId, "case-w");
+  assert.equal(controller.getState().formStep, opened);
+  assert.notEqual(opened, 4);
+  controller.stop();
+});
+
+test("using the office's values on a version-2 case keeps the four contact fields", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    contact: { phone: "2155550199", spousePhone: null, bestContactTime: ["weekend"], bestContactNote: "After six" },
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.records.set("case-v2", {
+    ...store.records.get("case-v2"),
+    revision: 2,
+    answers: { tp_first_name: "Lan" },
+  });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  const state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(Object.hasOwn(state.savedCase.answers, "tp_phone"), false, "the contact is not in answers");
+  await controller.reconcileAnswers({
+    answers: state.savedCase.answers,
+    expectedServerRevision: state.savedCase.revision,
+    fromServer: true,
+  });
+  assert.deepEqual(controller.getState().draftAnswers, {
+    tp_first_name: "Lan",
+    tp_phone: "2155550199",
+    best_contact_time: ["weekend"],
+    best_contact_note: "After six",
+  });
+  assert.equal(controller.getState().conflict, null);
+  controller.stop();
+});
+
+test("fromServer changes nothing on a version-1 case: the given answers are used", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { firstName: "Server" } }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  await controller.reconcileAnswers({
+    answers: { firstName: "Chosen" },
+    expectedServerRevision: 1,
+    fromServer: true,
+  });
+  assert.equal(controller.getState().draftAnswers.firstName, "Chosen");
+  controller.stop();
+});
+
 test("another case starts with no visited steps and nothing revealed", async () => {
   const { controller } = await openV2({
     answers: { tp_first_name: "Mei" },

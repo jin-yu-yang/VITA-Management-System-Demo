@@ -4561,4 +4561,9 @@ textarea::placeholder {
     text-align: left;
   }
 }
+/* Long version-2 answers wrap inside the conflict table, so it never scrolls
+   sideways at 390px. */
+.conflict-table td {
+  overflow-wrap: anywhere;
+}
 /* end part 4b */

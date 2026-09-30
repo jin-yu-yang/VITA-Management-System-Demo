@@ -2146,6 +2146,48 @@ async function runPermutation(t, roles) {
         await waitForStepOf9(page, 4);
         assert.equal(await answer("tp_job_title"), "Teacher");
 
+        // An office change that lands during a press on Continue. The redraw
+        // waits for the press, so the boxes still say "Teacher" while the
+        // draft already says "Librarian": the step change must not sweep the
+        // stale boxes back over the office's edit.
+        await goTo(railLink(1), 2);
+        await waitForQuiet(page);
+        assert.doesNotMatch(await chip(), /Unsaved changes/, "the draft must be clean for this check");
+        await mark("#intake-v2-form", "__beforeOffice");
+        await continueButton.scrollIntoViewIfNeeded();
+        const pressAt = await continueButton.boundingBox();
+        await page.mouse.move(pressAt.x + pressAt.width / 2, pressAt.y + pressAt.height / 2);
+        await page.mouse.down();
+        // The re-read a realtime change causes ends with the contact row; the
+        // hold's 2-second safety timer is running, so it must land well inside it.
+        const reread = page.waitForResponse(
+          (response) => response.url().includes("/rest/v1/case_contacts"),
+          { timeout: 1500 },
+        );
+        await fixture.database.sql(
+          `update public.cases set answers = answers || '{"tp_job_title":"Librarian"}'::jsonb,
+             revision = revision + 1 where id=$1`,
+          [own.id],
+        );
+        await reread;
+        await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+        assert.equal(
+          await marked("#intake-v2-form", "__beforeOffice"),
+          true,
+          "the page redrew during the press, so the stale-box case was not reached",
+        );
+        assert.equal(await box("tp_job_title").inputValue(), "Teacher");
+        await page.mouse.up();
+        await waitForStepOf9(page, 3);
+        await waitForQuiet(page);
+        assert.equal(
+          await answer("tp_job_title"),
+          "Librarian",
+          "the step change wrote the stale box back over the office's edit",
+        );
+        await goTo(backButton, 2);
+        assert.equal(await box("tp_job_title").inputValue(), "Librarian");
+
         // Every blank on every step, then the walk to step 9.
         await goTo(railLink(0), 1);
         await clickAction(page, "fill-fictional");
@@ -2349,6 +2391,14 @@ async function runPermutation(t, roles) {
             items: [{ question: "Date", flag: "Needs a change", step: "8", kind: "still-item is-invalid" }],
           },
         ]);
+        // Said aloud, and the keyboard is on the list rather than a disabled Submit.
+        assert.deepEqual(
+          await page.evaluate(() => ({
+            focus: document.activeElement?.id ?? null,
+            toast: document.querySelector("#toast")?.textContent.trim() ?? null,
+          })),
+          { focus: "still-title", toast: "Some answers still need a change before you can send." },
+        );
         assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid date was submitted");
         await box("gcf_tp_date-month").fill("");
         await box("gcf_tp_date-day").fill("");
