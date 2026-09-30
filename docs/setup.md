@@ -357,6 +357,16 @@ recovery is the one migration `009`'s own header comment describes: either recre
 from scratch, or first drop that file's own objects and its `schema_migrations` row with a local
 script that is not part of the repository, then apply again.
 
+A migration that is written to be re-applied (011–013, which are not on `main` yet) can instead be
+forgotten and applied again: delete its `schema_migrations` row **and the rows of every later
+migration that replaces the same functions**, then run `npm run db:migrate:test`. For 011 that
+means 011, the catalogue migration and 013 together; forgetting 011 alone would put 011's older
+`check_payload` back over 013's. A catalogue change on a branch deletes that branch's catalogue
+migration and regenerates it with `npm run build:intake` instead of adding a second one, and a
+change to the loader or the `intake_fields` columns bumps `LOADER_VERSION` in
+`tools/build-intake-catalogue.mjs` so the build writes a new catalogue migration. The full rules
+and the commands are in [`docs/developer/database.md`](developer/database.md#migrations).
+
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each

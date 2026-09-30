@@ -42,8 +42,34 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `013_contact_materials.sql` | `case_materials`; the UPDATE_CONTACT and RECORD_MATERIALS actions |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
-never edit an applied one.** The build writes a file only when the catalogue's hash differs from
-the newest catalogue migration's.
+never edit an applied one.** The build writes a file only when the hash differs from the newest
+catalogue migration's. The hash covers the catalogue and `LOADER_VERSION` in
+[`tools/build-intake-catalogue.mjs`](../../tools/build-intake-catalogue.mjs).
+
+- **Bump `LOADER_VERSION`** when 011's `load_intake_catalogue` or the `intake_fields` columns
+  change. The bump changes the hash, so the next `npm run build:intake` writes a new catalogue
+  migration that reloads the unchanged catalogue through the new loader.
+- **One catalogue migration per branch, and it should be the newest migration on it.** Only
+  migrations on `main` are immutable. If the catalogue changes again on a branch, or after
+  rebasing onto `main`, delete the branch's catalogue migration and run `npm run build:intake`;
+  never stack a second one on the same branch. The build numbers the file one past the highest
+  migration present, so on a branch that already has a later migration (part 4a's
+  `013_contact_materials.sql`) it writes `014_…`: rename it back to the deleted file's number.
+  The file's text doesn't contain its number.
+- **Re-applying a changed migration on a local test stack** means forgetting it **and every later
+  migration that replaces the same functions**, then running `npm run db:migrate:test`.
+  Forgetting `011_intake_v2.sql` alone would re-run 011's `check_payload` over 013's newer one,
+  so UPDATE_CONTACT and RECORD_MATERIALS would fail validation; forget 011, the catalogue
+  migration and 013 together:
+
+  ```sh
+  docker ps --format '{{.Names}}' | grep supabase_db_vitally-task2   # the db container
+  docker exec <db container> psql -U postgres -c \
+    "delete from vitally_private.schema_migrations where name in ('011_intake_v2.sql','012_intake_catalogue_<hash8>.sql','013_contact_materials.sql')"
+  npm run db:migrate:test
+  ```
+
+  Only migrations not yet on `main` may be changed; never 001–010.
 
 Later migrations replace earlier functions with `create or replace`. When you need the current
 version of a function, use the **last** file that defines it:
