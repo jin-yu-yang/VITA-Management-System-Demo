@@ -9,6 +9,7 @@ const CLIENT_VISIBLE_TABLES = [
   "document_requests",
   "documents",
   "client_events",
+  "case_contacts",
 ];
 const PRESENTER_ONLY_TABLES = [
   "preparation_participants",
@@ -17,6 +18,7 @@ const PRESENTER_ONLY_TABLES = [
   "case_events",
   "reviews",
   "assistance_items",
+  "case_materials",
 ];
 const WORKFLOW_TABLES = [...CLIENT_VISIBLE_TABLES, ...PRESENTER_ONLY_TABLES];
 async function rows(client, table, filter = {}) {
@@ -149,6 +151,14 @@ async function seedWorkflow(f, caseId) {
       "REQUEST_DOCUMENT",
       "A volunteer asked for one more document.",
     ],
+  );
+  await f.sql(
+    "insert into public.case_contacts(workspace_id,case_id,phone,best_contact_time) values($1,$2,$3,$4)",
+    [f.workspaceId, caseId, "2155550100", ["weekday_morning"]],
+  );
+  await f.sql(
+    "insert into public.case_materials(workspace_id,case_id,item,recorded_by_person_id) values($1,$2,$3,$4)",
+    [f.workspaceId, caseId, "w2", f.people.sam],
   );
   await f.sql(
     "insert into public.assistance_items(id,workspace_id,case_id,title,language,contact_preference) values($1,$2,$3,$4,$5,$6)",
@@ -951,6 +961,25 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
               message: "Written without an action.",
             },
             update: { message: "Rewritten." },
+          },
+          case_contacts: {
+            filter: ["case_id", submitted.caseId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: draft.caseId,
+              phone: "2155550199",
+            },
+            update: { phone: "2155550199" },
+          },
+          case_materials: {
+            filter: ["case_id", submitted.caseId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              item: "photo_id",
+              recorded_by_person_id: f.people.sam,
+            },
+            update: { item: "photo_id" },
           },
           assistance_items: {
             filter: ["id", seeded.assistanceId],

@@ -68,6 +68,8 @@ const STATE_TABLES = Object.freeze([
   "contact_attempts",
   "reviews",
   "assistance_items",
+  "case_contacts",
+  "case_materials",
 ]);
 // One key for the advisory lock that keeps fixture workspace setup exclusive
 // across parallel test processes (see initializeOwned below).

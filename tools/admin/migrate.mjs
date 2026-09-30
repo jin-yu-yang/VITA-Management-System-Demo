@@ -1,6 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { openDatabase, databaseError } from "./database.mjs";
+// A migration is a three-digit number, `_`, a lower-case name starting with a
+// letter, and `.sql`. The name may carry digits later on, as the generated
+// `NNN_intake_catalogue_<hash8>.sql` loads do.
+export const isMigrationFile = (name) => /^\d{3}_[a-z][a-z0-9_]*\.sql$/.test(name);
 export async function migrate({ target = { kind: "test" } } = {}) {
   const client = await openDatabase(target);
   try {
@@ -18,7 +22,7 @@ export async function migrate({ target = { kind: "test" } } = {}) {
     const directory = new URL("../../supabase/migrations/", import.meta.url);
     const { createHash } = await import("node:crypto");
     for (const name of (await readdir(directory))
-      .filter((x) => /^\d+_[a-z_]+\.sql$/.test(x))
+      .filter(isMigrationFile)
       .sort()) {
       const sql = await readFile(new URL(name, directory), "utf8"),
         digest = createHash("sha256").update(sql).digest("hex");

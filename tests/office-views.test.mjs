@@ -192,6 +192,22 @@ test("the language chips keep the shared filter key and narrow the rows", () => 
   assert.doesNotMatch(html, /VT-CANT/);
 });
 
+test("version-2 language codes and version-1 labels read and filter as one", () => {
+  const cases = [
+    kase({ id: "a", reference: "VT-V2", answers: { language: "cantonese", service: "drop_off" } }),
+    kase({ id: "b", reference: "VT-V1", answers: { language: "Cantonese", service: "Drop-off" } }),
+    kase({ id: "c", reference: "VT-MAND", answers: { language: "mandarin" } }),
+  ];
+  const all = page(cases, [], sam, {});
+  assert.doesNotMatch(all, /cantonese|mandarin/);
+  assert.equal([...all.matchAll(/data-filter="language" data-value="Cantonese"/g)].length, 1);
+  assert.match(all, /data-filter="language" data-value="Mandarin"/);
+  const html = page(cases, [], sam, { language: "Cantonese" });
+  assert.match(html, /VT-V2/);
+  assert.match(html, /VT-V1/);
+  assert.doesNotMatch(html, /VT-MAND/);
+});
+
 test("waiting is shown in words and marked amber at 3 days, red at 5", () => {
   const html = page([
     kase({ id: "a", updatedAt: daysAgo(6) }),

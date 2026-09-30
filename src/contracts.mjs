@@ -33,6 +33,9 @@ export const CASE_ACTIONS = Object.freeze([
   "RECORD_REVIEW_CONTACT",
   "REMIND",
   "CLOSE_CASE",
+  // Part 4a (migration 013). No screen offers them until 4b and 4c.
+  "UPDATE_CONTACT",
+  "RECORD_MATERIALS",
 ]);
 
 // Assistance is its own workflow with its own RPC, so its controls carry their
@@ -78,9 +81,15 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
-//         preparerId, reviewerId, season, clientNumber, requests, documents, history }
+//         preparerId, reviewerId, season, clientNumber, intakeVersion,
+//         contact, requests, documents, history }
+//   intakeVersion: 1 | 2. contact: the case_contacts row as
+//   { phone, spousePhone, bestContactTime, bestContactNote }, or null when
+//   there is none (always null for version 1). A list entry carries only the
+//   scalars, intakeVersion included, and no contact.
 // Staff case additionally includes participants, reviews, followups,
-// internalHistory. These are never loaded by the applicant adapter.
+// internalHistory and materials: [{ item, receivedAt, recordedByPersonId }].
+// These are never loaded by the applicant adapter.
 // Action: { actionId, caseId, expectedRevision, personId, type, payload }
 // Receipt: { actionId, caseId, reference, revision }
 // AppError: Error with a code from ERROR_CODES (auth errors mapped separately).

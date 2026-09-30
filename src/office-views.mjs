@@ -1,3 +1,4 @@
+import { languageLabel } from "./intake-catalogue.mjs";
 import { esc, icon, button, caseButton, stageBadge, textarea, clientNumberLabel, clientNumberTag } from "./ui.mjs";
 import {
   adminEligibility,
@@ -93,8 +94,9 @@ export function officeFilters(filters) {
   };
 }
 
-const rowLanguage = (row) => row.record?.answers?.language || row.item?.language || "";
-const inLanguage = (row, chosen) => chosen.language === "all" || rowLanguage(row) === chosen.language;
+const rowLanguage = (row) => languageLabel(row.record?.answers?.language || row.item?.language || "");
+const inLanguage = (row, chosen) =>
+  chosen.language === "all" || rowLanguage(row) === languageLabel(chosen.language);
 
 export function queueCounts(rows, chosen) {
   const inScope = rows.filter((row) => inLanguage(row, chosen));
@@ -301,7 +303,7 @@ export function resolveHelpDrawerBody({ item, person, ui = {} } = {}) {
         item.id,
       )}" ${busy}>${icon("check")} Record this as resolved</button></form>`
     : explain(rights.resolveAssistance);
-  return `<h3>${esc(item.title)}</h3>${drawerError(ui)}${detailRow("Language", item.language)}${detailRow(
+  return `<h3>${esc(item.title)}</h3>${drawerError(ui)}${detailRow("Language", languageLabel(item.language))}${detailRow(
     "Contact preference",
     item.contactPreference,
   )}<p class="field-note">Helping a client with their own forms is separate from preparing a return: resolving a request changes nothing about the case's intake, stage or preparer.</p>${resolve}`;
