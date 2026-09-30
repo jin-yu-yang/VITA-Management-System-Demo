@@ -2,6 +2,7 @@
 
 **Status:** approved in brainstorming on 2026-09-30.
 Revised 2026-09-30: redraw rules; invalid values (§2.5); partial dates, empty household cards and undo after a failed save.
+Revised for PR 4c: `gcf_sp_date`'s condition moves into 4c (catalogue migration 015, so the switch-over is 016); Add a case follows the workspace's default version.
 
 **Roadmap:** part 4 of `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-restyle-design.md`, which is split into 4a (catalogue and server, merged in #39), 4b (client intake), 4c (Add a case and staff views) and 4d (Chinese).
 
@@ -19,7 +20,7 @@ Revised 2026-09-30: redraw rules; invalid values (§2.5); partial dates, empty h
   - Real uploads (D4): upload tips show their text only.
   - Phone masking (part 5).
   - The returning-client search (part 6).
-  - Removing version 1, a later clean-up once no version-1 case is left.
+  - Removing version 1: its own part after 4d, started only once no version-1 case is still open (checked in the database first). Until then, setting a workspace back to 1 (§5) stays the way back.
 
 ## 2. The shared renderer: `src/intake-form.mjs`
 
@@ -72,7 +73,7 @@ It returns the read-only text of an answer:
 - dates as "Apr 12, 1961";
 - phones as "(215) 555-0199";
 - `who` as "Me, My spouse";
-- each household member as one line ("Xiao Ming Wang · Son · born Mar 14, 2015 · 12 months");
+- each household member as one line ("Xiao Ming Wang · Son / Daughter · born Mar 14, 2015 · 12 months"; the relationship is the catalogue's label);
 - `null` for unanswered.
 
 ### 2.4 Redraw rules
@@ -204,7 +205,7 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
 
 Better long-term: the server accepts any format in draft saves and checks at Submit. This needs a migration and is out of scope for 4b.
 
-**Follow-up after 4b (agreed 2026-09-30):** `gcf_sp_date`'s `showIf` is only "`gcf_sp_signature` filled", so a signed spouse date stays visible if consent goes back to "no" or the person is no longer married. It should carry the same three conditions: consent yes, married, and the signature filled. That changes field rows, so it needs its own catalogue migration and is not part of 4b (4b's 014 loads the same rows as 012).
+**Done in PR 4c (agreed 2026-09-30):** `gcf_sp_date`'s `showIf` is only "`gcf_sp_signature` filled", so a signed spouse date stays visible if consent goes back to "no" or the person is no longer married. It should carry the same three conditions: consent yes, married, and the signature filled. That changes field rows, so it needs its own catalogue migration: PR 4c's `015_intake_catalogue_<hash8>.sql` (4b's 014 loads the same rows as 012).
 
 ## 3. The client's nine-step form (PR 4b)
 
@@ -326,7 +327,10 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 - **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing. While any answer is invalid (`invalidAnswers`, §2.5), "Send to the office" is disabled, and the count of sections that need answers includes the sections holding one.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
-- **The old creation path goes.** PR 4's Add a case creates a case with answers in one call (`createAssistedCase` in `src/controller.mjs`), which 011's trigger refuses once the default is 2. PR 4c replaces that page and path with the version-2 page; `createAssistedCase` then creates empty cases only.
+- **Add a case follows the workspace's default version** (`workspaces.default_intake_version`, read with the workspace row).
+  - **Version 2:** the page above. Its first save creates an empty case, because 011's trigger refuses answers on a version-2 insert.
+  - **Version 1** (every test workspace, and any workspace set back to 1): today's page and today's one-call creation (`createAssistedCase`), unchanged. A version-1 workspace can only make version-1 cases, so the version-2 page can't serve it.
+  - Both version-1 paths go with the rest of version 1 in the clean-up part after 4d (§1).
 
 ### 4.3 Eligibility
 
@@ -335,7 +339,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 
 ## 5. The switch-over (the last step of PR 4c)
 
-The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql`. Like 4a's, it copies `seed_fixtures` and `apply_fixture_scenario` from their latest definitions (009) and changes only what is named below.
+The next migration after PR 4c's catalogue migration (015, `gcf_sp_date`'s condition), `016_intake_v2_default.sql`. Like 4a's, it copies `seed_fixtures` and `apply_fixture_scenario` from their latest definitions (009) and changes only what is named below.
 - **Default:** `workspaces.default_intake_version`'s column default becomes 2, and every existing workspace is set to 2.
   - New client cases and office cases become version 2.
   - Existing cases keep their version (011's trigger pins it).
@@ -421,7 +425,7 @@ The story, updated deliberately:
   - the contact card is hidden for a volunteer on an unclaimed case and shown once claimed;
   - records materials;
   - the office completes a walk-in case in Add a case.
-- **Version 1:** the story's version-1 phases shrink to one check. A version-1 draft is created while its workspace is set to 1, finished in the old form, and submitted.
+- **Version 1:** the story's version-1 phases shrink to one phase. A version-1 draft is created while its workspace is set to 1, finished in the old form, and submitted. That phase keeps the old form's own checks (a blank required answer stops the step; an out-of-scope screening answer stops the application), because they are version-1 behaviour that still ships.
 
 **Redraw rules (§2.4), in PR 4b's version-2 browser phase.** These use Playwright's real mouse (`page.mouse.move`/`down`/`up` on the element's box, or `locator.click()`, which does the same). Never use `element.click()` or `dispatchEvent`, which skip `mousedown` and so can't catch a lost press.
 - **Continue after typing:** type in a text field (leave the focus in it), then click Continue once. The step advances to the next one, and the typed value is in the saved answers.
