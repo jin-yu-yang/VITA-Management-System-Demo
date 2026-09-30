@@ -65,6 +65,15 @@ It returns the read-only text of an answer:
 
 `intakeScreen` dispatches on `savedCase.intakeVersion`. A version-1 draft gets today's four-step form, unchanged; a version-2 draft gets the nine-step form.
 
+### 3.1b Step titles
+
+The designs' titles win. PR 4b changes three step titles in the catalogue build (`tools/build-intake-catalogue.mjs`, the step table):
+- step 5 becomes "Household members" (家庭成员, unchanged);
+- step 7 becomes "Expenses & life events" (支出与生活事项);
+- step 9 becomes "Permission & review" (授权与确认).
+
+The new Chinese goes to the group for review, with the other new wording. Because step titles are part of the hashed catalogue, the build writes a new catalogue migration in PR 4b (`014_intake_catalogue_<hash8>.sql`, per the one-per-branch rule). The switch-over (§5) is therefore the migration after it, not a fixed number.
+
 ### 3.2 Layout (the step-2 and step-6 designs)
 
 - **Top bar:**
@@ -88,7 +97,7 @@ It returns the read-only text of an answer:
 
 ### 3.3 Draft and saving
 
-- The controller's draft holds the version-2 answers plus the four contact fields. On load, the contact fields are filled in from `record.contact` through `CONTACT_FIELDS`.
+- The controller's draft holds the version-2 answers plus the four contact fields. On load, the contact fields are filled in from `record.contact` through `CONTACT_FIELDS`. `record.contact` is `null` until a case's first contact save (`mapContact`), and `null` counts as empty.
 - `pickAnswers` becomes version-aware: version 1 keeps its 17 keys, and version 2 keeps the catalogue's top-level field IDs.
 - **Saving** happens on Continue, Back, a rail jump, and Save & exit. The save sends the whole draft (`SAVE_ANSWERS`); the server routes the contact fields to `case_contacts`.
 - The Saved / Unsaved chip, the retained-envelope retry, and the two-window conflict screen work as today.
@@ -96,9 +105,11 @@ It returns the read-only text of an answer:
 
 ### 3.4 Behaviour
 
-- **Show-if:** a change to any answer re-renders the step, so show-if questions appear and hide. A hidden question keeps its answer in the draft; the server ignores hidden required questions.
+- **Show-if:** the step re-renders on the `change` event, not on every keystroke: a text field when it loses focus, a choice or checkbox when it changes. So show-if questions appear and hide without interrupting typing, and the keyboard focus returns to the control that changed. A hidden question keeps its answer in the draft; the server ignores hidden required questions.
 - **Clearing spouse:** when `marital_status` changes away from `married`, every `who` answer drops `spouse` in the same edit.
-- **Continue always moves on.** A step's unanswered required questions show "Needs an answer" only after the client has left that step once. The set of visited steps is kept in the window state, alongside `formStep`.
+- **Continue always moves on.** A step's unanswered required questions show "Needs an answer" only after the client has left that step once.
+  - The visited steps are kept in the window state as a new field, `visitedSteps: { caseId, steps: number[] }`, added to `FIELDS` in `src/window-state.mjs` with its own check.
+  - It belongs to one case: it is ignored when `caseId` isn't the selected case, and reset when another case is opened.
 - **The senior switch** edits `form_version` (`general` / `senior`). The wording changes immediately, the form becomes Unsaved, and the switch is saved with the next save. No answer is touched.
 - **Step 9, "Permission & review":**
   1. **"Still to answer"** lists every missing required question (`missingToSubmit`), grouped by step, each linking to its step. When the list is empty it reads "Everything required is answered."
@@ -135,6 +146,8 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 - **Starting.** "Add a case" opens the page with no case yet: the header says "Application ID: assigned when you save", and the answers live in the browser's draft.
   - The first **Save draft** or **Send to the office** creates an empty version-2 assisted case (`vitally_create_case` with `{}`), then saves the draft into it. After that, the page is on that case.
   - Opening the page and leaving creates nothing, so no empty draft clutters the office queue.
+  - **Before the first save,** the Materials card is shown but disabled ("Save the draft first to record materials"), because there is no case to record them on.
+  - **The first save is two or three calls:** create, then save, then (for Send) submit. If the save or submit fails after the create succeeded, the page stays on the newly created draft, keeps every answer in its draft, shows the usual failure banner, and the same button retries the save (and the submit) against that case. It never creates a second case.
   - The same page continues an existing version-2 office draft: the office case page shows **Continue in Add a case** for one.
 - **Header:** Work board / Add a case, the title, the Application ID, and "Draft · Saved / Unsaved".
 - **Sections:** nine collapsible sections in step order.
@@ -147,6 +160,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 - **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
+- **The old creation path goes.** PR 4's Add a case creates a case with answers in one call (`createAssistedCase` in `src/controller.mjs`), which 011's trigger refuses once the default is 2. PR 4c replaces that page and path with the version-2 page; `createAssistedCase` then creates empty cases only.
 
 ### 4.3 Eligibility
 
@@ -155,7 +169,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 
 ## 5. The switch-over (the last step of PR 4c)
 
-Migration `014_intake_v2_default.sql`:
+The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql`. Like 4a's, it copies `seed_fixtures` and `apply_fixture_scenario` from their latest definitions (009) and changes only what is named below.
 - **Default:** `workspaces.default_intake_version`'s column default becomes 2, and every existing workspace is set to 2.
   - New client cases and office cases become version 2.
   - Existing cases keep their version (011's trigger pins it).
@@ -189,6 +203,10 @@ Migration `014_intake_v2_default.sql`:
   - Add a case: section summaries, and the Send gate.
 - **Progress page:** labels for both versions.
 
+**Test workspaces stay version 1 unless a test says otherwise.**
+- After the switch-over, the column default is 2. The test fixture (`tests/support/database-fixture.mjs`) therefore creates its workspaces with `default_intake_version = 1`, so the ~30 existing database tests that save version-1 answers (`makeSampleAnswers()`) keep working unchanged.
+- The version-2 tests set their workspace to 2 explicitly, and back in `finally`.
+
 **Database:**
 - A version-2 client round trip: create empty, save step by step, submit, client number.
 - An office version-2 round trip.
@@ -197,18 +215,25 @@ Migration `014_intake_v2_default.sql`:
   - a new case is version 2;
   - an existing version-1 case is untouched.
 - **Samples:**
-  - every sample's answers pass `check_intake_value`;
+  - every sample's version-2 answers pass `check_intake_value`, field by field;
   - every submitted sample has nothing missing (`intake_missing`);
   - a checkpoint reload clears contacts and materials.
 
-**Browser story (updated deliberately):**
+**Browser story.**
+- **PR 4b:** the story sets its own workspace to `default_intake_version = 2` before the client starts an application, walks the nine steps (below), and sets it back afterwards. The client form is covered in the browser before the switch-over.
+- **PR 4c:** the story's workspace follows the new default. Its version-1 form walk (about 21 places in `tests/browser.mjs`) and the 5 version-1 assertions in `tests/client-views.test.mjs` become deliberate updates.
+- **Making a version-1 case after the switch-over:** 011's insert trigger always takes `intake_version` from the workspace default, so an explicit version is ignored. The version-1 check sets its workspace to 1, creates the case, and sets it back.
+
+The story, updated deliberately:
 - **Client:** walks the nine steps with Fill fictional details, checks a show-if (married shows the spouse questions), flips the senior switch, checks step 9's missing list, submits, and sees the client number.
 - **Staff:**
   - reads the version-2 answers;
   - the contact card is hidden for a volunteer on an unclaimed case and shown once claimed;
   - records materials;
   - the office completes a walk-in case in Add a case.
-- **Version 1:** the story's version-1 phases shrink to one check. A version-1 draft is made directly in the database, finished in the old form, and submitted.
+- **Version 1:** the story's version-1 phases shrink to one check. A version-1 draft is created while its workspace is set to 1, finished in the old form, and submitted.
+
+- The auth-browser suite doesn't touch intake labels, so it should pass unchanged.
 
 **Accessibility:**
 - keyboard reach and visible focus rings;
