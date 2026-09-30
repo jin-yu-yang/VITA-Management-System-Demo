@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateTestTarget } from "../tools/admin/test-target.mjs";
 import { assertClassroomTarget } from "../tools/admin/classroom-target.mjs";
+import { parseMigrateArgs } from "../tools/admin/migrate.mjs";
 const db = {
   host: "aws-0-test.pooler.supabase.com",
   port: 5432,
@@ -227,4 +228,22 @@ test("guards reject missing config without fallback to application variables", (
     for (const bindings of Object.values(c.NetworkSettings.Ports))
       bindings[0].HostIp = "0.0.0.0";
   assert.equal(validateTestTarget(localEnv, local, wildcards).mode, "local");
+});
+
+test("the migrator runs on the test stack by default and on the classroom only by name", () => {
+  assert.deepEqual(parseMigrateArgs([]), { kind: "test" });
+  assert.deepEqual(parseMigrateArgs(["--target", "test"]), { kind: "test" });
+  assert.deepEqual(parseMigrateArgs(["--target", "classroom"]), {
+    kind: "classroom",
+  });
+  for (const argv of [
+    ["--target"],
+    ["--target", "production"],
+    ["classroom"],
+    ["--target", "classroom", "--force"],
+  ])
+    assert.throws(
+      () => parseMigrateArgs(argv),
+      (error) => error.code === "MIGRATE_USAGE",
+    );
 });

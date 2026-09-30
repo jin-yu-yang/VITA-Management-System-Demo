@@ -1,145 +1,370 @@
-import { esc, icon, button, input, select, radio, badge } from "./ui.mjs";
-import { screening } from "./domain.mjs";
-const steps = [
-  "Your visit",
-  "Your situation",
-  "Your details",
-  "Check your answers",
-];
-export function header(u) {
-  return `<a class="skip" href="#main">Skip to content</a><header class="site-header"><button class="brand" data-action="home" aria-label="PCDC home"><span class="brand-mark">${icon("home")}</span><span><strong>PCDC<span class="brand-dot">.</span></strong><small>COMMUNITY TAX ASSISTANCE</small></span></button><nav aria-label="Main navigation"><span class="season">2025 TAX SEASON</span>${button(`${icon("help")} Need help?`, "help", "text")}<span class="header-divider"></span>${button(u.route === "volunteer" ? `${icon("user")} Alex · Volunteer` : "Volunteer sign in", "staff-login", "text")}</nav></header>`;
+import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
+import {
+  renderStaffBoard,
+  renderStaffCase,
+  decorateStaffCase,
+  correctionsDialogBody,
+} from "./staff-views.mjs";
+import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
+import {
+  renderAddCase,
+  renderFollowups,
+  logCallDrawerBody,
+  resolveHelpDrawerBody,
+} from "./office-views.mjs";
+import { renderCasePool } from "./pool-views.mjs";
+import {
+  renderPresenterPanel,
+  resetDialogBody,
+  checkpointDialogBody,
+} from "./presenter-views.mjs";
+
+// The shared shell: the frame every screen sits in, the dialogs, the two
+// screens that belong to nobody in particular (setup needed, no access), and
+// the staff frame — the persona selector and the `<main>` that the work board
+// or one case workspace sits in. The client screens live in
+// `client-views.mjs` and the staff screens in `staff-views.mjs`; this file
+// renders no intake, no progress and no workflow button of its own.
+
+const when = (condition, html) => (condition ? html : "");
+
+// The switcher shows what the client form will offer. Only English works until
+// the intake is translated (roadmap part 4), so the others are visibly off.
+export function languageSwitch() {
+  return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="lang-note">Chinese coming soon</span></div>`;
 }
-export function toolbar(c, u) {
-  return `<aside class="demo-bar" aria-label="Prototype controls"><div class="demo-label"><span class="live-dot"></span><strong>Prototype controls</strong><span class="demo-fiction">Fictional data only</span></div><div class="demo-actions">${button(`${icon("spark")} Fill sample details`, "sample", "demo")}${u.route === "access" && u.codeSent ? button("Use demo code", "demo-code", "demo") : ""}${button(`${icon(u.route === "volunteer" ? "user" : "folder")} ${u.route === "volunteer" ? "Client view" : "Volunteer view"}`, "switch", "demo")}${button("Load exception example", "exception", "demo subtle")}${button(`${icon("refresh")} Reset demo`, "reset", "demo subtle")}</div></aside>`;
+
+// The client frame's top bar (spec section 7): the logo takes you home, then
+// the language, help, Save & exit while a draft is open, and sign out.
+export function clientHeader(state) {
+  const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
+  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch()}${button(
+    `${icon("help")} Need help?`,
+    "open-help",
+    "text",
+  )}${when(onDraft, button("Save &amp; exit", "save-exit", "secondary"))}${when(
+    state?.principal,
+    button(`${icon("signout")} Sign out`, "sign-out", "text"),
+  )}</div></header>`;
 }
-export function home() {
-  return `<main id="main" class="landing" tabindex="-1"><section class="hero"><div class="eyebrow"><span></span>HERE FOR OUR COMMUNITY</div><h1>A little support.<br>A <em>clearer path.</em></h1><p class="hero-copy">Free tax help from people who care. <br>Start your application today. We’ll help<br class="desktop-only"> you take it from here.</p><div class="trust-line">${icon("shield")} <span>No cost. No account to create.</span></div><div class="community-note"><div class="avatar-stack"><span>陈</span><span>李</span><span>林</span></div><p>Your neighbors. Your community.<br><strong>Your tax assistance team.</strong></p></div></section><section class="welcome-panel"><div class="welcome-art" aria-hidden="true"><svg viewBox="0 0 500 190" fill="none"><circle cx="265" cy="100" r="78" fill="#ddeae4"/><circle cx="185" cy="63" r="28" fill="#f6e5be"/><path d="M140 134h234M169 110V70l55-37 54 37v68M186 60v-20h17M251 132V75h52l38 30v27" stroke="#68877f" stroke-width="2"/><path d="M212 134V96h22v38M266 88h15v15h-15M294 88h15v15h-15M178 79h16v16h-16" stroke="#68877f" stroke-width="2"/><rect x="280" y="35" width="84" height="109" rx="8" fill="#fff" stroke="#a9bfb4"/><path d="M297 60h41M297 72h29M297 99h41M297 111h23" stroke="#b2c7bc" stroke-width="4" stroke-linecap="round"/><circle cx="350" cy="126" r="24" fill="#244e4c"/><path d="m340 125 7 7 13-15" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M120 132c-15-34-7-61 8-67 2 13 12 23 6 43M132 134c2-25 18-34 31-30-5 12-16 19-31 30" fill="#a8bba0"/><path d="M115 132h30l-5 17h-20Z" fill="#d7b990"/></svg></div><div class="welcome-card"><span class="overline">LET’S GET STARTED</span><h2>How can we help?</h2><button class="entry-card start-card" data-action="start" aria-label="Start an application"><span class="entry-icon">${icon("file")}</span><span><strong>Start an application</strong><small>New here? Begin with a few questions.</small></span>${icon("arrow")}</button><button class="entry-card" data-action="return" aria-label="Return to my application"><span class="entry-icon">${icon("folder")}</span><span><strong>Return to my application</strong><small>Continue a form or check your progress.</small></span>${icon("arrow")}</button><div class="welcome-help">${icon("phone")} <span>Prefer a little help? <button class="inline" data-action="help">Contact our office</button></span></div></div></section><div class="landing-bottom"><span>Philadelphia Chinatown Development Corporation</span><span>Serving our community, together.</span></div></main>`;
+
+// A lost connection is stated plainly, and what is on screen stays readable.
+// It never claims an action succeeded.
+export function connectionNotice(state) {
+  if (state.connection === "online" || state.connection === "unknown") return "";
+  const reconnecting = state.connection === "reconnecting";
+  return `<div class="connection-notice" role="status">${icon("clock")}<span>${
+    reconnecting
+      ? "The connection dropped and is being retried. What you see may be out of date, and actions cannot be confirmed until it is back."
+      : "No connection to the server. You can read this page, but nothing can be saved or sent until the connection returns."
+  }</span></div>`;
 }
-export function access(c, u) {
-  const returning = u.accessMode === "return";
-  return `<main id="main" class="narrow" tabindex="-1">${button(`${icon("back")} Back to welcome`, "home", "text back-link")}<div class="center-icon">${icon(u.codeSent ? "lock" : "shield")}</div><div class="page-intro centered"><span class="overline">${returning ? "WELCOME BACK" : "A SIMPLE WAY TO RETURN"}</span><h1>${u.codeSent ? "Check your code" : returning ? "Return to your application" : "Keep your application within reach"}</h1><p>${u.codeSent ? `Enter the code for ${esc(u.destination)}.<br>For this prototype, use <strong>246810</strong>. No message was sent.` : returning ? "Use your Application ID to continue your form or see your progress." : "Choose a phone or email you can access. You’ll use a one-time code to return—no password needed."}</p></div><form id="access-form" class="panel access-panel">${u.codeSent ? `${input("Verification code", "code", u.code, "text", 'required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6-digit code"')}<p class="field-note">This confirms access to your application. A volunteer will verify taxpayer identity separately.</p><div class="resend-row">Didn’t get a code? ${button("Resend code", "resend", "inline")}</div><button class="btn primary full" type="submit">Verify and continue ${icon("arrow")}</button>` : returning ? `${input("Application ID", "applicationId", u.applicationId, "text", 'required placeholder="e.g. DEMO-7K4P-92" autocomplete="off"')}<p class="field-note">We’ll use the contact method you verified when you started.</p><button class="btn primary full" type="submit">Send verification code ${icon("arrow")}</button>` : `<div class="segmented" aria-label="Contact method">${button(`${icon("phone")} Phone`, "method-phone", u.method === "phone" ? "selected" : "")}${button(`${icon("mail")} Email`, "method-email", u.method === "email" ? "selected" : "")}</div>${input(u.method === "phone" ? "Phone number" : "Email address", "contact", u.contact, u.method === "phone" ? "tel" : "email", u.method === "phone" ? 'required inputmode="tel" placeholder="Use a number that can receive texts"' : 'required placeholder="you@example.com"')}<p class="field-note">${u.method === "phone" ? "No email address? A phone that receives texts is enough." : "No email address? Select Phone above."}</p><button class="btn primary full" type="submit">Send verification code ${icon("arrow")}</button>`}${u.error ? `<p class="error" role="alert">${esc(u.error)}</p>` : ""}</form><div class="support-note">${icon("help")}<div><strong>Can’t access your phone or email?</strong><p>Our volunteers can help by phone or in person.</p><button class="inline" data-action="help">Get help from the office ${icon("arrow")}</button></div></div></main>`;
+
+// Something worth saying that is not a failure: today, that somebody rebuilt
+// the demonstration cases while this window was looking at one. It is a
+// status, not an alert, and it is dismissed by the same control.
+function noticeBanner(state) {
+  if (!state.notice) return "";
+  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
-export function idCard(c) {
-  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon success">${icon("check")}</div><div class="page-intro centered"><span class="overline">YOU’RE READY TO BEGIN</span><h1>A small card.<br>One less thing to remember.</h1><p>Keep your Application ID somewhere handy.<br>You’ll use it whenever you come back.</p></div><div class="reference-card"><span>PCDC <small>COMMUNITY TAX ASSISTANCE</small></span><p>YOUR APPLICATION ID</p><strong>${esc(c.id)}</strong><div class="reference-bottom">2025 tax year <span>Save this ID · Keep it private</span></div></div><div class="card-tools">${button(`${icon("copy")} Copy ID`, "copy", "secondary")}${button(`${icon("print")} Print reference card`, "print", "secondary")}</div>${button(`Continue to application ${icon("arrow")}`, "continue-intake", "primary full")}<p class="footnote">A verification code is still needed to reopen your application.<br>Your ID card does not contain your tax information.</p></main>`;
+
+// The office's two drawers: the modal frame placed at the right edge.
+export const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
+
+function problemBanner(state) {
+  if (!state.error || state.saveState === "failed") return "";
+  // The staff workspace states a failure in place, beside the action that
+  // failed, with the same Try again and Dismiss controls. One announcement is
+  // enough, and that one is the more useful of the two — but only when that
+  // screen is really the one being rendered (see `staffScreen`).
+  if (state.screen === "staff-case" && state.savedCase) return "";
+  // A drawer states its own failure, with the same two controls (see
+  // `drawerError`); a second alert behind an aria-modal dialog would be
+  // announced twice and could not be reached.
+  if (DRAWERS.includes(state.dialog)) return "";
+  return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
 }
-const row = (label, value) =>
-  `<div class="detail-row"><span>${label}</span><strong>${esc(value || "—")}</strong></div>`;
-export function intake(c, u) {
-  const a = c.answers;
-  const result = screening(a);
-  let body = "";
-  if (u.step === 0)
-    body = `<div class="service-options">${[
-      ["Same-day", "Meet with our volunteers at the site.", "home"],
-      ["Drop-off", "Leave your documents. We’ll follow up.", "folder"],
-      ["Online", "Work with us remotely.", "user"],
-    ]
-      .map(
-        ([val, desc, ico]) =>
-          `<label class="service-card ${a.service === val ? "selected" : ""}"><input type="radio" name="service" value="${val}" ${a.service === val ? "checked" : ""} required><span class="service-icon">${icon(ico)}</span><span><strong>${val}</strong><small>${desc}</small></span><i></i></label>`,
+
+export function footer() {
+  return `<footer class="site-footer"><span>ViTally · Philadelphia Chinatown Development Corporation (PCDC)</span><span>Course prototype · Tax year 2025 · No real taxpayer data</span></footer>`;
+}
+
+// The redesigned staff frame: a collapsible sidebar beside the page body, with
+// the toggle pinned to the top-left corner so it is always reachable. Nothing
+// passes a sidebar yet (Phase 0), and without one the body comes back exactly
+// as it went in, so no screen changes until it opts in.
+export function appShell({ sidebar = "", body = "", open = true } = {}) {
+  if (!sidebar) return body;
+  const label = open ? "Hide the sidebar" : "Show the sidebar";
+  return `<div class="app-shell${open ? "" : " sidebar-closed"}"><button type="button" class="sidebar-toggle" data-action="toggle-sidebar" aria-controls="app-sidebar" aria-expanded="${open}" aria-label="${label}" title="${label}">${icon("sidebar")}</button><aside id="app-sidebar" class="app-sidebar" aria-label="Workspace"${open ? "" : " hidden"}>${sidebar}</aside><div class="app-main">${body}</div></div>`;
+}
+
+export function page(state, body) {
+  // Presenters work in the staff frame, whose sidebar carries the brand, help
+  // and sign-out. Everyone else gets the client frame.
+  const presenter = state?.principal?.access === "presenter";
+  const top = presenter ? "" : clientHeader(state);
+  const main = presenter ? body : `<div class="client-shell">${body}</div>`;
+  return `<a class="skip" href="#main">Skip to content</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+}
+
+// Shown when `/public-config.json` cannot be read or reports `configured:false`.
+// It explains what to set and nothing about what the values are.
+export function setupNeeded() {
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("shield")}</div><div class="page-intro centered"><span class="overline">SETUP NEEDED</span><h1>ViTally is not configured yet</h1><p>This browser could not read a usable <code>/public-config.json</code>, so there is no project to sign in to.</p></div><section class="panel setup-panel"><h2>Add a local environment file</h2><p>Copy <code>.env.example</code> to <code>.env.local</code> in the project root and fill in the two published values of your own Supabase project:</p><pre><code>SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=your-publishable-key</code></pre><p>Then restart the server with <code>npm start</code> and reload this page. Both values are the ones a browser is meant to hold; nothing private belongs in this file, and it is never committed.</p><p class="field-note">See <code>docs/setup.md</code> for the database migrations and workspace setup that come before this step.</p></section></main>`;
+}
+
+// The server could not be reached while establishing who this visitor is.
+// Showing the sign-in form here would be a guess — and a misleading one for
+// someone who is already signed in — so this says what is actually known and
+// offers another attempt. Focus and `online` events retry on their own too.
+export function unreachableScreen(state) {
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">NO CONNECTION</span><h1>ViTally cannot reach the server</h1><p>${esc(state.error?.message ?? "The demo cannot reach the server. Check the connection.")}</p></div><div class="panel"><p>You are not signed out — this browser simply could not check. Nothing has been lost, and nothing was sent.</p>${button(`${icon("refresh")} Try again`, "retry-connection", "primary full")}<p class="field-note">This page also retries by itself when the connection returns or when you come back to this window.</p></div></main>`;
+}
+
+// Signed in, but this account has no active membership in a workspace.
+export function noAccessScreen(state) {
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("lock")}</div><div class="page-intro centered"><span class="overline">NOT ON THIS ROSTER</span><h1>This account has no access</h1><p>${esc(state.error?.message ?? "You do not have access to this step.")}</p></div><div class="panel"><p>ViTally is a closed demo: an organiser adds each address before it can be used. Ask the person running this session to add yours, then sign in again.</p>${button("Sign out", "sign-out", "primary full")}</div></main>`;
+}
+
+// ---------------------------------------------------------------------------
+// The staff frame
+// ---------------------------------------------------------------------------
+
+// Which screens a presenter gets is decided by the persona this window is
+// acting as, not by the account: an office administrator works in the follow-up
+// and assistance workspace, everybody else in the preparation/review one
+// (Ruling R55). The choice is a view choice — the database re-checks every
+// capability on every action, so nothing here grants anything.
+const isAdmin = (person) =>
+  Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
+
+// What the staff sidebar holds in part 1 of the redesign: the brand, the one
+// screen this persona can go to, and who this window is acting as. Screens that
+// do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
+export function staffSidebar(state, person, office) {
+  const onBoard = state?.screen === "staff";
+  const onPool = state?.screen === "office-cases";
+  const label = office ? "Follow-ups" : "Work board";
+  const pool = office
+    ? button(
+        `${icon("folder")} All cases`,
+        "open-cases",
+        `nav-link${onPool ? " current" : ""}`,
+        onPool ? 'aria-current="page"' : "",
       )
-      .join(
-        "",
-      )}</div><div class="form-grid">${select("Tax year", "year", a.year, ["2025"], "required")}${select("Preferred service language", "language", a.language, ["English", "Cantonese", "Mandarin"], "required")}</div><div class="info-note">${icon("help")}<p>This prototype covers selected intake questions for tax year 2025. A volunteer will complete the intake process with you.</p></div>`;
-  if (u.step === 1)
-    body = `<div class="form-grid">${input("City of residence", "residenceCity", a.residenceCity, "text", "required")}${select("State of residence", "residenceState", a.residenceState, ["PA", "NJ", "DE", "Other"], "required")}</div>${radio("Did you earn income from driving for Uber or Lyft in 2025?", "rideshare", a.rideshare)}${radio("Apart from Uber/Lyft driving, did you earn income from another business, freelance work, or self-employment in 2025?", "other", a.other)}<p class="field-note">Wages earned as an employee are not self-employment income.</p>${radio("Did you have more than 10 stock transactions in 2025?", "stocks", a.stocks)}${result === "unsupported" ? `<div class="notice amber" role="status">${icon("help")}<div><h3>Outside PCDC’s current service scope</h3><p>${a.other === "yes" ? "PCDC cannot prepare returns with other business or self-employment income under its current service policy. This also applies if you have Uber/Lyft income." : "More than 10 stock transactions exceeds PCDC’s current service limit."}</p><p>This is a PCDC service limitation. Contact our office for guidance; your draft is saved.</p>${button("Contact the office", "help", "secondary")}</div></div>` : result === "assistance" || a.residenceState === "Other" ? `<div class="notice amber"><div><h3>Let’s check with a volunteer</h3><p>Our office can help clarify your situation before you continue. Your answers will stay saved.</p>${button("Contact the office", "help", "secondary")}</div></div>` : ""}`;
-  if (u.step === 2)
-    body = `<div class="form-grid">${input("First name", "firstName", a.firstName, "text", 'required autocomplete="given-name"')}${input("Last name", "lastName", a.lastName, "text", 'required autocomplete="family-name"')}</div>${input("Mailing address", "address", a.address, "text", 'required autocomplete="street-address"')}<div class="form-grid triple">${input("City", "city", a.city, "text", "required")}${select("State", "state", a.state, ["PA", "NJ", "DE"], "required")}${input("ZIP code", "zip", a.zip, "text", 'required inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?"')}</div><div class="form-grid">${input("People in your household", "household", a.household, "number", 'required min="1" max="30"')}${select(
-      "Who is completing this form?",
-      "helper",
-      a.helper,
-      [
-        ["self", "I am the taxpayer"],
-        ["helper", "Someone is helping me"],
-      ],
-      "required",
-    )}</div>${a.helper === "helper" ? `<div class="info-note">${icon("help")}<p>Contact the office for assisted applications. Helping enter answers does not grant access or signing authority.</p></div>` : ""}${select(
-      "Are your income documents ready?",
-      "documents",
-      a.documents,
-      [
-        ["ready", "Yes, I have them ready"],
-        ["some", "Some are still missing"],
-        ["unsure", "I need help checking"],
-      ],
-      "required",
-    )}<p class="field-note">This records what you have ready. A volunteer will check which documents are needed and verify them.</p>`;
-  if (u.step === 3)
-    body = `<div class="review-block"><div class="section-head"><h3>Your visit</h3>${button("Edit visit", "edit-0", "inline")}</div>${row("Service", a.service)}${row("Tax year", a.year)}${row("Preferred language", a.language)}</div><div class="review-block"><div class="section-head"><h3>Your situation</h3>${button("Edit screening", "edit-1", "inline")}</div>${row("Residence", `${a.residenceCity || ""}, ${a.residenceState || ""}`)}${row("Uber / Lyft income", a.rideshare === "yes" ? "Yes" : "No")}${row("Other self-employment", a.other === "yes" ? "Yes" : "No")}${row("More than 10 stock transactions", a.stocks === "yes" ? "Yes" : "No")}</div><div class="review-block"><div class="section-head"><h3>Your details</h3>${button("Edit details", "edit-2", "inline")}</div>${row("Name", `${a.firstName || ""} ${a.lastName || ""}`)}${row("Mailing address", `${a.address || ""}, ${a.city || ""}, ${a.state || ""} ${a.zip || ""}`)}${row("Household size", a.household)}${row("Documents", a.documents === "ready" ? "Reported ready" : a.documents === "some" ? "Some missing" : "Needs help checking")}</div><label class="checkbox-row"><input type="checkbox" name="confirmed" required ${u.confirmed ? "checked" : ""}><span>I have checked my answers</span></label><p class="field-note">This is an answer confirmation, not a signature on a tax or consent form. A volunteer will follow up about required forms.</p>`;
-  const blocked =
-    (u.step === 1 &&
-      (result === "unsupported" ||
-        result === "assistance" ||
-        a.residenceState === "Other")) ||
-    (u.step === 2 && a.helper === "helper");
-  return `<main id="main" class="workspace" tabindex="-1"><aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">YOUR APPLICATION</span><h2>A few steps.<br>We’re here to help.</h2><ol class="step-list">${steps.map((s, i) => `<li class="${i === u.step ? "active" : i < u.step ? "complete" : ""}"><span>${i < u.step ? icon("check") : String(i + 1).padStart(2, "0")}</span><div>${s}${i === u.step ? "<small>YOU ARE HERE</small>" : ""}</div></li>`).join("")}</ol></div><div class="sidebar-help">${icon("phone")}<h3>Prefer to talk it through?</h3><p>Our volunteers can help you by phone or in person.</p>${button("Contact the office", "help", "inline")}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(c.id)}</span><span class="save-status">${icon("check")} ${u.storageError ? "Saved in this session only" : "Saved on this device"}</span></div><div class="page-intro"><span class="overline">STEP ${u.step + 1} OF 4</span><h1>${steps[u.step]}</h1><p>${["How would you like to work with our volunteers?", "A few questions help us understand how we can help.", "Tell us a little about yourself and what you have ready.", "Take a moment to make sure everything looks right."][u.step]}</p></div><form id="intake-form">${body}${u.error ? `<p class="error" role="alert">${esc(u.error)}</p>` : ""}<div class="form-actions"><div>${u.step ? button(`${icon("back")} Back`, "back-step", "text") : ""}${button("Save and exit", "save-exit", "text")}</div><button type="submit" class="btn primary" ${blocked ? "disabled" : ""}>${u.step === 3 ? "Submit application" : "Continue"} ${icon("arrow")}</button></div></form></section></main>`;
+    : "";
+  return `<div class="sidebar-brand"><img src="src/pcdc-logo.png" alt="PCDC" width="36" height="36"><span class="sidebar-wordmark">ViTally<span class="brand-dot">.</span></span></div><nav class="sidebar-nav" aria-label="Main navigation">${button(
+    `${icon(office ? "people" : "board")} ${label}`,
+    "open-board",
+    `nav-link${onBoard ? " current" : ""}`,
+    onBoard ? 'aria-current="page"' : "",
+  )}${pool}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
+    person?.name ?? "No persona chosen",
+  )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
+    `${icon("help")} Need help?`,
+    "open-help",
+    "text",
+  )}${button(`${icon("signout")} Sign out`, "sign-out", "text")}</div>`;
 }
-export function history(c, staff = false) {
-  return `<div class="timeline">${[...c.history]
-    .reverse()
-    .map(
-      (h) =>
-        `<div class="timeline-item"><span class="timeline-dot"></span><div><strong>${esc(h.title)}</strong><p>${esc(h.detail)}</p><small>${esc(staff ? h.actor : "PCDC application")} · ${new Date(h.time).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</small></div></div>`,
-    )
-    .join("")}</div>`;
-}
-export function progress(c) {
-  const held = c.status === "held",
-    responded = c.status === "responded";
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>Hello, ${esc(c.answers.firstName)}.</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(c.id)}</strong></div></div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${badge(c.status)}</div><div class="progress-steps">${["Intake", "Preparation", "Review", "Signing"].map((x, i) => `<div class="${i === 0 && c.intakeVerified ? "done" : (i === 0 && !c.intakeVerified) || (i === 1 && c.intakeVerified) ? "current" : ""}"><span>${i === 0 && c.intakeVerified ? icon("check") : i + 1}</span><small>${x}</small></div>`).join("")}</div><p class="status-explanation">${c.status === "received" ? "A volunteer will check your information and documents. We’ll show your next step here." : c.status === "queued" ? "Your intake checks are complete. Your case is waiting for a preparer." : c.status === "preparing" ? "A volunteer is working on your application. No action is needed from you right now." : held ? "Your preparer needs a little more information before continuing." : "Your response is with the team. A volunteer needs to check it before preparation can continue."}</p></div>${held ? `<div class="action-card"><div class="action-label">${icon("clock")} ACTION NEEDED</div><h2>${esc(c.request.title)}</h2><p>${esc(c.request.message)}</p>${button(`Add document ${icon("upload")}`, "upload", "primary")}<small>Only a sample document is used in this prototype.</small></div>` : responded ? `<div class="received-card"><span class="success-icon">${icon("check")}</span><div><span class="overline">THANK YOU</span><h2>Document received</h2><p>Document received — waiting for a volunteer to check it.</p><span class="file-chip">${icon("file")} demo-mileage-record-2025.pdf</span></div></div>` : `<div class="next-card">${icon("shield")}<div><h3>You’re all set for now.</h3><p>Your next action will appear here if our team needs anything else.</p></div></div>`}<section class="panel history-panel"><div class="section-head"><h2>Application history</h2><span class="muted small">The latest, all in one place</span></div>${history(c)}</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">AT A GLANCE</span><h3>Your service details</h3>${row("Tax year", "2025")}${row("Service", c.answers.service)}${row("Language", c.answers.language)}<div class="gentle-note">${icon("lock")} Your application is private to you and the site team.</div></div><div class="help-card"><span class="help-card-icon">${icon("phone")}</span><h3>We’re here for you.</h3><p>Questions about your application? Our volunteers can help.</p>${button("Contact the office", "help", "secondary")}</div></aside></div></main>`;
-}
-export function volunteer(c, u) {
-  return `<main id="main" class="volunteer-layout" tabindex="-1"><aside class="volunteer-sidebar"><div><span class="overline">VOLUNTEER WORKSPACE</span><h2>A good day<br>to help.</h2><div class="volunteer-nav active">${icon("folder")} Case worklist <span>${c.id && c.status !== "draft" ? 1 : 0}</span></div><div class="volunteer-person"><span class="avatar">AL</span><div><strong>Alex</strong><small>Preparer · Demo profile</small></div></div></div><div class="sidebar-help"><span class="badge teal">2025 SEASON</span><p>Eligibility is preconfigured for this fictional volunteer.</p></div></aside><section class="volunteer-main"><div class="page-intro"><span class="overline">ONE CASE. ONE SHARED HISTORY.</span><h1>Your worklist</h1><p>Pick up where the team left off.</p></div>${
-    !c.id || c.status === "draft"
-      ? `<div class="panel empty-state">${icon("folder")}<h2>No submitted applications yet</h2><p>Complete the client application first. It will appear here when submitted.</p>${button("Go to client application", "switch", "primary")}</div>`
-      : `<div class="worklist-summary"><div><small>ACTIVE CASES</small><strong>01</strong></div><div><small>ASSIGNED TO YOU</small><strong>${c.owner ? "01" : "00"}</strong></div><div><small>NEEDS ATTENTION</small><strong>${["received", "responded"].includes(c.status) ? "01" : "00"}</strong></div></div><div class="case-row"><span class="avatar soft">${esc(c.answers.firstName?.[0])}${esc(c.answers.lastName?.[0])}</span><div><strong>${esc(c.answers.firstName)} ${esc(c.answers.lastName)}</strong><small>${esc(c.id)} · ${esc(c.answers.service)} · 2025</small></div>${badge(c.status)}<span class="case-age">Today</span>${icon("chevron")}</div><div class="case-detail panel"><div class="section-head"><div><span class="overline">CASE WORKSPACE</span><h2>${esc(c.answers.firstName)}’s application</h2></div>${c.status === "queued" ? button(`Claim case ${icon("arrow")}`, "claim", "primary") : c.status === "preparing" ? button(`${icon("upload")} Request a document`, "request", "primary") : c.owner ? `<div class="owner-tag">${icon("user")} Assigned to Alex</div>` : ""}</div>${c.status === "received" ? `<div class="info-note"><div><strong>Intake checks are still pending</strong><p>Move past the off-screen staff work with the prototype control below.</p>${button(`${icon("play")} Simulate intake checks`, "intake-check", "secondary")}<small class="block">Demo time jump: records fictional interview, identity, document and applicable external consent checks.</small></div></div>` : ""}<div class="case-tabs" role="tablist">${[
-          ["overview", "Overview"],
-          ["documents", "Documents"],
-          ["history", "History"],
-        ]
-          .map(
-            ([v, t]) =>
-              `<button role="tab" aria-selected="${u.tab === v}" class="${u.tab === v ? "active" : ""}" data-action="tab-${v}">${t}${v === "documents" ? ` <span>${c.documents.length}</span>` : ""}</button>`,
+
+// A presenter is on one of two screens: the work board, or one case. Both get
+// the presenter panel, because which volunteer this window is acting as is
+// what decides who may do what — and because the person running the session
+// needs their own controls wherever they happen to be standing. The records
+// are decorated here — once, with the roster this screen already holds — so
+// the renderers never see a bare id.
+const OFFICE_SCREENS = ["office-cases", "office-add-case"];
+
+export function staffScreen(state) {
+  const people = state.people ?? [];
+  const person =
+    people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+  const panel = renderPresenterPanel({
+    principal: state.principal,
+    people,
+    selectedPersonId: state.selectedPersonId,
+    connection: state.connection,
+    workspace: state.workspace,
+    cases: state.cases,
+  });
+  const office = isAdmin(person);
+  // A volunteer chosen while an office screen is open gets the work board.
+  const screen =
+    !office && OFFICE_SCREENS.includes(state.screen) ? "staff" : state.screen;
+  const main = (() => {
+    const addCaseAction = button(`${icon("plus")} Add a case`, "open-add-case", "primary");
+    const frame = (overline, title, intro, backLabel, body, actions = "") =>
+      `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
+        backLabel,
+        button(`${icon("back")} ${backLabel}`, "open-board", "text"),
+      )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${panel}${body}</main>`;
+    if (screen === "staff-case" && state.savedCase) {
+      const record = decorateStaffCase(state.savedCase, people);
+      const ui = {
+        person,
+        busy: state.busy,
+        error: state.error,
+        retryable: state.retryable,
+        draftAnswers: state.draftAnswers,
+        dirty: state.dirty,
+        openPanels: state.openPanels,
+        caseTab: state.caseTab,
+      };
+      return office
+        ? frame(
+            "OFFICE WORKSPACE",
+            "One case",
+            "What the office knows about this case, and the office work you may do on it.",
+            "Back to Follow-ups",
+            renderAdminCase(record, ui),
           )
-          .join(
-            "",
-          )}</div><div class="case-tab-content" role="tabpanel">${u.tab === "history" ? history(c, true) : u.tab === "documents" ? documents(c) : `<div class="case-overview-grid"><div><h3>Intake at a glance</h3>${row("Uber / Lyft income", c.answers.rideshare === "yes" ? "Yes" : "No")}${row("Other self-employment", c.answers.other === "yes" ? "Yes" : "No")}${row("Intake checks", c.intakeVerified ? "Completed (simulated)" : "Pending")}${row("Preferred language", c.answers.language)}</div><div><h3>Documents & next action</h3>${documents(c)}</div></div>`}</div></div>`
-  }</section></main>`;
+        : frame(
+            "VOLUNTEER WORKSPACE",
+            "One case",
+            "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+            "Back to the work board",
+            renderStaffCase(record, person, ui),
+          );
+    }
+    if (screen === "office-add-case")
+      return frame(
+        "OFFICE · ADD A CASE",
+        "Add a case",
+        "Enter a walk-in client's answers yourself. The case has no client account: the office owns it.",
+        "Back to Follow-ups",
+        renderAddCase({ person, busy: state.busy }),
+      );
+    const cases = (state.cases ?? []).map((record) =>
+      decorateStaffCase(record, people),
+    );
+    if (screen === "office-cases")
+      return frame(
+        "OFFICE · ALL CASES",
+        "Case pool",
+        "Every case in this workspace, in every stage.",
+        "",
+        renderCasePool(cases, people, { filters: state.boardFilters, now: Date.now() }),
+        addCaseAction,
+      );
+    return office
+      ? frame(
+          "OFFICE",
+          "Follow-ups",
+          "Everything waiting on the office, most urgent first.",
+          "",
+          renderFollowups(
+            cases,
+            (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
+            {
+              person,
+              filters: state.boardFilters,
+              busy: state.busy,
+              now: Date.now(),
+            },
+          ),
+          addCaseAction,
+        )
+      : frame(
+          "VOLUNTEER WORKSPACE",
+          "Work board",
+          "Every case in this workspace, what it is waiting for, and the work you can take on.",
+          "",
+          renderStaffBoard(cases, people, {
+            person,
+            filters: state.boardFilters,
+            busy: state.busy,
+            searchDraft: state.boardSearchDraft,
+            currentSeason: state.workspace?.currentSeason ?? null,
+          }),
+        );
+  })();
+  return appShell({
+    sidebar: staffSidebar({ ...state, screen }, person, office),
+    body: main,
+    open: state.sidebarOpen !== false,
+  });
 }
-function documents(c) {
-  return `${c.documents.map((d) => `<div class="document-row">${icon("file")}<div><strong>${esc(d.name)}</strong><small>${d.verified ? "Verified during simulated intake" : "Awaiting verification"}</small></div><span class="document-check ${d.verified ? "" : "pending"}">${icon(d.verified ? "check" : "clock")}</span></div>`).join("") || '<p class="muted">Documents will appear after intake checks.</p>'}${c.request ? `<div class="request-summary"><span class="overline">${c.request.status === "open" ? "WAITING FOR CLIENT" : "RESPONSE RECEIVED"}</span><strong>${esc(c.request.title)}</strong><p>${esc(c.request.message)}</p><small>${c.request.status === "open" ? "Preparation is on hold." : "Preparation remains on hold until a volunteer verifies the response."}</small></div>` : ""}`;
+
+// The same id-to-name step `decorateStaffCase` performs, for the one field an
+// assistance item holds: the helper who took it. The store returns ids; no
+// renderer ever sees one.
+function decorateAssistance(item, people = []) {
+  if (!item) return item;
+  return {
+    ...item,
+    assigneeName: item.assigneeId
+      ? (people.find((person) => person?.id === item.assigneeId)?.name ??
+        "Unknown person")
+      : null,
+  };
 }
-export function modal(c, u) {
-  if (!u.modal) return "";
-  let title = "",
-    body = "";
-  if (u.modal === "help") {
+
+// ---------------------------------------------------------------------------
+// Dialogs
+// ---------------------------------------------------------------------------
+
+const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
+
+export function dialog(state) {
+  if (!state.dialog) return "";
+  let title = "";
+  let body = "";
+  if (state.dialog === "help") {
     title = "A real person can help.";
-    body = `<p>Contact PCDC’s office if you need help with your application, have lost your ID, or cannot access your phone or email.</p><div class="contact-option">${icon("phone")}<div><strong>Call the PCDC office</strong><small>Contact details shown in the live service.</small></div></div><div class="contact-option">${icon("home")}<div><strong>Visit the PCDC office</strong><small>Address and opening hours shown in the live service.</small></div></div><div class="info-note">${icon("shield")}<p>Volunteers will follow the site’s identity-check process before restoring access or changing contact details.</p></div>`;
+    body = `<p>Contact the PCDC office if you need help with your application, cannot find your Application ID, or cannot read the inbox you signed up with.</p><div class="contact-option">${icon("home")}<div><strong>Call or email the PCDC office</strong>${officeContact()}</div></div><div class="info-note">${icon("shield")}<p>Volunteers follow the site’s identity-check process before restoring access or changing contact details.</p></div>`;
   }
-  if (u.modal === "staff") {
-    title = "Volunteer workspace";
-    body = `<p>Staff use an approved account in the live service. For this fictional walkthrough, you can enter Alex’s workspace.</p><div class="info-note">${icon("user")}<p>Prototype role switching does not represent client access permissions.</p></div>${button("Enter demo volunteer workspace", "enter-staff", "primary full")}`;
+  if (state.dialog === "regenerate") {
+    title = "Replace the fictional answers?";
+    body = `<p>This replaces every answer in this form with a different fictional example, including answers you edited. Your email address, Application ID and current stage do not change.</p><div class="info-note">${icon("help")}<p>Nothing is saved until you save the form, so you can still step back through the form and check it first.</p></div>${button("Replace with another example", "confirm-regenerate", "primary full")}${button("Keep my answers", "close-dialog", "text")}`;
   }
-  if (u.modal === "reset") {
-    title = "Start a fresh walkthrough?";
-    body = `<p>This clears the fictional case saved on this device, including answers, requests and sample responses.</p>${button("Reset everything", "confirm-reset", "primary full")}`;
+  if (state.dialog === "close-case") {
+    title = "Close this case?";
+    // The office screens own their own copy; this frame only places it.
+    body = closeCaseDialogBody(state);
   }
-  if (u.modal === "exception") {
-    title = "Explore a service limitation";
-    body = `<p>This opens a separate sample draft with both Uber/Lyft income and other self-employment. Your main walkthrough will be preserved.</p>${button("Open exception draft", "confirm-exception", "primary full")}`;
+  if (state.dialog === "request-corrections") {
+    title = "Ask the preparer for corrections";
+    body = correctionsDialogBody(state);
   }
-  if (u.modal === "print") {
+  if (state.dialog === "reset-fixtures") {
+    title = "Reset the sample cases?";
+    body = resetDialogBody(state);
+  }
+  if (state.dialog === "load-checkpoint") {
+    title = "Load a sample checkpoint";
+    body = checkpointDialogBody(state);
+  }
+  if (DRAWERS.includes(state.dialog)) {
+    const people = state.people ?? [];
+    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const ui = { busy: state.busy, error: state.error, retryable: state.retryable };
+    if (state.dialog === "log-call") {
+      title = "Log a call";
+      body = logCallDrawerBody({
+        record: decorateStaffCase(state.savedCase, people),
+        person,
+        ui,
+        caseId: state.dialogContext?.caseId,
+      });
+    } else {
+      title = "Resolve a help request";
+      const item = (state.assistance ?? []).find(
+        (entry) => entry?.id === state.dialogContext?.itemId,
+      );
+      body = resolveHelpDrawerBody({ item: decorateAssistance(item, people), person, ui });
+    }
+  }
+  if (state.dialog === "print") {
     title = "Your application reference card";
-    body = `<div class="print-card"><strong>PCDC · Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(c.id)}</b><p>2025 tax year · A verification code is required to return.</p></div><p class="field-note">This card contains no tax answers or verification code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
+    body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b>${state.savedCase?.clientNumber != null ? `<span>CLIENT NUMBER</span><b>${esc(formatClientNumber(state.savedCase.clientNumber))}</b>` : ""}<p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
   }
-  if (u.modal === "request") {
-    title = "Make the next step clear.";
-    body = `<p>Tell ${esc(c.answers.firstName)} what you need. This request will appear in the client’s application.</p><form id="request-form">${input("Document name", "requestTitle", u.requestTitle, "text", 'required maxlength="100"')}<label class="field"><span>Message to the client</span><textarea name="requestMessage" required rows="4" maxlength="600">${esc(u.requestMessage)}</textarea></label><div class="info-note">${icon("clock")}<p>The case will be put on hold, waiting for the client. No text or email is sent in this demo.</p></div><button type="submit" class="btn primary full">Send request ${icon("arrow")}</button></form>`;
-  }
-  if (u.modal === "upload") {
-    title = "Add your mileage record";
-    body = `<p>${esc(c.request?.message)}</p><div class="upload-zone ${u.sampleFile ? "has-file" : ""}">${icon(u.sampleFile ? "file" : "upload")}<strong>${u.sampleFile ? "demo-mileage-record-2025.pdf" : "Use a sample document"}</strong><span>${u.sampleFile ? "Fictional sample · no real upload" : "No real documents are selected or stored."}</span>${button(u.sampleFile ? "Remove sample" : "Use sample document", u.sampleFile ? "remove-sample" : "choose-sample", "secondary")}</div><label class="checkbox-row small"><input type="checkbox" id="upload-failure" ${u.failUpload ? "checked" : ""}><span>Simulate an upload failure</span></label>${u.error ? `<p class="error" role="alert">${esc(u.error)}</p>` : ""}${button(`Submit document ${icon("arrow")}`, "submit-document", "primary full", u.sampleFile ? "" : "disabled")}<p class="field-note">A volunteer will check the document before work resumes.</p>`;
-  }
-  return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="close-btn" data-action="close-modal" aria-label="Close dialog">${icon("close")}</button><span class="overline">PCDC · HERE TO HELP</span><h2 id="modal-title">${title}</h2>${body}</section></div>`;
+  const drawer = DRAWERS.includes(state.dialog);
+  const overline = drawer
+    ? "OFFICE FOLLOW-UP"
+    : PRESENTER_DIALOGS.includes(state.dialog)
+      ? "PRESENTER CONTROLS"
+      : "ViTally · HERE TO HELP";
+  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
 }

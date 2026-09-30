@@ -6,12 +6,11 @@ import { initializeWorkspace } from "../../tools/admin/workspace-setup.mjs";
 import { createAppError } from "../../src/errors.mjs";
 import { makeSampleAnswers } from "../../src/sample-data.mjs";
 import { createRun, ownedRun, saveRun, endRun } from "./run-manifest.mjs";
-const camel = (key) =>
-  key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-const camelRow = (row) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [camel(key), value]),
-  );
+import { extendTestWorkspace } from "./workspace-overrides.mjs";
+// The fixture reads staff rows through the production adapter, so the browser
+// and these tests share one snake_case → camelCase mapping (Ruling R32). A
+// second copy here could drift from the shapes the application actually shows.
+import { createStore, camelRow } from "../../src/supabase-store.mjs";
 const INTAKE_CHECKS = Object.freeze({
   interview: true,
   identity: true,
@@ -32,6 +31,19 @@ const SAMPLE_ASSISTANCE = Object.freeze({
   language: "Mandarin",
   contactPreference: "Prefers calls from the main office",
 });
+// The six scenario keys the private binding table and `cases.fixture_key`
+// already constrain (migration 001). They are stable names, never case ids.
+const FIXTURE_KEYS = Object.freeze([
+  "preparation_ready",
+  "waiting_documents",
+  "admin_followup",
+  "review_ready",
+  "corrections_required",
+  "review_approved",
+]);
+// The one key this fixture binds to applicant A through the shared
+// initializer, so a reset has a durable client binding to reapply.
+const BOUND_FIXTURE_KEY = "preparation_ready";
 // Actions whose payload names a related record. For compact tests only, an
 // omitted id falls back to the case's single current request or open follow-up;
 // the browser always sends the selected id (Ruling R20).
@@ -54,6 +66,7 @@ const STATE_TABLES = Object.freeze([
   "documents",
   "admin_followups",
   "contact_attempts",
+  "reviews",
   "assistance_items",
 ]);
 // One key for the advisory lock that keeps fixture workspace setup exclusive
@@ -129,6 +142,23 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       return await sqlClient.query(text, values);
     } catch (error) {
       throw databaseError(error);
+    }
+  };
+  // Workspace setup is one serializable transaction over a people table small
+  // enough that every workspace shares an index page, so test files starting
+  // together see serialization failures that outlast the initializer's three
+  // retries. Every setup call — the fixture's own and the direct
+  // `initializeWorkspace` calls in tests/database.mjs — runs inside this
+  // session-level advisory lock, held on the fixture's own connection and
+  // never during a test. A deliberately concurrent pair belongs inside one
+  // call so the pair still races itself (Ruling R26). Nothing in the product,
+  // the initializer or the migrations changes.
+  f.withSetupLock = async (body) => {
+    await f.sql(SETUP_LOCK);
+    try {
+      return await body();
+    } finally {
+      await f.sql(SETUP_UNLOCK);
     }
   };
   f.createCase = async (
@@ -253,6 +283,46 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     );
     return created.caseId;
   };
+  // A client case Alex has claimed and handed to review: preparation version 1,
+  // stage review_ready, no reviewer. Built only through public actions.
+  f.preparedCase = async () => {
+    const caseId = await f.readyCase();
+    await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    return caseId;
+  };
+  // Test-only additive people and capabilities on this run's own workspace
+  // (contracts, "Test-only people and capabilities"). Returns the added
+  // people's ids keyed by person_key. After any enrichment the normal
+  // initializer rejects this workspace, by design.
+  f.enrich = async ({ addPeople = [], addCapabilities = [] } = {}) => {
+    const { people } = await extendTestWorkspace({
+      runManifest,
+      workspaceId: f.workspaceId,
+      addPeople,
+      addCapabilities,
+    });
+    return people;
+  };
+  // Historical reassignment for the self-review regression only. No product
+  // action reassigns or releases a case, so the test project writes the
+  // records a reassignment would have left: the new current preparer, their
+  // participation, and the former preparer's participation retained.
+  f.reassignPreparer = async (caseId, fromPersonId, toPersonId) => {
+    const moved = await f.sql(
+      "update public.cases set preparer_id=$3 where id=$1 and workspace_id=$4 and preparer_id=$2 returning id",
+      [caseId, fromPersonId, toPersonId, f.workspaceId],
+    );
+    if (moved.rowCount !== 1)
+      throw Object.assign(
+        new Error("Expected the case to be prepared by the former preparer."),
+        { code: "FIXTURE_AMBIGUOUS" },
+      );
+    await f.sql(
+      "insert into public.preparation_participants(workspace_id,case_id,person_id) values($1,$2,$3) on conflict do nothing",
+      [f.workspaceId, caseId, toPersonId],
+    );
+  };
   f.sampleAssistance = SAMPLE_ASSISTANCE;
   // One open assistance request against a received, unclaimed case. Assistance
   // items have no creating action in this scope, so the row is seeded through
@@ -277,84 +347,21 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     );
     return { itemId: inserted.rows[0].id, caseId: created.caseId };
   };
-  // The assistance item as staff read it, through the presenter's own client.
+  // Staff reads go through the production adapter on the presenter's own
+  // client, so these helpers prove presenter visibility *and* exercise the one
+  // mapping the browser uses. A row the presenter cannot see is NOT_FOUND,
+  // exactly as it is for the application.
+  f.staffStore = () => createStore(f.presenter);
+  // The assistance item as staff read it.
   f.readStaffAssistance = async (itemId) => {
-    const row = camelRow(
-      await visibleRow(f.presenter, "assistance_items", itemId),
+    const item = (await f.staffStore().listAssistance()).find(
+      (row) => row.id === itemId,
     );
-    return {
-      id: row.id,
-      caseId: row.caseId,
-      title: row.title,
-      status: row.status,
-      revision: Number(row.revision),
-      assigneeId: row.assigneePersonId,
-      resolutionNote: row.resolutionNote,
-      language: row.language,
-      contactPreference: row.contactPreference,
-      fixture: row.fixture,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    if (!item) throw createAppError({ code: "VT002" });
+    return item;
   };
-  // The staff Case shape from src/contracts.mjs, read through the presenter's
-  // own client so the helper also proves presenter visibility.
-  f.readStaffCase = async (caseId) => {
-    const row = await visibleCase(f.presenter, caseId);
-    const participants = await visibleRows(
-      f.presenter,
-      "preparation_participants",
-      caseId,
-      "person_id",
-    );
-    // Each follow-up carries its own contact attempts (Ruling R20).
-    const attempts = await visibleRows(f.presenter, "contact_attempts", caseId);
-    const followups = (
-      await visibleRows(f.presenter, "admin_followups", caseId)
-    ).map((followup) => ({
-      id: followup.id,
-      requestId: followup.requestId,
-      assigneeId: followup.assigneePersonId,
-      status: followup.status,
-      reason: followup.reason,
-      resolutionOutcome: followup.resolutionOutcome,
-      resolutionNote: followup.resolutionNote,
-      createdByPersonId: followup.createdByPersonId,
-      createdAt: followup.createdAt,
-      resolvedAt: followup.resolvedAt,
-      attempts: attempts
-        .filter((attempt) => attempt.followupId === followup.id)
-        .map((attempt) => ({
-          id: attempt.id,
-          outcome: attempt.outcome,
-          note: attempt.note,
-          actorPersonId: attempt.actorPersonId,
-          createdAt: attempt.createdAt,
-        })),
-    }));
-    return {
-      id: row.id,
-      reference: row.reference,
-      workspaceId: row.workspace_id,
-      ownerUserId: row.owner_user_id,
-      fixture: row.fixture,
-      stage: row.stage,
-      revision: Number(row.revision),
-      preparationVersion: Number(row.preparation_version),
-      answers: row.answers,
-      intakeVerified: row.intake_verified,
-      preparerId: row.preparer_id,
-      reviewerId: row.reviewer_id,
-      lastRemindedAt: row.last_reminded_at,
-      lastRemindedByPersonId: row.last_reminded_by_person_id,
-      participants: participants.map((participant) => participant.personId),
-      requests: await visibleRows(f.presenter, "document_requests", caseId),
-      documents: await visibleRows(f.presenter, "documents", caseId),
-      followups,
-      history: await visibleRows(f.presenter, "client_events", caseId),
-      internalHistory: await visibleRows(f.presenter, "case_events", caseId),
-    };
-  };
+  // The staff Case shape from src/contracts.mjs.
+  f.readStaffCase = (caseId) => f.staffStore().getCase(caseId);
   // Every column of every application row in the workspace, so an accepted
   // write cannot hide behind an unchanged row count. `f.snapshot` below covers
   // workspace setup (people, memberships, bindings) instead.
@@ -379,6 +386,124 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         )
       ).rows[0].count,
     );
+  // ---- fixtures, resets and checkpoints (Task 9) -------------------------
+  //
+  // Everything a reset must leave alone is read through one set of helpers, so
+  // "preserved" means the same thing in every test: the same privileged
+  // connection, the same deterministic ordering, and values that are stable by
+  // construction rather than by luck.
+
+  f.fixtureKeys = FIXTURE_KEYS;
+  f.boundFixtureKey = BOUND_FIXTURE_KEY;
+
+  // A class-created application carried to the same place the demo's own
+  // cases sit: submitted, intake recorded, and claimed by a preparer whose
+  // participation the claim writes. Only public actions are used, so what this
+  // builds is exactly what a student would have built.
+  f.prepareClassCase = async (caseId, preparerId) => {
+    // A client's own draft is private to them, so the stage is read through
+    // the privileged connection rather than through a staff client that is
+    // not allowed to see it yet.
+    const [current] = (
+      await f.sql("select stage,answers from public.cases where id=$1", [caseId])
+    ).rows;
+    if (current?.stage === "draft" && !current?.answers?.year)
+      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
+        answers: makeSampleAnswers(),
+      });
+    await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+    await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+      checks: INTAKE_CHECKS,
+    });
+    await f.act(f.presenter, caseId, preparerId, "CLAIM_PREPARATION", {});
+    return caseId;
+  };
+
+  // The workspace setup a reset must never touch. Deliberately excludes
+  // `workspaces.fixture_generation`, which a reset is *supposed* to move.
+  f.readStableSetup = async () => {
+    const people = (
+      await f.sql(
+        "select id,person_key,name,capabilities from public.people where workspace_id=$1 order by person_key",
+        [f.workspaceId],
+      )
+    ).rows.map((row) => ({ ...row, capabilities: [...row.capabilities].sort() }));
+    const memberships = (
+      await f.sql(
+        "select user_id,access,active from public.memberships where workspace_id=$1 order by user_id",
+        [f.workspaceId],
+      )
+    ).rows;
+    const bindings = (
+      await f.sql(
+        "select fixture_key,owner_user_id from vitally_private.fixture_client_bindings where workspace_id=$1 order by fixture_key",
+        [f.workspaceId],
+      )
+    ).rows;
+    const workspace = (
+      await f.sql(
+        "select default_followup_person_id from public.workspaces where id=$1",
+        [f.workspaceId],
+      )
+    ).rows;
+    return { people, memberships, bindings, workspace };
+  };
+
+  // Every membership row this account holds anywhere, so a revoked or deleted
+  // one is an empty array rather than a silent undefined.
+  f.readMembership = async (userId) =>
+    (
+      await f.sql(
+        "select workspace_id,user_id,access,active from public.memberships where user_id=$1 order by workspace_id",
+        [userId],
+      )
+    ).rows;
+
+  f.readFixtureCases = async () =>
+    (
+      await f.sql(
+        "select id,fixture_key,owner_user_id,stage,revision from public.cases where workspace_id=$1 and fixture order by fixture_key",
+        [f.workspaceId],
+      )
+    ).rows.map((row) => ({
+      id: row.id,
+      fixtureKey: row.fixture_key,
+      ownerUserId: row.owner_user_id,
+      stage: row.stage,
+      revision: Number(row.revision),
+    }));
+
+  f.readFixtureAssistance = async () =>
+    (
+      await f.sql(
+        "select * from public.assistance_items where workspace_id=$1 and fixture order by created_at,id",
+        [f.workspaceId],
+      )
+    ).rows.map(camelRow);
+
+  // The generation and the identities of everything a reset replaces: equal
+  // before and after means nothing was reseeded.
+  f.readFixtureState = async () => ({
+    generation: Number(
+      (
+        await f.sql("select fixture_generation from public.workspaces where id=$1", [
+          f.workspaceId,
+        ])
+      ).rows[0].fixture_generation,
+    ),
+    caseIds: (await f.readFixtureCases()).map((row) => row.id).sort(),
+    itemIds: (await f.readFixtureAssistance()).map((row) => row.id).sort(),
+  });
+
+  // A seeded workspace, through the one public path that seeds one.
+  f.seedFixtures = async (client = f.presenter) => {
+    const { data, error } = await client.rpc("vitally_reset_fixtures", {
+      p_action_id: randomUUID(),
+    });
+    if (error) throw createAppError(error);
+    return data;
+  };
+
   f.snapshot = async () => {
     const out = {};
     for (const [name, sql] of Object.entries({
@@ -463,6 +588,11 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       run.users.add(data.user.id);
       await saveRun(runManifest);
       f[`${actor}UserId`] = data.user.id;
+      // The synthetic address beside the id (Ruling R46). The browser gate
+      // types it into the real sign-in form and generates that user's one-time
+      // code from it, so the actor a test signs in as is the actor the fixture
+      // provisioned. It is never logged, and cleanup still works by id alone.
+      f[`${actor}Email`] = email;
       const client = createClient(
         target.apiUrl,
         target.publishableKey,
@@ -482,15 +612,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     const initializeOwned = async (setup) => {
       run.pendingWorkspaces.add(setup.workspaceId);
       await saveRun(runManifest);
-      // Setup runs one serializable transaction over a people table small
-      // enough that every workspace shares an index page, so test files
-      // starting together see serialization failures that outlast the
-      // initializer's three retries. This session-level advisory lock, held on
-      // the fixture's own connection and never during a test, makes fixture
-      // setup exclusive across test processes. It changes no product code and
-      // no initializer behaviour.
-      await f.sql(SETUP_LOCK);
-      try {
+      return await f.withSetupLock(async () => {
         const result = await initializeWorkspace(setup, {
           afterInitialize: async (connection) => {
             await connection.query(
@@ -509,9 +631,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         run.workspaces.add(setup.workspaceId);
         await saveRun(runManifest);
         return result;
-      } finally {
-        await f.sql(SETUP_UNLOCK);
-      }
+      });
     };
     // Workflow tests depend on the shared initializer's permanent people and
     // its default follow-up person; a partial workspace must fail, not skip.

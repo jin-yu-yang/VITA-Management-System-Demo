@@ -35,6 +35,23 @@ export const CASE_ACTIONS = Object.freeze([
   "CLOSE_CASE",
 ]);
 
+// Assistance is its own workflow with its own RPC, so its controls carry their
+// own attribute and are validated against this vocabulary — never translated
+// into a case action. Shared, so the controller and the wiring layer cannot
+// hold two different ideas of what an assistance control may say.
+export const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
+
+// The points in the story a presenter may put one demonstration case back to.
+// The database enforces the same five names (migration 009); this is the one
+// place the browser spells them, so the panel and the controller cannot drift.
+export const CHECKPOINTS = Object.freeze([
+  "intake_ready",
+  "document_requested",
+  "admin_followup_needed",
+  "ready_for_review",
+  "corrections_required",
+]);
+
 export const ERROR_CODES = Object.freeze([
   "FORBIDDEN",
   "NOT_FOUND",
@@ -61,7 +78,7 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
-//         preparerId, reviewerId, requests, documents, history }
+//         preparerId, reviewerId, season, clientNumber, requests, documents, history }
 // Staff case additionally includes participants, reviews, followups,
 // internalHistory. These are never loaded by the applicant adapter.
 // Action: { actionId, caseId, expectedRevision, personId, type, payload }

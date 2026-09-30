@@ -1,0 +1,6 @@
+{
+  "workspaceId": "replace-with-a-uuid",
+  "presenters": ["presenter@example.org"],
+  "applicants": ["client-a@example.org", "client-b@example.org"],
+  "sampleCaseOwners": { "preparation_ready": "client-a@example.org" }
+}

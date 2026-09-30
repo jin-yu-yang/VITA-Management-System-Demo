@@ -105,6 +105,11 @@ test("case actions apply the shared check order against real Supabase", async (t
         );
         assert.equal(submitted.revision, 4);
         assert.equal((await caseRow(f, created.caseId)).stage, "received");
+        // Receipt is not verification: the intake checks are their own action.
+        assert.equal(
+          (await caseRow(f, created.caseId)).intake_verified,
+          false,
+        );
         const verified = await f.act(
           f.presenter,
           created.caseId,
@@ -662,9 +667,12 @@ test("case actions apply the shared check order against real Supabase", async (t
             () => f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", payload),
             rejected("VALIDATION"),
           );
-        // Unknown and not-yet-implemented actions never reach a handler.
-        // REQUEST_DOCUMENT moved to tests/database-documents.mjs with 004.
-        for (const type of ["BOGUS", "CLAIM_REVIEW"])
+        // Unknown actions never reach a handler. Every action in CASE_ACTIONS
+        // is implemented now: REQUEST_DOCUMENT moved to
+        // tests/database-documents.mjs with 004 and CLAIM_REVIEW to
+        // tests/database-review.mjs with 006, where a client attempt is
+        // FORBIDDEN rather than a validation error.
+        for (const type of ["BOGUS", "claim_review", "CLAIM REVIEW"])
           await assert.rejects(
             () => f.act(f.applicantA, caseId, null, type, {}),
             rejected("VALIDATION"),
@@ -874,12 +882,20 @@ test("installed entry points deny anonymous callers and serve members", async (t
         for (const entry of RPC_SIGNATURES) {
           const draft = await draftCase(f);
           const seeded = await f.seedAssistance();
+          // The two fixture entry points work on the demonstration set, so it
+          // has to exist before either of them is called with a real target.
+          await f.seedFixtures();
+          const fixture = (await f.readFixtureCases()).find(
+            (row) => row.fixtureKey === "review_ready",
+          );
           const context = {
             draftCaseId: draft.caseId,
             draftRevision: 1,
             assistanceItemId: seeded.itemId,
             assistanceRevision: 1,
             assistPersonId: f.sam,
+            fixtureCaseId: fixture.id,
+            fixtureRevision: fixture.revision,
           };
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
