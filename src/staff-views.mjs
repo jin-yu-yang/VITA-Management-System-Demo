@@ -1,3 +1,4 @@
+import { languageLabel, serviceLabel } from "./intake-catalogue.mjs";
 import {
   esc,
   icon,
@@ -354,9 +355,12 @@ export function boardFilters(filters) {
   return chosen;
 }
 
+// Version 2 stores codes ("drop_off") and version 1 stores labels ("Drop-off");
+// both are compared, shown and grouped by their label. A saved filter value is
+// already a label and still matches.
 const inLanguageAndService = (record, chosen) =>
-  (chosen.language === "all" || (record?.answers?.language ?? "") === chosen.language) &&
-  (chosen.service === "all" || (record?.answers?.service ?? "") === chosen.service);
+  (chosen.language === "all" || languageLabel(record?.answers?.language ?? "") === languageLabel(chosen.language)) &&
+  (chosen.service === "all" || serviceLabel(record?.answers?.service ?? "") === serviceLabel(chosen.service));
 
 // A query of digits (optionally after one "#") is a client number, matched
 // exactly and only in the current season once the workspace has told us which
@@ -423,12 +427,12 @@ const filterChips = (name, options, current) =>
 
 // Language and service come from the records themselves, so a workspace with
 // one language does not show filters for languages nobody asked for.
-const valueOptions = (cases, key, allLabel) => [
+const valueOptions = (cases, key, allLabel, labelOf) => [
   ["all", allLabel],
   ...[
     ...new Set(
       cases
-        .map((record) => String(record?.answers?.[key] ?? "").trim())
+        .map((record) => String(labelOf(record?.answers?.[key] ?? "")).trim())
         .filter(Boolean),
     ),
   ]
@@ -491,7 +495,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(record?.answers?.language || "—")}</td><td>${esc(record?.answers?.service || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.
@@ -532,9 +536,9 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
-  )}${filterChips("language", valueOptions(cases, "language", "Any language"), chosen.language)}${filterChips(
+  )}${filterChips("language", valueOptions(cases, "language", "Any language", languageLabel), chosen.language)}${filterChips(
     "service",
-    valueOptions(cases, "service", "Any service"),
+    valueOptions(cases, "service", "Any service", serviceLabel),
     chosen.service,
   )}</div>${when(
     !person,

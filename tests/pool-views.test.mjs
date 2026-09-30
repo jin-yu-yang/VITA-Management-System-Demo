@@ -148,6 +148,23 @@ test("no matching case is an empty state", () => {
   assert.doesNotMatch(html, /<tr class="pool-row"/);
 });
 
+test("version-2 codes and version-1 labels read and filter as one", () => {
+  const cases = [
+    rec("X", "received", { answers: { language: "cantonese", service: "drop_off" } }),
+    rec("Y", "received", { answers: { language: "Cantonese", service: "Drop-off" } }),
+    rec("Z", "received", { answers: { language: "english", service: "online" } }),
+  ];
+  const html = render({}, cases);
+  assert.doesNotMatch(html, /drop_off|cantonese|online<|english</);
+  const opts = (key) => [...html.match(new RegExp(`data-board-filter="${key}"[^>]*>(.*?)</select>`))[1].matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(opts("poolLanguage"), ["all", "Cantonese", "English"]);
+  assert.deepEqual(opts("poolService"), ["all", "Drop-off", "Online"]);
+  const narrowed = render({ poolService: "Drop-off", poolLanguage: "Cantonese" }, cases);
+  assert.match(narrowed, /VT-X/);
+  assert.match(narrowed, /VT-Y/);
+  assert.doesNotMatch(narrowed, /VT-Z/);
+});
+
 test("references and languages are escaped, and the footnote says what is not shown", () => {
   const html = render({}, [rec("X", "received", { reference: "<script>x</script>", answers: { language: "<script>y</script>", service: "s" } })]);
   assert.doesNotMatch(html, /<script>/);

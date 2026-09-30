@@ -267,6 +267,25 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
   });
 });
 
+test("version-2 codes and version-1 labels display and filter as one", () => {
+  const v2 = boardCase({ id: "v2", reference: "VT-V2", answers: { service: "drop_off", language: "cantonese" } });
+  const v1 = boardCase({ id: "v1", reference: "VT-V1", answers: { service: "Drop-off", language: "Cantonese" } });
+  const other = boardCase({ id: "v3", reference: "VT-V3", answers: { service: "online", language: "english" } });
+  const both = [v2, v1, other];
+  const ids = (filters) => filterCases(both, { status: "available", ...filters }, ALEX).map((c) => c.id).sort();
+  assert.deepEqual(ids({ service: "Drop-off" }), ["v1", "v2"]);
+  assert.deepEqual(ids({ language: "Cantonese" }), ["v1", "v2"]);
+  assert.deepEqual(ids({ service: "Online" }), ["v3"]);
+  const html = renderStaffBoard(both, PEOPLE, { person: ALEX, filters: { status: "available" } });
+  assert.ok(!html.includes("drop_off") && !html.includes("cantonese"));
+  assert.equal([...html.matchAll(/data-filter="service" data-value="Drop-off"/g)].length, 1);
+  assert.equal([...html.matchAll(/data-filter="language" data-value="Cantonese"/g)].length, 1);
+  const shown = renderStaffBoard(both, PEOPLE, { person: ALEX, filters: { status: "available", service: "Drop-off" } });
+  assert.match(shown, /VT-V2/);
+  assert.match(shown, /VT-V1/);
+  assert.doesNotMatch(shown, /VT-V3/);
+});
+
 test("the board names the workflow and no taxpayer", () => {
   const html = board({ person: ALEX, filters: { status: "review" } });
   assert.match(html, /Drop-off/);
