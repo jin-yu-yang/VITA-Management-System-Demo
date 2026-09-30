@@ -21,6 +21,11 @@ const STANDARD = [
   "## Design Conventions (for developers)",
   "",
   "- Anything here is ignored, even `odd` · Lines · Like this",
+  "- **Who** options:",
+  "  - `me` (Me / 本人)",
+  "  - `spouse` (My spouse / 配偶), **shown only when married**",
+  "  - `none` (No one / 均无), which clears the other two",
+  "- **Every Yes/No question** has `not_sure` (I'm not sure / 不确定).",
   "",
   "## Section 0: Start / 开始",
   "",
@@ -116,7 +121,7 @@ const STANDARD = [
   "`nonsense` · Whatever",
 ].join("\n");
 
-const SENIOR = STANDARD.replace(
+const SENIOR = STANDARD.replace("`spouse` (My spouse / 配偶)", "`spouse` (My spouse / 我爱人)").replace(
   "**Q0.1** Pick a colour / 选颜色",
   "**Q0.1** Which colour do you like? / 您喜欢什么颜色？",
 )
@@ -292,6 +297,35 @@ test("buildCatalogue turns the fixture drafts into the catalogue", () => {
   assert.equal(findQuestion(catalogue, "nonsense"), undefined);
   assert.equal(findQuestion(catalogue, "odd"), undefined);
   assert.ok(catalogue.materials.some((m) => m.id === "photo_id"));
+  assert.deepEqual(catalogue.fixedOptions, {
+    who: {
+      options: [
+        { value: "me", label: both("Me", "本人") },
+        {
+          value: "spouse",
+          label: {
+            general: { en: "My spouse", zh: "配偶" },
+            senior: { en: "My spouse", zh: "我爱人" },
+          },
+        },
+        { value: "none", label: both("No one", "均无") },
+      ],
+      spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }],
+    },
+    yesno: {
+      options: [
+        { value: "yes", label: both("Yes", "是") },
+        { value: "no", label: both("No", "否") },
+        { value: "not_sure", label: both("I'm not sure", "不确定") },
+      ],
+    },
+  });
+});
+
+test("the build fails when a draft's conventions lack a fixed option's label", () => {
+  const text = STANDARD.replace("  - `none` (No one / 均无), which clears the other two\n", "");
+  assert.throws(() => parseDraft(text, { role: "standard" }), /^Error: intake-questions\.md: .*`none`/);
+  assert.throws(() => buildCatalogue(STANDARD, SENIOR.replace("`not_sure` (I'm not sure / 不确定)", "")), /not_sure/);
 });
 
 test("parseDraft rejects lines outside the grammar with file:line", () => {
@@ -329,6 +363,8 @@ test("buildCatalogue refuses drafts whose structure drifts apart", () => {
   assert.throws(() => buildCatalogue(STANDARD, flagged), /yr/);
   const shown = SENIOR.replace("`colour ≠ blue`", "`colour ≠ red`");
   assert.throws(() => buildCatalogue(STANDARD, shown), /hungry/);
+  const extra = SENIOR.replace("  - `me` (Me / 本人)", "  - `me` (Me / 本人)\n  - `maybe` (Maybe / 也许)");
+  assert.throws(() => buildCatalogue(STANDARD, extra), /fixedOptions/);
 });
 
 // ---------------------------------------------------------------------------
@@ -410,6 +446,24 @@ test("every real question states required, and the optional set is the agreed li
       "form_version",
     ].sort(),
   );
+  const section12 = COMMITTED.steps.flatMap((s) => s.sections).find((s) => s.n === 12);
+  assert.ok(section12.questions.length > 0);
+  for (const q of section12.questions) assert.equal(q.required, false, `Section 12: ${q.id}`);
+});
+
+test("the real catalogue labels the who and yesno values from the drafts' conventions", () => {
+  const { who, yesno } = COMMITTED.fixedOptions;
+  assert.deepEqual(who.options.map((o) => o.value), ["me", "spouse", "none"]);
+  assert.deepEqual(yesno.options.map((o) => o.value), ["yes", "no", "not_sure"]);
+  for (const o of [...who.options, ...yesno.options])
+    for (const variant of ["general", "senior"])
+      for (const lang of ["en", "zh"]) assert.ok(o.label[variant][lang], `${o.value} ${variant} ${lang}`);
+  const spouse = who.options[1].label;
+  assert.deepEqual(spouse.general, { en: "My spouse", zh: "配偶" });
+  assert.deepEqual(spouse.senior, { en: "My spouse", zh: "我爱人" });
+  assert.deepEqual(yesno.options[2].label.senior, { en: "I'm not sure", zh: "我不确定" });
+  assert.deepEqual(yesno.options[0].label.general, { en: "Yes", zh: "是" });
+  assert.deepEqual(who.spouseShowIf, [{ field: "marital_status", op: "eq", value: "married" }]);
 });
 
 test("the real catalogue keeps service, language, form_version, hh and the phones", () => {

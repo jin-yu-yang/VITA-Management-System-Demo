@@ -111,7 +111,15 @@ Section 0's page text becomes step 1's intro. Every other section heading become
 ### 2.4 The build and its outputs
 
 `node tools/build-intake-catalogue.mjs` writes:
-- **`src/intake-catalogue-data.mjs`:** a generated module, `export default` the catalogue: `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title: {en, zh}, intro?, questions: […] }] }] }`. Each question carries `{ id, type, required, options?, showIf?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
+- **`src/intake-catalogue-data.mjs`:** a generated module, `export default` the catalogue: `{ version: 2, steps: [{ n, title: {en, zh}, sections: [{ n, title, intro?, questions: […], footer? }] }], fixedOptions, materials }`.
+  - **Section text.** A section's `title`, `intro` and `footer`, and a question's `heading` (a `###` sub-heading in the draft), are worded per variant, `{ general: {en, zh}, senior: {en, zh} }`, because the senior draft's section titles differ. Step titles are a single `{en, zh}`.
+  - **Questions.** Each question carries `{ id, type, required, min?, max?, options?, showIf?, heading?, tips?, fields? (group), wording: { general: {en, zh}, senior: {en, zh} } }`.
+    - `options` is `[{ value, label?: { general: {en, zh}, senior: {en, zh} } }]`. `choice` and `multi` options carry labels. `who` and `yesno` options carry values only; a `yesno` question's list still says whether it offers `not_sure`.
+    - `tips` is `{ general: [{ showIf?, en, zh }], senior: […] }`, per variant, since the drafts' tips differ.
+  - **`fixedOptions`** labels the values of the fixed sets once for the whole catalogue: `{ who: { options: [{ value, label }] (me, spouse, none), spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }] }, yesno: { options: [{ value, label }] (yes, no, not_sure) } }`.
+    - The `who` and `not_sure` labels come from each draft's Design Conventions.
+    - The `yes` and `no` labels come from Section 12's options ("Yes / 是", "No / 否"), for both variants.
+  - **`materials`** is spec §3.5's list, `[{ id, label: {en, zh} }]`.
 - **A catalogue migration, only when the catalogue changed.** The build hashes the catalogue (SHA-256 of the canonical JSON) and reads the hash recorded in the newest `supabase/migrations/NNN_intake_catalogue_<hash8>.sql`.
   - If the hashes differ, or no catalogue migration exists, it writes the next-numbered migration, `NNN_intake_catalogue_<hash8>.sql`. That file holds a `-- catalogue-hash: <full hash>` line and one statement, `select vitally_private.load_intake_catalogue(2, '<catalogue json>'::jsonb);`.
   - If they match, it writes nothing.

@@ -79,6 +79,14 @@ const MATERIALS = [
   { id: "prior_year_1040", label: { en: "Prior-year return (1040)", zh: "去年的报税表（1040）" } },
 ];
 
+// Option values whose labels come from each draft's Design Conventions.
+const CONVENTION_VALUES = ["me", "spouse", "none", "not_sure"];
+
+// "Yes" and "No" have no Chinese in the conventions. Section 12's options use
+// "Yes / 是" and "No / 否" (standard Q12.3); the build takes them from there
+// and falls back to these, for both variants.
+const YES_NO_FALLBACK = { yes: { en: "Yes", zh: "是" }, no: { en: "No", zh: "否" } };
+
 const CJK = /[\p{Script=Han}　-〿＀-￯]/u;
 const ID = "[a-z][a-z0-9_]*";
 const VALUE = "[a-z0-9_]+";
@@ -158,6 +166,7 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
   let group = null; // the open group of this section
   let heading = null; // a pending "### " heading for the next question
   const conditions = []; // [{ lineNo, list }] checked once every field is known
+  const conventions = {}; // value → {en, zh}, from the Design Conventions bullets
 
   const closeBlock = () => {
     if (!block) return;
@@ -175,7 +184,7 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
       const m = line.match(/^## Section (\d+): (.+)$/);
       if (!m) {
         section = null;
-        mode = "skip";
+        mode = /^## Design Conventions\b/.test(line) ? "conventions" : "skip";
         continue;
       }
       const title = splitWording(m[2]);
@@ -190,6 +199,16 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
       continue;
     }
     if (mode === "skip") continue;
+    if (mode === "conventions") {
+      // The labels of the fixed option sets: "`me` (Me / 本人)", "`not_sure` (I'm not sure / 不确定)".
+      for (const cm of line.matchAll(new RegExp(`\`(${VALUE})\` \\(([^)]*)\\)`, "g"))) {
+        const label = splitWording(cm[2]);
+        if (!label) fail(lineNo, `the conventions' label for '${cm[1]}' must be 'English / 中文'`);
+        if (conventions[cm[1]]) fail(lineNo, `the conventions define '${cm[1]}' twice`);
+        conventions[cm[1]] = label;
+      }
+      continue;
+    }
     if (line === "---") continue;
     if (line.trim() === "") {
       if (block) block.block.brk();
@@ -350,7 +369,10 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
       if (c.op !== "filled" && !(target.options ?? []).some((o) => o.value === c.value))
         fail(lineNo, `show-if value '${c.value}' is not an option of '${c.field}'`);
     }
-  return { sections };
+  for (const value of CONVENTION_VALUES)
+    if (!conventions[value])
+      throw new Error(`${file}: the Design Conventions don't give the label of \`${value}\``);
+  return { sections, conventions };
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +407,28 @@ function mergeQuestion(g, s) {
   return out;
 }
 
+// Labels of the `who` and `yesno` values, shared by every such question (a
+// question's own `options` still lists which values it offers).
+function fixedOptions(general, senior) {
+  const section12 = general.sections.find((s) => s.n === 12)?.questions ?? [];
+  const yesNo = (value) =>
+    section12
+      .flatMap((q) => q.options ?? [])
+      .find((o) => o.value === value && o.label)?.label ?? YES_NO_FALLBACK[value];
+  const label = (value) =>
+    value === "yes" || value === "no"
+      ? variants(yesNo(value), yesNo(value))
+      : variants(general.conventions[value], senior.conventions[value]);
+  const options = (values) => values.map((value) => ({ value, label: label(value) }));
+  return {
+    who: {
+      options: options(FIXED_OPTIONS["Who (multi-select)"]),
+      spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }],
+    },
+    yesno: { options: options(FIXED_OPTIONS["Yes / No / Not sure"]) },
+  };
+}
+
 /**
  * Builds the catalogue (spec §2.4, version 2) from the two drafts' texts.
  * Throws if their IDs, types, options, required flags or show-if rules differ.
@@ -395,6 +439,12 @@ export function buildCatalogue(standardText, seniorText) {
   const sectionsNs = (d) => d.sections.map((s) => s.n).join(",");
   if (sectionsNs(general) !== sectionsNs(senior))
     throw new Error(`the drafts differ in their sections: ${sectionsNs(general)} / ${sectionsNs(senior)}`);
+
+  const conventionValues = (d) => Object.keys(d.conventions).sort().join(",");
+  if (conventionValues(general) !== conventionValues(senior))
+    throw new Error(
+      `the drafts differ in fixedOptions: ${conventionValues(general)} / ${conventionValues(senior)}`,
+    );
 
   const byN = new Map();
   general.sections.forEach((g, index) => {
@@ -431,6 +481,7 @@ export function buildCatalogue(standardText, seniorText) {
       title: step.title,
       sections: step.sections.filter((n) => byN.has(n)).map((n) => byN.get(n)),
     })),
+    fixedOptions: fixedOptions(general, senior),
     materials: MATERIALS,
   };
 }

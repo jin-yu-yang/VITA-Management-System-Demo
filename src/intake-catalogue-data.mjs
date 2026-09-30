@@ -4542,6 +4542,101 @@ export default {
       ]
     }
   ],
+  "fixedOptions": {
+    "who": {
+      "options": [
+        {
+          "value": "me",
+          "label": {
+            "general": {
+              "en": "Me",
+              "zh": "本人"
+            },
+            "senior": {
+              "en": "Me",
+              "zh": "我自己"
+            }
+          }
+        },
+        {
+          "value": "spouse",
+          "label": {
+            "general": {
+              "en": "My spouse",
+              "zh": "配偶"
+            },
+            "senior": {
+              "en": "My spouse",
+              "zh": "我爱人"
+            }
+          }
+        },
+        {
+          "value": "none",
+          "label": {
+            "general": {
+              "en": "No one",
+              "zh": "均无"
+            },
+            "senior": {
+              "en": "No one",
+              "zh": "都没有"
+            }
+          }
+        }
+      ],
+      "spouseShowIf": [
+        {
+          "field": "marital_status",
+          "op": "eq",
+          "value": "married"
+        }
+      ]
+    },
+    "yesno": {
+      "options": [
+        {
+          "value": "yes",
+          "label": {
+            "general": {
+              "en": "Yes",
+              "zh": "是"
+            },
+            "senior": {
+              "en": "Yes",
+              "zh": "是"
+            }
+          }
+        },
+        {
+          "value": "no",
+          "label": {
+            "general": {
+              "en": "No",
+              "zh": "否"
+            },
+            "senior": {
+              "en": "No",
+              "zh": "否"
+            }
+          }
+        },
+        {
+          "value": "not_sure",
+          "label": {
+            "general": {
+              "en": "I'm not sure",
+              "zh": "不确定"
+            },
+            "senior": {
+              "en": "I'm not sure",
+              "zh": "我不确定"
+            }
+          }
+        }
+      ]
+    }
+  },
   "materials": [
     {
       "id": "photo_id",
