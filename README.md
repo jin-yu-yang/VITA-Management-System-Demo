@@ -7,6 +7,9 @@ client intake, volunteer preparation, independent review with corrections, admin
 assistance requests, with real email sign-in and shared state across browsers. It is designed for
 **PCDC (Philadelphia Chinatown Development Corporation) Community**.
 
+**Course:** CSE 416 — Software Engineering Project, Fall 2026 ·
+**Team:** Cody Chi · Hailey Zheng · Jinyu Yang · Kelvin Chiu · Manqi Lu
+
 Use fictional data only. ViTally never files or prepares a real tax return; document uploads,
 reminders, and TaxSlayer preparation milestones are simulated throughout, and every seeded sample
 case uses invented names with no address or other routable contact detail.
@@ -31,6 +34,24 @@ in this repository's documentation claims live delivery or hosted access is work
 what it needs from the user.
 
 Track progress in the [implementation plan](docs/superpowers/plans/2026-09-15-vitally-shared-demo.md).
+
+### Redesign (September 28 onward)
+
+The UI redesign is built in parts, following the
+[redesign roadmap](docs/superpowers/specs/2026-09-28-redesign-roadmap-and-restyle-design.md)
+(decisions D1–D12 are logged in [`docs/design/redesign-review.md`](docs/design/redesign-review.md)):
+
+| # | Part | Status |
+| --- | --- | --- |
+| 0 | Foundations: design tokens, logo, icons, app shell | Done |
+| 1 | Visual restyle: volunteer board, case page, client screens, office screens (4 PRs) | Done |
+| 2 | [Client numbers](docs/superpowers/specs/2026-09-29-client-numbers-design.md): `#001`-style numbers assigned on submit, per season, searchable on the board | Done |
+| 3 | Lifecycle stages: the ~25 stages in [`return-lifecycle.svg`](docs/media/return-lifecycle.svg) replace today's 9 | Next |
+| 4–8 | New bilingual intake, access and masking, returning clients, team features, dashboards | Planned |
+
+Case messaging/SMS, real document uploads, scheduling, mobile layouts, and certification levels
+are after the MVP. Screenshots of the final designs and of what is implemented so far are in
+[`docs/design/`](docs/design/README.md).
 
 ## Run locally
 
@@ -91,3 +112,41 @@ document, and so on).
 developers turning this demo into a production system: the architecture and its key decisions,
 the database schema and action API, the browser app's structure, the server-side tooling, and a
 roadmap of what separates the demo from the product described in [`docs/spec.md`](docs/spec.md).
+
+## Project documents
+
+| Document | What it is |
+| --- | --- |
+| [`docs/proposal.md`](docs/proposal.md) | Project proposal: problem, users, scope, and plan |
+| [`docs/spec.md`](docs/spec.md) | Product specification: functional and non-functional requirements, case state machine |
+| [`docs/CSE 416 Milestone 1.pdf`](<docs/CSE 416 Milestone 1.pdf>) | Milestone 1 presentation |
+| [`docs/CSE416_VITA_SMS_Project_Notebook.docx`](docs/CSE416_VITA_SMS_Project_Notebook.docx) | Team project notebook: spec draft, pre-survey findings, meeting notes (9/6 – 9/29, English and Chinese), and UI design log |
+| [`docs/meeting-minutes/`](docs/meeting-minutes/) | Meeting minutes in Markdown |
+| [`docs/intake-questions/`](docs/intake-questions/) | Drafted intake questions, standard and senior wording |
+| [`docs/design/`](docs/design/README.md) | Design system, redesign review, and screen images |
+| [`docs/media/`](docs/media/) | PCDC logos, case state machine and return lifecycle diagrams, IRS Forms 13614-C and 14446, materials checklist |
+
+## Repository layout
+
+```text
+index.html, server.mjs   static entry page and local dev server (no build step)
+src/                     browser app: controller, Supabase store, auth, views, styles
+supabase/migrations/     database schema, row-level security, and action functions (001–010)
+tests/                   unit tests (*.test.mjs), database suites, browser suites
+tools/                   vendor bundle build and guarded admin tooling (migrate, roster)
+docs/                    specs, plans, setup guide, developer guide, design, project documents
+```
+
+## Team
+
+| Name | Sub-team | Focus |
+| --- | --- | --- |
+| Hailey Zheng | Frontend | UI development and redesign; intake question design |
+| Jinyu Yang | Frontend | UI development |
+| Manqi Lu | Frontend | UI development; English–Chinese translation |
+| Cody Chi | Backend | Server development |
+| Kelvin Chiu | Backend | Database design |
+
+## License
+
+[MIT](LICENSE)
