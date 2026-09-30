@@ -4,6 +4,17 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
+import { checkValue, findQuestion, stepsFor } from "./intake-catalogue.mjs";
+import {
+  countText,
+  drivesVisibility,
+  needsRedraw,
+  noteState,
+  readField,
+  readForm,
+  sendable,
+  stepStatus,
+} from "./intake-form.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -80,6 +91,17 @@ if (!config) {
   let heldInDialog = null;
   let quiet = false;
   let sampleSeed = 0;
+  // The version-2 form's redraw hold (spec §2.4 rules 1 and 4). While a pointer
+  // is down on the page, or an IME is composing, a requested render waits:
+  // replacing the page between mousedown and mouseup would swallow the click.
+  let pointerHeld = false, composing = false, heldRender = null; // heldRender: the `focus` argument of the held call
+  let holdTimer = null;
+  // In-place DOM updates waiting for the press to end (afterPress).
+  let heldUpdates = [];
+  // Where the last render drew: screen, case and form step. A version-2 render
+  // at the same place keeps focus, caret and scroll; one at a new place (a new
+  // step, or entering or leaving the form) starts at the top.
+  let lastPlace = null;
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. It is
@@ -100,13 +122,25 @@ if (!config) {
 
   function render(focus = false) {
     if (quiet) return;
+    // On the version-2 form a render waits for the press (or the composition)
+    // to end; `flushHeld` draws it then, unless another render drew first.
+    if (v2OnPage() && (pointerHeld || composing)) {
+      heldRender = heldRender || focus;
+      return;
+    }
+    heldRender = null; // a real render: any held request is now satisfied (spec §2.4 rule 1)
     const state = controller.getState();
+    const place = `${state.screen}|${state.selectedCaseId}|${state.formStep}`;
+    const wasV2 = v2OnPage();
     // A full rebuild replaces the fields, so remember where the keyboard was.
     // `describeFocus` decides what can be read; nothing it does may throw here,
     // because this runs before the page is replaced.
     const active = document.activeElement;
     const keyboard = active?.closest?.("#app") ? describeFocus(active) : null;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
     root.innerHTML = views.page(state, screenFor(state));
+    const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     tickCooldown(state);
     const opened = Boolean(state.dialog) && state.dialog !== shownDialog;
@@ -136,10 +170,58 @@ if (!config) {
         modal?.focus();
         if (wanted && findField(wanted, scope)?.disabled) heldInDialog = wanted;
       }
+    } else if (v2Place && !focus) {
+      // Version 2 only (spec §2.4 rule 4). The place is compared here rather
+      // than inferred from the caller: a step change also arrives as
+      // `show()` → `render(false)`, the same path as a realtime redraw.
+      if (place === lastPlace) {
+        if (keyboard) restoreField(keyboard);
+        window.scrollTo(scrollX, scrollY);
+      } else {
+        root.querySelector("#main")?.focus({ preventScroll: true });
+        window.scrollTo(0, 0);
+      }
     } else if (focus) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+    lastPlace = place;
+  }
+
+  // ---- the version-2 form's redraw hold (spec §2.4) ----------------------
+
+  function v2OnPage() {
+    return Boolean(root.querySelector("#intake-v2-form"));
+  }
+
+  root.addEventListener("pointerdown", () => {
+    pointerHeld = true;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(release, 2000); // safety: a pointerup that never arrives
+  }, true);
+  function release() {
+    if (!pointerHeld) return;
+    pointerHeld = false;
+    clearTimeout(holdTimer);
+    setTimeout(flushHeld, 0); // after the click
+  }
+  window.addEventListener("pointerup", release, true);
+  window.addEventListener("pointercancel", release, true);
+  window.addEventListener("contextmenu", release, true); // right-click, Ctrl+click
+  window.addEventListener("blur", release);
+  document.addEventListener("visibilitychange", release);
+  root.addEventListener("compositionstart", () => { composing = true; });
+  root.addEventListener("compositionend", () => { composing = false; setTimeout(flushHeld, 0); });
+  function flushHeld() {
+    if (pointerHeld || composing) return;
+    if (heldRender !== null) render(heldRender); // render() sets heldRender = null
+    for (const fn of heldUpdates.splice(0)) fn(); // each looks its node up by id; a gone node is a no-op
+  }
+  // A DOM update caused by `change` can move the layout (a note gaining text
+  // pushes Continue down), so it waits for any press in progress, like a render.
+  function afterPress(fn) {
+    if (pointerHeld || composing) heldUpdates.push(fn);
+    else setTimeout(fn, 0);
   }
 
   // What was sent is no longer a draft — and only what was sent. A page holds
@@ -283,6 +365,173 @@ if (!config) {
     refreshOfficeDraft();
   }
 
+  // ---- the client's version-2 form (spec §2.4, §2.5) --------------------
+  //
+  // Its controls carry `data-control` and `data-q` (the question, "hh" for a
+  // household control), and are read with the renderer's own `readField` and
+  // `readForm`. `#field-confirmed` has no `data-q`, so it never matches.
+  const V2_CONTROLS = "#intake-v2-form [data-control][data-q]";
+  const LAST_V2_STEP = stepsFor(2).length - 1;
+  const isV2Case = (state) => Number(state.savedCase?.intakeVersion) === 2;
+  // The step the form shows, clamped as the renderer clamps it.
+  const v2Step = (state) =>
+    Math.min(Math.max(Number(state.formStep) || 0, 0), LAST_V2_STEP);
+
+  // What a control answers, as plain values, so an update queued behind a
+  // press can find its question again after the page has been replaced.
+  function v2Ref(control) {
+    const { q, member, sub } = control.dataset;
+    return member !== undefined && sub !== undefined
+      ? { q, member: Number(member), sub }
+      : { q };
+  }
+
+  // The question a ref points at, its value in `draft`, the id base of its
+  // note and count, and its revealed id (`hh[<n>].<sub>` in a household).
+  function v2Answer(ref, draft) {
+    const top = findQuestion(2, ref.q);
+    if (!top) return null;
+    if (ref.sub === undefined)
+      return { question: top, value: draft[ref.q], base: `field-client-${ref.q}`, id: ref.q };
+    const question = (top.fields ?? []).find((field) => field.id === ref.sub);
+    if (!question) return null;
+    const members = Array.isArray(draft[ref.q]) ? draft[ref.q] : [];
+    return {
+      question,
+      value: members[ref.member]?.[ref.sub],
+      base: `field-client-${ref.q}-${ref.member}-${ref.sub}`,
+      id: `${ref.q}[${ref.member}].${ref.sub}`,
+      group: top,
+    };
+  }
+
+  // className and textContent only (spec §2.4 rule 2), and only when they
+  // differ, so a live note is not re-announced on every keystroke.
+  function paintInPlace(node, baseClass, { text, className }) {
+    if (!node) return;
+    const wanted = className ? `${baseClass} ${className}` : baseClass;
+    if (node.className !== wanted) node.className = wanted;
+    if (node.textContent !== text) node.textContent = text;
+  }
+
+  // The note of the control's question (and in a household, the group's own
+  // note too), from the controller's state now. `showInvalid(note, answer,
+  // revealed)` decides whether an invalid value shows its error.
+  function paintV2Note(ref, showInvalid) {
+    const state = controller.getState();
+    const draft = state.draftAnswers ?? {};
+    const answer = v2Answer(ref, draft);
+    if (!answer) return;
+    const showMissing = (state.visitedSteps ?? []).includes(v2Step(state));
+    const revealed = new Set(state.revealed ?? []);
+    const note = document.getElementById(`${answer.base}-note`);
+    if (note)
+      paintInPlace(
+        note,
+        "q-note",
+        noteState(answer.question, answer.value, {
+          showMissing,
+          showInvalid: showInvalid(note, answer, revealed),
+        }),
+      );
+    if (answer.group)
+      paintInPlace(
+        document.getElementById(`field-client-${ref.q}-note`),
+        "q-note",
+        noteState(answer.group, draft[ref.q], { showMissing, showInvalid: revealed.has(ref.q) }),
+      );
+  }
+
+  // The current step's rail mark, the same function the render uses.
+  function paintV2Rail() {
+    const state = controller.getState();
+    const step = v2Step(state);
+    const status = stepStatus(
+      step,
+      state.draftAnswers ?? {},
+      state.visitedSteps ?? [],
+      new Set(state.revealed ?? []),
+    );
+    paintInPlace(document.getElementById(`rail-step-${step}-status`), "rail-status", {
+      text: status.text,
+      className: `is-${status.key}`,
+    });
+  }
+
+  // A longtext's character count.
+  function paintV2Count(ref) {
+    const answer = v2Answer(ref, controller.getState().draftAnswers ?? {});
+    if (answer?.question.type !== "longtext") return;
+    const count = document.getElementById(`${answer.base}-count`);
+    if (count && count.textContent !== countText(answer.value))
+      count.textContent = countText(answer.value);
+  }
+
+  // Every rendered answer into the draft, quietly: the action that follows
+  // (a step change, a save, a fill) draws the page. Empty household cards are
+  // dropped, as `readForm` drops them.
+  function sweepV2Form() {
+    const form = root.querySelector("#intake-v2-form");
+    if (!form) return;
+    quiet = true;
+    try {
+      controller.editAnswers(readForm(form));
+    } finally {
+      quiet = false;
+    }
+  }
+
+  // A version-2 control's `change`. For a text field it fires on the
+  // mousedown of the next press, so nothing on screen may move now (spec §2.4
+  // rule 1): the state is updated at once, the page after the press.
+  function changeV2Field(field) {
+    const ref = v2Ref(field);
+    // `change` fires each time focus moves between a date's three boxes, so a
+    // date's error is revealed only when its step is left (spec §2.5).
+    const isDate = field.dataset.datePart !== undefined;
+    quiet = true;
+    try {
+      controller.editAnswers(readField(field));
+      if (!isDate) {
+        const answer = v2Answer(ref, controller.getState().draftAnswers ?? {});
+        if (answer && checkValue(answer.question, sendable(answer.question, answer.value)))
+          controller.revealInvalid(answer.id);
+      }
+    } finally {
+      quiet = false;
+    }
+    if (!isDate)
+      // Everything read when it runs, not now: a press may have changed the
+      // step or replaced the page in between, and then this writes exactly
+      // what that render wrote, or finds its node gone.
+      afterPress(() => {
+        paintV2Note(ref, (_note, answer, revealed) => revealed.has(answer.id));
+        paintV2Rail();
+        refreshSaveChip();
+      });
+    // A full redraw only when the visible questions change (rule 3): the ids
+    // on the page against the ids the draft makes visible. Queued, so a Tab's
+    // new target is the focus the render puts back.
+    const choice =
+      field.type === "radio" || field.type === "checkbox" || field.tagName === "SELECT";
+    let redraw = choice;
+    if (!redraw && drivesVisibility(ref.q)) {
+      const form = field.closest("#intake-v2-form");
+      const renderedIds = new Set(
+        [...form.querySelectorAll("[data-q]")].map((element) => element.dataset.q),
+      );
+      const state = controller.getState();
+      redraw = needsRedraw(renderedIds, v2Step(state), state.draftAnswers ?? {});
+    }
+    if (redraw) setTimeout(() => render(), 0);
+  }
+
+  async function goToV2Step(step) {
+    sweepV2Form();
+    await controller.goToStep(step);
+    root.querySelector("#main")?.focus({ preventScroll: true });
+  }
+
   // `opener` is passed when the control was described before an await (the
   // Log a call button, captured before its case is loaded); otherwise it is
   // whatever holds the keyboard now.
@@ -312,6 +561,34 @@ if (!config) {
   function fictional(replaceEverything) {
     const state = controller.getState();
     sampleSeed += 1;
+    if (isV2Case(state)) {
+      // What is in the boxes first, so a fill sees every answer as typed.
+      sweepV2Form();
+      const draft = controller.getState().draftAnswers ?? {};
+      const generated = makeSampleAnswers({
+        version: 2,
+        seed: sampleSeed,
+        married: draft.marital_status === "married",
+      });
+      // A regenerate is the new example plus a clear of every other answer
+      // already in the draft; a fill touches blank answers only.
+      const cleared = Object.fromEntries(
+        Object.keys(draft)
+          .filter((key) => findQuestion(2, key) && !(key in generated))
+          .map((key) => [key, null]),
+      );
+      controller.editAnswers(
+        replaceEverything
+          ? { ...cleared, ...generated }
+          : fillBlankAnswers(draft, generated, 2),
+      );
+      notify(
+        replaceEverything
+          ? "A different fictional example replaced the answers. Nothing is saved yet."
+          : "Fictional details filled in. Nothing is saved yet.",
+      );
+      return;
+    }
     const generated = makeSampleAnswers({
       seed: sampleSeed,
       scenario: "ordinary",
@@ -438,6 +715,13 @@ if (!config) {
     if (type === "SUBMIT" && !state.openPanels.includes("confirmed")) {
       notify("Confirm that you have checked your answers first.");
       return;
+    }
+    if (type === "SUBMIT" && isV2Case(state)) {
+      // Step 9's own answers (the consent) are saved before the submit, which
+      // sends the saved case's revision: otherwise they would be dropped, and
+      // the refresh would raise a conflict on a submitted case.
+      sweepV2Form();
+      if (controller.getState().dirty) await controller.saveAnswers();
     }
     if (type === "RESPOND_DOCUMENT" && state.openPanels.includes("upload-failure")) {
       // The simulated failure never reaches the server, so there is nothing to
@@ -660,13 +944,39 @@ if (!config) {
         controller.navigate("intake");
         break;
       case "back-step":
-        controller.setFormStep(Math.max(0, state.formStep - 1));
+        // Version 2 saves on every step change; version 1's Back never did.
+        if (isV2Case(state)) await goToV2Step(state.formStep - 1);
+        else controller.setFormStep(Math.max(0, state.formStep - 1));
         break;
-      case "save-exit":
-        if (state.dirty) await controller.saveAnswers();
+      case "go-step":
+        await goToV2Step(Number(target.dataset.step));
+        break;
+      case "toggle-senior":
+        controller.editAnswers({
+          form_version: state.draftAnswers?.form_version === "senior" ? "general" : "senior",
+        });
+        break;
+      case "add-member": {
+        // A new array, never the draft's own: `{}` is a card with no answers yet.
+        const members = Array.isArray(state.draftAnswers?.hh) ? state.draftAnswers.hh : [];
+        if (members.length < 10) controller.editAnswers({ hh: [...members, {}] });
+        break;
+      }
+      case "remove-member":
+        // The controller renumbers the revealed ids of the members after it.
+        controller.removeMember(Number(target.dataset.member));
+        break;
+      case "save-exit": {
+        let dirty = state.dirty;
+        if (isV2Case(state)) {
+          sweepV2Form();
+          dirty = controller.getState().dirty;
+        }
+        if (dirty) await controller.saveAnswers();
         controller.navigate("applications");
         notify("Your answers are saved.");
         break;
+      }
       case "fill-fictional":
         fictional(false);
         break;
@@ -769,9 +1079,26 @@ if (!config) {
 
   root.addEventListener("input", (event) => {
     const field = event.target;
-    // An answer form first: the office's copy is also a `.staff-form`, and its
-    // boxes belong to the draft rather than to the wiring layer's own map.
-    if (field.closest(ANSWER_FORMS) && field.name && field.type !== "checkbox") {
+    if (field.matches?.(V2_CONTROLS)) {
+      // The version-2 form (spec §2.4 rule 2): the draft, quietly, then the
+      // note, the rail mark and a longtext's count in place, never a redraw.
+      // The event's own target, so a ticked "No one" clears the others.
+      quiet = true;
+      try {
+        controller.editAnswers(readField(field));
+      } finally {
+        quiet = false;
+      }
+      refreshSaveChip();
+      const ref = v2Ref(field);
+      // Typing never adds an error, but clears one once the value is valid
+      // or empty (the controller drops the id at the same moment).
+      paintV2Note(ref, (note) => note.classList.contains("is-invalid"));
+      paintV2Rail();
+      paintV2Count(ref);
+    } else if (field.closest(ANSWER_FORMS) && field.name && field.type !== "checkbox") {
+      // An answer form first: the office's copy is also a `.staff-form`, and its
+      // boxes belong to the draft rather than to the wiring layer's own map.
       editAnswerField(field);
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
@@ -797,6 +1124,10 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
+    if (field.matches?.(V2_CONTROLS)) {
+      changeV2Field(field);
+      return;
+    }
     if (!field.closest(ANSWER_FORMS) || !field.name) return;
     if (field.type === "radio" || field.tagName === "SELECT") {
       // These change what the rest of the step says, so the page is rebuilt and
@@ -813,6 +1144,18 @@ if (!config) {
   root.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
+    if (form.id === "intake-v2-form") {
+      // Continue. Before `reportValidity`, which ignores `novalidate`: the
+      // form warns but always moves on, and a half-typed `type="email"` would
+      // otherwise block it.
+      try {
+        sweepV2Form();
+        await controller.goToStep(controller.getState().formStep + 1);
+      } catch (error) {
+        notify(error?.message ?? "Something went wrong.");
+      }
+      return;
+    }
     if (!form.reportValidity()) return;
     const values = new FormData(form);
     try {
