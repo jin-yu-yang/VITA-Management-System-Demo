@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { validateTestTarget } from "../tools/admin/test-target.mjs";
 import { assertClassroomTarget } from "../tools/admin/classroom-target.mjs";
-import { parseMigrateArgs } from "../tools/admin/migrate.mjs";
+import { parseMigrateArgs, isMigrationFile } from "../tools/admin/migrate.mjs";
 const db = {
   host: "aws-0-test.pooler.supabase.com",
   port: 5432,
@@ -228,6 +228,13 @@ test("guards reject missing config without fallback to application variables", (
     for (const bindings of Object.values(c.NetworkSettings.Ports))
       bindings[0].HostIp = "0.0.0.0";
   assert.equal(validateTestTarget(localEnv, local, wildcards).mode, "local");
+});
+
+test("the migrator applies numbered migrations, including generated catalogue loads", () => {
+  for (const name of ["001_identity_and_cases.sql", "011_intake_v2.sql", "012_intake_catalogue_0a1b2c3d.sql"])
+    assert.equal(isMigrationFile(name), true, name);
+  for (const name of ["README.md", "notes.sql", "012_Intake.sql", "012_intake.sql.bak"])
+    assert.equal(isMigrationFile(name), false, name);
 });
 
 test("the migrator runs on the test stack by default and on the classroom only by name", () => {
