@@ -251,3 +251,21 @@ Migration `supabase/migrations/011_intake_v2.sql`, written re-apply-safe like 01
 - All four suites pass.
 - `default_intake_version` is 1, and nothing visible has changed.
 - The drafts parse under §2.2 with their wording unchanged.
+
+## 6. Carried forward from 4a's implementation
+
+Found while building and reviewing 4a; each belongs to the piece named.
+
+**4b (client intake):**
+- **Samples.** When `default_intake_version` becomes 2, 009's `seed_fixtures`, `vitally_reset_fixtures` and `vitally_load_checkpoint` insert non-empty answers and hit 011's insert trigger. Samples must be inserted empty and then saved, or seeded with version-2 answers after the insert. 009's `apply_fixture_scenario` (checkpoint reload) must also delete the sample's `case_contacts` and `case_materials` rows.
+- **Labels on the progress page.** The client progress summary (`src/client-views.mjs`) prints `answers.service` and `answers.language` raw; a version-2 case would show `drop_off`. Route them through `serviceLabel` / `languageLabel`.
+- **Contact edits bump the revision.** An owner's `UPDATE_CONTACT` bumps `cases.revision`, so the form must refresh its edit base revision afterwards (or send the owner's best-time edits through `SAVE_ANSWERS`).
+- **Clear a stale spouse.** When `marital_status` leaves `married`, clear `spouse` from every `who` answer; `spouseShowIf` is display-only on both sides.
+- **State field.** `addr_state` is free text (the drafts define no state list); the form may offer a picker that writes the two-letter code.
+- **Group review.** The new wording (Q0.2–Q0.4, the Chinese step titles, the materials labels) is for the group to confirm. The drafts' Design Conventions say every Yes/No question offers "I'm not sure", but `Yes / No` questions offer only Yes and No; the group should reword the convention or the questions.
+
+**4c (Add a case and staff views):**
+- **Contact visibility.** RLS lets every staff persona read `case_contacts`; D5 ("no contact details on available cases") is enforced on screen. Render `record.contact` only when `canSeeContact(record, person)` (`src/intake-catalogue.mjs`) is true.
+- **Add a case** creates the version-2 case empty, then saves.
+- **Materials** display in `MATERIALS_ITEMS` order (the store reads them alphabetically). A repeat `RECORD_MATERIALS` keeps an item's first `received_at`.
+- **Eligibility** for the `UPDATE_CONTACT` / `RECORD_MATERIALS` buttons goes beside the existing screen eligibility, mirroring 013's `works_on_case`.
