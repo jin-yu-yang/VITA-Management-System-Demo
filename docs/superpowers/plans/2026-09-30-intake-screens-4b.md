@@ -31,7 +31,8 @@
   - keys are the catalogue's top-level field IDs, including the four contact fields `tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`;
   - values are strings, arrays of strings, or (for `hh`) arrays of member objects;
   - an explicit `null` means "clear this field on the next save", and is kept in the draft until then;
-  - inside a household member, empty sub-fields are omitted, never `null`.
+  - inside a household member, empty sub-fields are omitted, never `null`; a card with no answers yet is `{}` in the draft (so it survives redraws) and is dropped by `sendable`, so it's never sent;
+  - a partly typed date is its parts joined with `-`, empty parts blank (`"-04-12"`): an invalid value, withheld like any other (spec §2.2).
 - **Saves merge on the server** (`answers || payload`, with `null` clearing). A version-2 save sends `withholdInvalid(draft, 2)`: every field's `sendable` value, `null` clears included, minus the invalid fields (spec §2.5). So a cleared field reaches the server, and an invalid one never does.
 - **Redraw rules: spec §2.4 is the contract.** It applies while `#intake-v2-form` is on the page; version-1 screens keep today's `render()` behaviour exactly.
   1. **A press never loses its target.**
@@ -136,7 +137,7 @@
 - Modify `src/intake-catalogue.mjs` (email: no whitespace), `tests/intake-catalogue.test.mjs` and `tests/database-intake.mjs` (the contract table).
 
 **The contract table** (`tests/support/intake-value-cases.mjs`, spec §6) is one exported array of `{ field, value, js, sql }`, where `js`/`sql` are `true` (valid) or `false`. It includes:
-- `email`: `"mei lin@example.com"` (**js false, sql true**, the one intended difference, with a comment pointing at spec §2.5), `"a@"`, `"@"`, `"not-an-email"` (both false), `"mei.lin@example.com"` (both true);
+- `email`: `"mei lin@example.com"` (**js false, sql true**, one of the two marked email-with-space rows, with a comment pointing at spec §2.5), `"a@"`, `"@"`, `"not-an-email"` (both false), `"mei.lin@example.com"` (both true);
 - `tp_dob`: `"2025-02-30"` (both false), `"1961-04-12"` (both true);
 - `addr_zip`: `" 12345 "` and `"1234"` (both false: `checkValue` sees the raw value; trimming is `sendable`'s job), `"12345"` (both true);
 - one valid case per remaining type, each true on both sides:
@@ -157,11 +158,11 @@
 
 **The two tests that read it:**
 - **`tests/intake-catalogue.test.mjs`:** for each row, `(checkValue(findQuestion(2, field), value) === null) === row.js`.
-- **The existing 4a mirror list** in `tests/database-intake.mjs` ("the server's value check and missing list mirror the browser's", the `cases` array of about 60 rows) moves into this table with `js`/`sql` set from today's results, so there is one list. Its `["email", "a b@c"]` row becomes the marked difference (`js: false, sql: true`).
+- **The existing 4a mirror list** in `tests/database-intake.mjs` ("the server's value check and missing list mirror the browser's", the `cases` array of about 60 rows) moves into this table with `js`/`sql` set from today's results, so there is one list. Its `["email", "a b@c"]` row becomes the second marked difference (`js: false, sql: true`). So exactly two rows are marked, both emails with a space.
 - **`tests/intake-catalogue.test.mjs:127`** asserts `checkValue(e, "a b@c") === null` today. Change it to expect the "Enter a valid email address." message, and cite spec §2.5.
 - Nothing else depends on it (searched: `src/case-actions.mjs` calls `checkValue` only for the contact best-time and note, and `tests/auth.test.mjs`'s `"a b@c.org"` is sign-in validation, not `checkValue`). No version-1 path calls `checkValue`.
 - **`tests/database-intake.mjs`:** one query per row, `select vitally_private.check_intake_value(f, $2::jsonb) from vitally_private.intake_fields f where version=2 and group_id is null and field_id=$1`, expecting `row.sql`.
-- If a row other than the marked one disagrees, fix the JS rule, or stop and report. Never change SQL.
+- If a row other than the two marked ones disagrees, fix the JS rule, or stop and report. Never change SQL.
 
 **Interfaces (produces):**
 ```js
@@ -172,15 +173,18 @@ renderQuestion(question, value, { variant = "general", lang = "en", scope, answe
 // A control descriptor is plain data, so the reading rules are testable in Node:
 //   { q, member?, sub?, part?, type, value, checked }
 //   q = question id; member/sub for household controls; part = "month"|"day"|"year".
-valuesFromControls(descriptors, { changed } = {}) → { [id]: value }
+valuesFromControls(descriptors, { changed, keepEmptyMembers = false } = {}) → { [id]: value }
                                                          // pure; every question present in the list. `changed` is { q, value } for the
-                                                         // checkbox option just ticked, and drives the "No one" rule (below)
+                                                         // checkbox option just ticked, and drives the "No one" rule (below).
+                                                         // keepEmptyMembers: a household card with no answers reads as {} (kept), else dropped.
+                                                         // A date reads null only when all three parts are empty; otherwise
+                                                         // `${year}-${month}-${day}` with empty parts blank ("-04-12"), an invalid value
 describeControl(element) → descriptor                    // DOM, reads data-* and value/checked
 readField(element) → { [id]: value }                     // DOM: describes every control of the element's question (or, in the household, of the
-                                                         // whole group) and calls valuesFromControls(descriptors, { changed }), where
-                                                         // changed = element.type === "checkbox" && element.checked
+                                                         // whole group) and calls valuesFromControls(descriptors, { changed, keepEmptyMembers: true }),
+                                                         // where changed = element.type === "checkbox" && element.checked
                                                          //   ? { q: element.dataset.q, value: element.value } : undefined
-readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form; passes no `changed`
+readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form; passes no `changed`, and drops empty cards
 mergeIntoDraft(draft, patch) → newDraft                  // field by field; never drops keys absent from patch; never mutates
 drivesVisibility(id) → boolean                           // true when a question/household showIf, a tip's showIf or fixedOptions.who.spouseShowIf names
                                                          // this field. Of text fields, only gcf_sp_signature (checked; spec §2.4 rule 3)
@@ -196,7 +200,8 @@ invalidAnswers(step, answers) → string[]                 // ids of visible que
                                                          // a household member's sub-field is "hh[<n>].<sub>", never bare "hh";
                                                          // step = null means every step. Separate from missingToSubmit, which counts
                                                          // only unanswered required questions (checked: it never calls checkValue)
-sendable(question, value) → value                        // text-like values (and household sub-fields) trimmed; everything else as is.
+sendable(question, value) → value                        // text-like values (and household sub-fields) trimmed; for hh, members with no
+                                                         // answers ({}) dropped, and sub-fields that trim to "" omitted; everything else as is.
                                                          // Every check below applies checkValue / isAnswered to sendable(value)
 withholdInvalid(draft, version) → answers                // version 2: every field's sendable value, without every top-level field whose
                                                          // sendable value fails checkValue (hh withheld whole if any member fails).
@@ -228,6 +233,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 - **A date's three boxes** carry `data-date-part="month|day|year"`.
 - **The section intro** (`section.intro[variant][lang]`) and every tip go through `renderRichText`. Their text is Markdown-lite: there are about 150 `**bold**` runs in the catalogue, and bulleted lists.
 - **`formatAnswer` formats dates by splitting the string,** never through `new Date(…)`, which shifts a date by the time zone.
+- **A date's three boxes are filled by splitting the value on `-`,** so a partial date (`"-04-12"`, `"1961--12"`) puts each part back in its own box after a redraw (spec §2.2).
 
 - [ ] **Step 1: Failing tests** (`tests/intake-form.test.mjs`). Render from the real catalogue (`findQuestion(2, …)`).
   - The read tests use `valuesFromControls` with hand-built descriptors.
@@ -289,8 +295,10 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - an empty text reads `null`;
     - **no trimming on read:** a text descriptor `"hello "` reads `"hello "`, and `" 12345 "` reads `" 12345 "`. The draft holds the box's value exactly, so a redraw can't eat a space the person just typed;
     - a text of only spaces reads `null`;
-    - a date with one box empty reads `null`;
-    - an impossible date `"2025-02-30"` reads `"2025-02-30"`.
+    - a date with all three boxes empty reads `null`;
+    - **a partial date is kept:** month `"04"`, day `"12"`, year empty reads `"-04-12"`, and rendering `"-04-12"` puts `04` and `12` back in their boxes with the year empty. `checkValue` fails it, so `withholdInvalid` leaves it out;
+    - an impossible date `"2025-02-30"` reads `"2025-02-30"`;
+    - **an empty household card:** two members, the second with no answers, read with `keepEmptyMembers: true` gives `[{ …first }, {}]`, and without it gives `[{ …first }]`. `sendable(hh, [{ first_name: "Ming" }, {}])` is `[{ first_name: "Ming" }]`.
   - **`mergeIntoDraft`** keeps keys absent from the patch, and `null` in the patch sets `null`.
   - **`formatAnswer`:**
     - `"1961-04-12"` → "Apr 12, 1961";
@@ -332,22 +340,27 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - **`dirty` for a version-2 case** is recomputed by `editAnswers` after every edit: `state.dirty = sendableDiffers(draftAnswers, serverAnswers(), 2)`.
       - `serverAnswers()` is `savedCase.answers` with the contact fields merged in through `CONTACT_FIELDS`.
       - `editBaseRevision` is pinned only when `dirty` turns true.
-      - `saveState` becomes `"unsaved"` when `dirty` turns true, and goes back to `"saved"` when an edit leaves `dirty` false (an undo), at the same moment `editBaseRevision` is cleared. The chip's Unsaved test (`saveState === "unsaved" || dirty`, `client-views.mjs:154`) then lets "Saved" or "N answers need checking" show again.
+      - `saveState` becomes `"unsaved"` when `dirty` turns true; remember the state it replaced (`"idle"` or `"saved"`) as `stateBeforeEdit`.
+      - **An edit can turn `dirty` false only while `saveState` is `"unsaved"`** (an undo). Then `saveState` goes back to `stateBeforeEdit`, at the same moment `editBaseRevision` is cleared, so the chip shows "Up to date", "Saved" or "N answers need checking" again.
+      - **After a failed save** (`saveState === "failed"`), `dirty` stays true until a save succeeds, whatever the draft holds, and the pin stays. A save whose outcome is unknown may have reached the server, so a draft equal to `savedCase` proves nothing. The next save then meets a CONFLICT if that save landed, as version 1 does today (spec §2.5).
       - `forgetPendingSave()` runs only when the edit changed what would be sent, that is when `staleSave()` is now true. A trailing space, or a change to an already-invalid value, keeps the retained envelope, so `retryLast` still resends it (the Task 3 test). Version 1 keeps today's call on every edit.
     - **`applyCase`** (when not dirty, or after a save) builds the draft with `keepLocalOnly(previousDraft, serverAnswers(next), 2)` instead of `pickAnswers(next.answers)` alone. An invalid value, or one differing only in spaces, keeps the client's text; every other field takes the server's.
     - **`staleSave`** compares the envelope's answers with `withholdInvalid(draftAnswers, version)`. For version 1 that is the draft itself, so nothing changes.
     - **A refused save that names a field** (`error.field`, which today's server never sets) is retried once, with that field also left out of that one request. A second refusal, or one with no field, takes today's failure path. A flag on the call prevents a loop; nothing is stored.
     - **`saveStatus(state)`** (client-views) gains the chip state "N answers need checking" (`save-chip checking`, `role="status"`): not saving, not failed, not dirty, and N > 0.
+      - **Where it goes:** today's function returns "Saved" (`saveState === "saved"`) before it looks at `dirty`, and "Up to date" for `"idle"`. So the new branch sits directly after the `saving` branch, for a version-2 case only, and itself tests `saveState !== "failed" && saveState !== "unsaved" && !state.dirty && N > 0`. Version 1 never reaches it (`state.revealed` stays empty, and the branch checks `intakeVersion === 2`), so version 1's order is unchanged.
       - N = the shown errors: `invalidAnswers(null, draftAnswers).filter((id) => revealedSet.has(id)).length`, where `revealedSet = new Set(state.revealed)`.
       - It uses the same ids the notes show: visible questions only, and revealed only. So it never counts a value being typed, or a hidden question's value.
       - "1 answer needs checking" in the singular. It comes after Unsaved and before Saved, and is computed from the draft every time.
-    - **`editBaseRevision`** is set when `dirty` turns true and set back to `null` whenever `editAnswers` leaves `dirty` false (spec §2.5); `saveState` returns to `"saved"` at the same moment.
-    - **Test (undo):** from saved, `editAnswers({ tp_first_name: "Ming" })` then `editAnswers({ tp_first_name: "Mei" })`: `dirty` false, `saveState` `"saved"`, and `saveStatus` reads "Saved" (or "1 answer needs checking" when a revealed invalid email is also in the draft).
+    - **`editBaseRevision`** is set when `dirty` turns true and set back to `null` whenever an edit turns `dirty` false from `"unsaved"` (spec §2.5); `saveState` returns to `stateBeforeEdit` at the same moment.
+    - **Test (undo):** from saved, `editAnswers({ tp_first_name: "Ming" })` then `editAnswers({ tp_first_name: "Mei" })`: `dirty` false, `saveState` `"saved"`, and `saveStatus` reads "Saved" (or "1 answer needs checking" when a revealed invalid email is also in the draft). From a freshly opened case (`"idle"`), the same undo reads "Up to date".
+    - **Test (undo after a failed save):** `editAnswers({ tp_first_name: "Ming" })`, then a save that fails with an unknown outcome (the existing helper), then `editAnswers({ tp_first_name: "Mei" })`: `dirty` stays true, `editBaseRevision` keeps its pin, `saveState` stays `"failed"`, and the envelope is dropped (it no longer matches). The next `saveAnswers` sends `tp_first_name: "Mei"` with the pinned revision.
     - **`state.revealed`** (ids whose error has been shown), for the selected case. **Types:** stored as `string[]` (it goes into the window state), and turned into a `Set` (`new Set(state.revealed)`) wherever it's passed to `renderQuestion`, `stepStatus` or the chip. `visited` is always `number[]`, `state.visitedSteps`, the step indexes 0–8.
       - `revealInvalid(id)` adds an id (a top-level id, or `hh[<n>].<sub>`);
       - `goToStep(n)` adds every id in `invalidAnswers(formStep, draftAnswers)` before it records the step as visited;
       - `removeMember(index)` (used by the `remove-member` action) drops `hh[index].*` ids and renumbers higher ones;
       - `editAnswers` drops an id whose new `sendable` value is valid or empty.
+      - **Every other change to the draft prunes it the same way:** `applyCase` (a refresh) and `reconcileAnswers` ("Use the office's values") drop every id whose value is now valid or empty (or whose `hh[<n>]` member no longer exists). Write one helper, `pruneRevealed()`, and call it wherever `state.draftAnswers` is assigned.
       - It persists in the window state with `visitedSteps` and is cleared by `clearSelection`.
     - `state.visitedSteps` (an array of step indexes) for the selected case.
   - Window state: `visitedSteps: { caseId: string, steps: number[], revealed: string[] }`.
@@ -357,6 +370,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - version 2 output, with `married` false and true, passes `checkValue` for every key, and `missingToSubmit(2, …)` is `[]`;
     - the fill a client gets after choosing married: `fillBlankAnswers(unmarried output with marital_status set to "married" and the spouse keys removed, married output, 2)` has `missingToSubmit(2, …)` equal to `[]`;
     - it is deterministic for a seed;
+    - no key starting with `gcf_`, married or not;
     - version 1 output is unchanged (deep-equal to today's for seed 0).
   - **`tests/controller.test.mjs`** (use its existing fake store and helpers):
     - opening a version-2 case whose `contact` is `null` gives a draft without contact keys;
@@ -380,6 +394,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
       - `goToStep` from step 2 with an invalid email adds `email`, and the chip reads "1 answer needs checking";
       - hiding the question (its `showIf` stops holding) drops it from the chip count while the id stays revealed;
       - removing member 0 turns `hh[1].dob` into `hh[0].dob`;
+      - after `revealInvalid("email")`, a `reconcileAnswers` that takes the office's valid email drops `email`; a later `editAnswers({ email: "a@" })` then adds nothing, and the chip reads "Saved";
       - a new case starts empty;
       - it round-trips through the window state.
     - **field-naming refusal:** the fake store's first `act` rejects with `{ code: "VALIDATION", field: "tp_dob" }` and the second succeeds. The second call has no `tp_dob`, `act` is called exactly twice, and a store that refuses both times is called twice, not more. A refusal with no `field` is called once.
@@ -393,7 +408,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - wages yes, and every other income and event no;
     - a phone `2155550100`–`2155550199` chosen by seed, and a best time `["weekday_evening"]` (use the catalogue's real option values);
     - the name and birth date varied by seed from small fictional lists;
-    - `form_version` left out.
+    - `form_version` left out;
+    - **section 14 (the Form 15080 consent) left out entirely**: no `gcf_*` key. Consent is the client's own choice, and Task 6 item 11 needs `gcf_sp_date` absent until the spouse signature is typed.
     - With `married: true`, the same person plus `marital_status: "married"` and a fictional spouse: every spouse question the catalogue shows and requires when married, and `sp_phone`. Filing status and the other answers stay valid for a married person.
 
     Then add answers until the test's `missingToSubmit(2, …)` is `[]`. Don't generate values by walking the catalogue: a text question has no "first valid value". Keep version 1's code path exactly.
@@ -451,7 +467,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - a version-1 intake and other screens don't show it;
     - with `form_version: "senior"`, a question renders its senior wording.
   - **A submitted version-2 case** shows the read-only summary grouped by step with `formatAnswer` values, not the version-1 answer rows.
-  - **Conflict:** `conflictForm` for a version-2 case with a differing `best_contact_time` array and a differing household lists those rows, with question wording and `formatAnswer` values. A field that is `null` in the draft and missing on the server is not listed.
+  - **Conflict:** `conflictForm` for a version-2 case with a differing `best_contact_time` array and a differing household lists those rows, with question wording and `formatAnswer` values. A field that is `null` in the draft and missing on the server is not listed. The comparison uses `sendable` values, so `tp_first_name` `"Mei "` in the draft against `"Mei"` on the server is not listed either.
+  - **The chip on a fresh or saved case:** with `saveState` `"saved"` (and again with `"idle"`), a revealed invalid email reads "1 answer needs checking", not "Saved" or "Up to date". A version-1 state with the same `saveState` values reads exactly as today.
   - **Progress page:** a version-2 case with `service: "drop_off"` shows "Drop-off", and version 1's "Drop-off" still shows "Drop-off".
   - **CSS** (`tests/shell.test.mjs`): a `/* Part 4b: intake v2 */ … /* end part 4b */` block exists and has no hex except `#fff`.
 - [ ] **Step 2:** Run to confirm they fail.
@@ -463,7 +480,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `renderQuestion` with `scope: "client"`, `variant: answers.form_version || "general"`, `lang: "en"`, and `showMissing` true when the step is visited.
   - The rail and progress bar use the catalogue's step titles.
   - The office contact card reuses `officeContact()`.
-  - `conflictForm` gets the version-2 branch, and the progress summary uses the label lookups.
+  - `conflictForm` gets the version-2 branch, comparing `sendable` values, and the progress summary uses the label lookups.
   - `views.mjs`'s `clientHeader` shows the senior switch on a version-2 intake draft.
   - **CSS**, in the fenced block:
     - the rail states;
@@ -552,12 +569,13 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - The only full redraw on `change` is the queued one below (a radio, checkbox or select, or a show-if field when `needsRedraw`). Leaving an ordinary text field, by Tab or by a press, never redraws.
     - Test: Task 6 item 3.6a (Tab after typing leaves a marker on `#intake-v2-form` in place).
     - **At once (state only, nothing on screen moves):** if `checkValue(question, sendable(question, value))` fails, call `controller.revealInvalid(id)` quietly, so the error survives any later redraw (spec §2.5), even on an unvisited step.
+      - **Not for a date** (a control with `data-date-part`): `change` fires each time focus moves between its three boxes, so a date is revealed only by `goToStep` when the step is left. Its `change` does no in-place error update either.
     - **Then, through the hold,** `afterPress(() => { … })` does the in-place error update:
       - the note from `noteState(question, value, { showMissing: stepVisited, showInvalid: true })`;
       - `#rail-step-<formStep>-status` from `stepStatus`, which counts invalid answers;
       - `refreshSaveChip()`.
 
-      Each step looks its node up by id at run time and does nothing if it's gone (the press replaced the page, and the new render already shows the revealed error).
+      Each step looks its node up by id at run time and does nothing if it's gone (the press replaced the page, and the new render already shows the revealed error). **Each also reads `formStep`, the draft, `visitedSteps` and `revealed` from the controller at run time, never from values captured at `change` time.** The rail spans exist on every step, so after a press that changed the step the update still finds one; recomputing from current state makes it write exactly what the render wrote.
     - **`afterPress(fn)`**, in the wiring next to `flushHeld`:
       - while `pointerHeld` or `composing`, it pushes `fn` onto `heldUpdates`;
       - otherwise it runs `setTimeout(fn, 0)`;
@@ -567,10 +585,10 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
       This is spec §2.4 rule 1: filling an empty note makes it taller and moves Continue during the press that fired the `change`. It never redraws.
     - **Verified by the fault check:** add to Task 6 Step 2 a second temporary change, running the in-place error update at once instead of through `afterPress`. Then item 8a.1 (a single click on Continue after `not-an-email`) must fail, because the note fills during the press and moves Continue. Restore it and confirm the test passes. Put both results in the commit message.
     - Then a redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
-    - a radio, checkbox or select;
-    - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds = new Set([...form.querySelectorAll("[data-q]")].map((el) => el.dataset.q))`. That is the step's unique `data-q` values, with `"hh"` included once, the same kind of id `visibleIds` returns.
+      - a radio, checkbox or select;
+      - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds = new Set([...form.querySelectorAll("[data-q]")].map((el) => el.dataset.q))`. That is the step's unique `data-q` values, with `"hh"` included once, the same kind of id `visibleIds` returns.
 
-    Focus comes back through `render()`'s own `describeFocus`/`restoreField`, taken at flush time, so a Tab's new target is restored, not the field that was left.
+      Focus comes back through `render()`'s own `describeFocus`/`restoreField`, taken at flush time, so a Tab's new target is restored, not the field that was left.
   - **`submit` of `#intake-v2-form` (Continue):** handled before `form.reportValidity()`. It runs `editAnswers(readForm(form))`, then `goToStep(formStep + 1)`.
   - **Actions:**
     - `go-step`: `editAnswers(readForm(form))`, `await controller.goToStep(n)`, then focus `#main`.
@@ -596,7 +614,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Files:** `tests/browser.mjs` (a new phase; the main story is unchanged), `docs/design/screens/`, `docs/design/README.md`, `docs/design/redesign-review.md`.
 
 - [ ] **Step 1: Add one phase to the story.** Put it after "a reset rebuilds the samples…" and before "nothing threw…". The reset phase compares case sets, so the new case must come after it. The console phase must still see only allowed lines.
-  1. `fixture.database.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`, using the id the story already has.
+  - **Typing rule for this phase:** put text into a field with `locator.fill(…)`, or `locator.focus()` then `page.keyboard.type(…)`/`press(…)`. Never click into a field to type. A click into a field is itself a press, and it fires the `change` of the field left behind; the only press after typing must be the one the item tests. (Under Step 2's first fault, a click into the email box would fail item 4 at the wrong check.)
+  1. Inside a `try` whose `finally` is item 15: `fixture.database.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`, using the id the story already has.
   2. In a fresh client window, sign in as `applicantB` with `loginTestUser`, as the story does at `tests/browser.mjs:1137`.
      - Applicant B already has cases from earlier phases, among them a version-1 draft started at `:1217`. So start a new one the way the story does: `const reference = await startApplication(page)`, which clicks `start-application` and waits for the reference card.
      - Look the case up with `caseByReference(fixture, reference)`. Every database query below uses that case's id, never "B's only case".
@@ -615,12 +634,12 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
      6a. **Leaving a text field doesn't redraw:** set a marker property on `#intake-v2-form`, press Tab, and check the marker is still there and focus is on the next control.
      7. **A trailing space survives a redraw that rebuilds the draft (spec §2.5).** This has to run with the draft **not** dirty. A dirty draft is never rebuilt by `applyCase` when the revision is unchanged, and `set revision=revision` leaves it unchanged, so a dirty draft would pass whether or not `keepLocalOnly` works.
         1. Click Continue, then Back. This saves `Xia`, so the draft matches the server. Check `answers->>'tp_first_name'` is `Xia`.
-        2. Click at the end of `tp_first_name` and type ` ` (a space), so it holds `Xia `.
+        2. Focus `tp_first_name` (`locator.focus()`), press `End`, and type ` ` (a space), so it holds `Xia `.
         3. Check the chip does not read "Unsaved changes": a trailing space doesn't make the draft dirty. This proves the next redraw goes through `keepLocalOnly`.
         4. Force another redraw the same way, and wait for `#app` to be rebuilt.
         5. Check the value is still `Xia `, with the caret at 4.
         6. Type `o`, and check the box holds `Xia o`, not `Xiao`.
-  4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, type `mei.lin@example.com` into `email`, focus left in it.
+  4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, `locator.fill("mei.lin@example.com")` on `email`, focus left in it. (The fill moves focus from `tp_first_name` without a press, so its `change` fires now, not during the Continue press.)
      - The browser's own check being bypassed is proven by item 8a, with an invalid email.
      - Scroll to the bottom of the page, then **one** `locator.click()` on Continue.
      - Don't use `clickAction`, `waitForQuiet`, `pressUntil…` or any retry: they wait for stillness or re-press, and would hide a lost click.
@@ -629,7 +648,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
        - `answers->>'email'` is `mei.lin@example.com` (query the case);
        - `scrollY` is 0;
        - `document.activeElement.id` is `main`.
-  5. **Rail link after typing (real mouse):** click Back once to return to step 2. Type into `tp_job_title`, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
+  5. **Rail link after typing (real mouse):** click Back once to return to step 2. `locator.fill("Teacher")` on `tp_job_title` (focus left in it), then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
   6. Go to step 1 with the rail. Use Fill fictional details (it fills every blank on every step), then walk steps 1–8 with Continue.
   7. **In place, after the fill, on step 2** (reached with the rail; visited already, and every required question now answered, so its mark is `is-done`):
      1. Clear `tp_first_name`.
@@ -652,7 +671,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
         - The page then shows "STEP 3 OF 9". The browser's `type="email"` check didn't block it, and neither did the server.
      2. `#rail-step-1-status` has `is-needs` and "Needs answers", and the chip reads "1 answer needs checking".
      3. Query the case: `answers->>'tp_job_title'` is `Baker` (the rest of step 2 was saved), and `answers->>'email'` is still `mei.lin@example.com` from item 4, not `not-an-email`.
-     4. Go to step 9 with the rail. "Still to answer" lists the email under step 2 with "Needs a change" and a link, and Submit is disabled.
+     4. Go to step 9 with the rail. "Still to answer" lists the email under step 2 with "Needs a change" and a link.
+        - Then tick `#field-confirmed` (one click) and check Submit is **still** disabled: only the invalid email holds it now, since the box is ticked and nothing is missing.
+        - Click `#field-confirmed` again to untick it, and check it is unticked, so item 11's single click ticks it.
      5. Follow that link to step 2. The email's note reads "Enter a valid email address." with `is-invalid` (a visited step shows it), and the box still holds `not-an-email`.
      6. Set a marker property on the note node and on `#intake-v2-form`. `locator.fill("mei.lin@example.org")` on the email box (it replaces the text and fires `input`, not `change`). The note is empty with no class, both markers are still there (no redraw), and `#rail-step-1-status` has `is-done`.
      7. One click on Continue. Query the case: `answers->>'email'` is `mei.lin@example.org`. The chip no longer says "need checking".
@@ -661,15 +682,16 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   11. **Step 9, the text driver (real mouse):**
       1. check "Everything required is answered.";
       2. choose consent "yes" (`gcf_consent`), without pressing Continue;
-      3. type the primary signature into `gcf_tp_signature`;
-      4. type the spouse signature into `gcf_sp_signature`, focus left in it;
-      5. **one** `locator.click()` on `#field-confirmed`.
+      3. `locator.fill("Mei Lin")` on `gcf_tp_signature`;
+      4. `locator.fill("Wei Lin")` on `gcf_sp_signature`, focus left in it;
+      5. check `[data-q="gcf_sp_date"]` has count 0: the date isn't on the page yet, so the next check can't pass without the redraw (the generator leaves section 14 empty, Task 3);
+      6. **one** `locator.click()` on `#field-confirmed`.
 
       The box is ticked, and `[data-q="gcf_sp_date"]` has appeared: the `change` fired on that press, and its queued redraw ran after the click.
 
       **Catalogue check (done while planning):** every question in section 14 is optional, including `gcf_consent`, `gcf_tp_signature`, `gcf_tp_date`, `gcf_sp_signature` and `gcf_sp_date`. Consent "yes" makes `gcf_tp_signature` visible, not required, so leaving it blank doesn't disable Submit. The test still types a primary signature into `gcf_tp_signature` in item 11 (before the spouse signature), so the saved case looks like a real consent. Item 13 checks it too.
   12. Submit with one click.
-  13. **Submit saved first:** query the case and expect `answers->>'gcf_consent' = 'yes'`, and `answers->>'gcf_tp_signature'` and `answers->>'gcf_sp_signature'` equal to the typed names.
+  13. **Submit saved first:** query the case and expect `answers->>'gcf_consent' = 'yes'`, `answers->>'gcf_tp_signature' = 'Mei Lin'` and `answers->>'gcf_sp_signature' = 'Wei Lin'`.
   14. On the progress page, check a client number.
   15. In `finally`: set the workspace back to 1 and close the window.
   16. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
@@ -678,7 +700,12 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
 - [ ] **Step 2: Prove the click test catches the fault (temporary change, not committed).**
-  1. In `app.mjs`'s version-2 `change` handler, temporarily make a `change` that fires **while `pointerHeld` is true** call `render()` at once: no queue, no `needsRedraw` check, bypassing the hold. That is the old rule, limited to presses. A `change` from Tab (no pointer down) is left alone, so item 3.6a still passes and the run reaches item 4.
+  1. In `app.mjs`'s version-2 `change` handler, temporarily make a `change` that fires **while `pointerHeld` is true** replace the page at once: no queue, no `needsRedraw` check. `render()` itself holds any call made while `pointerHeld` is true, so a plain `render()` would be held and the fault would do nothing. Lift the hold around the call:
+     ```js
+     if (pointerHeld) { pointerHeld = false; render(); pointerHeld = true; }   // FAULT, not committed
+     ```
+     Put it after the quiet `editAnswers`, where `quiet` is false again, so `render()` really replaces the page.
+     That is the old rule, limited to presses. A `change` from Tab or from `locator.fill` (no pointer down) is left alone, so item 3.6a still passes and the run reaches item 4.
   2. Run `npm run test:browser`. Expected: the first failure is item 4, "Continue after typing": the step doesn't advance after one click. Items 5 and 11 come later and would fail the same way, but the run stops at item 4. Any other first failure means the fault is wrong: stop and report. Record the assertion and its message.
   3. Restore the handler (`git diff src/app.mjs` shows nothing from this step) and run `npm run test:browser` again. Expected: PASS.
   4. If step 2 did **not** fail, the test isn't catching lost presses. Stop and report; don't go on.
