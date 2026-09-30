@@ -1,6 +1,7 @@
 # Parts 4b and 4c: The version-2 intake screens
 
 **Status:** approved in brainstorming on 2026-09-30.
+Revised 2026-09-30: redraw rules.
 
 **Roadmap:** part 4 of `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-restyle-design.md`, which is split into 4a (catalogue and server, merged in #39), 4b (client intake), 4c (Add a case and staff views) and 4d (Chinese).
 
@@ -43,15 +44,16 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 
 - **Wording** comes from `wording(question, { variant, lang })`, and option labels from the question's options, or `fixedOptions` for `who` and `yesno`.
 - **Tips** render under their question. A tip with a condition renders only while the condition holds. Upload tips show text only.
-- **`showMissing`:** a required question that is unanswered (`isAnswered`) gets "Needs an answer", tied to the control by `aria-describedby`.
+- **Every question has a fixed note container:** `<p id="field-<scope>-<id>-note" class="q-note" aria-live="polite">`, rendered for every question, whether or not it has a message. Household sub-questions use `field-<scope>-hh-<n>-<sub>-note`. The control's `aria-describedby` always references it.
+- **`showMissing`:** a required question that is unanswered (`isAnswered`) gets the text "Needs an answer" and the class `is-missing` in its note container. Otherwise the container is empty and has no class. Because the container always exists, the text can change in place (§2.4) without replacing any node.
 
 ### 2.2 `readField(control, question)` and `readForm(formElement, version)`
 
 **Typed text never waits for `change`.** The app redraws the whole page on any state change, including realtime updates from another window, so anything not yet in the draft would be lost mid-sentence.
 - Every `input` event copies that one question's value into the draft through `readField(control, question)`, without re-rendering, as today's version-1 form does with `editAnswerField`.
 - A redraw therefore always renders from a draft that already holds the typed text.
-- A `change` event then re-renders for show-if (§3.4).
 - A household card's inputs update that member in the draft the same way.
+- When the page updates in place and when it is redrawn is set by §2.4.
 
 `readForm` reads every rendered question back into an answers object. It is used before a save and on "Fill fictional details": date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects.
 - An empty top-level field reads as `null`, which the save treats as clearing the field.
@@ -68,6 +70,32 @@ It returns the read-only text of an answer:
 - `who` as "Me, My spouse";
 - each household member as one line ("Xiao Ming Wang · Son · born Mar 14, 2015 · 12 months");
 - `null` for unanswered.
+
+### 2.4 Redraw rules
+
+The app redraws by replacing the whole page (`root.innerHTML`). These rules say when the client's version-2 form may do that. Version-1 screens keep today's behaviour, and Add a case (§4.2) keeps the scope PR 4c already has.
+
+1. **A press never loses its target.** No button or link may be replaced or moved between `mousedown` and `mouseup`. A browser delivers `click` only when both land on the same element, so a redraw in between swallows the click.
+   - This is why a text field's `change` (which fires on the `mousedown` that takes focus away) must never redraw on the spot.
+   - While a pointer is down on the page (`pointerdown` until `pointerup` or `pointercancel`), every requested redraw waits. It runs in a task queued from `pointerup`/`pointercancel` (`setTimeout(…, 0)`), so after the `click` has been delivered.
+2. **`input` updates in place, never redraws.** Each `input` event writes the question's value to the draft (§2.2) and updates exactly two things in the existing page:
+   - the question's note container (§2.1): its text ("Needs an answer" or empty) and its `is-missing` class;
+   - the current step's mark in the rail (§3.2): its status class and text.
+
+   Only `className` and `textContent` change. No node is added, removed or replaced, so nothing moves under the pointer or the keyboard, and the Saved / Unsaved chip keeps today's in-place refresh.
+3. **A full redraw happens only when the visible questions change.** That is:
+   - a radio, checkbox or `<select>` changes (on `change`, which for these fires after the click);
+   - a text field that drives a `showIf` changes (on `change`), and only when the set of visible questions on the step actually differs from before. Today the catalogue has one such field, `gcf_sp_signature` (it shows `gcf_sp_date`).
+
+   Everything else (Continue, Back, a rail jump, the senior switch, Add / Remove a person, Fill fictional details, a save's result) is a redraw the person asked for with a press, and runs from the `click` handler, after the press is complete.
+   - Any redraw requested by a `change` is queued (`setTimeout(…, 0)`) rather than run inside the handler, so that a Tab has already moved the focus to its new place and rule 4 restores that place, not the field that was left.
+4. **A realtime redraw keeps focus, caret and scroll: the method is restore-after-redraw.** A redraw from another window's change (or any redraw not caused by a press) goes ahead and then puts back:
+   - focus and caret, through the app's existing `describeFocus` / `restoreField` path, which already records the focused control's id and `selectionStart`;
+   - the scroll position, `window.scrollX`/`scrollY` recorded before the redraw and restored after it. This is new, and applies to the version-2 form only.
+
+   One narrow wait remains: a redraw requested during IME composition (`compositionstart` until `compositionend`) runs after `compositionend`, because replacing a field mid-composition discards the half-composed characters. This matters for Chinese input (4d) and costs nothing in English.
+
+   Restoring was chosen over deferring the redraw for as long as a field has focus. A client can keep a field focused indefinitely, and a deferred redraw would hide the office's change, and the conflict banner, until they left it.
 
 ## 3. The client's nine-step form (PR 4b)
 
@@ -100,6 +128,10 @@ That migration loads the same field rows as 012, because step titles aren't stor
     - "Needs answers" once visited with some left;
     - "You are here" for the current step.
   - Every step is a link.
+  - **Each step's mark is one fixed element,** `<span id="rail-step-<n>-status" class="rail-status is-done|is-needs|is-none">`, holding the text "Done", "Needs answers" or nothing. The current step is marked separately with `aria-current="step"` and "You are here", which a step change redraws.
+    - **In-place update (§2.4 rule 2):** after each `input`, the current step's status is recomputed with the same function the render uses (from the draft, the visible questions and `visitedSteps`).
+    - Only that span's `className` and `textContent` are set.
+    - Other steps' marks can't change from typing on this step, so they are left alone.
   - Under the steps: a progress bar ("Step 2 of 9"), then the office contact card.
 - **Main column:**
   - "STEP n OF 9", the step title, and the section intro.
@@ -118,7 +150,11 @@ That migration loads the same field rows as 012, because step titles aren't stor
 
 ### 3.4 Behaviour
 
-- **Show-if:** the step re-renders on the `change` event, not on every keystroke: a text field when it loses focus, a choice or checkbox when it changes. So show-if questions appear and hide without interrupting typing, and the keyboard focus returns to the control that changed. A hidden question keeps its answer in the draft; the server ignores hidden required questions.
+- **Show-if** follows §2.4:
+  - Typing never redraws; it updates the question's note and the current step's rail mark in place.
+  - A full redraw happens only when the visible questions change: on a radio, checkbox or select `change`, or on a `change` of a text field that drives a `showIf` (today only `gcf_sp_signature`) when the visible set actually differs.
+  - That redraw never runs between `mousedown` and `mouseup`, and focus, caret and scroll are restored after it.
+  - A hidden question keeps its answer in the draft; the server ignores hidden required questions.
 - **Clearing spouse:** when `marital_status` changes away from `married`, every `who` answer drops `spouse` in the same edit.
 - **Continue always moves on.** A step's unanswered required questions show "Needs an answer" only after the client has left that step once.
   - The visited steps are kept in the window state as a new field, `visitedSteps: { caseId, steps: number[] }`, added to `FIELDS` in `src/window-state.mjs` with its own check.
@@ -202,6 +238,7 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - `formatAnswer` outputs.
 - **Client form:**
   - each step renders its sections, and show-if hides and shows;
+  - every question has its note container (with id and `aria-live="polite"`) whether or not it shows a message, and each rail step has its `rail-step-<n>-status` span;
   - "Needs an answer" appears only after a visit;
   - step 9's missing list and the Submit gate;
   - the senior switch changes wording and keeps answers;
@@ -249,6 +286,17 @@ The story, updated deliberately:
   - records materials;
   - the office completes a walk-in case in Add a case.
 - **Version 1:** the story's version-1 phases shrink to one check. A version-1 draft is created while its workspace is set to 1, finished in the old form, and submitted.
+
+**Redraw rules (§2.4), in PR 4b's version-2 browser phase.** These use Playwright's real mouse (`page.mouse.move`/`down`/`up` on the element's box, or `locator.click()`, which does the same). Never use `element.click()` or `dispatchEvent`, which skip `mousedown` and so can't catch a lost press.
+- **Continue after typing:** type in a text field (leave the focus in it), then click Continue once. The step advances to the next one, and the typed value is in the saved answers.
+- **Rail link after typing:** type in a text field, then click a rail link to another step once. The page shows that step.
+- **The text driver:** on step 9, with consent "yes" and married, type in `gcf_sp_signature`, then click the "I have checked my answers" box below it once. Typing's `change` fires on that press and redraws. The box is ticked, and `gcf_sp_date` has appeared.
+- **Focus survives a realtime redraw:** type part of a word into a text field, force a realtime redraw from outside (`update public.cases set revision=revision where id=$1`, as the story already does), and check that:
+  - the same field still has focus;
+  - the caret is where it was;
+  - the typed text is intact;
+  - the page's scroll position is unchanged.
+- **In place:** typing an answer into a required question on a visited step clears its "Needs an answer" and changes the rail mark, and the note element is the same node before and after (compare a marker property set on it before typing).
 
 - The auth-browser suite doesn't touch intake labels, so it should pass unchanged.
 
