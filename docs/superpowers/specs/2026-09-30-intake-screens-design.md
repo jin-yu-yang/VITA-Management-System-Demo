@@ -46,7 +46,7 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 - **Tips** render under their question. A tip with a condition renders only while the condition holds. Upload tips show text only.
 - **Every question has a fixed note container:** `<p id="field-<scope>-<id>-note" class="q-note" aria-live="polite">`, rendered for every question, whether or not it has a message. Household sub-questions use `field-<scope>-hh-<n>-<sub>-note`. The control's `aria-describedby` always references it.
 - **`showMissing`:** a required question that is unanswered (`isAnswered`) gets the text "Needs an answer" and the class `is-missing` in its note container.
-- **Invalid values** (§2.5): an answered value that fails `checkValue` gets the `checkValue` message and the class `is-invalid` instead, when the note is shown (after `change`, or on a visited step).
+- **Invalid values** (§2.5): an answered value that fails `checkValue` gets the `checkValue` message and the class `is-invalid` instead, when the note is shown: after `change`, on a visited step, or for a question already revealed (§2.5). The check uses the `sendable` value.
 - Both come from one function, `noteState`. Otherwise the container is empty and has no class. The container stays fixed and `aria-live="polite"` in every state. Because the container always exists, the text can change in place (§2.4) without replacing any node.
 
 ### 2.2 `readField(control, question)` and `readForm(formElement, version)`
@@ -61,7 +61,7 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 - An empty top-level field reads as `null`, which the save treats as clearing the field.
 - Inside a household member, an empty sub-field is left out of the member object, not set to `null`, because the server checks every key a member carries. A card with no answers at all is dropped.
 - A date with some boxes empty reads as `null`. A full but impossible date (Feb 30) is kept in the draft, and handled as an invalid value (§2.5).
-- Text-like values are trimmed of leading and trailing spaces before they reach the draft (§2.5).
+- Values reach the draft exactly as typed; trimming happens only when a value is checked or sent (`sendable`, §2.5).
 - **It sees only what is rendered:** the current step on the client form, or the open sections on Add a case. Its result is **merged** into the draft field by field and never replaces it, so saving one step keeps the other steps' answers, and hidden questions keep theirs. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
 
 ### 2.3 `formatAnswer(question, value, { variant, lang })`
@@ -120,22 +120,33 @@ An invalid value is an answered value that fails `checkValue`: a bad email, Feb 
 
 Changing that needs a migration, so for 4b the client keeps invalid values away from the server:
 
-- **`withholdInvalid(draft, version)`** returns the draft without every field whose value fails `checkValue`. For a household, the whole `hh` field is withheld when any member fails.
+- **The draft holds exactly what is in the box.** Nothing is trimmed or rewritten while the person types: `readField` and `readForm` copy values as they are. Trimming the draft on `input` would let a redraw drop a trailing space the person had just typed, and the next letter would join the word, which breaks the §2.2 rule that a redraw never loses typed text.
+- **`sendable(question, value)`** is the value as the server would receive it: text-like values trimmed of leading and trailing spaces (household sub-fields too). Every check uses it:
+  - `checkValue` (so `" 12345 "` is a valid ZIP);
+  - `isAnswered`;
+  - `invalidAnswers` and `missingToSubmit`;
+  - the note and the rail.
+- **`withholdInvalid(draft, version)`** returns the save request's answers: every field's `sendable` value, without every field whose `sendable` value fails `checkValue`. For a household, the whole `hh` field is withheld when any member fails. `withheldFields(draft, version)` returns the ids it leaves out.
   - Every version-2 save path sends its result: Continue, Back, a rail jump, Save & exit, and the save before Submit (all go through `saveAnswers`).
   - The draft keeps the typed value, and the server keeps its last valid value for that field, or none.
-- **Withheld values survive the refresh after a save.** After a successful save, the controller re-reads the case (`applyCase`), which today rebuilds a clean draft from the server's answers and would drop what the client typed.
-  - The controller therefore keeps the last save's withheld fields (`state.withheld`, field → value) and lays them over the draft that `applyCase` builds.
-  - A withheld field leaves `state.withheld` when its draft value becomes valid (it is then saved normally), or is cleared.
-  - Opening another case empties it.
+- **`dirty` means "a save would change the server".** For a version-2 case, `editAnswers` recomputes it after every edit, over the whole draft: it is true when some field in `withholdInvalid(draft)` differs from the server's value (`savedCase.answers` with the contact fields merged; an unanswered value on both sides is equal).
+  - The base revision is pinned when `dirty` turns true.
+  - So editing an already-withheld invalid value leaves `dirty` as it was.
+  - Turning a valid value invalid doesn't make it dirty: the field isn't sent, and the server keeps its valid value.
+  - Typing a trailing space doesn't make it dirty either.
+- **Local-only differences survive every refresh.** `applyCase` (after a save, or on a realtime change while not dirty) rebuilds the draft from the server, which would drop what the client typed.
+  - It therefore keeps the previous draft's value for every field whose difference from the server can't be sent: a withheld (invalid) value, or a value equal to the server's once `sendable` is applied (only spaces differ).
+  - Every other field takes the server's value.
+  - The rule is computed from the draft each time; there is no separate list to fall out of date.
 - **The Saved / Unsaved chip** shows, in order:
   1. Saving;
   2. Failed;
   3. Unsaved, while `dirty`;
-  4. **"N answers need checking"**, when the draft differs from the server only by withheld fields (`dirty` is false and `state.withheld` has N keys);
+  4. **"N answers need checking"**, while `withheldFields(draft)` has N > 0 entries;
   5. Saved.
 
-  It never shows Unsaved for withheld fields alone.
-- **`staleSave`** compares the retained envelope's answers with `withholdInvalid(draft)`, not with the raw draft. A withheld field changing doesn't make the envelope stale, because the envelope never carried it.
+  It is computed from the draft whenever the chip is refreshed (on `input`, on `change` and after a save), so a valid value turned invalid shows "1 answer needs checking" at once, never "Saved". It never shows Unsaved for withheld fields alone.
+- **`staleSave`** compares the retained envelope's answers with `withholdInvalid(draft)`, not with the raw draft. A withheld field, or a change of spaces only, doesn't make the envelope stale, because the envelope never carried it.
 - **If the server still refuses a save:**
   - if the refusal names a field, the client withholds that field and retries once;
   - if it names none, the usual failure banner shows.
@@ -148,6 +159,11 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - never while the person types;
   - after `change` (they left the field), or when the step is rendered as visited;
   - `input` clears it as soon as the value is valid (or empty), but never adds it.
+- **A shown error survives redraws.** On `change`, a question whose value is invalid is added to the revealed list: the window state's `visitedSteps` record gains `revealed: string[]` (question ids) for the same case.
+  - Every render shows the error for a question that is revealed, or on a visited step. So a realtime redraw on an unvisited step keeps it.
+  - An id leaves the list when its value becomes valid or empty (on `input`).
+  - The list resets with the rest of the record when another case is opened.
+  - The rail counts a revealed invalid answer as "Needs answers" even on an unvisited step.
 
   Both updates set only `className` and `textContent`, as in §2.4 rule 2. An invalid value never causes a redraw.
 - **Three places show an invalid answer:**
@@ -158,7 +174,7 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - The server refuses Submit for missing answers, and never holds an invalid one: it refuses to store any.
   - So both sides use the same rule: nothing invalid is ever submitted.
   - The client's disabled Submit is also what stops a Submit that would use a withheld field's older, valid value.
-- **Trimming:** `readField` trims leading and trailing spaces from text-like values before writing the draft, so `" 12345 "` becomes `"12345"`.
+- **Trimming** happens only in `sendable`: in checks and in the save request, never in the draft. After a successful save the server holds the trimmed value. The box shows it after the next redraw that takes the server's value, which is never a redraw that keeps a local-only difference.
 - **Email with a space:** an email with a space inside is invalid. `checkValue` rejects it.
   - The server's check (`check_intake_value`, 4a) accepts it, and isn't changed here.
   - This is the one known difference between the two checks, and the direction is safe: the client withholds the value, so the server never receives it.
@@ -213,8 +229,8 @@ That migration loads the same field rows as 012, because step titles aren't stor
 - The controller's draft holds the version-2 answers plus the four contact fields. On load, the contact fields are filled in from `record.contact` through `CONTACT_FIELDS`. `record.contact` is `null` until a case's first contact save (`mapContact`), and `null` counts as empty.
 - `pickAnswers` becomes version-aware: version 1 keeps its 17 keys, and version 2 keeps the catalogue's top-level field IDs.
 - **Saving** happens on Continue, Back, a rail jump, and Save & exit. The save sends the whole draft (`SAVE_ANSWERS`); the server routes the contact fields to `case_contacts`.
-- **Invalid values are withheld from every save** (`withholdInvalid`, §2.5). The draft keeps them, and they are laid back over the draft after the post-save refresh, so a draft save never fails on a format rule.
-- The Saved / Unsaved chip works as today, with one more state from §2.5: "N answers need checking" when only withheld fields differ from the server. The retained-envelope retry works as today, and `staleSave` compares against the withheld-filtered draft.
+- **Invalid values are withheld from every save** (`withholdInvalid`, §2.5). The draft keeps them, and a refresh keeps every local-only difference (an invalid value, or spaces only), so a draft save never fails on a format rule and a redraw never loses typing. `dirty` means a save would change the server.
+- The Saved / Unsaved chip works as today, with one more state from §2.5: "N answers need checking" while the draft holds N withheld answers. The retained-envelope retry works as today, and `staleSave` compares against the withheld-filtered draft.
 - **The two-window conflict screen needs a version-2 branch.** Today's `conflictForm` compares only version 1's 17 keys, with `String()`. For version 2 it compares every catalogue field and the four contact fields by value (deep equality for arrays and household members), labels each row with the question's wording, and shows both sides with `formatAnswer`. "Keep my edits" and "Use the office's values" work as today.
 - **Fill fictional details** uses a new fictional version-2 generator: `makeSampleAnswers` in `src/sample-data.mjs` gains a `version` option (`{ seed, scenario, version: 2 }`), and version 1 stays the default. It fills only blank fields, and every value passes `checkValue`.
   - **The generated person follows the draft's marital status.** When the draft already says `married`, the fill generates a married person, spouse answers included (`makeSampleAnswers({ …, married: true })`). Otherwise it generates the default never-married person.
@@ -283,7 +299,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
   - Case info: Application ID, stage, created by, and created at.
   - Materials received: the §4.1 card.
 - **Fill fictional details** (the presenter panel's button and the page's own pill, both `fill-assisted-intake`) fills the version-2 page's blank fields from the version-2 generator, through the renderer's field IDs, replacing today's `#field-assisted-*` lookup for version-2 pages.
-- **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing.
+- **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing. While any answer is invalid (`invalidAnswers`, §2.5), "Send to the office" is disabled, and the count of sections that need answers includes the sections holding one.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
 - **The old creation path goes.** PR 4's Add a case creates a case with answers in one call (`createAssistedCase` in `src/controller.mjs`), which 011's trigger refuses once the default is 2. PR 4c replaces that page and path with the version-2 page; `createAssistedCase` then creates empty cases only.
@@ -312,17 +328,20 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - every type in the real catalogue renders with its label and ID;
   - render then `readForm` round-trips the value (date boxes; `who` with `none`; household add and remove; a `yesno` without Not sure);
   - `formatAnswer` outputs;
-  - `readField` trims text before it reaches the draft.
+  - `readField` never trims (the draft holds `"hello "` as typed), and `sendable` does (`" 12345 "` is a valid ZIP, and is sent as `"12345"`).
 - **Invalid values (§2.5):**
   - `withholdInvalid` removes only invalid fields: valid fields, `null` clears and empty values stay;
-  - `staleSave` ignores withheld fields: an envelope stays valid when only a withheld field changes;
-  - withheld values survive the post-save refresh, and the chip shows "N answers need checking";
+  - `staleSave` ignores withheld fields and space-only changes: an envelope stays valid when only those change;
+  - `dirty`: editing a withheld value, turning a valid value invalid, or adding a trailing space leaves it false, while a real change sets it;
+  - local-only differences (an invalid value, or spaces only) survive a post-save refresh and a realtime refresh;
+  - the chip shows "N answers need checking" as soon as a value turns invalid;
+  - a revealed error survives a redraw on an unvisited step;
   - a refusal that names a field is retried once without it; one that names none is not retried.
 - **Contract table for value checks.**
   - **One shared table** (`tests/support/intake-value-cases.mjs`) lists inputs with the expected result for each side (`js`, `sql`):
     - `"mei lin@example.com"`, `"a@"`, `"@"`, `"2025-02-30"`, `" 12345 "`, `"1234"`;
     - one valid case for each type.
-  - **Two tests read it:** the JS test (`checkValue`) and the database test (`check_intake_value` in `tests/database-intake.mjs`).
+  - **Two tests read it:** the JS test (`checkValue`) and the database test (`check_intake_value` in `tests/database-intake.mjs`). The table absorbs that file's existing 4a mirror list, so there is one list of cases, not two. The existing JS assertion that `"a b@c"` is a valid email (`tests/intake-catalogue.test.mjs`) becomes the marked difference.
   - **Only one row differs:** `"mei lin@example.com"` (JS invalid, SQL valid; §2.5). Any other disagreement fails the tests. It is fixed in the JS rule, or reported; the SQL is never changed here.
 - **Client form:**
   - each step renders its sections, and show-if hides and shows;
