@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
+  canSeeContact,
 } from "../src/intake-catalogue.mjs";
 
 const q = (id) => findQuestion(2, id);
@@ -161,4 +162,22 @@ test("empty strings and arrays are unanswered everywhere", () => {
   assert.ok(hh.includes("hh[0].dob"));
   for (const id of ["tp_first_name", "tp_dob", "best_contact_time", "hh", "tp_phone"])
     for (const empty of [null, "", []]) assert.equal(checkValue(q(id), empty), null, id);
+});
+
+test("canSeeContact: office staff always, a volunteer only on their own case (D5, 013's works_on_case)", () => {
+  const record = { preparerId: "p-prep", reviewerId: "p-rev" };
+  assert.equal(canSeeContact(record, { id: "p-office", capabilities: ["followup"] }), true);
+  assert.equal(canSeeContact(record, { id: "p-admin", capabilities: ["admin"] }), true);
+  assert.equal(canSeeContact({}, { id: "p-admin", capabilities: ["admin"] }), true);
+  assert.equal(canSeeContact(record, { id: "p-prep", capabilities: ["prepare"] }), true);
+  assert.equal(canSeeContact(record, { id: "p-rev", capabilities: ["review"] }), true);
+  // A volunteer on an available (unclaimed) case, or on someone else's.
+  assert.equal(canSeeContact({ preparerId: null, reviewerId: null }, { id: "p-prep", capabilities: ["prepare", "review"] }), false);
+  assert.equal(canSeeContact(record, { id: "p-other", capabilities: ["prepare", "review", "assist", "receive_documents"] }), false);
+  // No person, or a person without an id, never matches an empty slot.
+  assert.equal(canSeeContact(record, null), false);
+  assert.equal(canSeeContact(record, undefined), false);
+  assert.equal(canSeeContact({ preparerId: undefined, reviewerId: undefined }, { capabilities: [] }), false);
+  assert.equal(canSeeContact({ preparerId: null }, { id: null, capabilities: ["prepare"] }), false);
+  assert.equal(canSeeContact(null, { id: "p-prep", capabilities: ["prepare"] }), false);
 });

@@ -144,6 +144,20 @@ export const CONTACT_FIELDS = Object.freeze({
   best_contact_note: "bestContactNote",
 });
 
+/**
+ * Whether `person` may see a case's contact details (D5: none on an available
+ * case). RLS lets every staff persona read `case_contacts`, since it can't
+ * tell personas apart, so screens enforce this. Mirrors 013's
+ * `vitally_private.works_on_case`: office staff (`followup` or `admin`) on any
+ * case, a volunteer only as the case's preparer or reviewer.
+ */
+export function canSeeContact(record, person) {
+  if (!person) return false;
+  const capabilities = Array.isArray(person.capabilities) ? person.capabilities : [];
+  if (capabilities.includes("followup") || capabilities.includes("admin")) return true;
+  return Boolean(person.id) && (person.id === record?.preparerId || person.id === record?.reviewerId);
+}
+
 /** IDs of required, visible, unanswered questions. Contact fields come from `contact`. */
 export function missingToSubmit(version, answers = {}, contact = {}) {
   const merged = { ...answers };
