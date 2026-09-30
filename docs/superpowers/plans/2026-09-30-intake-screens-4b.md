@@ -208,6 +208,7 @@ keepLocalOnly(previousDraft, server, version) → draft    // server's answers, 
                                                          // sendable value equals server's (only spaces differ) keeps previousDraft's value
 countText(value) → string                                // "4,612 of 5,000 characters" when length > 4500, else ""
 stepStatus(step, answers, visited, revealed) → { key: "done"|"needs"|"none", text: "Done"|"Needs answers"|"" }
+                                                         // visited: number[] (step indexes 0–8); revealed: Set<string>
                                                          // answers is the draft with contact fields; missing = missingToSubmit(2, answers)
                                                          // (no contact argument: spec §2.5), limited to the step;
                                                          // shownInvalid = invalidAnswers(step, answers) ∩ revealed (unrevealed invalid never counts)
@@ -331,17 +332,18 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - **`dirty` for a version-2 case** is recomputed by `editAnswers` after every edit: `state.dirty = sendableDiffers(draftAnswers, serverAnswers(), 2)`.
       - `serverAnswers()` is `savedCase.answers` with the contact fields merged in through `CONTACT_FIELDS`.
       - `editBaseRevision` is pinned only when `dirty` turns true.
-      - `saveState` becomes `"unsaved"` only when `dirty`.
-      - `forgetPendingSave()` runs as today.
+      - `saveState` becomes `"unsaved"` when `dirty` turns true, and goes back to `"saved"` when an edit leaves `dirty` false (an undo), at the same moment `editBaseRevision` is cleared. The chip's Unsaved test (`saveState === "unsaved" || dirty`, `client-views.mjs:154`) then lets "Saved" or "N answers need checking" show again.
+      - `forgetPendingSave()` runs only when the edit changed what would be sent, that is when `staleSave()` is now true. A trailing space, or a change to an already-invalid value, keeps the retained envelope, so `retryLast` still resends it (the Task 3 test). Version 1 keeps today's call on every edit.
     - **`applyCase`** (when not dirty, or after a save) builds the draft with `keepLocalOnly(previousDraft, serverAnswers(next), 2)` instead of `pickAnswers(next.answers)` alone. An invalid value, or one differing only in spaces, keeps the client's text; every other field takes the server's.
     - **`staleSave`** compares the envelope's answers with `withholdInvalid(draftAnswers, version)`. For version 1 that is the draft itself, so nothing changes.
     - **A refused save that names a field** (`error.field`, which today's server never sets) is retried once, with that field also left out of that one request. A second refusal, or one with no field, takes today's failure path. A flag on the call prevents a loop; nothing is stored.
     - **`saveStatus(state)`** (client-views) gains the chip state "N answers need checking" (`save-chip checking`, `role="status"`): not saving, not failed, not dirty, and N > 0.
-      - N = the shown errors: `invalidAnswers(null, draftAnswers).filter((id) => state.revealed.includes(id)).length`.
+      - N = the shown errors: `invalidAnswers(null, draftAnswers).filter((id) => revealedSet.has(id)).length`, where `revealedSet = new Set(state.revealed)`.
       - It uses the same ids the notes show: visible questions only, and revealed only. So it never counts a value being typed, or a hidden question's value.
       - "1 answer needs checking" in the singular. It comes after Unsaved and before Saved, and is computed from the draft every time.
-    - **`editBaseRevision`** is set when `dirty` turns true and set back to `null` whenever `editAnswers` leaves `dirty` false (spec §2.5).
-    - **`state.revealed`** (ids whose error has been shown), for the selected case:
+    - **`editBaseRevision`** is set when `dirty` turns true and set back to `null` whenever `editAnswers` leaves `dirty` false (spec §2.5); `saveState` returns to `"saved"` at the same moment.
+    - **Test (undo):** from saved, `editAnswers({ tp_first_name: "Ming" })` then `editAnswers({ tp_first_name: "Mei" })`: `dirty` false, `saveState` `"saved"`, and `saveStatus` reads "Saved" (or "1 answer needs checking" when a revealed invalid email is also in the draft).
+    - **`state.revealed`** (ids whose error has been shown), for the selected case. **Types:** stored as `string[]` (it goes into the window state), and turned into a `Set` (`new Set(state.revealed)`) wherever it's passed to `renderQuestion`, `stepStatus` or the chip. `visited` is always `number[]`, `state.visitedSteps`, the step indexes 0–8.
       - `revealInvalid(id)` adds an id (a top-level id, or `hh[<n>].<sub>`);
       - `goToStep(n)` adds every id in `invalidAnswers(formStep, draftAnswers)` before it records the step as visited;
       - `removeMember(index)` (used by the `remove-member` action) drops `hh[index].*` ids and renumbers higher ones;
@@ -400,7 +402,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - blank means `!isAnswered`, so `null`, `""` and `[]` count as blank.
     - Test it.
   - **The controller:**
-    - `pickAnswers(source, version)` has a version everywhere it is called: `applyCase`, `editAnswers` and `reconcileAnswers`, each using `state.savedCase?.intakeVersion`.
+    - `pickAnswers(source, version = 1)`: the default keeps every version-1 path as today. `applyCase`, `editAnswers` and `reconcileAnswers` pass `state.savedCase?.intakeVersion`. `createAssistedCase` (`controller.mjs:932`) keeps calling it without a version, because Add a case is still version 1 until PR 4c.
     - A version-2 `editAnswers` patch may be all `null`s: the "nothing to edit" early return checks for keys, not values.
     - `applyCase` uses the case's `intakeVersion` for `pickAnswers`, and for version 2 merges the contact fields via `CONTACT_FIELDS`, treating a `null` contact as empty.
     - `visitedSteps` persists through `persistSession`, is restored only when its `caseId` equals `selectedCaseId`, and is cleared by `clearSelection`.
@@ -639,7 +641,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   8a. **Invalid values (spec §2.5; real mouse, one `locator.click()`, no retry helpers).** Every required answer is filled by now (item 6).
      1. Go to step 2 with the rail. `locator.fill("Baker")` on `tp_job_title`, then `locator.fill("not-an-email")` on `email` (it already holds `mei.lin@example.com` from item 4, so `fill` replaces it), focus left in it. Then **one press near the top edge of Continue**, with a real mouse:
         ```js
-        const box = await page.locator('#intake-v2-form button[type="submit"]').boundingBox();
+        const continueLocator = page.locator('#intake-v2-form button[type="submit"]');
+        await continueLocator.scrollIntoViewIfNeeded();   // step 2 is long; this scrolls without taking focus from the email box
+        const box = await continueLocator.boundingBox();
         await page.mouse.move(box.x + box.width / 2, box.y + 4);
         await page.mouse.down(); await page.mouse.up();
         ```
@@ -674,8 +678,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
 - [ ] **Step 2: Prove the click test catches the fault (temporary change, not committed).**
-  1. In `app.mjs`'s version-2 `change` handler, temporarily make every `change` (text fields included) call `render()` at once: no queue, no `needsRedraw` check, bypassing the hold. That is the old rule.
-  2. Run `npm run test:browser`. Expected: it FAILs at item 4, "Continue after typing": the step doesn't advance after one click. It may fail at item 5 or 11 first; any of the three counts. Record which assertion failed and its message.
+  1. In `app.mjs`'s version-2 `change` handler, temporarily make a `change` that fires **while `pointerHeld` is true** call `render()` at once: no queue, no `needsRedraw` check, bypassing the hold. That is the old rule, limited to presses. A `change` from Tab (no pointer down) is left alone, so item 3.6a still passes and the run reaches item 4.
+  2. Run `npm run test:browser`. Expected: the first failure is item 4, "Continue after typing": the step doesn't advance after one click. Items 5 and 11 come later and would fail the same way, but the run stops at item 4. Any other first failure means the fault is wrong: stop and report. Record the assertion and its message.
   3. Restore the handler (`git diff src/app.mjs` shows nothing from this step) and run `npm run test:browser` again. Expected: PASS.
   4. If step 2 did **not** fail, the test isn't catching lost presses. Stop and report; don't go on.
   5. **The second fault:** run the `change` handler's in-place error update at once instead of through `afterPress`. Run `npm run test:browser`. Expected: it FAILs at item 8a.1.

@@ -139,6 +139,8 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - So editing an already-withheld invalid value leaves `dirty` as it was.
   - Turning a valid value invalid doesn't make it dirty: the field isn't sent, and the server keeps its valid value.
   - Typing a trailing space doesn't make it dirty either.
+  - When an edit leaves `dirty` false (an undo), the save state also returns to Saved, so the chip can show "Saved" or "N answers need checking" again.
+  - A retained save envelope (the unknown-outcome retry) is dropped only when an edit changes what would be sent. A space-only change, or a change to an already-invalid value, keeps it.
 - **Local-only differences survive every refresh.** `applyCase` (after a save, or on a realtime change while not dirty) rebuilds the draft from the server, which would drop what the client typed.
   - It therefore keeps the previous draft's value for every field whose difference from the server can't be sent: a withheld (invalid) value, or a value equal to the server's once `sendable` is applied (only spaces differ).
   - Every other field takes the server's value.
