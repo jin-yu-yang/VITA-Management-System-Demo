@@ -80,7 +80,10 @@ function checkGroup(question, value) {
  * empty is missingToSubmit's business.
  * Contracts the server mirrors: phone = strip every non-digit, then exactly
  * 10 digits; email = at most 254 characters, exactly one "@", non-empty on
- * both sides (deliberately loose, "a b@c" passes).
+ * both sides, otherwise deliberately loose. One known difference: the browser
+ * also rejects any whitespace ("a b@c" fails here), while the server's
+ * check_intake_value accepts it. The direction is safe, because the client
+ * withholds an invalid value from every save (spec 2026-09-30 §2.5).
  */
 export function checkValue(question, value) {
   const type = question?.type;
@@ -102,7 +105,7 @@ export function checkValue(question, value) {
     case "longtext":
       return tooLong(value, 5000);
     case "email":
-      return value.length > 254 || value.split("@").length !== 2 || value.startsWith("@") || value.endsWith("@")
+      return value.length > 254 || /\s/.test(value) || value.split("@").length !== 2 || value.startsWith("@") || value.endsWith("@")
         ? "Enter a valid email address."
         : null;
     case "phone":

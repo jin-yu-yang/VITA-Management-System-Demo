@@ -18,6 +18,9 @@ import {
   dialog,
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { stepsFor, findQuestion } from "../src/intake-catalogue.mjs";
+import { invalidAnswers, stepStatus } from "../src/intake-form.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
 // the HTML string itself. No DOM library, and nothing here may reach a store.
@@ -639,4 +642,360 @@ test("my applications shows the client number on submitted rows only", () => {
   const rows = html.split('<button class="application-row"').slice(1);
   assert.match(rows[0], /<span class="application-id"><span class="application-reference">VT-AB2C-DE3F<\/span><span class="application-number">#093<\/span><\/span>/);
   assert.ok(!rows[1].includes("application-number"));
+});
+
+test("a version-2 chip counts the revealed invalid answers of visible questions", () => {
+  const v2 = (overrides = {}) =>
+    baseState({ savedCase: { id: "c2", intakeVersion: 2, answers: {} }, revealed: [], ...overrides });
+  const text = (html) => html.replace(/<[^>]+>/g, "").trim();
+  const one = saveStatus(v2({ saveState: "saved", draftAnswers: { email: "a@" }, revealed: ["email"] }));
+  assert.equal(text(one), "1 answer needs checking");
+  assert.match(one, /class="save-chip checking" role="status"/);
+  const two = saveStatus(
+    v2({ saveState: "idle", draftAnswers: { email: "a@", addr_zip: "191" }, revealed: ["email", "addr_zip"] }),
+  );
+  assert.equal(text(two), "2 answers need checking");
+  // Typed but not revealed, and revealed but hidden, are never counted.
+  assert.equal(text(saveStatus(v2({ saveState: "saved", draftAnswers: { email: "a@" } }))), "Saved");
+  assert.equal(
+    text(saveStatus(v2({ saveState: "saved", draftAnswers: { marital_status: "single", sp_dob: "1990-02-30" }, revealed: ["sp_dob"] }))),
+    "Saved",
+  );
+  // A revealed id whose value is valid again counts for nothing.
+  assert.equal(text(saveStatus(v2({ saveState: "idle", draftAnswers: { email: "a@b" }, revealed: ["email"] }))), "Up to date");
+  // Saving, Failed and Unsaved come first.
+  const shown = { draftAnswers: { email: "a@" }, revealed: ["email"] };
+  assert.match(text(saveStatus(v2({ ...shown, saveState: "saving" }))), /Saving/);
+  assert.match(text(saveStatus(v2({ ...shown, saveState: "failed", dirty: true }))), /Not saved/);
+  assert.equal(text(saveStatus(v2({ ...shown, saveState: "unsaved", dirty: true }))), "Unsaved changes");
+  // Version 1 never shows it, whatever the state holds.
+  assert.equal(
+    text(saveStatus(baseState({ saveState: "saved", savedCase: { id: "c1", answers: {} }, draftAnswers: { email: "a@" }, revealed: ["email"] }))),
+    "Saved",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Version 2: the nine-step form (spec 2026-09-30 §3)
+// ---------------------------------------------------------------------------
+
+const v2Case = (overrides = {}) =>
+  caseRecord({ id: "case-v2", reference: "VT-GJPY-JAY9", intakeVersion: 2, answers: {}, contact: null, ...overrides });
+const v2State = (overrides = {}) =>
+  baseState({
+    screen: "intake",
+    selectedCaseId: "case-v2",
+    savedCase: v2Case(),
+    draftAnswers: makeSampleAnswers({ version: 2 }),
+    formStep: 0,
+    visitedSteps: [],
+    revealed: [],
+    ...overrides,
+  });
+const without = (answers, ...ids) =>
+  Object.fromEntries(Object.entries(answers).filter(([id]) => !ids.includes(id)));
+const railOf = (html) => {
+  const start = html.indexOf('<ol class="rail"');
+  assert.ok(start >= 0, "the rail is rendered");
+  return html.slice(start, html.indexOf("</ol>", start));
+};
+const railStatus = (html, n) => {
+  const found = new RegExp(`<span id="rail-step-${n}-status" class="rail-status is-(\\w+)">([^<]*)</span>`).exec(html);
+  assert.ok(found, `rail-step-${n}-status is rendered`);
+  return { key: found[1], text: found[2] };
+};
+const railLink = (html, n) => {
+  const rail = railOf(html);
+  const at = rail.indexOf(`data-step="${n}"`);
+  const start = rail.lastIndexOf("<button", at);
+  return rail.slice(start, rail.indexOf("</button>", at) + "</button>".length);
+};
+const plain = (html) => html.replace(/<[^>]+>/g, "").trim();
+const v2Submit = (html) => {
+  const found = /<button[^>]*data-case-action="SUBMIT"[^>]*>/.exec(html);
+  assert.ok(found, "step 9 has Submit");
+  return found[0];
+};
+const titles = stepsFor(2).map((step) => step.title.en);
+const escText = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;");
+
+test("intakeScreen dispatches on intakeVersion: version 1 keeps its four steps", () => {
+  for (const savedCase of [caseRecord(), caseRecord({ intakeVersion: 1 })]) {
+    const html = intakeScreen(baseState({ screen: "intake", savedCase, formStep: 0 }));
+    assert.match(html, /<form id="intake-form">/);
+    assert.match(html, /STEP 1 OF 4/);
+    assert.doesNotMatch(html, /intake-v2-form/);
+    assert.doesNotMatch(html, /rail-step-/);
+  }
+  const v2 = intakeScreen(v2State());
+  assert.doesNotMatch(v2, /id="intake-form"/);
+  assert.doesNotMatch(v2, /OF 4/);
+});
+
+test("a version-2 draft gets the nine-step form, titled from the catalogue", () => {
+  const first = intakeScreen(v2State());
+  assert.match(first, /<form id="intake-v2-form"[^>]*novalidate/);
+  assert.match(first, /<span class="overline">STEP 1 OF 9<\/span>/);
+  assert.match(first, /<h1>Before you start<\/h1>/);
+  for (const [index, title] of titles.entries()) {
+    const html = intakeScreen(v2State({ formStep: index }));
+    assert.ok(html.includes(`STEP ${index + 1} OF 9`), `step ${index + 1}`);
+    assert.ok(html.includes(`<h1>${escText(title)}</h1>`), title);
+    // The progress bar under the rail says the same.
+    assert.ok(html.includes(`Step ${index + 1} of 9`), `progress on step ${index + 1}`);
+  }
+  // The office contact card sits under the rail, as in version 1.
+  assert.match(first, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
+  // Fill fictional details is the same action as version 1's.
+  assert.match(first, /data-action="fill-fictional"/);
+  // No browser validation attribute can block Continue.
+  const form = first.slice(first.indexOf('<form id="intake-v2-form"'));
+  assert.doesNotMatch(form, /\srequired[\s>=]|\spattern=|\smin=|\smax=/);
+});
+
+test("the rail: nine go-step links, the current one marked, a fixed status per step", () => {
+  const html = intakeScreen(v2State({ formStep: 1 }));
+  const rail = railOf(html);
+  const links = [...rail.matchAll(/<button[^>]*data-action="go-step"[^>]*data-step="(\d)"/g)].map((m) => Number(m[1]));
+  assert.deepEqual(links, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  for (const [index, title] of titles.entries()) assert.ok(railLink(html, index).includes(escText(title)), title);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.match(railLink(html, 1), /aria-current="step"/);
+  assert.match(railLink(html, 1), /You are here/);
+  assert.doesNotMatch(railLink(html, 0), /You are here/);
+
+  // Nothing missing: every step is done, with the check drawn outside the span.
+  for (let n = 0; n < 9; n += 1) assert.deepEqual(railStatus(html, n), { key: "done", text: "Done" });
+  const done = railLink(html, 0);
+  assert.ok(done.indexOf("<svg") >= 0 && done.indexOf("<svg") < done.indexOf("rail-step-0-status"), "the check sits outside the status");
+
+  // A visited step with a missing answer needs answers; an unvisited one says nothing.
+  const draftAnswers = without(makeSampleAnswers({ version: 2 }), "tp_first_name");
+  const visited = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [1] }));
+  assert.deepEqual(railStatus(visited, 1), { key: "needs", text: "Needs answers" });
+  const unvisited = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [] }));
+  assert.deepEqual(railStatus(unvisited, 1), { key: "none", text: "" });
+
+  // Every step keeps its span, even with nothing to say.
+  const empty = intakeScreen(v2State({ formStep: 0, draftAnswers: {} }));
+  for (let n = 0; n < 9; n += 1) railStatus(empty, n);
+  assert.deepEqual(railStatus(empty, 1), { key: "none", text: "" });
+});
+
+test("the rail counts a revealed invalid answer on a visited step", () => {
+  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), email: "a@" };
+  const html = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [1], revealed: ["email"] }));
+  assert.deepEqual(railStatus(html, 1), { key: "needs", text: "Needs answers" });
+  assert.deepEqual(
+    railStatus(html, 1),
+    { key: stepStatus(1, draftAnswers, [1], new Set(["email"])).key, text: "Needs answers" },
+  );
+});
+
+test("show-if: the spouse questions render only for a married client", () => {
+  const married = intakeScreen(
+    v2State({ formStep: 2, draftAnswers: { ...makeSampleAnswers({ version: 2 }), marital_status: "married" } }),
+  );
+  assert.match(married, /data-q="sp_first_name"/);
+  const single = intakeScreen(v2State({ formStep: 2 }));
+  assert.equal(makeSampleAnswers({ version: 2 }).marital_status, "never_married");
+  assert.doesNotMatch(single, /data-q="sp_first_name"/);
+  assert.match(single, /data-q="marital_status"/);
+});
+
+test("Needs an answer shows on the current step only once it was visited", () => {
+  const fresh = intakeScreen(v2State({ formStep: 1, draftAnswers: {} }));
+  assert.doesNotMatch(fresh, /Needs an answer/);
+  assert.doesNotMatch(fresh, /is-missing/);
+  const again = intakeScreen(v2State({ formStep: 1, draftAnswers: {}, visitedSteps: [1] }));
+  assert.match(again, /<p id="field-client-tp_first_name-note" class="q-note is-missing" aria-live="polite">Needs an answer<\/p>/);
+  // Every rendered question is a data-q wrapper Task 5 reads as renderedIds.
+  for (const id of ["tp_first_name", "tp_dob", "tp_phone", "email", "addr_zip"]) assert.match(again, new RegExp(`data-q="${id}"`));
+});
+
+test("a revealed error shows on an unvisited step, in the note and the rail", () => {
+  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), email: "a@" };
+  const html = intakeScreen(v2State({ formStep: 1, draftAnswers, visitedSteps: [], revealed: ["email"] }));
+  assert.match(html, /<p id="field-client-email-note" class="q-note is-invalid" aria-live="polite">Enter a valid email address\.<\/p>/);
+  assert.deepEqual(railStatus(html, 1), { key: "needs", text: "Needs answers" });
+  // Not revealed: nothing shows yet.
+  const quiet = intakeScreen(v2State({ formStep: 1, draftAnswers, visitedSteps: [], revealed: [] }));
+  assert.doesNotMatch(quiet, /is-invalid/);
+  assert.deepEqual(railStatus(quiet, 1), { key: "done", text: "Done" });
+});
+
+test("step 9 lists what is still to answer and what needs a change, each linking to its step", () => {
+  const sample = makeSampleAnswers({ version: 2 });
+  const member = sample.hh[0];
+  const draftAnswers = {
+    ...without(sample, "tp_last_name", "addr_zip"),
+    email: "not-an-email",
+    hh: [member, { ...member, first_name: "An", dob: "2015-02-30" }],
+  };
+  const html = intakeScreen(v2State({ formStep: 8, draftAnswers, visitedSteps: [0, 1, 2, 3, 4, 5, 6, 7] }));
+  const start = html.indexOf("Still to answer");
+  assert.ok(start >= 0);
+  const list = html.slice(start, html.indexOf("</section>", start));
+  const group = (n) => {
+    const at = list.indexOf(`<h3>Step ${n + 1}: ${escText(titles[n])}</h3>`);
+    assert.ok(at >= 0, `step ${n + 1} has a group`);
+    const end = list.indexOf("<h3>", at + 1);
+    return list.slice(at, end < 0 ? undefined : end);
+  };
+  const about = group(1);
+  const item = (block, text) => {
+    const at = block.indexOf(text);
+    assert.ok(at >= 0, `${text} is listed`);
+    const open = block.lastIndexOf("<button", at);
+    return block.slice(open, block.indexOf("</button>", at));
+  };
+  assert.match(item(about, "Last name"), /data-action="go-step"[^>]*data-step="1"/);
+  assert.match(item(about, "ZIP code"), /data-step="1"/);
+  const email = item(about, escText(findQuestion(2, "email").wording.general.en));
+  assert.match(email, /data-action="go-step"[^>]*data-step="1"/);
+  assert.match(email, /Needs a change/);
+  assert.doesNotMatch(item(about, "Last name"), /Needs a change/);
+  const person = item(group(4), "Person 2: Date of birth");
+  assert.match(person, /data-step="4"/);
+  assert.match(person, /Needs a change/);
+  // Only the groups with something in them.
+  assert.doesNotMatch(list, /<h3>Step 1:/);
+  assert.doesNotMatch(html, /Everything required is answered\./);
+  // Invalid, revealed or not: nothing here is revealed.
+  assert.deepEqual(invalidAnswers(null, draftAnswers), ["email", "hh[1].dob"]);
+});
+
+test("step 9's missing list comes from the draft alone, never from record.contact", () => {
+  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), tp_phone: "215 555 0123" };
+  const html = intakeScreen(
+    v2State({ formStep: 8, draftAnswers, savedCase: v2Case({ contact: { phone: null, spousePhone: null } }) }),
+  );
+  assert.doesNotMatch(html, /Phone number/);
+  assert.match(html, /Everything required is answered\./);
+});
+
+test("Submit waits for no missing, no invalid and the confirmation", () => {
+  const sample = makeSampleAnswers({ version: 2 });
+  const unconfirmed = intakeScreen(v2State({ formStep: 8 }));
+  assert.match(unconfirmed, /Everything required is answered\./);
+  assert.match(v2Submit(unconfirmed), /disabled/);
+  assert.match(unconfirmed, /<input type="checkbox" id="field-confirmed" name="confirmed" >/);
+  const confirmed = intakeScreen(v2State({ formStep: 8, openPanels: ["confirmed"] }));
+  assert.doesNotMatch(v2Submit(confirmed), /disabled/);
+  assert.match(confirmed, /id="field-confirmed" name="confirmed" checked/);
+  const invalidOnly = intakeScreen(
+    v2State({ formStep: 8, openPanels: ["confirmed"], draftAnswers: { ...sample, email: "not-an-email" } }),
+  );
+  assert.match(v2Submit(invalidOnly), /disabled/);
+  const missingOnly = intakeScreen(
+    v2State({ formStep: 8, openPanels: ["confirmed"], draftAnswers: without(sample, "tp_last_name") }),
+  );
+  assert.match(v2Submit(missingOnly), /disabled/);
+  // Step 9 has Submit and no Continue; the other steps have Continue as the form's submit.
+  assert.doesNotMatch(confirmed, /<button type="submit"/);
+  const middle = intakeScreen(v2State({ formStep: 4 }));
+  assert.match(middle, /<button type="submit" class="btn primary"[^>]*>Continue/);
+  assert.match(middle, /data-action="back-step"/);
+  assert.doesNotMatch(intakeScreen(v2State({ formStep: 0 })), /data-action="back-step"/);
+});
+
+test("the version-2 chip: revealed invalid answers need checking, in every quiet save state", () => {
+  const chip = (overrides) => plain(saveStatus(v2State(overrides)));
+  const sample = makeSampleAnswers({ version: 2 });
+  const one = { draftAnswers: { ...sample, email: "a@" }, revealed: ["email"] };
+  assert.equal(chip({ ...one, saveState: "saved" }), "1 answer needs checking");
+  assert.equal(chip({ ...one, saveState: "idle" }), "1 answer needs checking");
+  assert.equal(
+    chip({ saveState: "saved", draftAnswers: { ...sample, email: "a@", tp_dob: "1984-02-30" }, revealed: ["email", "tp_dob"] }),
+    "2 answers need checking",
+  );
+  assert.equal(chip({ saveState: "saved", draftAnswers: { ...sample, email: "a@" }, revealed: [] }), "Saved");
+  assert.equal(chip({ ...one, saveState: "unsaved", dirty: true }), "Unsaved changes");
+  // Version 1 reads exactly as today.
+  const v1 = (saveState) => plain(saveStatus(baseState({ saveState, savedCase: caseRecord(), ...one })));
+  assert.equal(v1("saved"), "Saved");
+  assert.equal(v1("idle"), "Up to date");
+});
+
+test("with the senior wording chosen, questions use it", () => {
+  const html = intakeScreen(
+    v2State({ formStep: 1, draftAnswers: { ...makeSampleAnswers({ version: 2 }), form_version: "senior" } }),
+  );
+  assert.ok(html.includes(escText(findQuestion(2, "tp_first_name").wording.senior.en)));
+  assert.ok(!html.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
+  const general = intakeScreen(v2State({ formStep: 1 }));
+  assert.ok(general.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
+});
+
+test("a submitted version-2 case shows its answers read-only, grouped by step", () => {
+  const answers = without(makeSampleAnswers({ version: 2 }), "tp_phone", "best_contact_time", "best_contact_note");
+  const html = intakeScreen(
+    v2State({
+      savedCase: v2Case({
+        stage: "received",
+        answers,
+        contact: { phone: "2155550100", spousePhone: null, bestContactTime: ["weekday_evening"], bestContactNote: null },
+      }),
+    }),
+  );
+  assert.match(html, /Your answers are with the office/);
+  assert.doesNotMatch(html, /intake-v2-form/);
+  for (const title of ["Before you start", "About you", "Household members"]) assert.ok(html.includes(escText(title)), title);
+  assert.ok(html.includes(escText(findQuestion(2, "service").wording.general.en)));
+  assert.ok(html.includes("Drop-off"));
+  assert.ok(!html.includes("drop_off"));
+  assert.ok(html.includes("May 12, 1984"));
+  assert.ok(html.includes("(215) 555-0100"), "contact fields come from record.contact");
+  assert.ok(html.includes("Weekday evenings"));
+  assert.ok(html.includes("Lin Chen · Son / Daughter · born Mar 14, 2015 · 12 months"));
+  // Not version 1's answer rows.
+  assert.doesNotMatch(html, /<span>Service<\/span>/);
+  assert.doesNotMatch(html, /<span>Preferred language<\/span>/);
+  assert.match(html, /data-action="open-progress"/);
+});
+
+test("the version-2 conflict screen compares sendable values and labels rows by wording", () => {
+  const sample = makeSampleAnswers({ version: 2 });
+  const member = sample.hh[0];
+  const html = conflictForm(
+    v2State({
+      savedCase: v2Case({
+        revision: 4,
+        answers: { ...without(sample, "best_contact_time", "email"), tp_first_name: "Mei", hh: [member] },
+        contact: { phone: sample.tp_phone, spousePhone: null, bestContactTime: ["weekday_morning"], bestContactNote: sample.best_contact_note },
+      }),
+      draftAnswers: {
+        ...sample,
+        tp_first_name: "Mei ",
+        email: null,
+        best_contact_time: ["weekday_evening", "weekend"],
+        hh: [member, { first_name: "An", last_name: "Chen" }],
+      },
+      dirty: true,
+      editBaseRevision: 2,
+      conflict: { code: "REMOTE_CHANGED", baseRevision: 2, serverRevision: 4 },
+    }),
+  );
+  const rows = [...html.matchAll(/<tr><th scope="row">([^<]*)<\/th><td>([\s\S]*?)<\/td><td>([\s\S]*?)<\/td><\/tr>/g)].map((m) => m.slice(1));
+  assert.deepEqual(
+    rows.map(([label]) => label),
+    [findQuestion(2, "best_contact_time").wording.general.en, findQuestion(2, "hh").wording.general.en],
+  );
+  assert.match(rows[0][1], /Weekday evenings, Weekends/);
+  assert.match(rows[0][2], /Weekday mornings/);
+  assert.match(rows[1][1], /Lin Chen · Son \/ Daughter · born Mar 14, 2015 · 12 months[\s\S]*An Chen/);
+  assert.doesNotMatch(rows[1][2], /An Chen/);
+  assert.match(html, /data-action="reconcile-mine"/);
+  assert.match(html, /data-action="reconcile-server"/);
+});
+
+test("the progress page labels service and language codes, for both versions", () => {
+  const progress = (savedCase) => progressScreen(baseState({ screen: "progress", savedCase }));
+  const v2 = progress(v2Case({ stage: "received", answers: { service: "drop_off", language: "english", tp_first_name: "Mei" } }));
+  assert.match(v2, /<span>Service<\/span><strong>Drop-off<\/strong>/);
+  assert.match(v2, /<span>Language<\/span><strong>English<\/strong>/);
+  assert.match(v2, /Hello, Mei\./);
+  const v1 = progress(caseRecord({ stage: "received", answers: { service: "Drop-off", language: "Mandarin" } }));
+  assert.match(v1, /<span>Service<\/span><strong>Drop-off<\/strong>/);
+  assert.match(v1, /<span>Language<\/span><strong>Mandarin<\/strong>/);
 });

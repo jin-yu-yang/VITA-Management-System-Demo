@@ -41,6 +41,20 @@ const asFilters = (value) =>
       )
     : undefined;
 const asBoolean = (value) => (typeof value === "boolean" ? value : undefined);
+// The version-2 form's steps this window has left, and the ids whose error it
+// has shown, for one case (spec 2026-09-30 §2.5, §3.4). Anything malformed is
+// dropped whole: a half-trusted list would mark the wrong steps. A record from
+// before `revealed` existed reads as nothing revealed.
+const VISITED_STEP_LIMIT = 8;
+const asVisitedSteps = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const { caseId, steps, revealed = [] } = value;
+  if (typeof caseId !== "string" || !caseId) return undefined;
+  if (!Array.isArray(steps) || !steps.every((step) => Number.isInteger(step) && step >= 0 && step <= VISITED_STEP_LIMIT))
+    return undefined;
+  if (!Array.isArray(revealed) || !revealed.every((id) => typeof id === "string")) return undefined;
+  return { caseId, steps: [...steps], revealed: [...revealed] };
+};
 
 // The stored fields, with the check each one has to pass to be restored. A
 // screen name is restored as a string: which screens exist is the controller's
@@ -55,6 +69,7 @@ const FIELDS = Object.freeze({
   boardFilters: asFilters,
   sidebarOpen: asBoolean,
   caseTab: asString,
+  visitedSteps: asVisitedSteps,
 });
 
 /**

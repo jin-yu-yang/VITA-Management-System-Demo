@@ -1,0 +1,630 @@
+// The shared version-2 intake renderer (docs/superpowers/specs/2026-09-30-intake-screens-design.md §2).
+// It is pure: it reads no controller state, and screens pass in what it needs.
+// Catalogue rules (visibility, answered, value checks, the missing list) come
+// from intake-catalogue.mjs and are never re-implemented here. Only
+// describeControl, readField and readForm touch the DOM, and they are thin
+// wrappers over valuesFromControls, which holds every reading rule.
+import { esc, button } from "./ui.mjs";
+import {
+  CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, isAnswered,
+  checkValue, missingToSubmit,
+} from "./intake-catalogue.mjs";
+
+const TEXT_LIKE = new Set(["text", "longtext", "signature", "email", "phone", "zip", "year", "number", "date"]);
+const TEXT_LIMIT = 200; // checkValue's limit for text and signature
+const LONGTEXT_LIMIT = 5000;
+const COUNT_FROM = LONGTEXT_LIMIT - 500; // the count shows within 500 of the limit
+const SELECT_OVER = 6; // a choice with more options than this is a <select>
+const MEMBER_LIMIT = 10;
+const NONE = "none"; // "No one": clears the other options of a multi or who
+const DATE_PARTS = [
+  ["month", "Month", "MM", 2],
+  ["day", "Day", "DD", 2],
+  ["year", "Year", "YYYY", 4],
+];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const asSet = (value) => (value instanceof Set ? value : new Set(Array.isArray(value) ? value : []));
+const stepQuestions = (step) => {
+  const found = stepsFor(2)[step];
+  return found ? questionsFor(2, found) : [];
+};
+
+// ---------------------------------------------------------------------------
+// Options, tips and rich text
+// ---------------------------------------------------------------------------
+
+const optionLabel = (option, { variant = "general", lang = "en" } = {}) =>
+  option?.label?.[variant]?.[lang] ?? option?.label?.general?.[lang] ?? option?.label?.general?.en ?? option?.value ?? "";
+
+const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
+
+// Every option a question can hold: its own, or fixedOptions for yesno (its own
+// values, labelled from the fixed list) and who.
+function allOptions(question) {
+  if (question.type === "who") return CATALOGUE.fixedOptions.who.options;
+  if (question.type === "yesno")
+    return (question.options ?? []).map(
+      (option) => CATALOGUE.fixedOptions.yesno.options.find((fixed) => fixed.value === option.value) ?? option,
+    );
+  return question.options ?? [];
+}
+
+// The options rendered now: who's "My spouse" only while married.
+const shownOptions = (question, answers) =>
+  question.type === "who" && !spouseShown(answers)
+    ? allOptions(question).filter((option) => option.value !== "spouse")
+    : allOptions(question);
+
+const labelOf = (question, value, options) => {
+  const option = question ? allOptions(question).find((o) => o.value === value) : undefined;
+  return option ? optionLabel(option, options) : String(value);
+};
+
+/** Intros and tips: escape, then **bold**, "- " lists and blank-line paragraphs. */
+export function renderRichText(text) {
+  const inline = (line) => esc(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  const blocks = String(text ?? "").replace(/\r\n?/g, "\n").split(/\n[ \t]*\n/);
+  return blocks
+    .map((block) => {
+      let html = "";
+      let lines = [];
+      let items = [];
+      const flushLines = () => {
+        if (lines.length) html += `<p>${lines.map(inline).join("<br>")}</p>`;
+        lines = [];
+      };
+      const flushItems = () => {
+        if (items.length) html += `<ul>${items.map((item) => `<li>${inline(item)}</li>`).join("")}</ul>`;
+        items = [];
+      };
+      for (const line of block.split("\n")) {
+        if (line.trim() === "") continue;
+        const item = /^\s*- (.*)$/.exec(line);
+        if (item) {
+          flushLines();
+          items.push(item[1]);
+        } else {
+          flushItems();
+          lines.push(line);
+        }
+      }
+      flushLines();
+      flushItems();
+      return html;
+    })
+    .join("");
+}
+
+// A tip with a condition renders only while it holds. Upload tips are text only.
+const tipsOf = (question, { variant, lang, answers }) =>
+  (question.tips?.[variant] ?? question.tips?.general ?? [])
+    .filter((tip) => isVisible(tip, answers))
+    .map((tip) => tip[lang] ?? tip.en ?? "")
+    .filter((tip) => tip !== "");
+
+// ---------------------------------------------------------------------------
+// Checks shared by the note, the rail, the chip and the save
+// ---------------------------------------------------------------------------
+
+/**
+ * The value as the server would receive it: text-like values trimmed; for a
+ * household, sub-fields trimmed, unanswered sub-fields omitted and members
+ * with no answers dropped. Everything else as is. The draft is never trimmed.
+ */
+export function sendable(question, value) {
+  if (!question) return value;
+  if (question.type === "group") {
+    if (!Array.isArray(value)) return value;
+    const fields = new Map((question.fields ?? []).map((field) => [field.id, field]));
+    return value
+      .map((member) => {
+        if (!isPlainObject(member)) return member;
+        const out = {};
+        for (const [key, item] of Object.entries(member)) {
+          const sent = sendable(fields.get(key), item);
+          if (isAnswered(sent)) out[key] = sent;
+        }
+        return out;
+      })
+      .filter((member) => !(isPlainObject(member) && Object.keys(member).length === 0));
+  }
+  return TEXT_LIKE.has(question.type) && typeof value === "string" ? value.trim() : value;
+}
+
+/** The note's text and class. For a household sub-field, `question` is the sub-field. */
+export function noteState(question, value, { showMissing = false, showInvalid = false } = {}) {
+  const sent = sendable(question, value);
+  if (showInvalid) {
+    const reason = checkValue(question, sent);
+    if (reason) return { text: reason, className: "is-invalid" };
+  }
+  if (showMissing && question?.required && !isAnswered(sent)) return { text: "Needs an answer", className: "is-missing" };
+  return { text: "", className: "" };
+}
+
+/**
+ * Ids of visible questions on `step` (0–8, or null for every step) whose
+ * sendable value fails checkValue, in catalogue order. A household member's
+ * sub-field is "hh[<n>].<sub>", n being the member's index in the draft.
+ */
+export function invalidAnswers(step, answers = {}) {
+  const draft = answers ?? {};
+  const steps = step === null || step === undefined ? stepsFor(2).map((_, index) => index) : [step];
+  const out = [];
+  for (const index of steps) {
+    for (const question of stepQuestions(index)) {
+      if (!isVisible(question, draft)) continue;
+      const value = draft[question.id];
+      if (question.type === "group") {
+        if (!Array.isArray(value)) continue;
+        value.forEach((member, n) => {
+          if (!isPlainObject(member)) return;
+          for (const field of question.fields ?? [])
+            if (checkValue(field, sendable(field, member[field.id]))) out.push(`${question.id}[${n}].${field.id}`);
+        });
+        continue;
+      }
+      if (checkValue(question, sendable(question, value))) out.push(question.id);
+    }
+  }
+  return out;
+}
+
+/** "4,612 of 5,000 characters" within 500 of the limit, otherwise "". */
+export const countText = (value) => {
+  const length = typeof value === "string" ? value.length : 0;
+  return length > COUNT_FROM
+    ? `${length.toLocaleString("en-US")} of ${LONGTEXT_LIMIT.toLocaleString("en-US")} characters`
+    : "";
+};
+
+/**
+ * The rail mark of one step. Missing and invalid come from the draft alone
+ * (it holds the contact fields; spec §2.5). An invalid answer counts only once
+ * revealed, so typing never flips the mark.
+ */
+export function stepStatus(step, answers = {}, visited = [], revealed = new Set()) {
+  const ids = new Set(stepQuestions(step).map((question) => question.id));
+  const missing = missingToSubmit(2, answers ?? {}).filter((id) => ids.has(id.replace(/\[.*$/, "")));
+  const shown = asSet(revealed);
+  const shownInvalid = invalidAnswers(step, answers).filter((id) => shown.has(id));
+  const wasVisited = Array.isArray(visited) ? visited.includes(step) : Boolean(visited?.has?.(step));
+  if ((wasVisited && missing.length > 0) || shownInvalid.length > 0) return { key: "needs", text: "Needs answers" };
+  if (missing.length === 0) return { key: "done", text: "Done" };
+  return { key: "none", text: "" };
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+const rangeText = (question) =>
+  question.min === undefined && question.max === undefined
+    ? ""
+    : question.max === undefined
+      ? `${question.min} or more`
+      : `${question.min ?? 0} to ${question.max}`;
+
+// One question's markup. `base` is its id (field-<scope>-<id>), `data` the
+// data-* attributes every control carries, and `wrapQ` the wrapper's data-q
+// (null inside a household card, so closest("[data-q]") finds the group).
+function renderField(question, value, ctx) {
+  const { base, data, wrapQ, variant, lang, answers } = ctx;
+  const type = question.type;
+  const note = noteState(question, value, { showMissing: ctx.showMissing, showInvalid: ctx.showInvalid });
+  const tips = tipsOf(question, { variant, lang, answers });
+  const noteId = `${base}-note`;
+  const tipsId = `${base}-tips`;
+  const countId = `${base}-count`;
+  const describedBy = [tips.length ? tipsId : null, noteId, type === "longtext" ? countId : null].filter(Boolean).join(" ");
+  const control = `${data} data-control aria-describedby="${describedBy}"`;
+  const text = typeof value === "string" ? value : "";
+  const title = esc(wording(question, { variant, lang }));
+  const wrap = wrapQ ? ` data-q="${esc(wrapQ)}"` : "";
+  const cls = `q q-${esc(type)}`;
+  const tipsHtml = tips.length
+    ? `<div class="q-tips" id="${tipsId}">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>`
+    : "";
+  const noteHtml = `<p id="${noteId}" class="q-note${note.className ? ` ${note.className}` : ""}" aria-live="polite">${esc(note.text)}</p>`;
+
+  const single = (input, extra = "") =>
+    `<div class="${cls}"${wrap}><label for="${base}" class="q-label">${title}${extra}</label>${input}${tipsHtml}${
+      type === "longtext" ? `<p id="${countId}" class="q-count">${esc(countText(value))}</p>` : ""
+    }${noteHtml}</div>`;
+  const group = (inner) =>
+    `<fieldset class="${cls}"${wrap}><legend class="q-label">${title}</legend>${inner}${tipsHtml}${noteHtml}</fieldset>`;
+  const options = shownOptions(question, answers);
+
+  switch (type) {
+    case "longtext":
+      return single(`<textarea id="${base}" ${control} class="q-input" maxlength="${LONGTEXT_LIMIT}" rows="5">${esc(text)}</textarea>`);
+    case "email":
+    case "phone": {
+      const inputType = type === "email" ? "email" : "tel";
+      return single(`<input id="${base}" ${control} class="q-input" type="${inputType}" value="${esc(text)}">`);
+    }
+    case "zip":
+    case "year":
+    case "number": {
+      const range = rangeText(question);
+      return single(
+        `<input id="${base}" ${control} class="q-input" type="text" inputmode="numeric" value="${esc(text)}">`,
+        range ? ` <span class="q-range">${esc(range)}</span>` : "",
+      );
+    }
+    case "date": {
+      // Filled by splitting on "-", so a partial date ("-04-12") goes back into its boxes.
+      const [year = "", month = "", day = ""] = text.split("-");
+      const parts = { year, month, day };
+      return group(
+        `<div class="q-date">${DATE_PARTS.map(
+          ([part, name, hint, size]) =>
+            `<label for="${base}-${part}" class="q-date-part"><span>${name}</span><input id="${base}-${part}" ${control} data-date-part="${part}" class="q-input" type="text" inputmode="numeric" maxlength="${size}" placeholder="${hint}" value="${esc(parts[part])}"></label>`,
+        ).join("")}</div>`,
+      );
+    }
+    case "choice":
+    case "yesno": {
+      if (type === "choice" && options.length > SELECT_OVER)
+        return single(
+          `<select id="${base}" ${control} class="q-input"><option value="">Select an option</option>${options
+            .map(
+              (option) =>
+                `<option value="${esc(option.value)}"${option.value === value ? " selected" : ""}>${esc(optionLabel(option, { variant, lang }))}</option>`,
+            )
+            .join("")}</select>`,
+        );
+      return group(
+        `<div class="q-options${type === "yesno" ? " q-segmented" : ""}">${options
+          .map((option) => {
+            const id = `${base}-${esc(option.value)}`;
+            return `<label for="${id}" class="q-option"><input id="${id}" ${control} type="radio" name="${base}" value="${esc(option.value)}"${option.value === value ? " checked" : ""}><span>${esc(optionLabel(option, { variant, lang }))}</span></label>`;
+          })
+          .join("")}</div>`,
+      );
+    }
+    case "multi":
+    case "who": {
+      const picked = Array.isArray(value) ? value : [];
+      return group(
+        `<div class="q-options q-chips">${options
+          .map((option) => {
+            const id = `${base}-${esc(option.value)}`;
+            return `<label for="${id}" class="q-option q-chip"><input id="${id}" ${control} type="checkbox" value="${esc(option.value)}"${picked.includes(option.value) ? " checked" : ""}><span>${esc(optionLabel(option, { variant, lang }))}</span></label>`;
+          })
+          .join("")}</div>`,
+      );
+    }
+    default: // text, signature
+      return single(
+        `<input id="${base}" ${control} class="q-input${type === "signature" ? " q-signature" : ""}" type="text" maxlength="${question.maxlength ?? TEXT_LIMIT}" value="${esc(text)}">`,
+      );
+  }
+}
+
+// The household: one card per member, each sub-question rendered by the same
+// renderField with scope <scope>-hh-<n>; every control carries data-q="hh".
+function renderGroup(question, value, { scope, variant, lang, answers, showMissing, revealed }) {
+  const qid = esc(question.id);
+  const base = `field-${esc(scope)}-${qid}`;
+  const members = Array.isArray(value) ? value : [];
+  const note = noteState(question, value, { showMissing, showInvalid: revealed.has(question.id) });
+  const noteId = `${base}-note`;
+  const tips = tipsOf(question, { variant, lang, answers });
+  const cards = members
+    .map((member, n) => {
+      const memberBase = `${base}-${n}`;
+      const answersOf = isPlainObject(member) ? member : {};
+      const subs = (question.fields ?? [])
+        .map((field) =>
+          renderField(field, answersOf[field.id], {
+            base: `${memberBase}-${esc(field.id)}`,
+            data: `data-q="${qid}" data-member="${n}" data-sub="${esc(field.id)}"`,
+            wrapQ: null,
+            variant,
+            lang,
+            answers,
+            showMissing,
+            showInvalid: revealed.has(`${question.id}[${n}].${field.id}`),
+          }),
+        )
+        .join("");
+      return `<div class="hh-card" role="group" aria-labelledby="${memberBase}-title"><div class="hh-card-head"><h3 class="hh-card-title" id="${memberBase}-title">Person ${n + 1}</h3>${button(
+        "Remove",
+        "remove-member",
+        "secondary",
+        `data-member="${n}" aria-label="Remove person ${n + 1}"`,
+      )}</div>${subs}</div>`;
+    })
+    .join("");
+  const add =
+    members.length < MEMBER_LIMIT ? button("Add a person", "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
+  return `<fieldset class="q q-group" data-q="${qid}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
+    tips.length ? `<div class="q-tips">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>` : ""
+  }<div class="hh-cards">${cards}</div>${add}<p id="${noteId}" class="q-note${note.className ? ` ${note.className}` : ""}" aria-live="polite">${esc(note.text)}</p></fieldset>`;
+}
+
+/**
+ * The HTML for one question. `answers` is the draft (contact fields included)
+ * for conditions; the note shows an error when `revealed` has the question's
+ * id, or "hh[<n>].<sub>" for a member's sub-field.
+ */
+export function renderQuestion(
+  question,
+  value,
+  { variant = "general", lang = "en", scope = "client", answers = {}, showMissing = false, revealed = new Set() } = {},
+) {
+  const shown = asSet(revealed);
+  const ctx = { variant, lang, answers: answers ?? {}, showMissing };
+  if (question.type === "group") return renderGroup(question, value, { ...ctx, scope, revealed: shown });
+  return renderField(question, value, {
+    ...ctx,
+    base: `field-${esc(scope)}-${esc(question.id)}`,
+    data: `data-q="${esc(question.id)}"`,
+    wrapQ: question.id,
+    showInvalid: shown.has(question.id),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+// One question's (or one member sub-field's) value from its descriptors.
+function readOne(list, changed) {
+  if (list.some((d) => d.part)) {
+    const part = (name) => String(list.find((d) => d.part === name)?.value ?? "");
+    const [year, month, day] = [part("year"), part("month"), part("day")];
+    return [year, month, day].every((p) => p.trim() === "") ? null : `${year}-${month}-${day}`;
+  }
+  const type = list[0].type;
+  if (type === "radio") return list.find((d) => d.checked)?.value ?? null;
+  if (type === "checkbox") {
+    let picked = list.filter((d) => d.checked).map((d) => d.value);
+    if (changed && picked.includes(NONE))
+      picked = changed.value === NONE ? [NONE] : picked.filter((v) => v !== NONE);
+    return picked.length ? picked : null;
+  }
+  const value = list[0].value ?? "";
+  return String(value).trim() === "" ? null : value;
+}
+
+function readMembers(list, keepEmptyMembers) {
+  const members = new Map();
+  for (const d of list) {
+    const n = Number(d.member);
+    if (!Number.isInteger(n) || n < 0) continue;
+    if (!members.has(n)) members.set(n, new Map());
+    if (!d.sub) continue;
+    const subs = members.get(n);
+    if (!subs.has(d.sub)) subs.set(d.sub, []);
+    subs.get(d.sub).push(d);
+  }
+  const result = [];
+  for (const n of [...members.keys()].sort((a, b) => a - b)) {
+    const member = {};
+    for (const [sub, descriptors] of members.get(n)) {
+      const value = readOne(descriptors);
+      if (isAnswered(value)) member[sub] = value;
+    }
+    if (keepEmptyMembers || Object.keys(member).length > 0) result.push(member);
+  }
+  return result.length ? result : null;
+}
+
+/**
+ * Reads control descriptors ({ q, member?, sub?, part?, type, value, checked })
+ * into { [id]: value }, one key per question in the list. Values are exactly
+ * what is in the box: an empty (or all-space) field reads null, and nothing is
+ * trimmed. `changed` ({ q, value }, the checkbox option just ticked) applies
+ * the "No one" rule. `keepEmptyMembers` keeps a household card with no answers
+ * as {}.
+ */
+export function valuesFromControls(descriptors, { changed, keepEmptyMembers = false } = {}) {
+  const byQuestion = new Map();
+  for (const d of descriptors ?? []) {
+    if (!d?.q) continue;
+    if (!byQuestion.has(d.q)) byQuestion.set(d.q, []);
+    byQuestion.get(d.q).push(d);
+  }
+  const out = {};
+  for (const [id, list] of byQuestion) {
+    const household = list.some((d) => d.member !== undefined && d.member !== null && d.member !== "");
+    out[id] = household ? readMembers(list, keepEmptyMembers) : readOne(list, changed?.q === id ? changed : undefined);
+  }
+  return out;
+}
+
+/** DOM: a control's descriptor, from its data-* attributes, value and checked state. */
+export function describeControl(element) {
+  const data = element.dataset ?? {};
+  const descriptor = { q: data.q, type: element.type, value: element.value, checked: Boolean(element.checked) };
+  if (data.member !== undefined) descriptor.member = Number(data.member);
+  if (data.sub !== undefined) descriptor.sub = data.sub;
+  if (data.datePart !== undefined) descriptor.part = data.datePart;
+  return descriptor;
+}
+
+/**
+ * DOM: the value of the element's question (in the household, the whole
+ * group), with a just-ticked checkbox as `changed` and empty cards kept.
+ */
+export function readField(element) {
+  const id = element?.dataset?.q;
+  if (!id) return {};
+  const wrapper = element.parentElement?.closest("[data-q]");
+  const holder = wrapper && wrapper.dataset.q === id ? wrapper : (element.form ?? element.ownerDocument);
+  const controls = [...holder.querySelectorAll("[data-control]")].filter((el) => el.dataset.q === id);
+  const changed = element.type === "checkbox" && element.checked ? { q: id, value: element.value } : undefined;
+  return valuesFromControls(controls.map(describeControl), { changed, keepEmptyMembers: true });
+}
+
+/** DOM: every rendered question of the form; empty household cards dropped. */
+export function readForm(formElement) {
+  const controls = [...formElement.querySelectorAll("[data-control]")].filter((el) => el.dataset.q);
+  return valuesFromControls(controls.map(describeControl));
+}
+
+/** Field by field; keys absent from the patch are kept, null sets null. Never mutates. */
+export const mergeIntoDraft = (draft, patch) => ({ ...(draft ?? {}), ...(patch ?? {}) });
+
+// ---------------------------------------------------------------------------
+// Redraw decisions (spec §2.4 rule 3)
+// ---------------------------------------------------------------------------
+
+const DRIVERS = (() => {
+  const fields = new Set();
+  const add = (conditions) => {
+    for (const condition of conditions ?? []) fields.add(condition.field);
+  };
+  const visit = (question) => {
+    add(question.showIf);
+    for (const tips of Object.values(question.tips ?? {})) for (const tip of tips ?? []) add(tip.showIf);
+    for (const field of question.fields ?? []) visit(field);
+  };
+  for (const step of stepsFor(2)) for (const section of step.sections) for (const question of section.questions) visit(question);
+  add(CATALOGUE.fixedOptions?.who?.spouseShowIf);
+  return fields;
+})();
+
+/** Whether a question, household, tip or who-spouse condition names this field. */
+export const drivesVisibility = (id) => DRIVERS.has(id);
+
+/** Top-level ids on step (0–8) that isVisible passes; the household is "hh". */
+export const visibleIds = (step, answers) =>
+  new Set(stepQuestions(step).filter((question) => isVisible(question, answers ?? {})).map((question) => question.id));
+
+/** The ids on the page differ from the ids the draft makes visible. */
+export function needsRedraw(renderedIds, step, answers) {
+  const visible = visibleIds(step, answers);
+  const rendered = new Set(renderedIds ?? []);
+  return rendered.size !== visible.size || [...visible].some((id) => !rendered.has(id));
+}
+
+// ---------------------------------------------------------------------------
+// Saving (spec §2.5)
+// ---------------------------------------------------------------------------
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => deepEqual(item, b[i]));
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((key) => Object.hasOwn(b, key) && deepEqual(a[key], b[key]));
+  }
+  return false;
+}
+
+// Unanswered is one state: null, a missing key, "" and [] are equal.
+const sameValue = (a, b) => (!isAnswered(a) && !isAnswered(b)) || deepEqual(a, b);
+
+/**
+ * Version 2: the save request's answers, every field's sendable value (null
+ * clears included), without each top-level field whose sendable value fails
+ * checkValue (hh withheld whole if any member fails). Version 1: the draft.
+ */
+export function withholdInvalid(draft, version) {
+  if (Number(version) !== 2) return draft;
+  const out = {};
+  for (const [id, value] of Object.entries(draft ?? {})) {
+    const question = findQuestion(2, id);
+    if (!question) {
+      out[id] = value;
+      continue;
+    }
+    const sent = sendable(question, value);
+    if (checkValue(question, sent) === null) out[id] = sent;
+  }
+  return out;
+}
+
+/** The ids withholdInvalid leaves out ([] for version 1). */
+export function withheldFields(draft, version) {
+  if (Number(version) !== 2) return [];
+  const sent = withholdInvalid(draft, version);
+  return Object.keys(draft ?? {}).filter((id) => !Object.hasOwn(sent, id));
+}
+
+/** Whether a save would change the server: some sent field differs from its value. */
+export function sendableDiffers(draft, server, version) {
+  const sent = withholdInvalid(draft ?? {}, version);
+  return Object.entries(sent).some(([id, value]) => !sameValue(value, server?.[id]));
+}
+
+/**
+ * The draft after a refresh: the server's answers, except that each field of
+ * the previous draft that can't be sent (withheld) or differs only in spaces
+ * keeps the previous draft's value.
+ */
+export function keepLocalOnly(previousDraft, server, version) {
+  const next = { ...(server ?? {}) };
+  if (Number(version) !== 2) return next;
+  const withheld = new Set(withheldFields(previousDraft, 2));
+  for (const [id, value] of Object.entries(previousDraft ?? {})) {
+    const question = findQuestion(2, id);
+    if (withheld.has(id) || sameValue(question ? sendable(question, value) : value, next[id])) next[id] = value;
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Read-only text (spec §2.3)
+// ---------------------------------------------------------------------------
+
+// Split, never new Date(…), which shifts a date by the time zone.
+function formatDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const month = m ? MONTHS[Number(m[2]) - 1] : undefined;
+  return month ? `${month} ${Number(m[3])}, ${m[1]}` : value;
+}
+
+function formatPhone(value) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : value;
+}
+
+function memberLine(question, member, options) {
+  const field = (id) => (question.fields ?? []).find((f) => f.id === id);
+  const name = [member.first_name, member.last_name].filter(isAnswered).join(" ");
+  const parts = [name];
+  if (isAnswered(member.relationship)) parts.push(labelOf(field("relationship"), member.relationship, options));
+  if (isAnswered(member.dob)) parts.push(`born ${formatDate(member.dob)}`);
+  if (isAnswered(member.months_lived))
+    parts.push(`${member.months_lived} ${member.months_lived === "1" ? "month" : "months"}`);
+  return parts.filter(isAnswered).join(" · ");
+}
+
+/** The read-only text of an answer, or null when unanswered. */
+export function formatAnswer(question, value, { variant = "general", lang = "en" } = {}) {
+  if (!question) return null;
+  const sent = sendable(question, value);
+  if (!isAnswered(sent)) return null;
+  const options = { variant, lang };
+  switch (question.type) {
+    case "date":
+      return typeof sent === "string" ? formatDate(sent) : String(sent);
+    case "phone":
+      return typeof sent === "string" ? formatPhone(sent) : String(sent);
+    case "choice":
+    case "yesno":
+      return labelOf(question, sent, options);
+    case "multi":
+    case "who":
+      return (Array.isArray(sent) ? sent : [sent]).map((item) => labelOf(question, item, options)).join(", ");
+    case "group": {
+      const lines = (Array.isArray(sent) ? sent : [])
+        .filter(isPlainObject)
+        .map((member) => memberLine(question, member, options))
+        .filter((line) => line !== "");
+      return lines.length ? lines.join("\n") : null;
+    }
+    default:
+      return String(sent);
+  }
+}

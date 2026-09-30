@@ -182,3 +182,36 @@ test("the case tab is kept as a string", () => {
   window.write("user-1", { screen: "staff-case", caseTab: 3 });
   assert.deepEqual(window.read("user-1"), { screen: "staff-case" });
 });
+
+test("the visited steps and revealed errors of one case round-trip", () => {
+  const sessionStorage = fakeSession();
+  const window = createWindowState({ sessionStorage });
+  const visitedSteps = { caseId: "case-a", steps: [0, 1, 8], revealed: ["email", "hh[1].dob"] };
+  window.write("user-1", { screen: "intake", visitedSteps });
+  assert.deepEqual(window.read("user-1"), { screen: "intake", visitedSteps });
+
+  // A record written before `revealed` existed reads as none revealed.
+  window.write("user-1", { screen: "intake", visitedSteps: { caseId: "case-a", steps: [2] } });
+  assert.deepEqual(window.read("user-1").visitedSteps, { caseId: "case-a", steps: [2], revealed: [] });
+});
+
+test("a malformed visited-steps record is dropped whole", () => {
+  const sessionStorage = fakeSession();
+  const window = createWindowState({ sessionStorage });
+  for (const visitedSteps of [
+    { caseId: 17, steps: [0], revealed: [] },
+    { steps: [0], revealed: [] },
+    { caseId: "case-a", steps: [0, 1.5], revealed: [] },
+    { caseId: "case-a", steps: ["1"], revealed: [] },
+    { caseId: "case-a", steps: [9], revealed: [] },
+    { caseId: "case-a", steps: [-1], revealed: [] },
+    { caseId: "case-a", steps: "0,1", revealed: [] },
+    { caseId: "case-a", steps: [0], revealed: ["email", 3] },
+    { caseId: "case-a", steps: [0], revealed: "email" },
+    ["case-a", [0]],
+    "case-a",
+  ]) {
+    window.write("user-1", { screen: "intake", visitedSteps });
+    assert.deepEqual(window.read("user-1"), { screen: "intake" }, JSON.stringify(visitedSteps));
+  }
+});

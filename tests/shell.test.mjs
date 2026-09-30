@@ -288,3 +288,73 @@ test("the print card shows the client number only when there is one", () => {
   const without = dialog({ dialog: "print", savedCase: { reference: "VT-AB2C-DE3F" } });
   assert.ok(!without.includes("CLIENT NUMBER") && !without.includes("#0"));
 });
+
+test("the senior switch shows on a version-2 intake draft only, pressed for the senior wording", () => {
+  const v2 = (draftAnswers, overrides = {}) => ({
+    principal: { access: "applicant" },
+    screen: "intake",
+    savedCase: { stage: "draft", intakeVersion: 2 },
+    draftAnswers,
+    ...overrides,
+  });
+  const toggle = (html) => /<button[^>]*data-action="toggle-senior"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0];
+  const senior = toggle(clientHeader(v2({ form_version: "senior" })));
+  assert.ok(senior, "the switch is on the version-2 form");
+  assert.match(senior, /type="button"/);
+  assert.match(senior, /aria-pressed="true"/);
+  assert.match(senior, /Senior version/);
+  assert.match(toggle(clientHeader(v2({ form_version: "general" }))), /aria-pressed="false"/);
+  assert.match(toggle(clientHeader(v2({}))), /aria-pressed="false"/);
+  // The top bar's order: language, the switch, Need help?, Save & exit.
+  const bar = clientHeader(v2({}));
+  const at = (text) => bar.indexOf(text);
+  assert.ok(at('class="language-switch"') < at('data-action="toggle-senior"'));
+  assert.ok(at('data-action="toggle-senior"') < at('data-action="open-help"'));
+  assert.ok(at('data-action="open-help"') < at('data-action="save-exit"'));
+  // Not on version 1, not after submission, not on other screens.
+  assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "draft" } }))), undefined);
+  assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "draft", intakeVersion: 1 } }))), undefined);
+  assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "received", intakeVersion: 2 } }))), undefined);
+  assert.equal(toggle(clientHeader(v2({}, { screen: "progress" }))), undefined);
+  assert.equal(toggle(clientHeader(v2({}, { screen: "applications" }))), undefined);
+});
+
+test("the part 4b block styles the version-2 form with tokens only", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* Part 4b: intake v2 */");
+  const end = css.indexOf("/* end part 4b */");
+  assert.ok(start >= 0 && end > start, "the part 4b block is marked");
+  const block = css.slice(start, end);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+  // No new tokens.
+  assert.doesNotMatch(block, /--vt-[\w-]+\s*:/);
+  for (const selector of [
+    ".rail-status.is-done",
+    ".rail-status.is-needs",
+    ".q-card",
+    ".q-segmented",
+    ".q-chip",
+    ".hh-card",
+    ".q-date",
+    ".q-note.is-missing",
+    ".q-note.is-invalid",
+    ".q-count",
+    ".save-chip.checking",
+    ".still-list",
+  ])
+    assert.ok(block.includes(selector), `${selector} is styled`);
+  assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*color:\s*var\(--vt-age-late-ink\)[^}]*\}/);
+  assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*border-left:[^;}]*var\(--vt-phase-attention\)/);
+  assert.match(block, /\.q-note\.is-missing\s*\{[^}]*color:\s*var\(--vt-age-soon-ink\)/);
+  assert.match(block, /\.save-chip\.checking\s*\{[^}]*color:\s*var\(--vt-age-late-ink\)/);
+  // The live note and the count take no room when empty, and are never display:none.
+  const empty = /\.q-note:empty,\s*\.q-count:empty\s*\{([^}]*)\}/.exec(block);
+  assert.ok(empty, "an :empty rule covers both containers");
+  assert.match(empty[1], /margin:\s*0/);
+  assert.match(empty[1], /padding:\s*0/);
+  assert.doesNotMatch(block, /\.q-(note|count)[^{]*\{[^}]*display:\s*none/);
+  // The segmented radios are hidden visually, not from the keyboard, and the label shows focus.
+  assert.doesNotMatch(block, /\.q-segmented input[^{]*\{[^}]*display:\s*none/);
+  assert.match(block, /\.q-segmented input:focus-visible \+ span\s*\{[^}]*outline:/);
+});

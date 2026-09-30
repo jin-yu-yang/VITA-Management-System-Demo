@@ -5,6 +5,7 @@ import {
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact,
 } from "../src/intake-catalogue.mjs";
+import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 
 const q = (id) => findQuestion(2, id);
 
@@ -122,9 +123,12 @@ test("phone: strip every non-digit, then exactly 10 digits", () => {
   assert.equal(typeof checkValue(p, "21555501001"), "string");
 });
 
-test("email is deliberately loose: 254 chars, one @, both sides non-empty", () => {
+test("email is loose but has no spaces: 254 chars, one @, both sides non-empty", () => {
   const e = q("email");
-  assert.equal(checkValue(e, "a b@c"), null);
+  // Spec §2.5: the browser rejects a space inside; the server's check doesn't
+  // (the one intended difference, recorded in the contract table).
+  assert.equal(checkValue(e, "a b@c"), "Enter a valid email address.");
+  assert.equal(checkValue(e, "mei lin@example.com"), "Enter a valid email address.");
   assert.equal(typeof checkValue(e, "@c"), "string");
   assert.equal(typeof checkValue(e, "a@"), "string");
   assert.equal(typeof checkValue(e, "a@b@c"), "string");
@@ -180,4 +184,17 @@ test("canSeeContact: office staff always, a volunteer only on their own case (D5
   assert.equal(canSeeContact({ preparerId: undefined, reviewerId: undefined }, { capabilities: [] }), false);
   assert.equal(canSeeContact({ preparerId: null }, { id: null, capabilities: ["prepare"] }), false);
   assert.equal(canSeeContact(null, { id: "p-prep", capabilities: ["prepare"] }), false);
+});
+
+test("the value-check contract table: checkValue gives each row's js result (spec §6)", () => {
+  for (const row of INTAKE_VALUE_CASES) {
+    const question = q(row.field);
+    assert.ok(question, `unknown catalogue id ${row.field}`);
+    assert.equal(checkValue(question, row.value) === null, row.js, `${row.field} ${JSON.stringify(row.value).slice(0, 60)}`);
+  }
+  const marked = INTAKE_VALUE_CASES.filter((row) => row.js !== row.sql);
+  assert.deepEqual(marked.map((row) => [row.field, row.value]), [["email", "mei lin@example.com"], ["email", "a b@c"]]);
+  const types = new Set(INTAKE_VALUE_CASES.map((row) => q(row.field).type));
+  for (const type of ["text", "longtext", "signature", "email", "phone", "zip", "date", "year", "number", "choice", "yesno", "multi", "who", "group"])
+    assert.ok(types.has(type), type);
 });

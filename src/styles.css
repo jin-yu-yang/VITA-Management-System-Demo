@@ -3964,3 +3964,606 @@ textarea::placeholder {
   color: var(--vt-intake-ink);
 }
 /* end part 2 */
+
+/* Part 4b: intake v2 */
+/* The client's nine-step form (spec 2026-09-30 §3.2), styled from the step-2
+   and step-6 designs. Tokens only; nothing here reaches the version-1 form,
+   whose rail and cards use other class names. */
+
+/* ---- The top bar's Senior version switch ---- */
+.senior-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--vt-tap);
+  padding: 4px 12px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-surface);
+  color: var(--vt-intake-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.senior-switch .switch-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--vt-primary-line);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.senior-switch .switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.senior-switch[aria-pressed="true"] .switch-track {
+  background: var(--vt-primary);
+}
+.senior-switch[aria-pressed="true"] .switch-thumb {
+  left: 16px;
+}
+
+/* ---- The save chip: shown errors need checking ---- */
+.save-chip.checking {
+  color: var(--vt-age-late-ink);
+  font-weight: 600;
+}
+
+/* ---- The rail ---- */
+.rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.rail-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 6px 4px;
+  border: 0;
+  border-radius: var(--vt-radius-sm);
+  background: transparent;
+  color: var(--vt-intake-hint);
+  text-align: left;
+  font-size: 14px;
+}
+.rail-link:hover {
+  background: var(--vt-primary-soft);
+}
+.rail-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--vt-line);
+  border-radius: 50%;
+  background: var(--vt-surface);
+  font-size: 12px;
+  color: var(--vt-intake-hint);
+}
+.rail-num .icon {
+  display: none;
+  width: 15px;
+  height: 15px;
+}
+.rail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 3px;
+}
+.rail-title {
+  line-height: 1.35;
+}
+.rail-here {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--vt-primary);
+}
+/* The mark is keyed on the status span's class alone, so an in-place class
+   change (spec §2.4 rule 2) restyles the circle and the words together. */
+.rail-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+.rail-status.is-done {
+  color: var(--vt-stage-filing);
+}
+.rail-status.is-needs {
+  color: var(--vt-age-soon-ink);
+}
+.rail-status.is-none {
+  color: var(--vt-intake-hint);
+}
+.rail-link:has(.rail-status.is-done) .rail-num {
+  border-color: var(--vt-stage-filing-bg);
+  background: var(--vt-stage-filing-bg);
+  color: var(--vt-stage-filing);
+}
+.rail-link:has(.rail-status.is-done) .rail-num .icon {
+  display: block;
+}
+.rail-link:has(.rail-status.is-done) .rail-digit {
+  display: none;
+}
+.rail-link:has(.rail-status.is-needs) .rail-num {
+  border-color: var(--vt-age-soon);
+  color: var(--vt-age-soon-ink);
+}
+/* The current step wins over its mark (the prefix matches the :has() rules'
+   specificity, and these come later). */
+.rail .rail-link[aria-current="step"] {
+  color: var(--vt-primary);
+  font-weight: 600;
+}
+.rail .rail-link[aria-current="step"] .rail-num {
+  border-color: var(--vt-primary);
+  background: var(--vt-primary);
+  color: #fff;
+}
+.rail .rail-link[aria-current="step"] .rail-num .icon {
+  display: none;
+}
+.rail .rail-link[aria-current="step"] .rail-digit {
+  display: inline;
+}
+.rail-progress {
+  margin-top: 22px;
+}
+.rail-progress p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--vt-intake-hint);
+}
+.rail-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--vt-line);
+  appearance: none;
+  overflow: hidden;
+}
+.rail-bar::-webkit-progress-bar {
+  background: var(--vt-line);
+  border-radius: 3px;
+}
+.rail-bar::-webkit-progress-value {
+  background: var(--vt-primary);
+  border-radius: 3px;
+}
+.rail-bar::-moz-progress-bar {
+  background: var(--vt-primary);
+  border-radius: 3px;
+}
+/* The office card sits right under the progress bar (spec §3.2), not at the
+   foot of a tall page as version 1's does. */
+.intake-v2 .intake-sidebar {
+  justify-content: flex-start;
+}
+.intake-v2 .sidebar-help {
+  margin-top: 28px;
+}
+
+/* ---- Sections and question cards ---- */
+.q-section {
+  margin-bottom: 28px;
+}
+.q-section-head h2 {
+  margin: 0 0 6px;
+  font-size: 21px;
+  color: var(--vt-intake-ink);
+}
+.q-intro {
+  font-size: 15px;
+  color: var(--vt-intake-hint);
+  margin-bottom: 14px;
+}
+.q-intro p,
+.q-tip p {
+  margin: 0 0 6px;
+}
+.q-intro ul,
+.q-tip ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.q-card {
+  margin-top: 14px;
+  padding: 24px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.q-heading {
+  margin: 0 0 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--vt-line);
+  font-size: 17px;
+  color: var(--vt-intake-ink);
+}
+.q {
+  display: block;
+  min-width: 0;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+}
+.q:last-child {
+  margin-bottom: 0;
+}
+.q-label {
+  display: block;
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--vt-intake-ink);
+}
+.q-range {
+  font-weight: 400;
+  color: var(--vt-intake-hint);
+}
+.q-signature {
+  font-family: var(--vt-serif);
+  font-style: italic;
+}
+.q-tips {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+}
+.q-tip + .q-tip {
+  margin-top: 6px;
+}
+
+/* ---- The note and the count: fixed containers, filled in place ---- */
+.q-note {
+  margin: 8px 0 0;
+  padding: 2px 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.q-note.is-missing {
+  color: var(--vt-age-soon-ink);
+}
+.q-note.is-invalid {
+  color: var(--vt-age-late-ink);
+  border-left: 3px solid var(--vt-phase-attention);
+  padding-left: 8px;
+}
+.q-count {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--vt-intake-hint);
+}
+/* Empty, they take no room, but they stay rendered: an aria-live region that
+   is display:none when its text arrives is not announced reliably. */
+.q-note:empty,
+.q-count:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* ---- Choices: radio cards ---- */
+.q-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.q-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--vt-tap);
+  padding: 8px 14px;
+  border: 1px solid var(--vt-primary-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-surface);
+  color: var(--vt-intake-ink);
+  cursor: pointer;
+}
+.q-option input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--vt-primary);
+}
+.q-option:has(input:checked) {
+  border-color: var(--vt-primary);
+  background: var(--vt-primary-soft);
+}
+
+/* ---- Yes / No / Not sure: a segmented radio group ---- */
+.q-segmented {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-background);
+}
+.q-segmented .q-option,
+.q-segmented .q-option:has(input:checked) {
+  position: relative;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+/* Hidden from sight, never from the keyboard or the accessibility tree. */
+.q-segmented input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+.q-segmented .q-option span {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--vt-tap);
+  padding: 0 18px;
+  border-radius: 6px;
+  color: var(--vt-intake-hint);
+  font-weight: 600;
+}
+.q-segmented .q-option:hover span {
+  background: var(--vt-primary-soft);
+}
+.q-segmented input:checked + span {
+  background: var(--vt-primary);
+  color: #fff;
+}
+.q-segmented input:focus-visible + span {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Several answers: checkbox chips ---- */
+.q-chips {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.q-chip {
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+.q-chip:has(input:checked) {
+  color: var(--vt-primary);
+}
+
+/* ---- Dates: Month / Day / Year ---- */
+.q-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.q-date-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--vt-intake-hint);
+}
+.q-date-part input.q-input {
+  width: 76px;
+  text-align: center;
+}
+.q-date-part:last-child input.q-input {
+  width: 108px;
+}
+
+/* ---- The household: one card per person ---- */
+.hh-cards {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.hh-cards:empty {
+  margin: 0;
+}
+.hh-card {
+  padding: 18px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-background);
+}
+.hh-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.hh-card-title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--vt-intake-ink);
+}
+
+/* ---- Step 9: Still to answer ---- */
+.still-list {
+  margin-bottom: 28px;
+  padding: 24px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.still-list h2 {
+  margin: 0 0 6px;
+  font-size: 21px;
+  color: var(--vt-intake-ink);
+}
+.still-step h3 {
+  margin: 16px 0 4px;
+  font-size: 15px;
+  color: var(--vt-intake-ink);
+}
+.still-step ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.still-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--vt-line);
+  background: transparent;
+  color: var(--vt-intake-ink);
+  text-align: left;
+  font-size: 15px;
+}
+.still-item:hover {
+  background: var(--vt-primary-soft);
+}
+.still-q {
+  flex: 1;
+  min-width: 0;
+}
+.still-flag {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.still-item.is-missing .still-flag {
+  color: var(--vt-age-soon-ink);
+}
+.still-item.is-invalid .still-flag {
+  color: var(--vt-age-late-ink);
+}
+.still-item .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--vt-primary);
+}
+.still-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--vt-stage-filing);
+}
+
+/* ---- After submission: the read-only answers ---- */
+.answers-v2 {
+  padding: 8px 24px 16px;
+  margin-bottom: 20px;
+}
+.answer-step {
+  padding-top: 16px;
+}
+.answer-step + .answer-step {
+  border-top: 1px solid var(--vt-line);
+}
+.answer-step h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--vt-intake-ink);
+}
+.answers-v2 .detail-row > span {
+  flex-shrink: 1;
+  color: var(--vt-intake-hint);
+}
+.answers-v2 .detail-row > strong {
+  min-width: 40%;
+  overflow-wrap: anywhere;
+  color: var(--vt-intake-ink);
+}
+
+/* ---- Narrow screens: no sideways scroll at 390px ---- */
+@media (max-width: 800px) {
+  .intake-v2 .rail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .intake-v2 .rail-link {
+    width: auto;
+    padding: 0;
+  }
+  .intake-v2 .rail-num {
+    width: var(--vt-tap);
+    height: var(--vt-tap);
+    font-size: 13px;
+  }
+  /* The step's words stay for screen readers; the circle carries the mark. */
+  .intake-v2 .rail-body {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .intake-v2 .rail-progress {
+    margin-top: 12px;
+  }
+  .q-card,
+  .still-list {
+    padding: 18px 16px;
+  }
+  .hh-card {
+    padding: 14px 12px;
+  }
+  .q-date {
+    gap: 8px;
+  }
+  .q-date-part input.q-input {
+    width: 64px;
+  }
+  .q-date-part:last-child input.q-input {
+    width: 92px;
+  }
+  .q-segmented .q-option span {
+    padding: 0 14px;
+  }
+  .answers-v2 {
+    padding: 8px 16px 16px;
+  }
+  .answers-v2 .detail-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .answers-v2 .detail-row > strong {
+    text-align: left;
+  }
+}
+/* Long version-2 answers wrap inside the conflict table, so it never scrolls
+   sideways at 390px. */
+.conflict-table td {
+  overflow-wrap: anywhere;
+}
+/* end part 4b */
