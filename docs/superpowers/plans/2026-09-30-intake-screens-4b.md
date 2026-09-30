@@ -8,7 +8,10 @@
 - **Shared renderer.** A pure module, `src/intake-form.mjs`, turns catalogue questions into controls (`renderQuestion`), reads them back (`readField` per keystroke, `readForm` before a save, merged into the draft), and formats answers as read-only text (`formatAnswer`).
 - **Screen.** `src/client-views.mjs` dispatches `intakeScreen` on `intakeVersion`: version 1 keeps today's form, and version 2 gets the new stepper.
 - **Controller.** It keeps a version-aware draft: structured values and explicit `null` clears for version 2, with the contact fields merged in from `record.contact`.
-- **Wiring.** `src/app.mjs` wires keystrokes, `change`-driven re-renders, the step rail, the senior switch and Fill fictional details.
+- **Wiring.** `src/app.mjs` wires the rest:
+  - keystrokes, with in-place updates of the note, the rail mark and the character count;
+  - the redraw rules of spec §2.4: presses never lose their target, `change` redraws are queued, and focus, caret and scroll are restored;
+  - the step rail, the senior switch and Fill fictional details.
 
 **Tech Stack:** vanilla ES modules rendering HTML strings; `node:test`; Playwright; the local Supabase test stack.
 
@@ -30,13 +33,18 @@
   - an explicit `null` means "clear this field on the next save", and is kept in the draft until then;
   - inside a household member, empty sub-fields are omitted, never `null`.
 - **Saves merge on the server** (`answers || payload`, with `null` clearing). So a save sends the whole version-2 draft, `null`s included, and a cleared field reaches the server.
-- **Re-render timing.** Every `input` event copies that question's value into the draft through `readField`, without re-rendering. A realtime redraw therefore never loses typed text.
-  - **`change` re-renders only a control that can change the page:**
-    - a radio, checkbox or `<select>`;
-    - a text-like control, only when its question drives a `showIf` (`drivesVisibility(id)`, today only `gcf_tp_signature`/`gcf_sp_signature`) and the set of visible questions actually changed.
-  - **Why not every text field:** a text field's `change` fires on the mousedown that blurs it. Re-rendering there replaces the button under the pointer, so the click that should follow (Continue, a rail link, Submit) is lost. Version 1 never re-renders on text for the same reason.
-  - **Consequence:** "Needs an answer" and the rail's marks on the current step catch up at the next render, not on blur.
-  - This narrows spec §3's "a text field when it loses focus" for the reason above.
+- **Redraw rules: spec §2.4 is the contract.** It applies while `#intake-v2-form` is on the page; version-1 screens keep today's `render()` behaviour exactly.
+  1. **A press never loses its target.** Between `pointerdown` and `pointerup`/`pointercancel`, a requested redraw is held. It runs from a `setTimeout(…, 0)` queued on `pointerup`/`pointercancel`, after the `click`.
+  2. **`input` never redraws.** It writes the draft (`readField`) and sets only `className`/`textContent` on:
+     - the question's note (`field-<scope>-<id>-note`);
+     - the current step's rail status (`rail-step-<n>-status`);
+     - a `longtext`'s count (`field-<scope>-<id>-count`).
+  3. **A full redraw only when the visible questions change:**
+     - a radio, checkbox or `<select>` `change`;
+     - a `change` of a text field with `drivesVisibility(id)` (today only `gcf_sp_signature`), and only when `needsRedraw(renderedIds, step, answers)` is true.
+
+     The comparison is **the ids rendered on the page against the ids the draft makes visible**, never draft-before against draft-after: rule 2 has already put the typed value in the draft. A `change`-caused redraw is queued with `setTimeout(…, 0)`.
+  4. **Every redraw restores focus, caret and scroll.** Focus and caret use the existing `describeFocus`/`restoreField`; the scroll (`scrollX`/`scrollY`) is new, for the version-2 form only. A redraw requested during IME composition waits for `compositionend`.
 - **No browser validation blocks Continue.** The spec says the form warns but always moves on.
   - The `submit` handler handles `#intake-v2-form` before its `form.reportValidity()` call. `reportValidity` ignores `novalidate`, and `type="email"` alone would block Continue on a half-typed address.
   - The renderer emits no `required`, `min`, `max` or `pattern` attributes; ranges are shown as text.
@@ -47,7 +55,7 @@
 - **Accessibility:**
   - a real `<label>` per control, and `<fieldset>`/`<legend>` for grouped controls;
   - IDs `field-<scope>-<id>` (household: `field-<scope>-hh-<n>-<sub>`);
-  - "Needs an answer" tied by `aria-describedby`;
+  - every question's fixed note container (`aria-live="polite"`), and a `longtext`'s count container (not live), both referenced by the control's `aria-describedby`;
   - controls at least `var(--vt-tap)` (44px) tall;
   - client text in `--vt-intake-ink` / `--vt-intake-hint`;
   - colors only from `--vt-*` tokens (`#fff` allowed);
@@ -74,13 +82,13 @@
 | `tools/build-intake-catalogue.mjs` | Step titles 5, 7, 9; the migration header explains title-only changes |
 | `src/intake-catalogue-data.mjs` (generated) | New step titles |
 | `supabase/migrations/014_intake_catalogue_<hash8>.sql` (generated) | Same field rows as 012, new hash |
-| `src/intake-form.mjs` (new) | `renderQuestion`, `readField`, `readForm`, `formatAnswer`, `mergeIntoDraft` |
+| `src/intake-form.mjs` (new) | `renderQuestion`, `readField`, `readForm`, `formatAnswer`, `mergeIntoDraft`, `drivesVisibility`, `needsRedraw`, `noteState`, `countText`, `stepStatus`, `renderRichText` |
 | `src/sample-data.mjs` | `makeSampleAnswers({ version: 2 })` |
 | `src/controller.mjs` | Version-aware `pickAnswers`; contact merge; `visitedSteps`; `goToStep`; the spouse clear |
 | `src/window-state.mjs` | `visitedSteps` field |
 | `src/client-views.mjs` | Version-2 `intakeScreen` (stepper, rail, step 9, read-only after submit); `conflictForm` version-2 branch; progress-page labels |
 | `src/views.mjs` | The Senior version switch in `clientHeader` on the version-2 intake |
-| `src/app.mjs` | Version-2 input/change wiring, step rail, senior switch, Fill fictional details |
+| `src/app.mjs` | Version-2 input/change wiring with in-place updates; the redraw hold (pointer, composition), queued `change` redraws and scroll restore; step rail, senior switch, Fill fictional details |
 | `src/styles.css` | Version-2 intake styles (fenced block) |
 | Tests | `tests/intake-form.test.mjs` (new), `tests/intake-catalogue.test.mjs`, `tests/intake-build.test.mjs`, `tests/sample-data.test.mjs`, `tests/controller.test.mjs`, `tests/window-state.test.mjs`, `tests/client-views.test.mjs`, `tests/shell.test.mjs`, `tests/browser.mjs` (a new phase) |
 
@@ -123,9 +131,19 @@ readField(element) → { [id]: value }                     // DOM: describes eve
 readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form
 mergeIntoDraft(draft, patch) → newDraft                  // field by field; never drops keys absent from patch; never mutates
 drivesVisibility(id) → boolean                           // true when some showIf in the catalogue names this field
+visibleIds(step, answers) → string[]                     // top-level question ids on step (0–8) that isVisible makes visible, in order
+needsRedraw(renderedIds, step, answers) → boolean        // spec §2.4 rule 3: page ids vs visibleIds(step, answers), as sets
+noteState(question, value, { showMissing }) → { text: string, className: string }
+                                                         // "Needs an answer"/"is-missing" when showMissing, required and !isAnswered; else "" / ""
+countText(value) → string                                // "4,612 of 5,000 characters" when length > 4500, else ""
+stepStatus(step, answers, contact, visited) → { key: "done"|"needs"|"none", text: "Done"|"Needs answers"|"" }
+                                                         // done: no visible required question unanswered; needs: visited with some; none otherwise
 renderRichText(text) → string                            // intros and tips: escape, then **bold**, "- " lists, blank-line paragraphs
 formatAnswer(question, value, { variant = "general", lang = "en" }) → string | null
 ```
+- **Every question renders its note container,** `<p id="field-<scope>-<id>-note" class="q-note{ is-missing}" aria-live="polite">`, always, even when empty, with its text and class from `noteState`. Household sub-questions use `field-<scope>-hh-<n>-<sub>-note`.
+- **Every `longtext` renders its count container,** `<p id="field-<scope>-<id>-count" class="q-count">`, always, with its text from `countText`; it has no `aria-live`.
+- **The control's `aria-describedby`** lists the note id (and the count id for `longtext`).
 - **Every input, select and textarea carries `data-control`.**
 - **Top-level controls carry `data-q="<id>"`.**
 - **Household controls carry `data-q="hh"`, `data-member="<n>"` and `data-sub="<sub>"`.** A sub-question's wrapper never carries its own `data-q`, so `closest("[data-q]")` always finds the right question.
@@ -146,12 +164,18 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
       - for choice, yesno, multi and who, every option's label.
     - `who` omits "My spouse" unless `answers.marital_status === "married"`.
     - A `choice` with more than 6 options renders a `<select>`.
-    - `longtext` has `maxlength="5000"`, and a character count appears only when the value is within 500 of the limit.
+    - `longtext` has `maxlength="5000"` and always a `field-client-<id>-count` element. `countText("a".repeat(4500))` is `""`, and `countText("a".repeat(4612))` is "4,612 of 5,000 characters".
     - No rendered control has `required`, `min`, `max` or `pattern`.
     - Every radio and checkbox has a unique id.
     - `renderRichText("**W-2** & <b>\n- one\n- two")` gives `<strong>W-2</strong> &amp; &lt;b&gt;` and a two-item `<ul>`.
-    - `drivesVisibility("marital_status")` and `drivesVisibility("gcf_sp_signature")` are true; `drivesVisibility("tp_first_name")` is false.
-    - `showMissing` on an unanswered required question adds an element with id `field-client-<id>-missing` and the control's `aria-describedby` references it. An answered question has neither.
+    - `drivesVisibility("marital_status")` and `drivesVisibility("gcf_sp_signature")` are true. `drivesVisibility("gcf_tp_signature")` and `drivesVisibility("tp_first_name")` are false.
+    - **`needsRedraw`** (step 9 is index 8):
+      - with answers `{ gcf_consent: "yes", marital_status: "married", gcf_sp_signature: "Mei Lin" }` and rendered ids that lack `gcf_sp_date`, it is **true**;
+      - with the same answers and rendered ids equal to `visibleIds(8, answers)`, it is **false**;
+      - with `gcf_sp_signature: ""` and rendered ids lacking `gcf_sp_date`, it is **false**.
+    - **Every question** (answered or not, `showMissing` or not) has `id="field-client-<id>-note"` with `aria-live="polite"`, and the control's `aria-describedby` contains it.
+    - `noteState` on an unanswered required question with `showMissing` gives "Needs an answer"/`is-missing`; answered, optional, or `showMissing` false gives empty text and no class. The rendered note carries the same text and class.
+    - **`stepStatus`:** a step whose visible required questions are all answered is `done`; a visited step with one missing is `needs`; an unvisited step with one missing is `none`.
     - The senior variant renders the senior wording for a question whose wordings differ (find one in the catalogue).
   - **`multi`/`who` "No one":** descriptors with "No one" and "Me" both checked, where "No one" is the one just changed, read as `["none"]` (use the catalogue's value for "No one"). The rule lives in `valuesFromControls`, which takes an optional `{ changed: value }` hint.
   - **Round trip:** render with a value, build descriptors from the rendered HTML's option values and checked state (a small regex helper in the test file), read back, and get the same value.
@@ -244,7 +268,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Interfaces:**
 - **Consumes:** Tasks 2–3; the reader.
 - **Produces** these hooks (Task 5 wires them):
-  - rail links `data-action="go-step" data-step="<n>"` (0–8);
+  - rail links `data-action="go-step" data-step="<n>"` (0–8), each containing its fixed `<span id="rail-step-<n>-status" class="rail-status is-<key>">` from `stepStatus`;
+  - the current step's `data-q` wrappers, which Task 5 reads as `renderedIds`;
   - Back `back-step`, Continue as a submit of `#intake-v2-form`, and step 9's Submit as `caseButton(…, "SUBMIT")`;
   - the senior switch `data-action="toggle-senior"`, a button with `aria-pressed`;
   - Fill fictional details `data-action="fill-fictional"` (the same action as version 1);
@@ -254,10 +279,11 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - **The dispatch:** a version-1 draft still renders `#intake-form` and "STEP 1 OF 4"; the existing tests stay green.
   - **Step 1:** `#intake-v2-form`, "STEP 1 OF 9", and the step title from the catalogue.
   - **The rail:**
-    - it has nine `go-step` links, and the current one has `aria-current="step"`;
-    - a step with no missing required question shows a check;
-    - a visited step with missing questions shows "Needs answers";
-    - an unvisited one shows neither.
+    - it has nine `go-step` links, and the current one has `aria-current="step"` and "You are here";
+    - every step has its `rail-step-<n>-status` span, even when empty;
+    - a step with no missing required question has `is-done` and "Done" (with the check icon outside the span);
+    - a visited step with missing questions has `is-needs` and "Needs answers";
+    - an unvisited one has `is-none` and no text.
   - **Show-if:** in step 3, with `marital_status: "married"`, a spouse question renders; with `"never_married"` it doesn't.
   - **"Needs an answer"** shows on the current step only when the step is in `visitedSteps`.
   - **Step 9:**
@@ -290,7 +316,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - checkbox chips;
     - household cards;
     - the date boxes;
-    - "Needs an answer";
+    - the note (`.q-note`, `.q-note.is-missing`) and count (`.q-count`) containers, with empty containers taking no height: no margin or padding when `:empty`. Never use `display: none`, because an `aria-live` region that is hidden when its text arrives isn't announced reliably.
+    - the rail status classes, keyed on class so an in-place class change restyles it;
     - step 9's list.
 
     Use tokens only. Style from the step-2 and step-6 designs.
@@ -304,11 +331,34 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Files:** `src/app.mjs` (and `tests/controller.test.mjs` if you add controller helpers).
 
 - [ ] **Step 1: Wire the version-2 form** in `app.mjs`, beside the version-1 `ANSWER_FORMS` handling. Keep version 1's paths unchanged.
+  - **The redraw hold** (spec §2.4 rules 1 and 4), inside `render()` and only while `#intake-v2-form` is on the page:
+    ```js
+    let pointerHeld = false, composing = false, heldRender = null; // heldRender: the `focus` argument of the held call
+    // in render(focus): if (v2OnPage() && (pointerHeld || composing)) { heldRender = heldRender || focus; return; }
+    root.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
+    const release = () => { pointerHeld = false; setTimeout(flushHeld, 0); };  // after the click
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    root.addEventListener("compositionstart", () => { composing = true; });
+    root.addEventListener("compositionend", () => { composing = false; setTimeout(flushHeld, 0); });
+    function flushHeld() { if (heldRender === null || pointerHeld || composing) return; const f = heldRender; heldRender = null; render(f); }
+    ```
+    - `heldRender` starts as `null` and holds `false`/`true` while a render is waiting.
+    - **Scroll:** when the version-2 form is on the page and `focus` is false, record `window.scrollX`/`scrollY` before `root.innerHTML = …` and `window.scrollTo(x, y)` after `restoreField`.
+    - Version-1 screens never reach these branches.
   - **`input`:** a `[data-control]` inside `#intake-v2-form` that has `data-q` → `controller.editAnswers(readField(control))`.
     - It runs quietly, as `editAnswerField` does, followed by `refreshSaveChip()`.
+    - Then the **in-place updates**, setting only `className` and `textContent`:
+      - the question's note from `noteState(question, value, { showMissing: stepVisited })`;
+      - `#rail-step-<formStep>-status` from `stepStatus(formStep, draft, contact, visited)`;
+      - for a `longtext`, its count from `countText(value)`.
     - `readField` on a household control returns the whole `hh` array. The draft is replaced, never mutated.
     - Checkboxes are included, unlike version 1.
-  - **`change`:** the same read. Re-render only as the global constraint says: a radio, checkbox or select always; a text-like control only when `drivesVisibility(id)` and the visible set changed. Compare `isVisible` over the current step's questions before and after. Then focus the control by its id.
+  - **`change`:** the same read. A redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
+    - a radio, checkbox or select;
+    - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds` is the `data-q` values of `#intake-v2-form [data-q]` wrappers outside the household group.
+
+    Focus comes back through `render()`'s own `describeFocus`/`restoreField`, taken at flush time, so a Tab's new target is restored, not the field that was left.
   - **`submit` of `#intake-v2-form` (Continue):** handled before `form.reportValidity()`. It runs `editAnswers(readForm(form))`, then `goToStep(formStep + 1)`.
   - **Actions:**
     - `go-step`: `editAnswers(readForm(form))`, `await controller.goToStep(n)`, then focus `#main`.
@@ -336,17 +386,40 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 - [ ] **Step 1: Add one phase to the story.** Put it after "a reset rebuilds the samples…" and before "nothing threw…". The reset phase compares case sets, so the new case must come after it. The console phase must still see only allowed lines.
   1. `fixture.database.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`, using the id the story already has.
   2. In a fresh client window, sign in as `applicantB` with `loginTestUser`, as the story does at `tests/browser.mjs:1137`. Start an application and land on "STEP 1 OF 9".
-  3. **Typing survives a redraw:** type part of a first name, then `fixture.database.sql("update public.cases set revision=revision where id=$1", …)` to force a realtime redraw (as the story does at `:657`), and check the box still holds the text.
-  4. **Continue never blocks:** type `not-an-email` into the email question and press Continue. The step still advances.
-  5. Use Fill fictional details, then walk steps 1–8 with Continue.
-  6. **Show-if and spouse:** on step 3, choose married and check a spouse question appears; choose never married and check it's gone.
-  7. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
-  8. **Step 9:** check "Everything required is answered.", then answer the 15080 consent (`gcf_consent`, any option) without pressing Continue. Tick `#field-confirmed` and Submit.
-  9. **Submit saved first:** query `answers->>'gcf_consent'` on that case and expect the chosen value.
-  10. On the progress page, check a client number.
-  11. In `finally`: set the workspace back to 1 and close the window.
-  12. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
-  13. Call `assertConsoleQuiet` on the window.
+  3. **Focus survives a realtime redraw:**
+     1. scroll the window down a little;
+     2. type `Xia` into the first name (focus left in it);
+     3. set the caret to 2 (`el.setSelectionRange(2, 2)`);
+     4. record `scrollY`;
+     5. force a redraw with `fixture.database.sql("update public.cases set revision=revision where id=$1", …)`, as the story does at `:657`, and wait for `#app` to be rebuilt (a marker property set on the old form is gone);
+     6. check that `document.activeElement.id` is the same field, `selectionStart === 2`, the value is `Xia`, and `scrollY` is unchanged.
+  4. **In place:**
+     1. Continue once, and come back with Back, so step 1 is visited.
+     2. Clear a required text question and set a marker property on its note node.
+     3. Check that the note reads "Needs an answer" and the rail status is `is-needs`.
+     4. Type an answer, and check the note is empty, the rail status changed, and the marker is still on the same node (not replaced).
+  5. **Continue after typing (real mouse):** go to the step holding the email question (with the rail), type `not-an-email` into it, focus left in it, then **one** `locator.click()` on Continue.
+     - Don't use `clickAction`, `waitForQuiet`, `pressUntil…` or any retry: they wait for stillness or re-press, and would hide a lost click.
+     - The step advances ("STEP n+1 OF 9"), even though the email is invalid, and the saved answers hold the typed value (query `answers->>'<email id>'`).
+  6. **Rail link after typing (real mouse):** type in a text field, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
+  7. **Long answer count:** go to the step with the "Anything else" longtext and set a marker property on `#intake-v2-form`. Then `locator.fill` 4,600 characters and type one more with `press`. The count reads "4,601 of 5,000 characters", and the marker is still on the form, so no redraw happened.
+  8. Go to step 1 with the rail. Use Fill fictional details, then walk steps 1–8 with Continue.
+  9. **Show-if and spouse:** on step 3, choose married and check a spouse question appears. Use Fill fictional details again (a fill only fills blanks) to answer the spouse questions, then continue. It stays married for item 11.
+  10. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
+  11. **Step 9, the text driver (real mouse):**
+      1. check "Everything required is answered.";
+      2. choose consent "yes" (`gcf_consent`), without pressing Continue;
+      3. type the spouse signature into `gcf_sp_signature`, focus left in it;
+      4. **one** `locator.click()` on `#field-confirmed`.
+
+      The box is ticked, and `[data-q="gcf_sp_date"]` has appeared: the `change` fired on that press, and its queued redraw ran after the click.
+  12. Submit with one click.
+  13. **Submit saved first:** query the case and expect `answers->>'gcf_consent' = 'yes'` and `answers->>'gcf_sp_signature'` equal to the typed name.
+  14. On the progress page, check a client number.
+  15. In `finally`: set the workspace back to 1 and close the window.
+  16. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
+  17. Call `assertConsoleQuiet` on the window.
+
 
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
 - [ ] **Step 2: Run all four suites** in the foreground (up to 10 minutes each), with output to `/tmp`:

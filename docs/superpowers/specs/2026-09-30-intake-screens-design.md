@@ -32,7 +32,7 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 | Type | Control |
 |---|---|
 | `text`, `signature` | text input, `maxlength` from the catalogue |
-| `longtext` | textarea, 5,000 limit; a character count appears within 500 of the limit |
+| `longtext` | textarea, 5,000 limit; a fixed count container `<p id="field-<scope>-<id>-count" class="q-count">`, always rendered (referenced by the control's `aria-describedby`, not live, so it isn't read out on every keystroke), whose text shows the count within 500 of the limit and is empty otherwise; typing updates it in place (§2.4) |
 | `email` | `type="email"` input |
 | `phone` | `type="tel"` input; any formatting accepted, digits kept on save (the 4a rules) |
 | `zip`, `year`, `number` | text input, `inputmode="numeric"`; the range is shown when declared |
@@ -78,14 +78,18 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
 1. **A press never loses its target.** No button or link may be replaced or moved between `mousedown` and `mouseup`. A browser delivers `click` only when both land on the same element, so a redraw in between swallows the click.
    - This is why a text field's `change` (which fires on the `mousedown` that takes focus away) must never redraw on the spot.
    - While a pointer is down on the page (`pointerdown` until `pointerup` or `pointercancel`), every requested redraw waits. It runs in a task queued from `pointerup`/`pointercancel` (`setTimeout(…, 0)`), so after the `click` has been delivered.
-2. **`input` updates in place, never redraws.** Each `input` event writes the question's value to the draft (§2.2) and updates exactly two things in the existing page:
+2. **`input` updates in place, never redraws.** Each `input` event writes the question's value to the draft (§2.2) and updates these things in the existing page, and nothing else:
    - the question's note container (§2.1): its text ("Needs an answer" or empty) and its `is-missing` class;
-   - the current step's mark in the rail (§3.2): its status class and text.
+   - the current step's mark in the rail (§3.2): its status class and text;
+   - for a `longtext`, its character-count container (§2.1): its text ("4,612 of 5,000 characters" within 500 of the limit, otherwise empty).
 
    Only `className` and `textContent` change. No node is added, removed or replaced, so nothing moves under the pointer or the keyboard, and the Saved / Unsaved chip keeps today's in-place refresh.
 3. **A full redraw happens only when the visible questions change.** That is:
    - a radio, checkbox or `<select>` changes (on `change`, which for these fires after the click);
-   - a text field that drives a `showIf` changes (on `change`), and only when the set of visible questions on the step actually differs from before. Today the catalogue has one such field, `gcf_sp_signature` (it shows `gcf_sp_date`).
+   - a text field that drives a `showIf` changes (on `change`), and only when the questions **on the page** differ from the questions **the draft makes visible**. Today the catalogue has one such field, `gcf_sp_signature` (it shows `gcf_sp_date`).
+     - **The comparison is page against draft, never draft before against draft after.** By the time `change` fires, rule 2 has already put every keystroke in the draft, so a before/after comparison of the draft always finds no difference, and `gcf_sp_date` would never appear.
+     - "On the page" is the set of `data-q` ids rendered in the current step. "The draft makes visible" is `isVisible` over the step's questions, evaluated against the draft.
+     - Using the page as the "before" also catches a change typed and then undone before `change` fires: page and draft agree, so no redraw happens.
 
    Everything else (Continue, Back, a rail jump, the senior switch, Add / Remove a person, Fill fictional details, a save's result) is a redraw the person asked for with a press, and runs from the `click` handler, after the press is complete.
    - Any redraw requested by a `change` is queued (`setTimeout(…, 0)`) rather than run inside the handler, so that a Tab has already moved the focus to its new place and rule 4 restores that place, not the field that was left.
@@ -152,7 +156,7 @@ That migration loads the same field rows as 012, because step titles aren't stor
 
 - **Show-if** follows §2.4:
   - Typing never redraws; it updates the question's note and the current step's rail mark in place.
-  - A full redraw happens only when the visible questions change: on a radio, checkbox or select `change`, or on a `change` of a text field that drives a `showIf` (today only `gcf_sp_signature`) when the visible set actually differs.
+  - A full redraw happens only when the visible questions change: on a radio, checkbox or select `change`, or on a `change` of a text field that drives a `showIf` (today only `gcf_sp_signature`) when the questions on the page differ from those the draft makes visible.
   - That redraw never runs between `mousedown` and `mouseup`, and focus, caret and scroll are restored after it.
   - A hidden question keeps its answer in the draft; the server ignores hidden required questions.
 - **Clearing spouse:** when `marital_status` changes away from `married`, every `who` answer drops `spouse` in the same edit.
@@ -238,7 +242,8 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - `formatAnswer` outputs.
 - **Client form:**
   - each step renders its sections, and show-if hides and shows;
-  - every question has its note container (with id and `aria-live="polite"`) whether or not it shows a message, and each rail step has its `rail-step-<n>-status` span;
+  - every question has its note container (with id and `aria-live="polite"`) whether or not it shows a message, every `longtext` has its count container, and each rail step has its `rail-step-<n>-status` span;
+  - the text-driver comparison (page ids against the draft's visible set) is a pure function, `needsRedraw(renderedIds, step, answers)`: with `gcf_sp_signature` filled in the draft and `gcf_sp_date` not rendered it returns true, and with both agreeing it returns false;
   - "Needs an answer" appears only after a visit;
   - step 9's missing list and the Submit gate;
   - the senior switch changes wording and keeps answers;
@@ -296,7 +301,7 @@ The story, updated deliberately:
   - the caret is where it was;
   - the typed text is intact;
   - the page's scroll position is unchanged.
-- **In place:** typing an answer into a required question on a visited step clears its "Needs an answer" and changes the rail mark, and the note element is the same node before and after (compare a marker property set on it before typing).
+- **In place:** typing an answer into a required question on a visited step clears its "Needs an answer" and changes the rail mark, and the note element is the same node before and after (compare a marker property set on it before typing). Filling a long answer past 4,500 characters (`locator.fill`, then one typed character) shows its count without a redraw.
 
 - The auth-browser suite doesn't touch intake labels, so it should pass unchanged.
 
