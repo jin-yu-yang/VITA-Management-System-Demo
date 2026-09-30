@@ -541,6 +541,9 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         ["tp_dob", "2024-02-29"],
         ["tp_dob", "2025-02-29"],
         ["tp_dob", "2025-04-31"],
+        ["tp_dob", "2025-13-01"],
+        ["tp_dob", "2025-00-10"],
+        ["tp_dob", "2025-01-00"],
         ["tp_dob", "0050-01-01"],
         ["tp_dob", "1980-1-2"],
         ["spouse_death_year", "2020"],
@@ -587,6 +590,17 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
           )
         ).rows[0].ok;
         assert.equal(server, checkValue(byId.get(id), value) === null, `${id} ${JSON.stringify(value).slice(0, 60)}`);
+      }
+      // Impossible dates are rejected on both sides, not merely alike.
+      for (const value of ["2025-13-01", "2025-00-10", "2025-01-00", "2025-02-29"]) {
+        const server = (
+          await f.sql(
+            "select vitally_private.check_intake_value(i, $1::jsonb) as ok from vitally_private.intake_fields i where version=2 and field_id='tp_dob'",
+            [JSON.stringify(value)],
+          )
+        ).rows[0].ok;
+        assert.equal(server, false, value);
+        assert.notEqual(checkValue(byId.get("tp_dob"), value), null, value);
       }
       // "Answered" is JavaScript's trim on both sides, every whitespace included.
       const blanks = [
@@ -906,6 +920,24 @@ test("contact and materials actions", async (t) => {
         [{ items: ["w2", "photo_id"] }, { items: ["ssn_itin"] }, { items: [] }],
       );
       assert.deepEqual(await clientEventsOf(caseId, "RECORD_MATERIALS"), []);
+    });
+
+    await t.test("recording again keeps the items already recorded as they were", async () => {
+      const caseId = await readyV2();
+      await record(caseId, ["photo_id", "w2"]);
+      const [photoBefore] = await materialRows(caseId);
+      assert.equal(photoBefore.item, "photo_id");
+      assert.equal(photoBefore.recorded_by_person_id, f.sam);
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      await record(caseId, ["photo_id", "1099int"], f.presenter, f.alex);
+      const rows = await materialRows(caseId);
+      assert.deepEqual(rows.map((row) => row.item), ["1099int", "photo_id"]);
+      const photo = rows.find((row) => row.item === "photo_id");
+      assert.equal(photo.recorded_by_person_id, f.sam);
+      assert.equal(photo.received_at.getTime(), photoBefore.received_at.getTime());
+      const added = rows.find((row) => row.item === "1099int");
+      assert.equal(added.recorded_by_person_id, f.alex);
+      assert.ok(added.received_at > photoBefore.received_at);
     });
 
     await t.test("RECORD_MATERIALS works on a version-1 case too", async () => {

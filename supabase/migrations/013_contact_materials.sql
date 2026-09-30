@@ -348,15 +348,19 @@ begin
 end;
 $$;
 
--- RECORD_MATERIALS: the payload is the whole set now received, so the case's
--- rows are replaced, each stamped with the recording person and now().
+-- RECORD_MATERIALS: the payload is the whole set now received. Items left out
+-- are deleted; an item already recorded keeps its received_at and
+-- recorded_by_person_id; a new one is stamped with the recording person and now().
 create or replace function vitally_private.act_record_materials(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 begin
- delete from public.case_materials where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.case_materials
+ where workspace_id=p_case.workspace_id and case_id=p_case.id
+  and not (item in (select jsonb_array_elements_text(p_payload->'received')));
  insert into public.case_materials(workspace_id, case_id, item, received_at, recorded_by_person_id)
  select p_case.workspace_id, p_case.id, e, now(), p_person.id
- from jsonb_array_elements_text(p_payload->'received') e;
+ from jsonb_array_elements_text(p_payload->'received') e
+ on conflict (case_id, item) do nothing;
  return jsonb_build_object('detail',jsonb_build_object('items',p_payload->'received'));
 end;
 $$;
