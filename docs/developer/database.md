@@ -50,12 +50,13 @@ version of a function, use the **last** file that defines it:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action` | `006_review.sql` |
-| `vitally_private.check_operation_authority`, `check_payload` | `006_review.sql` |
-| `vitally_private.check_authority`, `check_related` | `004_documents_followup.sql` |
+| `public.vitally_apply_action` | `013_contact_materials.sql` |
+| `vitally_private.check_operation_authority`, `check_payload`, `check_authority` | `013_contact_materials.sql` |
+| `vitally_private.check_related`, `act_save_answers` | `011_intake_v2.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
 | `public.vitally_create_case`, `vitally_private.initialize_workspace` | `001_identity_and_cases.sql` |
-| `vitally_private.intake_answer_keys`, `act_submit` | `003_action_core.sql` |
+| `vitally_private.act_submit` | `011_intake_v2.sql` |
+| `vitally_private.intake_answer_keys` | `003_action_core.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
 To list every function with its file and line:
@@ -88,6 +89,8 @@ erDiagram
   document_requests ||--o{ admin_followups : escalated_to
   admin_followups ||--o{ contact_attempts : logs
   cases ||--o{ reviews : reviewed_in
+  cases ||--o| case_contacts : contact_details
+  cases ||--o{ case_materials : materials_received
   cases ||--o{ preparation_participants : prepared_by
   cases ||--o{ case_events : internal_history
   cases ||--o{ client_events : client_progress
@@ -101,10 +104,10 @@ erDiagram
 
 | Table | Purpose | Notable columns and rules |
 | --- | --- | --- |
-| `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset) |
+| `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it) |
 | `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
 | `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
-| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object of strings), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at` |
+| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object of strings), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed) |
 | `action_receipts` | One row per accepted or in-flight action | Unique `(workspace_id, actor_user_id, action_id)`; `request_digest` (SHA-256 of the envelope); `receipt` (the stored result). No foreign key to the target, so receipts outlive deleted cases |
 | `preparation_participants` | Who ever prepared a case | Primary key `(case_id, person_id)`. Written on a preparation claim and never removed. Blocks self-review |
 | `document_requests` | A preparer asking for a document | `status`: `open` → `awaiting_verification` → `verified`, or `cancelled` on closure |
@@ -145,7 +148,8 @@ grants at all.
 | Table | Applicant (client) | Presenter (staff) |
 | --- | --- | --- |
 | `cases` | Own cases | All cases except client drafts not yet submitted |
-| `document_requests`, `documents`, `client_events` | On own cases | On visible cases |
+| `document_requests`, `documents`, `client_events`, `case_contacts` | On own cases | On visible cases |
+| `case_materials` | Nothing | On visible cases |
 | `case_events`, `preparation_participants`, `admin_followups`, `contact_attempts`, `reviews` | Nothing | On visible cases |
 | `assistance_items` | Nothing | All unlinked items, and items on visible cases |
 | `people` | Nothing | Everyone in the workspace |
@@ -282,8 +286,8 @@ shorthands in the table:
 | `RECORD_REVIEW_CONTACT` | Presenter + person | `review_approved` | Current reviewer; contact `pending` | Outcome saved; `reached` or `no_further_contact` completes it | Only when completed |
 | `REMIND` | Presenter + `admin` person | `preparation_ready` with no preparer, or `review_ready` with no reviewer | | Sets `last_reminded_at` (no message is sent) | No |
 | `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required`, or an assisted `draft` | | → `closed`; cancels open requests and tasks | Yes |
-| `UPDATE_CONTACT` | Owner on own draft; `followup` or `admin` person; a preparer or reviewer on their own case | Any | Version-2 case (a version-1 case has no contacts row) | Edits best time and note in `case_contacts`; never a phone | No |
-| `RECORD_MATERIALS` | Presenter + person (same authority as above) | Any | | Replaces the set of materials received | No |
+| `UPDATE_CONTACT` | Owner on own draft; `followup` or `admin` person; a preparer or reviewer on their own case | Draft (owner); any (staff) | Version-2 case (a version-1 case has no contacts row) | Edits best time and note in `case_contacts`; never a phone | No |
+| `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
 
 Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an extra key is a
 `VALIDATION` error, not ignored. The browser builds them in
