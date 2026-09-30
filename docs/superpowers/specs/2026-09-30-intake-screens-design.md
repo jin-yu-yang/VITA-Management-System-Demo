@@ -306,6 +306,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 - **Materials received card:**
   - The eleven items in `MATERIALS_ITEMS` order, as checkboxes, each received one showing who recorded it and when.
   - **Save** (`RECORD_MATERIALS`) is available to people who pass `canSeeContact`, the same rule as 013's `works_on_case`. Others see the card read-only.
+  - **A version-1 case gets this card too,** below today's answers, with no contact card. The server allows `RECORD_MATERIALS` on either version (013), and existing version-1 cases stay version 1 after the switch-over.
 
 ### 4.2 Add a case, version 2 (the design)
 
@@ -317,6 +318,8 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
   - The same page continues an existing version-2 office draft: the office case page shows **Continue in Add a case** for one.
 - **Header:** Work board / Add a case, the title, the Application ID, and "Draft · Saved / Unsaved".
 - **Sections:** nine collapsible sections in step order.
+  - Every section header, open or closed, reads "Needs answers" (text as well as colour) while the section holds a missing or invalid answer, so the bottom bar's count points somewhere.
+  - **After the first refused Send,** missing questions say "Needs an answer" (`showMissing` on for the whole page), and every section that counts opens. It stays on until the page is left.
   - A closed section shows its number, title and a one-line summary of its answers (`formatAnswer`, joined with " · ").
   - An open section shows its questions (`renderQuestion`).
   - Opening a section closes none of the others.
@@ -324,6 +327,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
   - Case info: Application ID, stage, created by, and created at.
   - Materials received: the §4.1 card.
 - **Fill fictional details** (the presenter panel's button and the page's own pill, both `fill-assisted-intake`) fills the version-2 page's blank fields from the version-2 generator, through the renderer's field IDs, replacing today's `#field-assisted-*` lookup for version-2 pages.
+- **Leaving:** Cancel and Work board ask first when leaving would lose typed answers (a new draft with any answer, or a saved draft with unsaved edits). The ask is "Leave without saving?", in the app's existing confirm dialog, with "Leave and discard" and "Keep editing". Otherwise they leave at once. A reload on an unsaved new draft loses it, as today's page does.
 - **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing. While any answer is invalid (`invalidAnswers`, §2.5), "Send to the office" is disabled, and the count of sections that need answers includes the sections holding one.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
