@@ -135,7 +135,7 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - Every version-2 save path sends its result: Continue, Back, a rail jump, Save & exit, and the save before Submit (all go through `saveAnswers`).
   - The draft keeps the typed value, and the server keeps its last valid value for that field, or none.
 - **`dirty` means "a save would change the server".** For a version-2 case, `editAnswers` recomputes it after every edit, over the whole draft: it is true when some field in `withholdInvalid(draft)` differs from the server's value (`savedCase.answers` with the contact fields merged; an unanswered value on both sides is equal).
-  - The base revision is pinned when `dirty` turns true.
+  - The base revision is pinned when `dirty` turns true, and **cleared when `dirty` turns false again**, for example when an edit is undone. Otherwise an office save in between would leave the next edit expecting the old revision, and the server would refuse it with a false CONFLICT. While not dirty, a realtime change simply rebuilds the draft (`keepLocalOnly`), so there is nothing a pin needs to protect.
   - So editing an already-withheld invalid value leaves `dirty` as it was.
   - Turning a valid value invalid doesn't make it dirty: the field isn't sent, and the server keeps its valid value.
   - Typing a trailing space doesn't make it dirty either.
@@ -147,10 +147,15 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   1. Saving;
   2. Failed;
   3. Unsaved, while `dirty`;
-  4. **"N answers need checking"**, while `withheldFields(draft)` has N > 0 entries;
+  4. **"N answers need checking"**, while N > 0 **shown** errors exist: invalid answers of visible questions (`invalidAnswers(null, draft)`) whose ids are in the revealed list;
   5. Saved.
 
-  It is computed from the draft whenever the chip is refreshed (on `input`, on `change` and after a save), so a valid value turned invalid shows "1 answer needs checking" at once, never "Saved". It never shows Unsaved for withheld fields alone.
+  - The chip counts exactly the errors the notes show.
+    - So it never flags a value while it is being typed: an id enters the revealed list only on `change` or when its step is left.
+    - It never counts a hidden question's value: hidden values are still withheld from saves, but nothing asks the person to fix them, and they are counted again if the question reappears.
+  - A valid value turned invalid shows the count once the person leaves the field, never "Saved" with an error on screen.
+  - It never shows Unsaved for withheld fields alone.
+  - **Step 9's "Needs a change" list and the Submit gate use every visible invalid answer** (`invalidAnswers(null, draft)`), revealed or not, because Submit must never go through with one. They can differ from the chip only while a field is being typed in and not yet left.
 - **`staleSave`** compares the retained envelope's answers with `withholdInvalid(draft)`, not with the raw draft. A withheld field, or a change of spaces only, doesn't make the envelope stale, because the envelope never carried it.
 - **If the server still refuses a save:**
   - if the refusal names a field, the client withholds that field and retries once;
@@ -160,15 +165,22 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
 - **Where the error shows:** in the question's note container (§2.1), next to the question, with the `checkValue` message ("Enter a real date as YYYY-MM-DD.", "Enter a valid email address.").
   - It takes the class `is-invalid`.
   - An invalid answer outranks "Needs an answer": the note shows one message.
-- **When it shows:**
-  - never while the person types;
-  - after `change` (they left the field), or when the step is rendered as visited. The `change` case waits for any press in progress to finish (§2.4 rule 1), because a note gaining text pushes the controls below it down;
-  - `input` clears it as soon as the value is valid (or empty), but never adds it.
-- **A shown error survives redraws.** On `change`, a question whose value is invalid is added to the revealed list: the window state's `visitedSteps` record gains `revealed: string[]` (question ids) for the same case.
-  - Every render shows the error for a question that is revealed, or on a visited step. So a realtime redraw on an unvisited step keeps it.
-  - An id leaves the list when its value becomes valid or empty (on `input`).
+- **The revealed list is the one source of "shown".** The window state's `visitedSteps` record gains `revealed: string[]` for the same case. An error is shown, in the note, the rail and the chip, exactly when its id is in the list and its value is still invalid.
+  - **Ids enter the list:**
+    - on `change`, when the value left behind is invalid;
+    - when the person leaves a step (`goToStep`, the moment the step becomes visited), for every invalid answer on that step.
+  - **Never while the person types:** `input` never adds an id. It removes one as soon as the value is valid or empty.
+  - **Survives redraws:** every render reads the list, so a realtime redraw keeps a shown error, on a visited step or not.
+  - The `change` case's on-screen update waits for any press in progress to finish (§2.4 rule 1), because a note gaining text pushes the controls below it down.
   - The list resets with the rest of the record when another case is opened.
-  - The rail counts a revealed invalid answer as "Needs answers" even on an unvisited step.
+  - The rail counts a revealed invalid answer as "Needs answers", even on an unvisited step.
+- **Household errors belong to the member's sub-field.**
+  - `invalidAnswers` returns an id per invalid sub-field, `hh[<n>].<sub>` (the same form `missingToSubmit` uses), never the bare `hh`. The revealed list uses the same ids.
+  - The error shows in that sub-question's own note (`field-<scope>-hh-<n>-<sub>-note`), with the sub-field's own `checkValue` message ("Enter a real date as YYYY-MM-DD."), never the group check's text ("dob: …").
+  - Step 9 lists it as "Person <n+1>: <sub-question wording>" with "Needs a change".
+  - Removing a member drops its ids from the revealed list and renumbers the ids of the members after it.
+  - `withholdInvalid` still withholds the whole `hh` field while any member has an invalid sub-field.
+- **Missing and invalid are computed from the draft alone.** The draft already holds the contact fields (§3.3), so the client form calls `missingToSubmit(2, draft)` with no `contact` argument. Passing `record.contact` would let the server's copy override the draft (`missingToSubmit` gives `contact` priority), so a phone typed but not saved would count as missing, and a cleared phone as answered.
 
   Both updates set only `className` and `textContent`, as in §2.4 rule 2. An invalid value never causes a redraw.
 - **Three places show an invalid answer:**
@@ -339,7 +351,10 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - `staleSave` ignores withheld fields and space-only changes: an envelope stays valid when only those change;
   - `dirty`: editing a withheld value, turning a valid value invalid, or adding a trailing space leaves it false, while a real change sets it;
   - local-only differences (an invalid value, or spaces only) survive a post-save refresh and a realtime refresh;
-  - the chip shows "N answers need checking" as soon as a value turns invalid;
+  - the chip counts shown errors only: not while a value is being typed, and not a hidden question's value; step 9 and Submit count every visible invalid answer;
+  - the base revision is cleared when an undo makes the draft clean, so a later office save and a new edit don't raise a false conflict;
+  - a typed-but-unsaved phone counts as answered and a cleared one as missing (the draft, not `record.contact`);
+  - household errors use `hh[<n>].<sub>` ids and the sub-field's own message;
   - a revealed error survives a redraw on an unvisited step;
   - a refusal that names a field is retried once without it; one that names none is not retried.
 - **Contract table for value checks.**
