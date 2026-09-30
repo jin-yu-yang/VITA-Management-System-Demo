@@ -328,6 +328,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
   - Materials received: the §4.1 card.
 - **Fill fictional details** (the presenter panel's button and the page's own pill, both `fill-assisted-intake`) fills the version-2 page's blank fields from the version-2 generator, through the renderer's field IDs, replacing today's `#field-assisted-*` lookup for version-2 pages.
 - **Leaving:** Cancel and Work board ask first when leaving would lose typed answers (a new draft with any answer, or a saved draft with unsaved edits). The ask is "Leave without saving?", in the app's existing confirm dialog, with "Leave and discard" and "Keep editing". Otherwise they leave at once. A reload on an unsaved new draft loses it, as today's page does.
+- **The office confirms the answers before Send (decided 2026-09-30):** "I have checked these answers with the client" (`#field-confirmed`), as today's office panel asks. Send stays disabled until it is ticked.
 - **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing. While any answer is invalid (`invalidAnswers`, §2.5), "Send to the office" is disabled, and the count of sections that need answers includes the sections holding one.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
@@ -340,6 +341,10 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 
 - The Edit best time and Save materials buttons follow `canSeeContact`, placed beside the existing screen eligibility.
 - A refused action shows its reason, as other actions do.
+
+### 4.4 Service scope (decided 2026-09-30)
+
+Version 2 has no service-scope stop. Version 1's screening (tax year, residence, who fills the form, out-of-scope income) stays on version 1 only. After the switch-over, a version-2 application outside PCDC's scope submits normally, from the client form or from Add a case, and the office handles scope at its intake checks. This is intended, and recorded here as a known gap so it isn't mistaken for a regression. A later part may add version-2 scope rules once they are defined in version-2 terms.
 
 ## 5. The switch-over (the last step of PR 4c)
 

@@ -31,6 +31,7 @@ PR 4b (merged in #40) built §2–§3.
   - `pickAnswers` version 1, `fixture_answers` and version-1 seeding are unchanged.
   - Removing version 1 is a separate part after 4d (spec §1). Nothing here deletes a version-1 path.
 - **Add a case follows `workspaces.default_intake_version`.** 2 gets the new page. 1 gets today's page and `createAssistedCase` unchanged.
+- **No service-scope stop on version 2, by decision (2026-09-30).** Version 1's screening (`submissionBlocker` in the browser, `screening()` in 003's SUBMIT) stays on version 1 only. A version-2 application that is outside PCDC's scope submits normally, from the client form or from Add a case, and the office handles scope at its intake checks. Add no scope rule; the spec records it as a known gap.
 - **Contact details (D5):** shown, and editable (best time and note only; never a phone), only when `canSeeContact(record, person)` from `src/intake-catalogue.mjs`. Otherwise show exactly: "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed."
 - **Materials:** the eleven `MATERIALS_ITEMS` in catalogue order, on cases of both versions. Save (`RECORD_MATERIALS`) only for people who pass `canSeeContact`; everyone else sees the card read-only.
 - **Catalogue rules come from `src/intake-catalogue.mjs` and `src/intake-form.mjs`, never re-implemented:**
@@ -224,13 +225,15 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
       - a received one is ticked with "Recorded by Alex Rivera ·" (use the roster);
       - an unclaimed-volunteer view has every box disabled and no Save;
     - **version 1:**
-      - every existing `answersPanel` / `renderStaffCase` test passes unchanged;
+      - every existing `answersPanel` / `renderStaffCase` test passes unchanged, **except** a test that pins the whole version-1 Intake answers tab. It now also holds the materials card, so update such a test deliberately to include the card, and list each one in the report;
       - a version-1 staff record's page contains no `contact-card` and no "Wording used". Its Intake answers tab contains today's answers panel followed by one `materials-card`;
       - `answersPanel(v1Record)` equals the pre-change function's output. Keep the old body as `answersPanelV1` and assert `answersPanel(v1) === answersPanelV1(v1)` for three version-1 fixtures.
     - `staffEligibility`: `editContact` and `recordMaterials` for the four cases above, plus a version-1 case. On version 1, `recordMaterials` follows `canSeeContact` and `editContact` is refused;
     - **contact hidden:** with the viewer unable to see contact, the version-2 answers panel has no row for any of the four contact questions and no "Not answered" for `tp_phone`.
   - **`tests/admin-views.test.mjs`:** a submitted version-2 case on the office page shows the three cards in the Intake answers tab. A submitted version-1 case shows today's answers panel plus the materials card, and no contact card.
-  - **`tests/controller.test.mjs`:** `runAction("UPDATE_CONTACT", …)` against the fake store leaves `savedCase.revision` equal to the store's new revision (the re-read).
+  - **`tests/controller.test.mjs`:** `runAction("UPDATE_CONTACT", { bestContactTime: ["weekend"] })` against the fake store leaves:
+    - `savedCase.contact.bestContactTime` equal to `["weekend"]`, which proves the re-read ran, whether or not the action moved the case revision;
+    - `savedCase.revision` equal to the store's current revision.
   - **`formValuesWithLists`:** pure enough to test through a tiny fake form object with `FormData`-like entries and a `querySelectorAll`.
     - Export it from a small new module `src/form-values.mjs`, so it is testable in Node.
     - Two ticked `received` boxes give an array of two; none gives `[]`; a single text field gives a string.
@@ -284,12 +287,13 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
        - restore `revealed`, `openAddSections` and `addCaseShowMissing`, which `selectCase` → `clearSelection` would otherwise reset.
     2. `if (state.dirty) await saveAnswers()`.
     3. If `send`:
+       - **The office's confirmation (decision 2026-09-30).** Send needs "I have checked these answers with the client" ticked (`openPanels` includes `"confirmed"`, the same panel name and `#field-confirmed` box as today's office panel and the client's step 9). Read it **at the start of the call**, before any create, because `selectCase` → `clearSelection` empties `openPanels`. Put `"confirmed"` back after the create if it was ticked. Without it, return `{ sent: false, reason: "unconfirmed" }` with no create, save or submit.
        - re-check from the draft: `missingToSubmit(2, state.draftAnswers).length === 0 && invalidAnswers(null, state.draftAnswers).length === 0`. If not:
          - reveal the invalid ids;
          - set `state.addCaseShowMissing = true` (spec §4.2: after the first refused Send, missing questions say "Needs an answer" until the page is left);
          - add every step that counts (holds a missing or invalid answer) to `openAddSections`;
          - `show()` and return `{ sent: false }`.
-       - otherwise `await runAction("SUBMIT", { confirmed: true })`, then `selectCase(id)` with navigation, so the office lands on the case page, and return `{ sent: true }`.
+       - otherwise `await runAction("SUBMIT", { confirmed: true })`, then `selectCase(id)` with navigation, so the office lands on the case page. Reset `addCaseShowMissing` to false: `selectCase` sets the screen itself, not through `navigate()`, so the reset has to happen here too. Return `{ sent: true }`.
     4. **Failure after the create** (the save or the submit throws): the case stays selected, the draft keeps every answer (it is dirty, so no refresh replaces it), and the error goes through today's banner. The next `saveOfficeDraft` call finds `savedCase` set and skips the create. It never creates a second case.
   - **`createAssistedCase`** is unchanged (the version-1 workspace path).
   - **Window state:** `officeDraft`, its answers and `addCaseShowMissing` aren't persisted. A reload loses an unsaved new office draft, as the version-1 page's unsubmitted form does today (accepted). The screen and a saved draft's case id are persisted as usual.
@@ -311,7 +315,11 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
   - **The workspace went back to version 1:** the fake store creates a version-1 case. `saveOfficeDraft()` throws VALIDATION, sends no `SAVE_ANSWERS`, and keeps the answers.
   - **Leaving resets:** after `openAddCase()` and an edit, `navigate("staff")` leaves `officeDraft` false, and a following `editAnswers` on no case behaves as version 1 does today.
   - **Restore:** a restored window state with `screen: "office-add-case"`, no case and a version-2 workspace gives `officeDraft` true, and a following `editAnswers({ tp_first_name: "Mei" })` keeps the key.
-  - **A refused Send:** `addCaseShowMissing` becomes true, and the counted steps are added to `openAddSections`. It survives the create inside the same call, and resets on `navigate`.
+  - **A refused Send:** `addCaseShowMissing` becomes true, and the counted steps are added to `openAddSections`. It survives the create inside the same call, and resets on `navigate` and after a successful Send.
+  - **The confirmation:**
+    - `saveOfficeDraft({ send: true })` with a complete draft but `"confirmed"` not in `openPanels` returns `{ sent: false, reason: "unconfirmed" }`, with no create, save or `SUBMIT`;
+    - ticked on a new office draft (no case yet), it survives the create, so the same call submits;
+    - after that create, `openPanels` still includes `"confirmed"`.
   - `saveOfficeDraft({ send: true })`:
     - with a complete draft (`makeSampleAnswers({ version: 2 })`), one save, then one `SUBMIT` with `{ confirmed: true }`, and the screen is the case page;
     - with a missing required answer, no `SUBMIT`, `{ sent: false }`;
@@ -346,13 +354,20 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
       - **Each toggle button has its own id,** `add-section-<n>-toggle`. `describeFocus` has no `data-step` key, so without the id a redraw would put the focus back on the first toggle, not the one pressed.
       - **Every section header, open or closed, carries a status** `<span class="add-section-status is-needs|is-none">`. It reads "Needs answers" (text as well as colour, in the same style as the client rail) when the section counts toward the bottom bar, and is empty otherwise. So the office can see which sections the count means.
     - **Side column:**
-      - "Case info": Application ID, stage ("Draft"), created by (the persona's name, or the case's creator), created at ("When you save", or the time).
+      - "Case info": Application ID, stage ("Draft"), created by, created at.
+        - **Before the first save:** created by is the acting persona's name, and created at reads "When you save".
+        - **Once saved:** created at is `formatTime(savedCase.createdAt)` (mapped since 008).
+        - **Created by comes from the case's history.** The browser case record doesn't carry `created_by` (`mapCase` leaves it out on purpose). Use the actor of the earliest `internalHistory` entry, named through the roster (`people`), falling back to "The office".
       - "Materials received": Task 3's `materialsCard` once a case exists. Before that, the same eleven items, disabled, with the note "Save the draft first to record materials".
     - **Bottom bar `.add-case-bar`:**
       - Cancel (`open-board`);
       - `<p id="add-case-count">`: "n sections still need answers". A section counts when it holds a required visible unanswered question or an invalid answer. With none, it reads "Every section is answered";
       - **Save draft**: `data-action="save-office-draft"`;
-      - **Send to the office**: `data-action="send-office-draft"`, `id="add-case-send"`, disabled when the count isn't 0 or `busy`.
+      - **The confirmation (decision 2026-09-30), next to Send:**
+        - `<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" …><span>I have checked these answers with the client</span></label>`;
+        - then today's office note: "This confirms the answers on screen. It is not a signature on a tax or consent form."
+        - The box is ticked while `openPanels` includes `"confirmed"`. It reuses the existing `#field-confirmed` change branch (`app.mjs`, the `field-confirmed` branch that toggles the `confirmed` panel). It has no `data-q`, so 4b's version-2 input/change branches never see it;
+      - **Send to the office**: `data-action="send-office-draft"`, `id="add-case-send"`, disabled when the count isn't 0, the box isn't ticked, or `busy`.
     - The Fill fictional details pill: `fill-assisted-intake`, as today.
   - `views.mjs`: the `office-add-case` screen renders:
     - `renderAddCaseV2` when `state.workspace?.defaultIntakeVersion === 2`;
@@ -376,7 +391,12 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
   - **On Add a case:**
     - `showMissing` is `state.addCaseShowMissing`: false until the first refused Send, then true until the page is left. The in-place note update on `input` uses the same value;
     - `needsRedraw` runs per open section: for each `section[data-step]` inside the form, compare its rendered `data-q` set with `visibleIds(step, draft)`;
-    - the in-place updates on `input` also set `#add-case-count`'s text and `#add-case-send`'s `disabled`, recomputed from the draft. Neither changes layout.
+    - the in-place updates on `input` also set, recomputed from the draft:
+      - `#add-case-count`'s text;
+      - `#add-case-send`'s `disabled` (the count, the confirmation and `busy`);
+      - every section header status's `className` and `textContent` (`.add-section-status`).
+
+      Each section header status needs an id, `add-section-<n>-status`, so it can be found. None of these changes layout.
 - **Place and scroll:** on `office-add-case`, 4b's "same place" key (`app.mjs:134`, today `screen|case|formStep`) is **the screen alone**. So:
   - a section toggle, a realtime redraw, and the first Save draft (which changes the case from none to the new id) all keep focus, caret and scroll;
   - arriving from another screen, and leaving it, still scroll to the top and focus `#main`.
@@ -386,7 +406,8 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
   - `save-office-draft`: sweep, `await controller.saveOfficeDraft()`, then `notify("The draft is saved. Nobody was emailed.")`.
   - `send-office-draft`: sweep, then `const { sent } = await controller.saveOfficeDraft({ send: true })`.
     - If sent: `notify("The application is with the office.")`.
-    - If not sent: `notify("Some answers still need attention before this can be sent.")` and focus `#add-case-count` (`tabindex="-1"` in its markup).
+    - If not sent because of the answers: `notify("Some answers still need attention before this can be sent.")` and focus `#add-case-count` (`tabindex="-1"` in its markup).
+    - If not sent because it's unconfirmed (`reason: "unconfirmed"`, which is reachable only when the disabled state is stale): `notify("Confirm that you have checked these answers with the client first.")` and focus `#field-confirmed`.
   - `continue-add-case`: `controller.openAddCase({ caseId: target.dataset.caseId })`.
   - `open-add-case` (existing): `controller.openAddCase()` (it keeps today's behaviour on a version-1 workspace).
   - **`fill-assisted-intake`** on the version-2 page: sweep, then `makeSampleAnswers({ version: 2, seed, married: draft.marital_status === "married" })` and `fillBlankAnswers(draft, generated, 2)` into `editAnswers`. It keeps today's version-1 branch.
@@ -405,7 +426,8 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
     - "Application ID: assigned when you save" without a case, and the reference with one;
     - the materials card is disabled with the note before a case, and enabled for an office persona after;
     - with a missing required answer in step 3, the count is "1 section still needs answers" (singular) and Send is disabled;
-    - with every answer present and valid, "Every section is answered" and Send is enabled;
+    - with every answer present and valid, "Every section is answered". Send is enabled only when `openPanels` includes `"confirmed"`, and is disabled otherwise;
+    - the `#field-confirmed` box and its label "I have checked these answers with the client" render next to Send, and each section header status has `id="add-section-<n>-status"`;
     - with an invalid email only, Send is disabled and step 2 counts;
     - no rendered control has `required`, `min`, `max` or `pattern`;
     - each toggle has `id="add-section-<n>-toggle"`;
@@ -520,15 +542,19 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
      - walk to step 9 with Continue;
      - check "Everything required is answered.";
      - tick the box, Submit (`act(client, "SUBMIT", { badge: "Received" })`), and the client number checks as today.
-     - Replace `fillIntakeToReview` with a version-2 helper `fillIntakeV2ToReview(page)`: continue-intake, Fill, then Continue eight times with `waitForStepOf9`.
-     - The screenshot is renamed `intake-v2-step9-check`.
+     - Add a version-2 helper `fillIntakeV2ToReview(page)`: continue-intake, Fill, then Continue eight times with `waitForStepOf9`. **Keep `fillIntakeToReview`** (the version-1 walk), because item 6 uses it.
+     - The phase's screenshot is renamed `intake-v2-step9-check` and still taken at the same point (step 9, before Submit). It is the evidence for this phase.
   3. **Staff read version-2 answers and the contact card (D5).** In the preparation phase ("Alex claims preparation…"), before Alex claims:
      - open the case's Intake answers tab: "What the client told us", a step heading, and "Wording used: Standard";
      - the page shows no phone digits (`/\(215\) 555-01\d\d/` absent from `#app`) and the D5 sentence;
      - after the claim, the same tab shows the phone and the best time;
      - Alex saves materials: tick "Photo ID" and one more with `locator.check()` on the labelled checkboxes, then one click on "Save materials". (`submitCaseForm` fills fields by label and doesn't tick boxes.) The card shows "Recorded by Alex";
      - then "Edit best time": tick `weekend`, save, and the card shows the new time. Query `case_contacts` to confirm.
-  4. **Offline retry** ("an offline action reports no success…"): the same steps on the version-2 form. Fill on step 1, then Continue (the save that goes offline), keeping its assertions about the same action id.
+  4. **Offline retry** ("an offline action reports no success…"): the same sequence as today, on the version-2 form.
+     - Start, continue-intake, Fill on step 1, and **Continue while online**. This is today's first save, recorded as `savedOnce`, with the receipt count taken after it.
+     - Then, on step 2, edit a field (`addr_city`, as today's phase edits City of residence) and go offline.
+     - Continue: this is the save that goes offline and is retried as the same action.
+     - Keep every assertion about the same action id and the receipts.
   5. **Two windows** ("a draft edited in two windows offers a choice, and keeps it"): the same scenario on the version-2 form.
      - Both windows go to step 2, and each changes `addr_city` (`MINE_CITY` / the other window's value).
      - The conflict panel lists the city row with the question's wording, "Keep my edits" keeps `MINE_CITY` on the server, and so on.
@@ -546,6 +572,7 @@ These are the findings PR 4b deferred. The rail cue must land before the switch-
      - **Save draft** uses today's `pressUntilEffect` pattern, with `safeToRepeat` checking that the workspace's case count grew by at most one. A lost click here fails the create, not a redraw rule, and a second press never creates a second case (Task 4).
        - Afterwards a case exists (query by the new reference in the header), `owner_user_id` is null, `intake_version` is 2, and the answers are saved;
      - the materials card is now enabled, so tick one item and save;
+     - **Send needs the confirmation:** Send is disabled before `#field-confirmed` is ticked. Tick it (`tickBox(staff, "field-confirmed")`), and Send is enabled.
      - open section 2, `fill("not-an-email")` on `field-office-email` and `fill("")` on `field-office-tp_last_name`, then **one** `locator.click()` on Send:
        - nothing is submitted (the stage is still draft);
        - the count mentions a section, and section 2's header reads "Needs answers";
