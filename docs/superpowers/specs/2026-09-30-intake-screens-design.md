@@ -1,7 +1,7 @@
 # Parts 4b and 4c: The version-2 intake screens
 
 **Status:** approved in brainstorming on 2026-09-30.
-Revised 2026-09-30: redraw rules.
+Revised 2026-09-30: redraw rules; invalid values (§2.5).
 
 **Roadmap:** part 4 of `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-restyle-design.md`, which is split into 4a (catalogue and server, merged in #39), 4b (client intake), 4c (Add a case and staff views) and 4d (Chinese).
 
@@ -45,7 +45,9 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 - **Wording** comes from `wording(question, { variant, lang })`, and option labels from the question's options, or `fixedOptions` for `who` and `yesno`.
 - **Tips** render under their question. A tip with a condition renders only while the condition holds. Upload tips show text only.
 - **Every question has a fixed note container:** `<p id="field-<scope>-<id>-note" class="q-note" aria-live="polite">`, rendered for every question, whether or not it has a message. Household sub-questions use `field-<scope>-hh-<n>-<sub>-note`. The control's `aria-describedby` always references it.
-- **`showMissing`:** a required question that is unanswered (`isAnswered`) gets the text "Needs an answer" and the class `is-missing` in its note container. Otherwise the container is empty and has no class. Because the container always exists, the text can change in place (§2.4) without replacing any node.
+- **`showMissing`:** a required question that is unanswered (`isAnswered`) gets the text "Needs an answer" and the class `is-missing` in its note container.
+- **Invalid values** (§2.5): an answered value that fails `checkValue` gets the `checkValue` message and the class `is-invalid` instead, when the note is shown (after `change`, or on a visited step).
+- Both come from one function, `noteState`. Otherwise the container is empty and has no class. The container stays fixed and `aria-live="polite"` in every state. Because the container always exists, the text can change in place (§2.4) without replacing any node.
 
 ### 2.2 `readField(control, question)` and `readForm(formElement, version)`
 
@@ -58,7 +60,8 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 `readForm` reads every rendered question back into an answers object. It is used before a save and on "Fill fictional details": date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects.
 - An empty top-level field reads as `null`, which the save treats as clearing the field.
 - Inside a household member, an empty sub-field is left out of the member object, not set to `null`, because the server checks every key a member carries. A card with no answers at all is dropped.
-- A date with some boxes empty reads as `null`; a full but impossible date (Feb 30) is kept, so `checkValue` can mark it.
+- A date with some boxes empty reads as `null`. A full but impossible date (Feb 30) is kept in the draft, and handled as an invalid value (§2.5).
+- Text-like values are trimmed of leading and trailing spaces before they reach the draft (§2.5).
 - **It sees only what is rendered:** the current step on the client form, or the open sections on Add a case. Its result is **merged** into the draft field by field and never replaces it, so saving one step keeps the other steps' answers, and hidden questions keep theirs. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
 
 ### 2.3 `formatAnswer(question, value, { variant, lang })`
@@ -106,6 +109,63 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
 
    Restoring was chosen over deferring the redraw for as long as a field has focus. A client can keep a field focused indefinitely, and a deferred redraw would hide the office's change, and the conflict banner, until they left it.
 
+### 2.5 Invalid values
+
+An invalid value is an answered value that fails `checkValue`: a bad email, Feb 30, a four-digit ZIP, and so on. **A draft save must not fail because of a format rule. Format rules apply at Submit.**
+
+**What the server does today** (checked against the test database, 2026-09-30):
+- One invalid value makes version-2 `SAVE_ANSWERS` refuse the **whole** save (`VT007 VALIDATION`), so none of the other answers are saved either.
+- The refusal doesn't say which field was wrong.
+- Submit checks only missing answers (`intake_missing`), because a stored value is always one that passed the save check.
+
+Changing that needs a migration, so for 4b the client keeps invalid values away from the server:
+
+- **`withholdInvalid(draft, version)`** returns the draft without every field whose value fails `checkValue`. For a household, the whole `hh` field is withheld when any member fails.
+  - Every version-2 save path sends its result: Continue, Back, a rail jump, Save & exit, and the save before Submit (all go through `saveAnswers`).
+  - The draft keeps the typed value, and the server keeps its last valid value for that field, or none.
+- **Withheld values survive the refresh after a save.** After a successful save, the controller re-reads the case (`applyCase`), which today rebuilds a clean draft from the server's answers and would drop what the client typed.
+  - The controller therefore keeps the last save's withheld fields (`state.withheld`, field → value) and lays them over the draft that `applyCase` builds.
+  - A withheld field leaves `state.withheld` when its draft value becomes valid (it is then saved normally), or is cleared.
+  - Opening another case empties it.
+- **The Saved / Unsaved chip** shows, in order:
+  1. Saving;
+  2. Failed;
+  3. Unsaved, while `dirty`;
+  4. **"N answers need checking"**, when the draft differs from the server only by withheld fields (`dirty` is false and `state.withheld` has N keys);
+  5. Saved.
+
+  It never shows Unsaved for withheld fields alone.
+- **`staleSave`** compares the retained envelope's answers with `withholdInvalid(draft)`, not with the raw draft. A withheld field changing doesn't make the envelope stale, because the envelope never carried it.
+- **If the server still refuses a save:**
+  - if the refusal names a field, the client withholds that field and retries once;
+  - if it names none, the usual failure banner shows.
+  - It never retries in a loop.
+  - Today's server never names a field (see above), so in 4b every refusal takes the banner path. The field-naming path is written so a later server change works without a client change.
+- **Where the error shows:** in the question's note container (§2.1), next to the question, with the `checkValue` message ("Enter a real date as YYYY-MM-DD.", "Enter a valid email address.").
+  - It takes the class `is-invalid`.
+  - An invalid answer outranks "Needs an answer": the note shows one message.
+- **When it shows:**
+  - never while the person types;
+  - after `change` (they left the field), or when the step is rendered as visited;
+  - `input` clears it as soon as the value is valid (or empty), but never adds it.
+
+  Both updates set only `className` and `textContent`, as in §2.4 rule 2. An invalid value never causes a redraw.
+- **Three places show an invalid answer:**
+  - the note;
+  - the rail mark, which counts it as "Needs answers" (§3.2);
+  - step 9, under "Still to answer", with the text "Needs a change" and a link to its step (§3.4).
+- **Submit** stays disabled while any answer is invalid (`invalidAnswers`), as well as while any is missing.
+  - The server refuses Submit for missing answers, and never holds an invalid one: it refuses to store any.
+  - So both sides use the same rule: nothing invalid is ever submitted.
+  - The client's disabled Submit is also what stops a Submit that would use a withheld field's older, valid value.
+- **Trimming:** `readField` trims leading and trailing spaces from text-like values before writing the draft, so `" 12345 "` becomes `"12345"`.
+- **Email with a space:** an email with a space inside is invalid. `checkValue` rejects it.
+  - The server's check (`check_intake_value`, 4a) accepts it, and isn't changed here.
+  - This is the one known difference between the two checks, and the direction is safe: the client withholds the value, so the server never receives it.
+  - The shared contract table (§6) records it.
+
+Better long-term: the server accepts any format in draft saves and checks at Submit. This needs a migration and is out of scope for 4b.
+
 ## 3. The client's nine-step form (PR 4b)
 
 ### 3.1 Which form
@@ -133,8 +193,8 @@ That migration loads the same field rows as 012, because step titles aren't stor
 - **Strip under the bar:** the Application ID, and the Saved / Unsaved chip.
 - **Left rail:**
   - The nine steps (catalogue titles). A step shows:
-    - a check when it has no unanswered required question;
-    - "Needs answers" once visited with some left;
+    - a check when it has no unanswered required question and no invalid answer;
+    - "Needs answers" once visited with some left, counting invalid answers (§2.5) as well as missing ones;
     - "You are here" for the current step.
   - Every step is a link.
   - **Each step's mark is one fixed element,** `<span id="rail-step-<n>-status" class="rail-status is-done|is-needs|is-none">`, holding the text "Done", "Needs answers" or nothing. The current step is marked separately with `aria-current="step"` and "You are here", which a step change redraws.
@@ -153,7 +213,8 @@ That migration loads the same field rows as 012, because step titles aren't stor
 - The controller's draft holds the version-2 answers plus the four contact fields. On load, the contact fields are filled in from `record.contact` through `CONTACT_FIELDS`. `record.contact` is `null` until a case's first contact save (`mapContact`), and `null` counts as empty.
 - `pickAnswers` becomes version-aware: version 1 keeps its 17 keys, and version 2 keeps the catalogue's top-level field IDs.
 - **Saving** happens on Continue, Back, a rail jump, and Save & exit. The save sends the whole draft (`SAVE_ANSWERS`); the server routes the contact fields to `case_contacts`.
-- The Saved / Unsaved chip and the retained-envelope retry work as today.
+- **Invalid values are withheld from every save** (`withholdInvalid`, §2.5). The draft keeps them, and they are laid back over the draft after the post-save refresh, so a draft save never fails on a format rule.
+- The Saved / Unsaved chip works as today, with one more state from §2.5: "N answers need checking" when only withheld fields differ from the server. The retained-envelope retry works as today, and `staleSave` compares against the withheld-filtered draft.
 - **The two-window conflict screen needs a version-2 branch.** Today's `conflictForm` compares only version 1's 17 keys, with `String()`. For version 2 it compares every catalogue field and the four contact fields by value (deep equality for arrays and household members), labels each row with the question's wording, and shows both sides with `formatAnswer`. "Keep my edits" and "Use the office's values" work as today.
 - **Fill fictional details** uses a new fictional version-2 generator: `makeSampleAnswers` in `src/sample-data.mjs` gains a `version` option (`{ seed, scenario, version: 2 }`), and version 1 stays the default. It fills only blank fields, and every value passes `checkValue`.
   - **The generated person follows the draft's marital status.** When the draft already says `married`, the fill generates a married person, spouse answers included (`makeSampleAnswers({ …, married: true })`). Otherwise it generates the default never-married person.
@@ -172,9 +233,13 @@ That migration loads the same field rows as 012, because step titles aren't stor
   - It belongs to one case: it is ignored when `caseId` isn't the selected case, and reset when another case is opened.
 - **The senior switch** edits `form_version` (`general` / `senior`). The wording changes immediately, the form becomes Unsaved, and the switch is saved with the next save. No answer is touched.
 - **Step 9, "Permission & review":**
-  1. **"Still to answer"** lists every missing required question (`missingToSubmit`), grouped by step, each linking to its step. When the list is empty it reads "Everything required is answered."
+  1. **"Still to answer"** lists, grouped by step, each linking to its step:
+     - every missing required question (`missingToSubmit`);
+     - every invalid answer (`invalidAnswers`, §2.5), with the text "Needs a change".
+
+     When both are empty it reads "Everything required is answered."
   2. **The Form 15080 consent** section (Section 14, optional).
-  3. **"I have checked my answers",** then **Submit**, disabled until the missing list is empty and the box is ticked.
+  3. **"I have checked my answers",** then **Submit**, disabled until the missing list and the "Needs a change" list are both empty and the box is ticked.
 - **After submit,** the client goes to the progress page as today. It shows the client number.
 
 ### 3.5 The progress page
@@ -246,7 +311,19 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
 - **Renderer:**
   - every type in the real catalogue renders with its label and ID;
   - render then `readForm` round-trips the value (date boxes; `who` with `none`; household add and remove; a `yesno` without Not sure);
-  - `formatAnswer` outputs.
+  - `formatAnswer` outputs;
+  - `readField` trims text before it reaches the draft.
+- **Invalid values (§2.5):**
+  - `withholdInvalid` removes only invalid fields: valid fields, `null` clears and empty values stay;
+  - `staleSave` ignores withheld fields: an envelope stays valid when only a withheld field changes;
+  - withheld values survive the post-save refresh, and the chip shows "N answers need checking";
+  - a refusal that names a field is retried once without it; one that names none is not retried.
+- **Contract table for value checks.**
+  - **One shared table** (`tests/support/intake-value-cases.mjs`) lists inputs with the expected result for each side (`js`, `sql`):
+    - `"mei lin@example.com"`, `"a@"`, `"@"`, `"2025-02-30"`, `" 12345 "`, `"1234"`;
+    - one valid case for each type.
+  - **Two tests read it:** the JS test (`checkValue`) and the database test (`check_intake_value` in `tests/database-intake.mjs`).
+  - **Only one row differs:** `"mei lin@example.com"` (JS invalid, SQL valid; §2.5). Any other disagreement fails the tests. It is fixed in the JS rule, or reported; the SQL is never changed here.
 - **Client form:**
   - each step renders its sections, and show-if hides and shows;
   - every question has its note container (with id and `aria-live="polite"`) whether or not it shows a message, every `longtext` has its count container, and each rail step has its `rail-step-<n>-status` span;
@@ -311,6 +388,12 @@ The story, updated deliberately:
 - **In place:** typing an answer into a required question on a visited step clears its "Needs an answer" and changes the rail mark, and the note element is the same node before and after (compare a marker property set on it before typing). Filling a long answer past 4,500 characters (`locator.fill`, then one typed character) shows its count without a redraw.
 
 - The auth-browser suite doesn't touch intake labels, so it should pass unchanged.
+
+**Invalid values (§2.5), in PR 4b's version-2 browser phase.** These use a real mouse: one `locator.click()`, and no retry helpers.
+1. On step 2, with the other required answers filled, type `not-an-email` into the email field and click Continue once. The step advances.
+2. The email's note shows "Enter a valid email address." (`is-invalid`), and the rail's step-2 mark shows "Needs answers". Step 9 lists the email under "Still to answer" as "Needs a change", with a link to step 2. Submit is disabled.
+3. The database has step 2's other answers and not the email (query the case). The chip reads "1 answer needs checking".
+4. Back on step 2, type a valid email. The error clears without a redraw: a marker property set on the note node is still there. After Continue, the email is saved, and Submit becomes possible when nothing else is missing.
 
 **Accessibility:**
 - keyboard reach and visible focus rings;

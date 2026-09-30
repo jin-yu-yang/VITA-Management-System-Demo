@@ -54,6 +54,10 @@
 - **No browser validation blocks Continue.** The spec says the form warns but always moves on.
   - The `submit` handler handles `#intake-v2-form` before its `form.reportValidity()` call. `reportValidity` ignores `novalidate`, and `type="email"` alone would block Continue on a half-typed address.
   - The renderer emits no `required`, `min`, `max` or `pattern` attributes; ranges are shown as text.
+- **Draft saves never fail on format (spec §2.5).**
+  - Today's server refuses a whole version-2 save for one invalid value, and doesn't name it. So every version-2 save sends `withholdInvalid(draft, 2)`: the draft keeps invalid values, and `state.withheld` lays them back after the post-save refresh.
+  - Only Submit enforces formats, and it's disabled while `invalidAnswers` is non-empty.
+  - No migration; 001–013 untouched.
 - **Immutable draft updates.** Never mutate a draft array or household member in place. `saveAnswers` shallow-copies the draft into its envelope, and `staleSave` compares that envelope with the draft by JSON, so an in-place edit would silently change a retained envelope.
 - **Unanswered is one state.** Wherever two version-2 values are compared (the conflict screen, tests), `null`, a missing key, `""` and `[]` are equal. Use `isAnswered`.
 - **Hooks that must not change:** everything the existing browser, auth-browser and client-views tests use for version 1 (`#intake-form`, `.page-intro .overline` "STEP n OF 4", `#field-confirmed`, `fill-fictional`, `save-exit`, `.conflict-panel`, `reconcile-mine`, `.id-pill strong` first = Application ID, etc.).
@@ -88,15 +92,16 @@
 | `tools/build-intake-catalogue.mjs` | Step titles 5, 7, 9; the migration header explains title-only changes |
 | `src/intake-catalogue-data.mjs` (generated) | New step titles |
 | `supabase/migrations/014_intake_catalogue_<hash8>.sql` (generated) | Same field rows as 012, new hash |
-| `src/intake-form.mjs` (new) | `renderQuestion`, `readField`, `readForm`, `formatAnswer`, `mergeIntoDraft`, `drivesVisibility`, `needsRedraw`, `noteState`, `countText`, `stepStatus`, `renderRichText` |
+| `src/intake-form.mjs` (new) | `renderQuestion`, `readField`, `readForm`, `formatAnswer`, `mergeIntoDraft`, `drivesVisibility`, `needsRedraw`, `noteState`, `countText`, `stepStatus`, `renderRichText`, `invalidAnswers`, `withholdInvalid` |
+| `src/intake-catalogue.mjs` | `checkValue`: an email with whitespace is invalid (the one intended JS/SQL difference) |
 | `src/sample-data.mjs` | `makeSampleAnswers({ version: 2 })` |
-| `src/controller.mjs` | Version-aware `pickAnswers`; contact merge; `visitedSteps`; `goToStep`; the spouse clear |
+| `src/controller.mjs` | Version-aware `pickAnswers`; contact merge; `visitedSteps`; `goToStep`; the spouse clear; `withholdInvalid` in `saveAnswers`, `state.withheld`, filtered `staleSave`, one retry on a field-naming refusal |
 | `src/window-state.mjs` | `visitedSteps` field |
 | `src/client-views.mjs` | Version-2 `intakeScreen` (stepper, rail, step 9, read-only after submit); `conflictForm` version-2 branch; progress-page labels |
 | `src/views.mjs` | The Senior version switch in `clientHeader` on the version-2 intake |
 | `src/app.mjs` | Version-2 input/change wiring with in-place updates; the redraw hold (pointer, composition), queued `change` redraws and scroll restore; step rail, senior switch, Fill fictional details |
 | `src/styles.css` | Version-2 intake styles (fenced block) |
-| Tests | `tests/intake-form.test.mjs` (new), `tests/intake-catalogue.test.mjs`, `tests/intake-build.test.mjs`, `tests/sample-data.test.mjs`, `tests/controller.test.mjs`, `tests/window-state.test.mjs`, `tests/client-views.test.mjs`, `tests/shell.test.mjs`, `tests/browser.mjs` (a new phase) |
+| Tests | `tests/intake-form.test.mjs` (new), `tests/intake-catalogue.test.mjs`, `tests/intake-build.test.mjs`, `tests/sample-data.test.mjs`, `tests/controller.test.mjs`, `tests/window-state.test.mjs`, `tests/client-views.test.mjs`, `tests/shell.test.mjs`, `tests/support/intake-value-cases.mjs` (new, the contract table), `tests/database-intake.mjs` (its SQL side), `tests/browser.mjs` (a new phase) |
 
 ---
 
@@ -122,7 +127,33 @@
 
 ### Task 2: The shared renderer
 
-**Files:** Create `src/intake-form.mjs` and `tests/intake-form.test.mjs`.
+**Files:**
+- Create `src/intake-form.mjs`, `tests/intake-form.test.mjs` and `tests/support/intake-value-cases.mjs`.
+- Modify `src/intake-catalogue.mjs` (email: no whitespace), `tests/intake-catalogue.test.mjs` and `tests/database-intake.mjs` (the contract table).
+
+**The contract table** (`tests/support/intake-value-cases.mjs`, spec §6) is one exported array of `{ field, value, js, sql }`, where `js`/`sql` are `true` (valid) or `false`. It includes:
+- `email`: `"mei lin@example.com"` (**js false, sql true**, the one intended difference, with a comment pointing at spec §2.5), `"a@"`, `"@"`, `"not-an-email"` (both false), `"mei.lin@example.com"` (both true);
+- `tp_dob`: `"2025-02-30"` (both false), `"1961-04-12"` (both true);
+- `addr_zip`: `" 12345 "` and `"1234"` (both false; the trim happens in `readField`, not in the check), `"12345"` (both true);
+- one valid case per remaining type, each true on both sides:
+  - text (`tp_first_name`, "Mei");
+  - longtext (`additional_notes`);
+  - signature (`gcf_tp_signature`);
+  - phone (`tp_phone`, "(215) 555-0100");
+  - year;
+  - number with a range (`hh` sub-field `months_lived` isn't top-level, so use a top-level `number` from the catalogue);
+  - choice (`service`);
+  - yesno (`inc_wages`, "not_sure" only if listed, otherwise "yes");
+  - multi;
+  - who (`["me"]`);
+  - group (`hh`, one member `{ first_name: "Ming" }`).
+
+  Use real catalogue ids; the test fails on an unknown id.
+
+**The two tests that read it:**
+- **`tests/intake-catalogue.test.mjs`:** for each row, `(checkValue(findQuestion(2, field), value) === null) === row.js`.
+- **`tests/database-intake.mjs`:** one query per row, `select vitally_private.check_intake_value(f, $2::jsonb) from vitally_private.intake_fields f where version=2 and group_id is null and field_id=$1`, expecting `row.sql`.
+- If a row other than the marked one disagrees, fix the JS rule, or stop and report. Never change SQL.
 
 **Interfaces (produces):**
 ```js
@@ -146,10 +177,19 @@ drivesVisibility(id) → boolean                           // true when a questi
 visibleIds(step, answers) → Set<string>                  // top-level question ids on step (0–8) that isVisible passes; the household group is "hh"
 needsRedraw(renderedIds, step, answers) → boolean        // spec §2.4 rule 3: renderedIds (a Set of the step's unique data-q values, "hh" included)
                                                          // differs from visibleIds(step, answers)
-noteState(question, value, { showMissing }) → { text: string, className: string }
-                                                         // "Needs an answer"/"is-missing" when showMissing, required and !isAnswered; else "" / ""
+noteState(question, value, { showMissing, showInvalid }) → { text: string, className: string }
+                                                         // 1. showInvalid and checkValue(question, value) → that message / "is-invalid"
+                                                         // 2. showMissing, required and !isAnswered → "Needs an answer" / "is-missing"
+                                                         // 3. otherwise "" / ""
+invalidAnswers(step, answers) → string[]                 // ids of visible questions on step (0–8) whose answered value fails checkValue;
+                                                         // step = null means every step. Separate from missingToSubmit, which counts
+                                                         // only unanswered required questions (checked: it never calls checkValue)
+withholdInvalid(draft, version) → draft                  // version 2: a copy without every top-level field whose value fails checkValue
+                                                         // (hh withheld whole if any member fails). null clears and empty values stay.
+                                                         // version 1: returns draft unchanged
 countText(value) → string                                // "4,612 of 5,000 characters" when length > 4500, else ""
 stepStatus(step, answers, contact, visited) → { key: "done"|"needs"|"none", text: "Done"|"Needs answers"|"" }
+                                                         // missing and invalid (invalidAnswers) both count against "done"
                                                          // done: no visible required question unanswered; needs: visited with some; none otherwise
 renderRichText(text) → string                            // intros and tips: escape, then **bold**, "- " lists, blank-line paragraphs
 formatAnswer(question, value, { variant = "general", lang = "en" }) → string | null
@@ -189,8 +229,24 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
       - **household ids match:** on step 5 (index 4), with `has_household_members: "yes"`, `visibleIds(4, answers)` contains `"hh"`, and `needsRedraw(new Set(visibleIds(4, answers)), 4, answers)` is **false**.
     - **`drivesVisibility`** is also true for `refund_method` (a tip condition). A unit test walks the whole catalogue: the only text-like field (`text`, `longtext`, `signature`, `email`, `phone`, `zip`, `year`, `number`, `date`) for which it returns true is `gcf_sp_signature`.
     - **Every question** (answered or not, `showMissing` or not) has `id="field-client-<id>-note"` with `aria-live="polite"`, and the control's `aria-describedby` contains it.
-    - `noteState` on an unanswered required question with `showMissing` gives "Needs an answer"/`is-missing`; answered, optional, or `showMissing` false gives empty text and no class. The rendered note carries the same text and class.
-    - **`stepStatus`:** a step whose visible required questions are all answered is `done`; a visited step with one missing is `needs`; an unvisited step with one missing is `none`.
+    - **`noteState`:**
+      - an unanswered required question with `showMissing` gives "Needs an answer"/`is-missing`;
+      - `email: "a@"` with `showInvalid` gives "Enter a valid email address."/`is-invalid`, which outranks missing;
+      - with `showInvalid` false, it gives no error;
+      - answered-valid, or optional-empty, gives empty text and no class.
+      - The rendered note carries the same text and class.
+    - **`invalidAnswers`:** on step 2 (index 1), `{ email: "not-an-email", tp_dob: "2025-02-30", tp_first_name: "Mei" }` → `["tp_dob", "email"]` in catalogue order. A hidden question's invalid value isn't listed. `step = null` covers all steps.
+    - **`withholdInvalid`** removes only invalid fields:
+      - `{ email: "a@", tp_first_name: "Mei", tp_middle_name: null, addr_zip: "12345" }` → `{ tp_first_name: "Mei", tp_middle_name: null, addr_zip: "12345" }`;
+      - a household with one member whose `dob` is `"2025-02-30"` → no `hh` key;
+      - the input object is not mutated;
+      - version 1 returns its input unchanged.
+    - **`stepStatus`:**
+      - a step whose visible required questions are all answered and valid is `done`;
+      - a visited step with one missing is `needs`;
+      - a visited step with all answered but one invalid is `needs`;
+      - an unvisited step with one missing is `none`.
+    - **Email with an inner space:** `checkValue(email, "mei lin@example.com")` is "Enter a valid email address." (the one intended JS/SQL difference, spec §2.5).
     - The senior variant renders the senior wording for a question whose wordings differ (find one in the catalogue).
   - **`multi`/`who` "No one"** (`who`'s value is `none`). The rule lives in `valuesFromControls`, and `readField` supplies `changed` from the element it was called with (see the interface):
     - `none` and `me` both checked, `changed: { q, value: "none" }` → `["none"]`;
@@ -203,6 +259,8 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `yesno`: `"not_sure"`;
     - household: two members, where the second has only `first_name`, so empty sub-fields are omitted;
     - an empty text reads `null`;
+    - **trimming:** a text descriptor `" 12345 "` for `addr_zip` reads `"12345"`, and `"  Mei "` reads `"Mei"`. `valuesFromControls` trims every text-like type (not `choice`/`multi`), so `readField` and `readForm` both trim;
+    - a text of only spaces reads `null`;
     - a date with one box empty reads `null`;
     - an impossible date `"2025-02-30"` reads `"2025-02-30"`.
   - **`mergeIntoDraft`** keeps keys absent from the patch, and `null` in the patch sets `null`.
@@ -219,7 +277,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - The `yesno` segmented look is CSS only (Task 4); the markup is a radio group.
   - Tips render under the question; a tip with a condition renders only while it holds; upload tips show text only.
   - A `group` renders one card per member, reusing `renderQuestion` for each sub-question with `scope` `<scope>-hh-<n>`.
-- [ ] **Step 4:** Run `node --test tests/intake-form.test.mjs`, then `npm test`. Expected: PASS.
+  - **`src/intake-catalogue.mjs`:** the email case also returns "Enter a valid email address." when `/\s/.test(value)`. Update the comment above `checkValue`, which today says `"a b@c"` passes: the browser check now rejects spaces, and the server check doesn't (spec §2.5).
+  - `renderQuestion` computes the note with `noteState(question, value, { showMissing, showInvalid: showMissing })`. On a visited step, both are shown.
+- [ ] **Step 4:** Run `node --test tests/intake-form.test.mjs tests/intake-catalogue.test.mjs`, then `npm test`, then `npm run test:database` (for the contract table's SQL side). Expected: PASS.
 - [ ] **Step 5: Commit** ("Render, read and format version-2 intake questions").
 
 ---
@@ -229,7 +289,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Files:** `src/sample-data.mjs`, `src/controller.mjs`, `src/window-state.mjs`, and their tests.
 
 **Interfaces:**
-- **Consumes:** `CONTACT_FIELDS`, `findQuestion`, `stepsFor`, `checkValue`, `missingToSubmit` (reader); `mergeIntoDraft` (Task 2).
+- **Consumes:** `CONTACT_FIELDS`, `findQuestion`, `stepsFor`, `checkValue`, `missingToSubmit` (reader); `mergeIntoDraft`, `withholdInvalid` (Task 2).
 - **Produces:**
   - `makeSampleAnswers({ seed, scenario, version: 2, married = false })` → a version-2 draft (the answers plus the four contact fields). Every value passes `checkValue`, and `missingToSubmit(2, answers, contact)` is `[]`.
     - `married: false` (the default): a never-married person.
@@ -238,6 +298,14 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `pickAnswers(source, version)`: version 1 behaves as today; version 2 keeps catalogue top-level IDs and structured values, including `null`.
     - `editAnswers(patch)` merges through `mergeIntoDraft` for a version-2 case, and applies the spouse clear.
     - `goToStep(n)`: saves if dirty, records the current step as visited, then sets `formStep`.
+    - **`saveAnswers()` for a version-2 case sends `withholdInvalid(draftAnswers, 2)`.**
+      - It records the fields it left out as `state.withheld` (field → draft value).
+      - `applyCase` lays `state.withheld` over the draft it builds from the server.
+      - `editAnswers` drops a key from `state.withheld` once that key's new value passes `checkValue` or is blank.
+      - `clearSelection` empties it.
+    - **`staleSave`** compares the envelope's answers with `withholdInvalid(draftAnswers, version)`. For version 1 that is the draft itself, so nothing changes.
+    - **A refused save that names a field** (`error.field`, which today's server never sets) is retried once: that field is added to `state.withheld` and `saveAnswers` runs again. A second refusal, or one with no field, takes today's failure path. A flag on the call prevents a loop.
+    - **`saveStatus(state)`** (client-views) gains the chip state "N answers need checking" (`save-chip checking`, `role="status"`): not saving, not failed, not dirty, and `Object.keys(state.withheld).length === N > 0`. "1 answer needs checking" in the singular. It comes after Unsaved and before Saved.
     - `state.visitedSteps` (an array of step indexes) for the selected case.
   - Window state: `visitedSteps: { caseId: string, steps: number[] }`.
 
@@ -254,6 +322,14 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `editAnswers({ marital_status: "never_married" })` drops `"spouse"` from every `who` answer in the draft, in the same edit;
     - `goToStep(3)` records the previous step in `visitedSteps` and saves when dirty;
     - reopening another case resets `visitedSteps`;
+    - **withholding:**
+      - with a draft `{ tp_first_name: "Mei", email: "a@" }`, `saveAnswers` sends `answers` without `email`;
+      - after the save and refresh (the fake store returns answers without `email`), the draft still has `email: "a@"`;
+      - `state.withheld` is `{ email: "a@" }`, `dirty` is false, and `saveStatus` reads "1 answer needs checking";
+      - `editAnswers({ email: "mei@example.com" })` empties `state.withheld` and makes the draft dirty, and the next save sends the email.
+    - **`staleSave` ignores withheld fields:** with a retained envelope from a failed save (use the existing unknown-outcome helper), changing only the invalid `email` leaves `retryLast` sending the envelope; changing `tp_first_name` drops it.
+    - **field-naming refusal:** the fake store's first `act` rejects with `{ code: "VALIDATION", field: "tp_dob" }` and the second succeeds. The second call has no `tp_dob`, `act` is called exactly twice, and a store that refuses both times is called twice, not more. A refusal with no `field` is called once.
+    - a version-1 case: the payload is the whole draft, as today, and `state.withheld` stays empty;
     - a version-1 case: `pickAnswers` and `editAnswers` behave exactly as today (reuse existing assertions).
   - **`tests/window-state.test.mjs`:** `visitedSteps` round-trips; a malformed value (bad `caseId` or non-integer steps) is dropped.
 - [ ] **Step 2:** Run the three files to confirm they fail.
@@ -278,7 +354,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `visitedSteps` persists through `persistSession`, is restored only when its `caseId` equals `selectedCaseId`, and is cleared by `clearSelection`.
   - **Window state:** add `visitedSteps` to `FIELDS` with a check (a `caseId` string, and an array of integers 0–8).
 - [ ] **Step 4:** Run the files, then `npm test`. Expected: PASS.
-- [ ] **Step 5: Commit** ("Version-aware draft, version-2 sample answers and visited steps").
+- [ ] **Step 5: Commit** ("Version-aware draft, version-2 sample answers, visited steps and withheld invalid values").
 
 ---
 
@@ -309,8 +385,11 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - **"Needs an answer"** shows on the current step only when the step is in `visitedSteps`.
   - **Step 9:**
     - "Still to answer" lists the missing questions grouped by step, with `go-step` links;
-    - with none missing it reads "Everything required is answered.";
-    - Submit is disabled unless the list is empty and `openPanels` includes `"confirmed"`.
+    - it also lists `invalidAnswers(null, …)` under their steps, each with "Needs a change" and a `go-step` link. With `email: "not-an-email"`, step 2's group shows the email's wording and "Needs a change";
+    - with none missing and none invalid it reads "Everything required is answered.";
+    - Submit is disabled unless both lists are empty and `openPanels` includes `"confirmed"`. With only an invalid email, it is disabled.
+  - **The rail with an invalid answer:** a visited step whose only problem is an invalid answer has `is-needs`; `stepStatus` supplies it.
+  - **The save chip:** `saveStatus` with `withheld: { email: "a@" }`, not dirty, reads "1 answer needs checking"; with two keys, "2 answers need checking"; dirty still reads "Unsaved changes".
   - **The senior switch:**
     - `clientHeader` on a version-2 intake shows `toggle-senior` with `aria-pressed` matching `form_version === "senior"`;
     - a version-1 intake and other screens don't show it;
@@ -337,7 +416,9 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - checkbox chips;
     - household cards;
     - the date boxes;
-    - the note (`.q-note`, `.q-note.is-missing`) and count (`.q-count`) containers, with empty containers taking no height: no margin or padding when `:empty`. Never use `display: none`, because an `aria-live` region that is hidden when its text arrives isn't announced reliably.
+    - the note (`.q-note`, `.q-note.is-missing`, `.q-note.is-invalid`) and count (`.q-count`) containers. `is-invalid` uses the existing error-coloured ink `--vt-age-late-ink` (#b42318, which passes AA on white), with a left rule in `--vt-phase-attention`. `is-missing` uses the quieter `--vt-age-soon-ink`. Add no new token;
+    - the `.save-chip.checking` state, in the same token family as `is-invalid`;
+    - both containers take with empty containers taking no height: no margin or padding when `:empty`. Never use `display: none`, because an `aria-live` region that is hidden when its text arrives isn't announced reliably.
     - the rail status classes, keyed on class so an in-place class change restyles it;
     - step 9's list.
 
@@ -394,12 +475,21 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - The same `readField(event.target)` call serves `change`.
     - It runs quietly, as `editAnswerField` does, followed by `refreshSaveChip()`.
     - Then the **in-place updates**, setting only `className` and `textContent`:
-      - the question's note from `noteState(question, value, { showMissing: stepVisited })`;
+      - the question's note from `noteState(question, value, { showMissing: stepVisited, showInvalid: noteShowsInvalid })`:
+        - `noteShowsInvalid` is true only when the note currently has `is-invalid`;
+        - so typing never adds an error, but it clears one as soon as the value is valid or empty;
       - `#rail-step-<formStep>-status` from `stepStatus(formStep, draft, contact, visited)`;
       - for a `longtext`, its count from `countText(value)`.
     - `readField` on a household control returns the whole `hh` array. The draft is replaced, never mutated.
     - Checkboxes are included, unlike version 1.
-  - **`change`:** the same read. A redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
+  - **`change`:** the same read.
+    - First the **in-place error update:**
+      - the note from `noteState(question, value, { showMissing: stepVisited, showInvalid: true })`;
+      - `#rail-step-<formStep>-status` from `stepStatus`, which counts invalid answers;
+      - `refreshSaveChip()`.
+
+      The person has left the field, so an invalid value now shows its `checkValue` message. This never redraws.
+    - Then a redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
     - a radio, checkbox or select;
     - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds = new Set([...form.querySelectorAll("[data-q]")].map((el) => el.dataset.q))`. That is the step's unique `data-q` values, with `"hh"` included once, the same kind of id `visibleIds` returns.
 
@@ -441,13 +531,13 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
      4. record `scrollY`;
      5. force a redraw with `fixture.database.sql("update public.cases set revision=revision where id=$1", …)`, as the story does at `:657`, and wait for `#app` to be rebuilt (a marker property set on the old form is gone);
      6. check that `document.activeElement.id` is the same field, `selectionStart === 2`, the value is `Xia`, and `scrollY` is unchanged.
-  4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, type `mei lin@example.com` into `email`, focus left in it.
-     - The browser's `type="email"` check rejects the space, but the server's deliberately loose check accepts it: one `@`, not at either end. So this also proves the browser check is bypassed.
+  4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, type `mei.lin@example.com` into `email`, focus left in it.
+     - The browser's own check being bypassed is proven by item 8a, with an invalid email.
      - Scroll to the bottom of the page, then **one** `locator.click()` on Continue.
      - Don't use `clickAction`, `waitForQuiet`, `pressUntil…` or any retry: they wait for stillness or re-press, and would hide a lost click.
      - Check that:
        - the page shows "STEP 3 OF 9";
-       - `answers->>'email'` is `mei lin@example.com` (query the case);
+       - `answers->>'email'` is `mei.lin@example.com` (query the case);
        - `scrollY` is 0;
        - `document.activeElement.id` is `main`.
   5. **Rail link after typing (real mouse):** click Back once to return to step 2. Type into `tp_job_title`, then one `locator.click()` on the step-4 rail link. The page shows "STEP 4 OF 9".
@@ -459,6 +549,14 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
      4. Type `Mei`.
      5. Check that the note is empty, `#rail-step-1-status` has `is-done` and "Done", and the marker is still on the same node (not replaced).
   8. **Long answer count:** go to step 8 (`additional_notes`, the only longtext) and set a marker property on `#intake-v2-form`. Then `locator.fill` 4,600 characters and type one more with `press`. The count reads "4,601 of 5,000 characters", and the marker is still on the form, so no redraw happened. Clear the box again.
+  8a. **Invalid values (spec §2.5; real mouse, one `locator.click()`, no retry helpers).** Every required answer is filled by now (item 6).
+     1. Go to step 2 with the rail. Type `Baker` into `tp_job_title`, then `not-an-email` into `email`, focus left in it. One click on Continue: the page shows "STEP 3 OF 9". The browser's `type="email"` check didn't block it, and neither did the server.
+     2. `#rail-step-1-status` has `is-needs` and "Needs answers", and the chip reads "1 answer needs checking".
+     3. Query the case: `answers->>'tp_job_title'` is `Baker` (the rest of step 2 was saved), and `answers->>'email'` is still `mei.lin@example.com` from item 4, not `not-an-email`.
+     4. Go to step 9 with the rail. "Still to answer" lists the email under step 2 with "Needs a change" and a link, and Submit is disabled.
+     5. Follow that link to step 2. The email's note reads "Enter a valid email address." with `is-invalid` (a visited step shows it), and the box still holds `not-an-email`.
+     6. Set a marker property on the note node and on `#intake-v2-form`. Select the box's text and type `mei.lin@example.org`. The note is empty with no class, both markers are still there (no redraw), and `#rail-step-1-status` has `is-done`.
+     7. One click on Continue. Query the case: `answers->>'email'` is `mei.lin@example.org`. The chip no longer says "need checking".
   9. **Show-if and spouse:** go to step 3 with the rail, choose married and check a spouse question appears. Use Fill fictional details again. Because the draft now says married, the generator makes a married person (`married: true`), so the blank spouse questions are filled. Check a spouse question now has a value, then go to step 9 with the rail. It stays married for item 11.
   10. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
   11. **Step 9, the text driver (real mouse):**
