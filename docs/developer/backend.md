@@ -24,7 +24,7 @@ Step-by-step setup is in [`docs/setup.md`](../setup.md); this page explains how 
 needed in production: any static host that serves the files plus a `public-config.json` does the
 same job.
 
-- **Allowlist, not a file server.** It serves exactly `/`, `/index.html`, `/src/<name>.mjs|css|svg`,
+- **Allowlist, not a file server.** It serves exactly `/`, `/index.html`, `/src/<name>.mjs|css|svg|png`,
   `/src/vendor/<name>.mjs` and `/public-config.json`. The check runs on the raw request path
   before any `..` or percent-escape is resolved, so path tricks cannot reach migrations, tools or
   `.env` files. Everything else is 404.
@@ -117,6 +117,19 @@ tested in [`tests/targets.test.mjs`](../../tests/targets.test.mjs).
 
 **Never run test cleanup against a real project.** The test fixtures create and delete their own
 workspaces and accounts; they only ever accept the test target.
+
+## Build tools
+
+Two scripts generate committed files. Neither needs a key or touches a database.
+
+| Command | Writes | When |
+| --- | --- | --- |
+| `npm run build:vendor` (`tools/build.mjs`) | `src/vendor/supabase.mjs`, the pinned SDK bundle | After upgrading `@supabase/supabase-js` |
+| `npm run build:intake` (`tools/build-intake-catalogue.mjs`) | `src/intake-catalogue-data.mjs`, and a new `supabase/migrations/NNN_intake_catalogue_<hash8>.sql` when the catalogue's hash changed | After editing `docs/intake-questions/` ([database recipe](database.md#change-the-intake-questions)) |
+
+The catalogue data is a JavaScript module rather than JSON because the local server (and the
+allowlist above) serves only `/src/<name>.mjs|css|svg|png`. The migration must still be applied
+to each environment with `migrate.mjs`, like any other.
 
 ## Environments
 

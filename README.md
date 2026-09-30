@@ -46,8 +46,10 @@ The UI redesign is built in parts, following the
 | 0 | Foundations: design tokens, logo, icons, app shell | Done |
 | 1 | Visual restyle: volunteer board, case page, client screens, office screens (4 PRs) | Done |
 | 2 | [Client numbers](docs/superpowers/specs/2026-09-29-client-numbers-design.md): `#001`-style numbers assigned on submit, per season, searchable on the board | Done |
-| 3 | Lifecycle stages: the ~25 stages in [`return-lifecycle.svg`](docs/media/return-lifecycle.svg) replace today's 9 | Next |
-| 4–8 | New bilingual intake, access and masking, returning clients, team features, dashboards | Planned |
+| 3 | Lifecycle stages: the ~25 stages in [`return-lifecycle.svg`](docs/media/return-lifecycle.svg) replace today's 9 | Planned |
+| 4 | [New intake](docs/superpowers/specs/2026-09-30-intake-screens-design.md): the drafted questions in nine steps, standard and senior wording, best time to reach, the materials checklist. 4a catalogue and server, 4b client form | 4a, 4b done |
+| | 4c staff views, the version-2 Add a case, and the switch to version 2; 4d Chinese; then removing version 1 | 4c in progress |
+| 5–8 | Access and masking, returning clients, team features, dashboards | Planned |
 
 Case messaging/SMS, real document uploads, scheduling, mobile layouts, and certification levels
 are after the MVP. Screenshots of the final designs and of what is implemented so far are in
@@ -131,9 +133,9 @@ roadmap of what separates the demo from the product described in [`docs/spec.md`
 ```text
 index.html, server.mjs   static entry page and local dev server (no build step)
 src/                     browser app: controller, Supabase store, auth, views, styles
-supabase/migrations/     database schema, row-level security, and action functions (001–010)
+supabase/migrations/     database schema, row-level security, action functions, intake catalogue (001–014)
 tests/                   unit tests (*.test.mjs), database suites, browser suites
-tools/                   vendor bundle build and guarded admin tooling (migrate, roster)
+tools/                   vendor bundle and intake catalogue builds, guarded admin tooling (migrate, roster)
 docs/                    specs, plans, setup guide, developer guide, design, project documents
 ```
 
