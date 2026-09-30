@@ -6,6 +6,7 @@ import {
   rejected,
 } from "./support/database-fixture.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import {
   checkValue,
@@ -515,81 +516,17 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
     });
 
     await t.test("the server's value check and missing list mirror the browser's", async () => {
-      const cases = [
-        ["tp_first_name", "x".repeat(200)],
-        ["tp_first_name", "x".repeat(201)],
-        ["tp_first_name", "  "],
-        ["tp_first_name", 7],
-        ["additional_notes", "x".repeat(5000)],
-        ["additional_notes", "x".repeat(5001)],
-        ["gcf_tp_signature", "x".repeat(201)],
-        // JavaScript counts a character outside the BMP as two.
-        ["tp_first_name", "\u{1F600}".repeat(100)],
-        ["tp_first_name", "\u{1F600}".repeat(101)],
-        ["tp_first_name", "\u4E2D".repeat(200)],
-        ["email", "a@b"],
-        ["email", "a b@c"],
-        ["email", "@b"],
-        ["email", "a@"],
-        ["email", "a@b@c"],
-        ["email", `${"a".repeat(250)}@b.cd`],
-        ["tp_phone", "(215) 555-0100"],
-        ["tp_phone", "215-555-01000"],
-        ["tp_phone", "555-0100"],
-        ["addr_zip", "19107"],
-        ["addr_zip", "19107-1234"],
-        ["tp_dob", "2024-02-29"],
-        ["tp_dob", "2025-02-29"],
-        ["tp_dob", "2025-04-31"],
-        ["tp_dob", "2025-13-01"],
-        ["tp_dob", "2025-00-10"],
-        ["tp_dob", "2025-01-00"],
-        ["tp_dob", "0050-01-01"],
-        ["tp_dob", "1980-1-2"],
-        ["spouse_death_year", "2020"],
-        ["spouse_death_year", "20201"],
-        ["inc_wages_job_count", "123456"],
-        ["inc_wages_job_count", "1234567"],
-        ["inc_wages_job_count", "1.5"],
-        ["inc_wages_job_count", "-1"],
-        ["marital_status", "never_married"],
-        ["marital_status", "single"],
-        ["marital_status", "Single"],
-        ["multi_state", "not_sure"],
-        ["claimed_by_other", "maybe"],
-        ["us_citizen", ["me", "spouse"]],
-        ["us_citizen", ["none"]],
-        ["us_citizen", ["none", "me"]],
-        ["us_citizen", ["me", "me"]],
-        ["us_citizen", ["someone"]],
-        ["us_citizen", "me"],
-        ["us_citizen", [1]],
-        ["best_contact_time", ["weekend", "any_time"]],
-        ["best_contact_time", ["weekend", "weekend"]],
-        ["hh", [member()]],
-        ["hh", [member({ months_lived: "12" })]],
-        ["hh", [member({ months_lived: "13" })]],
-        ["hh", [member({ months_lived: "0" })]],
-        ["hh", [member({ dob: null, first_name: "" })]],
-        ["hh", [{}]],
-        ["hh", [null]],
-        ["hh", [[]]],
-        ["hh", [member({ extra: "x" })]],
-        ["hh", Array.from({ length: 10 }, () => ({}))],
-        ["hh", Array.from({ length: 11 }, () => ({}))],
-        ["hh", "Bo"],
-        ["tp_first_name", null],
-        ["tp_first_name", ""],
-        ["us_citizen", []],
-      ];
-      for (const [id, value] of cases) {
-        const server = (
+      // The contract table (spec §6) is the one list: its `sql` column is the
+      // server's result, and tests/intake-catalogue.test.mjs checks `js`.
+      for (const row of INTAKE_VALUE_CASES) {
+        const found = (
           await f.sql(
-            "select vitally_private.check_intake_value(i, $2::jsonb) as ok from vitally_private.intake_fields i where version=2 and field_id=$1",
-            [id, JSON.stringify(value)],
+            "select vitally_private.check_intake_value(f, $2::jsonb) as ok from vitally_private.intake_fields f where version=2 and group_id is null and field_id=$1",
+            [row.field, JSON.stringify(row.value)],
           )
-        ).rows[0].ok;
-        assert.equal(server, checkValue(byId.get(id), value) === null, `${id} ${JSON.stringify(value).slice(0, 60)}`);
+        ).rows;
+        assert.equal(found.length, 1, `one top-level field ${row.field}`);
+        assert.equal(found[0].ok, row.sql, `${row.field} ${JSON.stringify(row.value).slice(0, 60)}`);
       }
       // Impossible dates are rejected on both sides, not merely alike.
       for (const value of ["2025-13-01", "2025-00-10", "2025-01-00", "2025-02-29"]) {
