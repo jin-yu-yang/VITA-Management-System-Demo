@@ -38,6 +38,7 @@
      - Between `pointerdown` and `pointerup`/`pointercancel`, a requested redraw is held. It runs from a `setTimeout(…, 0)` queued on `pointerup`/`pointercancel`, after the `click`.
      - The hold is also released on `contextmenu`, window `blur`, `visibilitychange`, and by a 2-second safety timer.
      - Every real render clears the held request first, so a flush can't draw twice.
+     - **DOM updates caused by `change`** (the note, the rail mark, the chip) go through the same hold, with `afterPress(fn)`, because they can move the layout. State updates (`revealInvalid`) run at once.
   2. **`input` never redraws.** It writes the draft (`readField`) and sets only `className`/`textContent` on:
      - the question's note (`field-<scope>-<id>-note`);
      - the current step's rail status (`rail-step-<n>-status`);
@@ -144,7 +145,8 @@
   - signature (`gcf_tp_signature`);
   - phone (`tp_phone`, "(215) 555-0100");
   - year;
-  - number with a range (`hh` sub-field `months_lived` isn't top-level, so use a top-level `number` from the catalogue);
+  - number without a range: `inc_wages_job_count`, `"3"` (both true);
+  - number with a range: the catalogue's only ranged number is the household sub-field `months_lived`, so ranges are tested through `hh` rows, `[{ first_name: "Ming", months_lived: "12" }]` (both true) and `…"13"` (both false). These are the 4a list's existing rows;
   - choice (`service`);
   - yesno (`inc_wages`, "not_sure" only if listed, otherwise "yes");
   - multi;
@@ -223,12 +225,13 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - The read tests use `valuesFromControls` with hand-built descriptors.
   - The DOM wrappers (`describeControl`, `readField`, `readForm`) are covered by Task 6's browser phase.
   - **Rendering:**
-    - For each type in the catalogue (pick one question per type: text, signature, longtext, email, phone, zip, year, number with a range, date, choice with ≤6 and >6 options, yesno with and without `not_sure`, multi, who, group):
+    - For each type in the catalogue (pick one question per type: text, signature, longtext, email, phone, zip, year, number (`inc_wages_job_count`), date, choice with ≤6 and >6 options, yesno with and without `not_sure`, multi, who, group):
       - the HTML contains `data-q="<id>"`;
       - a `<label for="field-client-<id>">` or a `<legend>`;
       - the question's wording;
       - for choice, yesno, multi and who, every option's label.
     - `who` omits "My spouse" unless `answers.marital_status === "married"`.
+    - **A ranged number inside a household card:** rendering `hh` with one member renders `months_lived` as `field-client-hh-0-months_lived` (`inputmode="numeric"`), with its range shown as text from the catalogue's `min`/`max` ("0 to 12") and no `min`/`max` attributes.
     - A `choice` with more than 6 options renders a `<select>`.
     - `longtext` has `maxlength="5000"` and always a `field-client-<id>-count` element. `countText("a".repeat(4500))` is `""`, and `countText("a".repeat(4612))` is "4,612 of 5,000 characters".
     - No rendered control has `required`, `min`, `max` or `pattern`.
@@ -483,7 +486,13 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     document.addEventListener("visibilitychange", release);
     root.addEventListener("compositionstart", () => { composing = true; });
     root.addEventListener("compositionend", () => { composing = false; setTimeout(flushHeld, 0); });
-    function flushHeld() { if (heldRender === null || pointerHeld || composing) return; render(heldRender); }
+    let heldUpdates = [];                                // in-place DOM updates waiting for the press to end (afterPress)
+    function flushHeld() {
+      if (pointerHeld || composing) return;
+      if (heldRender !== null) render(heldRender);        // render() sets heldRender = null
+      for (const fn of heldUpdates.splice(0)) fn();       // each looks its node up by id; a gone node is a no-op
+    }
+    function afterPress(fn) { if (pointerHeld || composing) heldUpdates.push(fn); else setTimeout(fn, 0); }
     ```
     - `heldRender` starts as `null` and holds `false`/`true` while a render is waiting.
     - `render()` itself sets it to `null` whenever it goes on to replace the page. `flushHeld` therefore draws only if nothing else drew in between, and a second flush finds `null` and does nothing.
@@ -508,13 +517,21 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - `readField` on a household control returns the whole `hh` array. The draft is replaced, never mutated.
     - Checkboxes are included, unlike version 1.
   - **`change`:** the same read.
-    - First the **in-place error update:**
-      - if `checkValue(question, sendable(question, value))` fails, `controller.revealInvalid(id)` (quietly), so the error survives any later redraw (spec §2.5), even on an unvisited step;
+    - **At once (state only, nothing on screen moves):** if `checkValue(question, sendable(question, value))` fails, call `controller.revealInvalid(id)` quietly, so the error survives any later redraw (spec §2.5), even on an unvisited step.
+    - **Then, through the hold,** `afterPress(() => { … })` does the in-place error update:
       - the note from `noteState(question, value, { showMissing: stepVisited, showInvalid: true })`;
       - `#rail-step-<formStep>-status` from `stepStatus`, which counts invalid answers;
       - `refreshSaveChip()`.
 
-      The person has left the field, so an invalid value now shows its `checkValue` message. This never redraws.
+      Each step looks its node up by id at run time and does nothing if it's gone (the press replaced the page, and the new render already shows the revealed error).
+    - **`afterPress(fn)`**, in the wiring next to `flushHeld`:
+      - while `pointerHeld` or `composing`, it pushes `fn` onto `heldUpdates`;
+      - otherwise it runs `setTimeout(fn, 0)`;
+      - `flushHeld` runs and empties `heldUpdates` after its render check;
+      - `release()` already queues `flushHeld` after the click.
+
+      This is spec §2.4 rule 1: filling an empty note makes it taller and moves Continue during the press that fired the `change`. It never redraws.
+    - **Verified by the fault check:** add to Task 6 Step 2 a second temporary change, running the in-place error update at once instead of through `afterPress`. Then item 8a.1 (a single click on Continue after `not-an-email`) must fail, because the note fills during the press and moves Continue. Restore it and confirm the test passes. Put both results in the commit message.
     - Then a redraw is queued (`setTimeout(() => render(), 0)`, so it passes through the hold) only for:
     - a radio, checkbox or select;
     - a text-like control with `drivesVisibility(id)` and `needsRedraw(renderedIds, formStep, draft)`, where `renderedIds = new Set([...form.querySelectorAll("[data-q]")].map((el) => el.dataset.q))`. That is the step's unique `data-q` values, with `"hh"` included once, the same kind of id `visibleIds` returns.
@@ -557,11 +574,13 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
      4. record `scrollY`;
      5. force a redraw with `fixture.database.sql("update public.cases set revision=revision where id=$1", …)`, as the story does at `:657`, and wait for `#app` to be rebuilt (a marker property set on the old form is gone);
      6. check that `document.activeElement.id` is the same field, `selectionStart === 2`, the value is `Xia`, and `scrollY` is unchanged.
-     7. **A trailing space survives a redraw (spec §2.5):**
-        1. click at the end of the box and type ` ` (a space), so it holds `Xia `;
-        2. force another redraw the same way;
-        3. check the value is still `Xia ` with the caret at 4;
-        4. type `o`, and check the box holds `Xia o`, not `Xiao`.
+     7. **A trailing space survives a redraw that rebuilds the draft (spec §2.5).** This has to run with the draft **not** dirty. A dirty draft is never rebuilt by `applyCase` when the revision is unchanged, and `set revision=revision` leaves it unchanged, so a dirty draft would pass whether or not `keepLocalOnly` works.
+        1. Click Continue, then Back. This saves `Xia`, so the draft matches the server. Check `answers->>'tp_first_name'` is `Xia`.
+        2. Click at the end of `tp_first_name` and type ` ` (a space), so it holds `Xia `.
+        3. Check the chip does not read "Unsaved changes": a trailing space doesn't make the draft dirty. This proves the next redraw goes through `keepLocalOnly`.
+        4. Force another redraw the same way, and wait for `#app` to be rebuilt.
+        5. Check the value is still `Xia `, with the caret at 4.
+        6. Type `o`, and check the box holds `Xia o`, not `Xiao`.
   4. **Continue after typing, and the new step opens at the top (real mouse):** still on step 2, type `mei.lin@example.com` into `email`, focus left in it.
      - The browser's own check being bypassed is proven by item 8a, with an invalid email.
      - Scroll to the bottom of the page, then **one** `locator.click()` on Continue.
@@ -614,8 +633,10 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   2. Run `npm run test:browser`. Expected: it FAILs at item 4, "Continue after typing": the step doesn't advance after one click. It may fail at item 5 or 11 first; any of the three counts. Record which assertion failed and its message.
   3. Restore the handler (`git diff src/app.mjs` shows nothing from this step) and run `npm run test:browser` again. Expected: PASS.
   4. If step 2 did **not** fail, the test isn't catching lost presses. Stop and report; don't go on.
+  5. **The second fault:** run the `change` handler's in-place error update at once instead of through `afterPress`. Run `npm run test:browser`. Expected: it FAILs at item 8a.1, because the email note fills during the press and moves Continue.
+  6. Restore it and confirm PASS. If it did not fail, stop and report.
 
-  The result goes in Step 6's commit message, for example: "Checked: with change redrawing at once, 'Continue after typing' failed (<message>); restored, it passes."
+  Both results go in Step 6's commit message, for example: "Checked: with change redrawing at once, 'Continue after typing' failed (<message>); with the error note filled at once, 8a.1 failed (<message>); restored, both pass."
 - [ ] **Step 3: Run all four suites** in the foreground (up to 10 minutes each), with output to `/tmp`:
   ```bash
   npm run db:migrate:test

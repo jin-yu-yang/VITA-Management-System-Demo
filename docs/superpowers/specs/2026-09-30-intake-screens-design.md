@@ -83,6 +83,11 @@ The app redraws by replacing the whole page (`root.innerHTML`). These rules say 
    - While a pointer is down on the page (`pointerdown` until `pointerup` or `pointercancel`), every requested redraw waits. It runs in a task queued from `pointerup`/`pointercancel` (`setTimeout(…, 0)`), so after the `click` has been delivered.
    - **The hold is also released** on `contextmenu`, window `blur` and `visibilitychange`, and by a 2-second safety timer started at `pointerdown`, so a press whose `pointerup` never arrives (right-click, Ctrl+click, a context menu) can't hold redraws forever.
    - **A held redraw is dropped once any real redraw runs.** Every render that actually replaces the page first clears the held request, so a queued flush can never draw a second time.
+   - **In-place updates that can move the layout wait too.** Filling an empty note, changing a rail mark or refreshing the chip on `change` makes content taller and pushes the controls below it down. For a text field, `change` fires on the `mousedown` of the next press, so that shift would move Continue out from under the pointer.
+     - Every DOM update caused by `change` therefore goes through the same hold as a redraw: it runs in a queued task, after `pointerup` and the `click`, while a pointer is down.
+     - Only state (for example, the revealed list, §2.5) is updated at once, and state moves nothing.
+     - If the press replaced the page (Continue, a rail link), the queued update finds its node gone and does nothing: the new render already shows the state.
+     - Updates caused by `input` can run at once, because nobody types during a press.
 2. **`input` updates in place, never redraws.** Each `input` event writes the question's value to the draft (§2.2) and updates these things in the existing page, and nothing else:
    - the question's note container (§2.1): its text ("Needs an answer" or empty) and its `is-missing` class;
    - the current step's mark in the rail (§3.2): its status class and text;
@@ -157,7 +162,7 @@ Changing that needs a migration, so for 4b the client keeps invalid values away 
   - An invalid answer outranks "Needs an answer": the note shows one message.
 - **When it shows:**
   - never while the person types;
-  - after `change` (they left the field), or when the step is rendered as visited;
+  - after `change` (they left the field), or when the step is rendered as visited. The `change` case waits for any press in progress to finish (§2.4 rule 1), because a note gaining text pushes the controls below it down;
   - `input` clears it as soon as the value is valid (or empty), but never adds it.
 - **A shown error survives redraws.** On `change`, a question whose value is invalid is added to the revealed list: the window state's `visitedSteps` record gains `revealed: string[]` (question ids) for the same case.
   - Every render shows the error for a question that is revealed, or on a visited step. So a realtime redraw on an unvisited step keeps it.
