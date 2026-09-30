@@ -45,12 +45,19 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 - **Tips** render under their question. A tip with a condition renders only while the condition holds. Upload tips show text only.
 - **`showMissing`:** a required question that is unanswered (`isAnswered`) gets "Needs an answer", tied to the control by `aria-describedby`.
 
-### 2.2 `readForm(formElement, version)`
+### 2.2 `readField(control, question)` and `readForm(formElement, version)`
 
-It reads every rendered question back into an answers object: date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects.
+**Typed text never waits for `change`.** The app redraws the whole page on any state change, including realtime updates from another window, so anything not yet in the draft would be lost mid-sentence.
+- Every `input` event copies that one question's value into the draft through `readField(control, question)`, without re-rendering, as today's version-1 form does with `editAnswerField`.
+- A redraw therefore always renders from a draft that already holds the typed text.
+- A `change` event then re-renders for show-if (§3.4).
+- A household card's inputs update that member in the draft the same way.
+
+`readForm` reads every rendered question back into an answers object. It is used before a save and on "Fill fictional details": date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects.
 - An empty top-level field reads as `null`, which the save treats as clearing the field.
 - Inside a household member, an empty sub-field is left out of the member object, not set to `null`, because the server checks every key a member carries. A card with no answers at all is dropped.
-- A date with some boxes empty reads as `null`; a full but impossible date (Feb 30) is kept, so `checkValue` can mark it. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
+- A date with some boxes empty reads as `null`; a full but impossible date (Feb 30) is kept, so `checkValue` can mark it.
+- **It sees only what is rendered:** the current step on the client form, or the open sections on Add a case. Its result is **merged** into the draft field by field and never replaces it, so saving one step keeps the other steps' answers, and hidden questions keep theirs. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
 
 ### 2.3 `formatAnswer(question, value, { variant, lang })`
 
@@ -76,6 +83,8 @@ The designs' titles win. PR 4b changes three step titles in the catalogue build 
 - step 9 becomes "Permission & review" (授权与确认).
 
 The new Chinese goes to the group for review, with the other new wording. Because step titles are part of the hashed catalogue, the build writes a new catalogue migration in PR 4b (`014_intake_catalogue_<hash8>.sql`, per the one-per-branch rule). The switch-over (§5) is therefore the migration after it, not a fixed number.
+
+That migration loads the same field rows as 012, because step titles aren't stored in the database. It exists only because the catalogue hash covers the whole catalogue, titles included, and the "database never behind the browser" test requires the newest catalogue migration to carry the current hash. The build's header comment for it should say so, so a reviewer isn't left wondering.
 
 ### 3.2 Layout (the step-2 and step-6 designs)
 
@@ -179,9 +188,9 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - New client cases and office cases become version 2.
   - Existing cases keep their version (011's trigger pins it).
 - **Samples:** 009's sample seeding is replaced (from its latest definition) to follow the workspace's `default_intake_version`.
-  - **Version 1** (a workspace set to 1, which includes every test workspace, §6): exactly today's seeding, with `fixture_answers(key)`.
+  - **Version 1** (a workspace set to 1, which includes every test workspace, §6): exactly today's seeding, with `fixture_answers(key)`. Resets and checkpoints in version-1 workspaces behave exactly as before 4c.
   - **Version 2:** each sample is inserted with empty answers, and then its fictional version-2 answers (`fixture_answers_v2(key)`) and its `case_contacts` row are written.
-  - **Checkpoint reload:** `apply_fixture_scenario` also deletes the sample's `case_contacts` and `case_materials` rows before rebuilding it.
+  - **Checkpoint reload:** `apply_fixture_scenario` also deletes the sample's `case_materials` rows before rebuilding it. It keeps `case_contacts`: contacts are intake answers, and a checkpoint already keeps the sample's answers, since only `seed_fixtures` writes them. A reloaded submitted sample therefore still has its phone and nothing missing. This changes the 4a carry-forward, which said to delete both.
 - **What stays for version 1:** `fixture_answers` and the version-1 seeding path stay. Setting a workspace back to 1 is a one-line update, and its next reset seeds version-1 samples.
 
 ## 6. Testing and acceptance
@@ -213,6 +222,7 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
 - After the switch-over, the column default is 2. `createDatabaseFixture` (`tests/support/database-fixture.mjs`) therefore gains an option, `intakeVersion`, defaulting to 1, and sets its workspaces to it. So the ~30 existing database tests that save version-1 answers (`makeSampleAnswers()`) keep working unchanged, and their sample resets seed version-1 samples.
 - The version-2 database tests either pass `intakeVersion: 2` or set their workspace to 2 explicitly and back in `finally`.
 - The browser fixture (`tests/support/browser-fixture.mjs`) builds on the database fixture. In PR 4c it passes `intakeVersion: 2`, so the story runs on version 2.
+- **Order matters,** because samples are seeded according to the workspace's version at the moment of seeding. The fixture sets `default_intake_version` inside workspace initialization (its `afterInitialize` step), before anything seeds samples. A test that switches a workspace's version and wants samples of that version resets the samples after switching.
 
 **Database:**
 - A version-2 client round trip: create empty, save step by step, submit, client number.
@@ -224,11 +234,11 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
 - **Samples:**
   - every sample's version-2 answers pass `check_intake_value`, field by field;
   - every submitted sample has nothing missing (`intake_missing`);
-  - a checkpoint reload clears contacts and materials.
+  - a checkpoint reload clears materials and keeps contacts, and a reloaded submitted sample still has nothing missing.
 
 **Browser story.**
 - **PR 4b:** the main story stays on version 1, because PR 4b's staff screens don't yet show version-2 answers. A new, separate phase covers the client form: it sets the workspace to `default_intake_version = 2`, has a second applicant start an application, walks the nine steps (below, client part only), submits, and sets the workspace back to 1. That case is never opened on a staff screen in 4b.
-- **PR 4c:** the story's workspace follows the new default. Its version-1 form walk (about 21 places in `tests/browser.mjs`) and the 5 version-1 assertions in `tests/client-views.test.mjs` become deliberate updates.
+- **PR 4c:** the browser fixture passes `intakeVersion: 2`, so the story's workspace is version 2. Its version-1 form walk (about 21 places in `tests/browser.mjs`) and the 5 version-1 assertions in `tests/client-views.test.mjs` become deliberate updates.
 - **Making a version-1 case after the switch-over:** 011's insert trigger always takes `intake_version` from the workspace default, so an explicit version is ignored. The version-1 check sets its workspace to 1, creates the case, and sets it back.
 
 The story, updated deliberately:
