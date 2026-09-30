@@ -22,7 +22,7 @@ The designs live outside the repository: `.stitch/designs` locally, and the ViTa
 | 1 | Visual restyle (4 PRs) | Shell and volunteer board → case page → client screens → office screens, on today's data | Phase 0 | Yes |
 | 2 | Client numbers | Assigned on submit, restarting at #001 each season; shown wherever the designs show `#093` | — | Yes |
 | 3 | Lifecycle stages | The ~25 stages in `docs/media/return-lifecycle.svg` replace today's 9, with the full phase set (Filing, Needs attention, Done, Closed) | 1 | Yes |
-| 4 | New intake | The drafted questions, standard and senior wording (`form_version`), best time to reach, the client phone field, the materials checklist; 9-step client intake and Add a case; Chinese translation | 1 | Yes |
+| 4 | New intake | The drafted questions, standard and senior wording (`form_version`), best time to reach, the client phone field, the materials checklist; 9-step client intake and Add a case; Chinese translation. Split into 4a catalogue and server, 4b client intake, 4c Add a case and staff views, 4d Chinese. | 1 | Yes |
 | 5 | Access and masking | Masked phones; on available cases volunteers see intake answers only. Enforced by the database, not only on screen. | 4 | Yes |
 | 6 | Returning clients | The kept-details store across seasons (name, phone, date of birth, address, household only) and the search in Add a case | 2, 4 | Yes |
 | 7 | Team features | Labels, groups and pinned cases, notifications and posting, the teammate contact card with phone sharing, People, Season settings | 1 | Yes |
