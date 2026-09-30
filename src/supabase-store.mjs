@@ -36,6 +36,7 @@ const STAFF_TABLES = Object.freeze([
   "case_events",
   "assistance_items",
   "reviews",
+  "case_materials",
 ]);
 export const SUBSCRIBED_TABLES = Object.freeze({
   applicant: CLIENT_TABLES,
@@ -85,6 +86,27 @@ export const mapCase = (row) => ({
   // (migration 008). Both mappers get them, because both start here.
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  // 1 or 2 (migration 011); a database from before it has only version 1.
+  intakeVersion: Number(row.intake_version ?? 1),
+});
+
+// The case's contact details (migration 011), or null when it has no row —
+// every version-1 case, and a version-2 case nobody has saved a contact for.
+export const mapContact = (row) =>
+  row
+    ? {
+        phone: row.phone,
+        spousePhone: row.spouse_phone,
+        bestContactTime: row.best_contact_time,
+        bestContactNote: row.best_contact_note,
+      }
+    : null;
+
+// The materials the site has received (migration 013). Staff only.
+export const mapMaterial = (row) => ({
+  item: row.item,
+  receivedAt: row.received_at,
+  recordedByPersonId: row.recorded_by_person_id,
 });
 
 export const mapPerson = (row) => ({
@@ -159,19 +181,27 @@ export const CLIENT_COLUMNS = Object.freeze({
   document_requests: "id,case_id,title,message,status,created_at,updated_at",
   documents: "id,case_id,request_id,filename,source,created_at",
   client_events: "id,case_id,action,message,created_at",
+  case_contacts: "case_id,phone,spouse_phone,best_contact_time,best_contact_note",
 });
 
-// The Case an applicant sees: their own case plus the three client-readable
+// The staff read's named columns, where it does not take the whole row.
+export const STAFF_COLUMNS = Object.freeze({
+  case_materials: "case_id,item,received_at,recorded_by_person_id",
+});
+
+// The Case an applicant sees: their own case plus the four client-readable
 // related tables, and nothing else.
-export const mapClientCase = ({ row, requests, documents, history }) => ({
+export const mapClientCase = ({ row, requests, documents, history, contacts = [] }) => ({
   ...mapCase(row),
+  contact: mapContact(contacts[0]),
   requests: requests.map(camelRow),
   documents: documents.map(camelRow),
   history: history.map(camelRow),
 });
 
 // The staff Case: the client sections plus participation, follow-ups with
-// their attempts, review attempts and the internal history.
+// their attempts, review attempts, the materials received and the internal
+// history.
 export const mapStaffCase = ({
   row,
   participants,
@@ -182,11 +212,14 @@ export const mapStaffCase = ({
   reviews,
   history,
   internalHistory,
+  contacts = [],
+  materials = [],
 }) => ({
-  ...mapClientCase({ row, requests, documents, history }),
+  ...mapClientCase({ row, requests, documents, history, contacts }),
   participants: participants.map((participant) => participant.person_id),
   reviews: reviews.map(mapReview),
   followups: followups.map((followup) => mapFollowup(followup, attempts)),
+  materials: materials.map(mapMaterial),
   internalHistory: internalHistory.map(camelRow),
 });
 
@@ -374,6 +407,14 @@ export function createStore(client) {
           "id",
           columns("client_events"),
         ),
+        // One row at most (case_id is its key), and no created_at to order by.
+        // Both principals name its columns.
+        contacts: await read(
+          client
+            .from("case_contacts")
+            .select(CLIENT_COLUMNS.case_contacts)
+            .eq("case_id", id),
+        ),
       };
       if (!staff) return mapClientCase(client_);
       return mapStaffCase({
@@ -386,6 +427,14 @@ export function createStore(client) {
         followups: await relatedRows("admin_followups", id),
         attempts: await relatedRows("contact_attempts", id),
         reviews: await relatedRows("reviews", id),
+        // Staff only: the applicant path above never names this table.
+        materials: await read(
+          client
+            .from("case_materials")
+            .select(STAFF_COLUMNS.case_materials)
+            .eq("case_id", id)
+            .order("item"),
+        ),
         internalHistory: await relatedRows("case_events", id),
       });
     },

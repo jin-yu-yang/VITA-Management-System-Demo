@@ -1277,3 +1277,16 @@ test("a submit entry names the client number the server assigned", () => {
   );
   assert.equal(historySentence({ action: "SUBMIT", actorName: "Sam" }), "Sam submitted the application.");
 });
+
+test("the contact and materials actions read as sentences", () => {
+  assert.equal(
+    historySentence({ action: "UPDATE_CONTACT", actorName: "Sam" }),
+    "Sam updated the best time to reach.",
+  );
+  assert.equal(
+    historySentence({ action: "RECORD_MATERIALS", actorName: "Alex", detail: { items: ["w2"] } }),
+    "Alex recorded the materials received.",
+  );
+  assert.equal(EVENT_SENTENCES.UPDATE_CONTACT, "updated the best time to reach");
+  assert.equal(EVENT_SENTENCES.RECORD_MATERIALS, "recorded the materials received");
+});

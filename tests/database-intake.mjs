@@ -671,3 +671,300 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
     await f.close();
   }
 });
+
+// Part 4a, Task 4 (spec §3.4–§3.5): UPDATE_CONTACT, RECORD_MATERIALS and
+// case_materials, from migration 013.
+test("contact and materials actions", async (t) => {
+  const f = await createDatabaseFixture();
+  const materialRows = async (caseId) =>
+    (
+      await f.sql(
+        "select item, recorded_by_person_id, received_at, workspace_id from public.case_materials where case_id=$1 order by item",
+        [caseId],
+      )
+    ).rows;
+  const eventsOf = async (caseId, action) =>
+    (
+      await f.sql(
+        "select detail, actor_person_id from public.case_events where case_id=$1 and action=$2 order by created_at",
+        [caseId, action],
+      )
+    ).rows;
+  const clientEventsOf = async (caseId, action) =>
+    (
+      await f.sql(
+        "select message from public.client_events where case_id=$1 and action=$2",
+        [caseId, action],
+      )
+    ).rows;
+  const update = (caseId, payload, actor = f.applicantA, personId = null) =>
+    f.act(actor, caseId, personId, "UPDATE_CONTACT", payload);
+  const record = (caseId, received, actor = f.presenter, personId = f.sam) =>
+    f.act(actor, caseId, personId, "RECORD_MATERIALS", { received });
+  // A version-2 case the applicant has submitted; staff can now see it.
+  const submittedV2 = async () => {
+    const { caseId } = await v2Case(f);
+    await save(f, caseId, completeAnswers());
+    await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+    return caseId;
+  };
+  // The same, verified by the office and waiting for a preparer.
+  const readyV2 = async () => {
+    const caseId = await submittedV2();
+    await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+      checks: f.intakeChecks,
+    });
+    return caseId;
+  };
+  try {
+    await t.test("materials_items is D9's list", async () => {
+      assert.deepEqual(
+        (await f.sql("select vitally_private.materials_items() as items")).rows[0]
+          .items,
+        [
+          "photo_id",
+          "ssn_itin",
+          "green_card",
+          "birth_certificate",
+          "w2",
+          "1099nec",
+          "1099misc",
+          "1099int",
+          "1098t",
+          "1095a",
+          "prior_year_1040",
+        ],
+      );
+      assert.deepEqual(
+        (await f.sql("select vitally_private.materials_items() as items")).rows[0]
+          .items,
+        CATALOGUE.materials.map((item) => item.id),
+      );
+    });
+
+    await t.test("the owner updates the best time and note on their own draft", async () => {
+      const { caseId } = await v2Case(f);
+      await save(f, caseId, { tp_phone: "2155550100" });
+      await update(caseId, {
+        bestContactTime: ["weekday_morning", "weekend"],
+        bestContactNote: "After 5pm",
+      });
+      let contact = await contactRow(f, caseId);
+      assert.deepEqual(contact.best_contact_time, ["weekday_morning", "weekend"]);
+      assert.equal(contact.best_contact_note, "After 5pm");
+      assert.equal(contact.phone, "2155550100");
+      // One key leaves the other alone; a blank note and an empty list clear.
+      await update(caseId, { bestContactNote: "   " });
+      contact = await contactRow(f, caseId);
+      assert.equal(contact.best_contact_note, null);
+      assert.deepEqual(contact.best_contact_time, ["weekday_morning", "weekend"]);
+      await update(caseId, { bestContactTime: [] });
+      assert.equal((await contactRow(f, caseId)).best_contact_time, null);
+      await update(caseId, { bestContactTime: ["weekend"], bestContactNote: null });
+      contact = await contactRow(f, caseId);
+      assert.deepEqual(contact.best_contact_time, ["weekend"]);
+      assert.equal(contact.best_contact_note, null);
+      assert.equal(contact.phone, "2155550100");
+      // Nothing moved into answers.
+      assert.deepEqual((await caseRow(f, caseId)).answers, {});
+      // History names the fields, never the values; the client is told nothing.
+      const events = await eventsOf(caseId, "UPDATE_CONTACT");
+      assert.equal(events.length, 4);
+      assert.deepEqual(events[0].detail, {
+        fields: ["bestContactNote", "bestContactTime"],
+      });
+      assert.deepEqual(events[1].detail, { fields: ["bestContactNote"] });
+      assert.equal(events[0].actor_person_id, null);
+      assert.deepEqual(await clientEventsOf(caseId, "UPDATE_CONTACT"), []);
+    });
+
+    await t.test("a first UPDATE_CONTACT creates the contacts row", async () => {
+      const { caseId } = await v2Case(f);
+      assert.equal(await contactRow(f, caseId), undefined);
+      await update(caseId, { bestContactNote: "Text first" });
+      const contact = await contactRow(f, caseId);
+      assert.equal(contact.workspace_id, f.workspaceId);
+      assert.equal(contact.best_contact_note, "Text first");
+      assert.equal(contact.phone, null);
+    });
+
+    await t.test("the owner may not update after submitting", async () => {
+      const caseId = await submittedV2();
+      await assert.rejects(
+        update(caseId, { bestContactNote: "Too late" }),
+        rejected("FORBIDDEN"),
+      );
+      assert.equal((await contactRow(f, caseId)).best_contact_note, null);
+    });
+
+    await t.test("another applicant and a personless presenter are refused", async () => {
+      const { caseId } = await v2Case(f);
+      await assert.rejects(
+        update(caseId, { bestContactNote: "Not mine" }, f.applicantB),
+        rejected("NOT_FOUND"),
+      );
+      // An applicant cannot speak as a staff person.
+      await assert.rejects(
+        update(caseId, { bestContactNote: "Posing" }, f.applicantA, f.sam),
+        rejected("FORBIDDEN"),
+      );
+      const submitted = await submittedV2();
+      await assert.rejects(
+        update(submitted, { bestContactNote: "No person" }, f.presenter, null),
+        rejected("FORBIDDEN"),
+      );
+    });
+
+    await t.test("office staff may update any case they can see", async () => {
+      const caseId = await submittedV2();
+      await update(caseId, { bestContactNote: "Office called" }, f.presenter, f.sam);
+      assert.equal((await contactRow(f, caseId)).best_contact_note, "Office called");
+      const [event] = await eventsOf(caseId, "UPDATE_CONTACT");
+      assert.equal(event.actor_person_id, f.sam);
+    });
+
+    await t.test("a volunteer only on a case they prepare or review", async () => {
+      const caseId = await readyV2();
+      // Unclaimed: neither volunteer may touch the contact row.
+      for (const volunteer of [f.alex, f.morgan])
+        await assert.rejects(
+          update(caseId, { bestContactNote: "Unclaimed" }, f.presenter, volunteer),
+          rejected("FORBIDDEN"),
+        );
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      await update(caseId, { bestContactNote: "Preparer" }, f.presenter, f.alex);
+      assert.equal((await contactRow(f, caseId)).best_contact_note, "Preparer");
+      await assert.rejects(
+        update(caseId, { bestContactNote: "Not yet" }, f.presenter, f.morgan),
+        rejected("FORBIDDEN"),
+      );
+      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      await update(caseId, { bestContactTime: ["weekend"] }, f.presenter, f.morgan);
+      assert.deepEqual((await contactRow(f, caseId)).best_contact_time, ["weekend"]);
+    });
+
+    await t.test("UPDATE_CONTACT never takes a phone, and checks each value's type", async () => {
+      const { caseId } = await v2Case(f);
+      await save(f, caseId, { tp_phone: "2155550100", sp_phone: "2155550199" });
+      const before = await contactRow(f, caseId);
+      for (const payload of [
+        {},
+        { phone: "2155550111" },
+        { spousePhone: "2155550111" },
+        { tp_phone: "2155550111" },
+        { bestContactNote: "Fine", phone: "2155550111" },
+        { best_contact_note: "Wrong spelling" },
+        { bestContactTime: "weekend" },
+        { bestContactTime: ["bogus"] },
+        { bestContactTime: ["weekend", "weekend"] },
+        { bestContactTime: [1] },
+        { bestContactTime: { weekend: true } },
+        { bestContactNote: "x".repeat(201) },
+        { bestContactNote: 5 },
+        { bestContactNote: ["After 5pm"] },
+        { bestContactNote: true },
+      ])
+        await assert.rejects(
+          update(caseId, payload),
+          rejected("VALIDATION"),
+          JSON.stringify(payload),
+        );
+      assert.deepEqual(await contactRow(f, caseId), before);
+      // The limit itself is fine.
+      await update(caseId, { bestContactNote: "x".repeat(200) });
+      assert.equal((await contactRow(f, caseId)).best_contact_note.length, 200);
+    });
+
+    await t.test("a version-1 case has no contacts row to update", async () => {
+      const created = await f.createCase(f.applicantA, crypto.randomUUID());
+      await assert.rejects(
+        update(created.caseId, { bestContactNote: "Hello" }),
+        rejected("VALIDATION"),
+      );
+      assert.equal(await contactRow(f, created.caseId), undefined);
+    });
+
+    await t.test("staff record the materials received, and a second call replaces them", async () => {
+      const caseId = await submittedV2();
+      await record(caseId, ["w2", "photo_id"]);
+      let rows = await materialRows(caseId);
+      assert.deepEqual(rows.map((row) => row.item), ["photo_id", "w2"]);
+      for (const row of rows) {
+        assert.equal(row.recorded_by_person_id, f.sam);
+        assert.equal(row.workspace_id, f.workspaceId);
+        assert.ok(row.received_at instanceof Date);
+      }
+      await record(caseId, ["ssn_itin"]);
+      rows = await materialRows(caseId);
+      assert.deepEqual(rows.map((row) => row.item), ["ssn_itin"]);
+      await record(caseId, []);
+      assert.deepEqual(await materialRows(caseId), []);
+      const events = await eventsOf(caseId, "RECORD_MATERIALS");
+      assert.deepEqual(
+        events.map((event) => event.detail),
+        [{ items: ["w2", "photo_id"] }, { items: ["ssn_itin"] }, { items: [] }],
+      );
+      assert.deepEqual(await clientEventsOf(caseId, "RECORD_MATERIALS"), []);
+    });
+
+    await t.test("RECORD_MATERIALS works on a version-1 case too", async () => {
+      const caseId = await f.readyCase();
+      await record(caseId, ["1099nec", "prior_year_1040"]);
+      assert.deepEqual(
+        (await materialRows(caseId)).map((row) => row.item),
+        ["1099nec", "prior_year_1040"],
+      );
+    });
+
+    await t.test("only staff who may act record materials", async () => {
+      const caseId = await readyV2();
+      await assert.rejects(record(caseId, ["w2"], f.applicantA, null), rejected("FORBIDDEN"));
+      await assert.rejects(record(caseId, ["w2"], f.presenter, null), rejected("FORBIDDEN"));
+      await assert.rejects(record(caseId, ["w2"], f.presenter, f.alex), rejected("FORBIDDEN"));
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      await record(caseId, ["w2"], f.presenter, f.alex);
+      assert.deepEqual((await materialRows(caseId)).map((row) => row.item), ["w2"]);
+      // A draft only its owner can see is not the office's to record on.
+      const { caseId: draft } = await v2Case(f);
+      await assert.rejects(record(draft, ["w2"]), rejected("NOT_FOUND"));
+    });
+
+    await t.test("the item list is enforced", async () => {
+      const caseId = await submittedV2();
+      for (const payload of [
+        { received: ["passport"] },
+        { received: ["w2", "w2"] },
+        { received: "w2" },
+        { received: [1] },
+        { received: ["W2"] },
+        { received: ["w2"], extra: true },
+        {},
+      ])
+        await assert.rejects(
+          f.act(f.presenter, caseId, f.sam, "RECORD_MATERIALS", payload),
+          rejected("VALIDATION"),
+          JSON.stringify(payload),
+        );
+      assert.deepEqual(await materialRows(caseId), []);
+    });
+
+    await t.test("an applicant never reads materials; staff do", async () => {
+      const caseId = await submittedV2();
+      await record(caseId, ["w2"]);
+      for (const actor of [f.applicantA, f.applicantB]) {
+        const { data, error } = await actor.from("case_materials").select("*");
+        assert.equal(error, null);
+        assert.deepEqual(data, []);
+      }
+      const { data, error } = await f.presenter
+        .from("case_materials")
+        .select("*")
+        .eq("case_id", caseId);
+      assert.equal(error, null);
+      assert.deepEqual(data.map((row) => row.item), ["w2"]);
+    });
+  } finally {
+    await f.close();
+  }
+});

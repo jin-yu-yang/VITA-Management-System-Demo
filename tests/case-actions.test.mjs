@@ -8,6 +8,7 @@ import {
   FOLLOWUP_RESOLUTION_OUTCOMES,
 } from "../src/case-actions.mjs";
 import { CASE_ACTIONS } from "../src/contracts.mjs";
+import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 
 // The payload rules are a pure function, so these tests are the payload table
 // of `contracts-excerpt.md` read back out of the code.
@@ -96,6 +97,18 @@ test("every action builds exactly the payload the contract names", () => {
       {},
       { reason: "Client moved away", confirmed: "true" },
       { reason: "Client moved away", confirmed: true },
+    ],
+    [
+      "UPDATE_CONTACT",
+      {},
+      { bestContactTime: ["weekday_morning", "weekend"], bestContactNote: " After 5pm " },
+      { bestContactTime: ["weekday_morning", "weekend"], bestContactNote: "After 5pm" },
+    ],
+    [
+      "RECORD_MATERIALS",
+      {},
+      { received: ["photo_id", "w2"] },
+      { received: ["photo_id", "w2"] },
     ],
   ];
   for (const [type, dataset, values, payload] of cases)
@@ -293,4 +306,72 @@ test("a related id may come from the dataset or from a hidden field", () => {
     }).payload.requestId,
     "from-form",
   );
+});
+
+// Part 4a, Task 4: the two version-2 contact and materials actions.
+test("UPDATE_CONTACT sends only the keys the form carries, checked like the catalogue", () => {
+  // One key alone, and a single ticked checkbox arrives as a string.
+  assert.deepEqual(payloadFor("UPDATE_CONTACT", {}, { bestContactTime: "weekend" }), {
+    type: "UPDATE_CONTACT",
+    payload: { bestContactTime: ["weekend"] },
+  });
+  assert.deepEqual(payloadFor("UPDATE_CONTACT", {}, { bestContactNote: "Text first" }).payload, {
+    bestContactNote: "Text first",
+  });
+  // A blank note and an empty list clear the field.
+  assert.deepEqual(
+    payloadFor("UPDATE_CONTACT", {}, { bestContactNote: "   ", bestContactTime: [] }).payload,
+    { bestContactNote: null, bestContactTime: null },
+  );
+  // A phone, a snake_case key or a dataset value never joins the payload.
+  assert.deepEqual(
+    payloadFor(
+      "UPDATE_CONTACT",
+      { phone: "2155550111", caseId: "case-a" },
+      { bestContactNote: "Hi", phone: "2155550111", tp_phone: "2155550111", best_contact_note: "x" },
+    ).payload,
+    { bestContactNote: "Hi" },
+  );
+  for (const values of [
+    {},
+    { phone: "2155550111" },
+    { bestContactTime: ["bogus"] },
+    { bestContactTime: ["weekend", "weekend"] },
+    { bestContactNote: "x".repeat(201) },
+  ])
+    assert.throws(() => payloadFor("UPDATE_CONTACT", {}, values), invalid, JSON.stringify(values));
+  assert.equal(
+    payloadFor("UPDATE_CONTACT", {}, { bestContactNote: "x".repeat(200) }).payload.bestContactNote
+      .length,
+    200,
+  );
+});
+
+test("RECORD_MATERIALS sends the whole set received, from the catalogue's list", () => {
+  // No ticked box is the empty set: nothing received.
+  assert.deepEqual(payloadFor("RECORD_MATERIALS", {}, {}), {
+    type: "RECORD_MATERIALS",
+    payload: { received: [] },
+  });
+  assert.deepEqual(payloadFor("RECORD_MATERIALS", {}, { received: "w2" }).payload, {
+    received: ["w2"],
+  });
+  // A repeated item is sent once.
+  assert.deepEqual(
+    payloadFor("RECORD_MATERIALS", {}, { received: ["w2", "photo_id", "w2"] }).payload,
+    { received: ["w2", "photo_id"] },
+  );
+  for (const received of [["passport"], ["W2"], [""], [1]])
+    assert.throws(
+      () => payloadFor("RECORD_MATERIALS", {}, { received }),
+      invalid,
+      JSON.stringify(received),
+    );
+  assert.deepEqual(
+    payloadFor("RECORD_MATERIALS", {}, { received: MATERIALS_ITEMS.map((item) => item.id) })
+      .payload.received,
+    MATERIALS_ITEMS.map((item) => item.id),
+  );
+  assert.ok(CASE_ACTIONS.includes("UPDATE_CONTACT"));
+  assert.ok(CASE_ACTIONS.includes("RECORD_MATERIALS"));
 });

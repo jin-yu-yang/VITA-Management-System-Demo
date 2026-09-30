@@ -10,6 +10,12 @@
 // related id, an empty required field and an outcome outside its own list.
 
 import { CASE_ACTIONS } from "./contracts.mjs";
+import {
+  MATERIALS_ITEMS,
+  checkValue,
+  findQuestion,
+  isAnswered,
+} from "./intake-catalogue.mjs";
 
 // The one fictional file the demo ever sends (Ruling R18); the database accepts
 // no other name.
@@ -94,6 +100,50 @@ function confirmation(values) {
   return true;
 }
 
+// A multi-select as a form reports it: one ticked box is a string, several are
+// an array, none is absent.
+const list = (value) =>
+  value === undefined || value === null ? [] : Array.isArray(value) ? value : [value];
+
+// UPDATE_CONTACT's two keys and the catalogue fields whose rules they follow.
+// A phone is never one of them: phones change only through the form.
+const CONTACT_KEYS = Object.freeze({
+  bestContactTime: "best_contact_time",
+  bestContactNote: "best_contact_note",
+});
+
+// Only the keys the form carries are sent, so a form with just the note leaves
+// the best time alone. Each value passes its catalogue field's own check; a
+// blank note or an empty list is sent as null, which clears that field.
+function contactUpdate(values) {
+  const payload = {};
+  for (const [key, fieldId] of Object.entries(CONTACT_KEYS)) {
+    if (!Object.hasOwn(values ?? {}, key)) continue;
+    const raw = key === "bestContactTime" ? list(values[key]) : values[key];
+    const value = typeof raw === "string" ? raw.trim() : raw;
+    if (!isAnswered(value)) {
+      payload[key] = null;
+      continue;
+    }
+    const problem = checkValue(findQuestion(2, fieldId), value);
+    if (problem) throw validation(problem);
+    payload[key] = value;
+  }
+  if (!Object.keys(payload).length)
+    throw validation("Choose a best time or add a note first.");
+  return payload;
+}
+
+// The whole set of materials now received, from the catalogue's list. No
+// ticked box is the empty set; a repeated item is sent once.
+const MATERIAL_IDS = Object.freeze(MATERIALS_ITEMS.map((item) => item.id));
+function materialsReceived(values) {
+  const received = [...new Set(list(values?.received))];
+  if (!received.every((item) => MATERIAL_IDS.includes(item)))
+    throw validation("That is not one of the materials on the list.");
+  return received;
+}
+
 // SAVE_ANSWERS is deliberately absent: it is built by the controller from the
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
@@ -149,6 +199,8 @@ const BUILDERS = Object.freeze({
     reason: text(values, "reason", "A reason"),
     confirmed: confirmation(values),
   }),
+  UPDATE_CONTACT: (dataset, values) => contactUpdate(values),
+  RECORD_MATERIALS: (dataset, values) => ({ received: materialsReceived(values) }),
 });
 
 // Every action this function can build, for tests and for the wiring layer's

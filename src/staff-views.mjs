@@ -998,6 +998,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
   REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
+  UPDATE_CONTACT: "updated the best time to reach",
+  RECORD_MATERIALS: "recorded the materials received",
 });
 
 export function historySentence(entry) {

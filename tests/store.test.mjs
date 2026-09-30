@@ -18,6 +18,7 @@ const STAFF_ONLY_TABLES = [
   "reviews",
   "assistance_items",
   "action_receipts",
+  "case_materials",
 ];
 
 const CASE_ROW = Object.freeze({
@@ -43,6 +44,7 @@ const CASE_ROW = Object.freeze({
   last_reminded_by_person_id: null,
   created_at: "2026-09-10T15:00:00.000Z",
   updated_at: "2026-09-12T16:30:00.000Z",
+  intake_version: 2,
 });
 
 // Every related row the staff read assembles, one per table.
@@ -157,6 +159,33 @@ const RELATED_ROWS = Object.freeze({
       person_key: "alex",
       name: "Alex",
       capabilities: ["prepare"],
+    },
+  ],
+  case_contacts: [
+    {
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      phone: "2155550100",
+      spouse_phone: null,
+      best_contact_time: ["weekday_morning", "weekend"],
+      best_contact_note: "After 5pm",
+      updated_at: "2026-09-06T00:00:00Z",
+    },
+  ],
+  case_materials: [
+    {
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      item: "photo_id",
+      received_at: "2026-09-07T00:00:00Z",
+      recorded_by_person_id: "person-sam",
+    },
+    {
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      item: "w2",
+      received_at: "2026-09-07T00:00:00Z",
+      recorded_by_person_id: "person-sam",
     },
   ],
   assistance_items: [
@@ -386,6 +415,7 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       lastRemindedByPersonId: null,
       createdAt: "2026-09-10T15:00:00.000Z",
       updatedAt: "2026-09-12T16:30:00.000Z",
+      intakeVersion: 2,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -489,6 +519,7 @@ test("an applicant case read asks for no staff table at all", async () => {
   const found = await createStore(client).getCase("case-1");
   const tables = client.reads.map((read) => read.table);
   assert.deepEqual(tables.toSorted(), [
+    "case_contacts",
     "cases",
     "client_events",
     "document_requests",
@@ -500,12 +531,14 @@ test("an applicant case read asks for no staff table at all", async () => {
   assert.deepEqual(Object.keys(found).toSorted(), [
     "answers",
     "clientNumber",
+    "contact",
     "createdAt",
     "documents",
     "fixture",
     "history",
     "id",
     "intakeVerified",
+    "intakeVersion",
     "lastRemindedAt",
     "lastRemindedByPersonId",
     "ownerUserId",
@@ -545,6 +578,28 @@ test("an applicant case read asks for no staff table at all", async () => {
   assert.equal(found.requests[0].title, "Mileage record");
   assert.equal(found.requests[0].status, "open");
   assert.equal(found.documents[0].filename, "demo-mileage-record-2025.pdf");
+  // The applicant's own contact row, by named columns, and never materials.
+  assert.equal(found.intakeVersion, 2);
+  assert.deepEqual(found.contact, {
+    phone: "2155550100",
+    spousePhone: null,
+    bestContactTime: ["weekday_morning", "weekend"],
+    bestContactNote: "After 5pm",
+  });
+  const [contactRead] = client.reads.filter((read) => read.table === "case_contacts");
+  assert.notEqual(contactRead.columns, "*");
+  assert.deepEqual(contactRead.filters, [["case_id", "case-1"]]);
+  assert.ok(!("materials" in found));
+});
+
+test("a case with no contacts row reads as no contact", async () => {
+  for (const access of ["applicant", "presenter"]) {
+    const client = fakeClient({ access, rows: { case_contacts: [] } });
+    const found = await createStore(client).getCase("case-1");
+    assert.equal(found.contact, null, access);
+  }
+  const client = fakeClient({ access: "presenter", rows: { case_materials: [] } });
+  assert.deepEqual((await createStore(client).getCase("case-1")).materials, []);
 });
 
 test("a presenter case read adds exactly the staff sections", async () => {
@@ -554,7 +609,9 @@ test("a presenter case read adds exactly the staff sections", async () => {
     client.reads.map((read) => read.table).toSorted(),
     [
       "admin_followups",
+      "case_contacts",
       "case_events",
+      "case_materials",
       "cases",
       "client_events",
       "contact_attempts",
@@ -565,6 +622,23 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "reviews",
     ],
   );
+  assert.equal(found.intakeVersion, 2);
+  assert.deepEqual(found.contact, {
+    phone: "2155550100",
+    spousePhone: null,
+    bestContactTime: ["weekday_morning", "weekend"],
+    bestContactNote: "After 5pm",
+  });
+  assert.deepEqual(found.materials, [
+    { item: "photo_id", receivedAt: "2026-09-07T00:00:00Z", recordedByPersonId: "person-sam" },
+    { item: "w2", receivedAt: "2026-09-07T00:00:00Z", recordedByPersonId: "person-sam" },
+  ]);
+  // Both new reads name their columns, one case at a time.
+  for (const table of ["case_contacts", "case_materials"]) {
+    const [read] = client.reads.filter((entry) => entry.table === table);
+    assert.notEqual(read.columns, "*", table);
+    assert.deepEqual(read.filters, [["case_id", "case-1"]], table);
+  }
   assert.deepEqual(found.participants, ["person-alex"]);
   assert.deepEqual(found.reviews, [
     {
@@ -832,6 +906,25 @@ test("a subscription watches only the tables its principal may read", async () =
     "workspaces",
     "case_contacts",
   ]);
+  assert.deepEqual(SUBSCRIBED_TABLES.presenter, [
+    "cases",
+    "document_requests",
+    "documents",
+    "client_events",
+    "workspaces",
+    "case_contacts",
+    "people",
+    "preparation_participants",
+    "admin_followups",
+    "contact_attempts",
+    "case_events",
+    "assistance_items",
+    "reviews",
+    "case_materials",
+  ]);
+  // The applicant's channel never names a staff-only table.
+  for (const staffTable of STAFF_ONLY_TABLES)
+    assert.ok(!SUBSCRIBED_TABLES.applicant.includes(staffTable), staffTable);
 });
 
 test("a change announces identifiers only", async () => {
@@ -909,4 +1002,11 @@ test("mapCase carries the season and the client number, null until submitted", (
   const draft = mapCase({ ...CASE_ROW, season: null, client_number: null });
   assert.equal(draft.season, null);
   assert.equal(draft.clientNumber, null);
+});
+
+test("mapCase carries the intake version, 1 when the column is absent", () => {
+  assert.equal(mapCase(CASE_ROW).intakeVersion, 2);
+  assert.equal(mapCase({ ...CASE_ROW, intake_version: "1" }).intakeVersion, 1);
+  const { intake_version: _version, ...older } = CASE_ROW;
+  assert.equal(mapCase(older).intakeVersion, 1);
 });
