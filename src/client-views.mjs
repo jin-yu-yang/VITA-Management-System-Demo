@@ -19,6 +19,7 @@ import {
   missingAnswers,
   submissionBlocker,
 } from "./domain.mjs";
+import { invalidAnswers } from "./intake-form.mjs";
 
 // Every client screen, as pure functions of one controller snapshot. No state,
 // no store, no timers, no DOM: each returns an HTML string, and everything that
@@ -144,9 +145,28 @@ export function referenceScreen(state) {
 // Save state and conflict reconciliation
 // ---------------------------------------------------------------------------
 
+// The errors a version-2 form shows: invalid answers of visible questions whose
+// ids are in the revealed list, the same ids the notes show (spec §2.5).
+function shownErrors(state) {
+  const revealed = new Set(state.revealed ?? []);
+  if (!revealed.size) return 0;
+  return invalidAnswers(null, state.draftAnswers ?? {}).filter((id) => revealed.has(id)).length;
+}
+
 export function saveStatus(state) {
   if (state.saveState === "saving")
     return `<span class="save-chip saving" role="status">${icon("refresh")} Saving…</span>`;
+  // Version 2 only, after Saving, Failed and Unsaved and before Saved.
+  if (
+    Number(state.savedCase?.intakeVersion) === 2 &&
+    state.saveState !== "failed" &&
+    state.saveState !== "unsaved" &&
+    !state.dirty
+  ) {
+    const count = shownErrors(state);
+    if (count > 0)
+      return `<span class="save-chip checking" role="status">${icon("help")} ${count} ${count === 1 ? "answer needs" : "answers need"} checking</span>`;
+  }
   if (state.saveState === "saved")
     return `<span class="save-chip saved" role="status">${icon("check")} Saved</span>`;
   if (state.saveState === "failed")

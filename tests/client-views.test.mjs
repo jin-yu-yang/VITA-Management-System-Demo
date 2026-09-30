@@ -640,3 +640,34 @@ test("my applications shows the client number on submitted rows only", () => {
   assert.match(rows[0], /<span class="application-id"><span class="application-reference">VT-AB2C-DE3F<\/span><span class="application-number">#093<\/span><\/span>/);
   assert.ok(!rows[1].includes("application-number"));
 });
+
+test("a version-2 chip counts the revealed invalid answers of visible questions", () => {
+  const v2 = (overrides = {}) =>
+    baseState({ savedCase: { id: "c2", intakeVersion: 2, answers: {} }, revealed: [], ...overrides });
+  const text = (html) => html.replace(/<[^>]+>/g, "").trim();
+  const one = saveStatus(v2({ saveState: "saved", draftAnswers: { email: "a@" }, revealed: ["email"] }));
+  assert.equal(text(one), "1 answer needs checking");
+  assert.match(one, /class="save-chip checking" role="status"/);
+  const two = saveStatus(
+    v2({ saveState: "idle", draftAnswers: { email: "a@", addr_zip: "191" }, revealed: ["email", "addr_zip"] }),
+  );
+  assert.equal(text(two), "2 answers need checking");
+  // Typed but not revealed, and revealed but hidden, are never counted.
+  assert.equal(text(saveStatus(v2({ saveState: "saved", draftAnswers: { email: "a@" } }))), "Saved");
+  assert.equal(
+    text(saveStatus(v2({ saveState: "saved", draftAnswers: { marital_status: "single", sp_dob: "1990-02-30" }, revealed: ["sp_dob"] }))),
+    "Saved",
+  );
+  // A revealed id whose value is valid again counts for nothing.
+  assert.equal(text(saveStatus(v2({ saveState: "idle", draftAnswers: { email: "a@b" }, revealed: ["email"] }))), "Up to date");
+  // Saving, Failed and Unsaved come first.
+  const shown = { draftAnswers: { email: "a@" }, revealed: ["email"] };
+  assert.match(text(saveStatus(v2({ ...shown, saveState: "saving" }))), /Saving/);
+  assert.match(text(saveStatus(v2({ ...shown, saveState: "failed", dirty: true }))), /Not saved/);
+  assert.equal(text(saveStatus(v2({ ...shown, saveState: "unsaved", dirty: true }))), "Unsaved changes");
+  // Version 1 never shows it, whatever the state holds.
+  assert.equal(
+    text(saveStatus(baseState({ saveState: "saved", savedCase: { id: "c1", answers: {} }, draftAnswers: { email: "a@" }, revealed: ["email"] }))),
+    "Saved",
+  );
+});

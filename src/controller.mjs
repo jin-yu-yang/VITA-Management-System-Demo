@@ -4,6 +4,20 @@ import {
   ASSISTANCE_ACTIONS,
 } from "./contracts.mjs";
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
+import {
+  CONTACT_FIELDS,
+  checkValue,
+  findQuestion,
+  stepsFor,
+} from "./intake-catalogue.mjs";
+import {
+  invalidAnswers,
+  keepLocalOnly,
+  mergeIntoDraft,
+  sendable,
+  sendableDiffers,
+  withholdInvalid,
+} from "./intake-form.mjs";
 import { createWindowState } from "./window-state.mjs";
 
 // The one place browser state lives. It owns what is loaded, what is being
@@ -69,16 +83,85 @@ function controllerError(code, message, cause) {
 }
 
 // The intake whitelist is the only thing that reaches `answers`. Anything else
-// — an owner id, a stage, a forged reference — is dropped here, once.
-function pickAnswers(source) {
+// — an owner id, a stage, a forged reference — is dropped here, once. Version 1
+// keeps its 17 keys as strings, dropping null; version 2 keeps the catalogue's
+// top-level field ids with their structured values, null included (a null is
+// "clear this field on the next save", spec 2026-09-30 §3.3).
+function pickAnswers(source, version = 1) {
   const result = {};
   if (!source || typeof source !== "object") return result;
+  if (Number(version) === 2) {
+    for (const [key, value] of Object.entries(source))
+      if (value !== undefined && findQuestion(2, key)) result[key] = value;
+    return result;
+  }
   for (const key of INTAKE_ANSWER_KEYS) {
     const value = source[key];
     if (value === undefined || value === null) continue;
     result[key] = String(value);
   }
   return result;
+}
+
+// ---- version 2 helpers (spec 2026-09-30 §2.5, §3.3–§3.4) -----------------
+
+const isVersionTwo = (record) => Number(record?.intakeVersion) === 2;
+const STEP_COUNT = stepsFor(2).length;
+const WHO_IDS = Object.freeze(
+  stepsFor(2)
+    .flatMap((step) => step.sections.flatMap((section) => section.questions))
+    .filter((question) => question.type === "who")
+    .map((question) => question.id),
+);
+const isPlainObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+// The server's side of a version-2 draft: its answers plus the contact record's
+// four fields. A null contact (no contact saved yet), or a null inside it,
+// counts as empty.
+function serverAnswersOf(record) {
+  const result = pickAnswers(record?.answers, 2);
+  for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
+    const value = record?.contact?.[key];
+    if (value !== undefined && value !== null) result[id] = value;
+  }
+  return result;
+}
+
+// Not married any more: no who answer may still name the spouse. A list left
+// empty reads as null, as an unticked group does.
+function clearSpouse(draft) {
+  const next = { ...draft };
+  for (const id of WHO_IDS) {
+    const value = next[id];
+    if (!Array.isArray(value) || !value.includes("spouse")) continue;
+    const kept = value.filter((entry) => entry !== "spouse");
+    next[id] = kept.length ? kept : null;
+  }
+  return next;
+}
+
+// "hh[1].dob" -> { group: "hh", index: 1, sub: "dob" }.
+const MEMBER_ID = /^([a-z0-9_]+)\[(\d+)\]\.([a-z0-9_]+)$/;
+const parseMemberId = (id) => {
+  const match = MEMBER_ID.exec(id);
+  return match ? { group: match[1], index: Number(match[2]), sub: match[3] } : null;
+};
+
+// Whether an id (top-level, or a member's sub-field) holds an invalid value in
+// this draft, visible or not. Valid, empty and gone are all "no".
+function holdsInvalid(id, draft) {
+  const member = parseMemberId(id);
+  if (member) {
+    const question = findQuestion(2, member.group);
+    const field = question?.fields?.find((entry) => entry.id === member.sub);
+    const person = Array.isArray(draft?.[member.group]) ? draft[member.group][member.index] : undefined;
+    if (!field || !isPlainObject(person)) return false;
+    return checkValue(field, sendable(field, person[member.sub])) !== null;
+  }
+  const question = findQuestion(2, id);
+  if (!question || question.type === "group") return false;
+  return checkValue(question, sendable(question, draft?.[id])) !== null;
 }
 
 export function createController({
@@ -127,6 +210,13 @@ export function createController({
     dirty: false,
     conflict: null,
     saveState: "idle",
+    // Version 2 only. The ids whose error this window has shown (spec §2.5):
+    // an id enters on `change` or when its step is left, and leaves once its
+    // value is valid or empty. Stored as a list, because it is window state.
+    revealed: [],
+    // Version 2 only. The step indexes (0–8) this window has left, for the
+    // selected case.
+    visitedSteps: [],
     busy: false,
     // Window-local navigation
     screen: "access",
@@ -163,6 +253,9 @@ export function createController({
   // The envelope of the last action whose outcome is unknown. Kept as the very
   // object that was sent, because retrying a copy would be a second action.
   let pendingAction = null;
+  // What the save state was before an edit made a version-2 draft dirty
+  // ("idle" or "saved"), so an undo can put it back.
+  let stateBeforeEdit = "idle";
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
   let pendingReset = null;
@@ -212,6 +305,13 @@ export function createController({
       boardFilters: state.boardFilters,
       sidebarOpen: state.sidebarOpen,
       caseTab: state.caseTab,
+      visitedSteps: state.selectedCaseId
+        ? {
+            caseId: state.selectedCaseId,
+            steps: state.visitedSteps,
+            revealed: state.revealed,
+          }
+        : undefined,
     });
   }
 
@@ -232,6 +332,11 @@ export function createController({
     if (saved.boardFilters) state.boardFilters = saved.boardFilters;
     if (typeof saved.sidebarOpen === "boolean") state.sidebarOpen = saved.sidebarOpen;
     if (typeof saved.caseTab === "string") state.caseTab = saved.caseTab;
+    // Visited steps belong to one case: another case's record means nothing.
+    if (saved.visitedSteps && saved.visitedSteps.caseId === state.selectedCaseId) {
+      state.visitedSteps = [...saved.visitedSteps.steps];
+      state.revealed = [...saved.visitedSteps.revealed];
+    }
   }
 
   // ---- the resend cooldown (Ruling R38) ----------------------------------
@@ -277,6 +382,9 @@ export function createController({
       Number(next.revision) < Number(current.revision)
     )
       return;
+    // The draft being replaced, when it is this case's: its local-only
+    // differences (an invalid value, or spaces only) survive the rebuild.
+    const previousDraft = current?.id === next.id ? state.draftAnswers : {};
     state.savedCase = next;
     if (state.dirty && state.editBaseRevision !== null) {
       state.conflict =
@@ -289,8 +397,21 @@ export function createController({
           : null;
       return;
     }
-    state.draftAnswers = pickAnswers(next.answers);
+    state.draftAnswers = isVersionTwo(next)
+      ? keepLocalOnly(previousDraft, serverAnswersOf(next), 2)
+      : pickAnswers(next.answers, next.intakeVersion);
+    pruneRevealed();
     state.conflict = null;
+  }
+
+  // Every change to a version-2 draft drops the revealed ids whose value is now
+  // valid or empty, or whose household member is gone (spec §2.5).
+  function pruneRevealed() {
+    if (!state.revealed.length) return false;
+    const kept = state.revealed.filter((id) => holdsInvalid(id, state.draftAnswers));
+    if (kept.length === state.revealed.length) return false;
+    state.revealed = kept;
+    return true;
   }
 
   async function loadList() {
@@ -379,7 +500,10 @@ export function createController({
     state.dirty = false;
     state.conflict = null;
     state.saveState = "idle";
+    stateBeforeEdit = "idle";
     state.formStep = 0;
+    state.visitedSteps = [];
+    state.revealed = [];
     // Open panels are per case: a confirmation ticked on one application, or a
     // simulated upload failure on one request, means nothing on another.
     state.openPanels = [];
@@ -939,12 +1063,22 @@ export function createController({
   // meaningful while those answers are still the draft: re-sending it after a
   // further edit would commit the older text at its older expected revision
   // and then be refreshed over, losing the newer typing without any error.
-  const staleSave = () =>
-    Boolean(
-      pendingAction?.save &&
-        JSON.stringify(pendingAction.action.payload?.answers ?? {}) !==
-          JSON.stringify(state.draftAnswers),
+  //
+  // It is compared with what the draft would send now: for version 2 that is
+  // `withholdInvalid(draft)`, so a withheld field or a change of spaces only
+  // leaves it current. For version 1 that is the draft itself. A retry that
+  // left a refused field out (`omit`) is compared without that field.
+  const staleSave = () => {
+    if (!pendingAction?.save) return false;
+    const sending = { ...withholdInvalid(state.draftAnswers, caseVersion()) };
+    if (pendingAction.omit) delete sending[pendingAction.omit];
+    return (
+      JSON.stringify(pendingAction.action.payload?.answers ?? {}) !==
+      JSON.stringify(sending)
     );
+  };
+
+  const caseVersion = () => (isVersionTwo(state.savedCase) ? 2 : 1);
 
   function forgetPendingSave() {
     if (!pendingAction?.save) return;
@@ -953,7 +1087,17 @@ export function createController({
   }
 
   function editAnswers(patch) {
-    const clean = pickAnswers(patch);
+    if (caseVersion() === 2) {
+      const clean = pickAnswers(patch, 2);
+      // Keys, not values: a patch of nulls is a real edit (it clears).
+      if (!Object.keys(clean).length) return;
+      let draft = mergeIntoDraft(state.draftAnswers, clean);
+      if (Object.hasOwn(clean, "marital_status") && clean.marital_status !== "married")
+        draft = clearSpouse(draft);
+      commitDraft(draft);
+      return;
+    }
+    const clean = pickAnswers(patch, state.savedCase?.intakeVersion);
     if (!Object.keys(clean).length) return;
     // The base revision is pinned on the first edit and kept until the edits
     // are saved or reconciled, so a later remote change is measured against
@@ -970,7 +1114,106 @@ export function createController({
     show();
   }
 
-  async function dispatch(action, { save = false } = {}) {
+  // A version-2 draft change (spec §2.5). `dirty` means a save would change
+  // the server, recomputed over the whole draft:
+  //   * it turns true: the revision is pinned and the chip goes Unsaved,
+  //     remembering the state it replaced;
+  //   * it turns false only from Unsaved (an undo): the pin is cleared and the
+  //     chip goes back. After a failed save it stays true until a save
+  //     succeeds, because that save may have landed.
+  // The retained envelope is dropped only when what would be sent changed.
+  function commitDraft(draft) {
+    state.draftAnswers = draft;
+    const revealedChanged = pruneRevealed();
+    const differs = sendableDiffers(draft, serverAnswersOf(state.savedCase), 2);
+    if (differs && !state.dirty) {
+      if (state.editBaseRevision === null && state.savedCase)
+        state.editBaseRevision = Number(state.savedCase.revision);
+      markUnsaved();
+      state.dirty = true;
+    } else if (!differs && state.dirty && state.saveState === "unsaved") {
+      state.dirty = false;
+      state.editBaseRevision = null;
+      state.saveState = stateBeforeEdit;
+      // Nothing left to choose between: the draft sends what the server has.
+      state.conflict = null;
+    }
+    state.error = null;
+    if (staleSave()) forgetPendingSave();
+    if (revealedChanged) persistSession();
+    show();
+  }
+
+  // Unsaved, remembering what it replaced when that was a settled state.
+  function markUnsaved() {
+    if (state.saveState === "idle" || state.saveState === "saved")
+      stateBeforeEdit = state.saveState;
+    state.saveState = "unsaved";
+  }
+
+  // An id whose error has been shown (on `change`). Only an invalid value is
+  // added; the page updates the note itself, so nothing is redrawn here.
+  function revealInvalid(id) {
+    if (caseVersion() !== 2 || typeof id !== "string") return;
+    if (state.revealed.includes(id) || !holdsInvalid(id, state.draftAnswers)) return;
+    state.revealed = [...state.revealed, id];
+    persistSession();
+  }
+
+  // The form's step change (Continue, Back, a rail jump). The step being left
+  // reveals its invalid answers and becomes visited, a dirty draft is saved,
+  // and the form moves on even when that save fails: the chip and the banner
+  // say so, and the draft is still here.
+  async function goToStep(step) {
+    const last = caseVersion() === 2 ? STEP_COUNT - 1 : Number.MAX_SAFE_INTEGER;
+    const target = Math.min(last, Math.max(0, Math.trunc(Number(step) || 0)));
+    const leaving = state.formStep;
+    if (caseVersion() === 2) {
+      const fresh = invalidAnswers(leaving, state.draftAnswers).filter(
+        (id) => !state.revealed.includes(id),
+      );
+      if (fresh.length) state.revealed = [...state.revealed, ...fresh];
+    }
+    // Only a real step index is recorded (the window state accepts 0–8).
+    if (
+      Number.isInteger(leaving) &&
+      leaving >= 0 &&
+      leaving < STEP_COUNT &&
+      !state.visitedSteps.includes(leaving)
+    )
+      state.visitedSteps = [...state.visitedSteps, leaving].sort((a, b) => a - b);
+    persistSession();
+    if (state.dirty) {
+      try {
+        await saveAnswers();
+      } catch {
+        // Already on screen: the save state is "failed" and the error is set.
+      }
+    }
+    state.formStep = target;
+    persistSession();
+    show();
+  }
+
+  // The household card's Remove: the member leaves the draft, its revealed ids
+  // go, and the ids of the members after it move down by one.
+  function removeMember(index, group = "hh") {
+    if (caseVersion() !== 2) return;
+    const members = state.draftAnswers[group];
+    const at = Number(index);
+    if (!Array.isArray(members) || !Number.isInteger(at) || at < 0 || at >= members.length) return;
+    state.revealed = state.revealed.flatMap((id) => {
+      const member = parseMemberId(id);
+      if (!member || member.group !== group || member.index < at) return [id];
+      if (member.index === at) return [];
+      return [`${group}[${member.index - 1}].${member.sub}`];
+    });
+    const kept = members.filter((_, position) => position !== at);
+    persistSession();
+    commitDraft(mergeIntoDraft(state.draftAnswers, { [group]: kept.length ? kept : null }));
+  }
+
+  async function dispatch(action, { save = false, omit = null } = {}) {
     state.busy = true;
     state.error = null;
     if (save) state.saveState = "saving";
@@ -998,7 +1241,7 @@ export function createController({
       if (UNKNOWN_OUTCOME.includes(error?.code)) {
         // The server may already have applied it. The retry must be the same
         // envelope so the stored receipt answers instead of a second action.
-        pendingAction = { action, save };
+        pendingAction = { action, save, omit };
         state.retryable = true;
         noteFailure(error);
       } else {
@@ -1040,6 +1283,7 @@ export function createController({
       show();
       throw controllerError("CONFLICT", EDIT_CONFLICT_MESSAGE);
     }
+    const version = caseVersion();
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
@@ -1051,9 +1295,33 @@ export function createController({
       // refuses a presenter who sends no person at all.
       personId: actingPersonId(),
       type: "SAVE_ANSWERS",
-      payload: { answers: { ...state.draftAnswers } },
+      // Version 2 never sends an invalid value (spec §2.5): every field's
+      // trimmed value, null clears included, minus the ones that fail their
+      // check. The draft itself keeps exactly what was typed.
+      payload: { answers: { ...withholdInvalid(state.draftAnswers, version) } },
     };
-    return await dispatch(action, { save: true });
+    if (version !== 2) return await dispatch(action, { save: true });
+    try {
+      return await dispatch(action, { save: true });
+    } catch (error) {
+      // A refusal that names one field is retried once, without that field
+      // too. This retry is dispatched directly, never back through here, so a
+      // second refusal takes the usual failure path. Today's server names no
+      // field, so this waits for a server that does.
+      const field = refusedField(error, action);
+      if (!field) throw error;
+      const { [field]: _left, ...rest } = action.payload.answers;
+      const retry = { ...action, actionId: newActionId(), payload: { answers: rest } };
+      return await dispatch(retry, { save: true, omit: field });
+    }
+  }
+
+  // The top-level field a refusal names, when it was in the request.
+  function refusedField(error, action) {
+    if (typeof error?.field !== "string") return null;
+    if (UNKNOWN_OUTCOME.includes(error.code) || error.code === "CONFLICT") return null;
+    const field = error.field.replace(/\[.*$/, "");
+    return Object.hasOwn(action.payload.answers, field) ? field : null;
   }
 
   // A deliberate choice between two sets of answers, and nothing more: it takes
@@ -1072,11 +1340,12 @@ export function createController({
         "This application changed again. Check the newest values and choose once more.",
       );
     }
-    state.draftAnswers = pickAnswers(answers);
+    state.draftAnswers = pickAnswers(answers, latest.intakeVersion);
+    pruneRevealed();
     state.editBaseRevision = Number(latest.revision);
     state.dirty = true;
     state.conflict = null;
-    state.saveState = "unsaved";
+    markUnsaved();
     state.error = null;
     // The chosen answers are a new draft, so any retained save envelope is as
     // stale here as it is after a keystroke.
@@ -1270,8 +1539,8 @@ export function createController({
       show();
       return null;
     }
-    const { action, save } = pendingAction;
-    return await dispatch(action, { save });
+    const { action, save, omit } = pendingAction;
+    return await dispatch(action, { save, omit });
   }
 
   function getState() {
@@ -1281,6 +1550,8 @@ export function createController({
       people: [...state.people],
       assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },
+      revealed: [...state.revealed],
+      visitedSteps: [...state.visitedSteps],
       openPanels: [...state.openPanels],
       boardFilters: { ...state.boardFilters },
       conflict: state.conflict ? { ...state.conflict } : null,
@@ -1315,6 +1586,9 @@ export function createController({
     toggleSidebar,
     setCaseTab,
     editAnswers,
+    revealInvalid,
+    goToStep,
+    removeMember,
     saveAnswers,
     reconcileAnswers,
     runAction,

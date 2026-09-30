@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
+import { saveStatus } from "../src/client-views.mjs";
+import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -2137,4 +2139,497 @@ test("the office screens are a presenter's, and a client falls back home", async
   await client.controller.start();
   assert.equal(client.controller.getState().screen, "applications");
   client.controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// Version 2: the draft, withheld invalid values, visited steps and the revealed
+// list (spec 2026-09-30 §2.5, §3.3–§3.4).
+// ---------------------------------------------------------------------------
+
+// The version-2 server as the fake sees it: a save merges (null clears) and the
+// four contact fields go to the case's contact record, never into answers.
+function v2Store({ answers = {}, contact = null, revision = 1, others = [] } = {}) {
+  const store = fakeStore({
+    cases: [
+      { id: "case-v2", reference: "VT-V2AA-BBBB", stage: "draft", revision, intakeVersion: 2, answers, contact },
+      ...others,
+    ],
+  });
+  // Refusals to throw from `act`, one per call, before anything is stored.
+  store.refusals = [];
+  store.act = async (action) => {
+    store.calls.push(`act:${action.type}`);
+    store.writes.push(action);
+    const failure = store.failNext ?? store.refusals.shift();
+    store.failNext = null;
+    if (failure) throw failure;
+    const record = store.records.get(action.caseId);
+    const merged = { ...record.answers };
+    let contact = record.contact;
+    for (const [id, value] of Object.entries(action.payload.answers)) {
+      if (CONTACT_FIELDS[id]) {
+        contact = { ...(contact ?? {}), [CONTACT_FIELDS[id]]: value };
+        continue;
+      }
+      if (value === null) delete merged[id];
+      else merged[id] = value;
+    }
+    const next = { ...record, revision: record.revision + 1, answers: merged, contact };
+    store.records.set(action.caseId, next);
+    return { actionId: action.actionId, caseId: action.caseId, reference: next.reference, revision: next.revision };
+  };
+  return store;
+}
+
+const offline = () => Object.assign(new Error("offline"), { code: "OFFLINE" });
+const chip = (controller) => saveStatus(controller.getState()).replace(/<[^>]+>/g, "").trim();
+
+async function openV2(options = {}) {
+  const store = v2Store(options);
+  const built = build({ store, sessionStorage: options.sessionStorage });
+  await built.controller.start();
+  await built.controller.selectCase("case-v2");
+  return { store, ...built };
+}
+
+// A version-2 case whose last save succeeded: the chip reads "Saved".
+async function savedV2(answers = { tp_first_name: "Mei" }) {
+  const opened = await openV2({ answers: { ...answers, tp_last_name: "Old" } });
+  opened.controller.editAnswers({ tp_last_name: "Chen" });
+  await opened.controller.saveAnswers();
+  assert.equal(opened.controller.getState().saveState, "saved");
+  assert.equal(chip(opened.controller), "Saved");
+  return opened;
+}
+
+test("a version-2 draft takes its contact fields from the case's contact record", async () => {
+  const bare = await openV2({ answers: { tp_first_name: "Mei" }, contact: null });
+  const draft = bare.controller.getState().draftAnswers;
+  assert.deepEqual(draft, { tp_first_name: "Mei" });
+  for (const id of Object.keys(CONTACT_FIELDS)) assert.equal(Object.hasOwn(draft, id), false, id);
+  bare.controller.stop();
+
+  const withContact = await openV2({
+    answers: { tp_first_name: "Mei" },
+    contact: { phone: "2155550199", spousePhone: null, bestContactTime: ["weekend"], bestContactNote: null },
+  });
+  assert.deepEqual(withContact.controller.getState().draftAnswers, {
+    tp_first_name: "Mei",
+    tp_phone: "2155550199",
+    best_contact_time: ["weekend"],
+  });
+  withContact.controller.stop();
+});
+
+test("a version-2 edit keeps structured values and null, and the save carries them with the contact", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei", tp_middle_name: "Lan", ownerUserId: "forged" },
+    contact: { phone: "2155550199", bestContactTime: ["weekend"] },
+  });
+  assert.equal(Object.hasOwn(controller.getState().draftAnswers, "ownerUserId"), false);
+  controller.editAnswers({ tp_middle_name: null });
+  assert.equal(controller.getState().draftAnswers.tp_middle_name, null);
+  controller.editAnswers({ hh: [{ first_name: "Xiao" }], best_contact_time: ["weekend", "any_time"], stage: "closed" });
+  assert.deepEqual(controller.getState().draftAnswers.hh, [{ first_name: "Xiao" }]);
+  assert.equal(Object.hasOwn(controller.getState().draftAnswers, "stage"), false);
+  await controller.saveAnswers();
+  const sent = store.writes[0].payload.answers;
+  assert.equal(sent.tp_middle_name, null);
+  assert.equal(sent.tp_phone, "2155550199");
+  assert.deepEqual(sent.best_contact_time, ["weekend", "any_time"]);
+  assert.deepEqual(sent.hh, [{ first_name: "Xiao" }]);
+  controller.stop();
+});
+
+test("leaving married drops the spouse from every who answer in the same edit", async () => {
+  const { controller } = await openV2({
+    answers: { marital_status: "married", us_citizen: ["me", "spouse"], on_visa: ["spouse"], pecf: ["none"] },
+  });
+  controller.editAnswers({ marital_status: "married", disabled: ["spouse"] });
+  assert.deepEqual(controller.getState().draftAnswers.disabled, ["spouse"], "still married: nothing is cleared");
+  controller.editAnswers({ marital_status: "never_married" });
+  const draft = controller.getState().draftAnswers;
+  assert.equal(draft.marital_status, "never_married");
+  assert.deepEqual(draft.us_citizen, ["me"]);
+  assert.deepEqual(draft.pecf, ["none"]);
+  for (const id of ["us_citizen", "on_visa", "disabled", "pecf"])
+    assert.equal((draft[id] ?? []).includes("spouse"), false, id);
+  controller.stop();
+});
+
+test("goToStep records the step being left, saves a dirty draft, then moves", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  assert.deepEqual(controller.getState().visitedSteps, []);
+  await controller.goToStep(1);
+  assert.equal(store.writes.length, 0, "nothing to save");
+  assert.deepEqual(controller.getState().visitedSteps, [0]);
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await controller.goToStep(3);
+  assert.equal(store.writes.length, 1);
+  assert.equal(store.writes[0].payload.answers.tp_first_name, "Ming");
+  assert.equal(controller.getState().formStep, 3);
+  assert.deepEqual(controller.getState().visitedSteps, [0, 1]);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("goToStep still moves when its save fails", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.failNext = offline();
+  await controller.goToStep(2);
+  assert.equal(controller.getState().formStep, 2);
+  assert.equal(controller.getState().saveState, "failed");
+  assert.equal(controller.getState().dirty, true);
+  controller.stop();
+});
+
+test("another case starts with no visited steps and nothing revealed", async () => {
+  const { controller } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.setFormStep(1);
+  controller.editAnswers({ email: "a@" });
+  await controller.goToStep(2);
+  assert.deepEqual(controller.getState().visitedSteps, [1]);
+  assert.deepEqual(controller.getState().revealed, ["email"]);
+  await controller.selectCase("case-w");
+  assert.deepEqual(controller.getState().visitedSteps, []);
+  assert.deepEqual(controller.getState().revealed, []);
+  controller.stop();
+});
+
+test("a version-2 save withholds invalid values and trims, and never touches the draft", async () => {
+  const { controller, store } = await openV2();
+  controller.editAnswers({ tp_first_name: "Mei", email: "a@", addr_zip: " 19107 " });
+  await controller.saveAnswers();
+  assert.deepEqual(store.writes[0].payload.answers, { tp_first_name: "Mei", addr_zip: "19107" });
+  const draft = controller.getState().draftAnswers;
+  assert.equal(draft.addr_zip, " 19107 ");
+  assert.equal(draft.email, "a@");
+  controller.stop();
+});
+
+test("version-2 dirty means a save would change the server", async () => {
+  const { controller } = await savedV2();
+  // Valid to invalid: the field is withheld, so nothing would change.
+  controller.editAnswers({ email: "a@" });
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(chip(controller), "Saved");
+  controller.revealInvalid("email");
+  assert.equal(chip(controller), "1 answer needs checking");
+  // Editing an already-invalid value leaves it as it was.
+  controller.editAnswers({ email: "a@@" });
+  assert.equal(controller.getState().dirty, false);
+  // Spaces alone would send the same value.
+  controller.editAnswers({ tp_first_name: "Mei " });
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().editBaseRevision, null);
+  assert.equal(controller.getState().saveState, "saved");
+  // A real change pins the revision the person was looking at.
+  controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(controller.getState().dirty, true);
+  assert.equal(controller.getState().saveState, "unsaved");
+  assert.equal(controller.getState().editBaseRevision, 2);
+  controller.stop();
+});
+
+test("an undo returns to the save state it replaced", async () => {
+  const saved = await savedV2();
+  saved.controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(chip(saved.controller), "Unsaved changes");
+  saved.controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(saved.controller.getState().dirty, false);
+  assert.equal(saved.controller.getState().saveState, "saved");
+  assert.equal(saved.controller.getState().editBaseRevision, null);
+  assert.equal(chip(saved.controller), "Saved");
+  // With a revealed invalid email in the draft, the undo shows the count.
+  saved.controller.editAnswers({ email: "a@" });
+  saved.controller.revealInvalid("email");
+  saved.controller.editAnswers({ tp_first_name: "Ming" });
+  saved.controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(chip(saved.controller), "1 answer needs checking");
+  saved.controller.stop();
+
+  const fresh = await openV2({ answers: { tp_first_name: "Mei" } });
+  fresh.controller.editAnswers({ tp_first_name: "Ming" });
+  fresh.controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(fresh.controller.getState().dirty, false);
+  assert.equal(fresh.controller.getState().saveState, "idle");
+  assert.equal(chip(fresh.controller), "Up to date");
+  fresh.controller.stop();
+});
+
+test("the pin is cleared on undo, so a later office save is not a false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" }, revision: 5 });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(controller.getState().editBaseRevision, 5);
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().editBaseRevision, null);
+  // The office saves in between.
+  store.records.set("case-v2", {
+    ...store.records.get("case-v2"),
+    revision: 6,
+    answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+  });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  assert.equal(controller.getState().conflict, null);
+  assert.equal(controller.getState().draftAnswers.tp_last_name, "Chen");
+  controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(controller.getState().editBaseRevision, 6);
+  await controller.saveAnswers();
+  assert.equal(store.writes[0].expectedRevision, 6);
+  assert.equal(controller.getState().conflict, null);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("after a failed save an undo stays dirty and keeps its pin", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
+  assert.equal(controller.getState().retryable, true);
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(controller.getState().dirty, true);
+  assert.equal(controller.getState().editBaseRevision, 1);
+  assert.equal(controller.getState().saveState, "failed");
+  assert.equal(controller.getState().retryable, false, "the envelope no longer matches");
+  assert.equal(await controller.retryLast(), null);
+  await controller.saveAnswers();
+  assert.equal(store.writes.length, 2);
+  assert.equal(store.writes[1].payload.answers.tp_first_name, "Mei");
+  assert.equal(store.writes[1].expectedRevision, 1);
+  controller.stop();
+});
+
+test("local-only differences survive every refresh", async () => {
+  const { controller, store } = await openV2();
+  controller.editAnswers({ tp_first_name: "Mei", email: "a@", addr_zip: " 19107 " });
+  await controller.saveAnswers();
+  assert.equal(Object.hasOwn(store.records.get("case-v2").answers, "email"), false);
+  assert.equal(store.records.get("case-v2").answers.addr_zip, "19107");
+  let draft = controller.getState().draftAnswers;
+  assert.equal(draft.email, "a@");
+  assert.equal(draft.addr_zip, " 19107 ");
+  // Somebody else changes the name.
+  store.records.set("case-v2", {
+    ...store.records.get("case-v2"),
+    revision: 3,
+    answers: { ...store.records.get("case-v2").answers, tp_first_name: "Ming" },
+  });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  draft = controller.getState().draftAnswers;
+  assert.equal(draft.tp_first_name, "Ming");
+  assert.equal(draft.email, "a@");
+  assert.equal(draft.addr_zip, " 19107 ");
+  controller.stop();
+});
+
+test("a retained envelope ignores withheld fields and spaces", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_last_name: "Chen", email: "a@" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveAnswers());
+  controller.editAnswers({ email: "b@" });
+  assert.equal(controller.getState().retryable, true, "the invalid email was never in the envelope");
+  controller.editAnswers({ tp_last_name: "Chen " });
+  assert.equal(controller.getState().retryable, true, "spaces alone send the same value");
+  await controller.retryLast();
+  assert.equal(store.writes.length, 2);
+  assert.equal(store.writes[1], store.writes[0], "the identical envelope");
+  assert.equal(controller.getState().saveState, "saved");
+
+  controller.editAnswers({ tp_last_name: "Wang" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveAnswers());
+  controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(store.writes.length, 3);
+  controller.stop();
+});
+
+test("the revealed list: typing never adds, a fix or a new case removes", async () => {
+  const { controller } = await savedV2();
+  controller.editAnswers({ email: "a@" });
+  assert.deepEqual(controller.getState().revealed, [], "typing adds nothing");
+  assert.equal(chip(controller), "Saved");
+  controller.revealInvalid("email");
+  assert.deepEqual(controller.getState().revealed, ["email"]);
+  controller.revealInvalid("email");
+  assert.deepEqual(controller.getState().revealed, ["email"], "added once");
+  controller.revealInvalid("tp_first_name");
+  assert.deepEqual(controller.getState().revealed, ["email"], "a valid value is never revealed");
+  controller.editAnswers({ email: "mei@example.com" });
+  assert.deepEqual(controller.getState().revealed, []);
+  controller.editAnswers({ email: "a@" });
+  assert.deepEqual(controller.getState().revealed, []);
+  controller.revealInvalid("email");
+  controller.editAnswers({ email: null });
+  assert.deepEqual(controller.getState().revealed, [], "empty is not invalid");
+  controller.stop();
+});
+
+test("leaving a step reveals its invalid answers", async () => {
+  const { controller } = await savedV2();
+  controller.setFormStep(1);
+  controller.editAnswers({ email: "a@", sp_dob: "1990-02-30" });
+  assert.equal(chip(controller), "Saved");
+  await controller.goToStep(2);
+  assert.deepEqual(controller.getState().revealed, ["email"], "only the step being left, and only visible questions");
+  assert.equal(chip(controller), "1 answer needs checking");
+  controller.stop();
+});
+
+test("a revealed answer whose question is hidden is not counted, and stays revealed", async () => {
+  const { controller, store } = await openV2({ answers: { marital_status: "married" } });
+  controller.editAnswers({ sp_dob: "1990-02-30" });
+  assert.equal(controller.getState().dirty, false);
+  controller.revealInvalid("sp_dob");
+  assert.equal(chip(controller), "1 answer needs checking");
+  store.records.set("case-v2", {
+    ...store.records.get("case-v2"),
+    revision: 2,
+    answers: { marital_status: "never_married" },
+  });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  assert.equal(controller.getState().draftAnswers.sp_dob, "1990-02-30");
+  assert.deepEqual(controller.getState().revealed, ["sp_dob"]);
+  assert.equal(chip(controller), "Up to date");
+  controller.stop();
+});
+
+test("removing a household member renumbers the revealed ids after it", async () => {
+  const { controller } = await openV2();
+  controller.editAnswers({
+    has_household_members: "yes",
+    hh: [
+      { first_name: "An", dob: "2015-02-30" },
+      { first_name: "Bo", dob: "2016-02-30" },
+      { first_name: "Cy", dob: "2017-01-01" },
+    ],
+  });
+  controller.revealInvalid("hh[0].dob");
+  controller.revealInvalid("hh[1].dob");
+  assert.deepEqual(controller.getState().revealed, ["hh[0].dob", "hh[1].dob"]);
+  const before = controller.getState().draftAnswers.hh;
+  controller.removeMember(0);
+  assert.deepEqual(controller.getState().revealed, ["hh[0].dob"]);
+  assert.deepEqual(
+    controller.getState().draftAnswers.hh.map((member) => member.first_name),
+    ["Bo", "Cy"],
+  );
+  assert.equal(before.length, 3, "the old array is never changed in place");
+  controller.removeMember(1);
+  controller.removeMember(0);
+  assert.deepEqual(controller.getState().revealed, []);
+  assert.equal(controller.getState().draftAnswers.hh, null, "no members left reads null");
+  controller.stop();
+});
+
+test("taking the office's valid value unreveals it", async () => {
+  const { controller, store } = await savedV2();
+  controller.editAnswers({ email: "a@" });
+  controller.revealInvalid("email");
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const server = { ...store.records.get("case-v2").answers, email: "office@example.com" };
+  store.records.set("case-v2", { ...store.records.get("case-v2"), revision: 3, answers: server });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  assert.equal(controller.getState().conflict?.code, "REMOTE_CHANGED");
+  assert.deepEqual(controller.getState().revealed, ["email"]);
+  await controller.reconcileAnswers({ answers: server, expectedServerRevision: 3 });
+  assert.equal(controller.getState().draftAnswers.email, "office@example.com");
+  assert.deepEqual(controller.getState().revealed, []);
+  controller.editAnswers({ email: "a@" });
+  assert.deepEqual(controller.getState().revealed, []);
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(chip(controller), "Saved");
+  controller.stop();
+});
+
+test("visited steps and the revealed list round-trip through the window state", async () => {
+  const sessionStorage = fakeSession();
+  // The fake server holds an invalid email (the real one never would), so the
+  // restored id still has something to point at after the case is re-read.
+  const first = await openV2({ answers: { email: "a@" }, sessionStorage });
+  first.controller.setFormStep(1);
+  await first.controller.goToStep(4);
+  assert.deepEqual(first.controller.getState().revealed, ["email"]);
+  const stored = JSON.parse(sessionStorage.raw("vitally:client:v1:user-1"));
+  assert.deepEqual(stored.visitedSteps, { caseId: "case-v2", steps: [1], revealed: ["email"] });
+  first.controller.stop();
+
+  const second = build({ store: first.store, sessionStorage });
+  await second.controller.start();
+  assert.equal(second.controller.getState().selectedCaseId, "case-v2");
+  assert.deepEqual(second.controller.getState().visitedSteps, [1]);
+  assert.deepEqual(second.controller.getState().revealed, ["email"]);
+  second.controller.stop();
+
+  // A record for another case is not this case's.
+  const other = fakeSession({
+    "vitally:client:v1:user-1": JSON.stringify({
+      selectedCaseId: "case-v2",
+      visitedSteps: { caseId: "case-other", steps: [3], revealed: ["email"] },
+    }),
+  });
+  const third = build({ store: first.store, sessionStorage: other });
+  await third.controller.start();
+  assert.deepEqual(third.controller.getState().visitedSteps, []);
+  assert.deepEqual(third.controller.getState().revealed, []);
+  third.controller.stop();
+});
+
+test("a refusal that names a field is retried once without it", async () => {
+  const refusal = (field) => Object.assign(new Error("refused"), { code: "VALIDATION", ...(field ? { field } : {}) });
+  const once = await openV2();
+  once.controller.editAnswers({ tp_first_name: "Mei", tp_dob: "1980-01-01" });
+  once.store.refusals.push(refusal("tp_dob"));
+  await once.controller.saveAnswers();
+  assert.equal(once.store.writes.length, 2);
+  assert.equal(once.store.writes[0].payload.answers.tp_dob, "1980-01-01");
+  assert.equal(Object.hasOwn(once.store.writes[1].payload.answers, "tp_dob"), false);
+  assert.equal(once.store.writes[1].payload.answers.tp_first_name, "Mei");
+  assert.equal(once.store.writes[1].expectedRevision, once.store.writes[0].expectedRevision);
+  assert.equal(once.controller.getState().saveState, "saved");
+  once.controller.stop();
+
+  const twice = await openV2();
+  twice.controller.editAnswers({ tp_first_name: "Mei", tp_dob: "1980-01-01" });
+  twice.store.refusals.push(refusal("tp_dob"), refusal("tp_first_name"), refusal("tp_first_name"));
+  await assert.rejects(twice.controller.saveAnswers(), (error) => error.code === "VALIDATION");
+  assert.equal(twice.store.writes.length, 2, "never a loop");
+  assert.equal(twice.controller.getState().saveState, "failed");
+  twice.controller.stop();
+
+  const unnamed = await openV2();
+  unnamed.controller.editAnswers({ tp_first_name: "Mei" });
+  unnamed.store.refusals.push(refusal());
+  await assert.rejects(unnamed.controller.saveAnswers(), (error) => error.code === "VALIDATION");
+  assert.equal(unnamed.store.writes.length, 1);
+  unnamed.controller.stop();
+});
+
+test("a version-1 case keeps today's whole-draft save, any-edit dirty and no revealed list", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { firstName: "Mei" } }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ firstName: "Mei", zip: "191", household: 2, stocks: null, tp_first_name: "x" });
+  assert.deepEqual(controller.getState().draftAnswers, { firstName: "Mei", zip: "191", household: "2" });
+  assert.equal(controller.getState().dirty, true, "any edit is dirty, even the same value");
+  assert.equal(controller.getState().saveState, "unsaved");
+  controller.editAnswers({ firstName: null });
+  assert.equal(controller.getState().draftAnswers.firstName, "Mei", "null is dropped as today");
+  controller.revealInvalid("zip");
+  await controller.goToStep(1);
+  assert.deepEqual(controller.getState().revealed, []);
+  assert.deepEqual(store.writes[0].payload.answers, { firstName: "Mei", zip: "191", household: "2" });
+  assert.equal(chip(controller), "Saved");
+  controller.stop();
 });
