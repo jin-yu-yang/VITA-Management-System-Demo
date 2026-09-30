@@ -47,7 +47,10 @@ It returns the HTML for one question. Every control has a real `<label>`, or a `
 
 ### 2.2 `readForm(formElement, version)`
 
-It reads every rendered question back into an answers object: date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects. Empty fields read as `null`, which the save treats as clearing the field. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
+It reads every rendered question back into an answers object: date boxes into `YYYY-MM-DD`, checkboxes into arrays, and household cards into an array of member objects.
+- An empty top-level field reads as `null`, which the save treats as clearing the field.
+- Inside a household member, an empty sub-field is left out of the member object, not set to `null`, because the server checks every key a member carries. A card with no answers at all is dropped.
+- A date with some boxes empty reads as `null`; a full but impossible date (Feb 30) is kept, so `checkValue` can mark it. It replaces today's version-1 field-by-field `editAnswerField` for version-2 forms.
 
 ### 2.3 `formatAnswer(question, value, { variant, lang })`
 
@@ -100,7 +103,8 @@ The new Chinese goes to the group for review, with the other new wording. Becaus
 - The controller's draft holds the version-2 answers plus the four contact fields. On load, the contact fields are filled in from `record.contact` through `CONTACT_FIELDS`. `record.contact` is `null` until a case's first contact save (`mapContact`), and `null` counts as empty.
 - `pickAnswers` becomes version-aware: version 1 keeps its 17 keys, and version 2 keeps the catalogue's top-level field IDs.
 - **Saving** happens on Continue, Back, a rail jump, and Save & exit. The save sends the whole draft (`SAVE_ANSWERS`); the server routes the contact fields to `case_contacts`.
-- The Saved / Unsaved chip, the retained-envelope retry, and the two-window conflict screen work as today.
+- The Saved / Unsaved chip and the retained-envelope retry work as today.
+- **The two-window conflict screen needs a version-2 branch.** Today's `conflictForm` compares only version 1's 17 keys, with `String()`. For version 2 it compares every catalogue field and the four contact fields by value (deep equality for arrays and household members), labels each row with the question's wording, and shows both sides with `formatAnswer`. "Keep my edits" and "Use the office's values" work as today.
 - **Fill fictional details** uses a new fictional version-2 generator: `makeSampleAnswers` in `src/sample-data.mjs` gains a `version` option (`{ seed, scenario, version: 2 }`), and version 1 stays the default. It fills only blank fields, and every value passes `checkValue`.
 
 ### 3.4 Behaviour
@@ -157,6 +161,7 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 - **Side column:**
   - Case info: Application ID, stage, created by, and created at.
   - Materials received: the §4.1 card.
+- **Fill fictional details** (the presenter panel's button and the page's own pill, both `fill-assisted-intake`) fills the version-2 page's blank fields from the version-2 generator, through the renderer's field IDs, replacing today's `#field-assisted-*` lookup for version-2 pages.
 - **Bottom bar:** Cancel; "n sections still need answers"; **Save draft** (`SAVE_ANSWERS`); and **Send to the office** (`SUBMIT`), enabled when nothing required is missing.
   - The office still records the intake checks from the case page, as today.
 - Version-1 office drafts keep today's assisted-answers panel on the case page.
@@ -173,10 +178,11 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
 - **Default:** `workspaces.default_intake_version`'s column default becomes 2, and every existing workspace is set to 2.
   - New client cases and office cases become version 2.
   - Existing cases keep their version (011's trigger pins it).
-- **Samples:** 009's sample seeding is replaced (from its latest definition) to work with version 2.
-  - **Seeding:** each sample is inserted with empty answers, and then its fictional version-2 answers (`fixture_answers_v2(key)`) and its `case_contacts` row are written.
+- **Samples:** 009's sample seeding is replaced (from its latest definition) to follow the workspace's `default_intake_version`.
+  - **Version 1** (a workspace set to 1, which includes every test workspace, §6): exactly today's seeding, with `fixture_answers(key)`.
+  - **Version 2:** each sample is inserted with empty answers, and then its fictional version-2 answers (`fixture_answers_v2(key)`) and its `case_contacts` row are written.
   - **Checkpoint reload:** `apply_fixture_scenario` also deletes the sample's `case_contacts` and `case_materials` rows before rebuilding it.
-- **What stays for version 1:** `fixture_answers` (version 1) stays for re-seeding a workspace that is set back to 1. Setting the default back to 1 is a one-line update.
+- **What stays for version 1:** `fixture_answers` and the version-1 seeding path stay. Setting a workspace back to 1 is a one-line update, and its next reset seeds version-1 samples.
 
 ## 6. Testing and acceptance
 
@@ -204,8 +210,9 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
 - **Progress page:** labels for both versions.
 
 **Test workspaces stay version 1 unless a test says otherwise.**
-- After the switch-over, the column default is 2. The test fixture (`tests/support/database-fixture.mjs`) therefore creates its workspaces with `default_intake_version = 1`, so the ~30 existing database tests that save version-1 answers (`makeSampleAnswers()`) keep working unchanged.
-- The version-2 tests set their workspace to 2 explicitly, and back in `finally`.
+- After the switch-over, the column default is 2. `createDatabaseFixture` (`tests/support/database-fixture.mjs`) therefore gains an option, `intakeVersion`, defaulting to 1, and sets its workspaces to it. So the ~30 existing database tests that save version-1 answers (`makeSampleAnswers()`) keep working unchanged, and their sample resets seed version-1 samples.
+- The version-2 database tests either pass `intakeVersion: 2` or set their workspace to 2 explicitly and back in `finally`.
+- The browser fixture (`tests/support/browser-fixture.mjs`) builds on the database fixture. In PR 4c it passes `intakeVersion: 2`, so the story runs on version 2.
 
 **Database:**
 - A version-2 client round trip: create empty, save step by step, submit, client number.
@@ -220,7 +227,7 @@ The next migration after PR 4b's catalogue migration, `015_intake_v2_default.sql
   - a checkpoint reload clears contacts and materials.
 
 **Browser story.**
-- **PR 4b:** the story sets its own workspace to `default_intake_version = 2` before the client starts an application, walks the nine steps (below), and sets it back afterwards. The client form is covered in the browser before the switch-over.
+- **PR 4b:** the main story stays on version 1, because PR 4b's staff screens don't yet show version-2 answers. A new, separate phase covers the client form: it sets the workspace to `default_intake_version = 2`, has a second applicant start an application, walks the nine steps (below, client part only), submits, and sets the workspace back to 1. That case is never opened on a staff screen in 4b.
 - **PR 4c:** the story's workspace follows the new default. Its version-1 form walk (about 21 places in `tests/browser.mjs`) and the 5 version-1 assertions in `tests/client-views.test.mjs` become deliberate updates.
 - **Making a version-1 case after the switch-over:** 011's insert trigger always takes `intake_version` from the workspace default, so an explicit version is ignored. The version-1 check sets its workspace to 1, creates the case, and sets it back.
 
