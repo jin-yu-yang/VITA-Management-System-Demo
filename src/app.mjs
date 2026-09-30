@@ -4,10 +4,11 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, stepsFor } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, missingToSubmit, stepsFor } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
+  invalidAnswers,
   needsRedraw,
   noteState,
   readField,
@@ -571,10 +572,12 @@ if (!config) {
         married: draft.marital_status === "married",
       });
       // A regenerate is the new example plus a clear of every other answer
-      // already in the draft; a fill touches blank answers only.
+      // already in the draft (the wording choice kept); a fill touches blank
+      // answers only.
       const cleared = Object.fromEntries(
         Object.keys(draft)
-          .filter((key) => findQuestion(2, key) && !(key in generated))
+          // The senior switch is the person's choice of wording, not an answer.
+          .filter((key) => key !== "form_version" && findQuestion(2, key) && !(key in generated))
           .map((key) => [key, null]),
       );
       controller.editAnswers(
@@ -721,6 +724,26 @@ if (!config) {
       // sends the saved case's revision: otherwise they would be dropped, and
       // the refresh would raise a conflict on a submitted case.
       sweepV2Form();
+      // Submit's disabled state is drawn at render, and typing on step 9
+      // never redraws, so the gate is checked again from the draft (spec
+      // §2.5: nothing invalid is ever submitted). Failing it reveals every
+      // invalid answer and redraws, so step 9 lists them and Submit is off.
+      const draft = controller.getState().draftAnswers ?? {};
+      const invalid = invalidAnswers(null, draft);
+      if (
+        invalid.length ||
+        missingToSubmit(2, draft).length ||
+        !controller.getState().openPanels.includes("confirmed")
+      ) {
+        quiet = true;
+        try {
+          for (const id of invalid) controller.revealInvalid(id);
+        } finally {
+          quiet = false;
+        }
+        render();
+        return;
+      }
       if (controller.getState().dirty) await controller.saveAnswers();
     }
     if (type === "RESPOND_DOCUMENT" && state.openPanels.includes("upload-failure")) {
