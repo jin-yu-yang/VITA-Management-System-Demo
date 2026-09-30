@@ -92,7 +92,7 @@ It returns the read-only text of an answer:
 - `pickAnswers` becomes version-aware: version 1 keeps its 17 keys, and version 2 keeps the catalogue's top-level field IDs.
 - **Saving** happens on Continue, Back, a rail jump, and Save & exit. The save sends the whole draft (`SAVE_ANSWERS`); the server routes the contact fields to `case_contacts`.
 - The Saved / Unsaved chip, the retained-envelope retry, and the two-window conflict screen work as today.
-- **Fill fictional details** uses a new fictional version-2 generator (`makeSampleAnswers({ version: 2 })` in `src/sample-data.mjs`). It fills only blank fields, and every value passes `checkValue`.
+- **Fill fictional details** uses a new fictional version-2 generator: `makeSampleAnswers` in `src/sample-data.mjs` gains a `version` option (`{ seed, scenario, version: 2 }`), and version 1 stays the default. It fills only blank fields, and every value passes `checkValue`.
 
 ### 3.4 Behaviour
 
@@ -132,7 +132,10 @@ The answers panel dispatches on `intakeVersion`; version 1 keeps today's panel.
 
 ### 4.2 Add a case, version 2 (the design)
 
-- **Starting.** "Add a case" creates an empty version-2 assisted case (`vitally_create_case` with `{}`), then opens the page on it. The same page continues an existing version-2 office draft: the office case page shows **Continue in Add a case** for one.
+- **Starting.** "Add a case" opens the page with no case yet: the header says "Application ID: assigned when you save", and the answers live in the browser's draft.
+  - The first **Save draft** or **Send to the office** creates an empty version-2 assisted case (`vitally_create_case` with `{}`), then saves the draft into it. After that, the page is on that case.
+  - Opening the page and leaving creates nothing, so no empty draft clutters the office queue.
+  - The same page continues an existing version-2 office draft: the office case page shows **Continue in Add a case** for one.
 - **Header:** Work board / Add a case, the title, the Application ID, and "Draft · Saved / Unsaved".
 - **Sections:** nine collapsible sections in step order.
   - A closed section shows its number, title and a one-line summary of its answers (`formatAnswer`, joined with " · ").
