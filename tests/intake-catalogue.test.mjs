@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
-  missingToSubmit, serviceLabel, languageLabel, MATERIALS_ITEMS,
+  missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
 } from "../src/intake-catalogue.mjs";
 
 const q = (id) => findQuestion(2, id);
@@ -111,4 +111,54 @@ test("service and language labels cover both versions", () => {
   assert.equal(languageLabel("cantonese"), "Cantonese");
   assert.equal(languageLabel("Cantonese"), "Cantonese");
   assert.equal(languageLabel("Polish"), "Polish");
+});
+
+test("phone: strip every non-digit, then exactly 10 digits", () => {
+  const p = q("tp_phone");
+  assert.equal(checkValue(p, "(215) 555-0100"), null);
+  assert.equal(checkValue(p, "2155550100x"), null);
+  assert.equal(typeof checkValue(p, "555-0100"), "string");
+  assert.equal(typeof checkValue(p, "21555501001"), "string");
+});
+
+test("email is deliberately loose: 254 chars, one @, both sides non-empty", () => {
+  const e = q("email");
+  assert.equal(checkValue(e, "a b@c"), null);
+  assert.equal(typeof checkValue(e, "@c"), "string");
+  assert.equal(typeof checkValue(e, "a@"), "string");
+  assert.equal(typeof checkValue(e, "a@b@c"), "string");
+  assert.equal(checkValue(e, "a@" + "b".repeat(252)), null);
+  assert.equal(typeof checkValue(e, "a@" + "b".repeat(253)), "string");
+});
+
+test("contact accepts the store's shape and the field ids", () => {
+  assert.deepEqual(CONTACT_FIELDS, {
+    tp_phone: "phone", sp_phone: "spousePhone",
+    best_contact_time: "bestContactTime", best_contact_note: "bestContactNote",
+  });
+  const answers = { marital_status: "married" };
+  const time = [q("best_contact_time").options[0].value];
+  assert.ok(missingToSubmit(2, answers).includes("tp_phone"));
+  assert.ok(!missingToSubmit(2, answers, { phone: "2155550100", bestContactTime: time }).includes("tp_phone"));
+  assert.ok(!missingToSubmit(2, answers, { tp_phone: "2155550100" }).includes("tp_phone"));
+  assert.ok(missingToSubmit(2, answers, { phone: "" }).includes("tp_phone"));
+});
+
+test("empty strings and arrays are unanswered everywhere", () => {
+  assert.equal(isAnswered(undefined), false);
+  assert.equal(isAnswered(null), false);
+  assert.equal(isAnswered(""), false);
+  assert.equal(isAnswered("  "), false);
+  assert.equal(isAnswered([]), false);
+  assert.equal(isAnswered("a"), true);
+  assert.equal(isAnswered(["a"]), true);
+  const filled = { showIf: [{ field: "a", op: "filled" }] };
+  assert.equal(isVisible(filled, { a: "  " }), false);
+  assert.equal(isVisible({ showIf: [{ field: "a", op: "ne", value: "x" }] }, { a: "" }), false);
+  const m = missingToSubmit(2, { service: "", language: [], tp_first_name: "  " });
+  for (const id of ["service", "language", "tp_first_name"]) assert.ok(m.includes(id), id);
+  const hh = missingToSubmit(2, { has_household_members: "yes", hh: [{ first_name: "A", last_name: "B", dob: "", relationship: "parent", months_lived: "3" }] });
+  assert.ok(hh.includes("hh[0].dob"));
+  for (const id of ["tp_first_name", "tp_dob", "best_contact_time", "hh", "tp_phone"])
+    for (const empty of [null, "", []]) assert.equal(checkValue(q(id), empty), null, id);
 });

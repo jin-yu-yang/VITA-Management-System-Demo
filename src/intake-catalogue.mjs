@@ -20,8 +20,16 @@ export const findQuestion = (version, id) =>
 export const wording = (question, { variant = "general", lang = "en" } = {}) =>
   question?.wording?.[variant]?.[lang] ?? question?.wording?.general?.[lang] ?? "";
 
-const filled = (value) =>
-  Array.isArray(value) ? value.length > 0 : typeof value === "string" ? value !== "" : false;
+/** Answered: not null/undefined, not "" after trim, not an empty array. Task 3's SQL mirrors this. */
+export const isAnswered = (value) =>
+  value === undefined || value === null
+    ? false
+    : Array.isArray(value)
+      ? value.length > 0
+      : typeof value === "string"
+        ? value.trim() !== ""
+        : true;
+const filled = isAnswered;
 
 const holds = (condition, answers) => {
   const value = answers?.[condition.field];
@@ -66,8 +74,17 @@ function checkGroup(question, value) {
   return null;
 }
 
+/**
+ * Checks an answered value against its type. An unanswered value (null, "" or
+ * []) returns null: clearing a field is always allowed; whether it may stay
+ * empty is missingToSubmit's business.
+ * Contracts the server mirrors: phone = strip every non-digit, then exactly
+ * 10 digits; email = at most 254 characters, exactly one "@", non-empty on
+ * both sides (deliberately loose, "a b@c" passes).
+ */
 export function checkValue(question, value) {
   const type = question?.type;
+  if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return null;
   if (type === "group") return checkGroup(question, value);
   if (type === "multi" || type === "who") {
     if (!Array.isArray(value) || !value.every(isString)) return "Expected a list of choices.";
@@ -89,7 +106,7 @@ export function checkValue(question, value) {
         ? "Enter a valid email address."
         : null;
     case "phone":
-      return value.replace(/\D/g, "").length === 10 && !/[a-z]/i.test(value) ? null : "Enter a 10-digit phone number.";
+      return value.replace(/\D/g, "").length === 10  ? null : "Enter a 10-digit phone number.";
     case "zip":
       return /^\d{5}$/.test(value) ? null : "Enter a 5-digit ZIP code.";
     case "date":
@@ -119,14 +136,21 @@ export function checkValue(question, value) {
 // Submit check
 // ---------------------------------------------------------------------------
 
-const CONTACT_IDS = ["tp_phone", "sp_phone", "best_contact_time", "best_contact_note"];
-
-const answered = (value) => (Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== "");
+/** Catalogue field id -> the store's contact key (spec 4). */
+export const CONTACT_FIELDS = Object.freeze({
+  tp_phone: "phone",
+  sp_phone: "spousePhone",
+  best_contact_time: "bestContactTime",
+  best_contact_note: "bestContactNote",
+});
 
 /** IDs of required, visible, unanswered questions. Contact fields come from `contact`. */
 export function missingToSubmit(version, answers = {}, contact = {}) {
   const merged = { ...answers };
-  for (const id of CONTACT_IDS) if (contact?.[id] !== undefined) merged[id] = contact[id];
+  for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
+    const value = contact?.[key] !== undefined ? contact[key] : contact?.[id];
+    if (value !== undefined) merged[id] = value;
+  }
   const missing = [];
   for (const question of allQuestions(version)) {
     if (!isVisible(question, merged)) continue;
@@ -135,11 +159,11 @@ export function missingToSubmit(version, answers = {}, contact = {}) {
       if (question.required && members.length === 0) missing.push(question.id);
       members.forEach((member, i) => {
         for (const field of question.fields ?? [])
-          if (field.required && !answered(member?.[field.id])) missing.push(`${question.id}[${i}].${field.id}`);
+          if (field.required && !isAnswered(member?.[field.id])) missing.push(`${question.id}[${i}].${field.id}`);
       });
       continue;
     }
-    if (question.required && !answered(merged[question.id])) missing.push(question.id);
+    if (question.required && !isAnswered(merged[question.id])) missing.push(question.id);
   }
   return missing;
 }
