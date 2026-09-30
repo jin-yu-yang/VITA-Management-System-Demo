@@ -30,7 +30,18 @@
   - an explicit `null` means "clear this field on the next save", and is kept in the draft until then;
   - inside a household member, empty sub-fields are omitted, never `null`.
 - **Saves merge on the server** (`answers || payload`, with `null` clearing). So a save sends the whole version-2 draft, `null`s included, and a cleared field reaches the server.
-- **Re-render timing.** Every `input` event copies that question's value into the draft through `readField` without re-rendering. Only `change` (text on blur, choice or checkbox on change) re-renders, restoring focus to the control. A realtime redraw never loses typed text.
+- **Re-render timing.** Every `input` event copies that question's value into the draft through `readField`, without re-rendering. A realtime redraw therefore never loses typed text.
+  - **`change` re-renders only a control that can change the page:**
+    - a radio, checkbox or `<select>`;
+    - a text-like control, only when its question drives a `showIf` (`drivesVisibility(id)`, today only `gcf_tp_signature`/`gcf_sp_signature`) and the set of visible questions actually changed.
+  - **Why not every text field:** a text field's `change` fires on the mousedown that blurs it. Re-rendering there replaces the button under the pointer, so the click that should follow (Continue, a rail link, Submit) is lost. Version 1 never re-renders on text for the same reason.
+  - **Consequence:** "Needs an answer" and the rail's marks on the current step catch up at the next render, not on blur.
+  - This narrows spec §3's "a text field when it loses focus" for the reason above.
+- **No browser validation blocks Continue.** The spec says the form warns but always moves on.
+  - The `submit` handler handles `#intake-v2-form` before its `form.reportValidity()` call. `reportValidity` ignores `novalidate`, and `type="email"` alone would block Continue on a half-typed address.
+  - The renderer emits no `required`, `min`, `max` or `pattern` attributes; ranges are shown as text.
+- **Immutable draft updates.** Never mutate a draft array or household member in place. `saveAnswers` shallow-copies the draft into its envelope, and `staleSave` compares that envelope with the draft by JSON, so an in-place edit would silently change a retained envelope.
+- **Unanswered is one state.** Wherever two version-2 values are compared (the conflict screen, tests), `null`, a missing key, `""` and `[]` are equal. Use `isAnswered`.
 - **Hooks that must not change:** everything the existing browser, auth-browser and client-views tests use for version 1 (`#intake-form`, `.page-intro .overline` "STEP n OF 4", `#field-confirmed`, `fill-fictional`, `save-exit`, `.conflict-panel`, `reconcile-mine`, `.id-pill strong` first = Application ID, etc.).
   - The version-2 form uses its own form id, `#intake-v2-form`, and its own overline, "STEP n OF 9".
 - **Accessibility:**
@@ -103,29 +114,47 @@
 ```js
 // Every function is pure. `scope` makes IDs unique ("client", "office").
 renderQuestion(question, value, { variant = "general", lang = "en", scope, answers = {}, showMissing = false, contact = {} }) → string
-readField(controlElement) → { id: string, value: any, member?: { index: number, sub: string } }
-readForm(formElement, version) → { [id]: value }        // rendered questions only
-mergeIntoDraft(draft, patch) → newDraft                  // field by field; never drops keys absent from patch
+// A control descriptor is plain data, so the reading rules are testable in Node:
+//   { q, member?, sub?, part?, type, value, checked }
+//   q = question id; member/sub for household controls; part = "month"|"day"|"year".
+valuesFromControls(descriptors) → { [id]: value }        // pure; every question present in the list
+describeControl(element) → descriptor                    // DOM, reads data-* and value/checked
+readField(element) → { [id]: value }                     // DOM: describes every control of the element's question (or, in the household, of the whole group) and calls valuesFromControls
+readForm(formElement) → { [id]: value }                  // DOM: every [data-control] in the form
+mergeIntoDraft(draft, patch) → newDraft                  // field by field; never drops keys absent from patch; never mutates
+drivesVisibility(id) → boolean                           // true when some showIf in the catalogue names this field
+renderRichText(text) → string                            // intros and tips: escape, then **bold**, "- " lists, blank-line paragraphs
 formatAnswer(question, value, { variant = "general", lang = "en" }) → string | null
 ```
-- Every question's wrapper carries `data-q="<id>"`.
-- Household controls carry `data-q="hh"`, `data-member="<n>"` and `data-sub="<sub>"`.
-- "Add a person" is `data-action="add-member"` with `data-q="hh"`, and Remove is `data-action="remove-member"` with `data-member="<n>"`.
-- A date's three boxes carry `data-date-part="month|day|year"`.
+- **Every input, select and textarea carries `data-control`.**
+- **Top-level controls carry `data-q="<id>"`.**
+- **Household controls carry `data-q="hh"`, `data-member="<n>"` and `data-sub="<sub>"`.** A sub-question's wrapper never carries its own `data-q`, so `closest("[data-q]")` always finds the right question.
+- **Radio and checkbox options each have their own id,** `field-<scope>-<id>-<value>`. The `change` handler refocuses by id, and radios share a name.
+- **Household buttons:** "Add a person" is `data-action="add-member"`, and Remove is `data-action="remove-member"` with `data-member="<n>"`.
+- **A date's three boxes** carry `data-date-part="month|day|year"`.
+- **The section intro** (`section.intro[variant][lang]`) and every tip go through `renderRichText`. Their text is Markdown-lite: there are about 150 `**bold**` runs in the catalogue, and bulleted lists.
+- **`formatAnswer` formats dates by splitting the string,** never through `new Date(…)`, which shifts a date by the time zone.
 
-- [ ] **Step 1: Failing tests** (`tests/intake-form.test.mjs`). Render from the real catalogue (`findQuestion(2, …)`). Use a minimal DOM for the read tests: Node has no DOM, so give `readField` and `readForm` a tiny adapter. They accept any object with `querySelectorAll`, `closest`, `dataset`, `value`, `checked` and `type`. Build fake elements in the test, or parse the rendered HTML with a small helper in the test file. Say which one you chose.
+- [ ] **Step 1: Failing tests** (`tests/intake-form.test.mjs`). Render from the real catalogue (`findQuestion(2, …)`).
+  - The read tests use `valuesFromControls` with hand-built descriptors.
+  - The DOM wrappers (`describeControl`, `readField`, `readForm`) are covered by Task 6's browser phase.
   - **Rendering:**
-    - For each type in the catalogue (pick one question per type: text, longtext, email, phone, zip, year, number with a range, date, choice with ≤6 and >6 options, yesno with and without `not_sure`, multi, who, group):
+    - For each type in the catalogue (pick one question per type: text, signature, longtext, email, phone, zip, year, number with a range, date, choice with ≤6 and >6 options, yesno with and without `not_sure`, multi, who, group):
       - the HTML contains `data-q="<id>"`;
       - a `<label for="field-client-<id>">` or a `<legend>`;
       - the question's wording;
       - for choice, yesno, multi and who, every option's label.
     - `who` omits "My spouse" unless `answers.marital_status === "married"`.
     - A `choice` with more than 6 options renders a `<select>`.
-    - `longtext` has `maxlength="5000"`.
+    - `longtext` has `maxlength="5000"`, and a character count appears only when the value is within 500 of the limit.
+    - No rendered control has `required`, `min`, `max` or `pattern`.
+    - Every radio and checkbox has a unique id.
+    - `renderRichText("**W-2** & <b>\n- one\n- two")` gives `<strong>W-2</strong> &amp; &lt;b&gt;` and a two-item `<ul>`.
+    - `drivesVisibility("marital_status")` and `drivesVisibility("gcf_sp_signature")` are true; `drivesVisibility("tp_first_name")` is false.
     - `showMissing` on an unanswered required question adds an element with id `field-client-<id>-missing` and the control's `aria-describedby` references it. An answered question has neither.
     - The senior variant renders the senior wording for a question whose wordings differ (find one in the catalogue).
-  - **Round trip:** render with a value, read back, and get the same value.
+  - **`multi`/`who` "No one":** descriptors with "No one" and "Me" both checked, where "No one" is the one just changed, read as `["none"]` (use the catalogue's value for "No one"). The rule lives in `valuesFromControls`, which takes an optional `{ changed: value }` hint.
+  - **Round trip:** render with a value, build descriptors from the rendered HTML's option values and checked state (a small regex helper in the test file), read back, and get the same value.
     - dates: `"1961-04-12"`;
     - `who`: `["me", "spouse"]` when married;
     - `multi`;
@@ -185,8 +214,21 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
   - **`tests/window-state.test.mjs`:** `visitedSteps` round-trips; a malformed value (bad `caseId` or non-integer steps) is dropped.
 - [ ] **Step 2:** Run the three files to confirm they fail.
 - [ ] **Step 3: Implement.**
-  - **The generator.** Build the version-2 generator from a fixed fictional person: a single adult with one household member, wages yes, everything else no or not sure, a phone and a best time. Walk the catalogue's visible required questions until `missingToSubmit` is empty, filling each with its first valid value. Keep version 1's code path exactly.
+  - **The generator.** Write the version-2 answers as one explicit object literal for a fictional person:
+    - a never-married adult with one household member (a child);
+    - wages yes, and every other income and event no;
+    - a phone `2155550100`–`2155550199` chosen by seed, and a best time `["weekday_evening"]` (use the catalogue's real option values);
+    - the name and birth date varied by seed from small fictional lists;
+    - `form_version` left out.
+
+    Then add answers until the test's `missingToSubmit(2, …)` is `[]`. Don't generate values by walking the catalogue: a text question has no "first valid value". Keep version 1's code path exactly.
+  - **`fillBlankAnswers(current, generated, version = 1)`:**
+    - version 2 iterates the union of both objects' catalogue keys;
+    - blank means `!isAnswered`, so `null`, `""` and `[]` count as blank.
+    - Test it.
   - **The controller:**
+    - `pickAnswers(source, version)` has a version everywhere it is called: `applyCase`, `editAnswers` and `reconcileAnswers`, each using `state.savedCase?.intakeVersion`.
+    - A version-2 `editAnswers` patch may be all `null`s: the "nothing to edit" early return checks for keys, not values.
     - `applyCase` uses the case's `intakeVersion` for `pickAnswers`, and for version 2 merges the contact fields via `CONTACT_FIELDS`, treating a `null` contact as empty.
     - `visitedSteps` persists through `persistSession`, is restored only when its `caseId` equals `selectedCaseId`, and is cleared by `clearSelection`.
   - **Window state:** add `visitedSteps` to `FIELDS` with a check (a `caseId` string, and an array of integers 0–8).
@@ -227,7 +269,7 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
     - a version-1 intake and other screens don't show it;
     - with `form_version: "senior"`, a question renders its senior wording.
   - **A submitted version-2 case** shows the read-only summary grouped by step with `formatAnswer` values, not the version-1 answer rows.
-  - **Conflict:** `conflictForm` for a version-2 case with a differing `best_contact_time` array and a differing household lists those rows, with question wording and `formatAnswer` values.
+  - **Conflict:** `conflictForm` for a version-2 case with a differing `best_contact_time` array and a differing household lists those rows, with question wording and `formatAnswer` values. A field that is `null` in the draft and missing on the server is not listed.
   - **Progress page:** a version-2 case with `service: "drop_off"` shows "Drop-off", and version 1's "Drop-off" still shows "Drop-off".
   - **CSS** (`tests/shell.test.mjs`): a `/* Part 4b: intake v2 */ … /* end part 4b */` block exists and has no hex except `#fff`.
 - [ ] **Step 2:** Run to confirm they fail.
@@ -262,18 +304,27 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 **Files:** `src/app.mjs` (and `tests/controller.test.mjs` if you add controller helpers).
 
 - [ ] **Step 1: Wire the version-2 form** in `app.mjs`, beside the version-1 `ANSWER_FORMS` handling. Keep version 1's paths unchanged.
-  - **`input`:** a control inside `#intake-v2-form` with `data-q` → `readField(control)`. For a top-level question, `controller.editAnswers({ [id]: value })`. For a household control, update that member (read the member's card, merge, then `editAnswers({ hh: members })`). Both run quietly, without re-rendering, as `editAnswerField` does.
-  - **`change`:** the same read, then `render()`, and focus back to the control, found by its id.
+  - **`input`:** a `[data-control]` inside `#intake-v2-form` that has `data-q` → `controller.editAnswers(readField(control))`.
+    - It runs quietly, as `editAnswerField` does, followed by `refreshSaveChip()`.
+    - `readField` on a household control returns the whole `hh` array. The draft is replaced, never mutated.
+    - Checkboxes are included, unlike version 1.
+  - **`change`:** the same read. Re-render only as the global constraint says: a radio, checkbox or select always; a text-like control only when `drivesVisibility(id)` and the visible set changed. Compare `isVisible` over the current step's questions before and after. Then focus the control by its id.
+  - **`submit` of `#intake-v2-form` (Continue):** handled before `form.reportValidity()`. It runs `editAnswers(readForm(form))`, then `goToStep(formStep + 1)`.
   - **Actions:**
-    - `go-step`: `await controller.goToStep(n)`, and focus `#main`.
-    - `back-step` on a version-2 case: `goToStep(formStep - 1)`.
-    - Submitting `#intake-v2-form` (Continue): `goToStep(formStep + 1)`.
+    - `go-step`: `editAnswers(readForm(form))`, `await controller.goToStep(n)`, then focus `#main`.
+    - `back-step` on a version-2 case: the same, to `formStep - 1`. Version 1's `back-step` is unchanged: it doesn't save.
     - `toggle-senior`: `editAnswers({ form_version: current === "senior" ? "general" : "senior" })`.
     - `add-member`: append `{}` (up to 10).
     - `remove-member`: remove that index.
-    - `fill-fictional` on a version-2 case: `fillBlankAnswers(draft, makeSampleAnswers({ version: 2, seed }))`, then `editAnswers` and `render`.
-  - **`save-exit`** saves as today, for both versions.
-- [ ] **Step 2:** `npm test`. Expected: PASS. The wiring has no unit tests of its own; Task 6's browser phase is its check.
+    - **`fill-fictional` and `confirm-regenerate`:** `fictional()` branches on `savedCase.intakeVersion`. For version 2, first `editAnswers(readForm(form))`. Then `makeSampleAnswers({ version: 2, seed })`, with `fillBlankAnswers(draft, generated, 2)` for a fill, or the generated set plus `null` for every other catalogue key already in the draft, for a regenerate.
+    - `save-exit` on a version-2 case: `editAnswers(readForm(form))` first, then as today.
+  - **Step 9's Submit saves first.** In `runCaseAction`, for `SUBMIT` on a version-2 case:
+    1. `editAnswers(readForm(form))`;
+    2. `if (state.dirty) await controller.saveAnswers()`;
+    3. then the action.
+
+    Today's `runAction` sends `expectedRevision` from `savedCase` without saving. A consent answered on step 9 would otherwise be dropped, and the refresh would then raise a conflict on a submitted case.
+- [ ] **Step 2:** `npm test`. Expected: PASS. The wiring has no unit tests of its own; Task 6's browser phase is its check, including the Submit-saves-first case.
 - [ ] **Step 3: Commit** ("Wire the version-2 intake").
 
 ---
@@ -282,16 +333,20 @@ formatAnswer(question, value, { variant = "general", lang = "en" }) → string |
 
 **Files:** `tests/browser.mjs` (a new phase; the main story is unchanged), `docs/design/screens/`, `docs/design/README.md`, `docs/design/redesign-review.md`.
 
-- [ ] **Step 1: Add one phase to the story,** after the main story's client phases.
-  1. `f.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`.
-  2. A second applicant (reuse the story's applicant B if it has a free client window; otherwise sign one in as the story already does) starts an application and lands on "STEP 1 OF 9".
-  3. Use Fill fictional details, then walk steps 1–8 with Continue.
-  4. On step 3, set marital status to married and check that a spouse question appears; set it back.
-  5. Flip the senior switch and check a wording change on the current step; flip it back.
-  6. On step 9, check "Everything required is answered.", tick `#field-confirmed`, and Submit.
-  7. On the progress page, check a client number.
-  8. In `finally`, set the workspace back to 1.
-  9. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
+- [ ] **Step 1: Add one phase to the story.** Put it after "a reset rebuilds the samples…" and before "nothing threw…". The reset phase compares case sets, so the new case must come after it. The console phase must still see only allowed lines.
+  1. `fixture.database.sql("update public.workspaces set default_intake_version=2 where id=$1", [workspaceId])`, using the id the story already has.
+  2. In a fresh client window, sign in as `applicantB` with `loginTestUser`, as the story does at `tests/browser.mjs:1137`. Start an application and land on "STEP 1 OF 9".
+  3. **Typing survives a redraw:** type part of a first name, then `fixture.database.sql("update public.cases set revision=revision where id=$1", …)` to force a realtime redraw (as the story does at `:657`), and check the box still holds the text.
+  4. **Continue never blocks:** type `not-an-email` into the email question and press Continue. The step still advances.
+  5. Use Fill fictional details, then walk steps 1–8 with Continue.
+  6. **Show-if and spouse:** on step 3, choose married and check a spouse question appears; choose never married and check it's gone.
+  7. **Senior switch:** flip it, check a wording change on the current step, and flip it back.
+  8. **Step 9:** check "Everything required is answered.", then answer the 15080 consent (`gcf_consent`, any option) without pressing Continue. Tick `#field-confirmed` and Submit.
+  9. **Submit saved first:** query `answers->>'gcf_consent'` on that case and expect the chosen value.
+  10. On the progress page, check a client number.
+  11. In `finally`: set the workspace back to 1 and close the window.
+  12. `shoot` step 2, step 6, a senior step, step 9 and the progress page.
+  13. Call `assertConsoleQuiet` on the window.
 
   Keep the rest of the story unchanged. That case is never opened on a staff screen.
 - [ ] **Step 2: Run all four suites** in the foreground (up to 10 minutes each), with output to `/tmp`:
