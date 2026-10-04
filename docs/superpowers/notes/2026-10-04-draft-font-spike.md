@@ -42,7 +42,7 @@ export const CJK_DRAW = "runs";
   draft PDF only carries the glyphs used (a few KB of font), not the 10 MB file.
 - CORS: every URL answers `200` with `access-control-allow-origin: *` (checked with curl and with
   `fetch` inside Chrome and Firefox).
-- Both packages pin an exact npm version, and jsDelivr npm versions are immutable.
+- All three packages pin an exact npm version, and jsDelivr npm versions are immutable.
 - Licence: the fonts are SIL Open Font License 1.1 (Noto Sans SC / TC / Noto Sans, (c) The Noto Project
   Authors). The npm wrapper packages are tagged `MIT AND OFL-1.1`. Fonts are fetched at runtime and never
   committed to the repo.
@@ -101,8 +101,14 @@ export function patchSubsetPadding(anyTtfBytes) {
 
 `b.constructor` is the Buffer class bundled inside fontkit (a plain `Uint8Array` makes fontkit's encoder
 throw "Invalid non-string/buffer chunk"). It depends on fontkit 1.1.1 internals, so keep fontkit pinned.
+
+Scope: `patchSubsetPadding` replaces `_addGlyph` on the **shared `TTFSubset` prototype**, so it changes the
+subsetting of **every** TrueType font embedded afterwards in that page or bundle (CJK and Latin alike), not
+only the font passed in. Call it once per page/bundle, before the first `embedFont(..., { subset: true })`.
+Calling it again is harmless (guarded by `__padded`). The padding is valid for any glyf font, so global scope
+is intended.
 Verified: after the patch, 3000 distinct CJK characters embed, every glyph of the embedded subset parses with
-fontTools, and the render is correct. The fallback if the patch is ever unwanted is `subset: false`, which
+fontTools, and the render is correct (see "Render verification limits" below). The fallback if the patch is ever unwanted is `subset: false`, which
 embeds the whole font (draft PDF grows to about 6.4 MB for SC) and also renders correctly.
 
 ## Step 2: Candidate A, fontsource pieces (`@fontsource/noto-sans-sc` / `-tc` 5.3.0)
@@ -145,7 +151,9 @@ clean, evenly weighted Noto Sans; TC form shows the Traditional labels (中間�
 
 esbuild bundle of pdf-lib + fontkit + the patch, loaded from a local page in **Google Chrome** (Playwright
 `channel: "chrome"`; the Playwright-managed Chromium is not installed on this machine, so I did not
-download it) and in Playwright **Firefox**. The page `fetch`es the two jsDelivr URLs per script, embeds
+download it) and in Playwright **Firefox**. This matches the repo's own browser story: `tests/support/browser-fixture.mjs`
+launches `chromium.launch({ channel: "chrome" })` for the `"chrome"` engine and Firefox for `"firefox"`
+(permutations in `tests/browser.mjs`), and Playwright's bundled Chromium is not installed. The page `fetch`es the two jsDelivr URLs per script, embeds
 them, writes the names on page 1 of the form, flattens, and returns the byte length. No exceptions.
 
 - zh-s: fetch 0.5-0.6 s, build 0.7-0.8 s, PDF 2,031,233 bytes (the blank template is 1,821,136).
@@ -183,3 +191,18 @@ zh-s form, `form1[0].page1[0].yourFirstName[0]` (rect x 18, y 468, 180 x 12.24; 
 
 For Task 9: with "runs" the field's own value is not updated by `updateFieldAppearances`, so draw the text
 from the widget rect before flattening (as above), and wrap if the text is wider than the rectangle.
+
+Regression test required (Task 9): add a unit test that embeds glyphs with odd-length `glyf` records
+(for example 美 林 and Latin letters such as `l o d 1 0` from the pinned SC font fixture) with
+`embedFont(bytes, { subset: true })` after `patchSubsetPadding`, saves the PDF, extracts the embedded
+FontFile2 stream, and asserts that the subset parses: via fontkit, `loca` is consistent with `glyf` (offsets
+monotonic, last offset equals the `glyf` length, every offset a multiple of 4 or 2 for short loca) and every
+glyph of the subset can be decoded without throwing. Without the patch this test fails (it is the exact
+"dots" bug), so a fontkit upgrade or a Buffer change breaks a test instead of drawing blanks.
+
+## Render verification limits
+
+Renders were checked only with macOS CoreGraphics (`sips`), plus structural validation of the embedded subset
+with fontTools (every glyph parses). pdf.js, Chrome's built-in PDF viewer and Acrobat were **not** checked.
+Chrome and Firefox only ran the build in the page (no exception, byte length returned); neither displayed
+the result.
