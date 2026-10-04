@@ -607,6 +607,8 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
   assert.match(app, /root\.innerHTML = views\.page\(state, screenFor\(state\)\);\s*applyPeek\(\);/);
   for (const event of ["pointerover", "pointerout", "focusin", "focusout"])
     assert.match(app, new RegExp(`root\\.addEventListener\\("${event}"`), event);
+  // Chrome's hover moving to root after a render removed the hovered node is not a leave.
+  assert.match(app, /"pointerover", \(event\) => \{\s*if \(event\.target !== root\) peek\.pointer/);
   // Only keyboard focus holds a peek.
   assert.match(app, /:focus-visible/);
   // The toggle tells the peek whether the click pinned or collapsed.

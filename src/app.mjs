@@ -268,7 +268,13 @@ if (!config) {
   window.addEventListener("contextmenu", release, true); // right-click, Ctrl+click
   window.addEventListener("blur", release);
   document.addEventListener("visibilitychange", release);
-  root.addEventListener("pointerover", (event) => peek.pointer(peekZone(event.target), event.pointerType));
+  // A pointerover on root itself is Chrome moving the hover to root when a
+  // render removed the node under a resting mouse; the pointer didn't move,
+  // so it is not a leave (it would end the no-re-peek after a collapse). The
+  // pointerout that follows it names the new node.
+  root.addEventListener("pointerover", (event) => {
+    if (event.target !== root) peek.pointer(peekZone(event.target), event.pointerType);
+  });
   root.addEventListener("pointerout", (event) => peek.pointer(peekZone(event.relatedTarget), event.pointerType));
   // Only keyboard focus in the sidebar holds a peek (a mouse click focuses
   // buttons in Chrome). Within the sidebar the next focusin decides.

@@ -128,7 +128,11 @@ Three rules the controller keeps:
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
-(sidebar plus corner toggle). An office screen chosen while a volunteer persona is active shows
+(sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
+while a mouse rests on the toggle, and closes 300 ms after the pointer and the keyboard leave the
+toggle and the sidebar; a click pins it. [`src/sidebar-peek.mjs`](../../src/sidebar-peek.mjs)
+decides, and `app.mjs` applies the peek in place after every render, so a realtime redraw keeps
+it. An office screen chosen while a volunteer persona is active shows
 the work board instead. A version-2 case's page reads its answers by sub-step, with the contact,
 materials and document-checklist cards, and Add a case follows the workspace's version
 ([below](#staff-views-and-add-a-case-version-2)).
