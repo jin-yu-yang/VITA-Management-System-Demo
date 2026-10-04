@@ -263,9 +263,10 @@ one-call `createAssistedCase`. Version 2 is `renderAddCaseV2` in `office-views.m
   the office" is off only until `#field-confirmed` is ticked (and while saving). A press with
   missing or invalid answers saves the draft and is refused: "Needs an answer" shows, every part
   that counts opens, and the keyboard goes to the count.
-- Leaving with unsaved answers (Cancel, the breadcrumb, "Back to Follow-ups", the sidebar's
-  links, or Add a case again) asks "Leave without saving?" first; Sign out and the persona switch
-  don't ask. A conflict with another window shows the shared reconcile choice.
+- Leaving with unsaved answers (Cancel, the breadcrumb's Work board, "Back to Follow-ups", or
+  the sidebar's Work board and All cases) asks "Leave without saving?" first; Sign out and the
+  persona switch leave without asking. The guard also covers `open-add-case`, though that button
+  isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
 
 ## Events and actions

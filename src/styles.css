@@ -5415,6 +5415,15 @@ textarea::placeholder {
 .add-case-v2 .add-case-bar .btn {
   margin: 0;
 }
+/* Above 760px the bar is sticky and covers the foot of the window, so the
+   browser's own scroll-into-view on Tab would leave the focused field under
+   it. Measured at its widest wrap (761-800px) the bar is 173px tall; 12.5rem
+   (200px) clears it with a margin and grows with the reader's text size. */
+@media (min-width: 761px) {
+  html:has(.add-case-v2) {
+    scroll-padding-bottom: 12.5rem;
+  }
+}
 @media (max-width: 1024px) {
   .add-case-v2 .add-case-layout {
     grid-template-columns: minmax(0, 1fr);

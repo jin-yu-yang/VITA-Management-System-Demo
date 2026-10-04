@@ -10,7 +10,6 @@ import {
   findQuestion,
   wording,
   isVisible,
-  isAnswered,
   findSubstep,
 } from "./intake-catalogue.mjs";
 import { formatAnswer, sendable } from "./intake-form.mjs";
@@ -996,7 +995,7 @@ export function documentChecklist(record, rights, ui = {}) {
   }).join("");
   return `<section class="panel doc-checklist" aria-labelledby="doc-checklist-title"><div class="section-head"><h2 id="doc-checklist-title">Document checklist</h2></div><p class="field-note">From the client's answers. Same-day clients bring these to the visit.</p>${reasons
     .map((reason) => explain({ reason }))
-    .join("")}${groups || '<p class="muted">The client\'s answers call for no documents yet.</p>'}</section>`;
+    .join("")}${groups}</section>`;
 }
 
 function requestCard(record, request, rights, ui) {

@@ -409,7 +409,7 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
 - **Dropped:** the map's "flag the case in the volunteer queue" for digital assets. Nothing designs that flag; it can be raised again as its own feature.
 - **Add a case** opens and closes sub-steps instead of sections, and gains the Documents accordion (§6.7). Every household member it adds carries a `member_id`. Its Send rule (option a) is unchanged.
 - **The switch-over** is the migration after 4c's last one (020, after 018's card authority and 019's version-2 samples). **It is held until the group's wording review is done (decided 2026-10-04)** and ships as its own small PR; 4c's browser story runs on version 2 through the test fixture meanwhile.
-- **Add a case** picks its page by the open case's version, and by the workspace only for a new draft. Its leave check also covers the sidebar's "All cases" and pressing "Add a case" again.
+- **Add a case** picks its page by the open case's version, and by the workspace only for a new draft. Its leave check covers the exits that can be reached on the page: Cancel, the breadcrumb's Work board, "Back to Follow-ups", and the sidebar's Work board and All cases. Sign out and the persona switch leave without asking.
 
 ## 11. Testing
 

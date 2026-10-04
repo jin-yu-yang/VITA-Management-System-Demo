@@ -119,8 +119,11 @@ const OFFLINE_CITY = "Riverbend";
 const MINE_CITY = "Keepmine City";
 const OTHER_CITY = "Otherwindow City";
 
-// Words a client screen must never carry: this demo records a workflow, and
-// there is no amount, refund, bank or routing field anywhere in it.
+// Words a client screen must never carry: this demo records a workflow and
+// shows no amounts. A version-2 client does choose a refund method (and a
+// direct-deposit document card), so the check leaves out the client's own
+// `.open-documents` card list, which names the papers to bring; every other
+// part of the screen must stay free of them.
 const MONEY_WORDS = Object.freeze(["$", "refund", "routing", "deposit", "direct debit"]);
 
 // What counts as the keyboard being somewhere a person can use it.
@@ -3096,6 +3099,17 @@ async function runPermutation(t, roles) {
         // stale boxes back over the office's edit.
         await jump("about.you");
         await waitForQuiet(page);
+        // Warm the realtime path first: a no-change bump from the office whose
+        // re-read is waited for, so the change under the press is not the
+        // first one this window has seen in a while (the hold lasts 2 seconds,
+        // and a cold delivery in Firefox could outlast it).
+        const warmed = page.waitForResponse(
+          (response) => response.url().includes("/rest/v1/case_document_cards"),
+          { timeout: ARRIVAL_MS },
+        );
+        await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [own.id]);
+        await warmed;
+        await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /Unsaved changes/, "the draft must be clean for this check");
         await mark("#intake-v2-form", "__beforeOffice");
         const heldLink = railLink("about.address");
@@ -3103,24 +3117,28 @@ async function runPermutation(t, roles) {
         const pressAt = await heldLink.boundingBox();
         await page.mouse.move(pressAt.x + pressAt.width / 2, pressAt.y + pressAt.height / 2);
         await page.mouse.down();
-        // The re-read a realtime change causes ends with the document cards;
-        // the hold's 2-second safety timer is running, so it must land well
-        // inside it.
+        // The re-read a realtime change causes ends with the document cards.
+        // The wait is the suite's usual arrival time, not a tight window: a
+        // slow realtime delivery is not a failure here. What the check below
+        // pins is that the page has not redrawn by the time the re-read is in,
+        // which fails by itself if the hold's 2-second safety timer ran out.
         const reread = page.waitForResponse(
           (response) => response.url().includes("/rest/v1/case_document_cards"),
-          { timeout: 1500 },
+          { timeout: ARRIVAL_MS },
         );
+        const pressedAt = Date.now();
         await fixture.database.sql(
           `update public.cases set answers = answers || '{"tp_job_title":"Librarian"}'::jsonb,
              revision = revision + 1 where id=$1`,
           [own.id],
         );
         await reread;
+        const rereadMs = Date.now() - pressedAt;
         await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
         assert.equal(
           await marked("#intake-v2-form", "__beforeOffice"),
           true,
-          "the page redrew during the press, so the stale-box case was not reached",
+          `the page redrew during the press, so the stale-box case was not reached (the re-read came ${rereadMs} ms into the press; the hold lasts 2000 ms)`,
         );
         assert.equal(await box("tp_job_title").inputValue(), "Teacher");
         await page.mouse.up();
