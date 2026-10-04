@@ -211,3 +211,29 @@ test("a query string does not change what is served or refused", async () => {
     assert.equal((await request(port, "/server.mjs?v=2")).status, 404);
   });
 });
+
+test("the three IRS forms are served as PDFs and nothing else under forms", async () => {
+  await withServer(CONFIGURED, async (port) => {
+    for (const path of [
+      "/src/forms/f13614c-2025.pdf",
+      "/src/forms/f13614cn-2025.pdf",
+      "/src/forms/f13614ct-2025.pdf",
+    ]) {
+      const response = await request(port, path);
+      assert.equal(response.status, 200, path);
+      assert.equal(response.headers["content-type"], "application/pdf", path);
+      assert.equal(response.headers["x-content-type-options"], "nosniff", path);
+      assert.match(response.body, /^%PDF-/, path);
+    }
+    for (const path of [
+      "/src/forms/other.pdf",
+      "/src/forms/../server.mjs",
+      "/src/forms/f13614c-2026.pdf",
+      "/src/forms/f13614cx-2025.pdf",
+      "/src/forms/%2e%2e/server.mjs",
+      "/src/forms/",
+      "/src/f13614c-2025.pdf",
+    ])
+      assert.equal((await request(port, path)).status, 404, path);
+  });
+});

@@ -15,6 +15,10 @@ import path from "node:path";
 const PAGE = "/index.html";
 const ASSET = /^\/src\/[a-z-]+\.(?:mjs|css|svg|png)$/;
 const VENDOR = /^\/src\/vendor\/[a-z-]+\.mjs$/;
+// The three IRS forms the draft PDF is built on (English, Simplified and
+// Traditional Chinese), by their exact names: the module rule above admits no
+// digits, and nothing else under `src/forms/` is served.
+const FORMS = /^\/src\/forms\/f13614c[nt]?-2025\.pdf$/;
 const CONFIG = "/public-config.json";
 
 const TYPES = {
@@ -23,6 +27,7 @@ const TYPES = {
   ".mjs": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".pdf": "application/pdf",
 };
 const JSON_TYPE = "application/json; charset=utf-8";
 const DEFAULT_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -64,7 +69,8 @@ const served = (requested) =>
   requested === PAGE ||
   requested === CONFIG ||
   ASSET.test(requested) ||
-  VENDOR.test(requested);
+  VENDOR.test(requested) ||
+  FORMS.test(requested);
 
 export function createAppServer({ env = process.env, root = DEFAULT_ROOT } = {}) {
   return http.createServer(async (req, res) => {

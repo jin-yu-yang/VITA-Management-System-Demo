@@ -222,6 +222,37 @@ test("the drawer list is exported once, for the renderer and app.mjs's focus fal
   assert.match(app, /views\.DRAWERS\.includes\(/);
 });
 
+// Part 4b2 (Task 8): app.mjs has no DOM harness, so the wiring is pinned at
+// the source: every control the version-2 screens emit has its handler, and
+// the step-index wiring it replaced is gone.
+test("app.mjs handles every version-2 action and no longer moves the form by step index", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const screens = read("../src/intake-views.mjs");
+  const emitted = new Set([
+    ...[...screens.matchAll(/data-action="([a-z-]+)"/g)].map((match) => match[1]),
+    ...[...screens.matchAll(/button\([^;]*?,\s*"([a-z-]+)",\s*"(?:primary|secondary|text|inline)/g)].map((match) => match[1]),
+    ...(screens.includes('"mark-card"') ? ["mark-card"] : []),
+  ]);
+  for (const action of [
+    "go-substep", "toggle-rail-step", "toggle-panel", "back-step", "change-substep",
+    "back-to-summary", "mark-card", "print-summary", "view-draft",
+  ]) {
+    assert.ok(emitted.has(action), `the screens emit ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  for (const action of emitted)
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  assert.match(app, /controller\.moveSubstep\(1\)/, "Continue moves one sub-step");
+  assert.match(app, /controller\.moveSubstep\(-1\)/, "Back moves one sub-step");
+  assert.match(app, /member_id: newMemberId\(\)/, "a new person gets a member id");
+  assert.match(app, /"The draft is not available yet\."/);
+  assert.match(app, /addEventListener\("afterprint"/);
+  assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
+  for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/])
+    assert.doesNotMatch(app, gone);
+});
+
 // PR 4 (the office screens) styles its new containers in one marked block of
 // the stylesheet, on the design tokens only.
 const stylesheet = () =>

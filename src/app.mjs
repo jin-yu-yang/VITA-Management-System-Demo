@@ -4,18 +4,21 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, missingToSubmit, stepsFor } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, missingToSubmit } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
   invalidAnswers,
   needsRedraw,
+  newMemberId,
   noteState,
   readField,
   readForm,
   sendable,
-  stepStatus,
+  stepRollup,
+  substepStatus,
 } from "./intake-form.mjs";
+import { cardsFor } from "./document-cards.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -99,9 +102,10 @@ if (!config) {
   let holdTimer = null;
   // In-place DOM updates waiting for the press to end (afterPress).
   let heldUpdates = [];
-  // Where the last render drew: screen, case and form step. A version-2 render
-  // at the same place keeps focus, caret and scroll; one at a new place (a new
-  // step, or entering or leaving the form) starts at the top.
+  // Where the last render drew: screen, case and sub-step (version 1: form
+  // step). A version-2 render at the same place keeps focus, caret and scroll;
+  // one at a new place (a new sub-step, or entering or leaving the form)
+  // starts at the top.
   let lastPlace = null;
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
@@ -131,7 +135,10 @@ if (!config) {
     }
     heldRender = null; // a real render: any held request is now satisfied (spec §2.4 rule 1)
     const state = controller.getState();
-    const place = `${state.screen}|${state.selectedCaseId}|${state.formStep}`;
+    // A version-2 case's place is its sub-step (resolved as the page resolves
+    // it), so scroll and focus restore compare sub-steps; version 1 keeps
+    // its step index.
+    const place = `${state.screen}|${state.selectedCaseId}|${controller.currentSubstep() ?? state.formStep}`;
     const wasV2 = v2OnPage();
     // A full rebuild replaces the fields, so remember where the keyboard was.
     // `describeFocus` decides what can be read; nothing it does may throw here,
@@ -372,11 +379,9 @@ if (!config) {
   // household control), and are read with the renderer's own `readField` and
   // `readForm`. `#field-confirmed` has no `data-q`, so it never matches.
   const V2_CONTROLS = "#intake-v2-form [data-control][data-q]";
-  const LAST_V2_STEP = stepsFor(2).length - 1;
   const isV2Case = (state) => Number(state.savedCase?.intakeVersion) === 2;
-  // The step the form shows, clamped as the renderer clamps it.
-  const v2Step = (state) =>
-    Math.min(Math.max(Number(state.formStep) || 0, 0), LAST_V2_STEP);
+  // A sub-step or slot id in an element id: "about.you" → "about-you".
+  const dashed = (id) => String(id ?? "").replace(/\./g, "-");
 
   // What a control answers, as plain values, so an update queued behind a
   // press can find its question again after the page has been replaced.
@@ -423,7 +428,7 @@ if (!config) {
     const draft = state.draftAnswers ?? {};
     const answer = v2Answer(ref, draft);
     if (!answer) return;
-    const showMissing = (state.visitedSteps ?? []).includes(v2Step(state));
+    const showMissing = (state.visitedSubsteps ?? []).includes(controller.currentSubstep());
     const revealed = new Set(state.revealed ?? []);
     const note = document.getElementById(`${answer.base}-note`);
     if (note)
@@ -443,20 +448,27 @@ if (!config) {
       );
   }
 
-  // The current step's rail mark, the same function the render uses.
+  // The current sub-step's rail mark and its step's, the same functions the
+  // render uses. Either span may be absent (the phone bar folds the tree).
   function paintV2Rail() {
     const state = controller.getState();
-    const step = v2Step(state);
-    const status = stepStatus(
-      step,
-      state.draftAnswers ?? {},
-      state.visitedSteps ?? [],
-      new Set(state.revealed ?? []),
-    );
-    paintInPlace(document.getElementById(`rail-step-${step}-status`), "rail-status", {
-      text: status.text,
-      className: `is-${status.key}`,
-    });
+    const current = controller.currentSubstep();
+    const substep = current ? findSubstep(current) : null;
+    if (!substep) return;
+    const answers = state.draftAnswers ?? {};
+    const marks = {
+      answers,
+      visited: state.visitedSubsteps ?? [],
+      revealed: new Set(state.revealed ?? []),
+      cards: cardsFor(answers, state.savedCase?.documentCards ?? []),
+    };
+    const paint = (id, status) =>
+      paintInPlace(document.getElementById(id), "rail-status", {
+        text: status.text,
+        className: `is-${status.key}`,
+      });
+    paint(`rail-sub-${dashed(current)}-status`, substepStatus(current, marks));
+    paint(`rail-step-${substep.step.id}-status`, stepRollup(substep.step.id, marks));
   }
 
   // A longtext's character count.
@@ -526,17 +538,40 @@ if (!config) {
       const renderedIds = new Set(
         [...form.querySelectorAll("[data-q]")].map((element) => element.dataset.q),
       );
-      const state = controller.getState();
-      redraw = needsRedraw(renderedIds, v2Step(state), state.draftAnswers ?? {});
+      redraw = needsRedraw(
+        renderedIds,
+        controller.currentSubstep(),
+        controller.getState().draftAnswers ?? {},
+      );
     }
     if (redraw) setTimeout(() => render(), 0);
   }
 
-  async function goToV2Step(step) {
+  // A sub-step change: what is in the boxes first (the move saves it), then
+  // the move, then the keyboard to the new page.
+  async function moveV2(go, focusId = null) {
     sweepV2Form();
-    await controller.goToStep(step);
+    await go();
+    focusV2Arrival(focusId);
+  }
+
+  // Where the keyboard lands after a sub-step change: the element `focusId`
+  // names (an "Upload now" card on the new page), else the alerts heading on
+  // arriving at review.check, else `#main` (the render has already scrolled
+  // to the top).
+  function focusV2Arrival(focusId = null) {
+    const card = focusId ? document.getElementById(focusId) : null;
+    if (card && root.contains(card)) return card.focus();
+    const alerts =
+      controller.currentSubstep() === "review.check" ? root.querySelector("#alerts-title") : null;
+    if (alerts) return alerts.focus();
     root.querySelector("#main")?.focus({ preventScroll: true });
   }
+
+  // The panels a generic `toggle-panel` control may open: the phone's "All
+  // steps" and a documents sub-step's Maybe needed group. Rail steps have
+  // their own action (`setRailExpanded`), and nothing else is a panel here.
+  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+)$/;
 
   // `opener` is passed when the control was described before an await (the
   // Log a call button, captured before its case is loaded); otherwise it is
@@ -735,14 +770,14 @@ if (!config) {
       return;
     }
     if (type === "SUBMIT" && isV2Case(state)) {
-      // Step 9's own answers (the consent) are saved before the submit, which
-      // sends the saved case's revision: otherwise they would be dropped, and
-      // the refresh would raise a conflict on a submitted case.
+      // Anything still in the boxes is saved before the submit, which sends
+      // the saved case's revision: otherwise it would be dropped, and the
+      // refresh would raise a conflict on a submitted case.
       sweepV2Form();
-      // Submit's disabled state is drawn at render, and typing on step 9
-      // never redraws, so the gate is checked again from the draft (spec
-      // §2.5: nothing invalid is ever submitted). Failing it reveals every
-      // invalid answer and redraws, so step 9 lists them and Submit is off.
+      // Submit's disabled state is drawn at render, and typing never
+      // redraws, so the gate is checked again from the draft (spec §2.5:
+      // nothing invalid is ever submitted). Failing it reveals every invalid
+      // answer and goes to review.check, whose alerts list them.
       const draft = controller.getState().draftAnswers ?? {};
       const invalid = invalidAnswers(null, draft);
       if (
@@ -756,14 +791,11 @@ if (!config) {
         } finally {
           quiet = false;
         }
-        render();
+        // Submit stays off: the alerts list says what to fix, and the
+        // keyboard goes to its heading.
+        await controller.goToSubstep("review.check");
         notify("Some answers still need a change before you can send.");
-        // Submit is now disabled: the keyboard goes to the list of what to fix.
-        const heading = root.querySelector("#still-title");
-        if (heading) {
-          heading.tabIndex = -1;
-          heading.focus();
-        } else root.querySelector("#main")?.focus();
+        focusV2Arrival();
         return;
       }
       if (controller.getState().dirty) await controller.saveAnswers();
@@ -989,12 +1021,65 @@ if (!config) {
         controller.navigate("intake");
         break;
       case "back-step":
-        // Version 2 saves on every step change; version 1's Back never did.
-        if (isV2Case(state)) await goToV2Step(state.formStep - 1);
+        // Version 2 saves on every sub-step change; version 1's Back never did.
+        if (isV2Case(state)) await moveV2(() => controller.moveSubstep(-1));
         else controller.setFormStep(Math.max(0, state.formStep - 1));
         break;
-      case "go-step":
-        await goToV2Step(Number(target.dataset.step));
+      // A rail link, an alert, a card's why line, "Upload now" (which names
+      // the card to land on in `data-focus`).
+      case "go-substep":
+        await moveV2(
+          () => controller.goToSubstep(target.dataset.substep),
+          target.dataset.focus ?? null,
+        );
+        break;
+      // The summary's Change: the sub-step opens with "Back to summary".
+      case "change-substep":
+        await moveV2(() => controller.openForChange(target.dataset.substep));
+        break;
+      case "back-to-summary":
+        await moveV2(() => controller.backToSummary());
+        break;
+      case "toggle-rail-step": {
+        const stepId = target.dataset.stepId ?? "";
+        controller.setRailExpanded(stepId, target.getAttribute("aria-expanded") !== "true");
+        // The tree was redrawn: the keyboard stays on this step's toggle.
+        root
+          .querySelector(`.rail-toggle[data-step-id="${CSS.escape(stepId)}"]`)
+          ?.focus();
+        break;
+      }
+      case "toggle-panel": {
+        const name = target.dataset.panel ?? "";
+        if (!V2_PANELS.test(name)) break;
+        controller.togglePanel(name);
+        root
+          .querySelector(`[data-action="toggle-panel"][data-panel="${CSS.escape(name)}"]`)
+          ?.focus();
+        break;
+      }
+      case "mark-card": {
+        const slot = target.dataset.slot ?? "";
+        sweepV2Form();
+        await controller.setDocumentCard(slot, target.dataset.status);
+        // The card's status line, never a button: the upload buttons are
+        // disabled and the mark buttons change with the status. On the
+        // progress page a card marked "Don't have" leaves the list.
+        (
+          document.getElementById(`doc-${dashed(slot)}-status`) ??
+          document.getElementById(`doc-${dashed(slot)}`) ??
+          root.querySelector("#main")
+        )?.focus();
+        break;
+      }
+      case "print-summary":
+        // Only `.summary-print` prints while the body carries the class
+        // (styles.css, part 4b2); "afterprint" takes it off again.
+        document.body.classList.add("print-summary");
+        window.print();
+        break;
+      case "view-draft":
+        notify("The draft is not available yet.");
         break;
       case "toggle-senior":
         controller.editAnswers({
@@ -1002,9 +1087,11 @@ if (!config) {
         });
         break;
       case "add-member": {
-        // A new array, never the draft's own: `{}` is a card with no answers yet.
+        // A new array, never the draft's own: a card with no answers yet but
+        // its own id, which its document cards are keyed by.
         const members = Array.isArray(state.draftAnswers?.hh) ? state.draftAnswers.hh : [];
-        if (members.length < 10) controller.editAnswers({ hh: [...members, {}] });
+        if (members.length < 10)
+          controller.editAnswers({ hh: [...members, { member_id: newMemberId() }] });
         break;
       }
       case "remove-member":
@@ -1194,8 +1281,11 @@ if (!config) {
       // form warns but always moves on, and a half-typed `type="email"` would
       // otherwise block it.
       try {
-        sweepV2Form();
-        await controller.goToStep(controller.getState().formStep + 1);
+        // Enter in a lone text box submits even with no Continue on the page;
+        // after a Change, that is the way back to the summary.
+        if (controller.getState().returnToSummary)
+          await moveV2(() => controller.backToSummary());
+        else await moveV2(() => controller.moveSubstep(1));
       } catch (error) {
         notify(error?.message ?? "Something went wrong.");
       }
@@ -1257,6 +1347,11 @@ if (!config) {
     } catch (error) {
       notify(error?.message ?? "Something went wrong.");
     }
+  });
+
+  // The summary's print mode lasts for one print only.
+  window.addEventListener("afterprint", () => {
+    document.body.classList.remove("print-summary");
   });
 
   // The case page's tabs follow the ARIA tab pattern: arrows, Home and End move

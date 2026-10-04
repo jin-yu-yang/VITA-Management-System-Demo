@@ -6,7 +6,7 @@
 // wrappers over valuesFromControls, which holds every reading rule.
 import { esc, button } from "./ui.mjs";
 import {
-  CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, isAnswered,
+  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
   checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions,
 } from "./intake-catalogue.mjs";
 
@@ -26,17 +26,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const asSet = (value) => (value instanceof Set ? value : new Set(Array.isArray(value) ? value : []));
-// Version 1 of this module keyed its checks by step index. The step-index
-// forms stay until Task 8 removes their last callers (stepStatus, the
-// controller and app.mjs); a sub-step id is the form that stays.
-const stepQuestions = (step) => {
-  const found = stepsFor(2)[step];
-  return found ? questionsFor(2, found) : [];
-};
 const everySubstepQuestions = () =>
   substepsFor(2).filter((substep) => substep.kind === "questions").flatMap((substep) => substepQuestions(substep.id));
-const questionsOf = (key) =>
-  key === null || key === undefined ? everySubstepQuestions() : typeof key === "number" ? stepQuestions(key) : substepQuestions(key);
+// A sub-step id's questions, or every sub-step's when null.
+const questionsOf = (substepId) =>
+  substepId === null || substepId === undefined ? everySubstepQuestions() : substepQuestions(substepId);
 
 // ---------------------------------------------------------------------------
 // Options, tips and rich text
@@ -156,7 +150,6 @@ export function noteState(question, value, { showMissing = false, showInvalid = 
  * Ids of visible questions in the sub-step `substepId` (or every sub-step when
  * null) whose sendable value fails checkValue, in catalogue order. A household
  * member's sub-field is "hh[<n>].<sub>", n being the member's index in the draft.
- * (A number is the old step index, kept until Task 8.)
  */
 export function invalidAnswers(substepId, answers = {}) {
   const draft = answers ?? {};
@@ -185,22 +178,6 @@ export const countText = (value) => {
     ? `${length.toLocaleString("en-US")} of ${LONGTEXT_LIMIT.toLocaleString("en-US")} characters`
     : "";
 };
-
-/**
- * The rail mark of one step. Missing and invalid come from the draft alone
- * (it holds the contact fields; spec §2.5). An invalid answer counts only once
- * revealed, so typing never flips the mark.
- */
-export function stepStatus(step, answers = {}, visited = [], revealed = new Set()) {
-  const ids = new Set(stepQuestions(step).map((question) => question.id));
-  const missing = missingToSubmit(2, answers ?? {}).filter((id) => ids.has(id.replace(/\[.*$/, "")));
-  const shown = asSet(revealed);
-  const shownInvalid = invalidAnswers(step, answers).filter((id) => shown.has(id));
-  const wasVisited = Array.isArray(visited) ? visited.includes(step) : Boolean(visited?.has?.(step));
-  if ((wasVisited && missing.length > 0) || shownInvalid.length > 0) return { key: "needs", text: "Needs answers" };
-  if (missing.length === 0) return { key: "done", text: "Done" };
-  return { key: "none", text: "" };
-}
 
 // ---------------------------------------------------------------------------
 // Sub-steps: visibility, the hidden-sub-step fallback and status marks

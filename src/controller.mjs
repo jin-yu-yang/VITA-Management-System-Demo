@@ -1457,21 +1457,6 @@ export function createController({
     await goToSubstep("review.summary");
   }
 
-  // Task 8 removes this: app.mjs still moves the version-2 form by step
-  // index. It goes to the step's first sub-step and keeps `formStep` in step
-  // for the page that still reads it.
-  async function goToStep(step) {
-    if (caseVersion() !== 2) return;
-    const steps = stepsFor(2);
-    const at = Math.min(steps.length - 1, Math.max(0, Math.trunc(Number(step) || 0)));
-    await goToSubstep(steps[at].substeps[0].id);
-    if (findSubstep(state.formSubstep)?.step.id === steps[at].id && state.formStep !== at) {
-      state.formStep = at;
-      persistSession();
-      show();
-    }
-  }
-
   // A rail step's toggle, in one change to `openPanels`: a step is expanded
   // when `rail-shut:<id>` is absent and `rail-open:<id>` is present or it is
   // the current step, so expanding adds `rail-open:` and collapsing adds
@@ -1972,7 +1957,6 @@ export function createController({
     openForChange,
     backToSummary,
     setRailExpanded,
-    goToStep,
     removeMember,
     saveAnswers,
     reconcileAnswers,
