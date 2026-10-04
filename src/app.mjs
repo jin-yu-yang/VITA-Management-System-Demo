@@ -790,6 +790,10 @@ if (!config) {
         ? "Your answers are kept. Save when you are ready."
         : "The office’s answers are loaded. Save when you are ready.",
     );
+    // On Add a case the choice's panel goes once made, and its button with it:
+    // the keyboard goes to Save draft, the next thing to press.
+    if (controller.getState().screen === "office-add-case" && !root.contains(document.activeElement))
+      root.querySelector('[data-action="save-office-draft"]')?.focus();
   }
 
   // ---- workflow actions -------------------------------------------------
@@ -1165,8 +1169,14 @@ if (!config) {
       case "save-office-draft": {
         sweepV2Form();
         const { reason } = await controller.saveOfficeDraft();
-        // "busy" and "left": nothing was saved by this press, so nothing is said.
-        if (!reason) notify("The draft is saved. Nobody was emailed.");
+        // Said only when the save really landed: no reason, a case, and the
+        // draft now matches the server ("saved", or "idle" when there was
+        // nothing to send). "busy" and "left" saved nothing by this press,
+        // and a failure has already thrown with its error on screen.
+        const after = controller.getState();
+        const landed =
+          !reason && Boolean(after.savedCase) && !after.dirty && ["saved", "idle"].includes(after.saveState);
+        if (landed) notify("The draft is saved. Nobody was emailed.");
         // The button was off while the save ran, which dropped the keyboard;
         // it goes back to it, unless the office has moved on to a field.
         if (!root.contains(document.activeElement))

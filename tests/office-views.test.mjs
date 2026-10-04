@@ -766,3 +766,24 @@ test("the version-2 Add a case refuses a persona without the right", () => {
   assert.match(refused, /fill-assisted-intake/);
   assert.match(addV2({ person: null }), /Choose a volunteer persona to act as\./);
 });
+
+// Fix round 1 (I1): a conflict on a saved office draft shows the shared choice
+// under the header, and the document marks wait for it, as the client's do.
+test("a conflict on a saved office draft shows the reconcile panel and holds the marks", () => {
+  const answers = V2_SAMPLE();
+  const conflict = { code: "REMOTE_CHANGED", baseRevision: 4, serverRevision: 5 };
+  const record = savedV2({ revision: 5, answers: { ...withoutIds(answers, "tp_phone", "best_contact_time", "best_contact_note"), tp_first_name: "Lan" } });
+  const html = addV2({ draftAnswers: answers, savedCase: record, conflict, openAddSubsteps: ["documents"], dirty: true, saveState: "unsaved" });
+  const meta = html.indexOf('<div class="application-meta">');
+  const panel = html.indexOf('<section class="panel conflict-panel"');
+  assert.ok(meta >= 0 && panel > meta, "the panel follows the header");
+  assert.ok(panel < html.indexOf('<form id="add-case-v2-form"'), "and comes before the form");
+  assert.match(html, /data-action="reconcile-mine"/);
+  assert.match(html, /data-action="reconcile-server"/);
+  assert.match(html, /<th scope="row">[^<]*<\/th><td>Mei<\/td><td>Lan<\/td>/);
+  assert.match(docCardOf(subOf(html, "documents"), "w2.household"), /data-status="later" disabled>/);
+  // No conflict: no panel, and the marks are on.
+  const calm = addV2({ draftAnswers: answers, savedCase: savedV2(), openAddSubsteps: ["documents"] });
+  assert.doesNotMatch(calm, /conflict-panel/);
+  assert.match(docCardOf(subOf(calm, "documents"), "w2.household"), /data-status="later">/);
+});

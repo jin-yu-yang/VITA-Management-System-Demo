@@ -11,7 +11,7 @@ import {
 import { renderQuestion, formatAnswer, invalidAnswers, visibleSubsteps } from "./intake-form.mjs";
 import { cardsFor, CARD_SUBSTEPS } from "./document-cards.mjs";
 import { docCard, variantOf } from "./intake-views.mjs";
-import { saveStatus } from "./client-views.mjs";
+import { saveStatus, conflictForm } from "./client-views.mjs";
 import {
   esc,
   icon,
@@ -485,7 +485,8 @@ function partBody(id, view) {
 // need a case to land on, so they wait for the first save.
 function documentsBody(view) {
   const cards = cardsFor(view.answers, view.savedCase?.documentCards ?? []);
-  const off = view.busy || view.officeSaving || !view.savedCase ? " disabled" : "";
+  // A conflict holds them too, as on the client's own cards.
+  const off = view.busy || view.officeSaving || view.conflict || !view.savedCase ? " disabled" : "";
   const groups = CARD_SUBSTEPS.map((name) => {
     const mine = cards.filter((card) => card.substep === name);
     if (!mine.length) return "";
@@ -547,7 +548,7 @@ function createdBy(record, people) {
  *
  * @param {object} ui `{ person, busy, officeSaving, draftAnswers, savedCase,
  *   openAddSubsteps, openPanels, addCaseShowMissing, revealed, dirty,
- *   saveState, error, retryable, people }`, `savedCase` decorated
+ *   saveState, conflict, error, retryable, people }`, `savedCase` decorated
  *   (`decorateStaffCase`)
  */
 export function renderAddCaseV2(ui = {}) {
@@ -564,6 +565,7 @@ export function renderAddCaseV2(ui = {}) {
     savedCase: record,
     busy: Boolean(view.busy),
     officeSaving: Boolean(view.officeSaving),
+    conflict: Boolean(view.conflict),
     variant: variantOf(answers),
     parts: addCaseParts(answers),
     open: new Set(Array.isArray(view.openAddSubsteps) ? view.openAddSubsteps : []),
@@ -602,5 +604,7 @@ export function renderAddCaseV2(ui = {}) {
     "primary",
     `id="add-case-send"${addCaseSendOff({ confirmed, busy: page.busy, officeSaving: page.officeSaving }) ? " disabled" : ""}`,
   )}</div>`;
-  return `<div class="add-case-v2">${breadcrumb}${meta}${pill}<div class="add-case-layout">${form}${side}</div>${bar}</div>`;
+  // Another window saved this draft under unsaved edits: the shared choice,
+  // whose two buttons the client's form already wires (reconcile-*).
+  return `<div class="add-case-v2">${breadcrumb}${meta}${conflictForm(view)}${pill}<div class="add-case-layout">${form}${side}</div>${bar}</div>`;
 }

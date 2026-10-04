@@ -515,6 +515,21 @@ test("Add a case picks its page by the open case's version, else the workspace's
   assert.doesNotMatch(old, /add-case-v2-form/);
 });
 
+test("Add a case passes a conflict to its page, which offers the choice", () => {
+  const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 5, answers: { tp_first_name: "Lan" }, documentCards: [], materials: [], internalHistory: [] };
+  const html = staffScreen(
+    addState({
+      workspace: { defaultIntakeVersion: 2 },
+      savedCase: draftV2,
+      selectedCaseId: "c2",
+      draftAnswers: { tp_first_name: "Mei" },
+      dirty: true,
+      conflict: { code: "REMOTE_CHANGED", baseRevision: 4, serverRevision: 5 },
+    }),
+  );
+  assert.match(html, /<div class="application-meta">[\s\S]*?<section class="panel conflict-panel"[\s\S]*?<form id="add-case-v2-form"/);
+});
+
 test("the leave dialog asks before discarding the answers on Add a case", () => {
   const html = dialog({ dialog: "leave-add-case", dialogContext: { to: "open-board" } });
   assert.match(html, /<h2 id="modal-title">Leave without saving\?<\/h2>/);
@@ -560,6 +575,13 @@ test("app.mjs wires the version-2 Add a case", () => {
   assert.match(app, /form\.id === "add-case-v2-form"\) return;/, "an implicit submit never reaches reportValidity");
   assert.match(app, /controller\.saveOfficeDraft\(\{ send: true \}\)/);
   assert.match(app, /"The draft is saved\. Nobody was emailed\."/);
+  // Fix round 1 (I2): the notice only when the save really landed.
+  const save = handler("save-office-draft");
+  assert.match(save, /const \{ reason \} = await controller\.saveOfficeDraft\(\);/);
+  assert.match(save, /const landed =\s+!reason && Boolean\(after\.savedCase\) && !after\.dirty && \["saved", "idle"\]\.includes\(after\.saveState\);/);
+  assert.match(save, /if \(landed\) notify\("The draft is saved\. Nobody was emailed\."\);/);
+  // Fix round 1 (I1): a reconcile on Add a case keeps the keyboard on the page.
+  assert.match(app, /async function reconcile\(useMine\)[\s\S]*?if \(controller\.getState\(\)\.screen === "office-add-case" && !root\.contains\(document\.activeElement\)\)/);
   assert.match(app, /"The application is with the office\."/);
   assert.match(app, /"The draft is saved\. Some answers still need attention before it can be sent\."/);
   assert.match(app, /"Confirm that you have checked these answers with the client first\."/);

@@ -1321,13 +1321,24 @@ export function createController({
     show();
   }
 
-  // Save draft (`send: false`) and Send to the office (`send: true`). Returns
-  // `{ sent }`, with `reason` when nothing was sent on purpose: "busy" (one
-  // save at a time), "unconfirmed" (the box isn't ticked: nothing at all is
-  // done) or "answers" (saved, but something is missing or invalid: the page
-  // marks it) or "left" (the office left the draft, or opened another case,
-  // while it was out: nothing more is done). A failure is thrown, with its
-  // error already on screen.
+  // Save draft (`send: false`) and Send to the office (`send: true`).
+  // Returns, or throws:
+  //   * `{ sent: true }`: Send only. Saved and submitted; the office is on the
+  //     case page.
+  //   * `{ sent: false }` (no reason): Save draft only. The press ran to the
+  //     end: the case exists and any unsaved edit was saved. Typing that
+  //     landed during the save stays dirty for the next press, so a caller
+  //     that says "saved" also checks `dirty` and `saveState`.
+  //   * `{ sent: false, reason: "busy" }`: another save or create is in
+  //     flight. Nothing was done by this press.
+  //   * `{ sent: false, reason: "unconfirmed" }`: Send only. The box isn't
+  //     ticked; nothing at all was done.
+  //   * `{ sent: false, reason: "answers" }`: Send only. Saved, but something
+  //     is missing or invalid: nothing was submitted and the page marks it.
+  //   * `{ sent: false, reason: "left" }`: the office left the draft, or
+  //     opened another case, while it was out. Nothing more was done.
+  //   * thrown: a failure (offline, refused, a conflict), with its error
+  //     already on screen. Nothing more was done.
   async function saveOfficeDraft({ send = false } = {}) {
     if (state.officeSaving || substepSaveInFlight) return { sent: false, reason: "busy" };
     if (send && !state.openPanels.includes("confirmed")) return { sent: false, reason: "unconfirmed" };

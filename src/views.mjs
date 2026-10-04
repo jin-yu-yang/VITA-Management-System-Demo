@@ -321,6 +321,7 @@ function addCasePage(state, person, people) {
     revealed: state.revealed,
     dirty: state.dirty,
     saveState: state.saveState,
+    conflict: state.conflict,
     error: state.error,
     retryable: state.retryable,
     people,

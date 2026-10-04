@@ -4031,3 +4031,35 @@ test("on the client's own version-2 draft, typing while a save is out is kept; t
   assert.equal(state.saveState, "saved");
   controller.stop();
 });
+
+// Part 4c, Task 4 fix round 1 (I1): a saved office draft changed elsewhere
+// while the office has unsaved edits raises the usual choice on Add a case,
+// and choosing keeps the office on the page with nothing visited sent.
+test("a conflict on a saved office draft is reconciled on Add a case, then saves", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase({ caseId: "case-v2" });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.records.set("case-v2", { ...store.records.get("case-v2"), revision: 2, answers: { tp_first_name: "Lan" } });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  let state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(state.screen, "office-add-case");
+  await assert.rejects(controller.saveOfficeDraft(), { code: "CONFLICT" });
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0, "nothing is rebased behind the office's back");
+  state = controller.getState();
+  await controller.reconcileAnswers({ answers: state.draftAnswers, expectedServerRevision: state.savedCase.revision });
+  state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.screen, "office-add-case", "the office stays on Add a case");
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(state.dirty, true);
+  assert.deepEqual(await controller.saveOfficeDraft(), { sent: false });
+  const saves = writesOf(store, "SAVE_ANSWERS");
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].expectedRevision, 2);
+  assert.equal(saves[0].payload.answers.tp_first_name, "Ming");
+  assert.equal(Object.hasOwn(saves[0].payload, "visited"), false, "the office never sends visits");
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().screen, "office-add-case");
+  controller.stop();
+});
