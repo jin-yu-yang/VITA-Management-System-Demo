@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createBrowserFixture,
@@ -38,6 +40,7 @@ import {
   pageText,
   pressUntil,
   pressUntilEffect,
+  railSub,
   readAlerts,
   readBoardTotals,
   readClientPlace,
@@ -54,12 +57,14 @@ import {
   waitForCaseWorkspace,
   waitForDetail,
   waitForQuiet,
+  waitForSubstep,
   waitForText,
   waitForTextGone,
   watchAlerts,
 } from "./support/story-pages.mjs";
 import { REFERENCE_PATTERN, SQLSTATE_ERROR_CODES } from "../src/contracts.mjs";
 import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
+import { DRAFT_FONT_FIXTURES } from "../src/draft-pdf.mjs";
 
 // Task 10A: the demonstration story (spec §9) driven through two real engines,
 // twice with the roles swapped, against the isolated local stack — plus the
@@ -280,7 +285,7 @@ async function fillIntakeToReview(page) {
 }
 
 // ---------------------------------------------------------------------------
-// The version-2 form (PR 4b): reachable only in the phase that switches the
+// The version-2 form (PR 4b2): reachable only in the phase that switches the
 // story's workspace to version 2 for its length
 // ---------------------------------------------------------------------------
 
@@ -297,21 +302,62 @@ const caseAnswer = async (fixture, caseId, key) =>
     ])
   )?.value ?? null;
 
-/**
- * Wait until the version-2 form is on this step (1-based). Like `waitForStep`,
- * it reads the marker above the heading, which moves only once the step change
- * (and the save before it) has landed.
- */
-async function waitForStepOf9(page, step) {
-  await waitFor(
-    page,
-    `intake step ${step} of 9`,
-    (wanted) =>
-      (document.querySelector(".page-intro .overline")?.textContent ?? "").trim() === wanted,
-    `STEP ${step} OF 9`,
-    ARRIVAL_MS,
+/** One document card's stored row, or null while nobody has marked it. */
+const cardRow = (fixture, caseId, slotId) =>
+  one(
+    fixture,
+    "select slot_id, status, group_override from public.case_document_cards where case_id=$1 and slot_id=$2",
+    [caseId, slotId],
   );
-}
+
+// Every sub-step the fictional example shows, in order: drop-off, never
+// married, one child, wages and a direct deposit. The walk presses Continue
+// once on each and must arrive at the next, so this is also the rail's list.
+const V2_WALK = Object.freeze([
+  "before.ready",
+  "before.service",
+  "before.language",
+  "about.you",
+  "about.address",
+  "about.marital",
+  "about.situation",
+  "about.irs",
+  "household.members",
+  "income.wages",
+  "income.retirement",
+  "income.investments",
+  "income.rental",
+  "income.business",
+  "income.other",
+  "expenses.deductible",
+  "expenses.other",
+  "expenses.events",
+  "refund.payment",
+  "refund.consent",
+  "optional.questions",
+  "documents.identity",
+  "documents.income",
+  "documents.events",
+  "documents.other",
+  "notes.anything",
+  "review.check",
+  "review.summary",
+  "review.submit",
+]);
+
+// The Needed cards of the married example that are still open when it is
+// submitted, in the order the progress page lists them.
+const OPEN_DOCUMENTS = Object.freeze([
+  "photo_id.tp",
+  "photo_id.sp",
+  "ssn.tp",
+  "ssn.sp",
+  "w2.household",
+  "bank.household",
+]);
+
+const DRAFT_FAILED = "The draft could not be made. Close this tab and try again.";
+const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again later.";
 
 // ---------------------------------------------------------------------------
 // One permutation: client in one engine, staff in the other
@@ -1933,18 +1979,27 @@ async function runPermutation(t, roles) {
       await waitForText(client, classReference, ARRIVAL_MS);
     });
 
-    // After the reset, which compares case sets. PR 4b's nine-step form is
-    // reached only on a version-2 workspace, and nothing switches one yet, so
-    // this phase switches the story's own workspace for its length and always
-    // sets it back. The case it makes is never opened on a staff screen.
+    // After the reset, which compares case sets. The version-2 form (parts 4b
+    // and 4b2) is reached only on a version-2 workspace, and nothing switches
+    // one yet, so this phase switches the story's own workspace for its length
+    // and always sets it back. The case it makes is never opened on a staff
+    // screen.
     //
     // Typing rule: text goes in with `fill`, or `focus` then the keyboard.
     // Nothing clicks into a field, because that click is itself a press, and it
     // fires the `change` of the field left behind: the only press after typing
     // is the one a check is about, and it is sent once, with no retry helper.
-    await phase("a client walks the nine-step intake on a version-2 workspace", async () => {
+    //
+    // Moving: Continue walks every visible sub-step exactly once, from
+    // before.ready to review.submit. Everywhere else the phase moves the way a
+    // person jumps around: a rail link (`go-substep`), an alert, a Change.
+    await phase("a client walks the version-2 intake, sub-step by sub-step", async () => {
       const { workspaceId } = fixture.database;
       let v2Win = null;
+      let againWin = null;
+      // Console lines this phase causes on purpose. Each pattern is added
+      // beside the check that causes it; nothing else may appear.
+      const deliberate = [];
       try {
         await fixture.database.sql(
           "update public.workspaces set default_intake_version=2 where id=$1",
@@ -1955,14 +2010,58 @@ async function runPermutation(t, roles) {
         const box = (id) => page.locator(`#field-client-${id}`);
         const continueButton = page.locator('#intake-v2-form button[type="submit"]');
         const submitButton = page.locator('#intake-v2-form [data-case-action="SUBMIT"]');
-        const backButton = page.locator('[data-action="back-step"]');
-        const railLink = (index) => page.locator(`.rail-link[data-step="${index}"]`);
         const confirmBox = page.locator("#field-confirmed");
-        // A step change no check is about: wait for stillness, press, arrive.
-        const goTo = async (control, step) => {
+        const railLink = (id) => page.locator(`.rail-sublink[data-substep="${id}"]`);
+        const railToggle = (stepId) => page.locator(`.rail-toggle[data-step-id="${stepId}"]`);
+        const stepOf = (id) => id.split(".")[0];
+        const here = () =>
+          page.evaluate(() => document.querySelector("#intake-v2-form")?.dataset.substep ?? null);
+        const rail = (id) => railSub(page, id);
+        // A move no check is about: wait for stillness, press, arrive.
+        const goTo = async (control, id) => {
           await waitForQuiet(page);
           await control.click({ timeout: CLICK_MS });
-          await waitForStepOf9(page, step);
+          await waitForSubstep(page, id);
+        };
+        const railOpen = (stepId) =>
+          page.evaluate((wanted) => {
+            const toggle = document.querySelector(`.rail-toggle[data-step-id="${wanted}"]`);
+            return {
+              expanded: toggle?.getAttribute("aria-expanded") ?? null,
+              hidden: document.getElementById(`rail-subs-${wanted}`)?.hidden ?? null,
+            };
+          }, stepId);
+        // A rail step's toggle, and the keyboard staying on it (spec §3.2).
+        const toggleRailStep = async (stepId, expanded) => {
+          await waitForQuiet(page);
+          await railToggle(stepId).click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            `the rail step ${stepId} to be ${expanded ? "expanded" : "collapsed"}`,
+            ([wanted, open]) =>
+              document
+                .querySelector(`.rail-toggle[data-step-id="${wanted}"]`)
+                ?.getAttribute("aria-expanded") === String(open) &&
+              document.getElementById(`rail-subs-${wanted}`)?.hidden === !open,
+            [stepId, expanded],
+            RENDER_MS,
+          );
+          assert.equal(
+            await page.evaluate(
+              (wanted) =>
+                document.activeElement?.matches(`.rail-toggle[data-step-id="${wanted}"]`) ?? false,
+              stepId,
+            ),
+            true,
+            `the ${stepId} toggle lost the keyboard`,
+          );
+        };
+        // A rail jump. A collapsed step's links are hidden, so its toggle
+        // opens it first; it then stays open (`rail-open:<step>`).
+        const jump = async (id) => {
+          await waitForQuiet(page);
+          if ((await railOpen(stepOf(id))).expanded !== "true") await toggleRailStep(stepOf(id), true);
+          await goTo(railLink(id), id);
         };
         // A radio redraws the page around itself, so it is read back, not
         // `check()`ed: the element Playwright pressed is gone by then.
@@ -1992,15 +2091,50 @@ async function runPermutation(t, roles) {
             caret: document.activeElement?.selectionStart ?? null,
             scrollY: window.scrollY,
           }));
+        const focused = () => page.evaluate(() => document.activeElement?.id ?? null);
         const readNode = (id) =>
           page.evaluate((wanted) => {
             const node = document.getElementById(wanted);
             return { className: node?.className ?? null, text: node?.textContent.trim() ?? null };
           }, id);
         const note = (id) => readNode(`field-client-${id}-note`);
-        const rail = (index) => readNode(`rail-step-${index}-status`);
+        const railStep = (stepId) => readNode(`rail-step-${stepId}-status`);
         const chip = async () =>
           (await page.locator(".application-meta .save-chip").innerText()).trim();
+        const toast = () =>
+          page.evaluate(() => document.querySelector("#toast")?.textContent.trim() ?? null);
+        const header = () =>
+          page.evaluate(() => {
+            const intro = document.querySelector(".form-workspace .page-intro");
+            return {
+              overline: intro?.querySelector(".overline")?.textContent.trim() ?? null,
+              title: intro?.querySelector("h1")?.textContent.trim() ?? null,
+              count: intro?.querySelector(".substep-count")?.textContent.trim() ?? null,
+            };
+          });
+        // Where the rail says the form is, read off the tree itself.
+        const railHere = () =>
+          page.evaluate(() => {
+            const link = document.querySelector('.rail-sublink[aria-current="step"]');
+            const step = document.querySelector(".rail-step.is-current");
+            return {
+              substep: document.querySelector("#intake-v2-form")?.dataset.substep ?? null,
+              current: link?.dataset.substep ?? null,
+              here: link?.querySelector(".rail-here")?.textContent.trim() ?? null,
+              step: step?.dataset.stepId ?? null,
+              expanded: step?.querySelector(".rail-toggle")?.getAttribute("aria-expanded") ?? null,
+              shown: step ? step.querySelector(".rail-subs")?.hidden === false : null,
+            };
+          });
+        // Every mark on the rail, collapsed steps included.
+        const railMarks = () =>
+          page.evaluate(() =>
+            Object.fromEntries(
+              [...document.querySelectorAll('.rail-tree [id^="rail-"][id$="-status"]')].map(
+                (span) => [span.id, `${span.className} | ${span.textContent.trim()}`],
+              ),
+            ),
+          );
         // A marker is a property on a node: it survives an in-place update and
         // dies with a redraw. Set only once the page is still, because a late
         // realtime refresh from an earlier save is a legitimate redraw.
@@ -2013,17 +2147,51 @@ async function runPermutation(t, roles) {
             ([wanted, key]) => document.querySelector(wanted)?.[key] === true,
             [selector, name],
           );
-        const stillToAnswer = () =>
+        // review.check's two blocks, as a person reads them.
+        const alertsList = () =>
           page.evaluate(() =>
-            [...document.querySelectorAll(".still-step")].map((group) => ({
-              step: group.querySelector("h3")?.textContent.trim() ?? null,
-              items: [...group.querySelectorAll(".still-item")].map((item) => ({
-                question: item.querySelector(".still-q")?.textContent.trim() ?? null,
-                flag: item.querySelector(".still-flag")?.textContent.trim() ?? null,
-                step: item.dataset.step ?? null,
+            [...document.querySelectorAll(".alerts-block .alerts-step")].map((group) => ({
+              step: group.querySelector("h4")?.textContent.trim() ?? null,
+              items: [...group.querySelectorAll(".alert-item")].map((item) => ({
+                question: item.querySelector(".alert-q")?.textContent.trim() ?? null,
+                flag: item.querySelector(".alert-flag")?.textContent.trim() ?? null,
+                substep: item.dataset.substep ?? null,
                 kind: item.className,
               })),
             })),
+          );
+        const warningsList = () =>
+          page.evaluate(() => ({
+            heading: document.querySelector(".warnings-block h3")?.textContent.trim() ?? null,
+            items: [...document.querySelectorAll(".warnings-block .warning-item")].map((item) => ({
+              label: item.querySelector("strong")?.textContent.trim() ?? null,
+              detail: item.querySelector("small")?.textContent.trim() ?? null,
+              focus: item.querySelector("button")?.dataset.focus ?? null,
+            })),
+          }));
+        const cardStatus = (slot) => readNode(`doc-${slot.replace(/\./g, "-")}-status`);
+        const markCard = async (slot, status, word) => {
+          await waitForQuiet(page);
+          await page
+            .locator(`[data-action="mark-card"][data-slot="${slot}"][data-status="${status}"]`)
+            .click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            `the ${slot} card to read ${word}`,
+            ([id, wanted]) =>
+              document.getElementById(id)?.textContent.trim() === `Status: ${wanted}`,
+            [`doc-${slot.replace(/\./g, "-")}-status`, word],
+            ARRIVAL_MS,
+          );
+        };
+        // The mark the rail shows for a sub-step once the server has answered.
+        const railReads = (id, text) =>
+          waitFor(
+            page,
+            `the rail to mark ${id} ${JSON.stringify(text)}`,
+            ([span, wanted]) => document.getElementById(span)?.textContent.trim() === wanted,
+            [`rail-sub-${id.replace(/\./g, "-")}-status`, text],
+            ARRIVAL_MS,
           );
 
         // Applicant B already has cases from earlier phases (a version-1 draft
@@ -2058,55 +2226,244 @@ async function runPermutation(t, roles) {
           2,
         );
         await clickAction(page, "continue-intake");
-        await waitForStepOf9(page, 1);
-        await choose("service", "same_day");
-        await choose("language", "english");
-        await goTo(continueButton, 2);
+        await waitForSubstep(page, "before.ready");
 
-        // Step 2: a realtime redraw keeps the keyboard, the caret and the scroll.
-        await waitForQuiet(page);
-        await page.evaluate(() => window.scrollBy(0, 160));
-        await box("tp_first_name").focus();
-        await page.keyboard.type("Xia");
-        await waitForQuiet(page);
-        const typed = await page.evaluate(() => {
-          document.activeElement.setSelectionRange(2, 2);
-          return {
-            id: document.activeElement.id,
-            value: document.activeElement.value,
-            caret: document.activeElement.selectionStart,
-            scrollY: window.scrollY,
-          };
-        });
-        assert.equal(typed.id, "field-client-tp_first_name");
-        assert.ok(typed.scrollY > 0, "the page never scrolled, so keeping the scroll proves nothing");
-        await redrawFromElsewhere();
+        // ---- The walk: Continue on every visible sub-step, once ----------
+        for (let at = 0; at < V2_WALK.length; at += 1) {
+          const id = V2_WALK[at];
+          const next = V2_WALK[at + 1] ?? null;
+          if (at > 0) await waitForSubstep(page, id);
+          // The rail marks where the form is, and the current step is open.
+          assert.deepEqual(
+            await railHere(),
+            {
+              substep: id,
+              current: id,
+              here: "You are here",
+              step: stepOf(id),
+              expanded: "true",
+              shown: true,
+            },
+            `the rail on arriving at ${id}`,
+          );
+          let pressed = false;
+
+          if (id === "before.ready") {
+            assert.deepEqual(await header(), {
+              overline: "BEFORE YOU START",
+              title: "Before you start",
+              count: "1 of 3",
+            });
+            assert.deepEqual(await railOpen("about"), { expanded: "false", hidden: true });
+            // Another step's toggle opens it where it is: no move, no save.
+            await toggleRailStep("about", true);
+            assert.equal(await here(), "before.ready", "a rail toggle moved the form");
+            assert.deepEqual(await railOpen("household"), { expanded: "false", hidden: true });
+            // Every blank filled once, here, so the walk has its answers.
+            await clickAction(page, "fill-fictional");
+            await waitFor(
+              page,
+              "the fill to be announced",
+              () => document.querySelector("#toast")?.textContent.includes("Fictional details filled in"),
+              undefined,
+              RENDER_MS,
+            );
+          }
+
+          if (id === "before.service") {
+            assert.deepEqual(await rail("before.ready"), {
+              className: "rail-status is-done",
+              text: "Done",
+            });
+            assert.equal(await box("service-drop_off").isChecked(), true);
+            // The fill is saved: the rail now lists exactly the walk.
+            assert.deepEqual(
+              await page.evaluate(() =>
+                [...document.querySelectorAll(".rail-sublink")].map((link) => link.dataset.substep),
+              ),
+              [...V2_WALK],
+              "the rail does not list the sub-steps this example shows",
+            );
+          }
+
+          if (id === "about.you") {
+            // A realtime redraw keeps the keyboard, the caret and the scroll.
+            await waitForQuiet(page);
+            await page.evaluate(() => window.scrollBy(0, 160));
+            await box("tp_middle_name").focus();
+            await page.keyboard.type("Xia");
+            await waitForQuiet(page);
+            const typed = await page.evaluate(() => {
+              document.activeElement.setSelectionRange(2, 2);
+              return {
+                id: document.activeElement.id,
+                value: document.activeElement.value,
+                caret: document.activeElement.selectionStart,
+                scrollY: window.scrollY,
+              };
+            });
+            assert.equal(typed.id, "field-client-tp_middle_name");
+            assert.ok(typed.scrollY > 0, "the page never scrolled, so keeping the scroll proves nothing");
+            await redrawFromElsewhere();
+            assert.deepEqual(
+              await keyboardNow(),
+              typed,
+              "a realtime redraw moved the keyboard, the caret or the scroll",
+            );
+
+            // Leaving a text field doesn't redraw.
+            await waitForQuiet(page);
+            await mark("#intake-v2-form", "__beforeTab");
+            await page.keyboard.press("Tab");
+            await waitForQuiet(page);
+            assert.equal(
+              await marked("#intake-v2-form", "__beforeTab"),
+              true,
+              "leaving a text field redrew the page",
+            );
+            assert.equal(await focused(), "field-client-tp_last_name");
+
+            // Continue after typing, with a real mouse and one press: the
+            // `change` of the field left behind fires on that press and must
+            // not swallow it.
+            await waitForQuiet(page);
+            await box("email").fill("mei.lin@example.com");
+            await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            await continueButton.click({ timeout: CLICK_MS });
+            pressed = true;
+          }
+
+          if (id === "about.address") {
+            assert.equal(await answer("email"), "mei.lin@example.com");
+            assert.equal(await answer("tp_middle_name"), "Xia");
+            await waitForQuiet(page);
+            const opened = await keyboardNow();
+            assert.equal(opened.scrollY, 0, "the new sub-step did not open at the top");
+            assert.equal(opened.id, "main", "the new sub-step did not put the keyboard on main");
+            // A never-married client: the spouse's sub-step is hidden, so this
+            // is the second of five.
+            assert.deepEqual(await header(), {
+              overline: "STEP 1 OF 9 · ABOUT YOU",
+              title: "Mailing address",
+              count: "2 of 5",
+            });
+            assert.equal(await rail("about.spouse"), null, "a never-married client's rail lists the spouse");
+            // A gap left on purpose: review.check lists it later.
+            await box("addr_city").fill("");
+          }
+
+          if (id === "about.marital") {
+            assert.deepEqual(await rail("about.address"), {
+              className: "rail-status is-needs",
+              text: "Needs answers",
+            });
+            assert.deepEqual(await railStep("about"), {
+              className: "rail-status is-needs",
+              text: "Needs answers",
+            });
+            assert.deepEqual(await rail("about.you"), { className: "rail-status is-done", text: "Done" });
+            assert.equal(await answer("addr_city"), null, "the cleared city is still on the server");
+            // The phone's "All steps" opens the tree at narrow widths, and the
+            // keyboard stays on it; the screenshot shows the open tree.
+            await page.setViewportSize({ width: MOBILE_WIDTH, height: 900 });
+            const allSteps = page.locator('[data-action="toggle-panel"][data-panel="rail-all"]');
+            await waitForQuiet(page);
+            await allSteps.click({ timeout: CLICK_MS });
+            await waitFor(
+              page,
+              "the phone's step list to open",
+              () =>
+                document.querySelector("#rail-tree")?.classList.contains("is-open") &&
+                document
+                  .querySelector('[data-action="toggle-panel"][data-panel="rail-all"]')
+                  ?.getAttribute("aria-expanded") === "true",
+              undefined,
+              RENDER_MS,
+            );
+            assert.equal(
+              await page.evaluate(
+                () => document.activeElement?.dataset.panel ?? null,
+              ),
+              "rail-all",
+              "All steps lost the keyboard",
+            );
+            await shoot(page, "intake-v2-rail-tree");
+            await page.setViewportSize({ width: MOBILE_WIDTH, height: 900 });
+            await waitForQuiet(page);
+            await allSteps.click({ timeout: CLICK_MS });
+            await waitFor(
+              page,
+              "the phone's step list to close",
+              () => !document.querySelector("#rail-tree")?.classList.contains("is-open"),
+              undefined,
+              RENDER_MS,
+            );
+            await page.setViewportSize(DESKTOP);
+          }
+
+          if (id === "income.wages") {
+            // A sub-step with a lead line shows it, and no section intro.
+            assert.deepEqual(
+              await page.evaluate(() => ({
+                lead: document.querySelector("#intake-v2-form .q-lead")?.textContent.trim() ?? null,
+                intros: document.querySelectorAll("#intake-v2-form .q-intro").length,
+              })),
+              { lead: "Did you or your spouse receive any of these in 2025?", intros: 0 },
+            );
+            assert.deepEqual(await header(), {
+              overline: "STEP 3 OF 9 · INCOME",
+              title: "Wages and tips",
+              count: "1 of 6",
+            });
+          }
+
+          if (id === "review.check") {
+            // Arriving by Continue puts the keyboard on the alerts heading.
+            await waitForQuiet(page);
+            assert.equal(await focused(), "alerts-title");
+          }
+
+          if (id === "review.submit") {
+            assert.equal(await submitButton.isDisabled(), true, "Submit was on before the box was ticked");
+            await tickBox(page, "field-confirmed");
+            assert.equal(
+              await submitButton.isDisabled(),
+              true,
+              "Submit was on with an answer still missing",
+            );
+            // "See the alerts" is a jump like any other: to the heading.
+            await goTo(
+              page.locator('#intake-v2-form [data-action="go-substep"][data-substep="review.check"]'),
+              "review.check",
+            );
+            await waitForQuiet(page);
+            assert.equal(await focused(), "alerts-title");
+          }
+
+          if (next && !pressed) {
+            await waitForQuiet(page);
+            await continueButton.click({ timeout: CLICK_MS });
+          }
+        }
         assert.deepEqual(
-          await keyboardNow(),
-          typed,
-          "a realtime redraw moved the keyboard, the caret or the scroll",
+          (
+            await one(fixture, "select intake_visited from public.cases where id=$1", [own.id])
+          ).intake_visited,
+          // review.submit too: "See the alerts" left it.
+          [...V2_WALK].sort(),
+          "the server's visits are not the walk",
         );
 
-        // Leaving a text field doesn't redraw.
-        await waitForQuiet(page);
-        await mark("#intake-v2-form", "__beforeTab");
-        await page.keyboard.press("Tab");
-        await waitForQuiet(page);
-        assert.equal(
-          await marked("#intake-v2-form", "__beforeTab"),
-          true,
-          "leaving a text field redrew the page",
-        );
-        assert.equal((await keyboardNow()).id, "field-client-tp_middle_name");
+        // ---- 4b's checks, moving by rail ---------------------------------
 
         // A trailing space survives a redraw that rebuilds the draft (spec
-        // §2.5). The draft must not be dirty: a dirty draft is never rebuilt
-        // when the revision is unchanged, and would pass without the rule.
-        await goTo(continueButton, 3);
-        await goTo(backButton, 2);
-        assert.equal(await answer("tp_first_name"), "Xia");
+        // 2026-09-30 §2.5). The draft must not be dirty: a dirty draft is
+        // never rebuilt when the revision is unchanged, and would pass
+        // without the rule.
+        await jump("about.you");
+        assert.equal(await answer("tp_middle_name"), "Xia");
         await waitForQuiet(page);
-        await box("tp_first_name").focus();
+        await box("tp_middle_name").focus();
         // The caret to the end by hand: macOS's End key doesn't move it in a
         // text box, in either engine.
         await page.evaluate(() => {
@@ -2119,49 +2476,38 @@ async function runPermutation(t, roles) {
         const spaced = await keyboardNow();
         assert.deepEqual(
           { id: spaced.id, value: spaced.value, caret: spaced.caret },
-          { id: "field-client-tp_first_name", value: "Xia ", caret: 4 },
+          { id: "field-client-tp_middle_name", value: "Xia ", caret: 4 },
           "a redraw that rebuilt the draft lost the trailing space or the caret",
         );
         await page.keyboard.type("o");
-        assert.equal(await box("tp_first_name").inputValue(), "Xia o");
+        assert.equal(await box("tp_middle_name").inputValue(), "Xia o");
 
-        // Continue after typing, with a real mouse and one press: the `change`
-        // of the field left behind fires on that press and must not swallow it.
-        await waitForQuiet(page);
-        await box("email").fill("mei.lin@example.com");
-        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-        await continueButton.click({ timeout: CLICK_MS });
-        await waitForStepOf9(page, 3);
-        assert.equal(await answer("email"), "mei.lin@example.com");
-        await waitForQuiet(page);
-        const opened = await keyboardNow();
-        assert.equal(opened.scrollY, 0, "the new step did not open at the top");
-        assert.equal(opened.id, "main", "the new step did not put the keyboard on main");
-
-        // A rail link after typing, the same way.
-        await goTo(backButton, 2);
+        // A rail link after typing: one press, and what was typed is saved.
         await waitForQuiet(page);
         await box("tp_job_title").fill("Teacher");
-        await railLink(3).click({ timeout: CLICK_MS });
-        await waitForStepOf9(page, 4);
+        await railLink("about.address").click({ timeout: CLICK_MS });
+        await waitForSubstep(page, "about.address");
         assert.equal(await answer("tp_job_title"), "Teacher");
+        assert.equal(await answer("tp_middle_name"), "Xia o");
 
-        // An office change that lands during a press on Continue. The redraw
-        // waits for the press, so the boxes still say "Teacher" while the
-        // draft already says "Librarian": the step change must not sweep the
+        // An office change that lands during a press on a rail link. The
+        // redraw waits for the press, so the boxes still say "Teacher" while
+        // the draft already says "Librarian": the move must not sweep the
         // stale boxes back over the office's edit.
-        await goTo(railLink(1), 2);
+        await jump("about.you");
         await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /Unsaved changes/, "the draft must be clean for this check");
         await mark("#intake-v2-form", "__beforeOffice");
-        await continueButton.scrollIntoViewIfNeeded();
-        const pressAt = await continueButton.boundingBox();
+        const heldLink = railLink("about.address");
+        await heldLink.scrollIntoViewIfNeeded();
+        const pressAt = await heldLink.boundingBox();
         await page.mouse.move(pressAt.x + pressAt.width / 2, pressAt.y + pressAt.height / 2);
         await page.mouse.down();
-        // The re-read a realtime change causes ends with the contact row; the
-        // hold's 2-second safety timer is running, so it must land well inside it.
+        // The re-read a realtime change causes ends with the document cards;
+        // the hold's 2-second safety timer is running, so it must land well
+        // inside it.
         const reread = page.waitForResponse(
-          (response) => response.url().includes("/rest/v1/case_contacts"),
+          (response) => response.url().includes("/rest/v1/case_document_cards"),
           { timeout: 1500 },
         );
         await fixture.database.sql(
@@ -2178,47 +2524,37 @@ async function runPermutation(t, roles) {
         );
         assert.equal(await box("tp_job_title").inputValue(), "Teacher");
         await page.mouse.up();
-        await waitForStepOf9(page, 3);
+        await waitForSubstep(page, "about.address");
         await waitForQuiet(page);
         assert.equal(
           await answer("tp_job_title"),
           "Librarian",
-          "the step change wrote the stale box back over the office's edit",
+          "the move wrote the stale box back over the office's edit",
         );
-        await goTo(backButton, 2);
+        await jump("about.you");
         assert.equal(await box("tp_job_title").inputValue(), "Librarian");
 
-        // Every blank on every step, then the walk to step 9.
-        await goTo(railLink(0), 1);
-        await clickAction(page, "fill-fictional");
-        for (let step = 2; step <= 9; step += 1) {
-          await goTo(continueButton, step);
-          if (step === 6) await shoot(page, "intake-v2-step6");
-        }
-
-        // In place on step 2: its note and its rail mark follow the typing,
-        // and the note is the same node throughout.
-        await goTo(railLink(1), 2);
-        assert.deepEqual(await rail(1), { className: "rail-status is-done", text: "Done" });
+        // In place on about.you: its note and its rail mark follow the
+        // typing, and the note is the same node throughout.
+        assert.deepEqual(await rail("about.you"), { className: "rail-status is-done", text: "Done" });
         await waitForQuiet(page);
         await box("tp_first_name").fill("");
         assert.equal((await note("tp_first_name")).text, "Needs an answer");
-        assert.match((await rail(1)).className, /\bis-needs\b/);
+        assert.match((await rail("about.you")).className, /\bis-needs\b/);
         await waitForQuiet(page);
         await mark("#field-client-tp_first_name-note", "__kept");
         await page.keyboard.type("Mei");
         assert.equal(await box("tp_first_name").inputValue(), "Mei");
         assert.deepEqual(await note("tp_first_name"), { className: "q-note", text: "" });
-        assert.deepEqual(await rail(1), { className: "rail-status is-done", text: "Done" });
+        assert.deepEqual(await rail("about.you"), { className: "rail-status is-done", text: "Done" });
         assert.equal(
           await marked("#field-client-tp_first_name-note", "__kept"),
           true,
           "typing replaced the note instead of updating it",
         );
-        await shoot(page, "intake-v2-step2");
 
         // A long answer's count, with no redraw.
-        await goTo(railLink(7), 8);
+        await jump("notes.anything");
         await waitForQuiet(page);
         await mark("#intake-v2-form", "__beforeLong");
         const notes = box("additional_notes");
@@ -2231,48 +2567,49 @@ async function runPermutation(t, roles) {
         assert.equal(await marked("#intake-v2-form", "__beforeLong"), true, "a long answer redrew the page");
         await notes.fill("");
 
-        // Invalid values (spec §2.5). One press near the top edge of Continue:
-        // anything that fills the email's note during the press moves the
-        // button out from under the release.
-        await goTo(railLink(1), 2);
+        // Invalid values (spec 2026-09-30 §2.5): leaving with a bad email
+        // keeps it out of the save, reveals it and marks the rail.
+        await jump("about.you");
         await waitForQuiet(page);
         await box("tp_job_title").fill("Baker");
         await box("email").fill("not-an-email");
-        await continueButton.scrollIntoViewIfNeeded();
-        const edge = await continueButton.boundingBox();
-        await page.mouse.move(edge.x + edge.width / 2, edge.y + 4);
-        await page.mouse.down();
-        await page.mouse.up();
-        await waitForStepOf9(page, 3);
+        await railLink("about.address").click({ timeout: CLICK_MS });
+        await waitForSubstep(page, "about.address");
         await waitForQuiet(page);
-        const flagged = await rail(1);
-        assert.match(flagged.className, /\bis-needs\b/);
-        assert.equal(flagged.text, "Needs answers");
+        assert.deepEqual(await rail("about.you"), {
+          className: "rail-status is-needs",
+          text: "Needs answers",
+        });
         assert.equal(await chip(), "1 answer needs checking");
-        assert.equal(await answer("tp_job_title"), "Baker", "the rest of step 2 was not saved");
+        assert.equal(await answer("tp_job_title"), "Baker", "the rest of about.you was not saved");
         assert.equal(await answer("email"), "mei.lin@example.com", "an invalid email reached the server");
 
-        await goTo(railLink(8), 9);
-        assert.deepEqual(await stillToAnswer(), [
+        // review.check lists both, in sub-step order, under the step.
+        await jump("review.check");
+        await waitForQuiet(page);
+        assert.equal(await focused(), "alerts-title", "a rail jump to review.check left the heading");
+        assert.deepEqual(await alertsList(), [
           {
-            step: "Step 2: About you",
+            step: "Step 1: About you",
             items: [
               {
                 question: "Email (optional)",
                 flag: "Needs a change",
-                step: "1",
-                kind: "still-item is-invalid",
+                substep: "about.you",
+                kind: "alert-item is-invalid",
+              },
+              {
+                question: "City",
+                flag: "Needs an answer",
+                substep: "about.address",
+                kind: "alert-item is-missing",
               },
             ],
           },
         ]);
-        await tickBox(page, "field-confirmed");
-        assert.equal(await submitButton.isDisabled(), true, "Submit was on with an invalid email");
-        await waitForQuiet(page);
-        await confirmBox.click({ timeout: CLICK_MS });
-        await confirmTicked(false);
 
-        await goTo(page.locator('.still-item.is-invalid[data-step="1"]'), 2);
+        // An alert goes to its sub-step, where the note says what to fix.
+        await goTo(page.locator('.alert-item.is-invalid[data-substep="about.you"]'), "about.you");
         assert.deepEqual(await note("email"), {
           className: "q-note is-invalid",
           text: "Enter a valid email address.",
@@ -2288,56 +2625,205 @@ async function runPermutation(t, roles) {
         assert.deepEqual(await note("email"), { className: "q-note", text: "" });
         assert.equal(await marked("#field-client-email-note", "__kept"), true, "fixing the email replaced its note");
         assert.equal(await marked("#intake-v2-form", "__beforeFix"), true, "fixing the email redrew the page");
-        assert.match((await rail(1)).className, /\bis-done\b/);
-        await continueButton.click({ timeout: CLICK_MS });
-        await waitForStepOf9(page, 3);
+        assert.match((await rail("about.you")).className, /\bis-done\b/);
+        await railLink("about.address").click({ timeout: CLICK_MS });
+        await waitForSubstep(page, "about.address");
         assert.equal(await answer("email"), "mei.lin@example.org");
         await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /checking/);
 
-        // Show-if, and a fill that follows the draft to a married example.
-        await goTo(railLink(2), 3);
+        // ---- Documents (spec 2026-10-04 §6) ------------------------------
+        await jump("documents.identity");
+        const photo = page.locator("#doc-photo_id-tp");
+        assert.deepEqual(
+          await photo.evaluate((card) =>
+            [...card.querySelectorAll(".doc-upload button")].map((button) => ({
+              text: button.textContent.trim(),
+              disabled: button.disabled,
+              note: document.getElementById(button.getAttribute("aria-describedby"))?.textContent.trim() ?? null,
+            })),
+          ),
+          ["Take a photo", "Choose a file"].map((text) => ({
+            text,
+            disabled: true,
+            note: "Uploading arrives soon. For now, bring it or mark it below.",
+          })),
+        );
+        assert.deepEqual(await cardStatus("photo_id.tp"), {
+          className: "doc-status is-not_done",
+          text: "Status: Not done",
+        });
+        assert.deepEqual(await rail("documents.identity"), {
+          className: "rail-status is-docs",
+          text: "Needs documents",
+        });
+        assert.equal(await cardRow(fixture, own.id, "photo_id.tp"), null);
+        // "Later" for one Needed card: the other still owes, so the mark stays.
+        await markCard("photo_id.tp", "later", "Later");
+        await waitForQuiet(page);
+        assert.equal(await focused(), "doc-photo_id-tp-status", "a mark left the keyboard off its status");
+        assert.deepEqual(await cardRow(fixture, own.id, "photo_id.tp"), {
+          slot_id: "photo_id.tp",
+          status: "later",
+          group_override: null,
+        });
+        assert.deepEqual(await rail("documents.identity"), {
+          className: "rail-status is-docs",
+          text: "Needs documents",
+        });
+        // Every Needed card marked: Done.
+        await markCard("ssn.tp", "none", "Don't have");
+        await railReads("documents.identity", "Done");
+        assert.deepEqual(await rail("documents.identity"), { className: "rail-status is-done", text: "Done" });
+        // "Mark as not done" puts it back: the row stays, with no status.
+        await markCard("ssn.tp", "not_done", "Not done");
+        await railReads("documents.identity", "Needs documents");
+        assert.deepEqual(await cardRow(fixture, own.id, "ssn.tp"), {
+          slot_id: "ssn.tp",
+          status: null,
+          group_override: null,
+        });
+        // The Maybe needed group opens in place, and keeps the keyboard.
+        const maybeToggle = page.locator('[data-action="toggle-panel"][data-panel="maybe:documents.identity"]');
+        assert.equal(await maybeToggle.getAttribute("aria-expanded"), "false");
+        await waitForQuiet(page);
+        await maybeToggle.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "the Maybe needed cards",
+          () =>
+            document
+              .querySelector('[data-panel="maybe:documents.identity"]')
+              ?.getAttribute("aria-expanded") === "true" &&
+            Boolean(document.querySelector('.doc-maybe .doc-card[data-slot^="ssn.hh."]')),
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(
+          await page.evaluate(() => document.activeElement?.dataset.panel ?? null),
+          "maybe:documents.identity",
+        );
+        await shoot(page, "intake-v2-documents");
+
+        // ---- Review & submit (spec 2026-10-04 §5) ------------------------
+        await jump("review.check");
+        assert.deepEqual(await alertsList(), [
+          {
+            step: "Step 1: About you",
+            items: [
+              {
+                question: "City",
+                flag: "Needs an answer",
+                substep: "about.address",
+                kind: "alert-item is-missing",
+              },
+            ],
+          },
+        ]);
+        const warnings = await warningsList();
+        assert.equal(warnings.heading, "You can still submit");
+        assert.deepEqual(
+          warnings.items.find((item) => item.focus === "doc-photo_id-tp"),
+          {
+            label: "Photo ID (driver's license, state ID, passport)",
+            detail: `${await answer("tp_first_name")} ${await answer("tp_last_name")} · Later`,
+            focus: "doc-photo_id-tp",
+          },
+          "the Later card is not under You can still submit",
+        );
+        await shoot(page, "intake-v2-review-check");
+        // "Upload now" lands on the card itself.
+        await goTo(
+          page.locator('.warning-item [data-focus="doc-photo_id-tp"]'),
+          "documents.identity",
+        );
+        await waitForQuiet(page);
+        assert.equal(await focused(), "doc-photo_id-tp", "Upload now did not land on its card");
+        await jump("review.check");
+        await goTo(page.locator('.alert-item[data-substep="about.address"]'), "about.address");
+        assert.deepEqual(await note("addr_city"), {
+          className: "q-note is-missing",
+          text: "Needs an answer",
+        });
+        await waitForQuiet(page);
+        await box("addr_city").fill("Philadelphia");
+        assert.deepEqual(await rail("about.address"), { className: "rail-status is-done", text: "Done" });
+        await jump("review.check");
+        assert.deepEqual(await alertsList(), [], "an alert outlived its fix");
+
+        // Submit: on only with no alerts and the box ticked.
+        await jump("review.submit");
+        assert.equal(await confirmBox.isChecked(), true, "the confirmation was lost on the way");
+        assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
+        await waitForQuiet(page);
+        await confirmBox.click({ timeout: CLICK_MS });
+        await confirmTicked(false);
+        assert.equal(await submitButton.isDisabled(), true, "Submit was on with the box unticked");
+        await tickBox(page, "field-confirmed");
+        assert.equal(await submitButton.isDisabled(), false);
+
+        // The summary's Change opens a sub-step with "Back to summary".
+        await jump("review.summary");
+        await goTo(
+          page.locator('.summary-print [data-action="change-substep"][data-substep="about.address"]'),
+          "about.address",
+        );
+        assert.equal(await continueButton.count(), 0, "Continue is still offered during a Change");
+        await goTo(page.locator('[data-action="back-to-summary"]'), "review.summary");
+        // Enter in the one text box of a sub-step submits the form: during a
+        // Change it goes back to the summary too, not on to the next part.
+        await goTo(
+          page.locator('.summary-print [data-action="change-substep"][data-substep="income.wages"]'),
+          "income.wages",
+        );
+        await waitForQuiet(page);
+        await box("inc_wages_job_count").focus();
+        await page.keyboard.press("Enter");
+        await waitForSubstep(page, "review.summary");
+        await shoot(page, "intake-v2-summary");
+
+        // ---- Show-if, a fill that follows the draft, and the senior switch
+        await jump("about.marital");
         await choose("marital_status", "married");
         await waitFor(
           page,
-          "the spouse's questions",
-          () => Boolean(document.querySelector("#field-client-sp_first_name")),
+          "the married questions",
+          () => Boolean(document.querySelector("#field-client-married_last_day-yes")),
           undefined,
           RENDER_MS,
         );
         await clickAction(page, "fill-fictional");
         await waitFor(
           page,
-          "the spouse's first name to be filled",
-          () => (document.querySelector("#field-client-sp_first_name")?.value ?? "").trim() !== "",
+          "the married questions to be filled",
+          () => document.querySelector("#field-client-married_last_day-yes")?.checked === true,
           undefined,
           RENDER_MS,
         );
-        await goTo(railLink(8), 9);
+        assert.notEqual(await rail("about.spouse"), null, "a married client's rail has no spouse");
 
-        // The senior switch changes the wording on the step it is flipped on.
-        const consentTitle = (wanted) =>
+        await jump("refund.consent");
+        const consentWording = (wanted) =>
           waitFor(
             page,
-            `the consent section to be titled ${JSON.stringify(wanted)}`,
-            (title) => document.querySelector("#q-section-14-title")?.textContent.trim() === title,
+            `the consent question to read ${JSON.stringify(wanted)}`,
+            (text) =>
+              document.querySelector('[data-q="gcf_consent"] legend')?.textContent.trim() === text,
             wanted,
             RENDER_MS,
           );
         const senior = page.locator('[data-action="toggle-senior"]');
-        await consentTitle("Consent to Disclose Tax Return Information (Form 15080)");
+        await consentWording("Do you consent to this disclosure?");
         await clickAction(page, "toggle-senior");
-        await consentTitle("Permission to Share Your Tax Information Next Year (Form 15080)");
+        await consentWording("Do you agree to let your tax information be shared this way?");
         assert.equal(await senior.getAttribute("aria-pressed"), "true");
         await shoot(page, "intake-v2-senior");
         await clickAction(page, "toggle-senior");
-        await consentTitle("Consent to Disclose Tax Return Information (Form 15080)");
+        await consentWording("Do you consent to this disclosure?");
         assert.equal(await senior.getAttribute("aria-pressed"), "false");
 
-        // Step 9: the spouse's signature is the one text field that shows
-        // another question. Its `change` fires on the press on the
-        // confirmation, and the redraw it asks for waits for that click.
-        await waitForText(page, "Everything required is answered.", RENDER_MS);
+        // The spouse's signature is the one text answer that shows another
+        // question: leaving it is the change that redraws.
         await choose("gcf_consent", "yes");
         await waitFor(
           page,
@@ -2356,61 +2842,248 @@ async function runPermutation(t, roles) {
           0,
           "the spouse's date was on the page before any redraw",
         );
-        await confirmBox.click({ timeout: CLICK_MS });
+        await page.keyboard.press("Tab");
         await waitFor(
           page,
-          "the confirmation ticked and the spouse's date shown",
-          () =>
-            document.querySelector("#field-confirmed")?.checked === true &&
-            Boolean(document.querySelector('[data-q="gcf_sp_date"]')),
+          "the spouse's date",
+          () => Boolean(document.querySelector('[data-q="gcf_sp_date"]')),
           undefined,
           RENDER_MS,
         );
+        await jump("notes.anything");
+        assert.equal(await answer("gcf_consent"), "yes");
+        assert.equal(await answer("gcf_sp_signature"), "Wei Lin");
 
-        // The Submit guard (spec §2.5: nothing invalid is ever submitted).
-        // Typing never redraws, so Submit is still drawn on after Feb 30.
-        assert.equal(await confirmBox.isChecked(), true);
-        // Still first: a redraw arriving mid-typing (the echo of the tick) would
-        // draw Submit off before the press, and the guard would go untested.
+        // ---- Visits follow the client (spec 2026-10-04 §3.7) -------------
+        // A fresh sign-in in its own context has no window record: the rail
+        // comes from the server's visits, and the case opens at the first
+        // sub-step that isn't Done (the new spouse part, never opened).
         await waitForQuiet(page);
-        await box("gcf_tp_date-month").fill("02");
-        await box("gcf_tp_date-day").fill("30");
-        await box("gcf_tp_date-year").fill("2026");
-        await submitButton.click({ timeout: CLICK_MS });
+        assert.doesNotMatch(await chip(), /Unsaved|checking/, "the draft must be saved for this check");
+        const marksHere = await railMarks();
+        againWin = await openWindow(clientEngine);
+        await loginTestUser({ page: againWin.page, actor: applicantB, fixture });
+        await waitForQuiet(againWin.page);
+        await againWin.page
+          .locator(`.application-row:has-text("${reference}")`)
+          .first()
+          .click({ timeout: CLICK_MS });
+        await waitForSubstep(againWin.page, "about.spouse");
+        await waitForQuiet(againWin.page);
+        assert.deepEqual(
+          await againWin.page.evaluate(() =>
+            Object.fromEntries(
+              [...document.querySelectorAll('.rail-tree [id^="rail-"][id$="-status"]')].map(
+                (span) => [span.id, `${span.className} | ${span.textContent.trim()}`],
+              ),
+            ),
+          ),
+          marksHere,
+          "a fresh window's rail is not the one this window shows",
+        );
+        const againConsole = assertConsoleQuiet(againWin, {
+          name: "second version-2 window",
+          allow: [],
+        });
+        await againWin.context.close();
+        againWin = null;
+
+        // ---- The draft 13614-C (spec 2026-10-04 §7) ----------------------
+        // Chrome only: Firefox may download a blob PDF instead of opening it
+        // in the tab, which leaves nothing for a check to read.
+        let draft = "not run: the client engine is Firefox, which may download the PDF instead of opening it";
+        if (roles.client === "chrome") {
+          draft = {};
+          // The fonts come from the packages npm installed, never the internet.
+          const fontHits = Object.fromEntries(Object.keys(DRAFT_FONT_FIXTURES).map((url) => [url, 0]));
+          const fontBytes = {};
+          const wrongFont = {};
+          const strayRequests = [];
+          await page.route("https://cdn.jsdelivr.net/**", (route) => {
+            strayRequests.push(route.request().url());
+            return route.abort();
+          });
+          for (const [url, file] of Object.entries(DRAFT_FONT_FIXTURES)) {
+            fontBytes[url] = await readFile(path.join(ROOT, file.path));
+            await page.route(url, (route) => {
+              fontHits[url] += 1;
+              return route.fulfill({
+                status: 200,
+                headers: { "content-type": "font/ttf", "access-control-allow-origin": "*" },
+                body: wrongFont[url] ?? fontBytes[url],
+              });
+            });
+          }
+          const hitsSince = (before) =>
+            Object.fromEntries(
+              Object.entries(fontHits).map(([url, n]) => [url.split("/").at(-1), n - before[url]]),
+            );
+          const openDraft = async (form) => {
+            await waitForQuiet(page);
+            const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+            await page
+              .locator(`[data-action="view-draft"][data-form="${form}"]`)
+              .click({ timeout: CLICK_MS });
+            return await opened;
+          };
+          const readDraft = async (popup) => {
+            await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+            return await popup.evaluate(async () => {
+              const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+              return { head: String.fromCharCode(...bytes.slice(0, 5)), size: bytes.length };
+            });
+          };
+          const tabSays = (popup, text) =>
+            waitFor(
+              popup,
+              `the draft tab to say ${JSON.stringify(text)}`,
+              (wanted) => document.body?.textContent.trim() === wanted,
+              text,
+              ARRIVAL_MS,
+            );
+          const toastSays = (text) =>
+            waitFor(
+              page,
+              `the toast to say ${JSON.stringify(text)}`,
+              (wanted) => document.querySelector("#toast")?.textContent.trim() === wanted,
+              text,
+              ARRIVAL_MS,
+            );
+
+          await jump("review.summary");
+          // English, every answer in Latin letters: no font is fetched.
+          let before = { ...fontHits };
+          let popup = await openDraft("en");
+          draft.en = await readDraft(popup);
+          await popup.close();
+          assert.equal(draft.en.head, "%PDF-");
+          assert.ok(draft.en.size > 100 * 1024, `the English draft is only ${draft.en.size} bytes`);
+          assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft fetched a font");
+
+          // A Chinese first name (fictional), so the Chinese font path runs.
+          await jump("about.you");
+          await waitForQuiet(page);
+          await box("tp_first_name").fill("美");
+          await jump("review.summary");
+          assert.equal(await answer("tp_first_name"), "美");
+          for (const [form, font] of [
+            ["zh-s", "NotoSansSC_400Regular.ttf"],
+            ["zh-t", "NotoSansTC_400Regular.ttf"],
+          ]) {
+            before = { ...fontHits };
+            popup = await openDraft(form);
+            draft[form] = await readDraft(popup);
+            await popup.close();
+            assert.equal(draft[form].head, "%PDF-");
+            assert.ok(draft[form].size > 100 * 1024, `the ${form} draft is only ${draft[form].size} bytes`);
+            assert.deepEqual(
+              hitsSince(before),
+              {
+                "NotoSansSC_400Regular.ttf": font === "NotoSansSC_400Regular.ttf" ? 1 : 0,
+                "NotoSansTC_400Regular.ttf": font === "NotoSansTC_400Regular.ttf" ? 1 : 0,
+                "NotoSans_400Regular.ttf": 1,
+              },
+              `the ${form} draft fetched the wrong fonts`,
+            );
+          }
+
+          // A font whose bytes are not the pinned ones is refused.
+          const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));
+          wrongFont[latin] = Buffer.from("not the pinned font");
+          popup = await openDraft("zh-s");
+          await tabSays(popup, DRAFT_FAILED);
+          await toastSays(DRAFT_FONT_UNCHECKED);
+          await popup.close();
+          delete wrongFont[latin];
+          draft.fontMismatch = DRAFT_FONT_UNCHECKED;
+
+          // The form itself refused: the tab and the toast say so. Chrome logs
+          // the refused request; that line, and only it, is expected here.
+          const formUrl = `${fixture.appOrigin}/src/forms/f13614c-2025.pdf`;
+          await page.route(formUrl, (route) => route.fulfill({ status: 500, body: "refused" }));
+          deliberate.push(/Failed to load resource: the server responded with a status of 500/);
+          popup = await openDraft("en");
+          await tabSays(popup, DRAFT_FAILED);
+          await toastSays(DRAFT_FAILED);
+          await popup.close();
+          await page.unroute(formUrl);
+          draft.failure = DRAFT_FAILED;
+
+          // A blocked tab: the page offers the finished draft as a link.
+          await page.evaluate(() => {
+            window.__vitallyOpen = window.open;
+            window.open = () => null;
+          });
+          await waitForQuiet(page);
+          await page.locator('[data-action="view-draft"][data-form="zh-s"]').click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            "the draft link",
+            () => Boolean(document.querySelector("#draft-ready a")),
+            undefined,
+            ARRIVAL_MS,
+          );
+          draft.blocked = await page.evaluate(() => {
+            const link = document.querySelector("#draft-ready a");
+            return { text: link.textContent.trim(), download: link.download, blob: link.href.startsWith("blob:") };
+          });
+          await page.evaluate(() => {
+            window.open = window.__vitallyOpen;
+          });
+          assert.deepEqual(draft.blocked, {
+            text: "Your draft is ready: open it",
+            download: `13614-C-draft-${reference}-zh-s.pdf`,
+            blob: true,
+          });
+          assert.deepEqual(strayRequests, [], "the draft reached for a CDN file it was not given");
+          await page.unrouteAll({ behavior: "wait" });
+        }
+
+        // ---- Same-day (spec 2026-10-04 §6.7) -----------------------------
+        await jump("before.service");
+        await choose("service", "same_day");
+        // The radio is ticked before the redraw it asks for: wait for the rail.
         await waitFor(
           page,
-          "the refused Submit to turn itself off",
-          () =>
-            document.querySelector('#intake-v2-form [data-case-action="SUBMIT"]')?.disabled === true,
+          "the rail to list the same-day documents step",
+          () => Boolean(document.querySelector('#rail-subs-documents [data-substep="documents.bring"]')),
           undefined,
           RENDER_MS,
         );
-        assert.deepEqual(await stillToAnswer(), [
-          {
-            step: "Step 9: Permission & review",
-            items: [{ question: "Date", flag: "Needs a change", step: "8", kind: "still-item is-invalid" }],
-          },
-        ]);
-        // Said aloud, and the keyboard is on the list rather than a disabled Submit.
+        await waitForQuiet(page);
+        assert.deepEqual(
+          await page.evaluate(() =>
+            [...document.querySelectorAll("#rail-subs-documents .rail-sublink")].map((link) => ({
+              substep: link.dataset.substep,
+              title: link.querySelector(".rail-subtitle")?.textContent.trim() ?? null,
+            })),
+          ),
+          [{ substep: "documents.bring", title: "Bring these to your visit" }],
+          "a same-day client's step 7 is not the one list",
+        );
+        await jump("documents.bring");
         assert.deepEqual(
           await page.evaluate(() => ({
-            focus: document.activeElement?.id ?? null,
-            toast: document.querySelector("#toast")?.textContent.trim() ?? null,
+            items: document.querySelectorAll("#intake-v2-form .bring-list li").length,
+            buttons: document.querySelectorAll("#intake-v2-form .bring-list button").length,
+            marks: document.querySelectorAll('[data-action="mark-card"]').length,
+            statuses: document.querySelectorAll(".doc-status").length,
           })),
-          { focus: "still-title", toast: "Some answers still need a change before you can send." },
+          { items: 7, buttons: 0, marks: 0, statuses: 0 },
         );
-        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid date was submitted");
-        await box("gcf_tp_date-month").fill("");
-        await box("gcf_tp_date-day").fill("");
-        await box("gcf_tp_date-year").fill("");
-        await confirmBox.click({ timeout: CLICK_MS });
-        await confirmTicked(false);
-        await confirmBox.click({ timeout: CLICK_MS });
-        await confirmTicked(true);
-        assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
-        await shoot(page, "intake-v2-step9");
+        await jump("review.check");
+        assert.equal(
+          await page.locator(".warnings-block").count(),
+          0,
+          "a same-day client is warned about documents",
+        );
+        await jump("before.service");
+        await choose("service", "drop_off");
 
-        // Submit saves step 9's answers first, then numbers the case.
+        // ---- Submit, and the open documents on the progress page ---------
+        await jump("review.submit");
+        if (!(await confirmBox.isChecked())) await tickBox(page, "field-confirmed");
+        assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
         await waitForQuiet(page);
         await submitButton.click({ timeout: CLICK_MS });
         await waitFor(
@@ -2438,15 +3111,47 @@ async function runPermutation(t, roles) {
             .innerText()
         ).trim();
         assert.match(clientNumber, /^#\d{3,}$/);
+        const openSlots = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll(".open-documents .doc-card")].map((card) => card.dataset.slot),
+          );
+        assert.deepEqual(await openSlots(), [...OPEN_DOCUMENTS]);
+        // Marked here too: "Later" stays listed and keeps the keyboard on
+        // its status; "Don't have" leaves the list, and the keyboard goes to main.
+        await markCard("w2.household", "later", "Later");
+        await waitForQuiet(page);
+        assert.equal(await focused(), "doc-w2-household-status");
+        await waitForQuiet(page);
+        await page
+          .locator('[data-action="mark-card"][data-slot="bank.household"][data-status="none"]')
+          .click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "the bank card to leave the open documents",
+          () => !document.querySelector('.open-documents [data-slot="bank.household"]'),
+          undefined,
+          ARRIVAL_MS,
+        );
+        await waitForQuiet(page);
+        assert.equal(await focused(), "main");
+        assert.deepEqual(await cardRow(fixture, own.id, "bank.household"), {
+          slot_id: "bank.household",
+          status: "none",
+          group_override: null,
+        });
         await shoot(page, "intake-v2-progress");
         evidence.story.versionTwo = {
           intakeVersion: 2,
+          walked: V2_WALK.length,
           emailNoteHeight,
           clientNumber,
           submitted: "consent and both signatures saved before the submit",
+          openDocuments: await openSlots(),
+          draft,
+          secondWindowConsoleLines: againConsole,
           consoleLines: assertConsoleQuiet(v2Win, {
             name: "version-2 client window",
-            allow: REFUSAL_LINES,
+            allow: deliberate,
           }),
         };
       } finally {
@@ -2454,6 +3159,7 @@ async function runPermutation(t, roles) {
           "update public.workspaces set default_intake_version=1 where id=$1",
           [workspaceId],
         );
+        await againWin?.context.close();
         await v2Win?.context.close();
       }
     });

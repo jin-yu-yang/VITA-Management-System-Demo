@@ -10,7 +10,8 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 - Part 1 (work board, case page, client screens, office screens) is merged.
 - Part 2 (client numbers: one number per submitted case in each workspace and season, shown to the client and on the staff screens, and searchable from the work board) is merged.
 - Part 4a (the intake catalogue and its server side: the drafted questions in one catalogue, version-2 intake checks, contact details and materials, with nothing visible changed yet) is merged.
-- Part 4b (the client's nine-step version-2 intake, reachable once part 4c switches the default intake version) is in review.
+- Part 4b (the client's nine-step version-2 intake, reachable once part 4c switches the default intake version) is merged.
+- Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is in review.
 - Still open: certification levels (D9) and a confirmation of the serif font (D11).
 
 **Canonical design files** (everything else in `.stitch/designs` is an earlier iteration):

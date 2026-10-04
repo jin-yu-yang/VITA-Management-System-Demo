@@ -23,7 +23,7 @@
 | Client intake, desktop: step 5 in Simplified Chinese, standard and senior | [standard](screens/intake-step5-zh-v2-general.png) · [senior](screens/intake-step5-zh-v2-senior.png) |
 | Client intake, mobile (after the MVP): all 9 steps | [intake-mobile-all-steps.png](screens/intake-mobile-all-steps.png) |
 | Implemented (part 1, PR 3): client screens on today's 4-step intake, rendered from test fixtures | [intake](screens/implemented-client-intake.png) · [progress](screens/implemented-client-progress.png) · [sign-in](screens/implemented-client-sign-in.png) |
-| Implemented (part 4b): the client's nine-step intake (reachable once 4c switches the default) | [step 2](screens/implemented-intake-v2-step2.png) · [step 6](screens/implemented-intake-v2-step6.png) · [senior](screens/implemented-intake-v2-senior.png) · [step 9](screens/implemented-intake-v2-step9.png) |
+| Implemented (parts 4b and 4b2): the client's version-2 intake by sub-step, from the browser story (reachable once 4c switches the default) | [rail tree](screens/implemented-intake-v2-rail-tree.png) · [documents](screens/implemented-intake-v2-documents.png) · [review](screens/implemented-intake-v2-review-check.png) · [summary](screens/implemented-intake-v2-summary.png) · [senior](screens/implemented-intake-v2-senior.png) |
 | Admin office overview: unclaimed cases by age and language, volunteers and their cases, office activity | [admin-dashboard-v2-full-page.png](screens/admin-dashboard-v2-full-page.png) |
 | Admin Follow-ups queue | [admin-followups-full-page.png](screens/admin-followups-full-page.png) |
 | Admin Post an update | [admin-post-update-full-page.png](screens/admin-post-update-full-page.png) |
