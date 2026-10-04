@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseDraft,
   buildCatalogue,
+  checkSubsteps,
   catalogueHash,
   LOADER_VERSION,
   nextCatalogueMigration,
@@ -135,6 +136,47 @@ const SENIOR = STANDARD.replace("`spouse` (My spouse / 配偶)", "`spouse` (My s
   )
   .replace("## Section 1: Details / 详情", "## Section 1: About you / 关于您");
 
+// The fixture's own steps: buildCatalogue takes the step table as an option,
+// so the fixture drafts need not name the real catalogue's questions.
+const titled = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
+const FIXTURE_STEPS = [
+  {
+    id: "start",
+    n: 1,
+    title: { en: "Start", zh: "开始" },
+    sections: [0],
+    substeps: [
+      { id: "start.all", kind: "questions", title: titled("Start", "开始"), questions: ["colour", "toppings", "likes", "hungry", "full"] },
+    ],
+  },
+  {
+    id: "details",
+    n: 2,
+    title: { en: "Details", zh: "详情" },
+    sections: [1],
+    substeps: [
+      { id: "details.name", kind: "questions", title: titled("Name", "名字"), lead: titled("Who?", "是谁？"), questions: ["name", "story", "sig"] },
+      { id: "details.more", kind: "questions", title: titled("More", "更多"), questions: ["mail", "tel", "zip5", "born", "yr", "count"] },
+    ],
+  },
+  {
+    id: "family",
+    n: 3,
+    title: { en: "Family", zh: "家庭" },
+    sections: [5],
+    substeps: [{ id: "family.kids", kind: "questions", title: titled("Kids", "孩子"), questions: ["has_kids", "kids"] }],
+  },
+  {
+    id: "review",
+    n: 4,
+    title: { en: "Review", zh: "检查" },
+    sections: [],
+    substeps: [{ id: "review.check", kind: "review", title: titled("Review", "检查"), questions: [] }],
+  },
+];
+const build = (standard = STANDARD, senior = SENIOR, steps = FIXTURE_STEPS) =>
+  buildCatalogue(standard, senior, { steps });
+
 const lineOf = (text, needle) =>
   text.split("\n").findIndex((line) => line.includes(needle)) + 1;
 
@@ -154,13 +196,15 @@ const allQuestions = (catalogue) =>
 const both = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
 
 test("buildCatalogue turns the fixture drafts into the catalogue", () => {
-  const catalogue = buildCatalogue(STANDARD, SENIOR);
+  const catalogue = build();
   assert.equal(catalogue.version, 2);
-  assert.equal(catalogue.steps.length, 9);
+  assert.equal(catalogue.steps.length, 4);
   assert.deepEqual(
     catalogue.steps.map((step) => step.sections.map((s) => s.n)),
-    [[0], [1], [], [5], [], [], [], [], []],
+    [[0], [1], [5], []],
   );
+  assert.deepEqual(catalogue.steps.map((step) => step.id), ["start", "details", "family", "review"]);
+  assert.deepEqual(catalogue.steps[1].substeps[0], FIXTURE_STEPS[1].substeps[0]);
 
   const start = catalogue.steps[0].sections[0];
   assert.deepEqual(start.title, both("Start", "开始"));
@@ -294,7 +338,7 @@ test("buildCatalogue turns the fixture drafts into the catalogue", () => {
     wording: both("Kids", "孩子"),
   });
   assert.deepEqual(
-    catalogue.steps[3].sections[0].footer,
+    catalogue.steps[2].sections[0].footer,
     both("Thanks.", "谢谢。"),
   );
   assert.equal(findQuestion(catalogue, "nonsense"), undefined);
@@ -328,7 +372,7 @@ test("buildCatalogue turns the fixture drafts into the catalogue", () => {
 test("the build fails when a draft's conventions lack a fixed option's label", () => {
   const text = STANDARD.replace("  - `none` (No one / 均无), which clears the other two\n", "");
   assert.throws(() => parseDraft(text, { role: "standard" }), /^Error: intake-questions\.md: .*`none`/);
-  assert.throws(() => buildCatalogue(STANDARD, SENIOR.replace("`not_sure` (I'm not sure / 不确定)", "")), /not_sure/);
+  assert.throws(() => build(STANDARD, SENIOR.replace("`not_sure` (I'm not sure / 不确定)", "")), /not_sure/);
 });
 
 test("parseDraft rejects lines outside the grammar with file:line", () => {
@@ -359,15 +403,77 @@ test("parseDraft rejects lines outside the grammar with file:line", () => {
   );
 });
 
+test("the parser maps `Hidden id` to the id type, and only inside a group", () => {
+  const withId = STANDARD.replace(
+    "**Q5.1** Kid's name / 孩子的名字",
+    "**Q5.0m** Kid id / 孩子编号\n`kids[i].member_id` · Hidden id · Optional\n\n**Q5.1** Kid's name / 孩子的名字",
+  );
+  const kids = parseDraft(withId, { role: "standard" }).sections.flatMap((s) => s.questions).find((q) => q.id === "kids");
+  assert.deepEqual(kids.fields.map((f) => [f.id, f.type, f.required]), [
+    ["member_id", "id", false],
+    ["name", "text", true],
+    ["months", "number", true],
+  ]);
+  const loose = STANDARD.replace(
+    "**Q1.2** Story / 故事",
+    "**Q1.1m** Stray id / 编号\n`stray_id` · Hidden id · Optional\n\n**Q1.2** Story / 故事",
+  );
+  assert.throws(
+    () => parseDraft(loose, { role: "standard" }),
+    (error) => {
+      assert.match(error.message, new RegExp(`^intake-questions\\.md:${lineOf(loose, "`stray_id`")}: `));
+      assert.match(error.message, /a hidden id belongs inside a group/);
+      return true;
+    },
+  );
+});
+
+test("checkSubsteps refuses an unknown question, a question in two sub-steps and one in none", () => {
+  const good = build();
+  assert.doesNotThrow(() => checkSubsteps(good));
+  const edit = (change) => {
+    const copy = structuredClone(good);
+    change(copy);
+    return copy;
+  };
+  assert.throws(
+    () => checkSubsteps(edit((c) => c.steps[0].substeps[0].questions.push("nonesuch"))),
+    /unknown question 'nonesuch'/,
+  );
+  assert.throws(
+    () => checkSubsteps(edit((c) => c.steps[1].substeps[1].questions.push("name"))),
+    /'name' is in two sub-steps/,
+  );
+  assert.throws(
+    () => checkSubsteps(edit((c) => c.steps[2].substeps[0].questions.push("colour"))),
+    /'colour'.*another step/,
+  );
+  assert.throws(
+    () => checkSubsteps(edit((c) => c.steps[0].substeps[0].questions.pop())),
+    /'full'.*no sub-step/,
+  );
+  assert.throws(() => checkSubsteps(edit((c) => (c.steps[3].substeps = []))), /at least one sub-step/);
+  assert.throws(
+    () => checkSubsteps(edit((c) => (c.steps[0].substeps[0].kind = "wizard"))),
+    /kind/,
+  );
+  // buildCatalogue runs the check itself.
+  const missing = FIXTURE_STEPS.map((s) => ({
+    ...s,
+    substeps: s.substeps.map((x) => ({ ...x, questions: x.questions.filter((id) => id !== "yr") })),
+  }));
+  assert.throws(() => buildCatalogue(STANDARD, SENIOR, { steps: missing }), /'yr'.*no sub-step/);
+});
+
 test("buildCatalogue refuses drafts whose structure drifts apart", () => {
   const drifted = SENIOR.replace("`blue` Blue / 蓝", "`navy` Blue / 蓝");
-  assert.throws(() => buildCatalogue(STANDARD, drifted), /colour/);
+  assert.throws(() => build(STANDARD, drifted), /colour/);
   const flagged = SENIOR.replace("`yr` · Year · Optional", "`yr` · Year · Required");
-  assert.throws(() => buildCatalogue(STANDARD, flagged), /yr/);
+  assert.throws(() => build(STANDARD, flagged), /yr/);
   const shown = SENIOR.replace("`colour ≠ blue`", "`colour ≠ red`");
-  assert.throws(() => buildCatalogue(STANDARD, shown), /hungry/);
+  assert.throws(() => build(STANDARD, shown), /hungry/);
   const extra = SENIOR.replace("  - `me` (Me / 本人)", "  - `me` (Me / 本人)\n  - `maybe` (Maybe / 也许)");
-  assert.throws(() => buildCatalogue(STANDARD, extra), /fixedOptions/);
+  assert.throws(() => build(STANDARD, extra), /fixedOptions/);
 });
 
 // ---------------------------------------------------------------------------
@@ -386,36 +492,79 @@ test("the committed catalogue module is a fresh build of the drafts", () => {
   assert.deepEqual(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT), COMMITTED);
 });
 
-test("the real catalogue has the nine steps of spec 2.3", () => {
+test("the real catalogue has the ten steps of the redesign", () => {
   assert.equal(COMMITTED.version, 2);
   assert.deepEqual(
-    COMMITTED.steps.map((step) => [step.n, step.title.en, step.sections.map((s) => s.n)]),
+    COMMITTED.steps.map((step) => [step.id, step.n, step.title.en, step.sections.map((s) => s.n)]),
     [
-      [1, "Before you start", [0]],
-      [2, "About you", [1, 2]],
-      [3, "Marriage & spouse", [3, 4]],
-      [4, "Your 2025 situation", [5]],
-      [5, "Household members", [6]],
-      [6, "Income", [9]],
-      [7, "Expenses & life events", [10, 11]],
-      [8, "Refund & preferences", [7, 8, 12, 13]],
-      [9, "Permission & review", [14]],
+      ["before", 1, "Before you start", [0]],
+      ["about", 2, "About you", [1, 2, 3, 4, 5, 8]],
+      ["household", 3, "Household", [6]],
+      ["income", 4, "Income", [9]],
+      ["expenses", 5, "Expenses & life events", [10, 11]],
+      ["refund", 6, "Refund & permission", [7, 14]],
+      ["optional", 7, "Optional questions", [12]],
+      ["documents", 8, "Documents", []],
+      ["notes", 9, "Anything else", [13]],
+      ["review", 10, "Review & submit", []],
     ],
   );
   for (const step of COMMITTED.steps) {
-    assert.ok(step.title.zh, `step ${step.n} has a Chinese title`);
-    assert.ok(
-      step.sections.some((section) => section.questions.length > 0),
-      `step ${step.n} has a question`,
-    );
+    assert.ok(step.title.zh, `step ${step.id} has a Chinese title`);
+    assert.ok(step.substeps.length > 0, `step ${step.id} has a sub-step`);
+    for (const sub of step.substeps)
+      for (const variant of ["general", "senior"])
+        for (const lang of ["en", "zh"]) assert.ok(sub.title[variant][lang], `${sub.id} ${variant} ${lang}`);
+  }
+  assert.doesNotThrow(() => checkSubsteps(COMMITTED));
+});
+
+test("the real sub-steps carry their kind, cards and lead lines", () => {
+  const subs = COMMITTED.steps.flatMap((s) => s.substeps);
+  assert.equal(subs.length, 32);
+  const kinds = (id) => subs.find((x) => x.id === id).kind;
+  assert.equal(kinds("income.wages"), "questions");
+  assert.equal(kinds("review.summary"), "review");
+  assert.deepEqual(
+    subs.filter((x) => x.kind === "documents").map((x) => [x.id, x.cards, x.questions]),
+    [
+      ["documents.bring", "bring", []],
+      ["documents.identity", "identity", []],
+      ["documents.income", "income", []],
+      ["documents.expenses", "expenses", []],
+      ["documents.events", "events", []],
+      ["documents.other", "other", []],
+    ],
+  );
+  const lead = (id) => subs.find((x) => x.id === id).lead;
+  assert.deepEqual(lead("income.rental"), titled("Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？"));
+  assert.deepEqual(lead("expenses.other"), titled("Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？"));
+  assert.deepEqual(lead("expenses.events"), titled("Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？"));
+  assert.equal(lead("about.you"), undefined);
+  assert.equal(subs.filter((x) => x.lead).length, 9);
+});
+
+test("the real drafts: every Tip that mentions uploading points to the Documents step", () => {
+  for (const [name, text] of [["standard", STANDARD_TEXT], ["senior", SENIOR_TEXT]]) {
+    const tips = text.split("\n").filter((line) => /^> Tip/.test(line) && /upload/i.test(line));
+    assert.ok(tips.length > 15, name);
+    // Q9.14's Tip carries the one other mention: the app's yearly tax summary.
+    for (const line of tips.filter((x) => !/yearly tax summary/.test(x)))
+      assert.match(line, /Documents step/, `${name}: ${line.slice(0, 80)}`);
   }
 });
 
-test("steps 5, 7 and 9 carry the designs' titles, in both languages", () => {
-  const title = (n) => COMMITTED.steps.find((step) => step.n === n).title;
-  assert.deepEqual(title(5), { en: "Household members", zh: "家庭成员" });
-  assert.deepEqual(title(7), { en: "Expenses & life events", zh: "支出与生活事项" });
-  assert.deepEqual(title(9), { en: "Permission & review", zh: "授权与确认" });
+test("the real catalogue gains hh.member_id, and gcf_sp_date waits for the spouse's signature", () => {
+  const hh = findQuestion(COMMITTED, "hh");
+  assert.deepEqual([hh.fields[0].id, hh.fields[0].type, hh.fields[0].required], ["member_id", "id", false]);
+  assert.deepEqual(findQuestion(COMMITTED, "gcf_sp_date").showIf, [
+    { field: "gcf_consent", op: "eq", value: "yes" },
+    { field: "marital_status", op: "eq", value: "married" },
+    { field: "gcf_sp_signature", op: "filled" },
+  ]);
+  // Section 9's intro is gone (its lead lines replace it).
+  const income = COMMITTED.steps.find((s) => s.id === "income");
+  assert.equal(income.sections[0].intro, undefined);
 });
 
 test("every real question states required, and the optional set is the agreed list", () => {
@@ -454,6 +603,7 @@ test("every real question states required, and the optional set is the agreed li
       "irs_language",
       "language_other",
       "form_version",
+      "hh.member_id",
     ].sort(),
   );
   const section12 = COMMITTED.steps.flatMap((s) => s.sections).find((s) => s.n === 12);
@@ -548,27 +698,27 @@ test("the database is never behind the browser: the newest catalogue migration r
   assert.equal(nextCatalogueMigration(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT), entries), null);
 });
 
-test("the newest catalogue migration is 014, named by the real catalogue's hash under the current loader", () => {
+test("012 exists, the newest catalogue migration carries the current hash, and no two share a hash8", () => {
   const names = readdirSync(fileURLToPath(new URL("../supabase/migrations/", import.meta.url)))
-    .filter((name) => /_intake_catalogue_/.test(name))
+    .filter((name) => /^\d{3}_intake_catalogue_[0-9a-f]{8}\.sql$/.test(name))
     .sort();
   const hash = catalogueHash(buildCatalogue(STANDARD_TEXT, SENIOR_TEXT));
-  // 012 is the applied original and stays as it was; 014 carries the step-title change.
-  assert.equal(names.length, 2);
   assert.match(names[0], /^012_intake_catalogue_[0-9a-f]{8}\.sql$/);
-  assert.equal(names[1], `014_intake_catalogue_${hash.slice(0, 8)}.sql`);
+  assert.match(names.at(-1), new RegExp(`^\\d{3}_intake_catalogue_${hash.slice(0, 8)}\\.sql$`));
+  const hashes = names.map((name) => name.slice(-12, -4));
+  assert.equal(new Set(hashes).size, hashes.length, "two catalogue migrations share a hash8");
 });
 
 test("catalogueHash is the SHA-256 of the key-sorted, unspaced JSON of the loader version and catalogue", () => {
-  assert.equal(LOADER_VERSION, 1);
+  assert.equal(LOADER_VERSION, 2);
   const expected = createHash("sha256")
-    .update('{"catalogue":{"a":[{"x":1,"y":2}],"b":1},"loaderVersion":1}')
+    .update('{"catalogue":{"a":[{"x":1,"y":2}],"b":1},"loaderVersion":2}')
     .digest("hex");
   assert.equal(catalogueHash({ b: 1, a: [{ y: 2, x: 1 }] }), expected);
 });
 
 test("bumping LOADER_VERSION changes the hash, and so writes a new catalogue migration, for the same catalogue", () => {
-  const catalogue = buildCatalogue(STANDARD, SENIOR);
+  const catalogue = build();
   const current = catalogueHash(catalogue);
   const bumped = catalogueHash(catalogue, LOADER_VERSION + 1);
   assert.notEqual(bumped, current);
@@ -582,7 +732,7 @@ test("bumping LOADER_VERSION changes the hash, and so writes a new catalogue mig
 });
 
 test("nextCatalogueMigration names, skips and round-trips catalogue migrations", () => {
-  const catalogue = buildCatalogue(STANDARD, SENIOR);
+  const catalogue = build();
   const hash = catalogueHash(catalogue);
 
   const first = nextCatalogueMigration(catalogue, ["010_client_numbers.sql", "011_intake_v2.sql"]);

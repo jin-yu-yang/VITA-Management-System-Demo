@@ -2229,15 +2229,15 @@ test("a version-2 edit keeps structured values and null, and the save carries th
   assert.equal(Object.hasOwn(controller.getState().draftAnswers, "ownerUserId"), false);
   controller.editAnswers({ tp_middle_name: null });
   assert.equal(controller.getState().draftAnswers.tp_middle_name, null);
-  controller.editAnswers({ hh: [{ first_name: "Xiao" }], best_contact_time: ["weekend", "any_time"], stage: "closed" });
-  assert.deepEqual(controller.getState().draftAnswers.hh, [{ first_name: "Xiao" }]);
+  controller.editAnswers({ hh: [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }], best_contact_time: ["weekend", "any_time"], stage: "closed" });
+  assert.deepEqual(controller.getState().draftAnswers.hh, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }]);
   assert.equal(Object.hasOwn(controller.getState().draftAnswers, "stage"), false);
   await controller.saveAnswers();
   const sent = store.writes[0].payload.answers;
   assert.equal(sent.tp_middle_name, null);
   assert.equal(sent.tp_phone, "2155550199");
   assert.deepEqual(sent.best_contact_time, ["weekend", "any_time"]);
-  assert.deepEqual(sent.hh, [{ first_name: "Xiao" }]);
+  assert.deepEqual(sent.hh, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }]);
   controller.stop();
 });
 
@@ -2606,9 +2606,9 @@ test("removing a household member renumbers the revealed ids after it", async ()
   controller.editAnswers({
     has_household_members: "yes",
     hh: [
-      { first_name: "An", dob: "2015-02-30" },
-      { first_name: "Bo", dob: "2016-02-30" },
-      { first_name: "Cy", dob: "2017-01-01" },
+      { member_id: "00000000000000000000000000000001", first_name: "An", dob: "2015-02-30" },
+      { member_id: "00000000000000000000000000000002", first_name: "Bo", dob: "2016-02-30" },
+      { member_id: "00000000000000000000000000000003", first_name: "Cy", dob: "2017-01-01" },
     ],
   });
   controller.revealInvalid("hh[0].dob");

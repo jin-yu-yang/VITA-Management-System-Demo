@@ -17,6 +17,28 @@ const allQuestions = (version) => stepsFor(version).flatMap((s) => s.sections.fl
 export const findQuestion = (version, id) =>
   allQuestions(version).find((q) => q.id === id) ?? null;
 
+// ---------------------------------------------------------------------------
+// Sub-steps (spec 2026-10-04 §2): every step lists its sub-steps in order.
+// ---------------------------------------------------------------------------
+
+/** Every sub-step of the version, in order, each `{ ...substep, step }` (`step` is its step object). */
+export const substepsFor = (version) =>
+  stepsFor(version).flatMap((step) => step.substeps.map((substep) => ({ ...substep, step })));
+
+/** The sub-step with this id, or null. Version 2 only: version 1 has no sub-steps. */
+export const findSubstep = (id) => substepsFor(2).find((s) => s.id === id) ?? null;
+
+/** The id of the sub-step holding this top-level question, or null. */
+export const substepOfQuestion = (questionId) =>
+  substepsFor(2).find((s) => s.questions.includes(questionId))?.id ?? null;
+
+/** The question objects of a sub-step, in its order ([] for an unknown, documents or review sub-step). */
+export const substepQuestions = (substepId) =>
+  (findSubstep(substepId)?.questions ?? []).map((id) => findQuestion(2, id)).filter(Boolean);
+
+/** The hidden household member id: 32 lowercase hexadecimal characters. */
+export const isMemberId = (value) => typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+
 export const wording = (question, { variant = "general", lang = "en" } = {}) =>
   question?.wording?.[variant]?.[lang] ?? question?.wording?.general?.[lang] ?? "";
 
@@ -43,6 +65,16 @@ const holds = (condition, answers) => {
 export const isVisible = (question, answers) =>
   (question?.showIf ?? []).every((condition) => holds(condition, answers ?? {}));
 
+/** A copy of `answers` without the keys of hidden top-level questions. Other keys stay. */
+export function visibleAnswers(version, answers = {}) {
+  const hidden = new Set(
+    allQuestions(version)
+      .filter((question) => !isVisible(question, answers))
+      .map((question) => question.id),
+  );
+  return Object.fromEntries(Object.entries(answers ?? {}).filter(([key]) => !hidden.has(key)));
+}
+
 // ---------------------------------------------------------------------------
 // Value checks (spec 2.2). Each returns null or a short reason.
 // ---------------------------------------------------------------------------
@@ -67,9 +99,17 @@ function checkGroup(question, value) {
     for (const [key, item] of Object.entries(member)) {
       const field = fields.get(key);
       if (!field) return `Unknown field ${key}.`;
+      if (key === "member_id") continue; // checked below: "" does not count as unanswered here
       const reason = checkValue(field, item);
       if (reason) return `${key}: ${reason}`;
     }
+  }
+  // Every person needs an id the server can trust, and no two share one.
+  const ids = new Set();
+  for (const member of value) {
+    if (!isMemberId(member.member_id)) return "Each person needs an id.";
+    if (ids.has(member.member_id)) return "Two people share an id.";
+    ids.add(member.member_id);
   }
   return null;
 }
@@ -126,6 +166,8 @@ export function checkValue(question, value) {
       }
       return value.length > 6 ? "At most 6 digits." : null;
     }
+    case "id":
+      return isMemberId(value) ? null : "Not a valid id.";
     case "choice":
       return optionValues(question).includes(value) ? null : "Not one of the choices.";
     case "yesno":

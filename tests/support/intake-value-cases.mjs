@@ -10,7 +10,11 @@
 
 // A complete, valid household member: the 4a mirror list's `member()`, the
 // first option of every choice and the lowest number.
+// 32 lowercase hex characters, distinct for each n (a fictional member id).
+const memberId = (n = 1) => n.toString(16).padStart(32, "0");
+
 const member = (overrides = {}) => ({
+  member_id: memberId(1),
   first_name: "Sample",
   last_name: "Sample",
   dob: "1980-01-02",
@@ -121,20 +125,35 @@ export const INTAKE_VALUE_CASES = [
   both("us_citizen", [1], false),
   both("us_citizen", [], true),
 
+  // id: the hidden member id, 32 lowercase hex characters.
+  both("hh", [member({ member_id: "0123456789abcdef0123456789abcdef" })], true),
+  both("hh", [member({ member_id: "0123456789ABCDEF0123456789ABCDEF" })], false),
+  both("hh", [member({ member_id: "0123456789abcdef0123456789abcde" })], false),
+  both("hh", [member({ member_id: "0123456789abcdef0123456789abcdef0" })], false),
+  both("hh", [member({ member_id: 5 })], false),
+
   // group; the catalogue's only ranged number is the member's months_lived.
-  both("hh", [{ first_name: "Ming" }], true),
-  both("hh", [{ first_name: "Ming", months_lived: "12" }], true),
-  both("hh", [{ first_name: "Ming", months_lived: "13" }], false),
+  // Every member needs a well-formed id, and no two members share one.
+  both("hh", [{ member_id: memberId(1), first_name: "Ming" }], true),
+  both("hh", [{ member_id: memberId(1), first_name: "Ming", months_lived: "12" }], true),
+  both("hh", [{ member_id: memberId(1), first_name: "Ming", months_lived: "13" }], false),
+  both("hh", [{ first_name: "Ming" }], false),
+  both("hh", [{ member_id: "", first_name: "Ming" }], false),
+  both("hh", [{ member_id: null, first_name: "Ming" }], false),
+  both("hh", [{ member_id: "XYZ", first_name: "Ming" }], false),
+  both("hh", [{ member_id: memberId(1) }, { member_id: memberId(1) }], false),
+  both("hh", [{ member_id: memberId(1) }, { member_id: memberId(2) }], true),
   both("hh", [member()], true),
   both("hh", [member({ months_lived: "12" })], true),
   both("hh", [member({ months_lived: "13" })], false),
   both("hh", [member({ months_lived: "0" })], true),
   both("hh", [member({ dob: null, first_name: "" })], true),
-  both("hh", [{}], true),
+  both("hh", [{ member_id: memberId(1) }], true),
+  both("hh", [{}], false),
   both("hh", [null], false),
   both("hh", [[]], false),
   both("hh", [member({ extra: "x" })], false),
-  both("hh", Array.from({ length: 10 }, () => ({})), true),
-  both("hh", Array.from({ length: 11 }, () => ({})), false),
+  both("hh", Array.from({ length: 10 }, (_, i) => ({ member_id: memberId(i + 1) })), true),
+  both("hh", Array.from({ length: 11 }, (_, i) => ({ member_id: memberId(i + 1) })), false),
   both("hh", "Bo", false),
 ];

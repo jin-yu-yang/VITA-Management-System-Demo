@@ -95,6 +95,11 @@ const V2_SPOUSES = Object.freeze([
   Object.freeze({ first: "Robin", dob: "1988-10-26" }),
 ]);
 
+// 32 lowercase hex characters, fixed by the seed and the member's place, so
+// the same seed gives the same sample (fictional ids, unique within a case).
+// A negative seed counts by its size, so the id is always hexadecimal.
+const memberIdFor = (n, index) => ((Math.abs(n) + 1) * 1000 + index + 1).toString(16).padStart(32, "0");
+
 const pick = (list, seed) => list[((seed % list.length) + list.length) % list.length];
 const numericSeed = (seed) => (Number.isFinite(Number(seed)) ? Math.trunc(Number(seed)) : 0);
 // 2155550100 to 2155550199, a fictional-looking range chosen by seed.
@@ -133,6 +138,7 @@ function versionTwoAnswers(seed, married) {
     has_household_members: "yes",
     hh: [
       {
+        member_id: memberIdFor(n, 0),
         first_name: person.child,
         last_name: person.last,
         dob: person.childDob,

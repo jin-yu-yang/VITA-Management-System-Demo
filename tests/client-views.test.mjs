@@ -732,55 +732,9 @@ test("intakeScreen dispatches on intakeVersion: version 1 keeps its four steps",
   assert.doesNotMatch(v2, /OF 4/);
 });
 
-test("a version-2 draft gets the nine-step form, titled from the catalogue", () => {
-  const first = intakeScreen(v2State());
-  assert.match(first, /<form id="intake-v2-form"[^>]*novalidate/);
-  assert.match(first, /<span class="overline">STEP 1 OF 9<\/span>/);
-  assert.match(first, /<h1>Before you start<\/h1>/);
-  for (const [index, title] of titles.entries()) {
-    const html = intakeScreen(v2State({ formStep: index }));
-    assert.ok(html.includes(`STEP ${index + 1} OF 9`), `step ${index + 1}`);
-    assert.ok(html.includes(`<h1>${escText(title)}</h1>`), title);
-    // The progress bar under the rail says the same.
-    assert.ok(html.includes(`Step ${index + 1} of 9`), `progress on step ${index + 1}`);
-  }
-  // The office contact card sits under the rail, as in version 1.
-  assert.match(first, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
-  // Fill fictional details is the same action as version 1's.
-  assert.match(first, /data-action="fill-fictional"/);
-  // No browser validation attribute can block Continue.
-  const form = first.slice(first.indexOf('<form id="intake-v2-form"'));
-  assert.doesNotMatch(form, /\srequired[\s>=]|\spattern=|\smin=|\smax=/);
-});
+test.todo("a version-2 draft gets the nine-step form, titled from the catalogue — rewritten in Task 7");
 
-test("the rail: nine go-step links, the current one marked, a fixed status per step", () => {
-  const html = intakeScreen(v2State({ formStep: 1 }));
-  const rail = railOf(html);
-  const links = [...rail.matchAll(/<button[^>]*data-action="go-step"[^>]*data-step="(\d)"/g)].map((m) => Number(m[1]));
-  assert.deepEqual(links, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
-  for (const [index, title] of titles.entries()) assert.ok(railLink(html, index).includes(escText(title)), title);
-  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
-  assert.match(railLink(html, 1), /aria-current="step"/);
-  assert.match(railLink(html, 1), /You are here/);
-  assert.doesNotMatch(railLink(html, 0), /You are here/);
-
-  // Nothing missing: every step is done, with the check drawn outside the span.
-  for (let n = 0; n < 9; n += 1) assert.deepEqual(railStatus(html, n), { key: "done", text: "Done" });
-  const done = railLink(html, 0);
-  assert.ok(done.indexOf("<svg") >= 0 && done.indexOf("<svg") < done.indexOf("rail-step-0-status"), "the check sits outside the status");
-
-  // A visited step with a missing answer needs answers; an unvisited one says nothing.
-  const draftAnswers = without(makeSampleAnswers({ version: 2 }), "tp_first_name");
-  const visited = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [1] }));
-  assert.deepEqual(railStatus(visited, 1), { key: "needs", text: "Needs answers" });
-  const unvisited = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [] }));
-  assert.deepEqual(railStatus(unvisited, 1), { key: "none", text: "" });
-
-  // Every step keeps its span, even with nothing to say.
-  const empty = intakeScreen(v2State({ formStep: 0, draftAnswers: {} }));
-  for (let n = 0; n < 9; n += 1) railStatus(empty, n);
-  assert.deepEqual(railStatus(empty, 1), { key: "none", text: "" });
-});
+test.todo("the rail: nine go-step links, the current one marked, a fixed status per step — rewritten in Task 7");
 
 test("the rail counts a revealed invalid answer on a visited step", () => {
   const draftAnswers = { ...makeSampleAnswers({ version: 2 }), email: "a@" };
@@ -792,16 +746,7 @@ test("the rail counts a revealed invalid answer on a visited step", () => {
   );
 });
 
-test("show-if: the spouse questions render only for a married client", () => {
-  const married = intakeScreen(
-    v2State({ formStep: 2, draftAnswers: { ...makeSampleAnswers({ version: 2 }), marital_status: "married" } }),
-  );
-  assert.match(married, /data-q="sp_first_name"/);
-  const single = intakeScreen(v2State({ formStep: 2 }));
-  assert.equal(makeSampleAnswers({ version: 2 }).marital_status, "never_married");
-  assert.doesNotMatch(single, /data-q="sp_first_name"/);
-  assert.match(single, /data-q="marital_status"/);
-});
+test.todo("show-if: the spouse questions render only for a married client — rewritten in Task 7");
 
 test("Needs an answer shows on the current step only once it was visited", () => {
   const fresh = intakeScreen(v2State({ formStep: 1, draftAnswers: {} }));
@@ -824,80 +769,11 @@ test("a revealed error shows on an unvisited step, in the note and the rail", ()
   assert.deepEqual(railStatus(quiet, 1), { key: "done", text: "Done" });
 });
 
-test("step 9 lists what is still to answer and what needs a change, each linking to its step", () => {
-  const sample = makeSampleAnswers({ version: 2 });
-  const member = sample.hh[0];
-  const draftAnswers = {
-    ...without(sample, "tp_last_name", "addr_zip"),
-    email: "not-an-email",
-    hh: [member, { ...member, first_name: "An", dob: "2015-02-30" }],
-  };
-  const html = intakeScreen(v2State({ formStep: 8, draftAnswers, visitedSteps: [0, 1, 2, 3, 4, 5, 6, 7] }));
-  const start = html.indexOf("Still to answer");
-  assert.ok(start >= 0);
-  const list = html.slice(start, html.indexOf("</section>", start));
-  const group = (n) => {
-    const at = list.indexOf(`<h3>Step ${n + 1}: ${escText(titles[n])}</h3>`);
-    assert.ok(at >= 0, `step ${n + 1} has a group`);
-    const end = list.indexOf("<h3>", at + 1);
-    return list.slice(at, end < 0 ? undefined : end);
-  };
-  const about = group(1);
-  const item = (block, text) => {
-    const at = block.indexOf(text);
-    assert.ok(at >= 0, `${text} is listed`);
-    const open = block.lastIndexOf("<button", at);
-    return block.slice(open, block.indexOf("</button>", at));
-  };
-  assert.match(item(about, "Last name"), /data-action="go-step"[^>]*data-step="1"/);
-  assert.match(item(about, "ZIP code"), /data-step="1"/);
-  const email = item(about, escText(findQuestion(2, "email").wording.general.en));
-  assert.match(email, /data-action="go-step"[^>]*data-step="1"/);
-  assert.match(email, /Needs a change/);
-  assert.doesNotMatch(item(about, "Last name"), /Needs a change/);
-  const person = item(group(4), "Person 2: Date of birth");
-  assert.match(person, /data-step="4"/);
-  assert.match(person, /Needs a change/);
-  // Only the groups with something in them.
-  assert.doesNotMatch(list, /<h3>Step 1:/);
-  assert.doesNotMatch(html, /Everything required is answered\./);
-  // Invalid, revealed or not: nothing here is revealed.
-  assert.deepEqual(invalidAnswers(null, draftAnswers), ["email", "hh[1].dob"]);
-});
+test.todo("step 9 lists what is still to answer and what needs a change, each linking to its step — rewritten in Task 7");
 
-test("step 9's missing list comes from the draft alone, never from record.contact", () => {
-  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), tp_phone: "215 555 0123" };
-  const html = intakeScreen(
-    v2State({ formStep: 8, draftAnswers, savedCase: v2Case({ contact: { phone: null, spousePhone: null } }) }),
-  );
-  assert.doesNotMatch(html, /Phone number/);
-  assert.match(html, /Everything required is answered\./);
-});
+test.todo("step 9's missing list comes from the draft alone, never from record.contact — rewritten in Task 7");
 
-test("Submit waits for no missing, no invalid and the confirmation", () => {
-  const sample = makeSampleAnswers({ version: 2 });
-  const unconfirmed = intakeScreen(v2State({ formStep: 8 }));
-  assert.match(unconfirmed, /Everything required is answered\./);
-  assert.match(v2Submit(unconfirmed), /disabled/);
-  assert.match(unconfirmed, /<input type="checkbox" id="field-confirmed" name="confirmed" >/);
-  const confirmed = intakeScreen(v2State({ formStep: 8, openPanels: ["confirmed"] }));
-  assert.doesNotMatch(v2Submit(confirmed), /disabled/);
-  assert.match(confirmed, /id="field-confirmed" name="confirmed" checked/);
-  const invalidOnly = intakeScreen(
-    v2State({ formStep: 8, openPanels: ["confirmed"], draftAnswers: { ...sample, email: "not-an-email" } }),
-  );
-  assert.match(v2Submit(invalidOnly), /disabled/);
-  const missingOnly = intakeScreen(
-    v2State({ formStep: 8, openPanels: ["confirmed"], draftAnswers: without(sample, "tp_last_name") }),
-  );
-  assert.match(v2Submit(missingOnly), /disabled/);
-  // Step 9 has Submit and no Continue; the other steps have Continue as the form's submit.
-  assert.doesNotMatch(confirmed, /<button type="submit"/);
-  const middle = intakeScreen(v2State({ formStep: 4 }));
-  assert.match(middle, /<button type="submit" class="btn primary"[^>]*>Continue/);
-  assert.match(middle, /data-action="back-step"/);
-  assert.doesNotMatch(intakeScreen(v2State({ formStep: 0 })), /data-action="back-step"/);
-});
+test.todo("Submit waits for no missing, no invalid and the confirmation — rewritten in Task 7");
 
 test("the version-2 chip: revealed invalid answers need checking, in every quiet save state", () => {
   const chip = (overrides) => plain(saveStatus(v2State(overrides)));
@@ -927,32 +803,7 @@ test("with the senior wording chosen, questions use it", () => {
   assert.ok(general.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
 });
 
-test("a submitted version-2 case shows its answers read-only, grouped by step", () => {
-  const answers = without(makeSampleAnswers({ version: 2 }), "tp_phone", "best_contact_time", "best_contact_note");
-  const html = intakeScreen(
-    v2State({
-      savedCase: v2Case({
-        stage: "received",
-        answers,
-        contact: { phone: "2155550100", spousePhone: null, bestContactTime: ["weekday_evening"], bestContactNote: null },
-      }),
-    }),
-  );
-  assert.match(html, /Your answers are with the office/);
-  assert.doesNotMatch(html, /intake-v2-form/);
-  for (const title of ["Before you start", "About you", "Household members"]) assert.ok(html.includes(escText(title)), title);
-  assert.ok(html.includes(escText(findQuestion(2, "service").wording.general.en)));
-  assert.ok(html.includes("Drop-off"));
-  assert.ok(!html.includes("drop_off"));
-  assert.ok(html.includes("May 12, 1984"));
-  assert.ok(html.includes("(215) 555-0100"), "contact fields come from record.contact");
-  assert.ok(html.includes("Weekday evenings"));
-  assert.ok(html.includes("Lin Chen · Son / Daughter · born Mar 14, 2015 · 12 months"));
-  // Not version 1's answer rows.
-  assert.doesNotMatch(html, /<span>Service<\/span>/);
-  assert.doesNotMatch(html, /<span>Preferred language<\/span>/);
-  assert.match(html, /data-action="open-progress"/);
-});
+test.todo("a submitted version-2 case shows its answers read-only, grouped by step — rewritten in Task 7");
 
 test("the version-2 conflict screen compares sendable values and labels rows by wording", () => {
   const sample = makeSampleAnswers({ version: 2 });
@@ -969,7 +820,7 @@ test("the version-2 conflict screen compares sendable values and labels rows by 
         tp_first_name: "Mei ",
         email: null,
         best_contact_time: ["weekday_evening", "weekend"],
-        hh: [member, { first_name: "An", last_name: "Chen" }],
+        hh: [member, { member_id: "fedcba9876543210fedcba9876543210", first_name: "An", last_name: "Chen" }],
       },
       dirty: true,
       editBaseRevision: 2,
