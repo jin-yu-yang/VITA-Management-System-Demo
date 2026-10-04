@@ -10,8 +10,8 @@
 //     (a module, not JSON, because server.mjs serves only /src/<name>.mjs|css|svg|png);
 //   - the next `supabase/migrations/NNN_intake_catalogue_<hash8>.sql`, only when
 //     the hash of the catalogue and LOADER_VERSION differs from the newest
-//     catalogue migration's and `011_intake_v2.sql` (which defines the loader)
-//     exists.
+//     catalogue migration's and `015_intake_loader.sql` (which defines the
+//     loader the migration calls) exists.
 //
 // Run with:
 //   node tools/build-intake-catalogue.mjs        (npm run build:intake)
@@ -42,6 +42,7 @@ const TYPES = {
   "Yes / No": "yesno",
   "Yes / No / Not sure": "yesno",
   Group: "group",
+  "Hidden id": "id",
 };
 
 // Fixed value sets of the types that carry no option lines.
@@ -51,19 +52,232 @@ const FIXED_OPTIONS = {
   "Yes / No / Not sure": ["yes", "no", "not_sure"],
 };
 
-// Spec §2.3: the nine steps and the draft sections each one shows. The Chinese
-// step titles are new wording (the drafts have none) for the group to review.
-const STEPS = [
-  { n: 1, title: { en: "Before you start", zh: "开始之前" }, sections: [0] },
-  { n: 2, title: { en: "About you", zh: "关于您" }, sections: [1, 2] },
-  { n: 3, title: { en: "Marriage & spouse", zh: "婚姻与配偶" }, sections: [3, 4] },
-  { n: 4, title: { en: "Your 2025 situation", zh: "您 2025 年的情况" }, sections: [5] },
-  { n: 5, title: { en: "Household members", zh: "家庭成员" }, sections: [6] },
-  { n: 6, title: { en: "Income", zh: "收入" }, sections: [9] },
-  { n: 7, title: { en: "Expenses & life events", zh: "支出与生活事项" }, sections: [10, 11] },
-  { n: 8, title: { en: "Refund & preferences", zh: "退税与偏好" }, sections: [7, 8, 12, 13] },
-  { n: 9, title: { en: "Permission & review", zh: "授权与确认" }, sections: [14] },
+// The intake redesign (spec 2026-10-04 §2): the ten steps, the draft sections
+// each one shows, and its sub-steps. A questions sub-step lists its question
+// ids in catalogue order; a documents sub-step names its card group; a review
+// sub-step is fixed. Step titles are `{ en, zh }`; sub-step titles and leads
+// are `{ general: { en, zh }, senior: { en, zh } }`, the same text in both for
+// now (the group adjusts the senior wording later). The Chinese titles are new
+// wording for the group to review.
+const both = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
+const questions = (id, title, ids, lead) => ({
+  id,
+  kind: "questions",
+  title: both(...title),
+  ...(lead ? { lead: both(...lead) } : {}),
+  questions: ids.split(/\s+/).filter(Boolean),
+});
+const documents = (id, title, cards) => ({ id, kind: "documents", title: both(...title), questions: [], cards });
+const review = (id, title) => ({ id, kind: "review", title: both(...title), questions: [] });
+
+const RECEIVED = ["Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？"];
+const PAID = ["Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？"];
+const HAPPENED = ["Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？"];
+
+export const STEPS = [
+  {
+    id: "before",
+    n: 1,
+    title: { en: "Before you start", zh: "开始之前" },
+    sections: [0],
+    substeps: [
+      questions("before.ready", ["Before you start", "开始之前"], "form_version"),
+      questions("before.service", ["How you'd like help", "服务方式"], "service"),
+      questions("before.language", ["Language", "语言"], "language language_other"),
+    ],
+  },
+  {
+    id: "about",
+    n: 2,
+    title: { en: "About you", zh: "基本信息" },
+    sections: [1, 2, 3, 4, 5, 8],
+    substeps: [
+      questions(
+        "about.you",
+        ["About you", "个人信息"],
+        "tp_first_name tp_middle_name tp_last_name tp_dob tp_job_title tp_phone email best_contact_time best_contact_note",
+      ),
+      questions("about.address", ["Mailing address", "邮寄地址"], "addr_street addr_apt addr_city addr_state addr_zip"),
+      questions(
+        "about.marital",
+        ["Marital status", "婚姻状况"],
+        "marital_status married_last_day lived_apart_last_6mo divorce_date separation_date spouse_death_year",
+      ),
+      questions("about.spouse", ["Your spouse", "配偶信息"], "sp_first_name sp_middle_name sp_last_name sp_dob sp_job_title sp_phone"),
+      questions(
+        "about.situation",
+        ["Your 2025 situation", "2025 年基本情况"],
+        "multi_state claimed_by_other us_citizen on_visa fulltime_student legally_blind disabled ippin digital_assets",
+      ),
+      questions("about.irs", ["IRS letters and election fund", "国税局信件与选举基金"], "irs_language_pref irs_language pecf"),
+    ],
+  },
+  {
+    id: "household",
+    n: 3,
+    title: { en: "Household", zh: "家庭成员" },
+    sections: [6],
+    substeps: [questions("household.members", ["Household members and dependents", "家庭成员及受抚养人"], "has_household_members hh")],
+  },
+  {
+    id: "income",
+    n: 4,
+    title: { en: "Income", zh: "收入" },
+    sections: [9],
+    substeps: [
+      questions("income.wages", ["Wages and tips", "工资与小费"], "inc_wages inc_wages_job_count inc_tips", RECEIVED),
+      questions(
+        "income.retirement",
+        ["Retirement and government benefits", "退休金与政府福利"],
+        "inc_retirement inc_disability inc_social_security inc_unemployment inc_state_refund",
+        RECEIVED,
+      ),
+      questions(
+        "income.investments",
+        ["Investments and sales", "投资与出售"],
+        "inc_interest_div inc_sale_assets inc_sale_assets_prior_loss",
+        RECEIVED,
+      ),
+      questions("income.rental", ["Rental income", "租金收入"], "inc_rental_home inc_rental_home_under15 inc_rental_property", RECEIVED),
+      questions("income.business", ["Business and self-employment", "经营与自雇"], "inc_self_employed inc_self_employed_prior_loss", RECEIVED),
+      questions("income.other", ["Other income", "其他收入"], "inc_alimony inc_gambling inc_other inc_other_desc", RECEIVED),
+    ],
+  },
+  {
+    id: "expenses",
+    n: 5,
+    title: { en: "Expenses & life events", zh: "支出与生活事项" },
+    sections: [10, 11],
+    substeps: [
+      questions(
+        "expenses.deductible",
+        ["Deductible expenses", "可扣除支出"],
+        "exp_mortgage_interest exp_taxes exp_medical exp_charity",
+        PAID,
+      ),
+      questions(
+        "expenses.other",
+        ["Other expenses", "其他支出"],
+        "exp_student_loan exp_dependent_care exp_retirement_contrib exp_educator exp_alimony_paid",
+        PAID,
+      ),
+      questions(
+        "expenses.events",
+        ["Things that happened in 2025", "2025 年发生的事项"],
+        "evt_education evt_sold_home evt_hsa evt_marketplace evt_energy evt_other evt_other_desc evt_debt_canceled evt_disaster evt_credit_disallowed evt_irs_letter evt_estimated_payments evt_brought_prior_return",
+        HAPPENED,
+      ),
+    ],
+  },
+  {
+    id: "refund",
+    n: 6,
+    title: { en: "Refund & permission", zh: "退税与授权" },
+    sections: [7, 14],
+    substeps: [
+      questions("refund.payment", ["Refund or payment", "退税或补税"], "refund_method refund_method_other payment_method"),
+      questions(
+        "refund.consent",
+        ["Sharing your return next year (Form 15080)", "明年共享报税信息（15080 表）"],
+        "gcf_consent gcf_tp_signature gcf_tp_date gcf_sp_signature gcf_sp_date",
+      ),
+    ],
+  },
+  {
+    id: "optional",
+    n: 7,
+    title: { en: "Optional questions", zh: "选填问题" },
+    sections: [12],
+    substeps: [
+      questions(
+        "optional.questions",
+        ["Optional questions", "选填问题"],
+        "opt_english_speak opt_english_read opt_household_disability opt_veteran opt_race_tp opt_race_sp",
+      ),
+    ],
+  },
+  {
+    id: "documents",
+    n: 8,
+    title: { en: "Documents", zh: "上传文件" },
+    sections: [],
+    substeps: [
+      documents("documents.bring", ["Bring these to your visit", "请携带以下文件"], "bring"),
+      documents("documents.identity", ["Identity", "身份文件"], "identity"),
+      documents("documents.income", ["Income forms", "收入税表"], "income"),
+      documents("documents.expenses", ["Expenses", "支出凭证"], "expenses"),
+      documents("documents.events", ["Health and other events", "医保及其他"], "events"),
+      documents("documents.other", ["Other documents", "其他文件"], "other"),
+    ],
+  },
+  {
+    id: "notes",
+    n: 9,
+    title: { en: "Anything else", zh: "补充说明" },
+    sections: [13],
+    substeps: [questions("notes.anything", ["Anything else", "补充说明"], "additional_notes")],
+  },
+  {
+    id: "review",
+    n: 10,
+    title: { en: "Review & submit", zh: "检查并提交" },
+    sections: [],
+    substeps: [
+      review("review.check", ["Review your application", "检查您的申请"]),
+      review("review.summary", ["Your application summary", "申请摘要"]),
+      review("review.submit", ["Submit", "提交"]),
+    ],
+  },
 ];
+
+const SUBSTEP_KINDS = ["questions", "documents", "review"];
+const CARD_GROUPS = ["bring", "identity", "income", "expenses", "events", "other"];
+
+/**
+ * Checks the sub-steps of a built catalogue: every step has at least one, each
+ * has a known kind, only `documents` sub-steps name a card group, and every
+ * top-level question is listed in exactly one `questions` sub-step of its own
+ * step. Throws on the first problem.
+ */
+export function checkSubsteps(catalogue) {
+  const owner = new Map(); // question id → sub-step id
+  const seen = new Set();
+  for (const step of catalogue.steps) {
+    if (!Array.isArray(step.substeps) || step.substeps.length === 0)
+      throw new Error(`step '${step.id}' needs at least one sub-step`);
+    const own = new Set(step.sections.flatMap((section) => section.questions.map((q) => q.id)));
+    for (const sub of step.substeps) {
+      if (seen.has(sub.id)) throw new Error(`sub-step '${sub.id}' appears twice`);
+      seen.add(sub.id);
+      if (!SUBSTEP_KINDS.includes(sub.kind)) throw new Error(`sub-step '${sub.id}' has an unknown kind '${sub.kind}'`);
+      if ((sub.kind === "documents") !== (sub.cards !== undefined))
+        throw new Error(`sub-step '${sub.id}': only a documents sub-step names its cards`);
+      if (sub.kind === "documents" && !CARD_GROUPS.includes(sub.cards))
+        throw new Error(`sub-step '${sub.id}' names unknown cards '${sub.cards}'`);
+      if (sub.kind !== "questions" && sub.questions.length > 0)
+        throw new Error(`sub-step '${sub.id}' is a ${sub.kind} sub-step and lists questions`);
+      for (const id of sub.questions) {
+        if (!own.has(id)) {
+          const elsewhere = catalogue.steps.some((s) =>
+            s.sections.some((section) => section.questions.some((q) => q.id === id)),
+          );
+          throw new Error(
+            elsewhere
+              ? `sub-step '${sub.id}' lists '${id}', which belongs to another step`
+              : `sub-step '${sub.id}' lists unknown question '${id}'`,
+          );
+        }
+        if (owner.has(id))
+          throw new Error(`question '${id}' is in two sub-steps: '${owner.get(id)}' and '${sub.id}'`);
+        owner.set(id, sub.id);
+      }
+    }
+  }
+  for (const step of catalogue.steps)
+    for (const section of step.sections)
+      for (const q of section.questions)
+        if (!owner.has(q.id)) throw new Error(`question '${q.id}' is in no sub-step`);
+}
 
 // Spec §3.5 / D9: the materials checklist, mirrored by vitally_private.materials_items().
 const MATERIALS = [
@@ -292,6 +506,7 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
         group.fields.push(question);
       } else {
         if (group) fail(idLineNo, `'${id}' follows the '${group.id}' group; only its fields may`);
+        if (type === "id") fail(idLineNo, "a hidden id belongs inside a group");
         if (type === "group") {
           question.fields = [];
           group = question;
@@ -434,7 +649,7 @@ function fixedOptions(general, senior) {
  * Builds the catalogue (spec §2.4, version 2) from the two drafts' texts.
  * Throws if their IDs, types, options, required flags or show-if rules differ.
  */
-export function buildCatalogue(standardText, seniorText) {
+export function buildCatalogue(standardText, seniorText, { steps = STEPS } = {}) {
   const general = parseDraft(standardText, { role: "standard" });
   const senior = parseDraft(seniorText, { role: "senior" });
   const sectionsNs = (d) => d.sections.map((s) => s.n).join(",");
@@ -471,20 +686,24 @@ export function buildCatalogue(standardText, seniorText) {
     byN.set(g.n, out);
   });
 
-  const mapped = STEPS.flatMap((step) => step.sections);
+  const mapped = steps.flatMap((step) => step.sections);
   for (const n of byN.keys())
     if (!mapped.includes(n)) throw new Error(`Section ${n} belongs to no step`);
 
-  return {
+  const catalogue = {
     version: 2,
-    steps: STEPS.map((step) => ({
+    steps: steps.map((step) => ({
+      id: step.id,
       n: step.n,
       title: step.title,
       sections: step.sections.filter((n) => byN.has(n)).map((n) => byN.get(n)),
+      substeps: structuredClone(step.substeps),
     })),
     fixedOptions: fixedOptions(general, senior),
     materials: MATERIALS,
   };
+  checkSubsteps(catalogue);
+  return catalogue;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,10 +720,11 @@ const canonical = (value) =>
         )
       : value;
 
-// Bump when 011's load_intake_catalogue or the intake_fields columns change.
+// Bump when the loader (011's load_intake_catalogue, redefined in 015) or the
+// intake_fields columns change; 015 added the `id` type and the sub-step table.
 // It is part of the hash, so a bump makes the build write a new catalogue
 // migration even though the catalogue itself is unchanged.
-export const LOADER_VERSION = 1;
+export const LOADER_VERSION = 2;
 
 /**
  * SHA-256 hex of the canonical JSON (keys sorted, no whitespace) of
@@ -583,10 +803,10 @@ function main() {
     console.log("the newest catalogue migration already records this catalogue");
     return;
   }
-  if (!existsSync(path.join(migrations, "011_intake_v2.sql"))) {
+  if (!existsSync(path.join(migrations, "015_intake_loader.sql"))) {
     console.log(
       `would write supabase/migrations/${next.name} (${next.text.length} characters), ` +
-        "but 011_intake_v2.sql, which defines the loader, doesn't exist yet",
+        "but 015_intake_loader.sql, which defines the loader, doesn't exist yet",
     );
     return;
   }

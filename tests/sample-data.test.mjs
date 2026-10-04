@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeSampleAnswers, fillBlankAnswers } from "../src/sample-data.mjs";
 import { screening, submissionBlocker } from "../src/domain.mjs";
-import { checkValue, findQuestion, missingToSubmit } from "../src/intake-catalogue.mjs";
+import { checkValue, findQuestion, isMemberId, missingToSubmit } from "../src/intake-catalogue.mjs";
 
 test("fictional filling preserves edits and excludes identity", () => {
   const sample = makeSampleAnswers({ seed: 21, scenario: "ordinary" });
@@ -130,6 +130,19 @@ test("a version-2 sample passes every value check and leaves nothing to answer",
   for (const id of ["married_last_day", "lived_apart_last_6mo", "sp_first_name", "sp_last_name", "sp_dob", "sp_job_title", "sp_phone"])
     assert.ok(Object.hasOwn(married, id), id);
   assert.match(married.sp_phone, /^\d{10}$/);
+});
+
+test("every version-2 sample member carries a well-formed id, unique in the answers and fixed by the seed", () => {
+  for (const seed of [0, 1, 2, 3, 4, 5, -3]) {
+    for (const married of [false, true]) {
+      const answers = makeSampleAnswers({ seed, version: 2, married });
+      const ids = answers.hh.map((member) => member.member_id);
+      assert.ok(ids.length > 0);
+      for (const id of ids) assert.equal(isMemberId(id), true, `seed ${seed}: ${id}`);
+      assert.equal(new Set(ids).size, ids.length);
+      assert.deepEqual(makeSampleAnswers({ seed, version: 2, married }).hh.map((m) => m.member_id), ids);
+    }
+  }
 });
 
 test("the version-2 sample is deterministic for a seed and varies with it", () => {

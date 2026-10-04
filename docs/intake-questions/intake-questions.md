@@ -18,7 +18,7 @@
   - `none` (No one / 均无), which clears the other two when selected
 - **Every Yes/No question** has an extra option: `not_sure` (I'm not sure / 不确定). The volunteer will confirm it in person.
 - **Show if** = the question appears only when the condition is met.
-- **Upload**: When a Tip says "upload", show a file-upload button right under that question.
+- **Upload**: The Tip names the document and says "You will upload it in the Documents step / 您将在「上传文件」步骤上传". All uploads happen in one place.
 - Fields on the paper form marked "To be completed by certified volunteer" **do not appear on the public-facing form** (see the appendix).
 
 ---
@@ -48,7 +48,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 `form_version` · Single choice · Optional
 - `general` No, use the standard version / 否，使用标准版
 - `senior` Yes, use the senior version / 是，使用长者版
-> Tip: The senior version asks the same questions, with shorter explanations and easier words. You can switch at any time with the "Senior version" switch at the top; your answers are kept. / 长者版的问题与标准版相同，说明更简短，用词更易懂。您可以随时通过页面顶部的"长者版"开关切换，已填写的内容会保留。
+> Tip: You can change back any time with the Senior version switch at the top. Your answers are kept. / 您可以随时通过页面顶部的"长者版"开关改回，已填写的内容会保留。
 > Note for developers: both versions use the same field IDs; only the wording changes. The standard version is the default.
 
 **Q0.2** How would you like to get tax help? / 您希望以哪种方式获得报税帮助？
@@ -229,7 +229,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q5.8** Who was issued an Identity Protection PIN (IP PIN)? / 以下谁持有国税局（IRS）发放的身份保护码（IP PIN）？
 `ippin` · Who (multi-select) · Required
-> Tip: A 6-digit number from the IRS, issued after identity theft or through voluntary sign-up. A new one is issued every year. If you have one, upload this year's letter. / 国税局发放的 6 位数字，通常在身份被盗用后发放，也可自行申请，**每年更换**。如有，请上传今年的通知信。
+> Tip: A 6-digit number from the IRS, issued after identity theft or through voluntary sign-up. A new one is issued every year. If you have one, bring this year's letter (CP01A) or a screenshot from your IRS online account. You will upload it in the Documents step. / 国税局发放的 6 位数字，通常在身份被盗用后发放，也可自行申请，**每年更换**。如有，请准备今年的通知信（CP01A）或国税局网上账户截图。您将在「上传文件」步骤上传。
 
 **Q5.9** Who owned or held any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025? / 2025 年，以下谁拥有或持有数字资产（如比特币、以太坊等加密货币）？
 `digital_assets` · Who (multi-select) · Required
@@ -249,6 +249,10 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 `hh` · Group · Required
 **Show if** `has_household_members = yes`
 > Note for developers: Repeatable group "Add a person / 添加成员" (the paper form has 4 rows; the online form can allow more). For each person:
+
+**Q6.0m** Person id / 成员编号
+`hh[i].member_id` · Hidden id · Optional
+> Note for developers: never shown. "Add a person" generates it (32 lowercase hex characters); the server refuses a member without one.
 
 **Q6.1** First name / 名
 `hh[i].first_name` · Text · Required
@@ -296,7 +300,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q6.10** Issued an IP PIN? / 是否持有身份保护码（IP PIN）？
 `hh[i].ippin` · Yes / No / Not sure · Required
-> Tip: If yes, upload this year's letter. / 如有，请上传今年的通知信。
+> Tip: If yes, bring this year's IP PIN letter (CP01A). You will upload it in the Documents step. / 如有，请准备今年的通知信（CP01A）。您将在「上传文件」步骤上传。
 
 ---
 
@@ -342,10 +346,6 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 ## Section 9: Income in 2025 / 2025 年收入
 
-**Intro text:**
-> Did **you or your spouse** receive any of the following in 2025? If yes, please upload the related tax forms.
-> 2025 年，您或配偶是否有以下收入？如有，请上传相关税表。
-
 > Note for developers: Each item below is Yes / No / Not sure. Some items have follow-up questions.
 
 **Q9.1** Wages from a part-time or full-time job / 工资（兼职或全职）
@@ -359,7 +359,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.2** Tips / 小费
 `inc_tips` · Yes / No / Not sure · Required
-> Tip: All tips, including cash tips, are income. Some tips may be deductible starting in 2025; please have your tip records ready. / 所有小费（含现金小费）均需申报。自 2025 年起部分小费可能可以扣除，请准备好小费记录，志愿者会协助判断。
+> Tip: All tips, including cash tips, are income. Some tips may be deductible starting in 2025. You will upload your tip records (your tip log, or the tip page of your app's tax summary) in the Documents step. / 所有小费（含现金小费）均需申报。自 2025 年起部分小费可能可以扣除。您将在「上传文件」步骤上传小费记录（自己记的小费账，或平台年度报税摘要中的小费页）。
 
 **Q9.3** Retirement account, pension, or annuity distributions / 退休账户、养老金或年金收入
 `inc_retirement` · Yes / No / Not sure · Required
@@ -367,6 +367,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.4** Disability benefits (from insurance or workers' compensation) / 残障补助（保险或工伤赔偿）
 `inc_disability` · Yes / No / Not sure · Required
+> Tip: W-2 or 1099-R for disability pay, or the benefit letter. You will upload it in the Documents step. / 残障补助的 W-2、1099-R 或补助通知信。您将在「上传文件」步骤上传。
 
 **Q9.5** Social Security or Railroad Retirement benefits / 社会安全金或铁路退休金
 `inc_social_security` · Yes / No / Not sure · Required
@@ -378,6 +379,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.7** Refund of state or local income tax / 州或地方所得税退税
 `inc_state_refund` · Yes / No / Not sure · Required
+> Tip: 1099-G for the state or city tax refund. You will upload it in the Documents step. / 州或市退税 1099-G。您将在「上传文件」步骤上传。
 
 **Q9.8** Interest or dividends (bank accounts, bonds, stocks, etc.) / 利息或股息（银行账户、债券、股票等）
 `inc_interest_div` · Yes / No / Not sure · Required
@@ -385,7 +387,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.9** Sale of stocks, bonds, or real estate / 出售股票、债券或房地产
 `inc_sale_assets` · Yes / No / Not sure · Required
-> Tip: Reported on Form **1099-B**. Please also upload your brokerage statement. / 对应 **1099-B** 表，请同时上传券商对账单。
+> Tip: Reported on Form **1099-B**. Document: the 1099-B and your full brokerage statement (and a 1099-S if the sale was real estate). You will upload it in the Documents step. / 对应 **1099-B** 表。文件：1099-B 及完整券商对账单（如卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。
 
 **Q9.9a** Did you report a loss from these sales on last year's return? / 去年的报税表是否申报过此类亏损？
 `inc_sale_assets_prior_loss` · Yes / No / Not sure · Required
@@ -393,9 +395,11 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.10** Alimony received (not child support) / 收到的赡养费（不含子女抚养费）
 `inc_alimony` · Yes / No / Not sure · Required
+> Tip: Divorce or separation agreement: the page with the date and the alimony terms. You will upload it in the Documents step. / 离婚或分居协议中写有日期和赡养费条款的页面。您将在「上传文件」步骤上传。
 
 **Q9.11** Income from renting out your house or a room in your house / 出租房屋或房间的收入
 `inc_rental_home` · Yes / No / Not sure · Required
+> Tip: Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step. / 租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
 
 **Q9.11a** Did you also use it as your home AND rent it out for fewer than 15 days in 2025? / 该房屋是否同时为您的自住房，且 2025 年出租不足 15 天？
 `inc_rental_home_under15` · Yes / No / Not sure · Required
@@ -403,6 +407,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.12** Income from renting out personal property (such as a vehicle or tools) / 出租个人物品（如车辆、工具）的收入
 `inc_rental_property` · Yes / No / Not sure · Required
+> Tip: Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step. / 出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
 
 **Q9.13** Gambling or lottery winnings / 赌博或彩票奖金
 `inc_gambling` · Yes / No / Not sure · Required
@@ -410,7 +415,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.14** Income from contract or self-employment work / 合同工或自雇收入
 `inc_self_employed` · Yes / No / Not sure · Required
-> Tip: For example: delivery or rideshare apps, cleaning, selling goods. May be reported on Form **1099-NEC**, **1099-MISC**, or **1099-K**. / 例如：外卖或网约车平台、清洁服务、销售商品。可能对应 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。
+> Tip: For example: delivery or rideshare apps, cleaning, selling goods. May be reported on Form **1099-NEC**, **1099-MISC**, or **1099-K**. If you drive or deliver with an app, also upload the app's yearly tax summary. / 例如：外卖或网约车平台、清洁服务、销售商品。可能对应 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。如果您开网约车或送外卖，也请上传平台的年度报税摘要。
 
 **Q9.14a** Did you report a loss from this work on last year's return? / 去年的报税表是否申报过此项亏损？
 `inc_self_employed_prior_loss` · Yes / No / Not sure · Required
@@ -418,6 +423,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.15** Any other income? (Cash payments, jury duty, prizes or awards, digital assets, royalties, union strike benefits, etc.) / 其他收入？（如现金收入、陪审员报酬、奖品或奖励、数字资产、版税、工会罢工补助等）
 `inc_other` · Yes / No / Not sure · Required
+> Tip: Any form or statement for this income (for example, 1099-MISC, a jury duty pay letter, a union strike pay statement). You will upload it in the Documents step. / 该收入的任何税表或证明（如 1099-MISC、陪审报酬通知、工会罢工补助证明）。您将在「上传文件」步骤上传。
 
 **Q9.15a** Please describe / 请说明收入类型
 `inc_other_desc` · Text · Optional
@@ -437,12 +443,15 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q10.2** Taxes paid: state, local, real estate, sales, etc. / 已缴税款：州税、地方税、房产税、销售税等
 `exp_taxes` · Yes / No / Not sure · Required
+> Tip: Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step. / 房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。
 
 **Q10.3** Medical, dental, or prescription expenses / 医疗、牙科或处方药费用
 `exp_medical` · Yes / No / Not sure · Required
+> Tip: Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step. / 医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。
 
 **Q10.4** Charitable contributions / 慈善捐款
 `exp_charity` · Yes / No / Not sure · Required
+> Tip: Donation receipts or thank-you letters. You will upload it in the Documents step. / 捐款收据或感谢信。您将在「上传文件」步骤上传。
 
 ### Part B: Other Expenses / 其他支出
 
@@ -456,9 +465,11 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q10.7** Contributions to a retirement account (IRA, 401(k), etc.) / 退休账户供款（IRA、401(k) 等）
 `exp_retirement_contrib` · Yes / No / Not sure · Required
+> Tip: IRA contribution statement or receipt (Form 5498 if you have it). You will upload it in the Documents step. / IRA 供款证明或收据（如有 5498 表）。您将在「上传文件」步骤上传。
 
 **Q10.8** Classroom supplies purchased as a teacher, teacher's aide, or other educator / 教师、助教或其他教育工作者自费购买的教学用品
 `exp_educator` · Yes / No / Not sure · Required
+> Tip: Receipts for classroom supplies. You will upload it in the Documents step. / 教学用品收据。您将在「上传文件」步骤上传。
 
 **Q10.9** Alimony paid (not child support) / 支付的赡养费（不含子女抚养费）
 `exp_alimony_paid` · Yes / No / Not sure · Required
@@ -472,20 +483,23 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q11.1** You or a family member took classes (college, trade school, job-related training, etc.) / 您或家人参加过课程（大学、职业学校、职业培训等）
 `evt_education` · Yes / No / Not sure · Required
-> Tip: Upload Form **1098-T** and payment receipts. / 请上传 **1098-T** 表及缴费收据。
+> Tip: Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step. / 每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。
 
 **Q11.2** Sold a home / 出售房屋
 `evt_sold_home` · Yes / No / Not sure · Required
+> Tip: 1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step. / 1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。
 
 **Q11.3** Had a Health Savings Account (HSA) / 持有健康储蓄账户（HSA）
 `evt_hsa` · Yes / No / Not sure · Required
+> Tip: 1099-SA and 5498-SA. You will upload it in the Documents step. / 1099-SA 和 5498-SA。您将在「上传文件」步骤上传。
 
 **Q11.4** Purchased health insurance through the Marketplace (HealthCare.gov or a state exchange) / 通过医保交易市场（HealthCare.gov 或州交易平台）购买医疗保险
 `evt_marketplace` · Yes / No / Not sure · Required
-> Tip: Upload every Form **1095-A** you received. Medicaid and Medicare do not count. / 请上传收到的所有 **1095-A** 表。Medicaid 和 Medicare 不属于此类。
+> Tip: Every Form **1095-A** you received. Medicaid and Medicare do not count. You will upload it in the Documents step. / 收到的所有 **1095-A** 表。Medicaid 和 Medicare 不属于此类。您将在「上传文件」步骤上传。
 
 **Q11.5** Purchased and installed energy-efficient home improvements (windows, furnace, insulation, etc.) / 购买并安装节能家居改造（窗户、暖气炉、隔热材料等）
 `evt_energy` · Yes / No / Not sure · Required
+> Tip: Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step. / 每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。
 
 **Q11.6** Other (for example: purchased a new vehicle) / 其他（例如购买新车）
 `evt_other` · Yes / No / Not sure · Required
@@ -501,18 +515,21 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q11.8** Had a loss in a federally declared disaster area / 在联邦宣布的灾区遭受损失
 `evt_disaster` · Yes / No / Not sure · Required
+> Tip: FEMA or insurance papers, and records of the loss. You will upload it in the Documents step. / FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。
 
 **Q11.9** Had a tax credit disallowed in a prior year (e.g., EITC, Child Tax Credit, American Opportunity Credit) / 以往年度是否有税收抵免被拒（如劳动所得抵免 EITC、儿童税收抵免 CTC、美国机会教育抵免 AOTC）
 `evt_credit_disallowed` · Yes / No / Not sure · Required
+> Tip: The IRS letter that denied the credit. You will upload it in the Documents step. / 国税局拒绝抵免的信。您将在「上传文件」步骤上传。
 
 **Q11.10** Received any letter or bill from the IRS / 收到国税局的信件或账单
 `evt_irs_letter` · Yes / No / Not sure · Required
-> Tip: Please upload the letter. / 请上传该信件。
+> Tip: Each IRS letter or bill. You will upload it in the Documents step. / 每一封国税局信件或账单。您将在「上传文件」步骤上传。
 
 **Q11.11** Made estimated tax payments or applied last year's refund to 2025 taxes / 缴纳过预估税，或将去年的退税用于抵缴 2025 年税款
 `evt_estimated_payments` · Yes / No / Not sure · Required
+> Tip: Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step. / 付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。
 
-**Q11.12** Can you upload last year's tax return? / 能否上传去年的报税表？
+**Q11.12** Do you have last year's tax return? / 您有去年的报税表吗？
 `evt_brought_prior_return` · Yes / No · Required
 
 ---
@@ -585,6 +602,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q13.1** Anything else you'd like the volunteer to know? / 还有其他需要告知志愿者的信息吗？
 `additional_notes` · Long text · Optional
+> Tip: For example, a form you haven't received yet. / 例如：还没收到的税表。
 
 ---
 
@@ -636,7 +654,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q14.5** Spouse signature date / 配偶签名日期
 `gcf_sp_date` · Date · Optional
-**Show if** `gcf_sp_signature` is filled
+**Show if** `gcf_consent = yes` AND `marital_status = married` AND `gcf_sp_signature` is filled
 > Note for developers: auto-fill today.
 
 **Footer text:**

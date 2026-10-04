@@ -53,6 +53,8 @@ const paths = {
     "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-2c0-3 3-5 7-5s7 2 7 5v2M16 3a4 4 0 0 1 0 8M22 21v-2c0-2-1-4-4-5",
   megaphone: "M3 10v4h4l8 5V5L7 10H3ZM18 9a4 4 0 0 1 0 6",
   chart: "M3 3v18h18M7 15l4-4 3 3 6-7",
+  // The intake redesign's document cards (spec 2026-10-04 §6.4)
+  camera: "M3 8h4l2-3h6l2 3h4v12H3ZM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
 };
 
 // Every name the icon table knows. A name that is not here falls back to the

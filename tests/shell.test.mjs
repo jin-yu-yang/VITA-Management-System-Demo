@@ -222,6 +222,57 @@ test("the drawer list is exported once, for the renderer and app.mjs's focus fal
   assert.match(app, /views\.DRAWERS\.includes\(/);
 });
 
+// Part 4b2 (Task 8): app.mjs has no DOM harness, so the wiring is pinned at
+// the source: every control the version-2 screens emit has its handler, and
+// the step-index wiring it replaced is gone.
+test("app.mjs handles every version-2 action and no longer moves the form by step index", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const screens = read("../src/intake-views.mjs");
+  const emitted = new Set([
+    ...[...screens.matchAll(/data-action="([a-z-]+)"/g)].map((match) => match[1]),
+    ...[...screens.matchAll(/button\([^;]*?,\s*"([a-z-]+)",\s*"(?:primary|secondary|text|inline)/g)].map((match) => match[1]),
+    ...(screens.includes('"mark-card"') ? ["mark-card"] : []),
+  ]);
+  for (const action of [
+    "go-substep", "toggle-rail-step", "toggle-panel", "back-step", "change-substep",
+    "back-to-summary", "mark-card", "print-summary", "view-draft",
+  ]) {
+    assert.ok(emitted.has(action), `the screens emit ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  for (const action of emitted)
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  assert.match(app, /controller\.moveSubstep\(1\)/, "Continue moves one sub-step");
+  assert.match(app, /controller\.moveSubstep\(-1\)/, "Back moves one sub-step");
+  assert.match(app, /member_id: newMemberId\(\)/, "a new person gets a member id");
+  // Part 4b2 (Task 9): the draft 13614-C replaced the placeholder. The tab is
+  // opened inside the press, before anything is awaited; the bundle loads on
+  // demand; fonts are checked by sha256; a failure never leaves the tab on
+  // "Preparing your draft…". Task 10's browser story presses the buttons.
+  assert.doesNotMatch(app, /The draft is not available yet/);
+  const draft = app.slice(app.indexOf("async function viewDraft("), app.indexOf("async function runNavigation("));
+  assert.ok(draft.indexOf('window.open("", "_blank")') > 0, "the tab opens in the press");
+  assert.ok(draft.indexOf('window.open("", "_blank")') < draft.indexOf("await "), "before anything is awaited");
+  assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
+  assert.match(draft, /"Preparing your draft…"/);
+  // The blocked-tab link goes with its URL, and is put into the page as it
+  // is after the build (a redraw during the build replaces #draft-ready).
+  assert.match(draft, /URL\.revokeObjectURL\(url\);\s+link\?\.remove\(\);\s+\}, 60_000\)/);
+  assert.match(draft, /"Your draft is ready: open it"/);
+  const built = draft.indexOf("await buildDraftPdf(");
+  assert.ok(built > 0);
+  assert.ok(draft.indexOf('const ready = root.querySelector("#draft-ready")') > built, "#draft-ready is looked up after the build");
+  assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
+  assert.match(app, /"The draft could not be made\. Close this tab and try again\."/);
+  assert.match(app, /"The draft font could not be checked\. Try again later\."/);
+  assert.match(app, /case "view-draft":\s+await viewDraft\(/);
+  assert.match(app, /addEventListener\("afterprint"/);
+  assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
+  for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/])
+    assert.doesNotMatch(app, gone);
+});
+
 // PR 4 (the office screens) styles its new containers in one marked block of
 // the stylesheet, on the design tokens only.
 const stylesheet = () =>
@@ -341,9 +392,12 @@ test("the part 4b block styles the version-2 form with tokens only", () => {
     ".q-note.is-invalid",
     ".q-count",
     ".save-chip.checking",
-    ".still-list",
   ])
     assert.ok(block.includes(selector), `${selector} is styled`);
+  // Part 4b2 replaced 4b's numbered rail and its "Still to answer" list; no
+  // markup uses these any more, so their rules went with them.
+  for (const gone of [/\.rail[\s,{]/, /\.rail-num\b/, /\.rail-digit\b/, /\.rail-body\b/, /\.rail-title\b/, /\.q-section-head\b/, /\.still-/])
+    assert.doesNotMatch(css, gone);
   assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*color:\s*var\(--vt-age-late-ink\)[^}]*\}/);
   assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*border-left:[^;}]*var\(--vt-phase-attention\)/);
   assert.match(block, /\.q-note\.is-missing\s*\{[^}]*color:\s*var\(--vt-age-soon-ink\)/);
@@ -357,4 +411,40 @@ test("the part 4b block styles the version-2 form with tokens only", () => {
   // The segmented radios are hidden visually, not from the keyboard, and the label shows focus.
   assert.doesNotMatch(block, /\.q-segmented input[^{]*\{[^}]*display:\s*none/);
   assert.match(block, /\.q-segmented input:focus-visible \+ span\s*\{[^}]*outline:/);
+});
+
+test("the part 4b2 block follows 4b's: icon-and-word marks, the phone bar and the summary print", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* Part 4b2: intake redesign */");
+  const end = css.indexOf("/* end part 4b2 */");
+  assert.ok(start >= 0 && end > start, "the part 4b2 block is marked");
+  assert.ok(start > css.indexOf("/* end part 4b */"), "it comes after 4b's block");
+  const block = css.slice(start, end);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+  assert.doesNotMatch(block, /--vt-[\w-]+\s*:/, "no new tokens");
+  // Each mark draws its own glyph before the word, so the marks differ by shape, not colour alone.
+  const glyphs = ["needs", "docs", "done"].map((key) => {
+    const rule = new RegExp(`\\.rail-status\\.is-${key}::before\\s*\\{([^}]*)\\}`).exec(block);
+    assert.ok(rule, `.rail-status.is-${key}::before is styled`);
+    const content = /content:\s*("[^"]*"|'[^']*')/.exec(rule[1]);
+    assert.ok(content && content[1].length > 2, `.rail-status.is-${key}::before sets a glyph`);
+    return content[1];
+  });
+  assert.equal(new Set(glyphs).size, 3, "three different glyphs");
+  // The document statuses, too.
+  for (const key of ["not_done", "later", "none"]) assert.ok(block.includes(`.doc-status.is-${key}`), `.doc-status.is-${key} is styled`);
+  // Phone width: the tree folds behind "All steps".
+  const phone = /@media \(max-width: 800px\)\s*\{([\s\S]*?)\n\}/.exec(block);
+  assert.ok(phone, "a phone-width rule set");
+  assert.match(phone[1], /\.rail-phone\s*\{[^}]*display:\s*flex/);
+  assert.match(phone[1], /\.rail-tree:not\(\.is-open\)\s*\{[^}]*display:\s*none/);
+  assert.match(block, /\n\.rail-phone\s*\{[^}]*display:\s*none/);
+  // Print: only the summary, while the body carries print-summary.
+  const print = /@media print\s*\{([\s\S]*?)\n\}/.exec(block);
+  assert.ok(print, "a print rule set");
+  assert.match(print[1], /body\.print-summary #app > \*\s*\{\s*display:\s*block;\s*\}/);
+  assert.match(print[1], /body\.print-summary \*\s*\{\s*visibility:\s*hidden;\s*\}/);
+  assert.match(print[1], /body\.print-summary \.summary-print,\s*body\.print-summary \.summary-print \*\s*\{\s*visibility:\s*visible;\s*\}/);
+  assert.match(print[1], /body\.print-summary \.summary-tools\s*\{\s*display:\s*none;\s*\}/);
 });

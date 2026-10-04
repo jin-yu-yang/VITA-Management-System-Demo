@@ -13,6 +13,7 @@ import {
   isAnswered,
   isVisible,
   missingToSubmit,
+  substepsFor,
 } from "../src/intake-catalogue.mjs";
 
 // Part 4a, Task 3 (docs/superpowers/specs/2026-09-29-intake-catalogue-design.md §3):
@@ -47,6 +48,8 @@ function sampleValue(question) {
       return String(question.min ?? 1);
     case "yesno":
       return "no";
+    case "id":
+      return crypto.randomUUID().replaceAll("-", "");
     case "who":
       return ["none"];
     case "multi":
@@ -251,6 +254,14 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         { hh: Array.from({ length: 11 }, () => member()) },
         { hh: ["Bo"] },
         { hh: { first_name: "Bo" } },
+        // Every member needs a well-formed id, and no two share one.
+        { hh: [{ first_name: "A" }] },
+        { hh: [member({ member_id: "" })] },
+        { hh: [member({ member_id: null })] },
+        { hh: [member({ member_id: "XYZ" })] },
+        { hh: [member({ member_id: "0123456789abcdef0123456789abcde" })] },
+        { hh: [member({ member_id: "0123456789ABCDEF0123456789ABCDEF" })] },
+        { hh: [member({ member_id: "0123456789abcdef0123456789abcdef" }), member({ member_id: "0123456789abcdef0123456789abcdef" })] },
         { tp_phone: "555-0100" },
         { email: "a@b@c" },
         { addr_zip: "1910" },
@@ -268,6 +279,16 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       assert.equal(after.revision, before.revision);
       assert.deepEqual(after.answers, {});
       assert.equal(await contactRow(f, caseId), undefined);
+    });
+
+    await t.test("a household with distinct member ids is accepted", async () => {
+      const { caseId } = await v2Case(f);
+      const people = [
+        { member_id: "0123456789abcdef0123456789abcdef", first_name: "A" },
+        { member_id: "fedcba9876543210fedcba9876543210", first_name: "B" },
+      ];
+      await save(f, caseId, { hh: people });
+      assert.deepEqual((await caseRow(f, caseId)).answers, { hh: people });
     });
 
     await t.test("a valid structured set is stored exactly, and null clears a key", async () => {
@@ -460,6 +481,32 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       assert.equal(Number((await caseRow(f, caseId)).revision), 2);
     });
 
+    await t.test("hh.member_id is an optional id field, and the sub-step table matches the catalogue", async () => {
+      const [idField] = (
+        await f.sql(
+          "select type, required_to_submit from vitally_private.intake_fields where version=2 and field_id='hh.member_id'",
+        )
+      ).rows;
+      assert.deepEqual(idField, { type: "id", required_to_submit: false });
+      const rows = (
+        await f.sql(
+          "select id, step from vitally_private.intake_substeps where version=2 order by position",
+        )
+      ).rows;
+      assert.deepEqual(
+        rows,
+        substepsFor(2).map((sub) => ({ id: sub.id, step: sub.step.n })),
+      );
+      // A member with every required field never has a missing member_id.
+      const missing = (
+        await f.sql(
+          "select vitally_private.intake_missing(2::smallint, $1::jsonb, '{}'::jsonb) as missing",
+          [JSON.stringify(completeAnswers({ has_household_members: "yes", hh: [member(), member()] }))],
+        )
+      ).rows[0].missing;
+      assert.equal(missing.some((id) => id.includes("member_id")), false);
+    });
+
     await t.test("the field table matches the catalogue", async () => {
       const expected = [];
       for (const question of TOP) {
@@ -602,12 +649,17 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       assert.equal(await visible("irs_language", { irs_language_pref: ["none"] }), false);
       assert.equal(await visible("irs_language", { irs_language_pref: ["me"] }), true);
       assert.equal(await visible("irs_language", {}), false);
-      assert.equal(await visible("gcf_sp_date", { gcf_sp_signature: "\u00A0" }), false);
-      assert.equal(await visible("gcf_sp_date", { gcf_sp_signature: "Mei" }), true);
+      const signed = { gcf_consent: "yes", marital_status: "married" };
+      assert.equal(await visible("gcf_sp_date", { ...signed, gcf_sp_signature: "\u00A0" }), false);
+      assert.equal(await visible("gcf_sp_date", { ...signed, gcf_sp_signature: "Mei" }), true);
+      assert.equal(await visible("gcf_sp_date", { gcf_sp_signature: "Mei" }), false);
+      assert.equal(await visible("gcf_sp_date", { ...signed, gcf_consent: "no", gcf_sp_signature: "Mei" }), false);
       for (const [id, answers] of [
         ["sp_first_name", { marital_status: "married" }],
         ["irs_language", { irs_language_pref: ["none"] }],
-        ["gcf_sp_date", { gcf_sp_signature: "\u00A0" }],
+        ["gcf_sp_date", { ...signed, gcf_sp_signature: "\u00A0" }],
+        ["gcf_sp_date", { ...signed, gcf_sp_signature: "Mei" }],
+        ["gcf_sp_date", { gcf_sp_signature: "Mei" }],
       ])
         assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), id);
     });

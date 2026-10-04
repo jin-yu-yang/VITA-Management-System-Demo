@@ -158,7 +158,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Fixture / sample case | One of six seeded demonstration cases, rebuilt by a presenter's reset. |
 | Generation | `workspaces.fixture_generation`, the counter a reset moves so every window reloads. |
 | Client number | `#001`-style number a case gets when it is submitted, one sequence per workspace and season (migration 010). |
-| Intake version | Which intake a case uses, fixed when it is created: `1` is the original four-step form of 17 string answers; `2` is the nine-step catalogue form. New cases take `workspaces.default_intake_version`. |
+| Intake version | Which intake a case uses, fixed when it is created: `1` is the original four-step form of 17 string answers; `2` is the catalogue form of steps 0–9 with sub-steps. New cases take `workspaces.default_intake_version`. |
 | Catalogue | The version-2 questions (ids, types, options, show-if rules, standard and senior wording), built from `docs/intake-questions/` into `src/intake-catalogue-data.mjs` and the private `intake_fields` table. |
 | Contact details | A version-2 case's phones, best time to reach and note, kept in `case_contacts` apart from the answers. Staff see them only on cases they work on (D5). |
 | Materials | The eleven-item checklist of documents the site has received for a case (`case_materials`), recorded by staff. |

@@ -45,6 +45,7 @@ const CASE_ROW = Object.freeze({
   created_at: "2026-09-10T15:00:00.000Z",
   updated_at: "2026-09-12T16:30:00.000Z",
   intake_version: 2,
+  intake_visited: ["about.you", "before.ready"],
 });
 
 // Every related row the staff read assembles, one per table.
@@ -170,6 +171,24 @@ const RELATED_ROWS = Object.freeze({
       best_contact_time: ["weekday_morning", "weekend"],
       best_contact_note: "After 5pm",
       updated_at: "2026-09-06T00:00:00Z",
+    },
+  ],
+  case_document_cards: [
+    {
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      slot_id: "w2.household",
+      status: "later",
+      group_override: null,
+      changed_at: "2026-09-08T00:00:00Z",
+    },
+    {
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      slot_id: "ssn.tp",
+      status: null,
+      group_override: "needed",
+      changed_at: "2026-09-08T01:00:00Z",
     },
   ],
   case_materials: [
@@ -416,6 +435,7 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       createdAt: "2026-09-10T15:00:00.000Z",
       updatedAt: "2026-09-12T16:30:00.000Z",
       intakeVersion: 2,
+      intakeVisited: ["about.you", "before.ready"],
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -520,6 +540,7 @@ test("an applicant case read asks for no staff table at all", async () => {
   const tables = client.reads.map((read) => read.table);
   assert.deepEqual(tables.toSorted(), [
     "case_contacts",
+    "case_document_cards",
     "cases",
     "client_events",
     "document_requests",
@@ -533,12 +554,14 @@ test("an applicant case read asks for no staff table at all", async () => {
     "clientNumber",
     "contact",
     "createdAt",
+    "documentCards",
     "documents",
     "fixture",
     "history",
     "id",
     "intakeVerified",
     "intakeVersion",
+    "intakeVisited",
     "lastRemindedAt",
     "lastRemindedByPersonId",
     "ownerUserId",
@@ -610,6 +633,7 @@ test("a presenter case read adds exactly the staff sections", async () => {
     [
       "admin_followups",
       "case_contacts",
+      "case_document_cards",
       "case_events",
       "case_materials",
       "cases",
@@ -905,6 +929,7 @@ test("a subscription watches only the tables its principal may read", async () =
     "client_events",
     "workspaces",
     "case_contacts",
+    "case_document_cards",
   ]);
   assert.deepEqual(SUBSCRIBED_TABLES.presenter, [
     "cases",
@@ -913,6 +938,7 @@ test("a subscription watches only the tables its principal may read", async () =
     "client_events",
     "workspaces",
     "case_contacts",
+    "case_document_cards",
     "people",
     "preparation_participants",
     "admin_followups",
@@ -1009,4 +1035,33 @@ test("mapCase carries the intake version, 1 when the column is absent", () => {
   assert.equal(mapCase({ ...CASE_ROW, intake_version: "1" }).intakeVersion, 1);
   const { intake_version: _version, ...older } = CASE_ROW;
   assert.equal(mapCase(older).intakeVersion, 1);
+});
+
+test("mapCase carries the visited sub-steps, [] when the column is absent", () => {
+  assert.deepEqual(mapCase(CASE_ROW).intakeVisited, ["about.you", "before.ready"]);
+  const { intake_visited: _visited, ...older } = CASE_ROW;
+  assert.deepEqual(mapCase(older).intakeVisited, []);
+  assert.deepEqual(mapCase({ ...CASE_ROW, intake_visited: null }).intakeVisited, []);
+  // A copy: the browser cannot change the row it came from.
+  assert.notEqual(mapCase(CASE_ROW).intakeVisited, CASE_ROW.intake_visited);
+});
+
+test("both principals read the card rows by named columns and map them", async () => {
+  assert.ok(SUBSCRIBED_TABLES.applicant.includes("case_document_cards"));
+  assert.ok(SUBSCRIBED_TABLES.presenter.includes("case_document_cards"));
+  for (const access of ["applicant", "presenter"]) {
+    const client = fakeClient({ access });
+    const found = await createStore(client).getCase("case-1");
+    const [read] = client.reads.filter((entry) => entry.table === "case_document_cards");
+    assert.equal(read.columns, "slot_id,status,group_override,changed_at", access);
+    assert.deepEqual(read.filters, [["case_id", "case-1"]], access);
+    assert.deepEqual(read.orders, ["slot_id"], access);
+    assert.deepEqual(found.documentCards, [
+      { slotId: "w2.household", status: "later", groupOverride: null, changedAt: "2026-09-08T00:00:00Z" },
+      { slotId: "ssn.tp", status: null, groupOverride: "needed", changedAt: "2026-09-08T01:00:00Z" },
+    ], access);
+    assert.deepEqual(found.intakeVisited, ["about.you", "before.ready"], access);
+  }
+  const empty = fakeClient({ access: "applicant", rows: { case_document_cards: [] } });
+  assert.deepEqual((await createStore(empty).getCase("case-1")).documentCards, []);
 });

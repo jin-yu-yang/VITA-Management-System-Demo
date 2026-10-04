@@ -1000,6 +1000,8 @@ export const EVENT_SENTENCES = Object.freeze({
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",
   RECORD_MATERIALS: "recorded the materials received",
+  SET_DOCUMENT_CARD: "marked a document card",
+  SET_DOCUMENT_GROUP: "moved a document card between groups",
 });
 
 export function historySentence(entry) {

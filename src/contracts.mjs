@@ -36,6 +36,9 @@ export const CASE_ACTIONS = Object.freeze([
   // Part 4a (migration 013). No screen offers them until 4b and 4c.
   "UPDATE_CONTACT",
   "RECORD_MATERIALS",
+  // Part 4b2 (migration 017): the document cards. The controller builds them.
+  "SET_DOCUMENT_CARD",
+  "SET_DOCUMENT_GROUP",
 ]);
 
 // Assistance is its own workflow with its own RPC, so its controls carry their
@@ -82,11 +85,14 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
 //         preparerId, reviewerId, season, clientNumber, intakeVersion,
-//         contact, requests, documents, history }
+//         intakeVisited, contact, documentCards, requests, documents, history }
 //   intakeVersion: 1 | 2. contact: the case_contacts row as
 //   { phone, spousePhone, bestContactTime, bestContactNote }, or null when
 //   there is none (always null for version 1). A list entry carries only the
-//   scalars, intakeVersion included, and no contact.
+//   scalars, intakeVersion and intakeVisited (sub-step ids, [] when none)
+//   included, and no contact. documentCards: the case_document_cards rows as
+//   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
+//   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,
 // internalHistory and materials: [{ item, receivedAt, recordedByPersonId }].
 // These are never loaded by the applicant adapter.

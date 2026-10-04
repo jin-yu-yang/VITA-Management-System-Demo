@@ -10,6 +10,7 @@ const CLIENT_VISIBLE_TABLES = [
   "documents",
   "client_events",
   "case_contacts",
+  "case_document_cards",
 ];
 const PRESENTER_ONLY_TABLES = [
   "preparation_participants",
@@ -155,6 +156,10 @@ async function seedWorkflow(f, caseId) {
   await f.sql(
     "insert into public.case_contacts(workspace_id,case_id,phone,best_contact_time) values($1,$2,$3,$4)",
     [f.workspaceId, caseId, "2155550100", ["weekday_morning"]],
+  );
+  await f.sql(
+    "insert into public.case_document_cards(workspace_id,case_id,slot_id,status) values($1,$2,$3,$4)",
+    [f.workspaceId, caseId, "w2.household", "later"],
   );
   await f.sql(
     "insert into public.case_materials(workspace_id,case_id,item,recorded_by_person_id) values($1,$2,$3,$4)",
@@ -970,6 +975,16 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
               phone: "2155550199",
             },
             update: { phone: "2155550199" },
+          },
+          case_document_cards: {
+            filter: ["case_id", submitted.caseId],
+            insert: {
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              slot_id: "ssn.tp",
+              status: "later",
+            },
+            update: { status: "none" },
           },
           case_materials: {
             filter: ["case_id", submitted.caseId],

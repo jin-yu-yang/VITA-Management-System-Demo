@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
-  canSeeContact,
+  canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 
 const q = (id) => findQuestion(2, id);
 
-test("steps: nine for version 2, none for version 1", () => {
-  assert.equal(stepsFor(2).length, 9);
+test("steps: ten for version 2, none for version 1", () => {
+  assert.equal(stepsFor(2).length, 10);
+  assert.deepEqual(stepsFor(2).map((s) => s.id), ["before", "about", "household", "income", "expenses", "refund", "optional", "documents", "notes", "review"]);
+  assert.deepEqual(stepsFor(2).map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.deepEqual(stepsFor(1), []);
   assert.ok(questionsFor(2, 1).some((x) => x.id === "service"));
   assert.deepEqual(questionsFor(1, 1), []);
@@ -79,12 +81,13 @@ test("checkValue: number ranges and groups", () => {
   assert.equal(checkValue(months, "12"), null);
   assert.equal(checkValue(months, 12), "Expected text.");
   assert.equal(typeof checkValue(months, "13"), "string");
-  const person = { first_name: "A", last_name: "B", dob: "2020-01-01", months_lived: "12" };
+  const person = { member_id: "0123456789abcdef0123456789abcdef", first_name: "A", last_name: "B", dob: "2020-01-01", months_lived: "12" };
   assert.equal(checkValue(hh, [person]), null);
   assert.equal(typeof checkValue(hh, [{ ...person, nickname: "x" }]), "string");
   assert.equal(typeof checkValue(hh, [{ ...person, dob: "2020-13-01" }]), "string");
-  assert.equal(checkValue(hh, Array(10).fill(person)), null);
-  assert.equal(typeof checkValue(hh, Array(11).fill(person)), "string");
+  const people = (n) => Array.from({ length: n }, (_, i) => ({ ...person, member_id: i.toString(16).padStart(32, "0") }));
+  assert.equal(checkValue(hh, people(10)), null);
+  assert.equal(typeof checkValue(hh, people(11)), "string");
   assert.equal(typeof checkValue(hh, "x"), "string");
 });
 
@@ -97,7 +100,7 @@ test("missingToSubmit", () => {
   const married = missingToSubmit(2, { marital_status: "married" });
   assert.ok(married.includes("sp_first_name"));
   assert.ok(!married.includes("sp_middle_name"));
-  const hh = missingToSubmit(2, { has_household_members: "yes", hh: [{ first_name: "A", last_name: "B", relationship: "parent", months_lived: "3" }] });
+  const hh = missingToSubmit(2, { has_household_members: "yes", hh: [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "A", last_name: "B", relationship: "parent", months_lived: "3" }] });
   assert.ok(hh.includes("hh[0].dob"));
   assert.ok(!hh.includes("hh[0].first_name"));
   assert.ok(missingToSubmit(2, { has_household_members: "yes" }).includes("hh"));
@@ -162,7 +165,7 @@ test("empty strings and arrays are unanswered everywhere", () => {
   assert.equal(isVisible({ showIf: [{ field: "a", op: "ne", value: "x" }] }, { a: "" }), false);
   const m = missingToSubmit(2, { service: "", language: [], tp_first_name: "  " });
   for (const id of ["service", "language", "tp_first_name"]) assert.ok(m.includes(id), id);
-  const hh = missingToSubmit(2, { has_household_members: "yes", hh: [{ first_name: "A", last_name: "B", dob: "", relationship: "parent", months_lived: "3" }] });
+  const hh = missingToSubmit(2, { has_household_members: "yes", hh: [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "A", last_name: "B", dob: "", relationship: "parent", months_lived: "3" }] });
   assert.ok(hh.includes("hh[0].dob"));
   for (const id of ["tp_first_name", "tp_dob", "best_contact_time", "hh", "tp_phone"])
     for (const empty of [null, "", []]) assert.equal(checkValue(q(id), empty), null, id);
@@ -197,4 +200,96 @@ test("the value-check contract table: checkValue gives each row's js result (spe
   const types = new Set(INTAKE_VALUE_CASES.map((row) => q(row.field).type));
   for (const type of ["text", "longtext", "signature", "email", "phone", "zip", "date", "year", "number", "choice", "yesno", "multi", "who", "group"])
     assert.ok(types.has(type), type);
+});
+
+const SUBSTEP_IDS = [
+  "before.ready", "before.service", "before.language",
+  "about.you", "about.address", "about.marital", "about.spouse", "about.situation", "about.irs",
+  "household.members",
+  "income.wages", "income.retirement", "income.investments", "income.rental", "income.business", "income.other",
+  "expenses.deductible", "expenses.other", "expenses.events",
+  "refund.payment", "refund.consent",
+  "optional.questions",
+  "documents.bring", "documents.identity", "documents.income", "documents.expenses", "documents.events", "documents.other",
+  "notes.anything",
+  "review.check", "review.summary", "review.submit",
+];
+
+test("every step has a sub-step, and every top-level question is in exactly one", () => {
+  for (const step of stepsFor(2)) assert.ok(step.substeps.length > 0, step.id);
+  const all = stepsFor(2).flatMap((s) => s.sections.flatMap((x) => x.questions)).map((x) => x.id);
+  const listed = stepsFor(2).flatMap((s) => s.substeps.flatMap((x) => x.questions));
+  assert.deepEqual([...listed].sort(), [...all].sort());
+  assert.equal(new Set(listed).size, listed.length);
+  for (const id of listed) assert.ok(q(id), id);
+});
+
+test("substepsFor lists the sub-steps in order, each with its step", () => {
+  const subs = substepsFor(2);
+  assert.deepEqual(subs.map((s) => s.id), SUBSTEP_IDS);
+  assert.deepEqual(substepsFor(2).filter((s) => s.step.id === "documents").map((s) => s.id)[0], "documents.bring");
+  for (const sub of subs) assert.ok(stepsFor(2).includes(sub.step) && sub.step.substeps.some((x) => x.id === sub.id));
+  assert.deepEqual(substepsFor(1), []);
+  assert.equal(findSubstep("income.other").step.id, "income");
+  assert.equal(findSubstep("income.other").kind, "questions");
+  assert.equal(findSubstep("nope.nope"), null);
+});
+
+test("substepOfQuestion and substepQuestions", () => {
+  assert.equal(substepOfQuestion("inc_alimony"), "income.other");
+  assert.equal(substepOfQuestion("tp_phone"), "about.you");
+  assert.equal(substepOfQuestion("gcf_sp_date"), "refund.consent");
+  assert.equal(substepOfQuestion("nonesuch"), null);
+  assert.deepEqual(substepQuestions("income.other").map((x) => x.id), ["inc_alimony", "inc_gambling", "inc_other", "inc_other_desc"]);
+  assert.deepEqual(substepQuestions("documents.identity"), []);
+  assert.deepEqual(substepQuestions("nope.nope"), []);
+});
+
+test("visibleAnswers drops the keys of hidden top-level questions", () => {
+  const answers = { inc_sale_assets: "no", inc_sale_assets_prior_loss: "yes", tp_first_name: "Mei", nonsense: 1 };
+  const seen = visibleAnswers(2, answers);
+  assert.equal(Object.hasOwn(seen, "inc_sale_assets_prior_loss"), false);
+  assert.equal(seen.inc_sale_assets, "no");
+  assert.equal(seen.tp_first_name, "Mei");
+  assert.equal(seen.nonsense, 1);
+  assert.notStrictEqual(seen, answers);
+  assert.equal(answers.inc_sale_assets_prior_loss, "yes");
+  assert.equal(Object.hasOwn(visibleAnswers(2, { inc_sale_assets: "yes", inc_sale_assets_prior_loss: "yes" }), "inc_sale_assets_prior_loss"), true);
+});
+
+test("gcf_sp_date shows only with consent, a married filer and the spouse's signature", () => {
+  const date = q("gcf_sp_date");
+  const base = { gcf_consent: "yes", marital_status: "married", gcf_sp_signature: "Wei Lin" };
+  assert.equal(isVisible(date, base), true);
+  assert.equal(isVisible(date, { ...base, gcf_consent: "no" }), false);
+  assert.equal(isVisible(date, { ...base, marital_status: "never_married" }), false);
+  const { gcf_sp_signature, ...unsigned } = base;
+  assert.equal(isVisible(date, unsigned), false);
+});
+
+test("the id type: 32 lowercase hex characters", () => {
+  assert.equal(checkValue({ type: "id" }, "0123456789abcdef0123456789abcdef"), null);
+  assert.equal(checkValue({ type: "id" }, "XYZ"), "Not a valid id.");
+  assert.equal(checkValue({ type: "id" }, "0123"), "Not a valid id.");
+  assert.equal(checkValue({ type: "id" }, "0123456789ABCDEF0123456789ABCDEF"), "Not a valid id.");
+  assert.equal(isMemberId("0123456789abcdef0123456789abcdef"), true);
+  assert.equal(isMemberId("0123456789abcdef0123456789abcde"), false);
+  assert.equal(isMemberId(undefined), false);
+  assert.equal(isMemberId(12), false);
+});
+
+test("a household needs a well-formed, unique id on every member", () => {
+  const hh = q("hh");
+  const A = "0123456789abcdef0123456789abcdef";
+  const B = "fedcba9876543210fedcba9876543210";
+  assert.equal(hh.fields[0].id, "member_id");
+  assert.equal(hh.fields[0].type, "id");
+  assert.equal(hh.fields[0].required, false);
+  assert.equal(checkValue(hh, [{ first_name: "A" }]), "Each person needs an id.");
+  assert.equal(checkValue(hh, [{ member_id: "", first_name: "A" }]), "Each person needs an id.");
+  assert.equal(checkValue(hh, [{ member_id: "XYZ", first_name: "A" }]), "Each person needs an id.");
+  assert.equal(checkValue(hh, [{ member_id: A }, { member_id: A }]), "Two people share an id.");
+  assert.equal(checkValue(hh, [{ member_id: A }, { member_id: B }]), null);
+  assert.equal(checkValue(hh, [{ member_id: A, first_name: "A" }]), null);
+  assert.equal(checkValue(hh, [{ member_id: A }, {}]), "Each person needs an id.");
 });

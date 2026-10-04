@@ -156,7 +156,13 @@ None of this exists yet; it is the list to work through.
 - **Monitoring.** Supabase logs for Auth failures, database errors and slow queries; alerts on
   email delivery failures.
 - **HTTP headers on the static host.** A Content-Security-Policy allowing only the app's own
-  scripts and the Supabase URL, plus HSTS. The local server sets `nosniff` but no CSP.
+  scripts and the Supabase URL, plus HSTS. The local server sets `nosniff` but no CSP. Two
+  things such a policy must keep working: the draft 13614-C fetches its Chinese fonts (and the
+  Latin font beside them) from `https://cdn.jsdelivr.net`, pinned by version and checked by
+  SHA-256 (`DRAFT_FONTS` in `src/draft-pdf.mjs`), so `connect-src` must allow that origin; and
+  the three IRS forms are the app's own files under `src/forms/` (`server.mjs` serves exactly
+  those three as `application/pdf`), so a static host must publish that folder. The finished
+  draft opens as a `blob:` URL in a new tab.
 - **Data retention.** Tax data has retention and deletion obligations; decide them before any real
   client uses the system.
 

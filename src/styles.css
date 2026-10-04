@@ -4017,13 +4017,6 @@ textarea::placeholder {
 }
 
 /* ---- The rail ---- */
-.rail {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
 .rail-link {
   display: flex;
   align-items: flex-start;
@@ -4041,33 +4034,6 @@ textarea::placeholder {
 .rail-link:hover {
   background: var(--vt-primary-soft);
 }
-.rail-num {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border: 1px solid var(--vt-line);
-  border-radius: 50%;
-  background: var(--vt-surface);
-  font-size: 12px;
-  color: var(--vt-intake-hint);
-}
-.rail-num .icon {
-  display: none;
-  width: 15px;
-  height: 15px;
-}
-.rail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding-top: 3px;
-}
-.rail-title {
-  line-height: 1.35;
-}
 .rail-here {
   font-size: 10px;
   font-weight: 700;
@@ -4076,7 +4042,7 @@ textarea::placeholder {
   color: var(--vt-primary);
 }
 /* The mark is keyed on the status span's class alone, so an in-place class
-   change (spec §2.4 rule 2) restyles the circle and the words together. */
+   change (spec §2.4 rule 2) restyles it. */
 .rail-status {
   font-size: 12px;
   font-weight: 600;
@@ -4089,38 +4055,6 @@ textarea::placeholder {
 }
 .rail-status.is-none {
   color: var(--vt-intake-hint);
-}
-.rail-link:has(.rail-status.is-done) .rail-num {
-  border-color: var(--vt-stage-filing-bg);
-  background: var(--vt-stage-filing-bg);
-  color: var(--vt-stage-filing);
-}
-.rail-link:has(.rail-status.is-done) .rail-num .icon {
-  display: block;
-}
-.rail-link:has(.rail-status.is-done) .rail-digit {
-  display: none;
-}
-.rail-link:has(.rail-status.is-needs) .rail-num {
-  border-color: var(--vt-age-soon);
-  color: var(--vt-age-soon-ink);
-}
-/* The current step wins over its mark (the prefix matches the :has() rules'
-   specificity, and these come later). */
-.rail .rail-link[aria-current="step"] {
-  color: var(--vt-primary);
-  font-weight: 600;
-}
-.rail .rail-link[aria-current="step"] .rail-num {
-  border-color: var(--vt-primary);
-  background: var(--vt-primary);
-  color: #fff;
-}
-.rail .rail-link[aria-current="step"] .rail-num .icon {
-  display: none;
-}
-.rail .rail-link[aria-current="step"] .rail-digit {
-  display: inline;
 }
 .rail-progress {
   margin-top: 22px;
@@ -4164,11 +4098,6 @@ textarea::placeholder {
 /* ---- Sections and question cards ---- */
 .q-section {
   margin-bottom: 28px;
-}
-.q-section-head h2 {
-  margin: 0 0 6px;
-  font-size: 21px;
-  color: var(--vt-intake-ink);
 }
 .q-intro {
   font-size: 15px;
@@ -4405,76 +4334,6 @@ textarea::placeholder {
   color: var(--vt-intake-ink);
 }
 
-/* ---- Step 9: Still to answer ---- */
-.still-list {
-  margin-bottom: 28px;
-  padding: 24px;
-  border: 1px solid var(--vt-line);
-  border-radius: var(--vt-radius);
-  background: var(--vt-surface);
-}
-.still-list h2 {
-  margin: 0 0 6px;
-  font-size: 21px;
-  color: var(--vt-intake-ink);
-}
-.still-step h3 {
-  margin: 16px 0 4px;
-  font-size: 15px;
-  color: var(--vt-intake-ink);
-}
-.still-step ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.still-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: var(--vt-tap);
-  padding: 8px 4px;
-  border: 0;
-  border-bottom: 1px solid var(--vt-line);
-  background: transparent;
-  color: var(--vt-intake-ink);
-  text-align: left;
-  font-size: 15px;
-}
-.still-item:hover {
-  background: var(--vt-primary-soft);
-}
-.still-q {
-  flex: 1;
-  min-width: 0;
-}
-.still-flag {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.still-item.is-missing .still-flag {
-  color: var(--vt-age-soon-ink);
-}
-.still-item.is-invalid .still-flag {
-  color: var(--vt-age-late-ink);
-}
-.still-item .icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--vt-primary);
-}
-.still-done {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  font-weight: 600;
-  color: var(--vt-stage-filing);
-}
-
 /* ---- After submission: the read-only answers ---- */
 .answers-v2 {
   padding: 8px 24px 16px;
@@ -4503,36 +4362,14 @@ textarea::placeholder {
 
 /* ---- Narrow screens: no sideways scroll at 390px ---- */
 @media (max-width: 800px) {
-  .intake-v2 .rail {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
   .intake-v2 .rail-link {
     width: auto;
     padding: 0;
   }
-  .intake-v2 .rail-num {
-    width: var(--vt-tap);
-    height: var(--vt-tap);
-    font-size: 13px;
-  }
-  /* The step's words stay for screen readers; the circle carries the mark. */
-  .intake-v2 .rail-body {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
   .intake-v2 .rail-progress {
     margin-top: 12px;
   }
-  .q-card,
-  .still-list {
+  .q-card {
     padding: 18px 16px;
   }
   .hh-card {
@@ -4567,3 +4404,602 @@ textarea::placeholder {
   overflow-wrap: anywhere;
 }
 /* end part 4b */
+
+/* Part 4b2: intake redesign */
+/* The sub-step form (spec 2026-10-04 §3–§6): the rail tree and its phone bar,
+   the page header, document cards, the bring list, Review & submit, the
+   summary print and the progress page's open documents. Tokens only. Every
+   mark is an icon and a word: the icon is a glyph drawn before the word, so
+   the marks differ by shape and never by colour alone. */
+
+/* ---- The rail tree ---- */
+.rail-tree,
+.rail-subs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rail-tree {
+  display: grid;
+  gap: 4px;
+}
+.rail-step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.rail-toggle {
+  display: grid;
+  place-items: center;
+  width: var(--vt-tap);
+  height: var(--vt-tap);
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--vt-radius-sm);
+  background: transparent;
+  color: var(--vt-intake-hint);
+}
+.rail-toggle:hover {
+  background: var(--vt-primary-soft);
+  color: var(--vt-primary);
+}
+.rail-toggle .icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s;
+}
+.rail-toggle[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
+}
+.rail-tree .rail-link {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.rail-step-num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--vt-line);
+  border-radius: 50%;
+  background: var(--vt-surface);
+  font-size: 12px;
+  color: var(--vt-intake-hint);
+}
+.rail-step.is-current .rail-step-num {
+  border-color: var(--vt-primary);
+  background: var(--vt-primary);
+  color: #fff;
+}
+.rail-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rail-step-title {
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--vt-intake-ink);
+}
+.rail-subs {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 8px 46px;
+}
+.rail-subs[hidden] {
+  display: none;
+}
+.rail-sublink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 6px 10px;
+  border: 0;
+  border-left: 2px solid var(--vt-line);
+  background: transparent;
+  color: var(--vt-intake-hint);
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.rail-sublink:hover {
+  background: var(--vt-primary-soft);
+}
+.rail-sublink[aria-current="step"] {
+  border-left-color: var(--vt-primary);
+  background: var(--vt-primary-soft);
+  color: var(--vt-primary);
+  font-weight: 600;
+}
+
+/* ---- Marks: a glyph, then the word ---- */
+.rail-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rail-status::before {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.rail-status.is-done::before {
+  content: "\2713";
+  content: "\2713" / "";
+  background: var(--vt-stage-filing-bg);
+  color: var(--vt-stage-filing);
+}
+.rail-status.is-needs::before {
+  content: "!";
+  content: "!" / "";
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-age-soon-ink);
+}
+.rail-status.is-docs {
+  color: var(--vt-stage-intake);
+}
+.rail-status.is-docs::before {
+  content: "\2191";
+  content: "\2191" / "";
+  border-radius: 3px;
+  background: var(--vt-stage-intake-bg);
+  color: var(--vt-stage-intake);
+}
+
+/* ---- The phone bar: shown at phone width only ---- */
+.rail-phone {
+  display: none;
+}
+
+/* ---- The page header and the lead line ---- */
+.substep-count {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--vt-intake-hint);
+}
+.q-lead {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--vt-intake-ink);
+}
+.q-intro-extra {
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--vt-intake-ink);
+}
+
+/* ---- Document cards ---- */
+.doc-list {
+  display: grid;
+  gap: 16px;
+}
+.doc-list[hidden] {
+  display: none;
+}
+.doc-card {
+  padding: 22px 24px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.doc-card:focus-visible,
+.doc-status:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.doc-card h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  line-height: 1.35;
+  color: var(--vt-intake-ink);
+}
+.doc-owner {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+}
+.doc-why,
+.doc-hint {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+}
+.doc-why .inline {
+  padding: 4px 0;
+  text-align: left;
+  text-decoration: underline;
+}
+.doc-upload,
+.doc-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.doc-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--vt-intake-hint);
+}
+.doc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.doc-status .icon {
+  width: 14px;
+  height: 14px;
+}
+.doc-status.is-not_done {
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+}
+.doc-status.is-later {
+  background: var(--vt-stage-intake-bg);
+  color: var(--vt-stage-intake);
+}
+.doc-status.is-none {
+  background: var(--vt-stage-prep-bg);
+  color: var(--vt-stage-prep);
+}
+.doc-maybe {
+  margin-top: 20px;
+}
+.doc-maybe-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 8px 14px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-background);
+  color: var(--vt-intake-ink);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+}
+.doc-maybe-toggle::before {
+  content: "\25B8";
+  content: "\25B8" / "";
+  color: var(--vt-primary);
+}
+.doc-maybe-toggle[aria-expanded="true"]::before {
+  content: "\25BE";
+  content: "\25BE" / "";
+}
+.doc-maybe > .doc-list {
+  margin-top: 16px;
+}
+
+/* ---- Same-day: the bring list, a checklist that prints ---- */
+.bring-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bring-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px 12px 46px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-surface);
+  break-inside: avoid;
+}
+.bring-item::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--vt-primary-line);
+  border-radius: 3px;
+}
+.bring-item strong {
+  color: var(--vt-intake-ink);
+}
+.bring-item .doc-owner {
+  margin: 0;
+}
+.bring-item .doc-hint {
+  margin: 0;
+  font-size: 13px;
+}
+.bring-maybe {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--vt-stage-amend);
+}
+
+/* ---- Review your application: alerts and warnings ---- */
+.review-intro p {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--vt-intake-ink);
+}
+.alerts-panel {
+  margin-top: 20px;
+  padding: 24px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.alerts-panel h2 {
+  margin: 0 0 6px;
+  font-size: 21px;
+  color: var(--vt-intake-ink);
+}
+.alerts-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.alerts-block h3,
+.warnings-block h3 {
+  margin: 18px 0 4px;
+  font-size: 16px;
+}
+.alerts-block h3 {
+  color: var(--vt-age-late-ink);
+}
+.warnings-block h3 {
+  color: var(--vt-stage-amend);
+}
+.alerts-step h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+}
+.alert-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--vt-line);
+  background: transparent;
+  color: var(--vt-intake-ink);
+  text-align: left;
+  font-size: 15px;
+}
+.alert-item:hover {
+  background: var(--vt-primary-soft);
+}
+.alert-q {
+  flex: 1;
+  min-width: 0;
+}
+.alert-flag {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.alert-item.is-missing .alert-flag {
+  color: var(--vt-age-soon-ink);
+}
+.alert-item.is-invalid .alert-flag {
+  color: var(--vt-age-late-ink);
+}
+.alert-item .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--vt-primary);
+}
+.warning-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--vt-line);
+}
+.warning-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.warning-doc small {
+  font-size: 13px;
+  color: var(--vt-intake-hint);
+}
+.warning-maybe {
+  padding: 10px 0;
+}
+.alerts-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--vt-stage-filing);
+}
+.alerts-empty::before {
+  content: "\2713";
+  content: "\2713" / "";
+}
+
+/* ---- Your application summary ---- */
+.summary-print {
+  display: grid;
+  gap: 16px;
+}
+.summary-meta,
+.summary-step {
+  padding: 8px 24px 16px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.summary-step h2 {
+  margin: 12px 0 4px;
+  font-size: 19px;
+  color: var(--vt-intake-ink);
+}
+.summary-sub,
+.answer-sub {
+  padding-top: 8px;
+}
+.summary-sub + .summary-sub {
+  border-top: 1px solid var(--vt-line);
+}
+.summary-sub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.summary-sub-head h3,
+.answer-sub h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--vt-intake-ink);
+}
+.answer-sub h3 {
+  margin-top: 8px;
+}
+.summary-sub-head .inline {
+  min-height: var(--vt-tap);
+  padding: 0 8px;
+}
+.summary-none {
+  margin: 4px 0 8px;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+}
+.summary-print .detail-row > span {
+  flex-shrink: 1;
+  color: var(--vt-intake-hint);
+}
+.summary-print .detail-row > strong {
+  min-width: 40%;
+  overflow-wrap: anywhere;
+  color: var(--vt-intake-ink);
+}
+.summary-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+.draft-languages {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vt-intake-hint);
+}
+.draft-ready {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ---- The progress page's open documents ---- */
+.open-documents {
+  padding: 27px 30px;
+  margin-top: 22px;
+}
+.open-documents .doc-list,
+.open-documents .bring-list {
+  margin-top: 12px;
+}
+.open-documents .doc-card {
+  background: var(--vt-background);
+}
+
+/* ---- Phone width: the rail folds into a bar with "All steps" ---- */
+@media (max-width: 800px) {
+  .rail-phone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0 10px;
+    font-weight: 600;
+    color: var(--vt-intake-ink);
+  }
+  .rail-tree:not(.is-open) {
+    display: none;
+  }
+  .rail-tree.is-open {
+    margin-bottom: 12px;
+    padding: 8px;
+    border: 1px solid var(--vt-line);
+    border-radius: var(--vt-radius);
+    background: var(--vt-surface);
+  }
+  /* Part 4b's phone rules shrink its old rail's links; the tree's keep their words. */
+  .intake-v2 .rail-tree .rail-link {
+    width: auto;
+    padding: 6px 4px;
+  }
+  .open-documents {
+    padding: 23px;
+  }
+  .doc-card,
+  .alerts-panel,
+  .summary-meta,
+  .summary-step {
+    padding: 16px;
+  }
+  .warning-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .summary-print .detail-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .summary-print .detail-row > strong {
+    text-align: left;
+  }
+}
+
+/* ---- Print: only the summary, while the body carries print-summary ---- */
+@media print {
+  body.print-summary #app > * { display: block; }
+  body.print-summary * { visibility: hidden; }
+  body.print-summary .summary-print, body.print-summary .summary-print * { visibility: visible; }
+  body.print-summary .summary-print { position: absolute; inset: 0 auto auto 0; width: 100%; }
+  body.print-summary .summary-tools { display: none; }
+  body.print-summary .summary-sub-head .inline { display: none; }
+  body.print-summary .summary-meta,
+  body.print-summary .summary-step {
+    border: 0;
+    padding: 0;
+  }
+}
+/* end part 4b2 */

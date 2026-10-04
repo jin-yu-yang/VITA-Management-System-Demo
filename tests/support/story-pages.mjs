@@ -588,6 +588,35 @@ export async function openCaseByReference(page, reference) {
   await waitForCaseWorkspace(page, reference);
 }
 
+// ---------------------------------------------------------------------------
+// The version-2 intake (part 4b2): sub-steps and their rail marks
+// ---------------------------------------------------------------------------
+
+/**
+ * Wait until the version-2 form is on this sub-step. The form's
+ * `data-substep` moves only once the move (and the save before it) has
+ * landed, so this is the arrival signal; a heading or a rail link is not.
+ */
+export const waitForSubstep = (page, id, timeout = ARRIVAL_MS) =>
+  waitFor(
+    page,
+    `the intake sub-step ${id}`,
+    (wanted) => document.querySelector("#intake-v2-form")?.dataset.substep === wanted,
+    id,
+    timeout,
+  );
+
+/**
+ * One sub-step's rail mark as drawn: `#rail-sub-<id, "." as "->-status`, its
+ * class and its word. It is read even inside a collapsed step (the span is
+ * there, only hidden), and is `null` when the sub-step is not on the rail.
+ */
+export const railSub = (page, id) =>
+  page.evaluate((wanted) => {
+    const span = document.getElementById(`rail-sub-${wanted.replace(/\./g, "-")}-status`);
+    return span ? { className: span.className, text: span.textContent.trim() } : null;
+  }, id);
+
 export const waitForCaseWorkspace = (page, reference, timeout = ARRIVAL_MS) =>
   waitFor(
     page,

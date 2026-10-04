@@ -6,8 +6,8 @@
 // wrappers over valuesFromControls, which holds every reading rule.
 import { esc, button } from "./ui.mjs";
 import {
-  CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, isAnswered,
-  checkValue, missingToSubmit,
+  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
+  checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions,
 } from "./intake-catalogue.mjs";
 
 const TEXT_LIKE = new Set(["text", "longtext", "signature", "email", "phone", "zip", "year", "number", "date"]);
@@ -26,10 +26,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const asSet = (value) => (value instanceof Set ? value : new Set(Array.isArray(value) ? value : []));
-const stepQuestions = (step) => {
-  const found = stepsFor(2)[step];
-  return found ? questionsFor(2, found) : [];
-};
+const everySubstepQuestions = () =>
+  substepsFor(2).filter((substep) => substep.kind === "questions").flatMap((substep) => substepQuestions(substep.id));
+// A sub-step id's questions, or every sub-step's when null.
+const questionsOf = (substepId) =>
+  substepId === null || substepId === undefined ? everySubstepQuestions() : substepQuestions(substepId);
 
 // ---------------------------------------------------------------------------
 // Options, tips and rich text
@@ -128,7 +129,8 @@ export function sendable(question, value) {
         }
         return out;
       })
-      .filter((member) => !(isPlainObject(member) && Object.keys(member).length === 0));
+      // A card holding nothing but its hidden member id is empty.
+      .filter((member) => !(isPlainObject(member) && Object.keys(member).every((key) => key === "member_id")));
   }
   return TEXT_LIKE.has(question.type) && typeof value === "string" ? value.trim() : value;
 }
@@ -145,29 +147,26 @@ export function noteState(question, value, { showMissing = false, showInvalid = 
 }
 
 /**
- * Ids of visible questions on `step` (0–8, or null for every step) whose
- * sendable value fails checkValue, in catalogue order. A household member's
- * sub-field is "hh[<n>].<sub>", n being the member's index in the draft.
+ * Ids of visible questions in the sub-step `substepId` (or every sub-step when
+ * null) whose sendable value fails checkValue, in catalogue order. A household
+ * member's sub-field is "hh[<n>].<sub>", n being the member's index in the draft.
  */
-export function invalidAnswers(step, answers = {}) {
+export function invalidAnswers(substepId, answers = {}) {
   const draft = answers ?? {};
-  const steps = step === null || step === undefined ? stepsFor(2).map((_, index) => index) : [step];
   const out = [];
-  for (const index of steps) {
-    for (const question of stepQuestions(index)) {
-      if (!isVisible(question, draft)) continue;
-      const value = draft[question.id];
-      if (question.type === "group") {
-        if (!Array.isArray(value)) continue;
-        value.forEach((member, n) => {
-          if (!isPlainObject(member)) return;
-          for (const field of question.fields ?? [])
-            if (checkValue(field, sendable(field, member[field.id]))) out.push(`${question.id}[${n}].${field.id}`);
-        });
-        continue;
-      }
-      if (checkValue(question, sendable(question, value))) out.push(question.id);
+  for (const question of questionsOf(substepId)) {
+    if (!isVisible(question, draft)) continue;
+    const value = draft[question.id];
+    if (question.type === "group") {
+      if (!Array.isArray(value)) continue;
+      value.forEach((member, n) => {
+        if (!isPlainObject(member)) return;
+        for (const field of question.fields ?? [])
+          if (checkValue(field, sendable(field, member[field.id]))) out.push(`${question.id}[${n}].${field.id}`);
+      });
+      continue;
     }
+    if (checkValue(question, sendable(question, value))) out.push(question.id);
   }
   return out;
 }
@@ -180,20 +179,123 @@ export const countText = (value) => {
     : "";
 };
 
+// ---------------------------------------------------------------------------
+// Sub-steps: visibility, the hidden-sub-step fallback and status marks
+// (docs/superpowers/specs/2026-10-04-intake-redesign-design.md §2 and §3)
+// ---------------------------------------------------------------------------
+
+const isSameDay = (answers) => answers?.service === "same_day";
+
+function substepVisible(substep, answers, cards) {
+  switch (substep.kind) {
+    case "review":
+      return true;
+    case "documents":
+      if (substep.cards === "bring") return isSameDay(answers);
+      if (isSameDay(answers)) return false;
+      if (substep.cards === "other") return true;
+      return (cards ?? []).some((card) => card.substep === substep.cards);
+    default:
+      return substepQuestions(substep.id).some((question) => isVisible(question, answers ?? {}));
+  }
+}
+
+/** Ids of the visible sub-steps, in catalogue order. `cards` is cardsFor's output. */
+export const visibleSubsteps = (answers, cards) =>
+  substepsFor(2).filter((substep) => substepVisible(substep, answers ?? {}, cards)).map((substep) => substep.id);
+
 /**
- * The rail mark of one step. Missing and invalid come from the draft alone
- * (it holds the contact fields; spec §2.5). An invalid answer counts only once
- * revealed, so typing never flips the mark.
+ * Where a place in the form lands now: `id` while visible; when hidden, the
+ * next visible sub-step after it in catalogue order, or the last visible one;
+ * an id the catalogue doesn't have (or null) goes to the first visible one.
  */
-export function stepStatus(step, answers = {}, visited = [], revealed = new Set()) {
-  const ids = new Set(stepQuestions(step).map((question) => question.id));
-  const missing = missingToSubmit(2, answers ?? {}).filter((id) => ids.has(id.replace(/\[.*$/, "")));
-  const shown = asSet(revealed);
-  const shownInvalid = invalidAnswers(step, answers).filter((id) => shown.has(id));
-  const wasVisited = Array.isArray(visited) ? visited.includes(step) : Boolean(visited?.has?.(step));
-  if ((wasVisited && missing.length > 0) || shownInvalid.length > 0) return { key: "needs", text: "Needs answers" };
-  if (missing.length === 0) return { key: "done", text: "Done" };
-  return { key: "none", text: "" };
+export function resolveSubstep(id, answers, cards) {
+  const visible = visibleSubsteps(answers, cards);
+  const all = substepsFor(2).map((substep) => substep.id);
+  const at = all.indexOf(id);
+  if (at < 0) return visible[0] ?? null;
+  if (visible.includes(id)) return id;
+  const visibleSet = new Set(visible);
+  return all.slice(at + 1).find((other) => visibleSet.has(other)) ?? visible[visible.length - 1] ?? null;
+}
+
+/** The visible sub-step `delta` (+1 or -1) from the resolved `id`, or null at either end. */
+export function adjacentSubstep(id, answers, cards, delta) {
+  const visible = visibleSubsteps(answers, cards);
+  const at = visible.indexOf(resolveSubstep(id, answers, cards));
+  return at < 0 ? null : visible[at + delta] ?? null;
+}
+
+const MARKS = {
+  needs: { key: "needs", text: "Needs answers" },
+  docs: { key: "docs", text: "Needs documents" },
+  done: { key: "done", text: "Done" },
+  none: { key: "none", text: "" },
+};
+const mark = (key) => ({ ...MARKS[key] });
+
+/**
+ * The rail mark of one sub-step (spec §3.3). `visited` is an array or Set of
+ * sub-step ids, `revealed` a Set of answer ids, `cards` cardsFor's output.
+ * Missing and invalid come from the draft alone. An invalid answer counts only
+ * once revealed, so typing never flips the mark. A visit is required for Done.
+ */
+export function substepStatus(id, { answers = {}, visited = [], revealed = new Set(), cards = [] } = {}) {
+  const substep = findSubstep(id);
+  if (!substep) return mark("none");
+  const draft = answers ?? {};
+  const wasVisited = asSet(visited).has(id);
+  switch (substep.kind) {
+    case "review": {
+      if (id === "review.submit") return mark("none");
+      if (id === "review.summary") return mark(wasVisited ? "done" : "none");
+      const clean = missingToSubmit(2, draft).length === 0 && invalidAnswers(null, draft).length === 0;
+      return mark(wasVisited && clean ? "done" : "none");
+    }
+    case "documents": {
+      if (!wasVisited) return mark("none");
+      if (substep.cards === "bring") return mark("done");
+      // The optional "other" card never makes a sub-step Needs documents.
+      const owing = (cards ?? []).some((card) => card.substep === substep.cards && card.group === "needed" && card.status === "not_done");
+      return mark(owing ? "docs" : "done");
+    }
+    default: {
+      const ids = new Set(substep.questions);
+      const missing = missingToSubmit(2, draft).filter((missed) => ids.has(missed.replace(/\[.*$/, "")));
+      const shown = asSet(revealed);
+      const shownInvalid = invalidAnswers(id, draft).filter((invalid) => shown.has(invalid));
+      if ((wasVisited && missing.length > 0) || shownInvalid.length > 0) return mark("needs");
+      return mark(wasVisited && missing.length === 0 ? "done" : "none");
+    }
+  }
+}
+
+/** A step's mark over its visible sub-steps: needs > docs > done when all are > none. */
+export function stepRollup(stepId, ctx = {}) {
+  const visible = new Set(visibleSubsteps(ctx.answers, ctx.cards));
+  const keys = substepsFor(2)
+    .filter((substep) => substep.step.id === stepId && visible.has(substep.id))
+    .map((substep) => substepStatus(substep.id, ctx).key);
+  if (keys.includes("needs")) return mark("needs");
+  if (keys.includes("docs")) return mark("docs");
+  return mark(keys.length > 0 && keys.every((key) => key === "done") ? "done" : "none");
+}
+
+/**
+ * Resume (spec §3.1): the first visible sub-step whose mark isn't Done, or
+ * review.check when every sub-step before the submit page is. review.submit is
+ * never Done by design, so it is not asked.
+ */
+export function firstUnfinishedSubstep(answers, cards, visited, revealed) {
+  const ctx = { answers, visited, revealed, cards };
+  return (
+    visibleSubsteps(answers, cards).find((id) => id !== "review.submit" && substepStatus(id, ctx).key !== "done") ?? "review.check"
+  );
+}
+
+/** A new household member id: 32 lowercase hex characters. */
+export function newMemberId(random = globalThis.crypto) {
+  return [...random.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -255,8 +357,8 @@ function renderField(question, value, ctx) {
       );
     }
     case "date": {
-      // Filled by splitting on "-", so a partial date ("-04-12") goes back into its boxes.
-      const [year = "", month = "", day = ""] = text.split("-");
+      // Split at the first two "-" only, so a partial date ("-04-12", "1961--12") goes back into its boxes.
+      const [year, month, day] = /^([^-]*)-([^-]*)-(.*)$/.exec(text)?.slice(1) ?? [text, "", ""];
       const parts = { year, month, day };
       return group(
         `<div class="q-date">${DATE_PARTS.map(
@@ -317,7 +419,12 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
     .map((member, n) => {
       const memberBase = `${base}-${n}`;
       const answersOf = isPlainObject(member) ? member : {};
+      // The member's id is a hidden control: no label, no note, no tab stop.
+      const hiddenId = (question.fields ?? []).some((field) => field.type === "id")
+        ? `<input type="hidden" data-control data-q="${qid}" data-member="${n}" data-sub="member_id" value="${esc(answersOf.member_id ?? "")}">`
+        : "";
       const subs = (question.fields ?? [])
+        .filter((field) => field.type !== "id")
         .map((field) =>
           renderField(field, answersOf[field.id], {
             base: `${memberBase}-${esc(field.id)}`,
@@ -331,7 +438,7 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
           }),
         )
         .join("");
-      return `<div class="hh-card" role="group" aria-labelledby="${memberBase}-title"><div class="hh-card-head"><h3 class="hh-card-title" id="${memberBase}-title">Person ${n + 1}</h3>${button(
+      return `<div class="hh-card" role="group" aria-labelledby="${memberBase}-title">${hiddenId}<div class="hh-card-head"><h3 class="hh-card-title" id="${memberBase}-title">Person ${n + 1}</h3>${button(
         "Remove",
         "remove-member",
         "secondary",
@@ -341,8 +448,10 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
     .join("");
   const add =
     members.length < MEMBER_LIMIT ? button("Add a person", "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
-  return `<fieldset class="q q-group" data-q="${qid}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
-    tips.length ? `<div class="q-tips">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>` : ""
+  const tipsId = `${base}-tips`;
+  const describedBy = [tips.length ? tipsId : null, noteId].filter(Boolean).join(" ");
+  return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
+    tips.length ? `<div class="q-tips" id="${tipsId}">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>` : ""
   }<div class="hh-cards">${cards}</div>${add}<p id="${noteId}" class="q-note${note.className ? ` ${note.className}` : ""}" aria-live="polite">${esc(note.text)}</p></fieldset>`;
 }
 
@@ -375,7 +484,7 @@ export function renderQuestion(
 // One question's (or one member sub-field's) value from its descriptors.
 function readOne(list, changed) {
   if (list.some((d) => d.part)) {
-    const part = (name) => String(list.find((d) => d.part === name)?.value ?? "");
+    const part = (name) => String(list.find((d) => d.part === name)?.value ?? "").replace(/\D/g, "");
     const [year, month, day] = [part("year"), part("month"), part("day")];
     return [year, month, day].every((p) => p.trim() === "") ? null : `${year}-${month}-${day}`;
   }
@@ -409,7 +518,8 @@ function readMembers(list, keepEmptyMembers) {
       const value = readOne(descriptors);
       if (isAnswered(value)) member[sub] = value;
     }
-    if (keepEmptyMembers || Object.keys(member).length > 0) result.push(member);
+    // A card with only its hidden id is empty: kept (id and all) while editing, dropped otherwise.
+    if (keepEmptyMembers || Object.keys(member).some((key) => key !== "member_id")) result.push(member);
   }
   return result.length ? result : null;
 }
@@ -492,13 +602,13 @@ const DRIVERS = (() => {
 /** Whether a question, household, tip or who-spouse condition names this field. */
 export const drivesVisibility = (id) => DRIVERS.has(id);
 
-/** Top-level ids on step (0–8) that isVisible passes; the household is "hh". */
-export const visibleIds = (step, answers) =>
-  new Set(stepQuestions(step).filter((question) => isVisible(question, answers ?? {})).map((question) => question.id));
+/** Top-level ids in the sub-step that isVisible passes; the household is "hh". */
+export const visibleIds = (substepId, answers) =>
+  new Set(questionsOf(substepId).filter((question) => isVisible(question, answers ?? {})).map((question) => question.id));
 
 /** The ids on the page differ from the ids the draft makes visible. */
-export function needsRedraw(renderedIds, step, answers) {
-  const visible = visibleIds(step, answers);
+export function needsRedraw(renderedIds, substepId, answers) {
+  const visible = visibleIds(substepId, answers);
   const rendered = new Set(renderedIds ?? []);
   return rendered.size !== visible.size || [...visible].some((id) => !rendered.has(id));
 }

@@ -26,6 +26,7 @@ const CLIENT_TABLES = Object.freeze([
   "client_events",
   "workspaces",
   "case_contacts",
+  "case_document_cards",
 ]);
 const STAFF_TABLES = Object.freeze([
   ...CLIENT_TABLES,
@@ -88,6 +89,8 @@ export const mapCase = (row) => ({
   updatedAt: row.updated_at,
   // 1 or 2 (migration 011); a database from before it has only version 1.
   intakeVersion: Number(row.intake_version ?? 1),
+  // The sub-steps the client has opened (migration 017); [] before it.
+  intakeVisited: Array.isArray(row.intake_visited) ? [...row.intake_visited] : [],
 });
 
 // The case's contact details (migration 011), or null when it has no row —
@@ -101,6 +104,15 @@ export const mapContact = (row) =>
         bestContactNote: row.best_contact_note,
       }
     : null;
+
+// One document card the client or staff has acted on (migration 017). The row
+// names no person: both principals read it, and realtime sends it whole.
+export const mapDocumentCard = (row) => ({
+  slotId: row.slot_id,
+  status: row.status,
+  groupOverride: row.group_override,
+  changedAt: row.changed_at,
+});
 
 // The materials the site has received (migration 013). Staff only.
 export const mapMaterial = (row) => ({
@@ -182,6 +194,7 @@ export const CLIENT_COLUMNS = Object.freeze({
   documents: "id,case_id,request_id,filename,source,created_at",
   client_events: "id,case_id,action,message,created_at",
   case_contacts: "case_id,phone,spouse_phone,best_contact_time,best_contact_note",
+  case_document_cards: "slot_id,status,group_override,changed_at",
 });
 
 // The staff read's named columns, where it does not take the whole row.
@@ -191,9 +204,17 @@ export const STAFF_COLUMNS = Object.freeze({
 
 // The Case an applicant sees: their own case plus the four client-readable
 // related tables, and nothing else.
-export const mapClientCase = ({ row, requests, documents, history, contacts = [] }) => ({
+export const mapClientCase = ({
+  row,
+  requests,
+  documents,
+  history,
+  contacts = [],
+  cards = [],
+}) => ({
   ...mapCase(row),
   contact: mapContact(contacts[0]),
+  documentCards: cards.map(mapDocumentCard),
   requests: requests.map(camelRow),
   documents: documents.map(camelRow),
   history: history.map(camelRow),
@@ -213,9 +234,10 @@ export const mapStaffCase = ({
   history,
   internalHistory,
   contacts = [],
+  cards = [],
   materials = [],
 }) => ({
-  ...mapClientCase({ row, requests, documents, history, contacts }),
+  ...mapClientCase({ row, requests, documents, history, contacts, cards }),
   participants: participants.map((participant) => participant.person_id),
   reviews: reviews.map(mapReview),
   followups: followups.map((followup) => mapFollowup(followup, attempts)),
@@ -414,6 +436,14 @@ export function createStore(client) {
             .from("case_contacts")
             .select(CLIENT_COLUMNS.case_contacts)
             .eq("case_id", id),
+        ),
+        // Both principals, by named columns (the row carries no person).
+        cards: await read(
+          client
+            .from("case_document_cards")
+            .select(CLIENT_COLUMNS.case_document_cards)
+            .eq("case_id", id)
+            .order("slot_id"),
         ),
       };
       if (!staff) return mapClientCase(client_);

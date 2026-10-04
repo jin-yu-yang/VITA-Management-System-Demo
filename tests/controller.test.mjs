@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
-import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
+import { CONTACT_FIELDS, isMemberId } from "../src/intake-catalogue.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -2142,16 +2142,38 @@ test("the office screens are a presenter's, and a client falls back home", async
 });
 
 // ---------------------------------------------------------------------------
-// Version 2: the draft, withheld invalid values, visited steps and the revealed
-// list (spec 2026-09-30 §2.5, §3.3–§3.4).
+// Version 2: the draft, withheld invalid values, sub-steps, visits on the
+// server, the revealed list and card actions (spec 2026-09-30 §2.5, §3.3–§3.4;
+// spec 2026-10-04 §3.1, §3.7, §3.8, §5.2, §6.3).
 // ---------------------------------------------------------------------------
 
 // The version-2 server as the fake sees it: a save merges (null clears) and the
-// four contact fields go to the case's contact record, never into answers.
-function v2Store({ answers = {}, contact = null, revision = 1, others = [] } = {}) {
+// four contact fields go to the case's contact record, never into answers. Like
+// the server, it refuses an envelope whose expected revision is not the case's,
+// stores the union of the visited sub-steps it is sent, keeps card rows, and
+// bumps the revision for every action.
+function v2Store({
+  answers = {},
+  contact = null,
+  revision = 1,
+  stage = "draft",
+  intakeVisited = [],
+  documentCards = [],
+  others = [],
+} = {}) {
   const store = fakeStore({
     cases: [
-      { id: "case-v2", reference: "VT-V2AA-BBBB", stage: "draft", revision, intakeVersion: 2, answers, contact },
+      {
+        id: "case-v2",
+        reference: "VT-V2AA-BBBB",
+        stage,
+        revision,
+        intakeVersion: 2,
+        answers,
+        contact,
+        intakeVisited,
+        documentCards,
+      },
       ...others,
     ],
   });
@@ -2164,21 +2186,49 @@ function v2Store({ answers = {}, contact = null, revision = 1, others = [] } = {
     store.failNext = null;
     if (failure) throw failure;
     const record = store.records.get(action.caseId);
-    const merged = { ...record.answers };
-    let contact = record.contact;
-    for (const [id, value] of Object.entries(action.payload.answers)) {
-      if (CONTACT_FIELDS[id]) {
-        contact = { ...(contact ?? {}), [CONTACT_FIELDS[id]]: value };
-        continue;
+    if (action.expectedRevision !== record.revision)
+      throw Object.assign(new Error("stale"), { code: "CONFLICT" });
+    const next = { ...record, revision: record.revision + 1 };
+    if (action.type === "SAVE_ANSWERS") {
+      const merged = { ...record.answers };
+      let contact = record.contact;
+      for (const [id, value] of Object.entries(action.payload.answers)) {
+        if (CONTACT_FIELDS[id]) {
+          contact = { ...(contact ?? {}), [CONTACT_FIELDS[id]]: value };
+          continue;
+        }
+        if (value === null) delete merged[id];
+        else merged[id] = value;
       }
-      if (value === null) delete merged[id];
-      else merged[id] = value;
+      next.answers = merged;
+      next.contact = contact;
+      if (action.payload.visited)
+        next.intakeVisited = [...new Set([...(record.intakeVisited ?? []), ...action.payload.visited])];
     }
-    const next = { ...record, revision: record.revision + 1, answers: merged, contact };
+    const setCard = (slotId, change) => {
+      const cards = [...(record.documentCards ?? [])];
+      const at = cards.findIndex((card) => card.slotId === slotId);
+      const row = { slotId, status: null, groupOverride: null, ...(at >= 0 ? cards[at] : {}), ...change, changedAt: "2026-10-04T12:00:00Z" };
+      if (at >= 0) cards[at] = row;
+      else cards.push(row);
+      next.documentCards = cards;
+    };
+    if (action.type === "SET_DOCUMENT_CARD")
+      setCard(action.payload.slotId, { status: action.payload.status === "not_done" ? null : action.payload.status });
+    if (action.type === "SET_DOCUMENT_GROUP")
+      setCard(action.payload.slotId, { groupOverride: action.payload.group === "needed" ? "needed" : null });
     store.records.set(action.caseId, next);
     return { actionId: action.actionId, caseId: action.caseId, reference: next.reference, revision: next.revision };
   };
   return store;
+}
+
+// Somebody else's change to the open case: a newer revision of the record,
+// then the realtime signal for it.
+async function remoteChange(store, change) {
+  const record = store.records.get("case-v2");
+  store.records.set("case-v2", { ...record, revision: record.revision + 1, ...change });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
 }
 
 const offline = () => Object.assign(new Error("offline"), { code: "OFFLINE" });
@@ -2229,15 +2279,15 @@ test("a version-2 edit keeps structured values and null, and the save carries th
   assert.equal(Object.hasOwn(controller.getState().draftAnswers, "ownerUserId"), false);
   controller.editAnswers({ tp_middle_name: null });
   assert.equal(controller.getState().draftAnswers.tp_middle_name, null);
-  controller.editAnswers({ hh: [{ first_name: "Xiao" }], best_contact_time: ["weekend", "any_time"], stage: "closed" });
-  assert.deepEqual(controller.getState().draftAnswers.hh, [{ first_name: "Xiao" }]);
+  controller.editAnswers({ hh: [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }], best_contact_time: ["weekend", "any_time"], stage: "closed" });
+  assert.deepEqual(controller.getState().draftAnswers.hh, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }]);
   assert.equal(Object.hasOwn(controller.getState().draftAnswers, "stage"), false);
   await controller.saveAnswers();
   const sent = store.writes[0].payload.answers;
   assert.equal(sent.tp_middle_name, null);
   assert.equal(sent.tp_phone, "2155550199");
   assert.deepEqual(sent.best_contact_time, ["weekend", "any_time"]);
-  assert.deepEqual(sent.hh, [{ first_name: "Xiao" }]);
+  assert.deepEqual(sent.hh, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao" }]);
   controller.stop();
 });
 
@@ -2257,28 +2307,31 @@ test("leaving married drops the spouse from every who answer in the same edit", 
   controller.stop();
 });
 
-test("goToStep records the step being left, saves a dirty draft, then moves", async () => {
+test("goToSubstep records the sub-step being left, saves a dirty draft, then moves", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
-  assert.deepEqual(controller.getState().visitedSteps, []);
-  await controller.goToStep(1);
-  assert.equal(store.writes.length, 0, "nothing to save");
-  assert.deepEqual(controller.getState().visitedSteps, [0]);
+  assert.equal(controller.getState().formSubstep, "before.ready");
+  assert.deepEqual(controller.getState().visitedSubsteps, []);
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().formSubstep, "before.service");
+  assert.deepEqual(controller.getState().visitedSubsteps, ["before.ready"]);
   controller.editAnswers({ tp_first_name: "Ming" });
-  await controller.goToStep(3);
-  assert.equal(store.writes.length, 1);
-  assert.equal(store.writes[0].payload.answers.tp_first_name, "Ming");
-  assert.equal(controller.getState().formStep, 3);
-  assert.deepEqual(controller.getState().visitedSteps, [0, 1]);
+  await controller.goToSubstep("about.address");
+  assert.equal(store.writes.length, 2);
+  assert.equal(store.writes[1].payload.answers.tp_first_name, "Ming");
+  assert.deepEqual(store.writes[1].payload.visited, ["before.ready", "before.service"]);
+  assert.equal(controller.getState().formSubstep, "about.address");
+  assert.deepEqual(controller.getState().visitedSubsteps, ["before.ready", "before.service"]);
   assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().dirty, false);
   controller.stop();
 });
 
-test("goToStep still moves when its save fails", async () => {
+test("goToSubstep still moves when its save fails", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
   controller.editAnswers({ tp_first_name: "Ming" });
   store.failNext = offline();
-  await controller.goToStep(2);
-  assert.equal(controller.getState().formStep, 2);
+  await controller.goToSubstep("about.you");
+  assert.equal(controller.getState().formSubstep, "about.you");
   assert.equal(controller.getState().saveState, "failed");
   assert.equal(controller.getState().dirty, true);
   controller.stop();
@@ -2300,40 +2353,41 @@ function holdSaves(store) {
   return () => release();
 }
 
-test("a second step change during the first one's save is ignored, so no false conflict", async () => {
+test("a second sub-step change during the first one's save is ignored, so no false conflict", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
   controller.editAnswers({ tp_first_name: "Ming" });
   const release = holdSaves(store);
-  const first = controller.goToStep(1);
-  const second = controller.goToStep(5);
+  const first = controller.goToSubstep("before.service");
+  const second = controller.goToSubstep("income.wages");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
   release();
   await Promise.all([first, second]);
   assert.equal(store.actCalls, 1);
-  assert.equal(controller.getState().formStep, 1);
+  assert.equal(controller.getState().formSubstep, "before.service");
   assert.equal(controller.getState().saveState, "saved");
   assert.equal(controller.getState().conflict, null);
-  await controller.goToStep(5);
-  assert.equal(controller.getState().formStep, 5, "the guard is gone once the save lands");
+  await controller.goToSubstep("income.wages");
+  assert.equal(controller.getState().formSubstep, "income.wages", "the guard is gone once the save lands");
+  assert.equal(controller.getState().conflict, null);
   controller.stop();
 });
 
-test("a step change whose save outlives its case leaves the newly opened case's step alone", async () => {
+test("a sub-step change whose save outlives its case leaves the newly opened case's place alone", async () => {
   const { controller, store } = await openV2({
     answers: { tp_first_name: "Mei" },
     others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
   });
   controller.editAnswers({ tp_first_name: "Ming" });
   const release = holdSaves(store);
-  const moving = controller.goToStep(4);
+  const moving = controller.goToSubstep("income.wages");
   await controller.selectCase("case-w");
-  const opened = controller.getState().formStep;
+  const opened = controller.getState().formSubstep;
+  assert.equal(opened, "before.ready");
   release();
   await moving;
   assert.equal(controller.getState().selectedCaseId, "case-w");
-  assert.equal(controller.getState().formStep, opened);
-  assert.notEqual(opened, 4);
+  assert.equal(controller.getState().formSubstep, opened);
   controller.stop();
 });
 
@@ -2383,19 +2437,22 @@ test("fromServer changes nothing on a version-1 case: the given answers are used
   controller.stop();
 });
 
-test("another case starts with no visited steps and nothing revealed", async () => {
+test("another case starts with no visited sub-steps, nothing revealed and no return", async () => {
   const { controller } = await openV2({
     answers: { tp_first_name: "Mei" },
     others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
   });
-  controller.setFormStep(1);
+  await controller.goToSubstep("about.you");
   controller.editAnswers({ email: "a@" });
-  await controller.goToStep(2);
-  assert.deepEqual(controller.getState().visitedSteps, [1]);
+  await controller.openForChange("about.address");
+  assert.deepEqual(controller.getState().visitedSubsteps, ["before.ready", "about.you"]);
   assert.deepEqual(controller.getState().revealed, ["email"]);
+  assert.equal(controller.getState().returnToSummary, true);
   await controller.selectCase("case-w");
-  assert.deepEqual(controller.getState().visitedSteps, []);
+  assert.deepEqual(controller.getState().visitedSubsteps, []);
   assert.deepEqual(controller.getState().revealed, []);
+  assert.equal(controller.getState().returnToSummary, false);
+  assert.equal(controller.getState().formSubstep, "before.ready");
   controller.stop();
 });
 
@@ -2572,13 +2629,13 @@ test("the revealed list: typing never adds, a fix or a new case removes", async 
   controller.stop();
 });
 
-test("leaving a step reveals its invalid answers", async () => {
+test("leaving a sub-step reveals its invalid answers", async () => {
   const { controller } = await savedV2();
-  controller.setFormStep(1);
+  await controller.goToSubstep("about.you");
   controller.editAnswers({ email: "a@", sp_dob: "1990-02-30" });
   assert.equal(chip(controller), "Saved");
-  await controller.goToStep(2);
-  assert.deepEqual(controller.getState().revealed, ["email"], "only the step being left, and only visible questions");
+  await controller.goToSubstep("about.address");
+  assert.deepEqual(controller.getState().revealed, ["email"], "only the sub-step being left, and only visible questions");
   assert.equal(chip(controller), "1 answer needs checking");
   controller.stop();
 });
@@ -2606,9 +2663,9 @@ test("removing a household member renumbers the revealed ids after it", async ()
   controller.editAnswers({
     has_household_members: "yes",
     hh: [
-      { first_name: "An", dob: "2015-02-30" },
-      { first_name: "Bo", dob: "2016-02-30" },
-      { first_name: "Cy", dob: "2017-01-01" },
+      { member_id: "00000000000000000000000000000001", first_name: "An", dob: "2015-02-30" },
+      { member_id: "00000000000000000000000000000002", first_name: "Bo", dob: "2016-02-30" },
+      { member_id: "00000000000000000000000000000003", first_name: "Cy", dob: "2017-01-01" },
     ],
   });
   controller.revealInvalid("hh[0].dob");
@@ -2649,36 +2706,43 @@ test("taking the office's valid value unreveals it", async () => {
   controller.stop();
 });
 
-test("visited steps and the revealed list round-trip through the window state", async () => {
+test("the sub-step and the revealed list round-trip through the window state; visits come from the server", async () => {
   const sessionStorage = fakeSession();
   // The fake server holds an invalid email (the real one never would), so the
   // restored id still has something to point at after the case is re-read.
   const first = await openV2({ answers: { email: "a@" }, sessionStorage });
-  first.controller.setFormStep(1);
-  await first.controller.goToStep(4);
+  await first.controller.goToSubstep("about.you");
+  await first.controller.goToSubstep("about.address");
   assert.deepEqual(first.controller.getState().revealed, ["email"]);
   const stored = JSON.parse(sessionStorage.raw("vitally:client:v1:user-1"));
-  assert.deepEqual(stored.visitedSteps, { caseId: "case-v2", steps: [1], revealed: ["email"] });
+  assert.equal(stored.formSubstep, "about.address");
+  assert.deepEqual(stored.revealedAnswers, { caseId: "case-v2", ids: ["email"] });
+  assert.equal(Object.hasOwn(stored, "visitedSteps"), false);
   first.controller.stop();
 
   const second = build({ store: first.store, sessionStorage });
   await second.controller.start();
   assert.equal(second.controller.getState().selectedCaseId, "case-v2");
-  assert.deepEqual(second.controller.getState().visitedSteps, [1]);
+  assert.equal(second.controller.getState().formSubstep, "about.address");
   assert.deepEqual(second.controller.getState().revealed, ["email"]);
+  assert.deepEqual(second.controller.getState().visitedSubsteps, ["before.ready", "about.you"]);
   second.controller.stop();
 
-  // A record for another case is not this case's.
+  // A record for another case is not this case's; a stale 4b record and an id
+  // the catalogue doesn't have are ignored (the latter lands on the first).
   const other = fakeSession({
     "vitally:client:v1:user-1": JSON.stringify({
       selectedCaseId: "case-v2",
-      visitedSteps: { caseId: "case-other", steps: [3], revealed: ["email"] },
+      formSubstep: "old.gone",
+      revealedAnswers: { caseId: "case-other", ids: ["email"] },
+      visitedSteps: { caseId: "case-v2", steps: [3], revealed: ["email"] },
     }),
   });
   const third = build({ store: first.store, sessionStorage: other });
   await third.controller.start();
-  assert.deepEqual(third.controller.getState().visitedSteps, []);
   assert.deepEqual(third.controller.getState().revealed, []);
+  assert.equal(Object.hasOwn(third.controller.getState(), "visitedSteps"), false);
+  assert.equal(third.controller.currentSubstep(), "before.ready");
   third.controller.stop();
 });
 
@@ -2726,9 +2790,562 @@ test("a version-1 case keeps today's whole-draft save, any-edit dirty and no rev
   controller.editAnswers({ firstName: null });
   assert.equal(controller.getState().draftAnswers.firstName, "Mei", "null is dropped as today");
   controller.revealInvalid("zip");
-  await controller.goToStep(1);
+  await controller.goToSubstep("about.you");
+  assert.equal(store.writes.length, 0, "a version-1 case has no sub-steps");
+  assert.equal(controller.currentSubstep(), null);
+  await controller.saveAnswers();
   assert.deepEqual(controller.getState().revealed, []);
   assert.deepEqual(store.writes[0].payload.answers, { firstName: "Mei", zip: "191", household: "2" });
   assert.equal(chip(controller), "Saved");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// Sub-steps, visits on the server, revisions that change no answers, card
+// actions and the return to the summary (spec 2026-10-04 §3.1, §3.7, §3.8,
+// §5.2, §6.3).
+// ---------------------------------------------------------------------------
+
+// Every before.* and about.you answer a Done mark needs, tp_phone from the
+// contact record.
+const BEFORE_AND_YOU = {
+  service: "drop_off",
+  language: "english",
+  tp_first_name: "Mei",
+  tp_last_name: "Chen",
+  tp_dob: "1980-01-01",
+  tp_job_title: "Cook",
+};
+
+test("a new case opens at before.ready, and a resumed one at its first unfinished sub-step", async () => {
+  const fresh = await openV2();
+  assert.equal(fresh.controller.getState().formSubstep, "before.ready");
+  assert.equal(fresh.controller.currentSubstep(), "before.ready");
+  assert.equal(fresh.controller.getState().returnToSummary, false);
+  fresh.controller.stop();
+
+  const resumed = await openV2({
+    answers: BEFORE_AND_YOU,
+    contact: { phone: "2155550199" },
+    intakeVisited: ["before.ready", "before.service", "before.language", "about.you"],
+  });
+  assert.equal(resumed.controller.getState().formSubstep, "about.address");
+  assert.deepEqual(resumed.controller.getState().visitedSubsteps, [
+    "before.ready",
+    "before.service",
+    "before.language",
+    "about.you",
+  ]);
+  resumed.controller.stop();
+});
+
+test("leaving a sub-step with nothing edited saves the visit once, with the answers unchanged", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  await controller.goToSubstep("before.service");
+  assert.equal(store.writes.length, 1);
+  assert.equal(store.writes[0].type, "SAVE_ANSWERS");
+  assert.equal(store.writes[0].expectedRevision, 1);
+  assert.deepEqual(store.writes[0].payload, { answers: { tp_first_name: "Mei" }, visited: ["before.ready"] });
+  assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().formSubstep, "before.service");
+  controller.stop();
+});
+
+test("revisiting already-visited sub-steps with nothing edited sends nothing", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    intakeVisited: ["before.ready", "before.service"],
+  });
+  assert.equal(controller.getState().formSubstep, "before.service");
+  await controller.goToSubstep("before.ready");
+  await controller.goToSubstep("before.service");
+  assert.equal(store.writes.length, 0);
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().formSubstep, "before.service");
+  controller.stop();
+});
+
+test("a visited id the catalogue doesn't know is kept but never sent, and never makes the draft dirty", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    intakeVisited: ["old.gone"],
+  });
+  assert.equal(controller.getState().dirty, false);
+  assert.ok(controller.getState().visitedSubsteps.includes("old.gone"));
+  await controller.goToSubstep("before.service");
+  assert.equal(store.writes.length, 1);
+  assert.deepEqual(store.writes[0].payload.visited, ["before.ready"]);
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await controller.saveAnswers();
+  assert.deepEqual(store.writes[1].payload.visited, ["before.ready"]);
+  controller.stop();
+});
+
+test("a presenter never sends visits, and its visits never make the draft dirty", async () => {
+  const store = v2Store({ answers: { tp_first_name: "Mei" } });
+  const presenterPrincipal = { userId: "user-9", workspaceId: "w1", access: "presenter" };
+  store.getPrincipal = async () => presenterPrincipal;
+  store.listPeople = async () => [{ id: "person-admin", capabilities: ["admin"] }];
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-admin");
+  await controller.selectCase("case-v2");
+  await controller.goToSubstep("before.service");
+  assert.equal(store.writes.length, 0);
+  assert.equal(controller.getState().dirty, false);
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await controller.saveAnswers();
+  assert.equal(Object.hasOwn(store.writes[0].payload, "visited"), false);
+  assert.equal(store.writes[0].personId, "person-admin");
+  controller.stop();
+});
+
+test("on a submitted case, visits are never pending and a card mark sends only the card action", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" }, stage: "received" });
+  await controller.goToSubstep("about.you");
+  assert.ok(controller.getState().visitedSubsteps.includes("before.ready"), "a visit the server lacks");
+  assert.equal(controller.getState().dirty, false);
+  await controller.setDocumentCard("w2.household", "later");
+  assert.deepEqual(
+    store.writes.map((write) => write.type),
+    ["SET_DOCUMENT_CARD"],
+  );
+  assert.deepEqual(store.writes[0].payload, { slotId: "w2.household", status: "later" });
+  assert.equal(store.writes[0].expectedRevision, 1);
+  assert.equal(store.writes[0].personId, null);
+  assert.equal(controller.getState().savedCase.documentCards[0].status, "later");
+  assert.equal(controller.getState().dirty, false);
+  controller.stop();
+});
+
+test("two tabs: a submit elsewhere while only visits are unsaved takes the newer case, and a card mark goes through", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true, "the visit is unsaved");
+  // Tab B submits.
+  await remoteChange(store, { stage: "received" });
+  let state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.savedCase.stage, "received");
+  assert.equal(state.dirty, false);
+  assert.equal(state.editBaseRevision, null);
+  assert.deepEqual(state.visitedSubsteps, [], "the server's visits, the unsent one dropped");
+  assert.equal(state.retryable, false, "the visits' envelope can no longer be sent");
+  await controller.setDocumentCard("w2.household", "none");
+  state = controller.getState();
+  assert.deepEqual(
+    store.writes.map((write) => write.type),
+    ["SAVE_ANSWERS", "SET_DOCUMENT_CARD"],
+  );
+  assert.equal(store.writes[1].expectedRevision, 2);
+  assert.equal(state.conflict, null);
+  assert.equal(state.error, null);
+  controller.stop();
+});
+
+test("§3.8 (a): a newer revision that changes no answers moves the pin and keeps the typing", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(controller.getState().editBaseRevision, 1);
+  await remoteChange(store, {
+    documentCards: [{ slotId: "w2.household", status: "later", groupOverride: null, changedAt: "2026-10-04T12:00:00Z" }],
+  });
+  const state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.editBaseRevision, 2);
+  assert.equal(state.dirty, true);
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(state.savedCase.documentCards.length, 1);
+  await controller.saveAnswers();
+  assert.equal(store.writes[0].expectedRevision, 2);
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
+  controller.stop();
+});
+
+test("§3.8 (b): a newer revision that changes an answer while answers are unsaved is a conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await remoteChange(store, { answers: { tp_first_name: "Mei", addr_city: "Philadelphia" } });
+  const state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(state.conflict.baseRevision, 1);
+  assert.equal(state.conflict.serverRevision, 2);
+  assert.equal(state.editBaseRevision, 1);
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(Object.hasOwn(state.draftAnswers, "addr_city"), false);
+  // A later answer-free revision does not clear a conflict already raised.
+  await remoteChange(store, { documentCards: [{ slotId: "w2.household", status: "none", groupOverride: null }] });
+  assert.equal(controller.getState().conflict?.code, "REMOTE_CHANGED");
+  assert.equal(controller.getState().editBaseRevision, 1);
+  controller.stop();
+});
+
+test("§3.8 (c): with only visits unsaved, a newer revision's answers are taken and the visits still sent", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true);
+  await remoteChange(store, { answers: { tp_first_name: "Mei", addr_city: "Philadelphia" } });
+  let state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.draftAnswers.addr_city, "Philadelphia");
+  assert.deepEqual(state.visitedSubsteps, ["before.ready"]);
+  assert.equal(state.editBaseRevision, 2);
+  assert.equal(state.dirty, true);
+  await controller.saveAnswers();
+  const sent = store.writes.at(-1);
+  assert.equal(sent.expectedRevision, 2);
+  assert.deepEqual(sent.payload.visited, ["before.ready"]);
+  assert.equal(sent.payload.answers.addr_city, "Philadelphia");
+  state = controller.getState();
+  assert.equal(state.saveState, "saved");
+  assert.equal(state.dirty, false);
+  assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
+  controller.stop();
+});
+
+test("§3.8 (d): a stage change while answers are unsaved is handled as today", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await remoteChange(store, { stage: "received" });
+  const state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(state.editBaseRevision, 1, "never re-pinned");
+  assert.equal(state.savedCase.stage, "received");
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  controller.stop();
+});
+
+test("a card action saves a dirty draft first, and a failed save stops it", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await controller.setDocumentCard("w2.household", "later");
+  assert.deepEqual(
+    store.writes.map((write) => [write.type, write.expectedRevision]),
+    [
+      ["SAVE_ANSWERS", 1],
+      ["SET_DOCUMENT_CARD", 2],
+    ],
+  );
+  assert.equal(controller.getState().conflict, null);
+  assert.equal(controller.getState().dirty, false);
+  controller.stop();
+
+  const failing = await openV2({ answers: { tp_first_name: "Mei" } });
+  failing.controller.editAnswers({ tp_first_name: "Ming" });
+  failing.store.failNext = offline();
+  assert.equal(await failing.controller.setDocumentCard("w2.household", "later"), null);
+  assert.deepEqual(
+    failing.store.writes.map((write) => write.type),
+    ["SAVE_ANSWERS"],
+  );
+  assert.equal(failing.controller.getState().saveState, "failed");
+  assert.equal(failing.controller.getState().error?.code, "OFFLINE");
+  failing.controller.stop();
+});
+
+test("a card's group is moved through the same path", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" }, stage: "received" });
+  await controller.setDocumentGroup("w2.household", "needed");
+  assert.equal(store.writes.length, 1);
+  assert.equal(store.writes[0].type, "SET_DOCUMENT_GROUP");
+  assert.deepEqual(store.writes[0].payload, { slotId: "w2.household", group: "needed" });
+  assert.equal(controller.getState().savedCase.documentCards[0].groupOverride, "needed");
+  controller.stop();
+});
+
+test("a rail step collapses and expands in one change each", async () => {
+  const { controller, renders } = await openV2({ answers: { tp_first_name: "Mei" } });
+  await controller.goToSubstep("about.you");
+  controller.togglePanel("rail-open:about");
+  let before = renders.count;
+  controller.setRailExpanded("about", false);
+  assert.equal(renders.count, before + 1);
+  let panels = controller.getState().openPanels;
+  assert.ok(panels.includes("rail-shut:about"));
+  assert.equal(panels.includes("rail-open:about"), false);
+  before = renders.count;
+  controller.setRailExpanded("about", true);
+  assert.equal(renders.count, before + 1);
+  panels = controller.getState().openPanels;
+  assert.ok(panels.includes("rail-open:about"));
+  assert.equal(panels.includes("rail-shut:about"), false);
+  assert.equal(panels.filter((name) => name.endsWith(":about")).length, 1);
+  controller.stop();
+});
+
+test("Change sets a return to the summary; Back to summary or a rail jump clears it", async () => {
+  const { controller } = await openV2({ answers: { tp_first_name: "Mei" } });
+  await controller.openForChange("about.address");
+  assert.equal(controller.getState().formSubstep, "about.address");
+  assert.equal(controller.getState().returnToSummary, true);
+  await controller.backToSummary();
+  assert.equal(controller.getState().formSubstep, "review.summary");
+  assert.equal(controller.getState().returnToSummary, false);
+  await controller.openForChange("about.address");
+  await controller.goToSubstep("about.you");
+  assert.equal(controller.getState().returnToSummary, false);
+  await controller.openForChange("about.address");
+  await controller.moveSubstep(1);
+  assert.equal(controller.getState().returnToSummary, false);
+  controller.stop();
+});
+
+test("moveSubstep goes to the next or previous visible sub-step and does nothing at either end", async () => {
+  const { controller, store } = await openV2({ answers: { marital_status: "never_married" } });
+  await controller.moveSubstep(-1);
+  assert.equal(controller.getState().formSubstep, "before.ready");
+  assert.equal(store.writes.length, 0, "nothing left, nothing visited");
+  assert.deepEqual(controller.getState().visitedSubsteps, []);
+  await controller.moveSubstep(1);
+  assert.equal(controller.getState().formSubstep, "before.service");
+  await controller.goToSubstep("about.marital");
+  await controller.moveSubstep(1);
+  assert.equal(controller.getState().formSubstep, "about.situation", "the hidden spouse sub-step is skipped");
+  await controller.goToSubstep("review.submit");
+  const writes = store.writes.length;
+  await controller.moveSubstep(1);
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.equal(store.writes.length, writes);
+  controller.stop();
+});
+
+test("currentSubstep resolves a place the draft has hidden to the next visible one", async () => {
+  const { controller } = await openV2({ answers: { marital_status: "married" } });
+  await controller.goToSubstep("about.spouse");
+  assert.equal(controller.currentSubstep(), "about.spouse");
+  controller.editAnswers({ marital_status: "never_married" });
+  assert.equal(controller.getState().formSubstep, "about.spouse");
+  assert.equal(controller.currentSubstep(), "about.situation");
+  controller.stop();
+});
+
+test("an undo after a failed save stays Not saved, keeps its pin, and the next save sends the undone value", async () => {
+  // An edit, a failed save, an undo.
+  const edited = await savedV2();
+  edited.controller.editAnswers({ tp_first_name: "Ming" });
+  edited.store.failNext = offline();
+  await assert.rejects(edited.controller.saveAnswers());
+  edited.controller.editAnswers({ tp_first_name: "Mei" });
+  assert.match(chip(edited.controller), /^Not saved\./);
+  assert.equal(edited.controller.getState().dirty, true);
+  await edited.controller.saveAnswers();
+  assert.equal(edited.store.writes.at(-1).payload.answers.tp_first_name, "Mei");
+  edited.controller.stop();
+
+  // A failed clean save, then an edit and its undo: the failed save may have
+  // landed, so the undo goes back to Not saved, not to Saved.
+  const clean = await savedV2();
+  clean.store.failNext = offline();
+  await assert.rejects(clean.controller.saveAnswers());
+  assert.equal(clean.controller.getState().dirty, false);
+  clean.controller.editAnswers({ tp_first_name: "Ming" });
+  assert.equal(clean.controller.getState().saveState, "unsaved");
+  assert.equal(clean.controller.getState().editBaseRevision, 2);
+  clean.controller.editAnswers({ tp_first_name: "Mei" });
+  let state = clean.controller.getState();
+  assert.equal(state.saveState, "failed");
+  assert.equal(state.dirty, true);
+  assert.equal(state.editBaseRevision, 2);
+  assert.equal(state.retryable, false);
+  assert.match(chip(clean.controller), /^Not saved\./);
+  await clean.controller.saveAnswers();
+  const sent = clean.store.writes.at(-1);
+  assert.equal(sent.payload.answers.tp_first_name, "Mei");
+  assert.equal(sent.expectedRevision, 2);
+  state = clean.controller.getState();
+  assert.equal(state.saveState, "saved");
+  assert.equal(state.dirty, false);
+  clean.controller.stop();
+});
+
+test("reconciling to the server's own answers leaves the form not dirty", async () => {
+  const { controller, store } = await savedV2();
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await remoteChange(store, { answers: { ...store.records.get("case-v2").answers, tp_last_name: "Wang" } });
+  assert.equal(controller.getState().conflict?.code, "REMOTE_CHANGED");
+  await controller.reconcileAnswers({ answers: {}, expectedServerRevision: 3, fromServer: true });
+  let state = controller.getState();
+  assert.equal(state.draftAnswers.tp_last_name, "Wang");
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.dirty, false);
+  assert.equal(state.editBaseRevision, null);
+  assert.equal(state.conflict, null);
+  assert.equal(state.saveState, "saved");
+  assert.equal(chip(controller), "Saved");
+
+  // Keeping one's own edits is still a change to save, pinned at the newest.
+  controller.editAnswers({ tp_first_name: "Ming" });
+  await remoteChange(store, { answers: { ...store.records.get("case-v2").answers, tp_last_name: "Lee" } });
+  await controller.reconcileAnswers({
+    answers: controller.getState().draftAnswers,
+    expectedServerRevision: 4,
+  });
+  state = controller.getState();
+  assert.equal(state.dirty, true);
+  assert.equal(state.editBaseRevision, 4);
+  assert.equal(state.saveState, "unsaved");
+  controller.stop();
+});
+
+test("every household member in the draft has a member id", async () => {
+  const { controller, store } = await openV2({
+    answers: { has_household_members: "yes", hh: [{ first_name: "Bo" }] },
+  });
+  // From the server: an id is given, and the same one survives a refresh.
+  const fromServer = controller.getState().draftAnswers.hh[0].member_id;
+  assert.ok(isMemberId(fromServer));
+  await remoteChange(store, { answers: { has_household_members: "yes", hh: [{ first_name: "Bo" }], addr_city: "Philadelphia" } });
+  assert.equal(controller.getState().draftAnswers.hh[0].member_id, fromServer);
+
+  // An edit: a new member, an invalid id and a shared id all get their own.
+  controller.editAnswers({
+    hh: [
+      { member_id: fromServer, first_name: "Bo" },
+      { first_name: "A" },
+      { member_id: "x", first_name: "C" },
+      { member_id: fromServer, first_name: "D" },
+    ],
+  });
+  const members = controller.getState().draftAnswers.hh;
+  assert.equal(members[0].member_id, fromServer);
+  assert.ok(members.every((member) => isMemberId(member.member_id)));
+  assert.equal(new Set(members.map((member) => member.member_id)).size, 4);
+  const ids = members.map((member) => member.member_id);
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.deepEqual(controller.getState().draftAnswers.hh.map((member) => member.member_id), ids, "stable across edits");
+  await controller.saveAnswers();
+  assert.deepEqual(store.writes.at(-1).payload.answers.hh.map((member) => member.member_id), ids, "the household is sent, not withheld");
+  controller.stop();
+
+  const simple = await openV2();
+  simple.controller.editAnswers({ hh: [{ first_name: "A" }] });
+  assert.ok(isMemberId(simple.controller.getState().draftAnswers.hh[0].member_id));
+  simple.controller.stop();
+});
+
+test("§3.8: after a failed save of an answer and its undo, a newer revision's answers are a choice, not taken", async () => {
+  // The failed save may have landed: the newer revision may be that very
+  // edit, which the person undid. Taking it silently would bring it back.
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(controller.getState().dirty, true);
+  await remoteChange(store, { answers: { tp_first_name: "Ming" } });
+  const state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  controller.stop();
+});
+
+test("a card mark and a sub-step change share one save at a time", async () => {
+  // A mark during a sub-step change's save is ignored: no second save.
+  const first = await openV2({ answers: { tp_first_name: "Mei" } });
+  first.controller.editAnswers({ tp_first_name: "Ming" });
+  let release = holdSaves(first.store);
+  const moving = first.controller.goToSubstep("before.service");
+  const marking = first.controller.setDocumentCard("w2.household", "later");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(first.store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  const [, marked] = await Promise.all([moving, marking]);
+  assert.equal(marked, null);
+  assert.deepEqual(first.store.writes.map((write) => write.type), ["SAVE_ANSWERS"]);
+  assert.equal(first.controller.getState().formSubstep, "before.service");
+  assert.equal(first.controller.getState().conflict, null);
+  assert.equal(first.controller.getState().error, null);
+  first.controller.stop();
+
+  // A sub-step change during a mark's pre-save is ignored the same way.
+  const second = await openV2({ answers: { tp_first_name: "Mei" } });
+  second.controller.editAnswers({ tp_first_name: "Ming" });
+  release = holdSaves(second.store);
+  const marking2 = second.controller.setDocumentCard("w2.household", "later");
+  const moving2 = second.controller.goToSubstep("about.you");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([marking2, moving2]);
+  assert.deepEqual(
+    second.store.writes.map((write) => [write.type, write.expectedRevision]),
+    [
+      ["SAVE_ANSWERS", 1],
+      ["SET_DOCUMENT_CARD", 2],
+    ],
+  );
+  assert.equal(second.controller.getState().formSubstep, "before.ready");
+  assert.equal(second.controller.getState().conflict, null);
+  assert.equal(second.controller.getState().error, null);
+  second.controller.stop();
+});
+
+// A card mark is one action at a time from send to answer, not only during its
+// pre-save: a second mark, or a sub-step change, sent while the first mark is
+// in flight would carry the same expected revision and meet a false conflict.
+test("a second card mark while the first is in flight is ignored, so no false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  assert.equal(controller.getState().dirty, false, "no pre-save: the mark goes straight out");
+  const release = holdSaves(store);
+  const first = controller.setDocumentCard("w2.household", "later");
+  const second = controller.setDocumentCard("photo_id.tp", "none");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SET_DOCUMENT_CARD only");
+  release();
+  const [marked, ignored] = await Promise.allSettled([first, second]);
+  assert.equal(marked.status, "fulfilled");
+  assert.deepEqual(ignored, { status: "fulfilled", value: null });
+  assert.deepEqual(
+    store.writes.map((write) => [write.type, write.payload.slotId, write.expectedRevision]),
+    [["SET_DOCUMENT_CARD", "w2.household", 1]],
+  );
+  const state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.error, null);
+  assert.equal(state.savedCase.documentCards[0].status, "later");
+  // Once it has landed, the next mark goes through with the new revision.
+  await controller.setDocumentCard("photo_id.tp", "none");
+  assert.deepEqual(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a sub-step change or a Change link while a card mark is in flight is ignored, so no false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  const release = holdSaves(store);
+  const marking = controller.setDocumentCard("w2.household", "later");
+  const moving = controller.goToSubstep("before.service");
+  const continuing = controller.moveSubstep(1);
+  const changing = controller.openForChange("about.you");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "no visit save beside the mark");
+  release();
+  const results = await Promise.allSettled([marking, moving, continuing, changing]);
+  assert.deepEqual(results.map((result) => result.status), ["fulfilled", "fulfilled", "fulfilled", "fulfilled"]);
+  assert.deepEqual(store.writes.map((write) => write.type), ["SET_DOCUMENT_CARD"]);
+  const state = controller.getState();
+  assert.equal(state.formSubstep, "before.ready", "the page stays where it was");
+  assert.equal(state.returnToSummary, false);
+  assert.deepEqual(state.visitedSubsteps, [], "an ignored move records no visit");
+  assert.equal(state.dirty, false);
+  assert.notEqual(state.saveState, "failed");
+  assert.equal(state.conflict, null);
+  assert.equal(state.error, null);
+  // Once the mark has landed, the move goes through on the new revision.
+  await controller.goToSubstep("before.service");
+  assert.deepEqual(
+    store.writes.map((write) => [write.type, write.expectedRevision]),
+    [
+      ["SET_DOCUMENT_CARD", 1],
+      ["SAVE_ANSWERS", 2],
+    ],
+  );
+  assert.equal(controller.getState().formSubstep, "before.service");
+  assert.equal(controller.getState().error, null);
   controller.stop();
 });

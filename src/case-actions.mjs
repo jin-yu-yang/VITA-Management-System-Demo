@@ -204,7 +204,8 @@ const BUILDERS = Object.freeze({
 });
 
 // Every action this function can build, for tests and for the wiring layer's
-// own guard. `SAVE_ANSWERS` is the one member of CASE_ACTIONS that is missing.
+// own guard. `SAVE_ANSWERS`, `SET_DOCUMENT_CARD` and `SET_DOCUMENT_GROUP` are
+// built by the controller, not by a form.
 export const PAYLOAD_ACTIONS = Object.freeze(
   CASE_ACTIONS.filter((type) => Object.hasOwn(BUILDERS, type)),
 );

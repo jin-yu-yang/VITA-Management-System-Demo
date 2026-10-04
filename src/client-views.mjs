@@ -19,26 +19,22 @@ import {
   missingAnswers,
   submissionBlocker,
 } from "./domain.mjs";
+import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
 import {
-  invalidAnswers,
-  renderQuestion,
-  stepStatus,
-  formatAnswer,
-  renderRichText,
-  sendable,
-} from "./intake-form.mjs";
-import {
-  CONTACT_FIELDS,
   stepsFor,
   questionsFor,
-  findQuestion,
   wording,
-  isVisible,
   isAnswered,
-  missingToSubmit,
   serviceLabel,
   languageLabel,
 } from "./intake-catalogue.mjs";
+import {
+  intakeFormV2,
+  submittedV2,
+  progressDocumentsV2,
+  serverAnswersV2,
+  variantOf,
+} from "./intake-views.mjs";
 
 // Every client screen, as pure functions of one controller snapshot. No state,
 // no store, no timers, no DOM: each returns an HTML string, and everything that
@@ -247,27 +243,6 @@ function conflictPanel(state, rows) {
 const isVersionTwo = (record) => Number(record?.intakeVersion) === 2;
 const STEPS_V2 = stepsFor(2);
 const allQuestionsV2 = () => STEPS_V2.flatMap((step) => questionsFor(2, step));
-const variantOf = (answers) => (answers?.form_version === "senior" ? "senior" : "general");
-const stepTitle = (step) => step?.title?.en ?? "";
-const localized = (text, variant) => text?.[variant]?.en ?? text?.general?.en ?? "";
-
-// The step (0–8) a question id belongs to; a household id "hh[1].dob" is hh's.
-const STEP_OF = new Map(
-  STEPS_V2.flatMap((step, index) => questionsFor(2, step).map((question) => [question.id, index])),
-);
-const ORDER_OF = new Map(allQuestionsV2().map((question, index) => [question.id, index]));
-const topId = (id) => String(id).replace(/\[.*$/, "");
-
-// The server's side of a version-2 case: its answers plus the contact record's
-// four fields (a null contact, or a null inside it, is empty).
-function serverAnswersV2(record) {
-  const result = { ...(record?.answers ?? {}) };
-  for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
-    const value = record?.contact?.[key];
-    if (value !== undefined && value !== null) result[id] = value;
-  }
-  return result;
-}
 
 // Deep equality over strings, arrays and plain objects (key order ignored).
 function sameAnswer(a, b) {
@@ -379,165 +354,14 @@ export function intakeScreen(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Intake, version 2: the nine-step form (spec 2026-09-30 §3)
+// Intake, version 2: the sub-step form lives in intake-views.mjs (spec
+// 2026-10-04 §2–§6); this file passes it the chrome it shares with version 1.
 // ---------------------------------------------------------------------------
 
-// The rail (spec §3.2). Each step's mark is one fixed span, so typing can
-// restyle it in place (className and textContent only); the check is drawn
-// outside the span, by CSS keyed on the span's class.
-function railV2(state, answers, visited, revealed) {
-  const current = state.formStep;
-  const items = STEPS_V2.map((step, index) => {
-    const status = stepStatus(index, answers, visited, revealed);
-    const here = index === current;
-    return `<li class="rail-item${here ? " is-current" : ""}"><button type="button" class="rail-link" data-action="go-step" data-step="${index}"${here ? ' aria-current="step"' : ""}><span class="rail-num" aria-hidden="true"><span class="rail-digit">${index + 1}</span>${icon("check")}</span><span class="rail-body"><span class="rail-title"><span class="sr-only">Step ${index + 1}: </span>${esc(stepTitle(step))}</span>${here ? '<small class="rail-here">You are here</small>' : ""}<span id="rail-step-${index}-status" class="rail-status is-${status.key}">${esc(status.text)}</span></span></button></li>`;
-  }).join("");
-  const count = STEPS_V2.length;
-  return `<nav class="rail-nav" aria-label="Form steps"><ol class="rail">${items}</ol></nav><div class="rail-progress"><progress class="rail-bar" max="${count}" value="${current + 1}" aria-hidden="true"></progress><p>Step ${current + 1} of ${count}</p></div>`;
-}
-
-// One section: its title and intro, then one card per heading group. A heading
-// starts a new group; a group with no visible question is left out, and so is
-// a section with none (the spouse section for an unmarried client).
-function sectionV2(section, ctx) {
-  const { answers, variant } = ctx;
-  const groups = [];
-  for (const question of section.questions) {
-    if (question.heading || !groups.length) groups.push({ heading: question.heading ?? null, questions: [] });
-    groups.at(-1).questions.push(question);
-  }
-  const cards = groups
-    .map((group) => ({ ...group, questions: group.questions.filter((question) => isVisible(question, answers)) }))
-    .filter((group) => group.questions.length)
-    .map(
-      (group) =>
-        `<div class="q-card">${group.heading ? `<h3 class="q-heading">${esc(localized(group.heading, variant))}</h3>` : ""}${group.questions
-          .map((question) =>
-            renderQuestion(question, answers[question.id], {
-              variant,
-              lang: "en",
-              scope: "client",
-              answers,
-              showMissing: ctx.showMissing,
-              revealed: ctx.revealed,
-            }),
-          )
-          .join("")}</div>`,
-    )
-    .join("");
-  if (!cards) return "";
-  const titleId = `q-section-${esc(section.n)}-title`;
-  const intro = localized(section.intro, variant);
-  return `<section class="q-section" aria-labelledby="${titleId}"><div class="q-section-head"><h2 id="${titleId}">${esc(localized(section.title, variant))}</h2>${intro ? `<div class="q-intro">${renderRichText(intro)}</div>` : ""}</div>${cards}</section>`;
-}
-
-// The words step 9 lists an id under: its question's wording, or for a
-// household sub-field "Person <n+1>: <sub-question wording>".
-function itemLabel(id, variant) {
-  const options = { variant, lang: "en" };
-  const member = /^([^[]+)\[(\d+)\]\.(.+)$/.exec(id);
-  if (member) {
-    const field = (findQuestion(2, member[1])?.fields ?? []).find((f) => f.id === member[3]);
-    return `Person ${Number(member[2]) + 1}: ${wording(field, options) || member[3]}`;
-  }
-  return wording(findQuestion(2, id), options) || id;
-}
-
-// Catalogue order: the question, then the member, then the sub-field.
-function itemOrder(id) {
-  const top = topId(id);
-  const order = ORDER_OF.get(top) ?? -1;
-  const member = /\[(\d+)\]\.(.+)$/.exec(id);
-  const subs = findQuestion(2, top)?.fields ?? [];
-  return [order, member ? Number(member[1]) : -1, member ? subs.findIndex((f) => f.id === member[2]) : -1];
-}
-const byOrder = (a, b) => {
-  const [x, y] = [itemOrder(a.id), itemOrder(b.id)];
-  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
-};
-
-// Step 9's "Still to answer" (spec §3.4): every missing required question and
-// every invalid answer (revealed or not), grouped by step, each a link there.
-function stillToAnswer(missing, invalid, variant) {
-  const items = [
-    ...missing.map((id) => ({ id, flag: "Needs an answer", kind: "missing" })),
-    ...invalid.map((id) => ({ id, flag: "Needs a change", kind: "invalid" })),
-  ];
-  const body = items.length
-    ? STEPS_V2.map((step, index) => {
-        const here = items.filter((item) => STEP_OF.get(topId(item.id)) === index).sort(byOrder);
-        if (!here.length) return "";
-        return `<div class="still-step"><h3>Step ${index + 1}: ${esc(stepTitle(step))}</h3><ul>${here
-          .map(
-            (item) =>
-              `<li><button type="button" class="still-item is-${item.kind}" data-action="go-step" data-step="${index}"><span class="still-q">${esc(itemLabel(item.id, variant))}</span><span class="still-flag">${item.flag}</span>${icon("chevron")}</button></li>`,
-          )
-          .join("")}</ul></div>`;
-      }).join("")
-    : `<p class="still-done">${icon("check")} Everything required is answered.</p>`;
-  return `<section class="still-list" aria-labelledby="still-title"><h2 id="still-title">Still to answer</h2>${body}</section>`;
-}
-
-function intakeFormV2(state) {
-  const record = state.savedCase;
-  const answers = state.draftAnswers ?? {};
-  const visited = Array.isArray(state.visitedSteps) ? state.visitedSteps : [];
-  const revealed = new Set(state.revealed ?? []);
-  const variant = variantOf(answers);
-  const last = STEPS_V2.length - 1;
-  const index = Math.min(Math.max(Number(state.formStep) || 0, 0), last);
-  const step = STEPS_V2[index];
-  const ctx = { answers, variant, revealed, showMissing: visited.includes(index) };
-  const sections = step.sections.map((section) => sectionV2(section, ctx)).join("");
-  const final = index === last;
-  const missing = final ? missingToSubmit(2, answers) : [];
-  const invalid = final ? invalidAnswers(null, answers) : [];
-  const confirmed = state.openPanels.includes("confirmed");
-  const cannotSubmit = missing.length > 0 || invalid.length > 0 || !confirmed;
-  const review = final
-    ? stillToAnswer(missing, invalid, variant)
-    : "";
-  const confirm = final
-    ? `<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>I have checked my answers</span></label><p class="field-note">This confirms your answers. It is not a signature on a tax form; the consent above is your own choice.</p>`
-    : "";
-  const actions = `<div class="form-actions"><div>${when(index, button(`${icon("back")} Back`, "back-step", "text"))}</div>${
-    final
-      ? caseButton(
-          `Submit application ${icon("arrow")}`,
-          "SUBMIT",
-          "primary",
-          cannotSubmit || state.conflict || state.busy ? "disabled" : "",
-        )
-      : `<button type="submit" class="btn primary" ${state.conflict || state.busy ? "disabled" : ""}>Continue ${icon("arrow")}</button>`
-  }</div>`;
-  const view = { ...state, formStep: index };
-  return `<main id="main" class="workspace intake-v2" tabindex="-1"><aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">YOUR APPLICATION</span><h2>A few steps.<br>We’re here to help.</h2>${railV2(view, answers, visited, revealed)}</div><div class="sidebar-help">${icon("help")}<h3>Prefer to talk it through?</h3><p>Our volunteers can help at the PCDC office, or by phone.</p>${officeContact()}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(record.reference)}</span>${saveStatus(state)}</div>${conflictForm(state)}<div class="page-intro"><span class="overline">STEP ${index + 1} OF ${STEPS_V2.length}</span><h1>${esc(stepTitle(step))}</h1></div>${fictionalTools}<form id="intake-v2-form" novalidate>${review}${sections}${confirm}${when(state.error, `<p class="error" role="alert">${esc(state.error?.message)}</p>`)}${actions}</form></section></main>`;
-}
-
-// After submission: read-only, grouped by step, each answered visible
-// question with its formatted answer (contact fields from record.contact).
-function submittedV2(state) {
-  const record = state.savedCase;
-  const answers = serverAnswersV2(record);
-  const variant = variantOf(answers);
-  const options = { variant, lang: "en" };
-  const steps = STEPS_V2.map((step) => {
-    const rows = questionsFor(2, step)
-      .filter((question) => isVisible(question, answers))
-      .map((question) => [question, formatAnswer(question, answers[question.id], options)])
-      .filter(([, text]) => text !== null)
-      .map(
-        ([question, text]) =>
-          `<div class="detail-row"><span>${esc(wording(question, options))}</span><strong>${esc(text).replace(/\n/g, "<br>")}</strong></div>`,
-      )
-      .join("");
-    return rows ? `<section class="answer-step"><h2>${esc(stepTitle(step))}</h2>${rows}</section>` : "";
-  }).join("");
-  return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(record.reference)}</span><h1>Your answers are with the office</h1><p>${esc(describeStage(record.stage).clientMessage)}</p></div><div class="panel answers-v2">${steps}</div><p class="field-note">A volunteer makes corrections after submission, so these answers are read-only here.</p>${button(`See your progress ${icon("arrow")}`, "open-progress", "primary full")}</main>`;
-}
-
 function intakeScreenV2(state) {
-  return state.savedCase.stage === "draft" ? intakeFormV2(state) : submittedV2(state);
+  return state.savedCase.stage === "draft"
+    ? intakeFormV2(state, { saveStatus, conflictForm, fictionalTools })
+    : submittedV2(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +422,7 @@ export function progressScreen(state) {
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
   const firstName = isVersionTwo(record) ? answers.tp_first_name : answers.firstName;
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${firstName ? `Hello, ${esc(firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${firstName ? `Hello, ${esc(firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${isVersionTwo(record) ? progressDocumentsV2(state) : ""}${
     open.length
       ? open.map((request) => documentRequest(request, state)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>You’re all set for now.</h3><p>Your next action appears here if the office needs anything else.</p></div></div>`

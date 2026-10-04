@@ -3,6 +3,7 @@ export default {
   "version": 2,
   "steps": [
     {
+      "id": "before",
       "n": 1,
       "title": {
         "en": "Before you start",
@@ -67,14 +68,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "The senior version asks the same questions, with shorter explanations and easier words. You can switch at any time with the \"Senior version\" switch at the top; your answers are kept.",
-                    "zh": "长者版的问题与标准版相同，说明更简短，用词更易懂。您可以随时通过页面顶部的\"长者版\"开关切换，已填写的内容会保留。"
+                    "en": "You can change back any time with the Senior version switch at the top. Your answers are kept.",
+                    "zh": "您可以随时通过页面顶部的\"长者版\"开关改回，已填写的内容会保留。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "The senior version asks the same questions. The explanations are shorter and the words are easier. You can change back any time with the \"Senior version\" switch at the top. Your answers will not be lost.",
-                    "zh": "长者版问的问题一样，只是说明更短、用词更简单。随时可以用页面最上面的\"长者版\"开关换回来，填好的内容不会丢。"
+                    "en": "You can change back any time with the Senior version switch at the top. Your answers are kept.",
+                    "zh": "您可以随时通过页面顶部的\"长者版\"开关改回，已填写的内容会保留。"
                   }
                 ]
               },
@@ -238,13 +239,68 @@ export default {
             }
           ]
         }
+      ],
+      "substeps": [
+        {
+          "id": "before.ready",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Before you start",
+              "zh": "开始之前"
+            },
+            "senior": {
+              "en": "Before you start",
+              "zh": "开始之前"
+            }
+          },
+          "questions": [
+            "form_version"
+          ]
+        },
+        {
+          "id": "before.service",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "How you'd like help",
+              "zh": "服务方式"
+            },
+            "senior": {
+              "en": "How you'd like help",
+              "zh": "服务方式"
+            }
+          },
+          "questions": [
+            "service"
+          ]
+        },
+        {
+          "id": "before.language",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Language",
+              "zh": "语言"
+            },
+            "senior": {
+              "en": "Language",
+              "zh": "语言"
+            }
+          },
+          "questions": [
+            "language",
+            "language_other"
+          ]
+        }
       ]
     },
     {
+      "id": "about",
       "n": 2,
       "title": {
         "en": "About you",
-        "zh": "关于您"
+        "zh": "基本信息"
       },
       "sections": [
         {
@@ -660,16 +716,7 @@ export default {
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      "n": 3,
-      "title": {
-        "en": "Marriage & spouse",
-        "zh": "婚姻与配偶"
-      },
-      "sections": [
+        },
         {
           "n": 3,
           "title": {
@@ -1123,16 +1170,7 @@ export default {
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      "n": 4,
-      "title": {
-        "en": "Your 2025 situation",
-        "zh": "您 2025 年的情况"
-      },
-      "sections": [
+        },
         {
           "n": 5,
           "title": {
@@ -1425,14 +1463,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "A 6-digit number from the IRS, issued after identity theft or through voluntary sign-up. A new one is issued every year. If you have one, upload this year's letter.",
-                    "zh": "国税局发放的 6 位数字，通常在身份被盗用后发放，也可自行申请，**每年更换**。如有，请上传今年的通知信。"
+                    "en": "A 6-digit number from the IRS, issued after identity theft or through voluntary sign-up. A new one is issued every year. If you have one, bring this year's letter (CP01A) or a screenshot from your IRS online account. You will upload it in the Documents step.",
+                    "zh": "国税局发放的 6 位数字，通常在身份被盗用后发放，也可自行申请，**每年更换**。如有，请准备今年的通知信（CP01A）或国税局网上账户截图。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "The IRS sends a new one each year, often after identity theft. You may also have signed up for it yourself. If you have one, please upload this year's letter.",
-                    "zh": "这个号码通常是身份被盗用后国税局寄来的，也可能是您自己申请的，**每年都会换一个新的**。如果有，请上传今年收到的那封信。"
+                    "en": "The IRS sends a new one each year, often after identity theft. You may also have signed up for it yourself. If you have one, bring this year's letter (CP01A) or a screenshot from your IRS online account. You will upload it in the Documents step.",
+                    "zh": "这个号码通常是身份被盗用后国税局寄来的，也可能是您自己申请的，**每年都会换一个新的**。如果有，请准备今年收到的那封信（CP01A）或国税局网上账户的截图。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -1474,13 +1512,253 @@ export default {
               }
             }
           ]
+        },
+        {
+          "n": 8,
+          "title": {
+            "general": {
+              "en": "Language and Election Fund",
+              "zh": "语言偏好与总统选举基金"
+            },
+            "senior": {
+              "en": "Language and Election Fund",
+              "zh": "语言和总统选举基金"
+            }
+          },
+          "questions": [
+            {
+              "id": "irs_language_pref",
+              "type": "who",
+              "required": true,
+              "options": [
+                {
+                  "value": "me"
+                },
+                {
+                  "value": "spouse"
+                },
+                {
+                  "value": "none"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Would you like written communications from the IRS in a language other than English?",
+                  "zh": "您是否希望国税局用英语以外的语言与您书面沟通？"
+                },
+                "senior": {
+                  "en": "Do you want letters from the IRS in a language other than English?",
+                  "zh": "您希望国税局（IRS）用英语以外的语言给您写信吗？"
+                }
+              }
+            },
+            {
+              "id": "irs_language",
+              "type": "text",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "irs_language_pref",
+                  "op": "ne",
+                  "value": "none"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Which language?",
+                  "zh": "哪种语言？"
+                },
+                "senior": {
+                  "en": "Which language?",
+                  "zh": "什么语言？"
+                }
+              }
+            },
+            {
+              "id": "pecf",
+              "type": "who",
+              "required": true,
+              "options": [
+                {
+                  "value": "me"
+                },
+                {
+                  "value": "spouse"
+                },
+                {
+                  "value": "none"
+                }
+              ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "**This does not increase your tax or reduce your refund.**",
+                    "zh": "**不会增加您的税款，也不会减少您的退税。**"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "**This will NOT change your tax or your refund.** It only decides where $3 of government money goes.",
+                    "zh": "**您不用多付钱，您的税和退税也不会变。**这只是决定政府的 3 美元用在哪里。"
+                  }
+                ]
+              },
+              "wording": {
+                "general": {
+                  "en": "Would you like $3 to go to the Presidential Election Campaign Fund?",
+                  "zh": "您是否愿意将 3 美元拨入总统选举竞选基金？"
+                },
+                "senior": {
+                  "en": "Do you want $3 to go to the Presidential Election Campaign Fund?",
+                  "zh": "您愿意让国税局把 3 美元拨给总统选举基金吗？"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "substeps": [
+        {
+          "id": "about.you",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "About you",
+              "zh": "个人信息"
+            },
+            "senior": {
+              "en": "About you",
+              "zh": "个人信息"
+            }
+          },
+          "questions": [
+            "tp_first_name",
+            "tp_middle_name",
+            "tp_last_name",
+            "tp_dob",
+            "tp_job_title",
+            "tp_phone",
+            "email",
+            "best_contact_time",
+            "best_contact_note"
+          ]
+        },
+        {
+          "id": "about.address",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Mailing address",
+              "zh": "邮寄地址"
+            },
+            "senior": {
+              "en": "Mailing address",
+              "zh": "邮寄地址"
+            }
+          },
+          "questions": [
+            "addr_street",
+            "addr_apt",
+            "addr_city",
+            "addr_state",
+            "addr_zip"
+          ]
+        },
+        {
+          "id": "about.marital",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Marital status",
+              "zh": "婚姻状况"
+            },
+            "senior": {
+              "en": "Marital status",
+              "zh": "婚姻状况"
+            }
+          },
+          "questions": [
+            "marital_status",
+            "married_last_day",
+            "lived_apart_last_6mo",
+            "divorce_date",
+            "separation_date",
+            "spouse_death_year"
+          ]
+        },
+        {
+          "id": "about.spouse",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Your spouse",
+              "zh": "配偶信息"
+            },
+            "senior": {
+              "en": "Your spouse",
+              "zh": "配偶信息"
+            }
+          },
+          "questions": [
+            "sp_first_name",
+            "sp_middle_name",
+            "sp_last_name",
+            "sp_dob",
+            "sp_job_title",
+            "sp_phone"
+          ]
+        },
+        {
+          "id": "about.situation",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Your 2025 situation",
+              "zh": "2025 年基本情况"
+            },
+            "senior": {
+              "en": "Your 2025 situation",
+              "zh": "2025 年基本情况"
+            }
+          },
+          "questions": [
+            "multi_state",
+            "claimed_by_other",
+            "us_citizen",
+            "on_visa",
+            "fulltime_student",
+            "legally_blind",
+            "disabled",
+            "ippin",
+            "digital_assets"
+          ]
+        },
+        {
+          "id": "about.irs",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "IRS letters and election fund",
+              "zh": "国税局信件与选举基金"
+            },
+            "senior": {
+              "en": "IRS letters and election fund",
+              "zh": "国税局信件与选举基金"
+            }
+          },
+          "questions": [
+            "irs_language_pref",
+            "irs_language",
+            "pecf"
+          ]
         }
       ]
     },
     {
-      "n": 5,
+      "id": "household",
+      "n": 3,
       "title": {
-        "en": "Household members",
+        "en": "Household",
         "zh": "家庭成员"
       },
       "sections": [
@@ -1542,6 +1820,21 @@ export default {
                 }
               ],
               "fields": [
+                {
+                  "id": "member_id",
+                  "type": "id",
+                  "required": false,
+                  "wording": {
+                    "general": {
+                      "en": "Person id",
+                      "zh": "成员编号"
+                    },
+                    "senior": {
+                      "en": "Person id",
+                      "zh": "成员编号"
+                    }
+                  }
+                },
                 {
                   "id": "first_name",
                   "type": "text",
@@ -1930,14 +2223,14 @@ export default {
                   "tips": {
                     "general": [
                       {
-                        "en": "If yes, upload this year's letter.",
-                        "zh": "如有，请上传今年的通知信。"
+                        "en": "If yes, bring this year's IP PIN letter (CP01A). You will upload it in the Documents step.",
+                        "zh": "如有，请准备今年的通知信（CP01A）。您将在「上传文件」步骤上传。"
                       }
                     ],
                     "senior": [
                       {
-                        "en": "If yes, please upload this year's letter.",
-                        "zh": "如果有，请上传今年收到的那封信。"
+                        "en": "If yes, bring this year's IP PIN letter (CP01A). You will upload it in the Documents step.",
+                        "zh": "如有，请准备今年的通知信（CP01A）。您将在「上传文件」步骤上传。"
                       }
                     ]
                   },
@@ -1966,10 +2259,31 @@ export default {
             }
           ]
         }
+      ],
+      "substeps": [
+        {
+          "id": "household.members",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Household members and dependents",
+              "zh": "家庭成员及受抚养人"
+            },
+            "senior": {
+              "en": "Household members and dependents",
+              "zh": "家庭成员及受抚养人"
+            }
+          },
+          "questions": [
+            "has_household_members",
+            "hh"
+          ]
+        }
       ]
     },
     {
-      "n": 6,
+      "id": "income",
+      "n": 4,
       "title": {
         "en": "Income",
         "zh": "收入"
@@ -1985,16 +2299,6 @@ export default {
             "senior": {
               "en": "Money You Got in 2025 (Income)",
               "zh": "您 2025 年收到的钱（收入）"
-            }
-          },
-          "intro": {
-            "general": {
-              "en": "Did **you or your spouse** receive any of the following in 2025? If yes, please upload the related tax forms.",
-              "zh": "2025 年，您或配偶是否有以下收入？如有，请上传相关税表。"
-            },
-            "senior": {
-              "en": "For each item below: did **you or your spouse** get this kind of money in 2025? If yes, please upload the tax papers for it.",
-              "zh": "下面每一题都在问：2025 年，您或您爱人有没有收到过这种钱？如果有，请上传相关的税表。"
             }
           },
           "questions": [
@@ -2092,14 +2396,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "All tips, including cash tips, are income. Some tips may be deductible starting in 2025; please have your tip records ready.",
-                    "zh": "所有小费（含现金小费）均需申报。自 2025 年起部分小费可能可以扣除，请准备好小费记录，志愿者会协助判断。"
+                    "en": "All tips, including cash tips, are income. Some tips may be deductible starting in 2025. You will upload your tip records (your tip log, or the tip page of your app's tax summary) in the Documents step.",
+                    "zh": "所有小费（含现金小费）均需申报。自 2025 年起部分小费可能可以扣除。您将在「上传文件」步骤上传小费记录（自己记的小费账，或平台年度报税摘要中的小费页）。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "All tips count as income, including cash tips. Some tips may lower your tax starting in 2025. Please bring your tip records, and the volunteer will check.",
-                    "zh": "所有小费都要报，包括现金小费。从 2025 年起，部分小费可能可以减税。请准备好您记录的小费金额，志愿者会帮您判断。"
+                    "en": "All tips count as income, including cash tips. Some tips may lower your tax starting in 2025. You will upload your tip records (your tip log, or the tip page of your app's tax summary) in the Documents step.",
+                    "zh": "所有小费都要报，包括现金小费。从 2025 年起，部分小费可能可以减税。您将在「上传文件」步骤上传小费记录（自己记的小费账，或平台年度报税摘要中的小费页）。"
                   }
                 ]
               },
@@ -2169,6 +2473,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "W-2 or 1099-R for disability pay, or the benefit letter. You will upload it in the Documents step.",
+                    "zh": "残障补助的 W-2、1099-R 或补助通知信。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "W-2 or 1099-R for disability pay, or the benefit letter. You will upload it in the Documents step.",
+                    "zh": "残障补助的 W-2、1099-R 或补助通知信。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Disability benefits (from insurance or workers' compensation)",
@@ -2276,11 +2594,20 @@ export default {
                 }
               ],
               "tips": {
-                "general": [],
+                "general": [
+                  {
+                    "en": "1099-G for the state or city tax refund. You will upload it in the Documents step.",
+                    "zh": "州或市退税 1099-G。您将在「上传文件」步骤上传。"
+                  }
+                ],
                 "senior": [
                   {
                     "en": "Money your state or city gave back to you from last year's taxes.",
                     "zh": "就是州政府或市政府退给您的去年的税。"
+                  },
+                  {
+                    "en": "1099-G for the state or city tax refund. You will upload it in the Documents step.",
+                    "zh": "州或市退税 1099-G。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -2353,14 +2680,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Reported on Form **1099-B**. Please also upload your brokerage statement.",
-                    "zh": "对应 **1099-B** 表，请同时上传券商对账单。"
+                    "en": "Reported on Form **1099-B**. Document: the 1099-B and your full brokerage statement (and a 1099-S if the sale was real estate). You will upload it in the Documents step.",
+                    "zh": "对应 **1099-B** 表。文件：1099-B 及完整券商对账单（如卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "You usually get a **1099-B** form. Please upload your broker statement too.",
-                    "zh": "一般会收到 **1099-B** 表。请把证券公司的对账单也一起上传。"
+                    "en": "You usually get a **1099-B** form. Document: the 1099-B and your full broker statement (and a 1099-S if you sold real estate). You will upload it in the Documents step.",
+                    "zh": "一般会收到 **1099-B** 表。文件：1099-B 及完整的证券公司对账单（如果卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -2423,6 +2750,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Divorce or separation agreement: the page with the date and the alimony terms. You will upload it in the Documents step.",
+                    "zh": "离婚或分居协议中写有日期和赡养费条款的页面。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Divorce or separation agreement: the page with the date and the alimony terms. You will upload it in the Documents step.",
+                    "zh": "离婚或分居协议中写有日期和赡养费条款的页面。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Alimony received (not child support)",
@@ -2449,6 +2790,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step.",
+                    "zh": "租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step.",
+                    "zh": "租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Income from renting out your house or a room in your house",
@@ -2508,6 +2863,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step.",
+                    "zh": "出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step.",
+                    "zh": "出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Income from renting out personal property (such as a vehicle or tools)",
@@ -2577,14 +2946,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "For example: delivery or rideshare apps, cleaning, selling goods. May be reported on Form **1099-NEC**, **1099-MISC**, or **1099-K**.",
-                    "zh": "例如：外卖或网约车平台、清洁服务、销售商品。可能对应 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。"
+                    "en": "For example: delivery or rideshare apps, cleaning, selling goods. May be reported on Form **1099-NEC**, **1099-MISC**, or **1099-K**. If you drive or deliver with an app, also upload the app's yearly tax summary.",
+                    "zh": "例如：外卖或网约车平台、清洁服务、销售商品。可能对应 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。如果您开网约车或送外卖，也请上传平台的年度报税摘要。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "For example: delivery or rideshare apps, cleaning houses, selling things. You may get a **1099-NEC**, **1099-MISC**, or **1099-K** form.",
-                    "zh": "比如：送外卖、开 Uber/Lyft、帮人打扫、卖东西。可能会收到 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。"
+                    "en": "For example: delivery or rideshare apps, cleaning houses, selling things. You may get a **1099-NEC**, **1099-MISC**, or **1099-K** form. If you drive or deliver with an app, also upload the app's yearly tax summary.",
+                    "zh": "比如：送外卖、开 Uber/Lyft、帮人打扫、卖东西。可能会收到 **1099-NEC**、**1099-MISC** 或 **1099-K** 表。如果您开网约车或送外卖，也请上传平台的年度报税摘要。"
                   }
                 ]
               },
@@ -2647,6 +3016,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Any form or statement for this income (for example, 1099-MISC, a jury duty pay letter, a union strike pay statement). You will upload it in the Documents step.",
+                    "zh": "该收入的任何税表或证明（如 1099-MISC、陪审报酬通知、工会罢工补助证明）。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Any form or statement for this income (for example, 1099-MISC, a jury duty pay letter, a union strike pay statement). You will upload it in the Documents step.",
+                    "zh": "该收入的任何税表或证明（如 1099-MISC、陪审报酬通知、工会罢工补助证明）。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Any other income? (Cash payments, jury duty, prizes or awards, digital assets, royalties, union strike benefits, etc.)",
@@ -2682,10 +3065,189 @@ export default {
             }
           ]
         }
+      ],
+      "substeps": [
+        {
+          "id": "income.wages",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Wages and tips",
+              "zh": "工资与小费"
+            },
+            "senior": {
+              "en": "Wages and tips",
+              "zh": "工资与小费"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_wages",
+            "inc_wages_job_count",
+            "inc_tips"
+          ]
+        },
+        {
+          "id": "income.retirement",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Retirement and government benefits",
+              "zh": "退休金与政府福利"
+            },
+            "senior": {
+              "en": "Retirement and government benefits",
+              "zh": "退休金与政府福利"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_retirement",
+            "inc_disability",
+            "inc_social_security",
+            "inc_unemployment",
+            "inc_state_refund"
+          ]
+        },
+        {
+          "id": "income.investments",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Investments and sales",
+              "zh": "投资与出售"
+            },
+            "senior": {
+              "en": "Investments and sales",
+              "zh": "投资与出售"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_interest_div",
+            "inc_sale_assets",
+            "inc_sale_assets_prior_loss"
+          ]
+        },
+        {
+          "id": "income.rental",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Rental income",
+              "zh": "租金收入"
+            },
+            "senior": {
+              "en": "Rental income",
+              "zh": "租金收入"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_rental_home",
+            "inc_rental_home_under15",
+            "inc_rental_property"
+          ]
+        },
+        {
+          "id": "income.business",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Business and self-employment",
+              "zh": "经营与自雇"
+            },
+            "senior": {
+              "en": "Business and self-employment",
+              "zh": "经营与自雇"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_self_employed",
+            "inc_self_employed_prior_loss"
+          ]
+        },
+        {
+          "id": "income.other",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Other income",
+              "zh": "其他收入"
+            },
+            "senior": {
+              "en": "Other income",
+              "zh": "其他收入"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you or your spouse receive any of these in 2025?",
+              "zh": "2025 年，您或配偶是否有以下收入？"
+            }
+          },
+          "questions": [
+            "inc_alimony",
+            "inc_gambling",
+            "inc_other",
+            "inc_other_desc"
+          ]
+        }
       ]
     },
     {
-      "n": 7,
+      "id": "expenses",
+      "n": 5,
       "title": {
         "en": "Expenses & life events",
         "zh": "支出与生活事项"
@@ -2769,6 +3331,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step.",
+                    "zh": "房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step.",
+                    "zh": "房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Taxes paid: state, local, real estate, sales, etc.",
@@ -2795,6 +3371,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step.",
+                    "zh": "医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step.",
+                    "zh": "医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Medical, dental, or prescription expenses",
@@ -2821,6 +3411,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Donation receipts or thank-you letters. You will upload it in the Documents step.",
+                    "zh": "捐款收据或感谢信。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Donation receipts or thank-you letters. You will upload it in the Documents step.",
+                    "zh": "捐款收据或感谢信。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Charitable contributions",
@@ -2937,6 +3541,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "IRA contribution statement or receipt (Form 5498 if you have it). You will upload it in the Documents step.",
+                    "zh": "IRA 供款证明或收据（如有 5498 表）。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "IRA contribution statement or receipt (Form 5498 if you have it). You will upload it in the Documents step.",
+                    "zh": "IRA 供款证明或收据（如有 5498 表）。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Contributions to a retirement account (IRA, 401(k), etc.)",
@@ -2963,6 +3581,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Receipts for classroom supplies. You will upload it in the Documents step.",
+                    "zh": "教学用品收据。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Receipts for classroom supplies. You will upload it in the Documents step.",
+                    "zh": "教学用品收据。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Classroom supplies purchased as a teacher, teacher's aide, or other educator",
@@ -3047,14 +3679,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Upload Form **1098-T** and payment receipts.",
-                    "zh": "请上传 **1098-T** 表及缴费收据。"
+                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step.",
+                    "zh": "每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Upload the **1098-T** form from the school, plus payment receipts.",
-                    "zh": "请上传学校的 **1098-T** 表和交学费的收据。"
+                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step.",
+                    "zh": "每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -3084,6 +3716,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step.",
+                    "zh": "1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step.",
+                    "zh": "1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Sold a home",
@@ -3111,11 +3757,20 @@ export default {
                 }
               ],
               "tips": {
-                "general": [],
+                "general": [
+                  {
+                    "en": "1099-SA and 5498-SA. You will upload it in the Documents step.",
+                    "zh": "1099-SA 和 5498-SA。您将在「上传文件」步骤上传。"
+                  }
+                ],
                 "senior": [
                   {
                     "en": "A special bank account used only for medical costs.",
                     "zh": "这是一种专门用来付医疗费的账户。"
+                  },
+                  {
+                    "en": "1099-SA and 5498-SA. You will upload it in the Documents step.",
+                    "zh": "1099-SA 和 5498-SA。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -3148,14 +3803,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Upload every Form **1095-A** you received. Medicaid and Medicare do not count.",
-                    "zh": "请上传收到的所有 **1095-A** 表。Medicaid 和 Medicare 不属于此类。"
+                    "en": "Every Form **1095-A** you received. Medicaid and Medicare do not count. You will upload it in the Documents step.",
+                    "zh": "收到的所有 **1095-A** 表。Medicaid 和 Medicare 不属于此类。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Upload every **1095-A** form you got. Medicaid and Medicare do NOT count.",
-                    "zh": "请上传收到的所有 **1095-A** 表。白卡（Medicaid）和红蓝卡（Medicare）不算。"
+                    "en": "Every **1095-A** form you got. Medicaid and Medicare do NOT count. You will upload it in the Documents step.",
+                    "zh": "收到的所有 **1095-A** 表。白卡（Medicaid）和红蓝卡（Medicare）不算。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -3185,6 +3840,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step.",
+                    "zh": "每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step.",
+                    "zh": "每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Purchased and installed energy-efficient home improvements (windows, furnace, insulation, etc.)",
@@ -3313,6 +3982,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "FEMA or insurance papers, and records of the loss. You will upload it in the Documents step.",
+                    "zh": "FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "FEMA or insurance papers, and records of the loss. You will upload it in the Documents step.",
+                    "zh": "FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Had a loss in a federally declared disaster area",
@@ -3339,6 +4022,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "The IRS letter that denied the credit. You will upload it in the Documents step.",
+                    "zh": "国税局拒绝抵免的信。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "The IRS letter that denied the credit. You will upload it in the Documents step.",
+                    "zh": "国税局拒绝抵免的信。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Had a tax credit disallowed in a prior year (e.g., EITC, Child Tax Credit, American Opportunity Credit)",
@@ -3368,14 +4065,14 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Please upload the letter.",
-                    "zh": "请上传该信件。"
+                    "en": "Each IRS letter or bill. You will upload it in the Documents step.",
+                    "zh": "每一封国税局信件或账单。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Please upload the letter.",
-                    "zh": "如果有，请上传。"
+                    "en": "Each IRS letter or bill. You will upload it in the Documents step.",
+                    "zh": "每一封国税局信件或账单。您将在「上传文件」步骤上传。"
                   }
                 ]
               },
@@ -3405,6 +4102,20 @@ export default {
                   "value": "not_sure"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step.",
+                    "zh": "付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step.",
+                    "zh": "付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Made estimated tax payments or applied last year's refund to 2025 taxes",
@@ -3430,24 +4141,127 @@ export default {
               ],
               "wording": {
                 "general": {
-                  "en": "Can you upload last year's tax return?",
-                  "zh": "能否上传去年的报税表？"
+                  "en": "Do you have last year's tax return?",
+                  "zh": "您有去年的报税表吗？"
                 },
                 "senior": {
-                  "en": "Can you upload last year's tax return?",
-                  "zh": "您能上传去年的报税表吗？"
+                  "en": "Do you have last year's tax return?",
+                  "zh": "您有去年的报税表吗？"
                 }
               }
             }
           ]
         }
+      ],
+      "substeps": [
+        {
+          "id": "expenses.deductible",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Deductible expenses",
+              "zh": "可扣除支出"
+            },
+            "senior": {
+              "en": "Deductible expenses",
+              "zh": "可扣除支出"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse pay for any of these in 2025?",
+              "zh": "2025 年，您或配偶是否支付过以下费用？"
+            },
+            "senior": {
+              "en": "Did you or your spouse pay for any of these in 2025?",
+              "zh": "2025 年，您或配偶是否支付过以下费用？"
+            }
+          },
+          "questions": [
+            "exp_mortgage_interest",
+            "exp_taxes",
+            "exp_medical",
+            "exp_charity"
+          ]
+        },
+        {
+          "id": "expenses.other",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Other expenses",
+              "zh": "其他支出"
+            },
+            "senior": {
+              "en": "Other expenses",
+              "zh": "其他支出"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did you or your spouse pay for any of these in 2025?",
+              "zh": "2025 年，您或配偶是否支付过以下费用？"
+            },
+            "senior": {
+              "en": "Did you or your spouse pay for any of these in 2025?",
+              "zh": "2025 年，您或配偶是否支付过以下费用？"
+            }
+          },
+          "questions": [
+            "exp_student_loan",
+            "exp_dependent_care",
+            "exp_retirement_contrib",
+            "exp_educator",
+            "exp_alimony_paid"
+          ]
+        },
+        {
+          "id": "expenses.events",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Things that happened in 2025",
+              "zh": "2025 年发生的事项"
+            },
+            "senior": {
+              "en": "Things that happened in 2025",
+              "zh": "2025 年发生的事项"
+            }
+          },
+          "lead": {
+            "general": {
+              "en": "Did any of these happen to you or your spouse in 2025?",
+              "zh": "2025 年，您或配偶是否发生过以下事项？"
+            },
+            "senior": {
+              "en": "Did any of these happen to you or your spouse in 2025?",
+              "zh": "2025 年，您或配偶是否发生过以下事项？"
+            }
+          },
+          "questions": [
+            "evt_education",
+            "evt_sold_home",
+            "evt_hsa",
+            "evt_marketplace",
+            "evt_energy",
+            "evt_other",
+            "evt_other_desc",
+            "evt_debt_canceled",
+            "evt_disaster",
+            "evt_credit_disallowed",
+            "evt_irs_letter",
+            "evt_estimated_payments",
+            "evt_brought_prior_return"
+          ]
+        }
       ]
     },
     {
-      "n": 8,
+      "id": "refund",
+      "n": 6,
       "title": {
-        "en": "Refund & preferences",
-        "zh": "退税与偏好"
+        "en": "Refund & permission",
+        "zh": "退税与授权"
       },
       "sections": [
         {
@@ -3664,108 +4478,251 @@ export default {
           ]
         },
         {
-          "n": 8,
+          "n": 14,
           "title": {
             "general": {
-              "en": "Language and Election Fund",
-              "zh": "语言偏好与总统选举基金"
+              "en": "Consent to Disclose Tax Return Information (Form 15080)",
+              "zh": "报税信息披露同意书"
             },
             "senior": {
-              "en": "Language and Election Fund",
-              "zh": "语言和总统选举基金"
+              "en": "Permission to Share Your Tax Information Next Year (Form 15080)",
+              "zh": "同意明年共享您的报税资料"
+            }
+          },
+          "intro": {
+            "general": {
+              "en": "**This consent is optional. Declining will not affect the tax preparation service you receive.**\n\nIf you consent, TaxSlayer (the VITA/TCE software provider) may make your tax return information available to **any** VITA/TCE site using TaxSlayer that you visit next filing season, so your return can be pre-filled.\n\nInformation disclosed includes: name, address, date of birth, phone, SSN, filing status, occupation, employer, income, deductions, and credits, plus your dependents' names, SSNs, dates of birth, and relationship to you.\n\nThis consent is valid through **November 30, 2027**.\n\n**Note:** Once disclosed, federal law may not protect your information from further use or distribution.\n\nConsent is not needed for the site preparing your return this year; it only helps if you visit a **different** site next year.\n\nYou have the right to receive a signed copy of this form.",
+              "zh": "**此同意书为自愿签署。不同意不会影响我们为您提供报税服务。**\n\n如您同意，TaxSlayer（VITA/TCE 报税软件提供商）可将您的报税信息提供给您明年前往的**任何**使用 TaxSlayer 的 VITA/TCE 报税点，用于自动预填。\n\n披露的信息包括：姓名、地址、出生日期、电话、社会安全号码、报税身份、职业、雇主、收入、扣除项和抵免项，以及受抚养人的姓名、社会安全号码、出生日期和与您的关系。\n\n本同意有效期至 **2027 年 11 月 30 日**。\n\n**注意：**信息披露后，联邦法律可能无法防止其被进一步使用或传播。\n\n今年为您报税的站点无需此同意；仅在您明年前往**其他**站点时有用。\n\n您有权获得本表签署后的副本。"
+            },
+            "senior": {
+              "en": "**This page is optional. You will still get tax help if you say No.**\n\nIf you say **Yes**: next year you can go to **any** free tax help site that uses TaxSlayer software, and your information from this year will already be filled in. This saves time.\n\nInformation that will be shared: your name, address, birthday, phone, Social Security number, filing status, job, employer, income, deductions, credits, and your dependents' names, SSNs, birthdays, and relationship to you.\n\nThis permission lasts until **November 30, 2027**.\n\n**Important:** Once shared, federal law may not protect this information from further use.\n\nYou do **not** need to say Yes for the site helping you this year. This only helps if you go to a **different** site next year.\n\nYou have the right to get a signed copy of this form.",
+              "zh": "**此页可选。即使您选\"不同意\"，我们也照样帮您报税。**\n\n如果您同意：明年您去**任何一个**使用 TaxSlayer 软件的免费报税点，今年的资料都会自动填好，可以节省时间。\n\n会共享的资料：您的姓名、地址、生日、电话、社安号码、报税身份、工作、工作单位、收入、减税和补助项目，以及您家属的姓名、社安号码、生日和与您的关系。\n\n这个同意有效期到 **2027 年 11 月 30 日**。\n\n**注意：**资料共享出去以后，联邦法律可能无法保护它不被再次使用。\n\n今年帮您报税的地方，**不需要**您同意这一页。只有明年您去**别的**报税点时，这一页才有用。\n\n您有权拿到一份签过名的表格副本。"
             }
           },
           "questions": [
             {
-              "id": "irs_language_pref",
-              "type": "who",
-              "required": true,
-              "options": [
-                {
-                  "value": "me"
-                },
-                {
-                  "value": "spouse"
-                },
-                {
-                  "value": "none"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Would you like written communications from the IRS in a language other than English?",
-                  "zh": "您是否希望国税局用英语以外的语言与您书面沟通？"
-                },
-                "senior": {
-                  "en": "Do you want letters from the IRS in a language other than English?",
-                  "zh": "您希望国税局（IRS）用英语以外的语言给您写信吗？"
-                }
-              }
-            },
-            {
-              "id": "irs_language",
-              "type": "text",
+              "id": "gcf_consent",
+              "type": "choice",
               "required": false,
-              "showIf": [
-                {
-                  "field": "irs_language_pref",
-                  "op": "ne",
-                  "value": "none"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Which language?",
-                  "zh": "哪种语言？"
-                },
-                "senior": {
-                  "en": "Which language?",
-                  "zh": "什么语言？"
-                }
-              }
-            },
-            {
-              "id": "pecf",
-              "type": "who",
-              "required": true,
               "options": [
                 {
-                  "value": "me"
+                  "value": "yes",
+                  "label": {
+                    "general": {
+                      "en": "I consent",
+                      "zh": "同意"
+                    },
+                    "senior": {
+                      "en": "Yes, I agree",
+                      "zh": "同意"
+                    }
+                  }
                 },
                 {
-                  "value": "spouse"
-                },
-                {
-                  "value": "none"
+                  "value": "no",
+                  "label": {
+                    "general": {
+                      "en": "I do not consent",
+                      "zh": "不同意"
+                    },
+                    "senior": {
+                      "en": "No, I do not agree",
+                      "zh": "不同意"
+                    }
+                  }
                 }
               ],
               "tips": {
                 "general": [
                   {
-                    "en": "**This does not increase your tax or reduce your refund.**",
-                    "zh": "**不会增加您的税款，也不会减少您的退税。**"
+                    "en": "If you wish to limit the duration or scope of the disclosure, choose **No**.",
+                    "zh": "如希望缩短有效期或限制披露范围，请选择**不同意**。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "**This will NOT change your tax or your refund.** It only decides where $3 of government money goes.",
-                    "zh": "**您不用多付钱，您的税和退税也不会变。**这只是决定政府的 3 美元用在哪里。"
+                    "en": "If you want the permission to last a shorter time, or share less information, choose **No**.",
+                    "zh": "如果您想让有效期更短，或者只共享一部分资料，请选**不同意**。"
                   }
                 ]
               },
               "wording": {
                 "general": {
-                  "en": "Would you like $3 to go to the Presidential Election Campaign Fund?",
-                  "zh": "您是否愿意将 3 美元拨入总统选举竞选基金？"
+                  "en": "Do you consent to this disclosure?",
+                  "zh": "您是否同意上述信息披露？"
                 },
                 "senior": {
-                  "en": "Do you want $3 to go to the Presidential Election Campaign Fund?",
-                  "zh": "您愿意让国税局把 3 美元拨给总统选举基金吗？"
+                  "en": "Do you agree to let your tax information be shared this way?",
+                  "zh": "您同意用这种方式共享您的报税资料吗？"
+                }
+              }
+            },
+            {
+              "id": "gcf_tp_signature",
+              "type": "signature",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "gcf_consent",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Primary taxpayer signature (type full name)",
+                  "zh": "主报税人签名（输入全名）"
+                },
+                "senior": {
+                  "en": "Type your full name to sign",
+                  "zh": "请输入您的全名作为签名"
+                }
+              }
+            },
+            {
+              "id": "gcf_tp_date",
+              "type": "date",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "gcf_consent",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Date",
+                  "zh": "日期"
+                },
+                "senior": {
+                  "en": "Date",
+                  "zh": "日期"
+                }
+              }
+            },
+            {
+              "id": "gcf_sp_signature",
+              "type": "signature",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "gcf_consent",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "marital_status",
+                  "op": "eq",
+                  "value": "married"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Secondary taxpayer (spouse) signature (type full name)",
+                  "zh": "配偶签名（输入全名）"
+                },
+                "senior": {
+                  "en": "Spouse: type your full name to sign",
+                  "zh": "请您爱人输入全名作为签名"
+                }
+              }
+            },
+            {
+              "id": "gcf_sp_date",
+              "type": "date",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "gcf_consent",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "marital_status",
+                  "op": "eq",
+                  "value": "married"
+                },
+                {
+                  "field": "gcf_sp_signature",
+                  "op": "filled"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Spouse signature date",
+                  "zh": "配偶签名日期"
+                },
+                "senior": {
+                  "en": "Spouse date",
+                  "zh": "您爱人签名的日期"
                 }
               }
             }
+          ],
+          "footer": {
+            "general": {
+              "en": "If you believe your tax return information has been disclosed or used improperly, contact TIGTA at **1-800-366-4484** or https://www.tigta.gov/reportcrime-misconduct",
+              "zh": "如您认为您的报税信息被不当披露或使用，请联系 TIGTA：**1-800-366-4484**，或访问上述网址。"
+            },
+            "senior": {
+              "en": "If you think your tax information was shared or used wrongly, call TIGTA: **1-800-366-4484**, or visit https://www.tigta.gov/reportcrime-misconduct",
+              "zh": "如果您认为您的报税资料被错误共享或使用，请打电话给 TIGTA：**1-800-366-4484**，或访问上面的网址。"
+            }
+          }
+        }
+      ],
+      "substeps": [
+        {
+          "id": "refund.payment",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Refund or payment",
+              "zh": "退税或补税"
+            },
+            "senior": {
+              "en": "Refund or payment",
+              "zh": "退税或补税"
+            }
+          },
+          "questions": [
+            "refund_method",
+            "refund_method_other",
+            "payment_method"
           ]
         },
+        {
+          "id": "refund.consent",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Sharing your return next year (Form 15080)",
+              "zh": "明年共享报税信息（15080 表）"
+            },
+            "senior": {
+              "en": "Sharing your return next year (Form 15080)",
+              "zh": "明年共享报税信息（15080 表）"
+            }
+          },
+          "questions": [
+            "gcf_consent",
+            "gcf_tp_signature",
+            "gcf_tp_date",
+            "gcf_sp_signature",
+            "gcf_sp_date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "optional",
+      "n": 7,
+      "title": {
+        "en": "Optional questions",
+        "zh": "选填问题"
+      },
+      "sections": [
         {
           "n": 12,
           "title": {
@@ -4315,7 +5272,148 @@ export default {
               }
             }
           ]
+        }
+      ],
+      "substeps": [
+        {
+          "id": "optional.questions",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Optional questions",
+              "zh": "选填问题"
+            },
+            "senior": {
+              "en": "Optional questions",
+              "zh": "选填问题"
+            }
+          },
+          "questions": [
+            "opt_english_speak",
+            "opt_english_read",
+            "opt_household_disability",
+            "opt_veteran",
+            "opt_race_tp",
+            "opt_race_sp"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "documents",
+      "n": 8,
+      "title": {
+        "en": "Documents",
+        "zh": "上传文件"
+      },
+      "sections": [],
+      "substeps": [
+        {
+          "id": "documents.bring",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Bring these to your visit",
+              "zh": "请携带以下文件"
+            },
+            "senior": {
+              "en": "Bring these to your visit",
+              "zh": "请携带以下文件"
+            }
+          },
+          "questions": [],
+          "cards": "bring"
         },
+        {
+          "id": "documents.identity",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Identity",
+              "zh": "身份文件"
+            },
+            "senior": {
+              "en": "Identity",
+              "zh": "身份文件"
+            }
+          },
+          "questions": [],
+          "cards": "identity"
+        },
+        {
+          "id": "documents.income",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Income forms",
+              "zh": "收入税表"
+            },
+            "senior": {
+              "en": "Income forms",
+              "zh": "收入税表"
+            }
+          },
+          "questions": [],
+          "cards": "income"
+        },
+        {
+          "id": "documents.expenses",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Expenses",
+              "zh": "支出凭证"
+            },
+            "senior": {
+              "en": "Expenses",
+              "zh": "支出凭证"
+            }
+          },
+          "questions": [],
+          "cards": "expenses"
+        },
+        {
+          "id": "documents.events",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Health and other events",
+              "zh": "医保及其他"
+            },
+            "senior": {
+              "en": "Health and other events",
+              "zh": "医保及其他"
+            }
+          },
+          "questions": [],
+          "cards": "events"
+        },
+        {
+          "id": "documents.other",
+          "kind": "documents",
+          "title": {
+            "general": {
+              "en": "Other documents",
+              "zh": "其他文件"
+            },
+            "senior": {
+              "en": "Other documents",
+              "zh": "其他文件"
+            }
+          },
+          "questions": [],
+          "cards": "other"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "n": 9,
+      "title": {
+        "en": "Anything else",
+        "zh": "补充说明"
+      },
+      "sections": [
         {
           "n": 13,
           "title": {
@@ -4333,6 +5431,20 @@ export default {
               "id": "additional_notes",
               "type": "longtext",
               "required": false,
+              "tips": {
+                "general": [
+                  {
+                    "en": "For example, a form you haven't received yet.",
+                    "zh": "例如：还没收到的税表。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "For example, a form you haven't received yet.",
+                    "zh": "例如：还没收到的税表。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Anything else you'd like the volunteer to know?",
@@ -4346,198 +5458,80 @@ export default {
             }
           ]
         }
-      ]
-    },
-    {
-      "n": 9,
-      "title": {
-        "en": "Permission & review",
-        "zh": "授权与确认"
-      },
-      "sections": [
+      ],
+      "substeps": [
         {
-          "n": 14,
+          "id": "notes.anything",
+          "kind": "questions",
           "title": {
             "general": {
-              "en": "Consent to Disclose Tax Return Information (Form 15080)",
-              "zh": "报税信息披露同意书"
+              "en": "Anything else",
+              "zh": "补充说明"
             },
             "senior": {
-              "en": "Permission to Share Your Tax Information Next Year (Form 15080)",
-              "zh": "同意明年共享您的报税资料"
-            }
-          },
-          "intro": {
-            "general": {
-              "en": "**This consent is optional. Declining will not affect the tax preparation service you receive.**\n\nIf you consent, TaxSlayer (the VITA/TCE software provider) may make your tax return information available to **any** VITA/TCE site using TaxSlayer that you visit next filing season, so your return can be pre-filled.\n\nInformation disclosed includes: name, address, date of birth, phone, SSN, filing status, occupation, employer, income, deductions, and credits, plus your dependents' names, SSNs, dates of birth, and relationship to you.\n\nThis consent is valid through **November 30, 2027**.\n\n**Note:** Once disclosed, federal law may not protect your information from further use or distribution.\n\nConsent is not needed for the site preparing your return this year; it only helps if you visit a **different** site next year.\n\nYou have the right to receive a signed copy of this form.",
-              "zh": "**此同意书为自愿签署。不同意不会影响我们为您提供报税服务。**\n\n如您同意，TaxSlayer（VITA/TCE 报税软件提供商）可将您的报税信息提供给您明年前往的**任何**使用 TaxSlayer 的 VITA/TCE 报税点，用于自动预填。\n\n披露的信息包括：姓名、地址、出生日期、电话、社会安全号码、报税身份、职业、雇主、收入、扣除项和抵免项，以及受抚养人的姓名、社会安全号码、出生日期和与您的关系。\n\n本同意有效期至 **2027 年 11 月 30 日**。\n\n**注意：**信息披露后，联邦法律可能无法防止其被进一步使用或传播。\n\n今年为您报税的站点无需此同意；仅在您明年前往**其他**站点时有用。\n\n您有权获得本表签署后的副本。"
-            },
-            "senior": {
-              "en": "**This page is optional. You will still get tax help if you say No.**\n\nIf you say **Yes**: next year you can go to **any** free tax help site that uses TaxSlayer software, and your information from this year will already be filled in. This saves time.\n\nInformation that will be shared: your name, address, birthday, phone, Social Security number, filing status, job, employer, income, deductions, credits, and your dependents' names, SSNs, birthdays, and relationship to you.\n\nThis permission lasts until **November 30, 2027**.\n\n**Important:** Once shared, federal law may not protect this information from further use.\n\nYou do **not** need to say Yes for the site helping you this year. This only helps if you go to a **different** site next year.\n\nYou have the right to get a signed copy of this form.",
-              "zh": "**此页可选。即使您选\"不同意\"，我们也照样帮您报税。**\n\n如果您同意：明年您去**任何一个**使用 TaxSlayer 软件的免费报税点，今年的资料都会自动填好，可以节省时间。\n\n会共享的资料：您的姓名、地址、生日、电话、社安号码、报税身份、工作、工作单位、收入、减税和补助项目，以及您家属的姓名、社安号码、生日和与您的关系。\n\n这个同意有效期到 **2027 年 11 月 30 日**。\n\n**注意：**资料共享出去以后，联邦法律可能无法保护它不被再次使用。\n\n今年帮您报税的地方，**不需要**您同意这一页。只有明年您去**别的**报税点时，这一页才有用。\n\n您有权拿到一份签过名的表格副本。"
+              "en": "Anything else",
+              "zh": "补充说明"
             }
           },
           "questions": [
-            {
-              "id": "gcf_consent",
-              "type": "choice",
-              "required": false,
-              "options": [
-                {
-                  "value": "yes",
-                  "label": {
-                    "general": {
-                      "en": "I consent",
-                      "zh": "同意"
-                    },
-                    "senior": {
-                      "en": "Yes, I agree",
-                      "zh": "同意"
-                    }
-                  }
-                },
-                {
-                  "value": "no",
-                  "label": {
-                    "general": {
-                      "en": "I do not consent",
-                      "zh": "不同意"
-                    },
-                    "senior": {
-                      "en": "No, I do not agree",
-                      "zh": "不同意"
-                    }
-                  }
-                }
-              ],
-              "tips": {
-                "general": [
-                  {
-                    "en": "If you wish to limit the duration or scope of the disclosure, choose **No**.",
-                    "zh": "如希望缩短有效期或限制披露范围，请选择**不同意**。"
-                  }
-                ],
-                "senior": [
-                  {
-                    "en": "If you want the permission to last a shorter time, or share less information, choose **No**.",
-                    "zh": "如果您想让有效期更短，或者只共享一部分资料，请选**不同意**。"
-                  }
-                ]
-              },
-              "wording": {
-                "general": {
-                  "en": "Do you consent to this disclosure?",
-                  "zh": "您是否同意上述信息披露？"
-                },
-                "senior": {
-                  "en": "Do you agree to let your tax information be shared this way?",
-                  "zh": "您同意用这种方式共享您的报税资料吗？"
-                }
-              }
-            },
-            {
-              "id": "gcf_tp_signature",
-              "type": "signature",
-              "required": false,
-              "showIf": [
-                {
-                  "field": "gcf_consent",
-                  "op": "eq",
-                  "value": "yes"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Primary taxpayer signature (type full name)",
-                  "zh": "主报税人签名（输入全名）"
-                },
-                "senior": {
-                  "en": "Type your full name to sign",
-                  "zh": "请输入您的全名作为签名"
-                }
-              }
-            },
-            {
-              "id": "gcf_tp_date",
-              "type": "date",
-              "required": false,
-              "showIf": [
-                {
-                  "field": "gcf_consent",
-                  "op": "eq",
-                  "value": "yes"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Date",
-                  "zh": "日期"
-                },
-                "senior": {
-                  "en": "Date",
-                  "zh": "日期"
-                }
-              }
-            },
-            {
-              "id": "gcf_sp_signature",
-              "type": "signature",
-              "required": false,
-              "showIf": [
-                {
-                  "field": "gcf_consent",
-                  "op": "eq",
-                  "value": "yes"
-                },
-                {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Secondary taxpayer (spouse) signature (type full name)",
-                  "zh": "配偶签名（输入全名）"
-                },
-                "senior": {
-                  "en": "Spouse: type your full name to sign",
-                  "zh": "请您爱人输入全名作为签名"
-                }
-              }
-            },
-            {
-              "id": "gcf_sp_date",
-              "type": "date",
-              "required": false,
-              "showIf": [
-                {
-                  "field": "gcf_sp_signature",
-                  "op": "filled"
-                }
-              ],
-              "wording": {
-                "general": {
-                  "en": "Spouse signature date",
-                  "zh": "配偶签名日期"
-                },
-                "senior": {
-                  "en": "Spouse date",
-                  "zh": "您爱人签名的日期"
-                }
-              }
-            }
-          ],
-          "footer": {
+            "additional_notes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "n": 10,
+      "title": {
+        "en": "Review & submit",
+        "zh": "检查并提交"
+      },
+      "sections": [],
+      "substeps": [
+        {
+          "id": "review.check",
+          "kind": "review",
+          "title": {
             "general": {
-              "en": "If you believe your tax return information has been disclosed or used improperly, contact TIGTA at **1-800-366-4484** or https://www.tigta.gov/reportcrime-misconduct",
-              "zh": "如您认为您的报税信息被不当披露或使用，请联系 TIGTA：**1-800-366-4484**，或访问上述网址。"
+              "en": "Review your application",
+              "zh": "检查您的申请"
             },
             "senior": {
-              "en": "If you think your tax information was shared or used wrongly, call TIGTA: **1-800-366-4484**, or visit https://www.tigta.gov/reportcrime-misconduct",
-              "zh": "如果您认为您的报税资料被错误共享或使用，请打电话给 TIGTA：**1-800-366-4484**，或访问上面的网址。"
+              "en": "Review your application",
+              "zh": "检查您的申请"
             }
-          }
+          },
+          "questions": []
+        },
+        {
+          "id": "review.summary",
+          "kind": "review",
+          "title": {
+            "general": {
+              "en": "Your application summary",
+              "zh": "申请摘要"
+            },
+            "senior": {
+              "en": "Your application summary",
+              "zh": "申请摘要"
+            }
+          },
+          "questions": []
+        },
+        {
+          "id": "review.submit",
+          "kind": "review",
+          "title": {
+            "general": {
+              "en": "Submit",
+              "zh": "提交"
+            },
+            "senior": {
+              "en": "Submit",
+              "zh": "提交"
+            }
+          },
+          "questions": []
         }
       ]
     }

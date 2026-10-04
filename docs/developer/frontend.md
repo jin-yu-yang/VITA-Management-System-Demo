@@ -88,7 +88,7 @@ fields:
 | `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
-| `visitedSteps`, `revealed` | Version 2: the steps left at least once (their missing answers show), and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
+| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | Version 2: the sub-step on screen; the sub-steps left at least once (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
 | `screen`, `selectedCaseId`, `selectedPersonId`, `formStep`, `openPanels`, `boardFilters`, `caseTab`, `sidebarOpen` | Window-local navigation, remembered per window |
 | `boardSearchDraft` | The work board's half-typed search, kept so a redraw doesn't blank it |
 | `busy`, `error`, `retryable`, `notice`, `dialog` | What the page should show right now |
@@ -121,7 +121,7 @@ Three rules the controller keeps:
 | Who | Screens |
 | --- | --- |
 | Signed out | Email and code form ([`client-views.mjs`](../../src/client-views.mjs) `accessScreen`); "cannot reach the server" and "no access" screens ([`views.mjs`](../../src/views.mjs)) |
-| Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the four-step form for a version-1 case, the nine-step form for a version-2 case), `progress` (status, client number, requests, send document) |
+| Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the four-step form for a version-1 case, the sub-step form for a version-2 case, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
 | Presenter, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
 | Presenter, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
@@ -162,10 +162,9 @@ for you; raw template literals do not.
 
 ## The version-2 intake form
 
-The nine-step form (part 4b) is built from the catalogue by the shared renderer in
-[`src/intake-form.mjs`](../../src/intake-form.mjs). The full design, with the reasons for each
-rule, is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
-§2–§3; this section is the map.
+The form (part 4b, redesigned in part 4b2 as steps 0–9 with sub-steps on a rail tree, a Documents step and Review & submit) is built from the catalogue by the shared renderer in
+[`src/intake-form.mjs`](../../src/intake-form.mjs) and the screens in [`src/intake-views.mjs`](../../src/intake-views.mjs); document cards come from [`src/document-cards.mjs`](../../src/document-cards.mjs) and the draft 13614-C from `src/draft-form.mjs` and `src/draft-pdf.mjs`. The full design is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
+§2 (renderer, redraw rules, invalid values) and [the redesign spec](../superpowers/specs/2026-10-04-intake-redesign-design.md); this section is the map.
 
 **The renderer** is pure. `renderQuestion(question, value, { variant, lang, scope, answers,
 showMissing, revealed })` returns one question's HTML. Ids are `field-<scope>-<id>` (household
@@ -189,9 +188,9 @@ dropped).
   differs from the server's only by spaces, survives a post-save or realtime refresh.
 - **Errors are shown only once revealed.** An invalid value's message shows when its id is in
   `revealed`: on `change` (a date only when its step is left) and for every invalid answer when
-  the person leaves a step. Typing never reveals; it only clears. Missing answers show "Needs an
-  answer" once a step has been visited (`visitedSteps`). The Saved chip counts shown errors only;
-  step 9's list and the Submit gate count every visible invalid answer.
+  the person leaves a sub-step. Typing never reveals; it only clears. Missing answers show "Needs an
+  answer" once a sub-step has been visited (`visitedSubsteps`). The Saved chip counts shown errors only;
+  Review's alerts and the Submit gate count every visible invalid answer.
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
   `case_contacts`. Missing answers are computed from the draft alone.
@@ -351,8 +350,8 @@ the checks all follow the catalogue with no screen change.
 
 **How a question type looks or reads** is `renderQuestion` and `valuesFromControls` in
 `intake-form.mjs`, with a unit test in `tests/intake-form.test.mjs` for render-then-read round
-trips. **The layout** (rail, step header, sections, step 9's list, Submit) is `intakeScreenV2`
-in `client-views.mjs`, which `intakeScreen` dispatches to for a version-2 case. Keep the redraw rules above: a new control that changes
+trips. **The layout** (rail tree, sub-step header, questions, Documents, Review & submit) is `intakeFormV2`
+in `intake-views.mjs`, which `intakeScreen` in `client-views.mjs` dispatches to for a version-2 case. Keep the redraw rules above: a new control that changes
 which questions are visible must be a choice, or be added to the `drivesVisibility` check.
 
 **Version 1** (the four-step form in `client-views.mjs`, with its keys in `domain.mjs`) is frozen

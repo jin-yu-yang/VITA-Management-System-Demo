@@ -12,7 +12,7 @@ exists, what is missing, and where the change lands.
 | Product spec area | Demo today | Gap |
 | --- | --- | --- |
 | Roles (spec §6) | Client, and one "presenter" account acting as staff personas | Real per-person staff accounts and role-based visibility ([§1](#1-staff-identity)) |
-| Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted nine-step intake is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
+| Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted intake (steps 0–9 with sub-steps) is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
 | Documents (spec §5, §7.1) | Metadata for one fixed fictional file | Real upload, storage, scanning, retention ([§3](#3-documents)) |
 | State machine (spec §8.2) | Intake through review approval, corrections, closure | Signature, e-filing, unreachable client, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
 | Client portal (spec §8.3) | Status, requests, document response, progress history | Queue position, preparer/reviewer contact, print, withdraw, notifications |
@@ -59,8 +59,8 @@ and fills the intake form. Two versions exist side by side (see
 - **Version 1**, what every workspace uses on `main`: four steps, 17 fictional-data fields. The
   database re-checks the answers and a screening rule on submit; out-of-scope answers block
   submission and leave a draft.
-- **Version 2**, built in parts 4a and 4b and switched on by part 4c: the group's drafted
-  questions in nine steps (101 questions, standard and senior wording), with contact details and a
+- **Version 2**, built in parts 4a, 4b and 4b2 and switched on by part 4c: the group's drafted
+  questions in steps 0–9 with sub-steps (101 questions, standard and senior wording), with contact details and a
   materials checklist. The database checks every value against the same catalogue and refuses a
   submit with a required answer missing. It has **no scope screening**: by the group's decision
   (2026-09-30) an out-of-scope version-2 application submits normally, and the office handles
@@ -209,7 +209,7 @@ The demo is sized for a classroom: a handful of cases per workspace.
 - The staff case list reads every visible case plus per-case summaries, with no pagination.
 - Child tables (`documents`, `contact_attempts`, `case_events`, `client_events`) have no index on
   `case_id`; add them before real volumes.
-- Each staff window keeps one Realtime channel over fourteen tables and re-reads on each event. With many
+- Each staff window keeps one Realtime channel over fifteen tables and re-reads on each event. With many
   staff online at once, measure and consider narrower subscriptions.
 - One account has one active membership, so one person cannot work at two sites. Revisit if PCDC
   runs several sites.
