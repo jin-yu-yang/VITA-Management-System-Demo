@@ -3243,3 +3243,44 @@ test("§3.8: after a failed save of an answer and its undo, a newer revision's a
   assert.equal(state.draftAnswers.tp_first_name, "Mei");
   controller.stop();
 });
+
+test("a card mark and a sub-step change share one save at a time", async () => {
+  // A mark during a sub-step change's save is ignored: no second save.
+  const first = await openV2({ answers: { tp_first_name: "Mei" } });
+  first.controller.editAnswers({ tp_first_name: "Ming" });
+  let release = holdSaves(first.store);
+  const moving = first.controller.goToSubstep("before.service");
+  const marking = first.controller.setDocumentCard("w2.household", "later");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(first.store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  const [, marked] = await Promise.all([moving, marking]);
+  assert.equal(marked, null);
+  assert.deepEqual(first.store.writes.map((write) => write.type), ["SAVE_ANSWERS"]);
+  assert.equal(first.controller.getState().formSubstep, "before.service");
+  assert.equal(first.controller.getState().conflict, null);
+  assert.equal(first.controller.getState().error, null);
+  first.controller.stop();
+
+  // A sub-step change during a mark's pre-save is ignored the same way.
+  const second = await openV2({ answers: { tp_first_name: "Mei" } });
+  second.controller.editAnswers({ tp_first_name: "Ming" });
+  release = holdSaves(second.store);
+  const marking2 = second.controller.setDocumentCard("w2.household", "later");
+  const moving2 = second.controller.goToSubstep("about.you");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([marking2, moving2]);
+  assert.deepEqual(
+    second.store.writes.map((write) => [write.type, write.expectedRevision]),
+    [
+      ["SAVE_ANSWERS", 1],
+      ["SET_DOCUMENT_CARD", 2],
+    ],
+  );
+  assert.equal(second.controller.getState().formSubstep, "before.ready");
+  assert.equal(second.controller.getState().conflict, null);
+  assert.equal(second.controller.getState().error, null);
+  second.controller.stop();
+});

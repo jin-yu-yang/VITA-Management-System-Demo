@@ -1719,16 +1719,26 @@ export function createController({
   // dirty draft is saved first, the same as a rail jump; a failed save stops
   // here, with its error on screen. On any other stage nothing is saved first
   // (the server refuses SAVE_ANSWERS there). Then the action goes through the
-  // same path as any other.
+  // same path as any other. It shares the sub-step change's one-save-at-a-time
+  // guard: a mark during that save is ignored (it would send a second save
+  // with the same expected revision and meet a false conflict), and a
+  // sub-step change during this pre-save is ignored the same way.
   async function cardAction(type, payload) {
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
+    if (substepSaveInFlight) return null;
     if (state.savedCase.stage === "draft" && state.dirty) {
+      const caseId = state.selectedCaseId;
+      substepSaveInFlight = true;
       try {
         await saveAnswers();
       } catch {
         return null;
+      } finally {
+        substepSaveInFlight = false;
       }
+      // Another case was opened during the save: this mark was for the old one.
+      if (state.selectedCaseId !== caseId) return null;
     }
     return await runAction(type, payload);
   }
