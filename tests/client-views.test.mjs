@@ -19,8 +19,10 @@ import {
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
-import { stepsFor, findQuestion } from "../src/intake-catalogue.mjs";
-import { invalidAnswers, stepStatus } from "../src/intake-form.mjs";
+import { stepsFor, findQuestion, findSubstep } from "../src/intake-catalogue.mjs";
+import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src/intake-form.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
+import { intakeFormV2 } from "../src/intake-views.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
 // the HTML string itself. No DOM library, and nothing here may reach a store.
@@ -676,48 +678,60 @@ test("a version-2 chip counts the revealed invalid answers of visible questions"
 });
 
 // ---------------------------------------------------------------------------
-// Version 2: the nine-step form (spec 2026-09-30 §3)
+// Version 2: sub-steps, the rail tree, Documents, Review & submit
+// (spec 2026-10-04 §2–§6)
 // ---------------------------------------------------------------------------
 
 const v2Case = (overrides = {}) =>
-  caseRecord({ id: "case-v2", reference: "VT-GJPY-JAY9", intakeVersion: 2, answers: {}, contact: null, ...overrides });
+  caseRecord({ id: "case-v2", reference: "VT-GJPY-JAY9", intakeVersion: 2, answers: {}, contact: null, documentCards: [], ...overrides });
 const v2State = (overrides = {}) =>
   baseState({
     screen: "intake",
     selectedCaseId: "case-v2",
     savedCase: v2Case(),
     draftAnswers: makeSampleAnswers({ version: 2 }),
-    formStep: 0,
-    visitedSteps: [],
+    formSubstep: "before.ready",
+    visitedSubsteps: [],
     revealed: [],
+    returnToSummary: false,
     ...overrides,
   });
 const without = (answers, ...ids) =>
   Object.fromEntries(Object.entries(answers).filter(([id]) => !ids.includes(id)));
-const railOf = (html) => {
-  const start = html.indexOf('<ol class="rail"');
-  assert.ok(start >= 0, "the rail is rendered");
-  return html.slice(start, html.indexOf("</ol>", start));
+const plain = (html) => html.replace(/<[^>]+>/g, "").trim();
+const escText = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;");
+const reEsc = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const sample = () => makeSampleAnswers({ version: 2 });
+const TODAY = new Date(2026, 9, 4, 12);
+const chrome = { saveStatus, conflictForm, fictionalTools: "", today: TODAY };
+const form = (overrides) => intakeFormV2(v2State(overrides), chrome);
+
+// One step's <li>, up to the next step (its sub-steps included).
+const railStepOf = (html, id) => {
+  const start = html.search(new RegExp(`<li class="rail-step[^"]*" data-step-id="${id}">`));
+  assert.ok(start >= 0, `rail step ${id} is rendered`);
+  const next = html.indexOf(`<li class="rail-step`, start + 1);
+  return html.slice(start, next < 0 ? html.indexOf("</nav>", start) : next);
 };
-const railStatus = (html, n) => {
-  const found = new RegExp(`<span id="rail-step-${n}-status" class="rail-status is-(\\w+)">([^<]*)</span>`).exec(html);
-  assert.ok(found, `rail-step-${n}-status is rendered`);
+const markOf = (html, spanId) => {
+  const found = new RegExp(`<span id="${reEsc(spanId)}" class="rail-status is-(\\w+)">([^<]*)</span>`).exec(html);
+  assert.ok(found, `${spanId} is rendered`);
   return { key: found[1], text: found[2] };
 };
-const railLink = (html, n) => {
-  const rail = railOf(html);
-  const at = rail.indexOf(`data-step="${n}"`);
-  const start = rail.lastIndexOf("<button", at);
-  return rail.slice(start, rail.indexOf("</button>", at) + "</button>".length);
-};
-const plain = (html) => html.replace(/<[^>]+>/g, "").trim();
-const v2Submit = (html) => {
-  const found = /<button[^>]*data-case-action="SUBMIT"[^>]*>/.exec(html);
-  assert.ok(found, "step 9 has Submit");
+const subLinkOf = (html, id) => {
+  const found = new RegExp(`<button type="button" class="rail-sublink" data-action="go-substep" data-substep="${reEsc(id)}"[^>]*>[\\s\\S]*?</button>`).exec(html);
+  assert.ok(found, `the rail links to ${id}`);
   return found[0];
 };
-const titles = stepsFor(2).map((step) => step.title.en);
-const escText = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;");
+const slug = (slot) => slot.replace(/\./g, "-");
+const cardOf = (html, slot) =>
+  new RegExp(`<article class="doc-card" id="doc-${reEsc(slug(slot))}" data-slot="${reEsc(slot)}" tabindex="-1">[\\s\\S]*?</article>`).exec(html)?.[0];
+const submitOf = (html) => {
+  const found = /<button[^>]*data-case-action="SUBMIT"[^>]*>/.exec(html);
+  assert.ok(found, "review.submit has Submit");
+  return found[0];
+};
+const MEMBER = "000000000000000000000000000003e9"; // the sample's first household member
 
 test("intakeScreen dispatches on intakeVersion: version 1 keeps its four steps", () => {
   for (const savedCase of [caseRecord(), caseRecord({ intakeVersion: 1 })]) {
@@ -732,48 +746,451 @@ test("intakeScreen dispatches on intakeVersion: version 1 keeps its four steps",
   assert.doesNotMatch(v2, /OF 4/);
 });
 
-test.todo("a version-2 draft gets the nine-step form, titled from the catalogue — rewritten in Task 7");
-
-test.todo("the rail: nine go-step links, the current one marked, a fixed status per step — rewritten in Task 7");
-
-test("the rail counts a revealed invalid answer on a visited step", () => {
-  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), email: "a@" };
-  const html = intakeScreen(v2State({ formStep: 3, draftAnswers, visitedSteps: [1], revealed: ["email"] }));
-  assert.deepEqual(railStatus(html, 1), { key: "needs", text: "Needs answers" });
-  assert.deepEqual(
-    railStatus(html, 1),
-    { key: stepStatus(1, draftAnswers, [1], new Set(["email"])).key, text: "Needs answers" },
+test("a version-2 draft gets the sub-step page: form, overline, title and count", () => {
+  const html = intakeScreen(v2State({ formSubstep: "about.address" }));
+  assert.match(html, /<form id="intake-v2-form" novalidate data-substep="about\.address">/);
+  assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 5<\/p>/);
+  // The office card stays under the rail, and the chrome comes from client-views.
+  assert.match(html, /class="sidebar-help"/);
+  assert.match(html, /Fill fictional details/);
+  assert.match(html, /<span class="save-chip/);
+  // Before you start has no number; an ampersand in a title is escaped.
+  assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 3<\/p>/);
+  assert.match(
+    intakeScreen(v2State({ formSubstep: "expenses.other" })),
+    /<span class="overline">STEP 4 OF 9 · EXPENSES &amp; LIFE EVENTS<\/span><h1>Other expenses<\/h1><p class="substep-count">2 of 3<\/p>/,
   );
+  // A hidden sub-step resolves to the next visible one; an unknown id to the first.
+  assert.match(intakeScreen(v2State({ formSubstep: "about.spouse" })), /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(intakeScreen(v2State({ formSubstep: "nowhere.at_all" })), /<form id="intake-v2-form" novalidate data-substep="before\.ready">/);
+  // The senior titles are used when chosen.
+  const senior = intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: { ...sample(), form_version: "senior" } }));
+  assert.ok(senior.includes(`<h1>${escText(findSubstep("about.address").title.senior.en)}</h1>`));
 });
 
-test.todo("show-if: the spouse questions render only for a married client — rewritten in Task 7");
+test("the rail tree: the current step expanded, the others collapsed, each with its toggle, link and marks", () => {
+  const draftAnswers = sample();
+  const visitedSubsteps = ["before.ready", "before.service", "before.language", "about.you"];
+  const html = intakeScreen(v2State({ formSubstep: "about.address", visitedSubsteps }));
+  assert.match(html, /<nav class="rail-nav" aria-label="Form steps"><ol id="rail-tree" class="rail-tree">/);
+  const steps = stepsFor(2);
+  assert.equal((html.match(/<li class="rail-step/g) ?? []).length, steps.length);
+  for (const step of steps) {
+    const item = railStepOf(html, step.id);
+    const expanded = step.id === "about";
+    assert.match(
+      item,
+      new RegExp(`<button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${step.id}" aria-expanded="${expanded}" aria-controls="rail-subs-${step.id}">`),
+    );
+    assert.ok(item.includes(`<span class="sr-only">Show or hide the parts of ${escText(step.title.en)}</span>`));
+    assert.match(item, new RegExp(`<ol id="rail-subs-${step.id}" class="rail-subs"${expanded ? "" : " hidden"}>`));
+    // The step's mark is its roll-up.
+    const rollup = stepRollup(step.id, { answers: draftAnswers, visited: visitedSubsteps, revealed: new Set(), cards: cardsFor(draftAnswers, []) });
+    assert.deepEqual(markOf(item, `rail-step-${step.id}-status`), { key: rollup.key, text: rollup.text });
+  }
+  // Numbers 1–9; Before you start has none.
+  assert.doesNotMatch(railStepOf(html, "before"), /rail-step-num/);
+  assert.match(railStepOf(html, "about"), /<span class="rail-step-num" aria-hidden="true">1<\/span>/);
+  assert.match(railStepOf(html, "review"), /<span class="rail-step-num" aria-hidden="true">9<\/span>/);
+  // A step's name links to its first sub-step that isn't Done, or its first when all are.
+  assert.match(railStepOf(html, "about"), /<button type="button" class="rail-link" data-action="go-substep" data-substep="about\.address">/);
+  assert.match(railStepOf(html, "before"), /<button type="button" class="rail-link" data-action="go-substep" data-substep="before\.ready">/);
+  // The current sub-step: aria-current and "You are here"; only it.
+  const here = subLinkOf(html, "about.address");
+  assert.match(here, /aria-current="step"/);
+  assert.match(here, /<small class="rail-here">You are here<\/small>/);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.equal((html.match(/You are here/g) ?? []).length, 1);
+  assert.doesNotMatch(subLinkOf(html, "about.you"), /aria-current/);
+  // Sub-step marks: fixed ids with "." as "-".
+  assert.deepEqual(markOf(html, "rail-sub-about-you-status"), { key: "done", text: "Done" });
+  assert.deepEqual(markOf(html, "rail-sub-about-address-status"), { key: "none", text: "" });
+  assert.deepEqual(markOf(html, "rail-step-before-status"), { key: "done", text: "Done" });
+  // A hidden sub-step is not listed (the spouse, for an unmarried client).
+  assert.doesNotMatch(html, /data-substep="about\.spouse"/);
+  assert.doesNotMatch(html, /rail-sub-about-spouse-status/);
+  // Collapsed steps still render their sub-steps' spans, hidden.
+  assert.match(railStepOf(html, "income"), /rail-sub-income-wages-status/);
+});
 
-test("Needs an answer shows on the current step only once it was visited", () => {
-  const fresh = intakeScreen(v2State({ formStep: 1, draftAnswers: {} }));
+test("the rail's open and shut entries win over the current step, and the phone bar opens the tree", () => {
+  const html = intakeScreen(v2State({ formSubstep: "about.address", openPanels: ["rail-open:income", "rail-shut:about"] }));
+  assert.match(railStepOf(html, "about"), /aria-expanded="false" aria-controls="rail-subs-about"/);
+  assert.match(railStepOf(html, "about"), /<ol id="rail-subs-about" class="rail-subs" hidden>/);
+  assert.match(railStepOf(html, "income"), /aria-expanded="true" aria-controls="rail-subs-income"/);
+  assert.match(railStepOf(html, "income"), /<ol id="rail-subs-income" class="rail-subs">/);
+  // The phone bar, and the tree closed until "All steps" opens it.
+  assert.match(
+    html,
+    /<div class="rail-phone"><span>About you · 2 of 5<\/span><button type="button" class="btn secondary" data-action="toggle-panel" data-panel="rail-all" aria-expanded="false" aria-controls="rail-tree">All steps<\/button><\/div>/,
+  );
+  const open = intakeScreen(v2State({ formSubstep: "about.address", openPanels: ["rail-all"] }));
+  assert.match(open, /<ol id="rail-tree" class="rail-tree is-open">/);
+  assert.match(open, /data-panel="rail-all" aria-expanded="true" aria-controls="rail-tree"/);
+});
+
+test("the progress bar counts visible sub-steps", () => {
+  const draftAnswers = sample();
+  const count = visibleSubsteps(draftAnswers, cardsFor(draftAnswers, [])).length;
+  const html = intakeScreen(v2State({ formSubstep: "about.address" }));
+  assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="5"[^>]*></progress><p>Part 5 of ${count}</p>`));
+  // A married client has one more part.
+  const married = makeSampleAnswers({ version: 2, married: true });
+  const more = visibleSubsteps(married, cardsFor(married, [])).length;
+  assert.equal(more, count + 1);
+  assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="5"`));
+});
+
+test("the rail counts a revealed invalid answer on its sub-step and its step", () => {
+  const draftAnswers = { ...sample(), email: "a@" };
+  const html = intakeScreen(v2State({ formSubstep: "income.wages", draftAnswers, visitedSubsteps: ["about.you"], revealed: ["email"] }));
+  assert.deepEqual(markOf(html, "rail-sub-about-you-status"), { key: "needs", text: "Needs answers" });
+  assert.deepEqual(markOf(html, "rail-step-about-status"), { key: "needs", text: "Needs answers" });
+  const ctx = { answers: draftAnswers, visited: ["about.you"], revealed: new Set(["email"]), cards: cardsFor(draftAnswers, []) };
+  assert.equal(substepStatus("about.you", ctx).key, "needs");
+});
+
+test("a Documents sub-step with a Needed card still Not done reads Needs documents", () => {
+  const html = intakeScreen(v2State({ formSubstep: "notes.anything", visitedSubsteps: ["documents.identity"] }));
+  assert.deepEqual(markOf(html, "rail-sub-documents-identity-status"), { key: "docs", text: "Needs documents" });
+  assert.deepEqual(markOf(html, "rail-step-documents-status"), { key: "docs", text: "Needs documents" });
+  // Later or Don't have clears it.
+  const marked = intakeScreen(
+    v2State({
+      formSubstep: "notes.anything",
+      visitedSubsteps: ["documents.identity"],
+      savedCase: v2Case({ documentCards: [{ slotId: "photo_id.tp", status: "later" }, { slotId: "ssn.tp", status: "none" }] }),
+    }),
+  );
+  assert.deepEqual(markOf(marked, "rail-sub-documents-identity-status"), { key: "done", text: "Done" });
+});
+
+test("Needs an answer shows on the current sub-step only once it was visited", () => {
+  const fresh = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {} }));
   assert.doesNotMatch(fresh, /Needs an answer/);
   assert.doesNotMatch(fresh, /is-missing/);
-  const again = intakeScreen(v2State({ formStep: 1, draftAnswers: {}, visitedSteps: [1] }));
+  const again = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {}, visitedSubsteps: ["about.you"] }));
   assert.match(again, /<p id="field-client-tp_first_name-note" class="q-note is-missing" aria-live="polite">Needs an answer<\/p>/);
-  // Every rendered question is a data-q wrapper Task 5 reads as renderedIds.
-  for (const id of ["tp_first_name", "tp_dob", "tp_phone", "email", "addr_zip"]) assert.match(again, new RegExp(`data-q="${id}"`));
+  // Every rendered question is a data-q wrapper (the page's renderedIds), and only this sub-step's.
+  for (const id of ["tp_first_name", "tp_dob", "tp_phone", "email"]) assert.match(again, new RegExp(`data-q="${id}"`));
+  assert.doesNotMatch(again, /data-q="addr_zip"/);
 });
 
-test("a revealed error shows on an unvisited step, in the note and the rail", () => {
-  const draftAnswers = { ...makeSampleAnswers({ version: 2 }), email: "a@" };
-  const html = intakeScreen(v2State({ formStep: 1, draftAnswers, visitedSteps: [], revealed: ["email"] }));
+test("a revealed error shows on an unvisited sub-step, in the note and the rail", () => {
+  const draftAnswers = { ...sample(), email: "a@" };
+  const html = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers, revealed: ["email"] }));
   assert.match(html, /<p id="field-client-email-note" class="q-note is-invalid" aria-live="polite">Enter a valid email address\.<\/p>/);
-  assert.deepEqual(railStatus(html, 1), { key: "needs", text: "Needs answers" });
-  // Not revealed: nothing shows yet.
-  const quiet = intakeScreen(v2State({ formStep: 1, draftAnswers, visitedSteps: [], revealed: [] }));
+  assert.deepEqual(markOf(html, "rail-sub-about-you-status"), { key: "needs", text: "Needs answers" });
+  const quiet = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers }));
   assert.doesNotMatch(quiet, /is-invalid/);
-  assert.deepEqual(railStatus(quiet, 1), { key: "done", text: "Done" });
+  assert.deepEqual(markOf(quiet, "rail-sub-about-you-status"), { key: "none", text: "" });
 });
 
-test.todo("step 9 lists what is still to answer and what needs a change, each linking to its step — rewritten in Task 7");
+test("with the senior wording chosen, questions use it", () => {
+  const html = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: { ...sample(), form_version: "senior" } }));
+  assert.ok(html.includes(escText(findQuestion(2, "tp_first_name").wording.senior.en)));
+  assert.ok(!html.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
+  const general = intakeScreen(v2State({ formSubstep: "about.you" }));
+  assert.ok(general.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
+});
 
-test.todo("step 9's missing list comes from the draft alone, never from record.contact — rewritten in Task 7");
+test("show-if: the spouse questions render only for a married client", () => {
+  const married = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: makeSampleAnswers({ version: 2, married: true }) }));
+  assert.match(married, /<form id="intake-v2-form" novalidate data-substep="about\.spouse">/);
+  assert.match(married, /data-q="sp_first_name"/);
+  const single = intakeScreen(v2State({ formSubstep: "about.spouse" }));
+  assert.doesNotMatch(single, /data-q="sp_first_name"/);
+  assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+});
 
-test.todo("Submit waits for no missing, no invalid and the confirmation — rewritten in Task 7");
+test("a lead line replaces the section intro; a section's intro shows on its first sub-step only", () => {
+  const wages = intakeScreen(v2State({ formSubstep: "income.wages" }));
+  assert.match(wages, /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
+  assert.match(intakeScreen(v2State({ formSubstep: "expenses.events" })), /<p class="q-lead">Did any of these happen to you or your spouse in 2025\?<\/p>/);
+  // No Section 9 intro anywhere, and no intro beside a lead.
+  for (const id of ["income.wages", "income.retirement", "income.investments", "income.rental", "income.business", "income.other"])
+    assert.doesNotMatch(intakeScreen(v2State({ formSubstep: id })), /class="q-intro"/, id);
+  // Section 6's intro on the household page; nothing on About you's later pages.
+  assert.match(intakeScreen(v2State({ formSubstep: "household.members" })), /class="q-intro"/);
+  assert.doesNotMatch(intakeScreen(v2State({ formSubstep: "about.address" })), /class="q-intro"/);
+  // Section 0's intro on before.ready only, not on the later Before you start pages.
+  assert.match(intakeScreen(v2State()), /<div class="q-intro"><p>Please have these ready:/);
+  assert.doesNotMatch(intakeScreen(v2State({ formSubstep: "before.service" })), /class="q-intro"/);
+});
+
+test("before.ready adds a line after the S0 text: the Documents step, or a list for same-day", () => {
+  const html = intakeScreen(v2State());
+  assert.match(html, /ts\.voltax@irs\.gov[\s\S]*<p class="q-intro-extra">You will upload them in the Documents step\.<\/p>/);
+  assert.doesNotMatch(html, /You will get a list of what to bring/);
+  const sameDay = intakeScreen(v2State({ draftAnswers: { ...sample(), service: "same_day" } }));
+  assert.match(sameDay, /<p class="q-intro-extra">You will get a list of what to bring\.<\/p>/);
+  assert.doesNotMatch(sameDay, /Documents step/);
+  assert.doesNotMatch(intakeScreen(v2State({ formSubstep: "before.service" })), /q-intro-extra/);
+});
+
+test("Back, Continue and Back to summary", () => {
+  const first = intakeScreen(v2State());
+  assert.doesNotMatch(first, /data-action="back-step"/);
+  assert.match(first, /<button type="submit" class="btn primary"[^>]*>Continue/);
+  const middle = intakeScreen(v2State({ formSubstep: "about.you" }));
+  assert.match(middle, /data-action="back-step"/);
+  assert.match(middle, /<button type="submit" class="btn primary"[^>]*>Continue/);
+  const submit = intakeScreen(v2State({ formSubstep: "review.submit" }));
+  assert.match(submit, /data-action="back-step"/);
+  assert.doesNotMatch(submit, /type="submit"/);
+  // A Change link's return: the primary button goes back to the summary instead.
+  const change = intakeScreen(v2State({ formSubstep: "about.address", returnToSummary: true }));
+  assert.match(change, /<button type="button" class="btn primary" data-action="back-to-summary"[^>]*>Back to summary<\/button>/);
+  assert.doesNotMatch(change, /type="submit"/);
+  // A conflict or a save in flight disables the primary button.
+  assert.match(intakeScreen(v2State({ formSubstep: "about.you", busy: true })), /<button type="submit" class="btn primary" disabled>/);
+});
+
+test("a Documents sub-step: Needed cards, then the Maybe needed group, each card with its marks", () => {
+  const html = intakeScreen(v2State({ formSubstep: "documents.identity" }));
+  assert.match(html, /<span class="overline">STEP 7 OF 9 · DOCUMENTS<\/span><h1>Identity<\/h1>/);
+  const photo = cardOf(html, "photo_id.tp");
+  assert.ok(photo, "the photo ID card is rendered");
+  assert.match(photo, /<h3>Photo ID \(driver&#39;s license, state ID, passport\)<\/h3>/);
+  assert.match(photo, /<p class="doc-owner">Mei Chen<\/p>/);
+  // Upload buttons, disabled, described by the note.
+  for (const name of ["Take a photo", "Choose a file"])
+    assert.match(photo, new RegExp(`<button type="button" class="btn secondary" disabled aria-describedby="doc-photo_id-tp-note">[\\s\\S]*?${name}</button>`));
+  assert.match(photo, /<p class="doc-note" id="doc-photo_id-tp-note">Uploading arrives soon\. For now, bring it or mark it below\.<\/p>/);
+  assert.match(photo, /<button type="button" class="btn secondary" data-action="mark-card" data-slot="photo_id\.tp" data-status="later">I will send it later<\/button>/);
+  assert.match(photo, /<button type="button" class="btn secondary" data-action="mark-card" data-slot="photo_id\.tp" data-status="none">I don&#39;t have this<\/button>/);
+  assert.doesNotMatch(photo, /data-status="not_done"/);
+  assert.match(photo, /<p class="doc-status is-not_done" id="doc-photo_id-tp-status" tabindex="-1">[\s\S]*Not done<\/p>/);
+  assert.match(photo, /<svg/, "the status has an icon");
+  // No why line on photo ID, so no link.
+  assert.doesNotMatch(photo, /data-action="go-substep"/);
+  // Maybe needed: a closed toggle after the Needed cards, its cards not shown.
+  const toggle = /<button type="button" class="doc-maybe-toggle" data-action="toggle-panel" data-panel="maybe:documents\.identity" aria-expanded="false"[^>]*>Maybe needed \(1\)<\/button>/.exec(html);
+  assert.ok(toggle, "the Maybe needed toggle is rendered");
+  assert.ok(html.indexOf(cardOf(html, "ssn.tp")) < toggle.index);
+  assert.equal(cardOf(html, `ssn.hh.${MEMBER}`), undefined);
+  // Open, the Maybe needed card shows, with its why line linking back.
+  const open = intakeScreen(v2State({ formSubstep: "documents.identity", openPanels: ["maybe:documents.identity"] }));
+  assert.match(open, /data-panel="maybe:documents\.identity" aria-expanded="true"/);
+  const member = cardOf(open, `ssn.hh.${MEMBER}`);
+  assert.ok(member, "the household member's card shows");
+  assert.match(member, /<p class="doc-owner">Lin Chen<\/p>/);
+  assert.match(member, /<button type="button" class="inline" data-action="go-substep" data-substep="household\.members">You listed this person in your household<\/button>/);
+  assert.ok(open.indexOf(member) > open.indexOf("doc-maybe-toggle"));
+});
+
+test("a card's status reads Later or Don't have, and then offers Mark as not done", () => {
+  const state = (status) =>
+    v2State({ formSubstep: "documents.income", savedCase: v2Case({ documentCards: [{ slotId: "w2.household", status }] }) });
+  const later = cardOf(intakeScreen(state("later")), "w2.household");
+  assert.match(later, /<p class="doc-status is-later" id="doc-w2-household-status" tabindex="-1">[\s\S]*Later<\/p>/);
+  assert.match(later, /<button type="button" class="btn secondary" data-action="mark-card" data-slot="w2\.household" data-status="not_done">Mark as not done<\/button>/);
+  const none = cardOf(intakeScreen(state("none")), "w2.household");
+  assert.match(none, /<p class="doc-status is-none" id="doc-w2-household-status" tabindex="-1">[\s\S]*Don&#39;t have<\/p>/);
+  assert.match(none, /data-status="not_done">Mark as not done/);
+  // The why line links to the question that asked.
+  assert.match(later, /<button type="button" class="inline" data-action="go-substep" data-substep="income\.wages">You said you had wages from a job<\/button>/);
+  assert.match(later, /<p class="doc-owner">For you<\/p>/);
+  assert.match(later, /You said 1 job\. Upload 1 W-2\./);
+});
+
+test("the optional Other documents card has the upload buttons but no marks and no status", () => {
+  const html = intakeScreen(v2State({ formSubstep: "documents.other" }));
+  const other = cardOf(html, "other.household");
+  assert.ok(other, "the Other documents card shows");
+  assert.match(other, /<h3>Other documents<\/h3>/);
+  assert.match(other, /<p class="doc-owner">For your household<\/p>/);
+  assert.match(other, /For example, a city tax notice, or a blank local tax form you received\./);
+  assert.match(other, /disabled aria-describedby="doc-other-household-note"/);
+  assert.match(other, /class="doc-note"/);
+  assert.doesNotMatch(other, /mark-card/);
+  assert.doesNotMatch(other, /doc-status/);
+  assert.doesNotMatch(html, /doc-maybe-toggle/);
+});
+
+test("same-day: Bring these to your visit, a list with no buttons and no statuses", () => {
+  const draftAnswers = { ...sample(), service: "same_day" };
+  const html = intakeScreen(v2State({ formSubstep: "documents.bring", draftAnswers }));
+  assert.match(html, /<h1>Bring these to your visit<\/h1>/);
+  const list = /<ul class="bring-list">[\s\S]*?<\/ul>/.exec(html)?.[0];
+  assert.ok(list, "the bring list is rendered");
+  for (const card of cardsFor(draftAnswers, []).filter((c) => c.group !== "optional"))
+    assert.ok(list.includes(escText(card.label.en)), card.slotId);
+  // Needed first, then Maybe needed.
+  assert.ok(list.indexOf("A voided check") < list.indexOf("Maybe needed"));
+  assert.doesNotMatch(list, /Other documents/);
+  assert.doesNotMatch(html, /data-action="mark-card"/);
+  assert.doesNotMatch(html, /doc-status/);
+  assert.doesNotMatch(html, /Take a photo/);
+  assert.doesNotMatch(html, /<article class="doc-card"/);
+});
+
+test("review.check: the two texts, alerts grouped by step and the document warnings", () => {
+  const draftAnswers = { ...without(sample(), "tp_first_name", "refund_method"), email: "a@" };
+  const html = intakeScreen(v2State({ formSubstep: "review.check", draftAnswers }));
+  assert.match(html, /<p>Please review your application and check it for accuracy and completeness before you submit it\.<\/p>/);
+  assert.match(html, /<p>The IRS Volunteer Income Tax Assistance \(VITA\) program is completely free if you qualify\. We will never ask you to pay\.<\/p>/);
+  assert.match(html, /<section class="alerts-panel" aria-labelledby="alerts-title"><h2 id="alerts-title" tabindex="-1">Alerts and warnings<\/h2>/);
+  const alerts = /<div class="alerts-block">[\s\S]*?<\/div><div class="warnings-block">/.exec(html)?.[0];
+  assert.ok(alerts, "alerts come before warnings");
+  assert.match(alerts, /Fix before you submit/);
+  const item = (kind, id, wordingOf, flag) =>
+    new RegExp(`<button type="button" class="alert-item is-${kind}" data-action="go-substep" data-substep="${reEsc(id)}">[\\s\\S]*?${reEsc(escText(wordingOf))}[\\s\\S]*?${flag}[\\s\\S]*?</button>`);
+  assert.match(alerts, item("missing", "about.you", findQuestion(2, "tp_first_name").wording.general.en, "Needs an answer"));
+  assert.match(alerts, item("invalid", "about.you", findQuestion(2, "email").wording.general.en, "Needs a change"));
+  assert.match(alerts, item("missing", "refund.payment", findQuestion(2, "refund_method").wording.general.en, "Needs an answer"));
+  // Grouped by step, in step order.
+  assert.ok(alerts.indexOf("Step 1: About you") < alerts.indexOf("Step 5: Refund &amp; permission"));
+  assert.ok(alerts.indexOf("Step 1: About you") < alerts.indexOf(escText(findQuestion(2, "tp_first_name").wording.general.en)));
+  // Warnings: every Needed card Not done or Later, each with Upload now.
+  const warnings = /<div class="warnings-block">[\s\S]*?<\/section>/.exec(html)[0];
+  assert.match(warnings, /You can still submit/);
+  for (const [slot, substep] of [["photo_id.tp", "identity"], ["ssn.tp", "identity"], ["w2.household", "income"]])
+    assert.match(warnings, new RegExp(`data-action="go-substep" data-substep="documents\\.${substep}" data-focus="doc-${reEsc(slug(slot))}">Upload now</button>`));
+  // The Maybe needed cards as one line (the member's SSN and the bank letter).
+  assert.match(warnings, /<button type="button" class="inline" data-action="go-substep" data-substep="documents\.identity">2 more documents may be needed<\/button>/);
+  assert.doesNotMatch(html, /alerts-empty/);
+});
+
+test("review.check: Later still warns, Don't have does not, and nothing at all reads the empty sentence", () => {
+  const cards = (statuses) => v2Case({ documentCards: Object.entries(statuses).map(([slotId, status]) => ({ slotId, status })) });
+  const later = intakeScreen(v2State({ formSubstep: "review.check", savedCase: cards({ "photo_id.tp": "later", "ssn.tp": "none" }) }));
+  assert.match(later, /data-focus="doc-photo_id-tp">Upload now/);
+  assert.doesNotMatch(later, /data-focus="doc-ssn-tp"/);
+  assert.doesNotMatch(later, /alerts-block/);
+  const settled = cards({
+    "photo_id.tp": "none",
+    "ssn.tp": "none",
+    "w2.household": "none",
+    "bank.household": "none",
+    [`ssn.hh.${MEMBER}`]: "none",
+  });
+  const empty = intakeScreen(v2State({ formSubstep: "review.check", savedCase: settled }));
+  assert.match(empty, /<p class="alerts-empty">We found no alerts or warnings in your application\.<\/p>/);
+  assert.doesNotMatch(empty, /alerts-block|warnings-block/);
+  // One Maybe needed card reads in the singular.
+  const one = intakeScreen(v2State({ formSubstep: "review.check", savedCase: cards({ "photo_id.tp": "none", "ssn.tp": "none", "w2.household": "none", "bank.household": "none" }) }));
+  assert.match(one, />1 more document may be needed</);
+});
+
+test("review.check: same-day gets no document warnings, and alerts come from the draft alone", () => {
+  const sameDay = intakeScreen(v2State({ formSubstep: "review.check", draftAnswers: { ...sample(), service: "same_day" } }));
+  assert.match(sameDay, /alerts-empty/);
+  assert.doesNotMatch(sameDay, /Upload now|may be needed/);
+  // The phone is on the server's contact record but not in the draft: still an alert.
+  const html = intakeScreen(
+    v2State({
+      formSubstep: "review.check",
+      draftAnswers: without(sample(), "tp_phone"),
+      savedCase: v2Case({ contact: { phone: "2155550100", spousePhone: null, bestContactTime: null, bestContactNote: null } }),
+    }),
+  );
+  assert.match(html, /class="alert-item is-missing" data-action="go-substep" data-substep="about\.you"/);
+});
+
+test("review.summary: everything the printout shows sits in one block, with Change links and the cards", () => {
+  const html = form({ formSubstep: "review.summary", savedCase: v2Case({ documentCards: [{ slotId: "w2.household", status: "later" }] }) });
+  const start = html.indexOf('<div class="summary-print">');
+  const tools = html.indexOf('<div class="summary-tools">');
+  assert.ok(start >= 0 && tools > start, "the tools come after the printed block");
+  const printed = html.slice(start, tools);
+  assert.match(printed, /VT-GJPY-JAY9/);
+  assert.match(printed, /October 4, 2026/);
+  // Steps and sub-steps, each sub-step with its Change link.
+  assert.match(printed, /<section class="summary-step"><h2>About you<\/h2>/);
+  assert.match(printed, /<div class="summary-sub"><div class="summary-sub-head"><h3>Mailing address<\/h3><button type="button" class="inline" data-action="change-substep" data-substep="about\.address">Change<\/button><\/div>/);
+  assert.match(printed, /<span>[^<]*<\/span><strong>Philadelphia<\/strong>/);
+  assert.ok(printed.includes(`<strong>${escText(formatAnswer(findQuestion(2, "marital_status"), "never_married"))}</strong>`));
+  assert.doesNotMatch(printed, /data-substep="about\.spouse"/);
+  assert.doesNotMatch(printed, /data-substep="review\./);
+  // The cards and their status.
+  assert.match(printed, /W-2 from each job[\s\S]*?<strong>Later<\/strong>/);
+  assert.match(printed, /Photo ID[\s\S]*?<strong>Not done<\/strong>/);
+  assert.doesNotMatch(printed, /Other documents/);
+  // The tools, outside the printed block.
+  const toolbox = html.slice(tools);
+  assert.match(toolbox, /data-action="print-summary"[^>]*>[\s\S]*?Print<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="en"[^>]*>[\s\S]*?View Draft 13614-C<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="zh-s"[^>]*>简体中文版<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="zh-t"[^>]*>繁體中文版<\/button>/);
+  assert.match(toolbox, /<p id="draft-ready" class="draft-ready" aria-live="polite"><\/p>/);
+  // Same-day: the bring list instead of the cards.
+  const sameDay = form({ formSubstep: "review.summary", draftAnswers: { ...sample(), service: "same_day" } });
+  assert.match(sameDay.slice(sameDay.indexOf("summary-print"), sameDay.indexOf("summary-tools")), /<ul class="bring-list">/);
+});
+
+test("review.submit: Submit waits for no alerts and the confirmation", () => {
+  const clean = { formSubstep: "review.submit" };
+  const html = intakeScreen(v2State(clean));
+  assert.match(html, /<input type="checkbox" id="field-confirmed" name="confirmed"\s*>/);
+  assert.match(html, /I have checked my answers/);
+  assert.match(submitOf(html), /disabled/);
+  assert.doesNotMatch(submitOf(intakeScreen(v2State({ ...clean, openPanels: ["confirmed"] }))), /disabled/);
+  // Any alert keeps it disabled, ticked or not, and says where to look.
+  const missing = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: without(sample(), "tp_first_name") }));
+  assert.match(submitOf(missing), /disabled/);
+  assert.match(missing, /data-action="go-substep" data-substep="review\.check"/);
+  const invalid = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: { ...sample(), email: "a@" } }));
+  assert.match(submitOf(invalid), /disabled/);
+  // Document warnings never block.
+  assert.ok(cardsFor(sample(), []).some((card) => card.group === "needed" && card.status === "not_done"));
+  // A conflict or a save in flight does.
+  assert.match(submitOf(intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], busy: true }))), /disabled/);
+});
+
+test("a submitted version-2 case shows its answers read-only, grouped by step and sub-step", () => {
+  const answers = without(sample(), "tp_phone", "best_contact_time", "best_contact_note");
+  const html = intakeScreen(
+    v2State({
+      savedCase: v2Case({
+        stage: "received",
+        answers,
+        contact: { phone: "2155550123", spousePhone: null, bestContactTime: ["weekday_morning"], bestContactNote: null },
+      }),
+      draftAnswers: {},
+    }),
+  );
+  assert.match(html, /Your answers are with the office/);
+  assert.doesNotMatch(html, /<form|<input|data-action="change-substep"/);
+  assert.match(html, /<section class="answer-step"><h2>About you<\/h2>/);
+  assert.match(html, /<div class="answer-sub"><h3>About you<\/h3>/);
+  assert.match(html, /<div class="answer-sub"><h3>Mailing address<\/h3>/);
+  // Contact fields come from the contact record.
+  assert.match(html, /<strong>\(215\) 555-0123<\/strong>/);
+  assert.match(html, /<strong>Weekday mornings<\/strong>/);
+  // Unanswered and hidden questions are left out; so is a sub-step with nothing answered.
+  assert.doesNotMatch(html, /data-q=/);
+  assert.doesNotMatch(html, /<h3>Your spouse<\/h3>/);
+  assert.match(html, /data-action="open-progress"/);
+});
+
+test("the progress page lists open documents for version 2, with their marks", () => {
+  const progress = (overrides) =>
+    progressScreen(baseState({ screen: "progress", savedCase: v2Case({ stage: "received", answers: sample(), ...overrides }) }));
+  const html = progress({ documentCards: [{ slotId: "ssn.tp", status: "none" }, { slotId: "w2.household", status: "later" }] });
+  const panel = /<section class="panel open-documents"[\s\S]*?<\/section>/.exec(html)?.[0];
+  assert.ok(panel, "the open documents panel is rendered");
+  assert.match(panel, /<h2 id="open-documents-title">Open documents<\/h2>/);
+  assert.ok(cardOf(panel, "photo_id.tp"));
+  assert.match(cardOf(panel, "w2.household"), /Later/);
+  assert.match(cardOf(panel, "w2.household"), /data-status="not_done">Mark as not done/);
+  assert.match(cardOf(panel, "photo_id.tp"), /data-action="mark-card" data-slot="photo_id\.tp" data-status="later"/);
+  // Don't have, Maybe needed and the optional card are not open documents.
+  assert.equal(cardOf(panel, "ssn.tp"), undefined);
+  assert.equal(cardOf(panel, `ssn.hh.${MEMBER}`), undefined);
+  assert.equal(cardOf(panel, "other.household"), undefined);
+  // Answers are locked: no link back into the form.
+  assert.doesNotMatch(panel, /data-action="go-substep"/);
+  // After the status panel.
+  assert.ok(html.indexOf("status-panel") < html.indexOf("open-documents"));
+  // Same-day: the bring list.
+  const sameDay = progressScreen(baseState({ screen: "progress", savedCase: v2Case({ stage: "received", answers: { ...sample(), service: "same_day" } }) }));
+  assert.match(sameDay, /<h2 id="open-documents-title">Bring these to your visit<\/h2>/);
+  assert.match(sameDay, /<ul class="bring-list">/);
+  assert.doesNotMatch(sameDay, /mark-card/);
+  // Version 1 has none.
+  assert.doesNotMatch(progressScreen(baseState({ screen: "progress", savedCase: caseRecord({ stage: "received" }) })), /open-documents/);
+});
 
 test("the version-2 chip: revealed invalid answers need checking, in every quiet save state", () => {
   const chip = (overrides) => plain(saveStatus(v2State(overrides)));
@@ -792,18 +1209,6 @@ test("the version-2 chip: revealed invalid answers need checking, in every quiet
   assert.equal(v1("saved"), "Saved");
   assert.equal(v1("idle"), "Up to date");
 });
-
-test("with the senior wording chosen, questions use it", () => {
-  const html = intakeScreen(
-    v2State({ formStep: 1, draftAnswers: { ...makeSampleAnswers({ version: 2 }), form_version: "senior" } }),
-  );
-  assert.ok(html.includes(escText(findQuestion(2, "tp_first_name").wording.senior.en)));
-  assert.ok(!html.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
-  const general = intakeScreen(v2State({ formStep: 1 }));
-  assert.ok(general.includes(`>${findQuestion(2, "tp_first_name").wording.general.en}<`));
-});
-
-test.todo("a submitted version-2 case shows its answers read-only, grouped by step — rewritten in Task 7");
 
 test("the version-2 conflict screen compares sendable values and labels rows by wording", () => {
   const sample = makeSampleAnswers({ version: 2 });
