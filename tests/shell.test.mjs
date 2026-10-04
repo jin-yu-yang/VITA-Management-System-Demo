@@ -273,6 +273,22 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
     assert.doesNotMatch(app, gone);
 });
 
+// Part 4c (Task 2): the staff checklist emits mark-card, move-card and
+// view-draft; app.mjs handles each, and move-card puts the group through the
+// controller and returns the keyboard to the card.
+test("app.mjs handles the staff checklist's actions", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const staff = read("../src/staff-views.mjs");
+  for (const action of ["mark-card", "move-card", "view-draft"]) {
+    assert.match(staff, new RegExp(`"${action}"`), `staff-views emits ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  const move = app.slice(app.indexOf('case "move-card":'), app.indexOf('case "print-summary":'));
+  assert.match(move, /controller\.setDocumentGroup\(target\.dataset\.slot, target\.dataset\.group\)/);
+  assert.match(move, /doc-\$\{dashed\(slot\)\}-status/);
+});
+
 // PR 4 (the office screens) styles its new containers in one marked block of
 // the stylesheet, on the design tokens only.
 const stylesheet = () =>

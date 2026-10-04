@@ -1182,6 +1182,17 @@ if (!config) {
         )?.focus();
         break;
       }
+      case "move-card": {
+        const slot = target.dataset.slot ?? "";
+        await controller.setDocumentGroup(target.dataset.slot, target.dataset.group);
+        // The same ids `mark-card` focuses: the status line, then the row.
+        (
+          document.getElementById(`doc-${dashed(slot)}-status`) ??
+          document.getElementById(`doc-${dashed(slot)}`) ??
+          root.querySelector("#main")
+        )?.focus();
+        break;
+      }
       case "print-summary":
         // Only `.summary-print` prints while the body carries the class
         // (styles.css, part 4b2); "afterprint" takes it off again.

@@ -868,3 +868,35 @@ test("a version-1 office draft keeps its note, with the materials card below it"
   assert.match(tab, /The office is filling in this walk-in client’s answers on Overview\./);
   assert.ok(tab.indexOf("filling in") < tab.indexOf('class="panel materials-card"'));
 });
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 2: the document checklist on the office page.
+// ---------------------------------------------------------------------------
+
+test("the office page's Documents tab starts with the checklist for a submitted version-2 case", () => {
+  const sample = makeSampleAnswers({ version: 2, seed: 2 });
+  const answers = Object.fromEntries(
+    Object.entries(sample).filter(([id]) => !Object.hasOwn(CONTACT_FIELDS, id)),
+  );
+  const record = officeCase({
+    stage: "received",
+    intakeVersion: 2,
+    answers,
+    contact: { phone: sample.tp_phone, bestContactTime: [], bestContactNote: null },
+    materials: [],
+    documentCards: [],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const tab = html.match(
+    /id="case-panel-documents"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-followup"/,
+  )[1];
+  assert.ok(tab.startsWith('<section class="panel doc-checklist"'));
+  assert.ok(tab.indexOf("doc-checklist") < tab.indexOf('id="documents-title"'));
+  assert.match(tab, /data-action="mark-card"/, "Sam works every case: the marks show");
+  // Alex does not prepare this one: the office page offers him no marks.
+  const forAlex = renderAdminCase({ ...record, preparerId: "someone-else" }, { person: ALEX });
+  assert.doesNotMatch(forAlex, /data-action="mark-card"/);
+  // A version-1 case keeps its Documents tab as it was.
+  const v1 = renderAdminCase(officeCase({ stage: "received" }), { person: SAM });
+  assert.doesNotMatch(v1, /doc-checklist/);
+});

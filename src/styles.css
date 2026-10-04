@@ -5151,4 +5151,68 @@ textarea::placeholder {
     margin-top: 4px;
   }
 }
+/* The staff document checklist (Documents tab). */
+.doc-checklist h3 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+.doc-rows {
+  display: grid;
+  gap: 10px;
+}
+.doc-row {
+  padding: 14px 16px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.doc-row:focus-visible,
+.doc-row .doc-status:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.doc-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.doc-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vt-ink);
+}
+.doc-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-muted);
+}
+.doc-group .icon {
+  width: 14px;
+  height: 14px;
+}
+.doc-group.is-needed {
+  color: var(--vt-stage-prep);
+}
+.doc-row .doc-owner,
+.doc-row .doc-why {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--vt-muted);
+}
+.doc-row .doc-status {
+  margin-top: 8px;
+}
+.doc-row .doc-marks {
+  margin-top: 10px;
+}
+@media (max-width: 480px) {
+  .doc-row .doc-marks .btn {
+    flex: 1 1 100%;
+  }
+}
 /* end part 4c */

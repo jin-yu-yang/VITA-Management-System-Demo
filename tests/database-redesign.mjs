@@ -114,6 +114,16 @@ async function submittedCase(f) {
   return caseId;
 }
 
+// A submitted version-2 case Alex prepares and Morgan reviews.
+async function claimedCase(f) {
+  const caseId = await submittedCase(f);
+  await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", { checks: f.intakeChecks });
+  await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+  await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+  await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+  return caseId;
+}
+
 test("visits and document cards on the server", async (t) => {
   const f = await createDatabaseFixture();
   try {
@@ -266,10 +276,22 @@ test("visits and document cards on the server", async (t) => {
       assert.deepEqual(await cardRows(f, office.caseId), [
         { slot_id: "w2.household", status: "later", group_override: null },
       ]);
+      // Alex neither is nor will be this case's preparer here: refused for not
+      // working on the case (018), not for lacking a capability.
       await assert.rejects(
         card(f, f.presenter, office.caseId, f.alex, "w2.household", "none"),
         rejected("FORBIDDEN"),
       );
+      await assert.rejects(
+        group(f, f.presenter, office.caseId, f.alex, "w2.household", "needed"),
+        rejected("FORBIDDEN"),
+      );
+      assert.equal((await cardRows(f, office.caseId)).length, 1);
+      // Office staff may move a card on an office draft too.
+      await group(f, f.presenter, office.caseId, f.sam, "w2.household", "needed");
+      assert.deepEqual(await cardRows(f, office.caseId), [
+        { slot_id: "w2.household", status: "later", group_override: "needed" },
+      ]);
       // The client cannot mark a card on a case that is not theirs.
       await assert.rejects(
         card(f, f.applicantA, office.caseId, null, "w2.household", "none"),
@@ -299,11 +321,65 @@ test("visits and document cards on the server", async (t) => {
       assert.deepEqual(await cardRows(f, caseId), []);
     });
 
-    await t.test("Alex, without admin, may not mark a card", async () => {
+    await t.test("a volunteer who does not work on the case may not mark a card", async () => {
+      // Alex has the prepare capability but no claim on this case. Until 018 he
+      // was refused for lacking admin; now it is works_on_case that refuses him.
       const caseId = await submittedCase(f);
       await assert.rejects(
         card(f, f.presenter, caseId, f.alex, "w2.household", "later"),
         rejected("FORBIDDEN"),
+      );
+      await assert.rejects(
+        card(f, f.presenter, caseId, f.morgan, "w2.household", "later"),
+        rejected("FORBIDDEN"),
+      );
+      assert.deepEqual(await cardRows(f, caseId), []);
+    });
+
+    await t.test("the preparer and the reviewer may mark and move; others on that case may not", async () => {
+      const caseId = await claimedCase(f);
+      const slot = `ssn.hh.${HH_A}`;
+      // Alex as its preparer.
+      await card(f, f.presenter, caseId, f.alex, "w2.household", "later");
+      await group(f, f.presenter, caseId, f.alex, slot, "needed");
+      // Morgan as its reviewer.
+      await card(f, f.presenter, caseId, f.morgan, "ssn.tp", "none");
+      await group(f, f.presenter, caseId, f.morgan, slot, "maybe");
+      assert.deepEqual(await cardRows(f, caseId), [
+        { slot_id: slot, status: null, group_override: null },
+        { slot_id: "ssn.tp", status: "none", group_override: null },
+        { slot_id: "w2.household", status: "later", group_override: null },
+      ]);
+      // Alex on a case he does not prepare is still refused, and nothing is written.
+      const other = await submittedCase(f);
+      await assert.rejects(
+        card(f, f.presenter, other, f.alex, "w2.household", "later"),
+        rejected("FORBIDDEN"),
+      );
+      await assert.rejects(
+        group(f, f.presenter, other, f.alex, "w2.household", "needed"),
+        rejected("FORBIDDEN"),
+      );
+      assert.deepEqual(await cardRows(f, other), []);
+      // Sam (office) may on any submitted case.
+      await card(f, f.presenter, other, f.sam, "w2.household", "later");
+      await group(f, f.presenter, other, f.sam, "w2.household", "needed");
+      assert.equal((await cardRows(f, other)).length, 1);
+      // The client's own mark is unchanged.
+      await card(f, f.applicantA, other, null, "ssn.tp", "later");
+      assert.equal((await cardRows(f, other)).length, 2);
+    });
+
+    await t.test("the preparer is refused once the case is closed", async () => {
+      const caseId = await claimedCase(f);
+      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "Test close." });
+      await assert.rejects(
+        card(f, f.presenter, caseId, f.alex, "w2.household", "later"),
+        rejected("INVALID_TRANSITION"),
+      );
+      await assert.rejects(
+        group(f, f.presenter, caseId, f.morgan, "w2.household", "needed"),
+        rejected("INVALID_TRANSITION"),
       );
       assert.deepEqual(await cardRows(f, caseId), []);
     });
@@ -346,7 +422,7 @@ test("visits and document cards on the server", async (t) => {
         );
     });
 
-    await t.test("SET_DOCUMENT_GROUP is for receive_documents staff only", async () => {
+    await t.test("SET_DOCUMENT_GROUP is for staff who work on the case only", async () => {
       const caseId = await submittedCase(f);
       await assert.rejects(
         group(f, f.applicantA, caseId, null, "w2.household", "needed"),

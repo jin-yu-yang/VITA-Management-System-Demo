@@ -11,8 +11,10 @@ import {
   wording,
   isVisible,
   isAnswered,
+  findSubstep,
 } from "./intake-catalogue.mjs";
 import { formatAnswer, sendable } from "./intake-form.mjs";
+import { cardsFor, CARD_SUBSTEPS } from "./document-cards.mjs";
 import { serverAnswersV2, variantOf } from "./intake-views.mjs";
 import {
   esc,
@@ -217,6 +219,9 @@ export const CONTACT_NOT_SHOWN =
 const MATERIALS_NOT_RECORDED =
   "Materials are recorded by the office, and by the preparer and reviewer once the case is claimed.";
 
+const CARDS_NOT_MARKED =
+  "Documents are marked by the office, and by the preparer and reviewer once the case is claimed.";
+
 const allowed = { allowed: true, reason: "" };
 const refused = (reason) => ({ allowed: false, reason });
 
@@ -322,6 +327,15 @@ export function staffEligibility(caseRecord, person) {
   };
   const recordMaterials = () => (seesContact ? allowed : refused(MATERIALS_NOT_RECORDED));
 
+  // Document marks and moves (migration 018): the same people who see contact
+  // details, on an open version-2 case. One rule under the two action names.
+  const documentWork = () => {
+    if (!seesContact) return refused(CARDS_NOT_MARKED);
+    if (stage === "closed") return refused("This case is closed.");
+    if (Number(record.intakeVersion) !== 2) return refused("A version-1 case has no document checklist.");
+    return allowed;
+  };
+
   return {
     personId: id,
     canPrepare,
@@ -339,6 +353,8 @@ export function staffEligibility(caseRecord, person) {
     seesContact,
     editContact: editContact(),
     recordMaterials: recordMaterials(),
+    markDocumentCard: documentWork(),
+    moveDocumentCard: documentWork(),
   };
 }
 
@@ -886,10 +902,101 @@ export function materialsCard(record, rights, ui = {}) {
   }</form></section>`;
 }
 
-// What the Intake answers tab holds, shared with the office page.
+// The three draft 13614-C buttons (spec 2026-10-04 §7.4). They reuse 4b2's
+// `view-draft` wiring, which builds from the case's answers and contact fields.
+const draftTools = () =>
+  `<div class="summary-tools">${button("View Draft 13614-C", "view-draft", "secondary", 'data-form="en"')}${button(
+    "简体中文版",
+    "view-draft",
+    "secondary",
+    'data-form="zh-s" lang="zh-Hans"',
+  )}${button("繁體中文版", "view-draft", "secondary", 'data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+
+// What the Intake answers tab holds, shared with the office page. The draft
+// prints the client's phones, so its buttons follow the contact rule.
 export function intakeAnswersTab(record, rights, ui = {}, person = null) {
   const version2 = Number(record?.intakeVersion) === 2;
-  return `${answersPanel(record, { person })}${when(version2, contactCard(record, rights, ui))}${materialsCard(record, rights, ui)}`;
+  return `${answersPanel(record, { person })}${when(version2 && canSeeContact(record, person), draftTools())}${when(version2, contactCard(record, rights, ui))}${materialsCard(record, rights, ui)}`;
+}
+
+// ---------------------------------------------------------------------------
+// The document checklist (Documents tab, version 2)
+// ---------------------------------------------------------------------------
+
+const dashedSlot = (slot) => String(slot).replace(/\./g, "-");
+const CARD_STATUS = Object.freeze({
+  not_done: { word: "Not done", icon: "upload" },
+  later: { word: "Later", icon: "clock" },
+  none: { word: "Don't have", icon: "close" },
+});
+
+function groupMark(card) {
+  if (card.group === "optional") return { word: "Optional", icon: "file", className: "is-optional" };
+  if (card.group === "needed")
+    return {
+      word: card.baseGroup === "maybe" ? "Needed (moved up by the office)" : "Needed",
+      icon: "pin",
+      className: "is-needed",
+    };
+  return { word: "Maybe needed", icon: "help", className: "is-maybe" };
+}
+
+function checklistRow(card, { variant, markable, movable, off }) {
+  const id = `doc-${esc(dashedSlot(card.slotId))}`;
+  const slot = esc(card.slotId);
+  const group = groupMark(card);
+  const optional = card.group === "optional";
+  const asked = card.ask ? wording(findQuestion(2, card.ask), { variant }) : "";
+  const why = asked ? `<p class="doc-why">Asked by: ${esc(asked)}</p>` : "";
+  const status = CARD_STATUS[card.status] ?? CARD_STATUS.not_done;
+  const statusLine = optional
+    ? ""
+    : `<p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
+  const mark = (value, text) =>
+    button(esc(text), "mark-card", "secondary", `data-slot="${slot}" data-status="${value}"${off}`);
+  const marks =
+    markable && !optional
+      ? `${mark("later", "Later")}${mark("none", "Don't have")}${when(card.status !== "not_done", mark("not_done", "Mark as not done"))}`
+      : "";
+  const move =
+    movable && card.baseGroup === "maybe"
+      ? card.group === "maybe"
+        ? button("Move to Needed", "move-card", "secondary", `data-slot="${slot}" data-group="needed"${off}`)
+        : button("Move to Maybe needed", "move-card", "secondary", `data-slot="${slot}" data-group="maybe"${off}`)
+      : "";
+  return `<article class="doc-row" id="${id}" data-slot="${slot}" tabindex="-1"><div class="doc-row-head"><strong class="doc-label">${esc(card.label?.en)}</strong><span class="doc-group ${group.className}">${icon(group.icon)} ${esc(group.word)}</span></div><p class="doc-owner">${esc(card.ownerLine?.en)}</p>${why}${statusLine}${when(marks || move, `<div class="doc-marks">${marks}${move}</div>`)}</article>`;
+}
+
+/**
+ * The client's document cards, as the office reads them: every card in full,
+ * whatever the service, grouped by sub-step. `rights` is
+ * `staffEligibility(record, person)`; a refusal is said once at the top.
+ * Returns "" for a version-1 case.
+ */
+export function documentChecklist(record, rights, ui = {}) {
+  if (Number(record?.intakeVersion) !== 2) return "";
+  const answers = serverAnswersV2(record);
+  const cards = cardsFor(answers, record.documentCards ?? []);
+  const variant = variantOf(answers);
+  const markable = Boolean(rights?.markDocumentCard?.allowed);
+  const movable = Boolean(rights?.moveDocumentCard?.allowed);
+  const off = ui?.busy ? " disabled" : "";
+  const reasons = [
+    ...new Set(
+      [rights?.markDocumentCard, rights?.moveDocumentCard]
+        .filter((decision) => decision && !decision.allowed && decision.reason)
+        .map((decision) => decision.reason),
+    ),
+  ];
+  const groups = CARD_SUBSTEPS.map((name) => {
+    const mine = cards.filter((card) => card.substep === name);
+    if (!mine.length) return "";
+    const title = findSubstep(`documents.${name}`)?.title?.general?.en ?? name;
+    return `<h3>${esc(title)}</h3><div class="doc-rows">${mine.map((card) => checklistRow(card, { variant, markable, movable, off })).join("")}</div>`;
+  }).join("");
+  return `<section class="panel doc-checklist" aria-labelledby="doc-checklist-title"><div class="section-head"><h2 id="doc-checklist-title">Document checklist</h2></div><p class="field-note">From the client's answers. Same-day clients bring these to the visit.</p>${reasons
+    .map((reason) => explain({ reason }))
+    .join("")}${groups || '<p class="muted">The client\'s answers call for no documents yet.</p>'}</section>`;
 }
 
 function requestCard(record, request, rights, ui) {
@@ -1293,7 +1400,11 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
       // no action: it keeps the answers alone.
       staffShaped ? intakeAnswersTab(record, rights, view, person) : answersPanel(record, { person }),
     ],
-    ["documents", "Documents", staffShaped ? documentsPanel(record, rights, view) : elsewhere],
+    [
+      "documents",
+      "Documents",
+      staffShaped ? `${documentChecklist(record, rights, view)}${documentsPanel(record, rights, view)}` : elsewhere,
+    ],
     ["followup", "Follow-up", staffShaped ? followupPanel(record) : elsewhere],
     ["history", "History", historyPanel(record, staffShaped)],
   ];

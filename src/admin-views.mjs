@@ -30,6 +30,7 @@ import {
   intakeAnswersTab,
   materialsCard,
   documentsPanel,
+  documentChecklist,
   historyPanel,
   staffEligibility,
   isAvailableWork,
@@ -721,7 +722,11 @@ export function renderAdminCase(caseRecord, ui = {}) {
           }`
         : intakeAnswersTab(record, staffRights, view, person),
     ],
-    ["documents", "Documents", documentsPanel(record, staffRights, view)],
+    [
+      "documents",
+      "Documents",
+      `${documentChecklist(record, staffRights, view)}${documentsPanel(record, staffRights, view)}`,
+    ],
     ["followup", "Follow-up", adminFollowupPanel(record, person, view)],
     ["history", "History", historyPanel(record, Array.isArray(record.internalHistory))],
   ];
