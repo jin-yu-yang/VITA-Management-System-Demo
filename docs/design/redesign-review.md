@@ -10,8 +10,13 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 - Part 1 (work board, case page, client screens, office screens) is merged.
 - Part 2 (client numbers: one number per submitted case in each workspace and season, shown to the client and on the staff screens, and searchable from the work board) is merged.
 - Part 4a (the intake catalogue and its server side: the drafted questions in one catalogue, version-2 intake checks, contact details and materials, with nothing visible changed yet) is merged.
-- Part 4b (the client's nine-step version-2 intake, reachable once part 4c switches the default intake version) is merged.
-- Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is in review.
+- Part 4b (the client's nine-step version-2 intake, with the senior switch; built and tested, reachable once part 4c switches the default intake version) is merged (#40).
+- Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is in review. It replaced the nine-step layout before any client sees version 2.
+- Part 4c is paused and will be re-planned onto 4b2: staff read version-2 answers, with a contact card (D5) and the materials checklist (D9); the version-2 Add a case; and last, the switch-over that makes new cases version 2. Existing cases keep their version.
+- Next: part 4d (the intake in Chinese), then removing version 1 as its own part once no version-1 case is open.
+- Decided on Sep 30, 2026, while planning 4c:
+  - The version-2 intake has **no service-scope stop**. An out-of-scope application submits normally, and the office handles scope at its intake checks. This is a known gap, not a regression; scope rules may return later, written for the new questions.
+  - On Add a case, the office confirms "I have checked these answers with the client" before sending.
 - Still open: certification levels (D9) and a confirmation of the serif font (D11).
 
 **Canonical design files** (everything else in `.stitch/designs` is an earlier iteration):
@@ -34,7 +39,7 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 ### Between the designs and the app
 1. **Stages.** The designs use the ~20-stage lifecycle from `docs/media/return-lifecycle.svg` ("Pending intake", "Filing in process", "Accepted"…). The app has 9 stages (`STAGES` in `src/contracts.mjs`), enforced by the database. *Decided (D1): adopt the lifecycle. The boards now group stages into phases (section 3), which replace the old status tabs (`STATUS_GROUPS` in `src/staff-views.mjs`).*
 2. **Client numbers** (#093…) appear everywhere. The data model only has the Application ID (`VT-XXXX-XXXX`). Nothing stores or sequences client numbers. *Decided (D2): assigned on submit, restarting at #001 each season.*
-3. **Intake questions.** The designs follow the drafts in `docs/intake-questions/` (9 steps). The app has 4 steps and 17 whitelisted answer keys (`INTAKE_ANSWER_KEYS`, migrations 001/003/009). The volunteer "Add a case" form also uses the 9-section layout. *Decided (D3): replace the intake with the drafts.*
+3. **Intake questions.** The designs follow the drafts in `docs/intake-questions/` (9 steps). The app has 4 steps and 17 whitelisted answer keys (`INTAKE_ANSWER_KEYS`, migrations 001/003/009). The volunteer "Add a case" form also uses the 9-section layout. *Decided (D3): replace the intake with the drafts.* *Progress: the drafts are one catalogue shared by the browser and the database (part 4a), and the client's nine-step form is built (part 4b). Part 4c adds the staff side and makes version 2 the default; version-1 cases keep the old form until they are done.*
    - **The two drafts share the same field IDs.** `intake-questions.md` (standard) and `intake-questions-senior-v2.md` (senior) differ only in wording.
    - **The English screens had followed the senior draft** without saying so. They now show the standard wording by default and the senior wording behind a switch.
 4. **Styling technology.** The design files use the Tailwind CDN, Material Symbols and Stitch's token names. The app uses hand-written `src/styles.css` with `:root` variables and its own SVG `icon()` helper in `src/ui.mjs`, with no framework and no build step for CSS. Implementation must port tokens and patterns into `styles.css`, not copy Tailwind markup.

@@ -12,14 +12,14 @@ exists, what is missing, and where the change lands.
 | Product spec area | Demo today | Gap |
 | --- | --- | --- |
 | Roles (spec §6) | Client, and one "presenter" account acting as staff personas | Real per-person staff accounts and role-based visibility ([§1](#1-staff-identity)) |
-| Client accounts (spec §8.1) | Rostered email addresses only, one-time codes | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
+| Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted intake (steps 0–9 with sub-steps) is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
 | Documents (spec §5, §7.1) | Metadata for one fixed fictional file | Real upload, storage, scanning, retention ([§3](#3-documents)) |
 | State machine (spec §8.2) | Intake through review approval, corrections, closure | Signature, e-filing, unreachable client, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
 | Client portal (spec §8.3) | Status, requests, document response, progress history | Queue position, preparer/reviewer contact, print, withdraw, notifications |
 | Volunteer portal (spec §8.4) | Work board, filters, case detail, internal history | Profiles, certifications, contact details |
 | Admin dashboard (spec §8.5) | Office board, follow-ups, reminders, closure, assistance | Reassignment, workload, reports, reference materials ([§7](#7-admin-reporting-and-forms)) |
 | Form generation (spec §8.6) | None | IRS Form 13614-C and Form 14446 drafts ([§7](#7-admin-reporting-and-forms)) |
-| Bilingual (spec §9) | English only | English and Chinese throughout ([§6](#6-language-and-accessibility)) |
+| Bilingual (spec §9) | English on screen; the intake catalogue already carries Chinese wording | English and Chinese throughout ([§6](#6-language-and-accessibility)) |
 | Security and audit (spec §9) | RLS, audited writes, no passwords | Production hardening ([§8](#8-security-and-privacy)) |
 
 ## 1. Staff identity
@@ -52,9 +52,19 @@ and carries over unchanged.
 
 ## 2. Client accounts and intake
 
-**Today.** Only rostered addresses can sign in. A client creates an application after signing in,
-fills a four-step form of 17 fictional-data fields, and submits. The database re-checks the
-answers and a screening rule on submit. Out-of-scope answers block submission and leave a draft.
+**Today.** Only rostered addresses can sign in. A client creates an application after signing in
+and fills the intake form. Two versions exist side by side (see
+[Architecture: two intake versions](architecture.md#two-intake-versions)):
+
+- **Version 1**, what every workspace uses on `main`: four steps, 17 fictional-data fields. The
+  database re-checks the answers and a screening rule on submit; out-of-scope answers block
+  submission and leave a draft.
+- **Version 2**, built in parts 4a, 4b and 4b2 and switched on by part 4c: the group's drafted
+  questions in steps 0–9 with sub-steps (101 questions, standard and senior wording), with contact details and a
+  materials checklist. The database checks every value against the same catalogue and refuses a
+  submit with a required answer missing. It has **no scope screening**: by the group's decision
+  (2026-09-30) an out-of-scope version-2 application submits normally, and the office handles
+  scope at its intake checks, until scope rules are written in version-2 terms.
 
 **Needed.**
 
@@ -62,10 +72,16 @@ answers and a screening rule on submit. Out-of-scope answers block submission an
   on submission. Email one-time codes (what the demo uses) avoid passwords entirely; decide with
   the team whether to keep them and open sign-up (`shouldCreateUser: true` plus an automatic
   applicant membership), and add abuse controls (captcha, rate limits).
-- **Intake questions.** The group is designing the real questions. Changing them touches the
-  database whitelist and the form together; follow
-  [Database: change the intake questions](database.md#change-the-intake-questions). Real intake
-  will include sensitive identifiers; see [§8](#8-security-and-privacy) before collecting them.
+- **Intake questions.** The drafted questions are the version-2 catalogue; changing them is an
+  edit to `docs/intake-questions/` and a build
+  ([Database: change the intake questions](database.md#change-the-intake-questions)). They collect
+  personal data for the taxpayer, spouse and every household member: names, dates of birth, phone,
+  email, address, and typed signatures. See [§8](#8-security-and-privacy) before collecting any of
+  it for a real client.
+- **Remove version 1** once no version-1 case is open (its own part, after Chinese): the old form,
+  its keys in `domain.mjs` and migrations 001/003/009, and the samples' version-1 seeding.
+- **Scope screening for version 2**, if the site wants the form to stop out-of-scope clients
+  rather than the office.
 - **Out-of-scope clients.** Spec §13 asks what happens to records of clients who turn out to be
   out of scope. Today they remain drafts that staff cannot see.
 - **Phone access.** Deferred in the design; email is the only sign-in route.
@@ -120,7 +136,7 @@ Remove these, or restrict them to non-production environments, before real use:
 | --- | --- |
 | Presenter access and the persona picker | `memberships.access = 'presenter'`, `presenter-views.mjs`, `selectedPersonId` |
 | Sample cases, reset and checkpoints | Migration 009 functions, `vitally_reset_fixtures`, `vitally_load_checkpoint`, `cases.fixture`, `cases.fixture_key`, `origin = 'fixture'`, `workspaces.fixture_generation`, `vitally_private.fixture_client_bindings`, `assistance_items.fixture` |
-| Fictional form filling | `sample-data.mjs`, the "Fill fictional details" buttons |
+| Fictional form filling | `sample-data.mjs` (both versions), the "Fill fictional details" buttons and pill |
 | Simulated document and upload failure | The fixed file name; the "simulate upload failure" checkbox |
 | Tick-box intake checks | `VERIFY_INTAKE`'s four `true` attestations |
 | Simulated reminders | `REMIND` records a time and sends nothing |
@@ -131,7 +147,9 @@ Removing database objects is a new migration that drops or revokes them; never e
 
 ## 6. Language and accessibility
 
-**Bilingual.** Every user-facing string is English and inline: in the view modules, in
+**Bilingual.** The version-2 catalogue already holds every question, option and tip in English
+and Chinese (`wording(question, { lang })`), and part 4d puts the Chinese on screen. Everything
+else is English and inline: in the view modules, in
 `describeStage` ([`src/domain.mjs`](../../src/domain.mjs)), in the error copy
 ([`src/errors.mjs`](../../src/errors.mjs)), and **in the database**, which writes client progress
 messages (`client_events.message`) as English sentences. For Chinese:
@@ -140,7 +158,8 @@ messages (`client_events.message`) as English sentences. For Chinese:
 - Change the database to store a message key and parameters in `client_events` instead of a
   sentence, and translate in the browser. Existing rows need a migration or a fallback.
 - Intake answers that are shown back to staff need consistent stored values (codes) with
-  translated labels.
+  translated labels. Version 2 already stores codes (`drop_off`, `mandarin`) and shows labels
+  (`serviceLabel`, `languageLabel`, `formatAnswer`); version 1 stores English labels.
 
 **Accessibility.** The demo uses labels, focus management, `role="status"` and `role="alert"`,
 and keyboard-safe live updates. A production release needs a proper audit against WCAG 2.1 AA with
@@ -166,9 +185,12 @@ accepted action with actor and time; no staff data in client payloads; secrets n
 Before real data:
 
 - **Staff identity** ([§1](#1-staff-identity)) and a narrower staff visibility rule.
-- **Sensitive fields.** Real intake will include identifiers such as Social Security numbers.
-  Decide which fields need column-level encryption or a separate protected table, and who may
-  read them.
+- **Sensitive fields.** The version-2 intake already holds names, dates of birth, addresses and
+  phones for whole households, and a real intake may add identifiers such as Social Security
+  numbers. Decide which fields need column-level encryption or a separate protected table, and who
+  may read them. Phones already live apart from the answers (`case_contacts`) so part 5 can mask
+  them in one place; today every presenter can read that table and only the screens hide it
+  ([Architecture: who can see what](architecture.md#who-can-see-what)).
 - **Program rules.** Follow the IRS's VITA privacy and confidentiality requirements for handling
   taxpayer information; confirm them with PCDC's site coordinator.
 - **Staff account security.** Stronger sign-in for staff (multi-factor), shorter sessions, and
@@ -187,7 +209,7 @@ The demo is sized for a classroom: a handful of cases per workspace.
 - The staff case list reads every visible case plus per-case summaries, with no pagination.
 - Child tables (`documents`, `contact_attempts`, `case_events`, `client_events`) have no index on
   `case_id`; add them before real volumes.
-- Each window keeps one Realtime channel over twelve tables and re-reads on each event. With many
+- Each staff window keeps one Realtime channel over fifteen tables and re-reads on each event. With many
   staff online at once, measure and consider narrower subscriptions.
 - One account has one active membership, so one person cannot work at two sites. Revisit if PCDC
   runs several sites.
@@ -205,16 +227,25 @@ Reviewed and accepted for the demo, and worth knowing about:
   can create one today.
 - `ASSISTANCE:CLAIM` and `ASSISTANCE:RESOLVE` sent to the case entry point at a stale revision
   answer `CONFLICT` instead of `VALIDATION`. The browser never sends them there.
+- **Version-2 draft saves are all-or-nothing on the server.** One invalid value makes
+  `SAVE_ANSWERS` refuse the whole save without naming the field, so the browser withholds invalid
+  values and saves the rest. Better long-term: accept any format in a draft save and check formats
+  at submit, which needs a migration.
+- **An email with a space inside** is invalid in the browser but accepted by the server's check.
+  The browser withholds it, so the server never receives one; the two checks are otherwise the
+  same, and a database test compares them.
+- **The sample reset needs a version-1 workspace** until part 4c's switch-over, because the
+  samples are seeded with version-1 answers ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 
 1. **Staff identity and visibility** (database, front end): everything else builds on it.
 2. **Remove or gate demo-only parts** (all).
 3. **Continuous integration and environments** (back end): development, staging, production.
-4. **Final intake questions and client sign-up** (all), with the security decisions for sensitive
-   fields.
+4. **Client sign-up and the intake's personal data** (all): open sign-up, and the security
+   decisions for the fields the version-2 intake collects.
 5. **Document storage** (back end, database, front end).
-6. **Bilingual support** (front end, database).
+6. **Bilingual support** (front end, database); the intake's Chinese is part 4d of the redesign.
 7. **Workflow extensions**: withdrawal, reassignment, signature and e-filing milestones.
 8. **Admin reporting, notifications and form generation** (a new service).
 9. **Security review, accessibility audit, load testing**, then a pilot with fictional data before

@@ -75,34 +75,45 @@ src/
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
   contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
   errors.mjs               The one mapper from database/transport errors to domain codes.
-  domain.mjs               Intake answer keys, required answers, screening, stage wording.
+  domain.mjs               Version-1 intake keys, required answers, screening; stages, phases, stage wording.
+  intake-catalogue-data.mjs  Generated: the version-2 question catalogue. Never edit by hand.
+  intake-catalogue.mjs     Reads the catalogue: steps, questions, wording, visibility, value checks,
+                           the missing list, contact fields, the materials list, who sees contact details.
+  intake-form.mjs          The shared version-2 renderer: one question as HTML, reading it back,
+                           read-only answers, and the draft rules (withheld invalid values).
   case-actions.mjs         Builds each action's payload from a button's data and its form.
   views.mjs                Page frame, dialogs, staff screen routing.
-  client-views.mjs         Client screens: sign-in, applications, intake form, progress.
-  staff-views.mjs          Volunteer work board and case screen; staff eligibility rules.
-  admin-views.mjs          Office (admin) board and case screen; admin eligibility rules.
+  client-views.mjs         Client screens: sign-in, applications, intake (4 or 9 steps), progress.
+  staff-views.mjs          Volunteer work board and case page; staff eligibility rules.
+  admin-views.mjs          The office's case page; admin eligibility rules.
+  office-views.mjs         The office's Follow-ups queue and Add a case.
+  pool-views.mjs           The office's case pool (every case, by phase).
   presenter-views.mjs      Demo-only presenter panel: personas, reset, checkpoints.
-  ui.mjs                   HTML helpers, escaping, labels, focus preservation.
-  sample-data.mjs          Fictional form filling for demos.
+  ui.mjs                   HTML helpers, escaping, labels, icons, focus preservation.
+  sample-data.mjs          Fictional form filling for demos (version 1 and version 2).
   styles.css               All styles.
+  pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
 supabase/
-  migrations/001-009       The whole schema, RLS, and business logic, in order.
+  migrations/001-014       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
   build.mjs                Rebuilds src/vendor/supabase.mjs.
+  build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 215.
-  database*.mjs            Database tests against the local stack: 151.
+  *.test.mjs               Unit tests (no network): 429.
+  database*.mjs            Database tests against the local stack: 199.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
-  browser.mjs              The full demonstration story, two browsers, both directions: 51.
+  browser.mjs              The full demonstration story, two browsers, both directions: 53.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
 docs/
   setup.md                 How to run and test everything.
   demo-script.md           The presentation script.
   spec.md, proposal.md     The product requirements and proposal (the target system).
-  superpowers/             The demo's design spec and implementation plan.
+  intake-questions/        The drafted intake questions (standard and senior wording): the catalogue's source.
+  design/                  The redesign review, design system and screen images.
+  superpowers/             Design specs and implementation plans, one pair per part.
   developer/               This guide.
 ```
 
@@ -146,3 +157,8 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Participation | The permanent record that a person helped prepare a case. It blocks them from reviewing it. |
 | Fixture / sample case | One of six seeded demonstration cases, rebuilt by a presenter's reset. |
 | Generation | `workspaces.fixture_generation`, the counter a reset moves so every window reloads. |
+| Client number | `#001`-style number a case gets when it is submitted, one sequence per workspace and season (migration 010). |
+| Intake version | Which intake a case uses, fixed when it is created: `1` is the original four-step form of 17 string answers; `2` is the catalogue form of steps 0–9 with sub-steps. New cases take `workspaces.default_intake_version`. |
+| Catalogue | The version-2 questions (ids, types, options, show-if rules, standard and senior wording), built from `docs/intake-questions/` into `src/intake-catalogue-data.mjs` and the private `intake_fields` table. |
+| Contact details | A version-2 case's phones, best time to reach and note, kept in `case_contacts` apart from the answers. Staff see them only on cases they work on (D5). |
+| Materials | The eleven-item checklist of documents the site has received for a case (`case_materials`), recorded by staff. |
