@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
+import { appShell, staffSidebar, staffScreen, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -273,6 +273,22 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
     assert.doesNotMatch(app, gone);
 });
 
+// Part 4c (Task 2): the staff checklist emits mark-card, move-card and
+// view-draft; app.mjs handles each, and move-card puts the group through the
+// controller and returns the keyboard to the card.
+test("app.mjs handles the staff checklist's actions", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const staff = read("../src/staff-views.mjs");
+  for (const action of ["mark-card", "move-card", "view-draft"]) {
+    assert.match(staff, new RegExp(`"${action}"`), `staff-views emits ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  const move = app.slice(app.indexOf('case "move-card":'), app.indexOf('case "print-summary":'));
+  assert.match(move, /controller\.setDocumentGroup\(target\.dataset\.slot, target\.dataset\.group\)/);
+  assert.match(move, /doc-\$\{dashed\(slot\)\}-status/);
+});
+
 // PR 4 (the office screens) styles its new containers in one marked block of
 // the stylesheet, on the design tokens only.
 const stylesheet = () =>
@@ -447,4 +463,138 @@ test("the part 4b2 block follows 4b's: icon-and-word marks, the phone bar and th
   assert.match(print[1], /body\.print-summary \*\s*\{\s*visibility:\s*hidden;\s*\}/);
   assert.match(print[1], /body\.print-summary \.summary-print,\s*body\.print-summary \.summary-print \*\s*\{\s*visibility:\s*visible;\s*\}/);
   assert.match(print[1], /body\.print-summary \.summary-tools\s*\{\s*display:\s*none;\s*\}/);
+});
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 4: Add a case by version, the leave dialog and the wiring.
+// ---------------------------------------------------------------------------
+
+const ADD_SAM = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup", "assist", "receive_documents"] };
+const addState = (over = {}) => ({
+  principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+  people: [ADD_SAM],
+  selectedPersonId: ADD_SAM.id,
+  screen: "office-add-case",
+  cases: [],
+  assistance: [],
+  savedCase: null,
+  officeDraft: false,
+  officeSaving: false,
+  openAddSubsteps: ["before.ready"],
+  addCaseShowMissing: false,
+  draftAnswers: {},
+  openPanels: [],
+  revealed: [],
+  boardFilters: {},
+  busy: false,
+  dirty: false,
+  saveState: "idle",
+  error: null,
+  retryable: false,
+  ...over,
+});
+
+test("Add a case picks its page by the open case's version, else the workspace's", () => {
+  const v2 = staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, officeDraft: true }));
+  assert.match(v2, /<form id="add-case-v2-form"/);
+  assert.doesNotMatch(v2, /assisted-intake-form/);
+  assert.match(v2, /<h1>Add a case<\/h1>/);
+  assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 2 } })), /id="add-case-v2-form"/);
+  const v1 = staffScreen(addState({ workspace: { defaultIntakeVersion: 1 } }));
+  assert.match(v1, /<form id="assisted-intake-form"/);
+  assert.doesNotMatch(v1, /add-case-v2-form/);
+  const loading = staffScreen(addState({ workspace: null }));
+  assert.match(loading, /<p class="muted" role="status">Loading…<\/p>/);
+  assert.doesNotMatch(loading, /<form id="(assisted-intake-form|add-case-v2-form)"/);
+  // The two mismatches: the open case decides.
+  const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 1, answers: {}, documentCards: [], materials: [], internalHistory: [] };
+  assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 1 }, savedCase: draftV2, selectedCaseId: "c2" })), /Application ID: VT-TWO2-0002[\s\S]*id="add-case-v2-form"/);
+  const caseV1 = { ...draftV2, id: "c1", reference: "VT-ONE1-0001", intakeVersion: 1 };
+  const old = staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, savedCase: caseV1, selectedCaseId: "c1" }));
+  assert.match(old, /<form id="assisted-intake-form"/);
+  assert.doesNotMatch(old, /add-case-v2-form/);
+});
+
+test("Add a case passes a conflict to its page, which offers the choice", () => {
+  const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 5, answers: { tp_first_name: "Lan" }, documentCards: [], materials: [], internalHistory: [] };
+  const html = staffScreen(
+    addState({
+      workspace: { defaultIntakeVersion: 2 },
+      savedCase: draftV2,
+      selectedCaseId: "c2",
+      draftAnswers: { tp_first_name: "Mei" },
+      dirty: true,
+      conflict: { code: "REMOTE_CHANGED", baseRevision: 4, serverRevision: 5 },
+    }),
+  );
+  assert.match(html, /<div class="application-meta">[\s\S]*?<section class="panel conflict-panel"[\s\S]*?<form id="add-case-v2-form"/);
+});
+
+test("the leave dialog asks before discarding the answers on Add a case", () => {
+  const html = dialog({ dialog: "leave-add-case", dialogContext: { to: "open-board" } });
+  assert.match(html, /<h2 id="modal-title">Leave without saving\?<\/h2>/);
+  assert.match(html, /The answers on this page are not saved yet\. If you leave now, they are lost\. Nothing has been sent to the office\./);
+  assert.match(html, /<button type="button" class="btn primary full" data-action="confirm-leave-add-case"[^>]*>Leave and discard<\/button>/);
+  assert.match(html, /<button type="button" class="btn text" data-action="close-dialog"[^>]*>Keep editing<\/button>/);
+});
+
+test("app.mjs wires the version-2 Add a case", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const office = read("../src/office-views.mjs");
+  const admin = read("../src/admin-views.mjs");
+  for (const action of ["toggle-add-substep", "save-office-draft", "send-office-draft", "fill-assisted-intake", "open-board"])
+    assert.match(office, new RegExp(`"${action}"`), `office-views emits ${action}`);
+  assert.match(admin, /"continue-add-case"/);
+  for (const action of [
+    "toggle-add-substep", "save-office-draft", "send-office-draft", "continue-add-case",
+    "confirm-leave-add-case", "open-add-case", "open-board", "open-cases", "fill-assisted-intake", "mark-card",
+  ])
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  // The leave guard sits at the top of each exit's handler.
+  const handler = (action) => {
+    const start = app.indexOf(`case "${action}":`);
+    assert.ok(start >= 0, action);
+    return app.slice(start, app.indexOf("\n      case ", start + 1));
+  };
+  for (const action of ["open-board", "open-cases", "open-add-case"]) {
+    assert.match(handler(action), new RegExp(`if \\(leaveAddCaseFirst\\("${action}", target\\)\\) break;`), action);
+    assert.match(handler(action), new RegExp(`EXITS\\["${action}"\\]\\(\\)`), action);
+  }
+  // Each exit's body, which the confirm runs past the guard.
+  assert.match(app, /"open-board": \(\) => \{\s+formDrafts\.clear\(\);\s+controller\.navigate\("staff"\);/);
+  assert.match(app, /"open-cases": \(\) => \{\s+formDrafts\.clear\(\);\s+controller\.navigate\("office-cases"\);/);
+  assert.match(app, /"open-add-case": async \(\) => \{\s+formDrafts\.clear\(\);\s+await controller\.openAddCase\(\);/);
+  assert.match(handler("continue-add-case"), /controller\.openAddCase\(\{ caseId: target\.dataset\.caseId \}\)/);
+  const confirm = handler("confirm-leave-add-case");
+  assert.match(confirm, /EXITS\[state\.dialogContext\?\.to\]/);
+  assert.match(app, /openDialog\("leave-add-case", \{ to: action \}, describeFocus\(target\)\)/);
+  // Both version-2 forms share the wiring; each control selector names its form.
+  assert.match(app, /const V2_FORMS = "#intake-v2-form, #add-case-v2-form";/);
+  assert.match(app, /const V2_CONTROLS = "#intake-v2-form \[data-control\]\[data-q\], #add-case-v2-form \[data-control\]\[data-q\]";/);
+  assert.match(app, /form\.id === "add-case-v2-form"\) return;/, "an implicit submit never reaches reportValidity");
+  assert.match(app, /controller\.saveOfficeDraft\(\{ send: true \}\)/);
+  assert.match(app, /"The draft is saved\. Nobody was emailed\."/);
+  // Fix round 1 (I2): the notice only when the save really landed.
+  const save = handler("save-office-draft");
+  assert.match(save, /const \{ reason \} = await controller\.saveOfficeDraft\(\);/);
+  assert.match(save, /const landed =\s+!reason && Boolean\(after\.savedCase\) && !after\.dirty && \["saved", "idle"\]\.includes\(after\.saveState\);/);
+  assert.match(save, /if \(landed\) notify\("The draft is saved\. Nobody was emailed\."\);/);
+  // Fix round 1 (I1): a reconcile on Add a case keeps the keyboard on the page.
+  assert.match(app, /async function reconcile\(useMine\)[\s\S]*?if \(controller\.getState\(\)\.screen === "office-add-case" && !root\.contains\(document\.activeElement\)\)/);
+  assert.match(app, /"The application is with the office\."/);
+  assert.match(app, /"The draft is saved\. Some answers still need attention before it can be sent\."/);
+  assert.match(app, /"Confirm that you have checked these answers with the client first\."/);
+});
+
+test("the part 4c block styles the version-2 Add a case with tokens only", () => {
+  const css = stylesheet();
+  const start = css.indexOf("/* Part 4c: staff views */");
+  const end = css.indexOf("/* end part 4c */");
+  const block = css.slice(start, end);
+  for (const selector of [".add-step", ".add-sub-toggle", ".add-sub-summary", ".add-sub-status.is-needs", ".add-case-v2 .add-case-bar"])
+    assert.ok(block.includes(selector), `${selector} is styled`);
+  const hexes = (block.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).filter((hex) => hex.toLowerCase() !== "#fff");
+  assert.deepEqual(hexes, []);
+  assert.match(block, /\.add-sub-status\.is-needs::before\s*\{[^}]*content:/, "an icon as well as the words");
 });

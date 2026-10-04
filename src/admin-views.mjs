@@ -27,8 +27,10 @@ import {
   caseHeader,
   caseTabs,
   caseDetails,
-  answersPanel,
+  intakeAnswersTab,
+  materialsCard,
   documentsPanel,
+  documentChecklist,
   historyPanel,
   staffEligibility,
   isAvailableWork,
@@ -464,6 +466,21 @@ function assistedAnswersPanel(record, rights, ui) {
   )}</section>`;
 }
 
+// A version-2 office draft is entered on the Add a case page, not here.
+function continueInAddCase(record, rights) {
+  const head = '<div class="section-head"><h2 id="assisted-case-title">The answers the office entered</h2></div>';
+  return `<section class="panel" aria-labelledby="assisted-case-title">${head}${
+    rights.assistedIntake.allowed
+      ? `<p class="field-note">${esc("This walk-in client's answers are entered in Add a case.")}</p>${button(
+          `${icon("arrow")} Continue in Add a case`,
+          "continue-add-case",
+          "primary",
+          `data-case-id="${esc(record.id)}"`,
+        )}`
+      : explain(rights.assistedIntake)
+  }</section>`;
+}
+
 function receiptPanel(record, person, ui) {
   const busy = ui.busy ? "disabled" : "";
   const requests = record.requests ?? [];
@@ -692,6 +709,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
   // persona is refused there, in the preparer screen's own words.
   const staffRights = staffEligibility(record, person);
   const draftForOffice = record.stage === "draft" && assisted(record);
+  const version2 = Number(record.intakeVersion) === 2;
   const origin = `<section class="panel" aria-labelledby="origin-title"><div class="section-head"><h2 id="origin-title">How this case reached the office</h2></div>${originRows(
     record,
   )}<p class="field-note">${esc(OFFICE_NOTE)}</p></section>`;
@@ -703,7 +721,11 @@ export function renderAdminCase(caseRecord, ui = {}) {
       [
         origin,
         intakeChecksPanel(record, rights, view),
-        draftForOffice ? assistedAnswersPanel(record, rights, view) : "",
+        draftForOffice
+          ? version2
+            ? continueInAddCase(record, rights)
+            : assistedAnswersPanel(record, rights, view)
+          : "",
         receiptPanel(record, person, view),
         officeActionsPanel(record, rights, view),
         caseDetails(record),
@@ -712,11 +734,22 @@ export function renderAdminCase(caseRecord, ui = {}) {
     [
       "intake",
       "Intake answers",
-      draftForOffice
-        ? '<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>'
-        : answersPanel(record),
+      // A version-1 office draft is filled in on Overview and gains only the
+      // materials card, below the note; a version-2 one is entered in Add a
+      // case, so its tab reads like any version-2 case's.
+      draftForOffice && !version2
+        ? `<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>${materialsCard(
+            record,
+            staffRights,
+            view,
+          )}`
+        : intakeAnswersTab(record, staffRights, view, person),
     ],
-    ["documents", "Documents", documentsPanel(record, staffRights, view)],
+    [
+      "documents",
+      "Documents",
+      `${documentChecklist(record, staffRights, view)}${documentsPanel(record, staffRights, view)}`,
+    ],
     ["followup", "Follow-up", adminFollowupPanel(record, person, view)],
     ["history", "History", historyPanel(record, Array.isArray(record.internalHistory))],
   ];

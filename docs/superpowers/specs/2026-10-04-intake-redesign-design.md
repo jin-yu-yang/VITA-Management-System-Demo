@@ -222,13 +222,13 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
   - **`SET_DOCUMENT_CARD {slotId, status}`**, where status is `later`, `none` or `not_done` (which sets the status to null).
     - Who:
       - the client, on their own case;
-      - or a staff persona with `admin`, on an office draft (Add a case) or on any case after it has been submitted;
+      - or a staff persona who works on the case (013's `works_on_case`: office staff, `followup` or `admin`, on any case; a volunteer only as its preparer or reviewer), on an office draft (Add a case) or on any case after it has been submitted (decided 2026-10-04, migration 018 in 4c; 4b2's 017 allowed only `admin`);
       - never staff on a client's unsent draft.
     - When: at any stage except `closed`. Submitting moves a case from `draft` to `received` and on; there is no stage called "submitted".
     - It writes a `case_events` row. Those are staff-only (`002_workflow_schema.sql:138`), so the client sees no history line.
   - Both actions are version 2 only: a version-1 case refuses them (`VALIDATION`).
   - **`SET_DOCUMENT_GROUP {slotId, group}`**, where group is `needed` or `maybe`.
-    - Who: a staff persona with `receive_documents`, as for `RECORD_DOCUMENT_RESPONSE` (`013_contact_materials.sql:121`).
+    - Who: a staff persona who works on the case, as for marks (decided 2026-10-04, migration 018 in 4c; 4b2's 017 required `receive_documents`). So the preparer who runs the interview can move a household member's card to Needed once the interview confirms the person goes on the return.
     - What it changes: it moves a Maybe needed card up to Needed, or a card it moved back down. A card that is Needed because of an answer can't be moved down.
     - It writes a case event.
 - **Checks:** the rule id is known, the owner kind fits the rule's card type, and a `hh.<member_id>` owner is well formed. A card need not be visible to have state.
@@ -263,7 +263,8 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 - The case page shows the cards with their group and status.
 - It offers Move to Needed and Move to Maybe needed (`SET_DOCUMENT_GROUP`).
 - Add a case has a Documents accordion for marking Later or Don't have for a walk-in. **It shows the full cards with their marks for every service, same-day included:** the person is at the desk, and the office knows what they brought. Only the client's own form uses the "Bring these" list (§6.6).
-- After submission, admin staff can also mark a card Later or Don't have on the case page, for example when the client says at the interview that they don't have a 1099.
+- After submission, staff who work on the case (the office, or its preparer or reviewer) can also mark a card Later or Don't have on the case page, for example when the client says at the interview that they don't have a 1099.
+- On Add a case and the staff checklist the cards speak to the office: "Later" / "Don't have", "Asked by: <question>", and an office upload note. The client's wording is unchanged.
 
 ### 6.8 Left to the uploads part
 
@@ -407,7 +408,8 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
 - **"I'm not sure" answers are highlighted** on the case page (an icon and the words "Not sure", never colour alone), so the volunteer sees what to ask.
 - **Dropped:** the map's "flag the case in the volunteer queue" for digital assets. Nothing designs that flag; it can be raised again as its own feature.
 - **Add a case** opens and closes sub-steps instead of sections, and gains the Documents accordion (§6.7). Every household member it adds carries a `member_id`. Its Send rule (option a) is unchanged.
-- **The switch-over** is the migration after 4c's last one, and stays last.
+- **The switch-over** is the migration after 4c's last one (020, after 018's card authority and 019's version-2 samples). **It is held until the group's wording review is done (decided 2026-10-04)** and ships as its own small PR; 4c's browser story runs on version 2 through the test fixture meanwhile.
+- **Add a case** picks its page by the open case's version, and by the workspace only for a new draft. Its leave check covers the exits that can be reached on the page: Cancel, the breadcrumb's Work board, "Back to Follow-ups", and the sidebar's Work board and All cases. Sign out and the persona switch leave without asking.
 
 ## 11. Testing
 

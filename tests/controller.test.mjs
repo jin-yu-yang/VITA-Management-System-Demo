@@ -4,6 +4,8 @@ import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { CONTACT_FIELDS, isMemberId } from "../src/intake-catalogue.mjs";
+import { withholdInvalid } from "../src/intake-form.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -50,6 +52,7 @@ function fakeStore({
     id: "w1",
     fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
+    defaultIntakeVersion: 1,
   },
 } = {}) {
   const records = new Map(cases.map((entry) => [entry.id, entry]));
@@ -1742,6 +1745,7 @@ test("a presenter start reads the workspace the fixture generation lives on", as
     id: "w1",
     fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
+    defaultIntakeVersion: 1,
   });
   controller.stop();
 
@@ -2160,8 +2164,10 @@ function v2Store({
   intakeVisited = [],
   documentCards = [],
   others = [],
+  ...shared
 } = {}) {
   const store = fakeStore({
+    ...shared,
     cases: [
       {
         id: "case-v2",
@@ -2205,6 +2211,9 @@ function v2Store({
       if (action.payload.visited)
         next.intakeVisited = [...new Set([...(record.intakeVisited ?? []), ...action.payload.visited])];
     }
+    // The office's best time and note go to the case's contact record; a null clears.
+    if (action.type === "UPDATE_CONTACT")
+      next.contact = { ...(record.contact ?? {}), ...action.payload };
     const setCard = (slotId, change) => {
       const cards = [...(record.documentCards ?? [])];
       const at = cards.findIndex((card) => card.slotId === slotId);
@@ -2222,6 +2231,23 @@ function v2Store({
   };
   return store;
 }
+
+test("the office's UPDATE_CONTACT leaves the case's contact changed and its revision the store's", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    contact: { phone: "2155550101", bestContactTime: ["weekday_evening"], bestContactNote: "After 6 pm." },
+    stage: "preparing",
+  });
+  await controller.runAction("UPDATE_CONTACT", { bestContactTime: ["weekend"] });
+  const saved = controller.getState().savedCase;
+  assert.deepEqual(saved.contact.bestContactTime, ["weekend"]);
+  assert.equal(saved.contact.phone, "2155550101", "the phone is never part of this action");
+  assert.equal(saved.contact.bestContactNote, "After 6 pm.", "a key the form did not send is left alone");
+  assert.equal(saved.revision, store.records.get("case-v2").revision);
+  assert.equal(store.writes.at(-1).type, "UPDATE_CONTACT");
+  assert.deepEqual(store.writes.at(-1).payload, { bestContactTime: ["weekend"] });
+  controller.stop();
+});
 
 // Somebody else's change to the open case: a newer revision of the record,
 // then the realtime signal for it.
@@ -3347,5 +3373,693 @@ test("a sub-step change or a Change link while a card mark is in flight is ignor
   );
   assert.equal(controller.getState().formSubstep, "before.service");
   assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The version-2 Add a case: a new office draft (spec 2026-10-04 §10)
+// ---------------------------------------------------------------------------
+
+// The office on a version-2 workspace. The server creates a case of the
+// workspace's version with no owner, no contact, no visits and no card rows.
+// `case-v2` is an owner-less version-2 office draft already saved.
+function officeV2(options = {}) {
+  const store = v2Store({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "sam", name: "Sam", capabilities: ["admin", "assist", "followup"] }],
+    workspace: { id: "w1", fixtureGeneration: 3, defaultFollowupPersonId: "sam", defaultIntakeVersion: 2 },
+    ...options,
+  });
+  store.records.set("case-v2", { ...store.records.get("case-v2"), ownerUserId: null });
+  const create = store.createCase;
+  store.createCase = async (request) => {
+    await store.createGate;
+    const receipt = await create(request);
+    const record = store.records.get(receipt.caseId);
+    if (record.intakeVersion === undefined)
+      store.records.set(receipt.caseId, {
+        ...record,
+        intakeVersion: store.workspace.defaultIntakeVersion,
+        ownerUserId: null,
+        contact: null,
+        intakeVisited: [],
+        documentCards: [],
+      });
+    return receipt;
+  };
+  // Reads to refuse, one per case id, before anything is returned.
+  store.getFailures = new Map();
+  const get = store.getCase;
+  store.getCase = async (id) => {
+    const failure = store.getFailures.get(id);
+    if (failure) {
+      store.getFailures.delete(id);
+      store.calls.push(`getCase:${id}`);
+      throw failure;
+    }
+    return get(id);
+  };
+  return store;
+}
+
+// Holds every create until `release()`.
+function holdCreates(store) {
+  let release;
+  store.createGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  return () => release();
+}
+
+async function startOffice(options = {}) {
+  const store = officeV2(options);
+  let next = 0;
+  const built = build({
+    store,
+    sessionStorage: options.sessionStorage,
+    newActionId: () => `action-${(next += 1)}`,
+  });
+  await built.controller.start();
+  built.controller.selectPerson("sam");
+  return { store, ...built };
+}
+
+const writesOf = (store, type) => store.writes.filter((write) => (write.type ?? "createCase") === type);
+const creates = (store) => store.writes.filter((write) => write.mode !== undefined);
+
+test("Add a case on a version-2 workspace starts a new office draft that takes version-2 answers", async () => {
+  const { controller } = await startOffice();
+  await controller.openAddCase();
+  let state = controller.getState();
+  assert.equal(state.officeDraft, true);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.screen, "office-add-case");
+  assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
+  assert.equal(state.addCaseShowMissing, false);
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "idle");
+  assert.deepEqual(state.revealed, []);
+  controller.editAnswers({ tp_first_name: "Mei" });
+  state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Mei", "the version-2 key is kept");
+  assert.equal(state.dirty, true, "anything typed is something to send");
+  controller.editAnswers({ hh: [{ first_name: "A" }] });
+  assert.ok(isMemberId(controller.getState().draftAnswers.hh[0].member_id));
+  controller.stop();
+});
+
+test("the first Save draft creates one empty case, adopts it in place and saves without visits", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei", email: "not-an-email" });
+  const draft = controller.getState().draftAnswers;
+  assert.deepEqual(await controller.saveOfficeDraft(), { sent: false });
+  assert.deepEqual(creates(store), [
+    { actionId: "action-1", mode: "assisted", personId: "sam", answers: {} },
+  ]);
+  const saves = writesOf(store, "SAVE_ANSWERS");
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].caseId, "case-2");
+  assert.equal(saves[0].personId, "sam");
+  assert.deepEqual(saves[0].payload.answers, withholdInvalid(draft, 2));
+  assert.equal(Object.hasOwn(saves[0].payload, "visited"), false, "the office never sends visits");
+  const state = controller.getState();
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(state.savedCase.id, "case-2");
+  assert.equal(state.selectedCaseId, "case-2");
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "saved");
+  assert.equal(state.officeSaving, false);
+  assert.equal(state.draftAnswers.email, "not-an-email", "the invalid value stays in the draft");
+  controller.stop();
+});
+
+test("a save that fails after the create keeps the draft and the case, and never creates twice", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.refusals.push(offline());
+  await assert.rejects(controller.saveOfficeDraft(), { code: "OFFLINE" });
+  let state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.selectedCaseId, "case-2");
+  assert.equal(state.savedCase.id, "case-2");
+  assert.equal(state.saveState, "failed");
+  assert.equal(state.officeSaving, false);
+  assert.equal(state.error.code, "OFFLINE");
+  await controller.saveOfficeDraft();
+  assert.equal(creates(store).length, 1, "no second case");
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 2, "one more save");
+  state = controller.getState();
+  assert.equal(state.saveState, "saved");
+  assert.equal(store.records.get("case-2").answers.tp_first_name, "Mei");
+  controller.stop();
+});
+
+test("a create with an unknown outcome is retried with the same action id", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveOfficeDraft(), { code: "OFFLINE" });
+  let state = controller.getState();
+  assert.equal(state.officeDraft, true);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  await controller.saveOfficeDraft();
+  assert.deepEqual(creates(store).map((write) => write.actionId), ["action-1", "action-1"]);
+  state = controller.getState();
+  assert.equal(state.savedCase.id, "case-2");
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 1);
+  controller.stop();
+});
+
+test("a create that lands but whose case can't be read is used again, not created again", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.getFailures.set("case-2", offline());
+  await assert.rejects(controller.saveOfficeDraft(), { code: "OFFLINE" });
+  let state = controller.getState();
+  assert.equal(state.officeDraftCaseId, "case-2");
+  assert.equal(state.officeDraft, true);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.error.code, "OFFLINE");
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  await controller.saveOfficeDraft();
+  assert.equal(creates(store).length, 1, "no second case");
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 1);
+  state = controller.getState();
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(state.savedCase.id, "case-2");
+  controller.stop();
+});
+
+test("what the office types while the case is being created is kept and saved", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const release = holdCreates(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  const [save] = writesOf(store, "SAVE_ANSWERS");
+  assert.equal(save.payload.answers.tp_first_name, "Mei");
+  assert.equal(save.payload.answers.addr_city, "Camden");
+  assert.equal(controller.getState().draftAnswers.addr_city, "Camden");
+  assert.equal(controller.getState().dirty, false);
+  controller.stop();
+});
+
+test("adopting the new case resets nothing on the page", async () => {
+  const { controller } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei", email: "not-an-email" });
+  controller.revealInvalid("email");
+  controller.toggleAddSubstep("about.address");
+  controller.togglePanel("confirmed");
+  await controller.saveOfficeDraft();
+  const state = controller.getState();
+  assert.equal(state.savedCase.id, "case-2");
+  assert.deepEqual(state.revealed, ["email"]);
+  assert.deepEqual(state.openAddSubsteps, ["before.ready", "about.address"]);
+  assert.ok(state.openPanels.includes("confirmed"));
+  assert.equal(state.addCaseShowMissing, false);
+  controller.stop();
+});
+
+test("one save at a time: a second press, or a card mark, during a Save draft does nothing", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const release = holdCreates(store);
+  const first = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.getState().officeSaving, true);
+  assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: false, reason: "busy" });
+  assert.deepEqual(await controller.saveOfficeDraft(), { sent: false, reason: "busy" });
+  assert.equal(await controller.setDocumentCard("w2.household", "later"), null);
+  release();
+  await first;
+  assert.equal(creates(store).length, 1);
+  assert.equal(writesOf(store, "SET_DOCUMENT_CARD").length, 0);
+  assert.equal(controller.getState().officeSaving, false);
+  // Once it has landed, a mark goes through on the saved case.
+  await controller.setDocumentCard("w2.household", "later");
+  assert.equal(writesOf(store, "SET_DOCUMENT_CARD").length, 1);
+  controller.stop();
+});
+
+test("a workspace set back to version 1 under a new draft refuses, keeping the answers", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.workspace = { ...store.workspace, defaultIntakeVersion: 1 };
+  await assert.rejects(controller.saveOfficeDraft(), {
+    code: "VALIDATION",
+    message: "This workspace now takes version-1 applications. Start again from Add a case.",
+  });
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  const state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.savedCase, null);
+  assert.equal(state.error.code, "VALIDATION");
+  assert.equal(state.officeSaving, false);
+  controller.stop();
+});
+
+test("a new office draft never outlives the page, and starts again on a reload or when the workspace arrives", async () => {
+  // Leaving resets it.
+  const left = await startOffice();
+  await left.controller.openAddCase();
+  left.controller.editAnswers({ tp_first_name: "Mei" });
+  left.controller.navigate("staff");
+  let state = left.controller.getState();
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(state.addCaseShowMissing, false);
+  left.controller.stop();
+
+  // A reload on Add a case with no case starts a new draft.
+  const sessionStorage = fakeSession();
+  const first = await startOffice({ sessionStorage });
+  await first.controller.openAddCase();
+  first.controller.stop();
+  const again = await startOffice({ sessionStorage });
+  state = again.controller.getState();
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.officeDraft, true);
+  assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
+
+  // A realtime workspace change doesn't wipe what is being typed.
+  again.controller.editAnswers({ tp_first_name: "Mei" });
+  again.store.workspace = { ...again.store.workspace, fixtureGeneration: 4 };
+  await again.store.handlers.onChange({ table: "workspaces" });
+  state = again.controller.getState();
+  assert.equal(state.workspace.fixtureGeneration, 4);
+  assert.equal(state.officeDraft, true);
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.dirty, true);
+  again.controller.stop();
+
+  // Pressed before the workspace row has loaded: the draft starts when it arrives.
+  const store = officeV2();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const getWorkspace = store.getWorkspace;
+  store.getWorkspace = async () => {
+    await gate;
+    return getWorkspace();
+  };
+  const early = build({ store });
+  const starting = early.controller.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(early.controller.getState().workspace, null);
+  await early.controller.openAddCase();
+  state = early.controller.getState();
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.officeDraft, false);
+  release();
+  await starting;
+  state = early.controller.getState();
+  assert.equal(state.officeDraft, true);
+  assert.equal(state.screen, "office-add-case");
+  early.controller.stop();
+});
+
+test("a refused Send saves the draft, shows what is missing and opens its part", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  const { addr_city: _city, ...answers } = makeSampleAnswers({ version: 2 });
+  controller.editAnswers(answers);
+  controller.togglePanel("confirmed");
+  assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: false, reason: "answers" });
+  assert.equal(creates(store).length, 1);
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 1);
+  assert.equal(writesOf(store, "SUBMIT").length, 0);
+  let state = controller.getState();
+  assert.equal(state.addCaseShowMissing, true);
+  assert.ok(state.openAddSubsteps.includes("about.address"));
+  assert.ok(state.openAddSubsteps.includes("before.ready"), "opening one closes none");
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.savedCase.id, "case-2");
+  // Answered now: the next Send goes, and the missing marks are reset.
+  controller.editAnswers({ addr_city: "Camden" });
+  assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: true });
+  state = controller.getState();
+  assert.equal(state.addCaseShowMissing, false);
+  assert.equal(state.screen, "staff-case");
+  assert.equal(creates(store).length, 1);
+  assert.equal(writesOf(store, "SUBMIT").length, 1);
+  controller.stop();
+
+  // Leaving resets the missing marks too.
+  const other = await startOffice();
+  await other.controller.openAddCase();
+  other.controller.editAnswers({ tp_first_name: "Mei" });
+  other.controller.togglePanel("confirmed");
+  await other.controller.saveOfficeDraft({ send: true });
+  assert.equal(other.controller.getState().addCaseShowMissing, true);
+  other.controller.navigate("staff");
+  assert.equal(other.controller.getState().addCaseShowMissing, false);
+  other.controller.stop();
+});
+
+test("Send needs the confirmation; ticked, a complete new draft is created, saved and sent", async () => {
+  const unticked = await startOffice();
+  await unticked.controller.openAddCase();
+  unticked.controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  assert.deepEqual(await unticked.controller.saveOfficeDraft({ send: true }), {
+    sent: false,
+    reason: "unconfirmed",
+  });
+  assert.deepEqual(unticked.store.writes, [], "nothing is created, saved or sent");
+  assert.equal(unticked.controller.getState().officeDraft, true);
+  unticked.controller.stop();
+
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  controller.togglePanel("confirmed");
+  assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: true });
+  assert.deepEqual(
+    store.writes.map((write) => write.type ?? "createCase"),
+    ["createCase", "SAVE_ANSWERS", "SUBMIT"],
+  );
+  const submit = writesOf(store, "SUBMIT")[0];
+  assert.deepEqual(submit.payload, { confirmed: true });
+  assert.equal(submit.personId, "sam");
+  assert.equal(submit.expectedRevision, 2, "the saved revision");
+  const state = controller.getState();
+  assert.equal(state.screen, "staff-case");
+  assert.equal(state.selectedCaseId, "case-2");
+  assert.equal(state.officeSaving, false);
+  controller.stop();
+});
+
+test("a Send with an invalid answer saves, reveals it and sends nothing", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ ...makeSampleAnswers({ version: 2 }), email: "not-an-email" });
+  controller.togglePanel("confirmed");
+  assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: false, reason: "answers" });
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 1);
+  assert.equal(writesOf(store, "SUBMIT").length, 0);
+  const state = controller.getState();
+  assert.ok(state.revealed.includes("email"));
+  assert.ok(state.openAddSubsteps.includes("about.you"));
+  assert.equal(state.addCaseShowMissing, true);
+  assert.equal(state.screen, "office-add-case");
+  controller.stop();
+});
+
+test("Add a case opens a saved office draft on the page, whatever the workspace's version", async () => {
+  for (const version of [2, 1]) {
+    const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+    store.workspace = { ...store.workspace, defaultIntakeVersion: version };
+    await controller.refresh();
+    await controller.openAddCase({ caseId: "case-v2" });
+    const state = controller.getState();
+    assert.equal(state.selectedCaseId, "case-v2", `version ${version}`);
+    assert.equal(state.savedCase.id, "case-v2");
+    assert.equal(state.officeDraft, false);
+    assert.equal(state.screen, "office-add-case");
+    assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
+    assert.equal(state.draftAnswers.tp_first_name, "Mei");
+    controller.stop();
+  }
+});
+
+test("Add a case's parts open and close independently", async () => {
+  const { controller } = await startOffice();
+  await controller.openAddCase();
+  controller.toggleAddSubstep("about.you");
+  controller.toggleAddSubstep("documents");
+  assert.deepEqual(controller.getState().openAddSubsteps, ["before.ready", "about.you", "documents"]);
+  controller.toggleAddSubstep("before.ready");
+  assert.deepEqual(controller.getState().openAddSubsteps, ["about.you", "documents"]);
+  controller.stop();
+});
+
+test("a version-1 workspace keeps today's Add a case page and one-call creation", async () => {
+  const store = officeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 2, ownerUserId: null, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("sam");
+  await controller.selectCase("case-a", { navigate: false });
+  await controller.openAddCase();
+  let state = controller.getState();
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.selectedCaseId, null, "today's page never reads the selection");
+  assert.equal(state.savedCase, null);
+  assert.deepEqual(store.writes, []);
+  await controller.createAssistedCase({ answers: { firstName: "Mei" } });
+  assert.deepEqual(store.writes[0].answers, { firstName: "Mei" });
+  assert.equal(store.writes[0].mode, "assisted");
+  state = controller.getState();
+  assert.equal(state.screen, "staff-case");
+  assert.equal(state.selectedCaseId, state.savedCase.id);
+  controller.stop();
+});
+
+test("the adopted draft is pinned: a re-read of the new case before its save lands keeps the draft", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const release = holdSaves(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  let state = controller.getState();
+  assert.equal(state.savedCase.id, "case-2");
+  assert.equal(state.editBaseRevision, 1);
+  // The create's own change arrives while the save is out.
+  await store.handlers.onChange({ table: "cases", caseId: "case-2" });
+  state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.conflict, null);
+  release();
+  await saving;
+  assert.equal(store.records.get("case-2").answers.tp_first_name, "Mei");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+// ---- fix round 1 ----------------------------------------------------------
+
+// Starts a Save draft whose create is held, runs `meanwhile`, then lets the
+// create land. Returns the Save draft's result.
+async function leaveMidCreate(controller, store, meanwhile) {
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Lin" });
+  const release = holdCreates(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.getState().officeSaving, true, "the create is out");
+  await meanwhile();
+  release();
+  return await saving;
+}
+
+test("a create that lands after another case was opened adopts nothing and saves nothing", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  const result = await leaveMidCreate(controller, store, () => controller.selectCase("case-v2"));
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-v2");
+  assert.equal(state.savedCase.id, "case-v2");
+  assert.equal(state.screen, "staff-case");
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  assert.ok(store.records.has("case-2"), "the empty case stays, unselected");
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Mei");
+  assert.equal(state.officeSaving, false);
+  controller.stop();
+});
+
+test("a create that lands after the office left for the board adopts nothing and saves nothing", async () => {
+  const { controller, store } = await startOffice();
+  const result = await leaveMidCreate(controller, store, async () => controller.navigate("staff"));
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  const state = controller.getState();
+  assert.equal(state.screen, "staff");
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  controller.stop();
+});
+
+test("a create that lands after sign-out, or after a fresh draft started, adopts nothing", async () => {
+  const signedOut = await startOffice();
+  const result = await leaveMidCreate(signedOut.controller, signedOut.store, () => signedOut.controller.signOut());
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  let state = signedOut.controller.getState();
+  assert.equal(state.principal, null);
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(signedOut.store, "SAVE_ANSWERS").length, 0);
+  signedOut.controller.stop();
+
+  const fresh = await startOffice();
+  const again = await leaveMidCreate(fresh.controller, fresh.store, () => fresh.controller.openAddCase());
+  assert.deepEqual(again, { sent: false, reason: "left" });
+  state = fresh.controller.getState();
+  assert.equal(state.officeDraft, true, "the fresh draft is untouched");
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(writesOf(fresh.store, "SAVE_ANSWERS").length, 0);
+  fresh.controller.stop();
+});
+
+test("a Send whose save outlives its case sends nothing", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase();
+  controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  controller.togglePanel("confirmed");
+  const release = holdSaves(store);
+  const sending = controller.saveOfficeDraft({ send: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.getState().savedCase.id, "case-2");
+  await controller.selectCase("case-v2");
+  release();
+  assert.deepEqual(await sending, { sent: false, reason: "left" });
+  assert.equal(writesOf(store, "SUBMIT").length, 0);
+  assert.equal(controller.getState().selectedCaseId, "case-v2");
+  controller.stop();
+});
+
+test("Add a case on a version-1 workspace drops a version-2 selection and a refused draft", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  store.workspace = { ...store.workspace, defaultIntakeVersion: 1 };
+  await store.handlers.onChange({ table: "workspaces" });
+  await controller.selectCase("case-v2");
+  await controller.openAddCase();
+  let state = controller.getState();
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraft, false);
+  controller.stop();
+
+  // Refused because the workspace went back to version 1, then Add a case again.
+  const refused = await startOffice();
+  await refused.controller.openAddCase();
+  refused.controller.editAnswers({ tp_first_name: "Lin" });
+  refused.store.workspace = { ...refused.store.workspace, defaultIntakeVersion: 1 };
+  await assert.rejects(refused.controller.saveOfficeDraft(), { code: "VALIDATION" });
+  assert.equal(refused.controller.getState().officeDraftCaseId, "case-2");
+  await refused.store.handlers.onChange({ table: "workspaces" });
+  await refused.controller.openAddCase();
+  state = refused.controller.getState();
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(state.dirty, false);
+  assert.equal(state.screen, "office-add-case");
+  refused.controller.stop();
+});
+
+test("on a new office draft, typing while the first save is out is kept and still to send", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const release = holdSaves(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1);
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  let state = controller.getState();
+  assert.equal(store.records.get("case-2").answers.tp_first_name, "Mei");
+  assert.equal(Object.hasOwn(store.records.get("case-2").answers, "addr_city"), false);
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.dirty, true);
+  assert.equal(state.saveState, "unsaved");
+  await controller.saveOfficeDraft();
+  assert.equal(store.records.get("case-2").answers.addr_city, "Camden");
+  state = controller.getState();
+  assert.equal(state.dirty, false);
+  assert.equal(state.error, null);
+  controller.stop();
+});
+
+test("on the client's own version-2 draft, typing while a save is out is kept; the same value is not dirty", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  let release = holdSaves(store);
+  let saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  let state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  assert.equal(state.dirty, true);
+  await controller.saveAnswers();
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().dirty, false);
+
+  // Changed and changed back while the save is out: nothing new to send.
+  controller.editAnswers({ tp_first_name: "Lan" });
+  release = holdSaves(store);
+  saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ tp_first_name: "Mei" });
+  controller.editAnswers({ tp_first_name: "Lan" });
+  release();
+  await saving;
+  state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Lan");
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "saved");
+  controller.stop();
+});
+
+// Part 4c, Task 4 fix round 1 (I1): a saved office draft changed elsewhere
+// while the office has unsaved edits raises the usual choice on Add a case,
+// and choosing keeps the office on the page with nothing visited sent.
+test("a conflict on a saved office draft is reconciled on Add a case, then saves", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase({ caseId: "case-v2" });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.records.set("case-v2", { ...store.records.get("case-v2"), revision: 2, answers: { tp_first_name: "Lan" } });
+  await store.handlers.onChange({ table: "cases", caseId: "case-v2" });
+  let state = controller.getState();
+  assert.equal(state.conflict?.code, "REMOTE_CHANGED");
+  assert.equal(state.screen, "office-add-case");
+  await assert.rejects(controller.saveOfficeDraft(), { code: "CONFLICT" });
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0, "nothing is rebased behind the office's back");
+  state = controller.getState();
+  await controller.reconcileAnswers({ answers: state.draftAnswers, expectedServerRevision: state.savedCase.revision });
+  state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.screen, "office-add-case", "the office stays on Add a case");
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(state.dirty, true);
+  assert.deepEqual(await controller.saveOfficeDraft(), { sent: false });
+  const saves = writesOf(store, "SAVE_ANSWERS");
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].expectedRevision, 2);
+  assert.equal(saves[0].payload.answers.tp_first_name, "Ming");
+  assert.equal(Object.hasOwn(saves[0].payload, "visited"), false, "the office never sends visits");
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().screen, "office-add-case");
   controller.stop();
 });

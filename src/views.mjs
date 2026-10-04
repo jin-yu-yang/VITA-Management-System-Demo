@@ -8,6 +8,7 @@ import {
 import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
 import {
   renderAddCase,
+  renderAddCaseV2,
   renderFollowups,
   logCallDrawerBody,
   resolveHelpDrawerBody,
@@ -244,7 +245,7 @@ export function staffScreen(state) {
         "Add a case",
         "Enter a walk-in client's answers yourself. The case has no client account: the office owns it.",
         "Back to Follow-ups",
-        renderAddCase({ person, busy: state.busy }),
+        addCasePage(state, person, people),
       );
     const cases = (state.cases ?? []).map((record) =>
       decorateStaffCase(record, people),
@@ -297,6 +298,36 @@ export function staffScreen(state) {
   });
 }
 
+// Add a case picks its page by the open case's version; with no case, by the
+// workspace's (2 while a new office draft is open). Before the workspace row
+// has loaded there is nothing to choose, so nothing is offered yet.
+function addCasePage(state, person, people) {
+  const saved = state.savedCase ?? null;
+  if (!saved && !state.officeDraft && !state.workspace)
+    return '<p class="muted" role="status">Loading…</p>';
+  const version2 = saved
+    ? Number(saved.intakeVersion) === 2
+    : Boolean(state.officeDraft) || Number(state.workspace?.defaultIntakeVersion) === 2;
+  if (!version2) return renderAddCase({ person, busy: state.busy });
+  return renderAddCaseV2({
+    person,
+    busy: state.busy,
+    officeSaving: state.officeSaving,
+    draftAnswers: state.draftAnswers,
+    savedCase: decorateStaffCase(saved, people),
+    openAddSubsteps: state.openAddSubsteps,
+    openPanels: state.openPanels,
+    addCaseShowMissing: state.addCaseShowMissing,
+    revealed: state.revealed,
+    dirty: state.dirty,
+    saveState: state.saveState,
+    conflict: state.conflict,
+    error: state.error,
+    retryable: state.retryable,
+    people,
+  });
+}
+
 // The same id-to-name step `decorateStaffCase` performs, for the one field an
 // assistance item holds: the helper who took it. The store returns ids; no
 // renderer ever sees one.
@@ -328,6 +359,10 @@ export function dialog(state) {
   if (state.dialog === "regenerate") {
     title = "Replace the fictional answers?";
     body = `<p>This replaces every answer in this form with a different fictional example, including answers you edited. Your email address, Application ID and current stage do not change.</p><div class="info-note">${icon("help")}<p>Nothing is saved until you save the form, so you can still step back through the form and check it first.</p></div>${button("Replace with another example", "confirm-regenerate", "primary full")}${button("Keep my answers", "close-dialog", "text")}`;
+  }
+  if (state.dialog === "leave-add-case") {
+    title = "Leave without saving?";
+    body = `<p>The answers on this page are not saved yet. If you leave now, they are lost. Nothing has been sent to the office.</p>${button("Leave and discard", "confirm-leave-add-case", "primary full")}${button("Keep editing", "close-dialog", "text")}`;
   }
   if (state.dialog === "close-case") {
     title = "Close this case?";

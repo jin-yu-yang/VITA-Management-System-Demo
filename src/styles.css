@@ -5003,3 +5003,448 @@ textarea::placeholder {
   }
 }
 /* end part 4b2 */
+
+/* Part 4c: staff views */
+/* The version-2 answers, read by step and sub-step. */
+.answers-v2 .wording-used {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--vt-muted);
+}
+.answers-step {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--vt-line);
+}
+.answers-step > h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.answers-sub {
+  margin-top: 10px;
+}
+.answers-sub > h4 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
+}
+.answers-v2 .detail-row {
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--vt-line);
+}
+.answers-v2 .detail-row > span,
+.contact-card .detail-row > span {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.answers-v2 .detail-row > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* A required answer nobody gave: the words say it, the colour only helps. */
+.detail-row.is-missing > strong {
+  color: var(--vt-stage-stopped);
+}
+.detail-row.is-missing {
+  background: var(--vt-stage-stopped-bg);
+  padding-inline: 8px;
+  border-radius: var(--vt-radius-sm);
+}
+/* "Not sure": an icon and the words, never colour alone. */
+.detail-row.is-not-sure {
+  background: var(--vt-stage-amend-bg);
+  padding-inline: 8px;
+  border-radius: var(--vt-radius-sm);
+}
+.not-sure-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--vt-stage-amend);
+  background: var(--vt-surface);
+  color: var(--vt-stage-amend);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.not-sure-flag .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.not-sure-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--vt-stage-amend);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+  font-size: 13px;
+  font-weight: 600;
+}
+.not-sure-count .icon {
+  flex-shrink: 0;
+}
+
+/* The contact card and the materials card. */
+.contact-card .btn,
+.materials-card .btn {
+  margin-top: 12px;
+}
+.contact-card .staff-form .btn + .btn {
+  margin-left: 8px;
+}
+.check-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.check-group > legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.check-group .checkbox-row.small {
+  min-height: var(--vt-tap);
+  margin: 0;
+  align-items: center;
+}
+.check-group .checkbox-row input {
+  height: 20px;
+  width: 20px;
+}
+.check-group .checkbox-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.material-recorded {
+  display: block;
+  color: var(--vt-muted);
+  font-size: 12px;
+}
+.materials-card .staff-form {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+@media (max-width: 480px) {
+  .contact-card .staff-form .btn {
+    width: 100%;
+  }
+  .contact-card .staff-form .btn + .btn {
+    margin-left: 0;
+  }
+  .not-sure-flag {
+    margin-left: 0;
+    margin-top: 4px;
+  }
+}
+/* The staff document checklist (Documents tab). */
+.doc-checklist h3 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+.doc-rows {
+  display: grid;
+  gap: 10px;
+}
+.doc-row {
+  padding: 14px 16px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.doc-row:focus-visible,
+.doc-row .doc-status:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.doc-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.doc-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vt-ink);
+}
+.doc-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-muted);
+}
+.doc-group .icon {
+  width: 14px;
+  height: 14px;
+}
+.doc-group.is-needed {
+  color: var(--vt-stage-prep);
+}
+.doc-row .doc-owner,
+.doc-row .doc-why {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--vt-muted);
+}
+.doc-row .doc-status {
+  margin-top: 8px;
+}
+.doc-row .doc-marks {
+  margin-top: 10px;
+}
+@media (max-width: 480px) {
+  .doc-row .doc-marks .btn {
+    flex: 1 1 100%;
+  }
+}
+/* The version-2 Add a case: step headings, one accordion per part, the
+   side column and the bottom bar. Today's page keeps its .add-case-form rules. */
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  color: var(--vt-muted);
+}
+.breadcrumb li + li::before {
+  content: "/";
+  margin-right: 6px;
+}
+.breadcrumb .btn.inline {
+  min-height: var(--vt-tap);
+}
+.add-case-v2 .application-meta {
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--vt-muted);
+}
+.add-case-v2 .add-case-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+/* Not sticky: the materials card is taller than a laptop screen, and its
+   Save button must be reachable without scrolling to the end of the form. */
+.add-case-v2 .add-case-side {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.add-case-v2 .add-case-side .panel {
+  padding: 18px 20px;
+}
+.add-case-v2 .add-case-side h2 {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
+}
+.add-case-v2 .materials-card input:disabled + span {
+  color: var(--vt-muted);
+}
+.add-step {
+  margin: 0 0 24px;
+}
+.add-step > h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: var(--vt-ink);
+}
+.add-sub {
+  margin: 0 0 10px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.add-sub-head {
+  margin: 0;
+  font-size: inherit;
+}
+.add-sub-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--vt-tap);
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--vt-radius);
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--vt-ink);
+  cursor: pointer;
+}
+.add-sub-toggle:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.add-sub-toggle > .icon {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.add-sub-toggle[aria-expanded="true"] > .icon {
+  transform: none;
+}
+.add-sub-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* "Needs answers": a glyph and the words, never colour alone. */
+.add-sub-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.add-sub-status.is-needs {
+  color: var(--vt-age-soon-ink);
+}
+.add-sub-status.is-needs::before {
+  content: "!";
+  content: "!" / "";
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--vt-stage-amend-bg);
+  font-size: 10px;
+  font-weight: 700;
+}
+.add-sub-summary {
+  margin: 0;
+  padding: 0 16px 12px 42px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: var(--vt-muted);
+}
+.add-sub-body {
+  padding: 0 16px 16px;
+}
+.add-sub-body .q-card {
+  margin-top: 10px;
+  padding: 16px;
+}
+.add-sub-body .q-heading {
+  font-size: 16px;
+}
+.add-docs-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+.add-sub-body .doc-list {
+  display: grid;
+  gap: 10px;
+}
+.add-case-v2 .doc-marks .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* The bar follows the page down and settles after the last part, so it never
+   covers the last control; on a phone it simply sits there. */
+.add-case-v2 .add-case-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 16px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--vt-line);
+  background: var(--vt-surface);
+}
+.add-case-count {
+  flex: 1 1 160px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.add-case-count:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.add-case-confirm {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.add-case-confirm .checkbox-row {
+  min-height: var(--vt-tap);
+  margin: 0;
+  align-items: center;
+}
+.add-case-confirm .field-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+.add-case-v2 .add-case-bar .btn {
+  margin: 0;
+}
+/* Above 760px the bar is sticky and covers the foot of the window, so the
+   browser's own scroll-into-view on Tab would leave the focused field under
+   it. Measured at its widest wrap (761-800px) the bar is 173px tall; 12.5rem
+   (200px) clears it with a margin and grows with the reader's text size. */
+@media (min-width: 761px) {
+  html:has(.add-case-v2) {
+    scroll-padding-bottom: 12.5rem;
+  }
+}
+@media (max-width: 1024px) {
+  .add-case-v2 .add-case-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .add-case-v2 .add-case-bar {
+    position: static;
+    padding: 12px 16px;
+  }
+  .add-case-v2 .add-case-bar .btn {
+    flex: 1 1 100%;
+  }
+  .add-sub-toggle {
+    padding: 12px;
+  }
+  .add-sub-summary {
+    padding: 0 12px 12px;
+  }
+  .add-sub-body {
+    padding: 0 12px 12px;
+  }
+}
+/* end part 4c */

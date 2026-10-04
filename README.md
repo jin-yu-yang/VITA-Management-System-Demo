@@ -47,8 +47,8 @@ The UI redesign is built in parts, following the
 | 1 | Visual restyle: volunteer board, case page, client screens, office screens (4 PRs) | Done |
 | 2 | [Client numbers](docs/superpowers/specs/2026-09-29-client-numbers-design.md): `#001`-style numbers assigned on submit, per season, searchable on the board | Done |
 | 3 | Lifecycle stages: the ~25 stages in [`return-lifecycle.svg`](docs/media/return-lifecycle.svg) replace today's 9 | Planned |
-| 4 | [New intake](docs/superpowers/specs/2026-09-30-intake-screens-design.md): the drafted questions in steps 0–9 with sub-steps, standard and senior wording, best time to reach, the materials checklist, document cards, Review & submit and a draft 13614-C ([redesign spec](docs/superpowers/specs/2026-10-04-intake-redesign-design.md)). 4a catalogue and server, 4b client form, 4b2 redesign | 4a, 4b done; 4b2 in review |
-| | 4c staff views, the version-2 Add a case, and the switch to version 2; 4d Chinese; then removing version 1 | 4c in progress |
+| 4 | [New intake](docs/superpowers/specs/2026-09-30-intake-screens-design.md): the drafted questions in steps 0–9 with sub-steps, standard and senior wording, best time to reach, the materials checklist, document cards, Review & submit and a draft 13614-C ([redesign spec](docs/superpowers/specs/2026-10-04-intake-redesign-design.md)). 4a catalogue and server, 4b client form, 4b2 redesign | 4a, 4b, 4b2 done |
+| | 4c: staff version-2 answers by sub-step, contact, materials and the document checklist; the version-2 Add a case; version 2 ready, switch-over held for the wording review. Then 4d Chinese, then removing version 1 | 4c done |
 | 5–8 | Access and masking, returning clients, team features, dashboards | Planned |
 
 Case messaging/SMS, real document uploads, scheduling, mobile layouts, and certification levels

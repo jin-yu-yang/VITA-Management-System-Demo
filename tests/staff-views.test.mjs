@@ -21,7 +21,14 @@ import {
   historySentence,
   EVENT_SENTENCES,
   historyPanel,
+  answersPanel,
+  answersPanelV1,
+  contactCard,
+  materialsCard,
+  documentChecklist,
 } from "../src/staff-views.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 import { describeStage } from "../src/domain.mjs";
 import { CASE_ACTIONS } from "../src/contracts.mjs";
 
@@ -1289,4 +1296,470 @@ test("the contact and materials actions read as sentences", () => {
   );
   assert.equal(EVENT_SENTENCES.UPDATE_CONTACT, "updated the best time to reach");
   assert.equal(EVENT_SENTENCES.RECORD_MATERIALS, "recorded the materials received");
+});
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 1: the version-2 answers by step and sub-step, "Not sure", the
+// contact card and the materials card (materials on version 1 too).
+// ---------------------------------------------------------------------------
+
+// A version-2 case the way the store returns it: the four contact fields live
+// in `contact`, never in `answers`.
+function v2Case({ seed = 1, married = false, answers = {}, ...overrides } = {}) {
+  const sample = { ...makeSampleAnswers({ version: 2, seed, married }), ...answers };
+  const contact = {};
+  for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
+    contact[key] = sample[id] ?? null;
+    delete sample[id];
+  }
+  return staffCase({ intakeVersion: 2, answers: sample, contact, materials: [], ...overrides });
+}
+// Drop keys (the sample answers everything), keeping the rest.
+const without = (record, ...ids) => ({
+  ...record,
+  answers: Object.fromEntries(Object.entries(record.answers).filter(([id]) => !ids.includes(id))),
+});
+const v2Panel = (record, person = SAM) => answersPanel(record, { person });
+const D5_SENTENCE =
+  "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed.";
+
+test("a version-2 answers panel groups the answers by step and sub-step", () => {
+  const html = v2Panel(v2Case({ answers: { tp_dob: "1961-04-12" } }));
+  assert.match(html, /<h2 id="answers-title">What the client told us<\/h2>/);
+  assert.match(html, /Wording used: Standard/);
+  // Question steps only: the Documents and Review steps have no answer rows.
+  const steps = [...html.matchAll(/<section class="answers-step"><h3>([^<]*)<\/h3>/g)].map((m) => m[1]);
+  assert.deepEqual(steps.slice(0, 3), ["Before you start", "About you", "Household"]);
+  assert.equal(steps.includes("Documents"), false);
+  assert.equal(steps.includes("Review & submit"), false);
+  assert.match(html, /<h3>About you<\/h3><div class="answers-sub"><h4>About you<\/h4>/);
+  assert.match(html, /<h4>Mailing address<\/h4>/);
+  assert.match(html, /Date of birth<\/span><strong>Apr 12, 1961<\/strong>/);
+  // A household member, one row each.
+  assert.match(html, /Sam Rivera · Son \/ Daughter · born Aug 30, 2012 · 12 months/);
+  assert.equal((html.match(/People in your household/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /data-case-action|<input|<textarea/);
+});
+
+test("the senior wording is named, and the questions use it", () => {
+  const html = v2Panel(v2Case({ answers: { form_version: "senior" } }));
+  assert.match(html, /Wording used: Senior/);
+  assert.match(html, /What is your phone number\?/);
+  assert.match(html, /Tips \(extra money from customers\)/);
+});
+
+test("a required question without an answer says so, and an optional one is left out", () => {
+  const record = without(v2Case(), "addr_street", "additional_notes", "opt_veteran");
+  const html = v2Panel(record);
+  assert.match(html, /<div class="detail-row is-missing"><span>[^<]*(Street|street)[^<]*<\/span><strong>Not answered<\/strong><\/div>/);
+  // `opt_veteran` and `additional_notes` are optional: no row at all.
+  assert.doesNotMatch(html, /veteran of the U\.S\. Armed Forces/);
+  assert.doesNotMatch(html, /Anything else you&#39;d like the volunteer to know/);
+});
+
+test("a hidden question and a hidden sub-step are absent", () => {
+  const single = v2Panel(v2Case());
+  assert.doesNotMatch(single, /Your spouse/);
+  assert.doesNotMatch(single, /Spouse&#39;s first name/);
+  assert.doesNotMatch(single, /Not answered[\s\S]*Spouse/);
+  const married = v2Panel(v2Case({ married: true }));
+  assert.match(married, /<h4>Your spouse<\/h4>/);
+  assert.match(married, /Spouse&#39;s first name<\/span><strong>Casey<\/strong>/);
+});
+
+test('"Not sure" is highlighted with the words and an icon, and counted', () => {
+  const one = v2Panel(v2Case({ answers: { inc_tips: "not_sure" } }));
+  assert.match(one, /<div class="detail-row is-not-sure"><span>Tips<\/span><strong>[^<]*<span class="not-sure-flag"><svg[^>]*>.*?<\/svg> Not sure<\/span><\/strong><\/div>/);
+  assert.match(one, /<p class="not-sure-count"><svg[^>]*>.*?<\/svg> 1 answer is "Not sure"\. Ask about them at the interview\.<\/p>/);
+  const memberId = "0000000000000000000000000000abcd";
+  const member = v2Panel(
+    v2Case({
+      answers: {
+        inc_tips: "not_sure",
+        hh: [{ member_id: memberId, first_name: "Lin", last_name: "Chen", dob: "2015-03-14", relationship: "son_daughter", us_citizen: "not_sure", fulltime_student: "not_sure" }],
+      },
+    }),
+  );
+  assert.match(member, /Lin Chen[^<]*<span class="not-sure-flag">[^]*? Not sure: U\.S\. citizen, Full-time student in 2025 \(at least 5 months\)<\/span>/);
+  assert.doesNotMatch(member, /Not sure: U\.S\. citizen\?/);
+  assert.match(member, /3 answers are "Not sure"\./);
+  const two = v2Panel(v2Case({ answers: { inc_tips: "not_sure", inc_wages: "not_sure" } }));
+  assert.match(two, /2 answers are "Not sure"\./);
+  const none = v2Panel(v2Case());
+  assert.doesNotMatch(none, /not-sure-count|is-not-sure|not-sure-flag/);
+});
+
+test("the contact questions are skipped entirely unless the viewer may see contact details", () => {
+  const html = v2Panel(v2Case(), null);
+  for (const text of ["Phone number", "Spouse&#39;s phone number", "Best time to reach you", "Notes about reaching you"])
+    assert.doesNotMatch(html, new RegExp(text), text);
+  assert.doesNotMatch(html, /555-01/);
+  // Not even "Not answered" for the required phone.
+  const bare = v2Panel(without(v2Case(), "tp_phone"), null);
+  assert.doesNotMatch(bare, /Phone number/);
+  const seen = v2Panel(v2Case(), SAM);
+  assert.match(seen, /Phone number<\/span><strong>\(215\) 555-01\d\d<\/strong>/);
+});
+
+test("contact details follow D5 on the staff page", () => {
+  const unclaimed = v2Case({ stage: "preparation_ready", preparerId: null, participants: [] });
+  const html = renderStaffCase(unclaimed, ALEX);
+  assert.doesNotMatch(html, /555-01\d\d/);
+  assert.doesNotMatch(html, /Weekday evenings|After 6 pm/);
+  assert.match(html, /class="panel contact-card"[^>]*>[\s\S]*Contact details[\s\S]*Contact details are shown to the office, and to the preparer and reviewer once the case is claimed\./);
+  assert.doesNotMatch(html, /toggle-edit-contact/);
+  // The same case with that volunteer as its preparer.
+  const claimed = renderStaffCase(v2Case({ preparerId: "alex", participants: ["alex"] }), ALEX);
+  assert.match(claimed, /\(215\) 555-01\d\d/);
+  assert.match(claimed, /Weekday evenings/);
+  assert.match(claimed, /data-action="toggle-edit-contact" aria-expanded="false">Edit best time<\/button>/);
+  assert.doesNotMatch(claimed, new RegExp(D5_SENTENCE));
+  // An office person sees it on any case.
+  const office = renderStaffCase(unclaimed, SAM);
+  assert.match(office, /\(215\) 555-01\d\d/);
+});
+
+test("the contact form is pre-ticked from the contact record and carries a note", () => {
+  const record = v2Case({ preparerId: "alex", participants: ["alex"] });
+  const ui = { openPanels: ["edit-contact"] };
+  const html = renderStaffCase(record, ALEX, ui);
+  const form = html.match(/<form[^>]*id="contact-form"[\s\S]*?<\/form>/)?.[0] ?? "";
+  assert.ok(form, "the form is drawn");
+  const boxes = form.match(/<input[^>]*type="checkbox"[^>]*>/g) ?? [];
+  assert.equal(boxes.length, 5);
+  for (const box of boxes) assert.match(box, /name="bestContactTime"/);
+  const ticked = boxes.filter((box) => /\schecked/.test(box));
+  assert.equal(ticked.length, 1);
+  assert.match(ticked[0], /value="weekday_evening"/);
+  assert.match(form, /<textarea[^>]*name="bestContactNote"[^>]*>After 6 pm is best\.<\/textarea>/);
+  assert.match(form, /data-case-action="UPDATE_CONTACT"[^>]*>[^<]*Save best time/);
+  assert.match(form, /data-action="toggle-edit-contact"[^>]*>[^<]*Cancel/);
+  // Closed: no form, and the toggle says so.
+  const closed = renderStaffCase(record, ALEX, { openPanels: [] });
+  assert.doesNotMatch(closed, /id="contact-form"/);
+  assert.match(html, /data-action="toggle-edit-contact"[^>]*aria-expanded="true"/);
+});
+
+test("the materials card lists the eleven items in order, ticks the received ones and names who recorded them", () => {
+  const record = v2Case({
+    preparerId: "alex",
+    participants: ["alex"],
+    materials: [{ item: "ssn_itin", receivedAt: "2026-09-14T15:00:00.000Z", recordedByPersonId: "alex" }],
+  });
+  const html = renderStaffCase(record, ALEX);
+  const card = html.match(/<section class="panel materials-card"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(card, /<h2[^>]*>Materials received<\/h2>/);
+  assert.match(card, /<legend>Materials received<\/legend>/);
+  const boxes = card.match(/<input[^>]*name="received"[^>]*>/g) ?? [];
+  assert.equal(boxes.length, 11);
+  assert.deepEqual(
+    boxes.map((box) => box.match(/value="([^"]*)"/)[1]),
+    MATERIALS_ITEMS.map((item) => item.id),
+  );
+  const ticked = boxes.filter((box) => /\schecked/.test(box));
+  assert.equal(ticked.length, 1);
+  assert.match(ticked[0], /value="ssn_itin"/);
+  assert.match(card, /Recorded by Alex ·/);
+  assert.match(card, /data-case-action="RECORD_MATERIALS"[^>]*>[^<]*Save materials/);
+  assert.doesNotMatch(card, /disabled/);
+  for (const item of MATERIALS_ITEMS) assert.match(card, new RegExp(item.label.en.replace(/[/()]/g, "\\$&")));
+});
+
+test("a viewer who may not record materials sees them read-only, with the reason", () => {
+  const record = v2Case({ stage: "preparation_ready", preparerId: null, participants: [], materials: [{ item: "photo_id", receivedAt: "2026-09-14T15:00:00.000Z", recordedByPersonId: "sam" }] });
+  const html = renderStaffCase(record, ALEX);
+  const card = html.match(/<section class="panel materials-card"[\s\S]*?<\/section>/)?.[0] ?? "";
+  const boxes = card.match(/<input[^>]*name="received"[^>]*>/g) ?? [];
+  assert.equal(boxes.length, 11);
+  for (const box of boxes) assert.match(box, /\sdisabled/);
+  assert.doesNotMatch(card, /RECORD_MATERIALS/);
+  assert.match(card, /Materials are recorded by the office, and by the preparer and reviewer once the case is claimed\./);
+});
+
+test("materialsCard and contactCard are exported with the (record, rights, ui) shape", () => {
+  const record = v2Case({ preparerId: "alex", participants: ["alex"] });
+  const rights = staffEligibility(record, ALEX);
+  assert.match(materialsCard(record, rights, {}), /^<section class="panel materials-card"/);
+  assert.match(contactCard(record, rights, {}), /^<section class="panel contact-card"/);
+  assert.match(contactCard(record, rights, { openPanels: ["edit-contact"], busy: true }), /UPDATE_CONTACT"[^>]*disabled/);
+  // Busy disables the save, not the reading.
+  assert.match(materialsCard(record, rights, { busy: true }), /RECORD_MATERIALS"[^>]*disabled/);
+});
+
+test("a version-1 case keeps today's answers panel, then gains the materials card", () => {
+  const fixtures = [
+    staffCase(),
+    staffCase({ answers: { service: "Online", language: "English", firstName: "Jo" } }),
+    staffCase({ answers: {}, intakeVersion: 1 }),
+  ];
+  for (const record of fixtures) {
+    assert.equal(answersPanel(record), answersPanelV1(record));
+    assert.equal(answersPanel(record, { person: SAM }), answersPanelV1(record));
+    const html = renderStaffCase(record, ALEX);
+    assert.doesNotMatch(html, /contact-card/);
+    assert.doesNotMatch(html, /Wording used/);
+    const tab = html.match(/<div role="tabpanel" id="case-panel-intake"[^>]*>([\s\S]*?)<\/div><div role="tabpanel" id="case-panel-documents"/)[1];
+    assert.ok(tab.startsWith(answersPanelV1(record)), "today's panel comes first, unchanged");
+    assert.equal((tab.match(/class="panel materials-card"/g) ?? []).length, 1);
+    assert.equal(tab, `${answersPanelV1(record)}${materialsCard(record, staffEligibility(record, ALEX), {})}`);
+  }
+});
+
+test("a version-2 case's intake tab is the answers, the contact card, then the materials card", () => {
+  const html = renderStaffCase(v2Case({ preparerId: "alex", participants: ["alex"] }), ALEX);
+  const tab = html.match(/<div role="tabpanel" id="case-panel-intake"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-documents"/)[1];
+  const at = (text) => tab.indexOf(text);
+  assert.ok(at("Wording used") >= 0);
+  assert.ok(at("Wording used") < at('class="panel contact-card"'));
+  assert.ok(at('class="panel contact-card"') < at('class="panel materials-card"'));
+});
+
+test("staffEligibility: editing the best time and recording materials follow works_on_case", () => {
+  const claimed = v2Case({ preparerId: "alex", participants: ["alex"] });
+  const unclaimed = v2Case({ stage: "preparation_ready", preparerId: null, participants: [] });
+  const MATERIALS_REASON = "Materials are recorded by the office, and by the preparer and reviewer once the case is claimed.";
+  // Its preparer.
+  assert.deepEqual(staffEligibility(claimed, ALEX).editContact, { allowed: true, reason: "" });
+  assert.deepEqual(staffEligibility(claimed, ALEX).recordMaterials, { allowed: true, reason: "" });
+  // Its reviewer.
+  const reviewing = v2Case({ stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"] });
+  assert.equal(staffEligibility(reviewing, MORGAN).editContact.allowed, true);
+  assert.equal(staffEligibility(reviewing, MORGAN).recordMaterials.allowed, true);
+  // Another volunteer, and nobody.
+  assert.deepEqual(staffEligibility(unclaimed, ALEX).editContact, { allowed: false, reason: D5_SENTENCE });
+  assert.deepEqual(staffEligibility(unclaimed, ALEX).recordMaterials, { allowed: false, reason: MATERIALS_REASON });
+  assert.equal(staffEligibility(claimed, MORGAN).editContact.allowed, false);
+  assert.equal(staffEligibility(claimed, null).recordMaterials.allowed, false);
+  // Office staff, on any case.
+  assert.equal(staffEligibility(unclaimed, SAM).editContact.allowed, true);
+  assert.equal(staffEligibility(unclaimed, SAM).recordMaterials.allowed, true);
+  // A version-1 case has no contact card, but takes materials.
+  const v1 = staffCase({ preparerId: "alex" });
+  assert.deepEqual(staffEligibility(v1, ALEX).editContact, { allowed: false, reason: "A version-1 case has no contact card." });
+  assert.deepEqual(staffEligibility(v1, SAM).editContact, { allowed: false, reason: "A version-1 case has no contact card." });
+  assert.equal(staffEligibility(v1, ALEX).recordMaterials.allowed, true);
+  assert.equal(staffEligibility(staffCase({ preparerId: null }), ALEX).recordMaterials.allowed, false);
+});
+
+test("decorateStaffCase names who recorded each material", () => {
+  const record = decorateStaffCase(
+    { id: "c", materials: [{ item: "photo_id", receivedAt: "2026-09-14T15:00:00.000Z", recordedByPersonId: "alex" }, { item: "ssn_itin", recordedByPersonId: "gone" }] },
+    PEOPLE,
+  );
+  assert.equal(record.materials[0].recordedByName, "Alex");
+  assert.equal(record.materials[1].recordedByName, "Unknown person");
+  assert.equal(record.materials[0].item, "photo_id");
+  assert.equal(decorateStaffCase({ id: "c" }, PEOPLE).materials, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 2: the document checklist with marks and Needed/Maybe moves,
+// and the draft 13614-C on the case page.
+// ---------------------------------------------------------------------------
+
+const HH1 = "a".repeat(32);
+const HH2 = "b".repeat(32);
+const member = (id, first) => ({
+  member_id: id,
+  first_name: first,
+  last_name: "Rivera",
+  relationship: "child",
+  dob: "2012-08-30",
+  months_in_home: 12,
+});
+// Wages, two household members and a direct-deposit refund; one card marked
+// Later and one Maybe card moved up by the office.
+function checklistCase(overrides = {}) {
+  return v2Case({
+    stage: "received",
+    preparerId: null,
+    participants: [],
+    answers: {
+      inc_wages: "yes",
+      has_household_members: "yes",
+      hh: [member(HH1, "Sam"), member(HH2, "Lee")],
+      refund_method: "direct_deposit",
+    },
+    documentCards: [
+      { slotId: "w2.household", status: "later", groupOverride: null },
+      { slotId: `ssn.hh.${HH1}`, status: null, groupOverride: "needed" },
+    ],
+    ...overrides,
+  });
+}
+const checklist = (record, person = SAM, ui = {}) =>
+  documentChecklist(record, staffEligibility(record, person), ui);
+const rowOf = (html, slot) => {
+  const id = `doc-${slot.replace(/\./g, "-")}`;
+  const start = html.indexOf(`<article class="doc-row" id="${id}"`);
+  assert.ok(start >= 0, `a row for ${slot}`);
+  return html.slice(start, html.indexOf("</article>", start));
+};
+const MARK_ACTIONS = /data-action="(mark-card|move-card)"/g;
+
+test("the checklist groups the client's cards under sub-step titles, in order", () => {
+  const html = checklist(checklistCase());
+  assert.match(
+    html,
+    /^<section class="panel doc-checklist" aria-labelledby="doc-checklist-title"><div class="section-head"><h2 id="doc-checklist-title">Document checklist<\/h2><\/div>/,
+  );
+  assert.match(html, /From the client(?:'|&#39;)s answers\. Same-day clients bring these to the visit\./);
+  const titles = [...html.matchAll(/<h3>([^<]*)<\/h3>/g)].map((m) => m[1]);
+  assert.deepEqual(titles, ["Identity", "Income forms", "Health and other events", "Other documents"]);
+  const at = (slot) => html.indexOf(`id="doc-${slot.replace(/\./g, "-")}"`);
+  assert.ok(at("photo_id.tp") < at("w2.household"));
+  assert.ok(at("w2.household") < at("bank.household"));
+  assert.ok(at("bank.household") < at("other.household"));
+});
+
+test("a marked card shows its status and the three marks", () => {
+  const row = rowOf(checklist(checklistCase()), "w2.household");
+  assert.match(row, /id="doc-w2-household" data-slot="w2\.household" tabindex="-1"/);
+  assert.match(row, /<strong class="doc-label">[^<]*W-2/);
+  assert.match(row, /For you/);
+  assert.match(row, /<p class="doc-status is-later" id="doc-w2-household-status" tabindex="-1">[^]*Later<\/p>/);
+  assert.match(row, /data-action="mark-card" data-slot="w2\.household" data-status="later"[^>]*>Later</);
+  assert.match(row, /data-status="none"[^>]*>Don(?:'|&#39;)t have</);
+  assert.match(row, /data-status="not_done"[^>]*>Mark as not done</);
+  assert.match(row, /Needed/);
+  assert.doesNotMatch(row, /move-card/);
+});
+
+test("a card with no mark offers Later and Don't have, and no Mark as not done", () => {
+  const row = rowOf(checklist(checklistCase()), "photo_id.tp");
+  assert.match(row, /doc-status is-not_done[^>]*>[^]*Not done<\/p>/);
+  assert.match(row, /data-status="later"/);
+  assert.match(row, /data-status="none"/);
+  assert.doesNotMatch(row, /data-status="not_done"/);
+  assert.doesNotMatch(row, /move-card/, "an answer-Needed card has no move");
+  assert.doesNotMatch(row, /Asked by/, "a card with no asking question has no reason line");
+});
+
+test("Maybe cards move up and back; a moved-up card says who moved it", () => {
+  const html = checklist(checklistCase());
+  const up = rowOf(html, `ssn.hh.${HH1}`);
+  assert.match(up, /Needed \(moved up by the office\)/);
+  assert.match(up, new RegExp(`data-action="move-card" data-slot="ssn\\.hh\\.${HH1}" data-group="maybe"[^>]*>Move to Maybe needed<`));
+  const maybe = rowOf(html, `ssn.hh.${HH2}`);
+  assert.match(maybe, /Maybe needed/);
+  assert.doesNotMatch(maybe, /moved up/);
+  assert.match(maybe, new RegExp(`data-action="move-card" data-slot="ssn\\.hh\\.${HH2}" data-group="needed"[^>]*>Move to Needed<`));
+  assert.match(up, /Sam Rivera/);
+});
+
+test("the optional card has no marks, no status and no move", () => {
+  const row = rowOf(checklist(checklistCase()), "other.household");
+  assert.match(row, /Optional/);
+  assert.doesNotMatch(row, /doc-status|mark-card|move-card/);
+});
+
+test("the reason line names the question that asked for the card", () => {
+  const html = checklist(checklistCase());
+  assert.match(rowOf(html, "w2.household"), /Asked by: Wages from a part-time or full-time job/);
+  assert.match(rowOf(html, `ssn.hh.${HH2}`), /Asked by: /);
+});
+
+test("Alex sees marks and moves only on a case he prepares; Morgan only as its reviewer", () => {
+  const unclaimed = checklistCase({ preparerId: "someone-else" });
+  const refused =
+    "Documents are marked by the office, and by the preparer and reviewer once the case is claimed.";
+  const forAlex = checklist(unclaimed, ALEX);
+  assert.doesNotMatch(forAlex, MARK_ACTIONS);
+  assert.equal((forAlex.match(/class="staff-reason"/g) ?? []).length, 1, "the refusal is shown once");
+  assert.ok(forAlex.includes(refused));
+  assert.ok(forAlex.indexOf(refused) < forAlex.indexOf("<h3>"), "at the top of the checklist");
+  assert.match(forAlex, /doc-row/, "the cards are still shown to read");
+  const prepared = checklistCase({ preparerId: "alex" });
+  const mine = checklist(prepared, ALEX);
+  assert.match(mine, /data-action="mark-card"/);
+  assert.match(mine, /data-action="move-card"/);
+  assert.doesNotMatch(mine, /staff-reason/);
+  const reviewed = checklistCase({ preparerId: "someone-else", reviewerId: "morgan" });
+  assert.match(checklist(reviewed, MORGAN), /data-action="move-card"/);
+  assert.doesNotMatch(checklist(unclaimed, MORGAN), MARK_ACTIONS);
+});
+
+test("a closed case offers no marks or moves, and says why", () => {
+  const html = checklist(checklistCase({ stage: "closed" }));
+  assert.doesNotMatch(html, MARK_ACTIONS);
+  assert.equal((html.match(/This case is closed\./g) ?? []).length, 1);
+  assert.match(html, /doc-row/);
+});
+
+test("a version-1 case has no checklist", () => {
+  const record = staffCase({ intakeVersion: 1 });
+  assert.equal(documentChecklist(record, staffEligibility(record, SAM), {}), "");
+  const none = staffEligibility(record, SAM);
+  assert.equal(none.markDocumentCard.allowed, false);
+  assert.equal(none.markDocumentCard.reason, "A version-1 case has no document checklist.");
+});
+
+test("document marks and moves follow one rule under two names", () => {
+  const sam = staffEligibility(checklistCase(), SAM);
+  assert.deepEqual(sam.markDocumentCard, { allowed: true, reason: "" });
+  assert.deepEqual(sam.moveDocumentCard, sam.markDocumentCard);
+  const alex = staffEligibility(checklistCase({ preparerId: "x" }), ALEX);
+  assert.equal(alex.markDocumentCard.allowed, false);
+  assert.deepEqual(alex.moveDocumentCard, alex.markDocumentCard);
+});
+
+test("every mark and move is disabled while busy", () => {
+  const html = checklist(checklistCase(), SAM, { busy: true });
+  const buttons = html.match(/<button[^>]*data-action="(?:mark-card|move-card)"[^>]*>/g) ?? [];
+  assert.ok(buttons.length > 4);
+  for (const one of buttons) assert.match(one, /\sdisabled/);
+  const idle = checklist(checklistCase(), SAM, { busy: false });
+  for (const one of idle.match(/<button[^>]*data-action="(?:mark-card|move-card)"[^>]*>/g) ?? [])
+    assert.doesNotMatch(one, /\sdisabled/);
+});
+
+test("same-day clients still show the full cards, with marks, to staff", () => {
+  const record = checklistCase({ answers: { ...checklistCase().answers, service: "same_day" } });
+  const html = checklist(record);
+  assert.match(html, /data-action="mark-card"/);
+  assert.match(html, /doc-status/);
+  assert.doesNotMatch(html, /bring-list/);
+});
+
+test("text in the cards is escaped", () => {
+  const record = checklistCase({
+    answers: { ...checklistCase().answers, hh: [member(HH1, "<b>Sam</b>"), member(HH2, "Lee")] },
+  });
+  const html = checklist(record);
+  assert.doesNotMatch(html, /<b>Sam/);
+  assert.match(html, /&lt;b&gt;Sam/);
+});
+
+test("the Documents tab starts with the checklist, above the requests", () => {
+  const record = checklistCase({ requests: [], stage: "received" });
+  const html = renderStaffCase(record, SAM);
+  const tab = html.match(/id="case-panel-documents"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-followup"/)[1];
+  assert.ok(tab.startsWith('<section class="panel doc-checklist"'));
+  assert.ok(tab.indexOf("doc-checklist") < tab.indexOf('id="documents-title"'));
+  const v1 = renderStaffCase(staffCase(), SAM);
+  assert.doesNotMatch(v1, /doc-checklist/);
+});
+
+test("the draft 13614-C buttons show to staff who work on a version-2 case", () => {
+  const intake = (html) =>
+    html.match(/id="case-panel-intake"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-documents"/)[1];
+  const tools = (record, person) => intake(renderStaffCase(record, person));
+  const has = (html) =>
+    html.includes('<div class="summary-tools">') &&
+    html.includes('data-form="en"') &&
+    html.includes('data-form="zh-s"') &&
+    html.includes('data-form="zh-t"') &&
+    html.includes('<p id="draft-ready" class="draft-ready" aria-live="polite"></p>');
+  const office = tools(checklistCase(), SAM);
+  assert.ok(has(office));
+  assert.match(office, /data-action="view-draft" data-form="en">View Draft 13614-C</);
+  assert.match(office, />简体中文版</);
+  assert.match(office, />繁體中文版</);
+  // After the answers panel, before the contact card.
+  assert.ok(office.indexOf("answers-v2") < office.indexOf("summary-tools"));
+  assert.ok(office.indexOf("summary-tools") < office.indexOf("contact-card"));
+  assert.ok(has(tools(checklistCase({ preparerId: "alex" }), ALEX)));
+  assert.equal(has(tools(checklistCase({ preparerId: "someone-else" }), ALEX)), false);
+  assert.doesNotMatch(tools(checklistCase({ preparerId: "someone-else" }), ALEX), /view-draft|draft-ready/);
+  assert.doesNotMatch(tools(staffCase({ intakeVersion: 1 }), SAM), /view-draft|draft-ready/);
 });

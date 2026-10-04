@@ -28,6 +28,7 @@ import {
   assertConsoleQuiet,
   capture,
   caseActionCount,
+  chooseAnswer,
   choosePersona,
   clickAction,
   clickCaseActionUntil,
@@ -40,6 +41,7 @@ import {
   pageText,
   pressUntil,
   pressUntilEffect,
+  railJump,
   railSub,
   readAlerts,
   readBoardTotals,
@@ -56,6 +58,7 @@ import {
   waitForBadge,
   waitForCaseWorkspace,
   waitForDetail,
+  waitForIntakeV2,
   waitForQuiet,
   waitForSubstep,
   waitForText,
@@ -65,6 +68,8 @@ import {
 import { REFERENCE_PATTERN, SQLSTATE_ERROR_CODES } from "../src/contracts.mjs";
 import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { DRAFT_FONT_FIXTURES } from "../src/draft-pdf.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
+import { CONTACT_NOT_SHOWN } from "../src/staff-views.mjs";
 
 // Task 10A: the demonstration story (spec §9) driven through two real engines,
 // twice with the roles swapped, against the isolated local stack — plus the
@@ -114,8 +119,11 @@ const OFFLINE_CITY = "Riverbend";
 const MINE_CITY = "Keepmine City";
 const OTHER_CITY = "Otherwindow City";
 
-// Words a client screen must never carry: this demo records a workflow, and
-// there is no amount, refund, bank or routing field anywhere in it.
+// Words a client screen must never carry: this demo records a workflow and
+// shows no amounts. A version-2 client does choose a refund method (and a
+// direct-deposit document card), so the check leaves out the client's own
+// `.open-documents` card list, which names the papers to bring; every other
+// part of the screen must stay free of them.
 const MONEY_WORDS = Object.freeze(["$", "refund", "routing", "deposit", "direct debit"]);
 
 // What counts as the keyboard being somewhere a person can use it.
@@ -273,20 +281,100 @@ async function startApplication(page) {
   return (await card.innerText()).trim();
 }
 
-/** Fill every blank in one click and walk the four intake steps. */
-async function fillIntakeToReview(page) {
+/**
+ * Fill every blank in one click and walk the four version-1 intake steps.
+ * `beforeFill` runs on step 1 while it is still blank, and `atStep` on each
+ * step the walk arrives at, so a check can sit where its question is.
+ */
+async function fillIntakeToReview(page, { beforeFill, atStep } = {}) {
   await clickAction(page, "continue-intake");
   await waitForText(page, "Your visit", RENDER_MS);
+  if (beforeFill) await beforeFill();
   await clickAction(page, "fill-fictional");
   for (let step = 2; step <= 4; step += 1) {
     await clickContinue(page);
     await waitForStep(page, step);
+    if (atStep) await atStep(step);
   }
 }
 
+/**
+ * The version-2 walk the story's own application takes: Fill fictional
+ * details, then the rail. On the way it becomes married (a show-if: the
+ * spouse's part joins the rail, and a second Fill answers it) and the wording
+ * flips to Senior and back. It stops on review.submit with the box ticked;
+ * the Submit is the caller's, and `atCheck` runs on an empty review.check.
+ */
+async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
+  await clickAction(page, "continue-intake");
+  await waitForSubstep(page, "before.ready");
+  await clickAction(page, "fill-fictional");
+  await waitFor(
+    page,
+    "the fill to be announced",
+    () => document.querySelector("#toast")?.textContent.includes("Fictional details filled in"),
+    undefined,
+    RENDER_MS,
+  );
+  await railJump(page, "about.marital");
+  assert.equal(
+    await page.locator('.rail-sublink[data-substep="about.spouse"]').count(),
+    0,
+    "a never-married client's rail lists the spouse",
+  );
+  await chooseAnswer(page, "marital_status", "married");
+  await waitFor(
+    page,
+    "the rail to list Your spouse",
+    () =>
+      document
+        .querySelector('.rail-sublink[data-substep="about.spouse"] .rail-subtitle')
+        ?.textContent.trim() === "Your spouse",
+    undefined,
+    RENDER_MS,
+  );
+  await clickAction(page, "fill-fictional");
+  await waitFor(
+    page,
+    "the married questions to be filled",
+    () => document.querySelector("#field-client-married_last_day-yes")?.checked === true,
+    undefined,
+    RENDER_MS,
+  );
+  // A wording change, there and back: the answers stay as they are.
+  for (const pressed of ["true", "false"]) {
+    await clickAction(page, "toggle-senior");
+    await waitFor(
+      page,
+      `the senior switch to read ${pressed}`,
+      (wanted) =>
+        document.querySelector('[data-action="toggle-senior"]')?.getAttribute("aria-pressed") ===
+        wanted,
+      pressed,
+      RENDER_MS,
+    );
+  }
+  await railJump(page, "review.check");
+  await waitForQuiet(page);
+  assert.equal(
+    await page.locator(".alerts-block .alert-item").count(),
+    0,
+    `the filled example still has alerts: ${await page.locator(".alerts-block").innerText().catch(() => "")}`,
+  );
+  if (atCheck) await atCheck();
+  await railJump(page, "review.submit");
+  await tickBox(page, "field-confirmed");
+}
+
+// The sample phones (`samplePhone` in src/sample-data.mjs), as a staff page
+// prints them. D5 keeps them off every page of a volunteer who has not
+// claimed the case.
+const SAMPLE_PHONE = /\(215\) 555-01\d\d/;
+
 // ---------------------------------------------------------------------------
-// The version-2 form (PR 4b2): reachable only in the phase that switches the
-// story's workspace to version 2 for its length
+// The version-2 form (PR 4b2): the story's workspace is on version 2, so
+// every client form here is version 2 except in the one phase that sets the
+// workspace back to 1 for its length
 // ---------------------------------------------------------------------------
 
 // 4,600 characters of fictional text: 400 short of the long-answer limit, so
@@ -364,7 +452,9 @@ const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again lat
 // ---------------------------------------------------------------------------
 
 async function runPermutation(t, roles) {
-  const fixture = await createBrowserFixture();
+  // The story's workspace is on version 2 from the start (the switch-over
+  // itself is held): its samples, its client forms and Add a case all follow.
+  const fixture = await createBrowserFixture({ intakeVersion: 2 });
   const evidence = {
     roles,
     timings: {},
@@ -459,6 +549,29 @@ async function runPermutation(t, roles) {
     );
   };
 
+  // A staff page for the design docs: at the narrow widths the sidebar is an
+  // overlay that covers the page, so it is closed by its own toggle for the
+  // shot (the page redraws, nothing else moves) and opened again after.
+  const shootWithoutSidebar = async (page, name) => {
+    const setSidebar = async (open) => {
+      await waitForQuiet(page);
+      await page.locator('[data-action="toggle-sidebar"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        page,
+        `the sidebar to be ${open ? "open" : "closed"}`,
+        (wanted) =>
+          document.querySelector('[data-action="toggle-sidebar"]')?.getAttribute("aria-expanded") === wanted,
+        String(open),
+        RENDER_MS,
+      );
+    };
+    await setSidebar(false);
+    await waitForQuiet(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shoot(page, name);
+    await setSidebar(true);
+  };
+
   try {
     const clientEngine = await fixture.launch(roles.client);
     const staffEngine = await fixture.launch(roles.staff);
@@ -510,6 +623,18 @@ async function runPermutation(t, roles) {
         samples.map((row) => row.fixture_key).sort(),
         [...fixture.database.fixtureKeys].sort(),
       );
+      // The samples follow the workspace's version (migration 019).
+      assert.equal(
+        Number(
+          (
+            await one(fixture, "select intake_version from public.cases where id=$1", [
+              samples[0].id,
+            ])
+          ).intake_version,
+        ),
+        2,
+        "a version-2 workspace's sample is not on version 2",
+      );
       await shoot(staff, "staff-board-six-cases");
     });
 
@@ -522,10 +647,16 @@ async function runPermutation(t, roles) {
       assert.equal(classCase.fixture, false);
       // A client's own draft is theirs alone: the staff board cannot see it yet.
       assert.equal((await readBoardTotals(staff)).total, 6);
-      await fillIntakeToReview(client);
-      await waitForText(client, "Check your answers", RENDER_MS);
-      await shoot(client, "intake-check-your-answers");
-      await tickBox(client, "field-confirmed");
+      assert.equal(
+        Number(
+          (await one(fixture, "select intake_version from public.cases where id=$1", [classCase.id]))
+            .intake_version,
+        ),
+        2,
+      );
+      await fillIntakeV2ToSubmit(client, {
+        atCheck: () => shoot(client, "intake-v2-review-check"),
+      });
       await act(client, "SUBMIT", { badge: "Received" });
       // The same reference, on the other engine, with nothing copied by hand.
       await waitFor(
@@ -612,8 +743,13 @@ async function runPermutation(t, roles) {
         const before = await readClientPlace(client, applicantA.userId);
         assert.equal(before.stored.screen, "progress");
         assert.equal(before.stored.selectedCaseId, classCase.id);
-        assert.equal(before.stored.formStep, 3);
-        assert.deepEqual(before.stored.openPanels, ["confirmed"]);
+        // Version 2 remembers the sub-step the Submit was pressed on; the
+        // version-1 step number is checked in the version-1 phase.
+        assert.equal(before.stored.formSubstep, "review.submit");
+        assert.ok(
+          before.stored.openPanels.includes("confirmed"),
+          `the ticked confirmation was not remembered: ${JSON.stringify(before.stored.openPanels)}`,
+        );
         evidence.windowIsolation.clientBefore = before.stored;
 
         await choosePersona(staff, alex);
@@ -668,10 +804,154 @@ async function runPermutation(t, roles) {
     await phase("Alex claims preparation and requests the sample mileage record", async () => {
       await choosePersona(staff, alex);
       await waitForText(staff, "Preparation milestones", RENDER_MS);
+
+      // ---- The version-2 answers, before the claim (D5) ----------------
+      // Every tab is in the page and the others are hidden, so the phone
+      // check reads the whole of #app, hidden tabs included.
+      const appText = () => staff.evaluate(() => document.querySelector("#app")?.textContent ?? "");
+      await openCaseTab(staff, "intake");
+      const answersRead = await staff.evaluate(() => {
+        const panel = document.querySelector("#case-panel-intake .answers-v2");
+        return {
+          title: panel?.querySelector("#answers-title")?.textContent.trim() ?? null,
+          steps: [...(panel?.querySelectorAll(".answers-step > h3") ?? [])].map((h) => h.textContent.trim()),
+          parts: [...(panel?.querySelectorAll(".answers-sub > h4") ?? [])].map((h) => h.textContent.trim()),
+          wording: panel?.querySelector(".wording-used")?.textContent.trim() ?? null,
+          contact: document.querySelector("#case-panel-intake .contact-card")?.textContent ?? "",
+        };
+      });
+      assert.equal(answersRead.title, "What the client told us");
+      assert.ok(answersRead.steps.includes("About you"), `no step heading: ${JSON.stringify(answersRead.steps)}`);
+      assert.ok(
+        answersRead.parts.includes("Mailing address"),
+        `no sub-step heading: ${JSON.stringify(answersRead.parts)}`,
+      );
+      assert.equal(answersRead.wording, "Wording used: Standard");
+      assert.ok(answersRead.contact.includes(CONTACT_NOT_SHOWN), "the D5 sentence is missing");
+      assert.doesNotMatch(await appText(), SAMPLE_PHONE, "a phone reached a volunteer who has not claimed the case");
+      assert.equal(
+        await staff.locator('[data-action="view-draft"]').count(),
+        0,
+        "the draft 13614-C, which prints the phones, was offered before the claim",
+      );
+      await shootWithoutSidebar(staff, "staff-contact-hidden");
+
       await act(staff, "CLAIM_PREPARATION", {
         detail: { label: "Preparer", value: "Alex" },
       });
       await waitForBadge(client, "In preparation");
+
+      // ---- After the claim: the phone, the best time, the draft --------
+      await openCaseTab(staff, "intake");
+      const contactRow = (label) =>
+        staff.evaluate(
+          (wanted) =>
+            [...document.querySelectorAll("#case-panel-intake .contact-card .detail-row")]
+              .find((row) => row.querySelector("span")?.textContent.trim() === wanted)
+              ?.querySelector("strong")
+              ?.textContent.trim() ?? null,
+          label,
+        );
+      await waitFor(
+        staff,
+        "the phone in the contact card",
+        (pattern) => new RegExp(pattern).test(document.querySelector("#case-panel-intake .contact-card")?.textContent ?? ""),
+        SAMPLE_PHONE.source,
+        ARRIVAL_MS,
+      );
+      assert.match(await contactRow("Phone"), SAMPLE_PHONE);
+      assert.equal(await contactRow("Best time to reach"), "Weekday evenings");
+      assert.deepEqual(
+        await staff.evaluate(() =>
+          [...document.querySelectorAll('#case-panel-intake [data-action="view-draft"]')].map(
+            (button) => button.dataset.form,
+          ),
+        ),
+        ["en", "zh-s", "zh-t"],
+      );
+      // The draft opens as a PDF in its own tab. Chrome only, as in the
+      // version-2 phase: Firefox may download a blob PDF instead of opening
+      // it, which leaves nothing to read. Here the page is the staff window.
+      let staffDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      if (roles.staff === "chrome") {
+        const stray = [];
+        await staff.route("https://cdn.jsdelivr.net/**", (route) => {
+          stray.push(route.request().url());
+          return route.abort();
+        });
+        await waitForQuiet(staff);
+        const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+        await staff.locator('#case-panel-intake [data-action="view-draft"][data-form="en"]').click({ timeout: CLICK_MS });
+        const popup = await opened;
+        await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+        staffDraft = await popup.evaluate(async () => {
+          const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+          return { head: String.fromCharCode(...bytes.slice(0, 5)), size: bytes.length };
+        });
+        await popup.close();
+        await staff.unrouteAll({ behavior: "wait" });
+        assert.equal(staffDraft.head, "%PDF-");
+        assert.ok(staffDraft.size > 100 * 1024, `the staff draft is only ${staffDraft.size} bytes`);
+        // The sample's names are in Latin letters: no font is fetched.
+        assert.deepEqual(stray, [], "the staff draft fetched a font");
+      }
+      evidence.story.staffDraft = staffDraft;
+
+      // Materials: two boxes, one save.
+      const materials = staff.locator("#case-panel-intake #materials-form");
+      await waitForQuiet(staff);
+      await materials.getByLabel("Photo ID", { exact: true }).check({ timeout: CLICK_MS });
+      await materials.getByLabel("W-2", { exact: true }).check({ timeout: CLICK_MS });
+      await waitForQuiet(staff);
+      await materials.locator('button[data-case-action="RECORD_MATERIALS"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "both materials recorded by Alex",
+        () =>
+          [...document.querySelectorAll("#case-panel-intake #materials-form .material-recorded")].filter((note) =>
+            note.textContent.includes("Recorded by Alex"),
+          ).length === 2,
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.deepEqual(
+        (
+          await fixture.database.sql(
+            "select item from public.case_materials where case_id=$1 order by item",
+            [classCase.id],
+          )
+        ).rows.map((row) => row.item),
+        ["photo_id", "w2"],
+      );
+
+      // The best time: Weekends added, saved, and shown.
+      await clickAction(staff, "toggle-edit-contact");
+      await staff.locator("#contact-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForQuiet(staff);
+      await staff.locator("#field-contact-weekend").check({ timeout: CLICK_MS });
+      await waitForQuiet(staff);
+      await staff
+        .locator('#contact-form button[data-case-action="UPDATE_CONTACT"]')
+        .click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the contact card to show Weekends",
+        () =>
+          [...document.querySelectorAll("#case-panel-intake .contact-card .detail-row")].some(
+            (row) =>
+              row.querySelector("span")?.textContent.trim() === "Best time to reach" &&
+              /Weekends/.test(row.querySelector("strong")?.textContent ?? ""),
+          ),
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.deepEqual(
+        (await one(fixture, "select best_contact_time from public.case_contacts where case_id=$1", [classCase.id]))
+          .best_contact_time,
+        ["weekday_evening", "weekend"],
+      );
+      await shootWithoutSidebar(staff, "staff-answers-v2");
+
       await actForm(
         staff,
         "REQUEST_DOCUMENT",
@@ -685,6 +965,60 @@ async function runPermutation(t, roles) {
       await waitForText(client, REQUEST_TITLE, RENDER_MS);
       await shoot(client, "progress-action-needed");
       await shoot(staff, "staff-case-preparing");
+
+      // ---- The office works the client's document checklist ------------
+      // The cards come from the answers the client sent, through the same
+      // rules the page uses: the example's child is the household's one
+      // member, whose SSN card is Maybe needed until somebody moves it.
+      const sent = (await caseById(fixture, classCase.id)).answers;
+      const childSsn = `ssn.hh.${sent.hh?.[0]?.member_id}`;
+      const cards = cardsFor(sent);
+      assert.equal(cards.find((card) => card.slotId === childSsn)?.group, "maybe", `${childSsn} is not Maybe needed`);
+      assert.ok(cards.some((card) => card.slotId === "photo_id.tp"), "the photo ID card is missing");
+      const rowOf = (slot) => `#case-panel-documents #doc-${slot.replace(/\./g, "-")}`;
+      const groupOf = (slot) =>
+        staff.evaluate((selector) => document.querySelector(`${selector} .doc-group`)?.textContent.trim() ?? null, rowOf(slot));
+      await choosePersona(staff, sam);
+      await waitForCaseWorkspace(staff, classReference);
+      await openCaseTab(staff, "documents");
+      await staff
+        .locator("#case-panel-documents section.doc-checklist")
+        .waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(await groupOf(childSsn), "Maybe needed");
+      const moveCard = async (slot, group, word) => {
+        await waitForQuiet(staff);
+        await staff
+          .locator(`#case-panel-documents [data-action="move-card"][data-slot="${slot}"][data-group="${group}"]`)
+          .click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          `the ${slot} card to read ${word}`,
+          ([selector, wanted]) => document.querySelector(`${selector} .doc-group`)?.textContent.trim() === wanted,
+          [rowOf(slot), word],
+          ARRIVAL_MS,
+        );
+      };
+      await moveCard(childSsn, "needed", "Needed (moved up by the office)");
+      assert.equal((await cardRow(fixture, classCase.id, childSsn))?.group_override, "needed");
+      await waitForQuiet(staff);
+      await staff
+        .locator('#case-panel-documents [data-action="mark-card"][data-slot="photo_id.tp"][data-status="none"]')
+        .click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the photo ID card to read Don't have",
+        (selector) => /Don't have/.test(document.querySelector(`${selector}-status`)?.textContent ?? ""),
+        rowOf("photo_id.tp"),
+        ARRIVAL_MS,
+      );
+      assert.equal((await cardRow(fixture, classCase.id, "photo_id.tp"))?.status, "none");
+      await shootWithoutSidebar(staff, "staff-doc-checklist");
+      // "Move to Maybe needed" undoes the office's move, and nothing else.
+      await moveCard(childSsn, "maybe", "Maybe needed");
+      assert.equal((await cardRow(fixture, classCase.id, childSsn))?.group_override, null);
+      evidence.story.staffChecklist = { moved: childSsn, dontHave: "photo_id.tp" };
+      await choosePersona(staff, alex);
+      await waitForCaseWorkspace(staff, classReference);
     });
 
     await phase("Alex asks the office to contact the client", async () => {
@@ -1082,9 +1416,17 @@ async function runPermutation(t, roles) {
           !seen.includes(secret),
           `internal staff text reached the client window: ${secret.slice(0, 24)}…`,
         );
+      // A version-2 client's open document cards name papers, not amounts:
+      // the bank card asks for "a voided check or a bank letter with routing
+      // and account numbers" because the client chose a refund by deposit.
+      // Those cards are left out of the money check; everything else is in.
+      const claims = await client.evaluate(() => {
+        const cards = document.querySelector(".open-documents")?.innerText ?? "";
+        return (document.querySelector("#app")?.innerText ?? "").replace(cards, "");
+      });
       for (const word of MONEY_WORDS)
         assert.ok(
-          !seen.toLowerCase().includes(word),
+          !claims.toLowerCase().includes(word),
           `the client window claimed something about money: ${word}`,
         );
       assert.equal(
@@ -1297,12 +1639,16 @@ async function runPermutation(t, roles) {
         const reference = await startApplication(clientB.page);
         const own = await caseByReference(fixture, reference);
         await clickAction(clientB.page, "continue-intake");
-        await waitForText(clientB.page, "Your visit", RENDER_MS);
+        await waitForSubstep(clientB.page, "before.ready");
         await clickAction(clientB.page, "fill-fictional");
+        // The recorded first save, then a visits save, both online.
         await clickContinue(clientB.page);
-        await waitForText(clientB.page, "City of residence", ARRIVAL_MS);
+        await waitForSubstep(clientB.page, "before.service");
+        await railJump(clientB.page, "about.address");
+        await waitForQuiet(clientB.page);
         const savedOnce = await caseById(fixture, own.id);
         const receiptsBefore = await receiptCount(fixture, own.id, "SAVE_ANSWERS");
+        const city = clientB.page.locator("#field-client-addr_city");
 
         // Offline, and refused at the door. `setOffline` alone is enough in
         // Chrome — the request fails at once — but Firefox leaves it pending
@@ -1315,9 +1661,7 @@ async function runPermutation(t, roles) {
         const refuse = (route) => route.abort();
         await clientB.context.route(apiTraffic, refuse);
         await clientB.context.setOffline(true);
-        await clientB.page
-          .getByLabel("City of residence", { exact: true })
-          .fill(OFFLINE_CITY);
+        await city.fill(OFFLINE_CITY);
         await clickContinue(clientB.page);
         await waitForText(clientB.page, "No connection to the server.");
         await waitForText(clientB.page, "Not saved.");
@@ -1327,7 +1671,7 @@ async function runPermutation(t, roles) {
           Number(savedOnce.revision),
           "an offline action reached the server",
         );
-        assert.notEqual(offlineRow.answers.residenceCity, OFFLINE_CITY);
+        assert.notEqual(offlineRow.answers.addr_city, OFFLINE_CITY);
         assert.equal(
           await receiptCount(fixture, own.id, "SAVE_ANSWERS"),
           receiptsBefore,
@@ -1339,7 +1683,7 @@ async function runPermutation(t, roles) {
         await waitForText(clientB.page, "Saved");
         await waitForTextGone(clientB.page, "No connection to the server.");
         const retried = await caseById(fixture, own.id);
-        assert.equal(retried.answers.residenceCity, OFFLINE_CITY);
+        assert.equal(retried.answers.addr_city, OFFLINE_CITY);
         assert.equal(
           Number(retried.revision),
           Number(savedOnce.revision) + 1,
@@ -1361,11 +1705,13 @@ async function runPermutation(t, roles) {
       const reference = await startApplication(client);
       const draftCase = await caseByReference(fixture, reference);
       await clickAction(client, "continue-intake");
-      await waitForText(client, "Your visit", RENDER_MS);
+      await waitForSubstep(client, "before.ready");
       await clickAction(client, "fill-fictional");
       await clickContinue(client);
-      await waitForText(client, "City of residence", ARRIVAL_MS);
-      await client.getByLabel("City of residence", { exact: true }).fill(MINE_CITY);
+      await waitForSubstep(client, "before.service");
+      await railJump(client, "about.address");
+      await waitForQuiet(client);
+      await client.locator("#field-client-addr_city").fill(MINE_CITY);
 
       // Another window of the same account — the one thing that can change a
       // client's own draft, because the office is refused it by design.
@@ -1375,29 +1721,33 @@ async function runPermutation(t, roles) {
         .locator(`.application-row:has-text("${reference}")`)
         .first()
         .click({ timeout: CLICK_MS });
-      await waitForText(draftWin.page, "Your visit", ARRIVAL_MS);
-      await clickContinue(draftWin.page);
-      await waitForText(draftWin.page, "City of residence", ARRIVAL_MS);
-      await draftWin.page
-        .getByLabel("City of residence", { exact: true })
-        .fill(OTHER_CITY);
-      await clickContinue(draftWin.page);
-      await waitForStep(draftWin.page, 3);
+      await waitForIntakeV2(draftWin.page);
+      await railJump(draftWin.page, "about.address");
+      await waitForQuiet(draftWin.page);
+      await draftWin.page.locator("#field-client-addr_city").fill(OTHER_CITY);
+      await draftWin.page.locator('#intake-v2-form button[type="submit"]').click({ timeout: CLICK_MS });
+      await waitForSubstep(draftWin.page, "about.marital");
 
       await waitForText(client, "Someone else changed this application");
-      const conflict = await client.locator(".conflict-panel").innerText();
-      assert.ok(conflict.includes(MINE_CITY), "the conflict hid this window's edit");
-      assert.ok(conflict.includes(OTHER_CITY), "the conflict hid the other version");
+      // The conflict lists the city by its own wording, with both values.
+      const rows = await client.evaluate(() =>
+        [...document.querySelectorAll(".conflict-panel tbody tr")].map((row) => [
+          row.querySelector("th")?.textContent.trim() ?? null,
+          ...[...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()),
+        ]),
+      );
+      assert.deepEqual(
+        rows.find((row) => row[0] === "City"),
+        ["City", MINE_CITY, OTHER_CITY],
+        `the conflict did not offer both cities: ${JSON.stringify(rows)}`,
+      );
       await clickAction(client, "reconcile-mine");
       await waitForTextGone(client, "Someone else changed this application");
-      assert.equal(
-        await client.getByLabel("City of residence", { exact: true }).inputValue(),
-        MINE_CITY,
-      );
+      assert.equal(await client.locator("#field-client-addr_city").inputValue(), MINE_CITY);
       await clickContinue(client);
-      await waitForStep(client, 3);
+      await waitForSubstep(client, "about.marital");
       const saved = await caseById(fixture, draftCase.id);
-      assert.equal(saved.answers.residenceCity, MINE_CITY);
+      assert.equal(saved.answers.addr_city, MINE_CITY);
       evidence.regressions.conflict = "REMOTE_CHANGED offered both answers; the chosen one saved";
       assertConsoleQuiet(draftWin, {
         name: "second applicant-A window",
@@ -1406,115 +1756,54 @@ async function runPermutation(t, roles) {
       await draftWin.context.close();
     });
 
-    await phase(
-      "the form screens, blocks a blank required answer, and keeps what was saved",
-      async () => {
-        await clickAction(client, "open-applications");
-        const reference = await startApplication(client);
-        const own = await caseByReference(fixture, reference);
-        const untouched = Number(own.revision);
-        await clickAction(client, "continue-intake");
-        await waitForText(client, "Your visit", RENDER_MS);
+    // The version-1 checks that stood here (a blank required answer stops
+    // step 1; an out-of-scope answer stops the form) are version-1 rules and
+    // live in the version-1 phase below.
+    await phase("a draft saved with Save & exit comes back after signing in again", async () => {
+      await clickAction(client, "open-applications");
+      const reference = await startApplication(client);
+      const own = await caseByReference(fixture, reference);
+      await clickAction(client, "continue-intake");
+      await waitForSubstep(client, "before.ready");
+      await clickAction(client, "fill-fictional");
+      await clickContinue(client);
+      await waitForSubstep(client, "before.service");
+      await railJump(client, "about.address");
 
-        // A required answer nobody has given stops the step, and the field
-        // that stopped it says so for itself.
-        await clickContinue(client);
-        const blocked = await client.evaluate(() => {
-          const form = document.querySelector("#intake-form");
-          const invalid = [...form.elements].find(
-            (element) => element.willValidate && !element.checkValidity(),
-          );
-          return {
-            formValid: form.checkValidity(),
-            step: document.querySelector(".page-intro .overline")?.textContent ?? null,
-            field: invalid?.name ?? null,
-            message: invalid?.validationMessage ?? null,
-          };
-        });
-        assert.equal(blocked.formValid, false);
-        assert.equal(blocked.step, "STEP 1 OF 4", "a blank required answer did not stop the step");
-        assert.equal(blocked.field, "service", "a different field was the one that blocked");
-        assert.ok(blocked.message, "the field that blocked the step explains nothing");
-        assert.equal(
-          Number((await caseById(fixture, own.id)).revision),
-          untouched,
-          "a form that refused to submit still sent something",
-        );
-        evidence.regressions.requiredField = {
-          field: blocked.field,
-          stoppedAt: blocked.step,
-        };
-
-        await clickAction(client, "fill-fictional");
-        await clickContinue(client);
-        await waitForText(client, "City of residence", ARRIVAL_MS);
-
-        // Screening: an answer outside what PCDC prepares stops the
-        // application where it stands, and says it is a service limit.
-        await waitForQuiet(client);
-        await client
-          .locator('input[name="other"][value="yes"]')
-          .click({ timeout: CLICK_MS });
-        await waitForText(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
-        const stopped = await client.evaluate(() => ({
-          continueDisabled: [
-            ...document.querySelectorAll("#intake-form button[type='submit']"),
-          ].every((button) => button.disabled),
-          submits: document.querySelectorAll('[data-case-action="SUBMIT"]').length,
-        }));
-        assert.equal(stopped.continueDisabled, true, "an unsupported answer still continues");
-        assert.equal(stopped.submits, 0, "an unsupported answer can still be submitted");
-        await waitForText(
-          client,
-          "This is a PCDC service limitation, not a judgement about your taxes.",
-          RENDER_MS,
-        );
-        evidence.regressions.screening =
-          "the out-of-scope notice appeared, Continue was disabled and nothing could be submitted";
-
-        await waitForQuiet(client);
-        await client
-          .locator('input[name="other"][value="no"]')
-          .click({ timeout: CLICK_MS });
-        await waitForTextGone(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
-
-        // Save and exit, sign out, come back as the same applicant, and open
-        // the same application again from the list.
-        await client.getByLabel("City of residence", { exact: true }).fill(RETURN_CITY);
-        await clickAction(client, "save-exit");
-        await waitForText(client, "My applications", RENDER_MS);
-        assert.equal(
-          (await caseById(fixture, own.id)).answers.residenceCity,
-          RETURN_CITY,
-          "save and exit saved nothing",
-        );
-        await clickAction(client, "sign-out");
-        await waitForText(client, "Sign in with your email", RENDER_MS);
-        // A fresh document, because the auth module's resend cooldown lives in
-        // the one it signed out of (Task 5A, note 3).
-        await client.goto(fixture.appOrigin);
-        await loginTestUser({ page: client, actor: applicantA, fixture });
-        await watchAlerts(client);
-        await waitForQuiet(client);
-        await client
-          .locator(`.application-row:has-text("${reference}")`)
-          .first()
-          .click({ timeout: CLICK_MS });
-        await waitForText(client, "Your visit", ARRIVAL_MS);
-        await clickContinue(client);
-        await waitForText(client, "City of residence", ARRIVAL_MS);
-        assert.equal(
-          await client.getByLabel("City of residence", { exact: true }).inputValue(),
-          RETURN_CITY,
-          "the answers saved before signing out did not come back",
-        );
-        evidence.regressions.saveAndReturn =
-          "saved, signed out, signed back in, reopened from the list with the same answers";
-        // Left on the step the reset phase reads a field from.
-        await clickContinue(client);
-        await waitForStep(client, 3);
-      },
-    );
+      // Save and exit, sign out, come back as the same applicant, and open
+      // the same application again from the list.
+      await waitForQuiet(client);
+      await client.locator("#field-client-addr_city").fill(RETURN_CITY);
+      await clickAction(client, "save-exit");
+      await waitForText(client, "My applications", RENDER_MS);
+      assert.equal(
+        (await caseById(fixture, own.id)).answers.addr_city,
+        RETURN_CITY,
+        "save and exit saved nothing",
+      );
+      await clickAction(client, "sign-out");
+      await waitForText(client, "Sign in with your email", RENDER_MS);
+      // A fresh document, because the auth module's resend cooldown lives in
+      // the one it signed out of (Task 5A, note 3).
+      await client.goto(fixture.appOrigin);
+      await loginTestUser({ page: client, actor: applicantA, fixture });
+      await watchAlerts(client);
+      await waitForQuiet(client);
+      await client
+        .locator(`.application-row:has-text("${reference}")`)
+        .first()
+        .click({ timeout: CLICK_MS });
+      await waitForIntakeV2(client);
+      await railJump(client, "about.address");
+      assert.equal(
+        await client.locator("#field-client-addr_city").inputValue(),
+        RETURN_CITY,
+        "the answers saved before signing out did not come back",
+      );
+      evidence.regressions.saveAndReturn =
+        "saved, signed out, signed back in, reopened from the list with the same answers";
+      // Left on the sub-step the reset phase reads a field from.
+    });
 
     await phase("a dialog takes the keyboard and gives it back", async () => {
       // Run while the client window is quiet: a dialog is about the keyboard,
@@ -1632,46 +1921,205 @@ async function runPermutation(t, roles) {
       await choosePersona(staff, sam);
       await openBoard(staff, OFFICE_BOARD_HEADING);
       await clickAction(staff, "open-add-case");
-      await staff
-        .locator("#assisted-intake-form")
-        .waitFor({ state: "visible", timeout: RENDER_MS });
-      await clickAction(staff, "fill-assisted-intake");
+      await staff.locator("#add-case-v2-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      const meta = () =>
+        staff.evaluate(() => document.querySelector(".add-case-v2 .application-meta span")?.textContent.trim() ?? null);
+      const box = (id) => staff.locator(`#field-office-${id}`);
+      const text = (selector) =>
+        staff.evaluate((wanted) => document.querySelector(wanted)?.textContent.trim() ?? null, selector);
+      const toggle = (id) => staff.locator(`#add-sub-${id.replace(/\./g, "-")}-toggle`);
+      const openPart = async (id) => {
+        if ((await toggle(id).getAttribute("aria-expanded")) === "true") return;
+        await waitForQuiet(staff);
+        await toggle(id).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          `the ${id} part to open`,
+          (selector) => document.querySelector(selector)?.getAttribute("aria-expanded") === "true",
+          `#add-sub-${id.replace(/\./g, "-")}-toggle`,
+          RENDER_MS,
+        );
+      };
+      assert.equal(await meta(), "Application ID: assigned when you save");
+
+      // Nothing to record or mark on before there is a case.
+      assert.equal(await text(".add-case-side .materials-card .staff-reason"), "Save the draft first to record materials.");
+      assert.equal(
+        await staff.evaluate(() =>
+          [...document.querySelectorAll('.add-case-side .materials-card input[type="checkbox"]')].every((input) => input.disabled),
+        ),
+        true,
+        "a materials box was enabled before the first save",
+      );
+      await openPart("documents");
+      const marksBefore = await staff.evaluate(() => ({
+        note: document.querySelector("#add-sub-documents-body > .field-note")?.textContent.trim() ?? null,
+        marks: [...document.querySelectorAll('#add-sub-documents-body [data-action="mark-card"]')].map((mark) => mark.disabled),
+      }));
+      assert.equal(marksBefore.note, "Save the draft first to mark documents.");
+      assert.ok(marksBefore.marks.length > 0, "the Documents part shows no marks to hold");
+      assert.ok(marksBefore.marks.every(Boolean), "a document mark was enabled before the first save");
+      await waitForQuiet(staff);
+      await toggle("documents").click({ timeout: CLICK_MS });
       await waitFor(
         staff,
-        "the assisted intake form to be filled in",
-        () => Boolean(document.querySelector("#field-assisted-firstName")?.value),
+        "the Documents part to close",
+        () => document.querySelector("#add-sub-documents-toggle")?.getAttribute("aria-expanded") === "false",
         undefined,
         RENDER_MS,
       );
-      // Creating a case is the form's own submit, not a case action — there is
-      // no case yet — so what proves a repeat is safe is that no case appeared.
-      const before = await workspaceCaseCount(fixture);
+
+      await clickAction(staff, "fill-assisted-intake");
+      await waitFor(
+        staff,
+        "every part to be answered",
+        () => document.querySelector("#add-case-count")?.textContent.trim() === "Every part is answered",
+        undefined,
+        RENDER_MS,
+      );
+      await waitForQuiet(staff);
+      await shootWithoutSidebar(staff, "add-case-v2");
+      await openPart("about.you");
+      const firstName = await box("tp_first_name").inputValue();
+      assert.ok(firstName, "Fill fictional details left the first name blank");
+
+      // The leave check: every way off the page asks first, and Keep
+      // editing keeps every answer. No case exists yet.
+      const casesBefore = await workspaceCaseCount(fixture);
+      const leaveThenKeep = async (selector, what) => {
+        await waitForQuiet(staff);
+        await staff.locator(selector).click({ timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          `the leave check after ${what}`,
+          () => (document.querySelector(".modal")?.textContent ?? "").includes("Leave without saving?"),
+          undefined,
+          RENDER_MS,
+        );
+        await waitForQuiet(staff);
+        await staff.locator(".modal").getByRole("button", { name: "Keep editing", exact: true }).click({ timeout: CLICK_MS });
+        await waitFor(staff, "the leave check to close", () => document.querySelector(".modal") === null, undefined, RENDER_MS);
+        assert.equal(await staff.locator("#add-case-v2-form").count(), 1, `${what} left Add a case`);
+        assert.equal(await box("tp_first_name").inputValue(), firstName, `Keep editing after ${what} lost an answer`);
+      };
+      await leaveThenKeep("#add-case-cancel", "Cancel");
+      await leaveThenKeep('#app-sidebar [data-action="open-cases"]', "All cases");
+      assert.equal(await workspaceCaseCount(fixture), casesBefore, "the leave check created a case");
+
+      // Save draft: the first save creates the case. A repeat is safe as
+      // long as at most one case appeared, because the draft adopts it.
       record(
-        "CREATE_ASSISTED",
+        "SAVE_OFFICE_DRAFT",
         await pressUntilEffect(staff, {
           press: async () => {
             await waitForQuiet(staff);
-            await staff
-              .locator('#assisted-intake-form button[type="submit"]')
-              .click({ timeout: CLICK_MS });
+            await staff.locator('[data-action="save-office-draft"]').click({ timeout: CLICK_MS });
           },
-          ready: HAS_TEXT,
-          arg: "The answers the office entered",
-          what: "the assisted application's own case workspace",
-          safeToRepeat: async () => (await workspaceCaseCount(fixture)) === before,
+          ready: () => {
+            const said = document.querySelector(".add-case-v2 .application-meta span")?.textContent.trim() ?? "";
+            return said.startsWith("Application ID: ") && !said.endsWith("assigned when you save");
+          },
+          what: "the saved draft's Application ID",
+          safeToRepeat: async () => (await workspaceCaseCount(fixture)) <= casesBefore + 1,
         }),
       );
-      const assistedReference = (await staff.locator("#case-title").innerText()).trim();
-      const assisted = await caseByReference(fixture, assistedReference);
-      assert.equal(assisted.owner_user_id, null, "an assisted case has a client account");
-      const onAssisted = { caseId: assisted.id };
-      await tickBox(staff, "field-confirmed");
-      await act(
-        staff,
-        "SUBMIT",
-        { badge: "Received" },
-        { ...onAssisted, attributes: '[data-role="assisted-submit"]' },
+      const assistedReference = (await meta()).replace("Application ID: ", "");
+      assert.match(assistedReference, REFERENCE_PATTERN);
+      assert.equal(await workspaceCaseCount(fixture), casesBefore + 1, "Save draft made more than one case");
+      const assisted = await one(
+        fixture,
+        "select id,owner_user_id,intake_version,stage,answers,intake_visited from public.cases where workspace_id=$1 and reference=$2",
+        [fixture.database.workspaceId, assistedReference],
       );
+      assert.ok(assisted, "the saved draft's reference names no case");
+      assert.equal(assisted.owner_user_id, null, "an assisted case has a client account");
+      assert.equal(Number(assisted.intake_version), 2);
+      assert.equal(assisted.stage, "draft");
+      assert.equal(assisted.answers.tp_first_name, firstName, "the draft's answers were not saved");
+      assert.deepEqual(assisted.intake_visited, [], "the office sent visits");
+      const onAssisted = { caseId: assisted.id };
+
+      // With a case, the materials card and the marks work.
+      await waitFor(
+        staff,
+        "the materials card to be enabled",
+        () =>
+          Boolean(document.querySelector('.add-case-side button[data-case-action="RECORD_MATERIALS"]')) &&
+          document.querySelector("#field-materials-photo_id")?.disabled === false,
+        undefined,
+        RENDER_MS,
+      );
+      await waitForQuiet(staff);
+      await staff.locator(".add-case-side #materials-form").getByLabel("Photo ID", { exact: true }).check({ timeout: CLICK_MS });
+      await waitForQuiet(staff);
+      await staff.locator('.add-case-side button[data-case-action="RECORD_MATERIALS"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the photo ID recorded by Sam",
+        () => /Recorded by Sam/.test(document.querySelector('label[for="field-materials-photo_id"]')?.textContent ?? ""),
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.deepEqual(
+        (await fixture.database.sql("select item from public.case_materials where case_id=$1", [assisted.id])).rows.map(
+          (row) => row.item,
+        ),
+        ["photo_id"],
+      );
+      await openPart("documents");
+      await waitForQuiet(staff);
+      await staff
+        .locator('#add-sub-documents-body [data-action="mark-card"][data-slot="photo_id.tp"][data-status="later"]')
+        .click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the photo ID card to read Later",
+        () => /Later/.test(document.querySelector("#doc-photo_id-tp-status")?.textContent ?? ""),
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal((await cardRow(fixture, assisted.id, "photo_id.tp"))?.status, "later");
+      await shootWithoutSidebar(staff, "add-case-v2-saved");
+
+      // Send waits only for the box.
+      const send = staff.locator("#add-case-send");
+      assert.equal(await send.isDisabled(), true, "Send was on before the box was ticked");
+      await tickBox(staff, "field-confirmed");
+      assert.equal(await send.isDisabled(), false, "Send stayed off with the box ticked");
+
+      // A bad email and a cleared last name: Send stays on, and its press is
+      // refused with the reasons shown and the keyboard on the count.
+      await openPart("about.you");
+      await waitForQuiet(staff);
+      await box("email").fill("not-an-email");
+      await box("tp_last_name").fill("");
+      assert.equal(await send.isDisabled(), false, "Send went off with answers missing");
+      assert.equal(await text("#field-office-tp_last_name-note"), "", "the last name's note spoke before Send");
+      await send.click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the keyboard on the count after a refused Send",
+        () => document.activeElement?.id === "add-case-count",
+        undefined,
+        ARRIVAL_MS,
+      );
+      await waitForQuiet(staff);
+      const refusedRow = await caseById(fixture, assisted.id);
+      assert.equal(refusedRow.stage, "draft", "a draft with missing answers was sent");
+      assert.equal(refusedRow.answers.tp_last_name ?? null, null, "the cleared last name was not saved");
+      assert.notEqual(refusedRow.answers.email, "not-an-email", "an invalid email reached the server");
+      assert.match(await text("#add-case-count"), /\bpart\b/);
+      assert.equal(await text("#add-sub-about-you-status"), "Needs answers");
+      assert.equal(await text("#field-office-tp_last_name-note"), "Needs an answer");
+      assert.equal(await text("#field-office-email-note"), "Enter a valid email address.");
+
+      // Both fixed: one press sends it, and the page is the case.
+      await waitForQuiet(staff);
+      await box("email").fill("walkin@example.com");
+      await box("tp_last_name").fill("Rivera");
+      await send.click({ timeout: CLICK_MS });
+      await waitForCaseWorkspace(staff, assistedReference);
+      assert.equal((await caseById(fixture, assisted.id)).stage, "received");
 
       // The case pool, while the new case is still in intake with nobody
       // preparing it: its phase tab, a narrowing filter, and clearing it.
@@ -1979,11 +2427,170 @@ async function runPermutation(t, roles) {
       await waitForText(client, classReference, ARRIVAL_MS);
     });
 
-    // After the reset, which compares case sets. The version-2 form (parts 4b
-    // and 4b2) is reached only on a version-2 workspace, and nothing switches
-    // one yet, so this phase switches the story's own workspace for its length
-    // and always sets it back. The case it makes is never opened on a staff
-    // screen.
+    // Version 1 outlives the switch-over: a draft started on it finishes in
+    // the old four-step form, and the office's version-1 Add a case still
+    // creates a case in one call. This phase sets the story's workspace to 1
+    // for its length and always sets it back to 2. It holds the version-1
+    // checks the rest of the story no longer reaches.
+    await phase("a version-1 draft still finishes in the old form", async () => {
+      const { workspaceId } = fixture.database;
+      try {
+        await fixture.database.sql(
+          "update public.workspaces set default_intake_version=1 where id=$1",
+          [workspaceId],
+        );
+        await clickAction(client, "open-applications");
+        const reference = await startApplication(client);
+        const own = await caseByReference(fixture, reference);
+        const untouched = Number(own.revision);
+        assert.equal(
+          Number(
+            (await one(fixture, "select intake_version from public.cases where id=$1", [own.id]))
+              .intake_version,
+          ),
+          1,
+        );
+        await fillIntakeToReview(client, {
+          // A required answer nobody has given stops the step, and the field
+          // that stopped it says so for itself.
+          beforeFill: async () => {
+            await clickContinue(client);
+            const blocked = await client.evaluate(() => {
+              const form = document.querySelector("#intake-form");
+              const invalid = [...form.elements].find(
+                (element) => element.willValidate && !element.checkValidity(),
+              );
+              return {
+                formValid: form.checkValidity(),
+                step: document.querySelector(".page-intro .overline")?.textContent ?? null,
+                field: invalid?.name ?? null,
+                message: invalid?.validationMessage ?? null,
+              };
+            });
+            assert.equal(blocked.formValid, false);
+            assert.equal(blocked.step, "STEP 1 OF 4", "a blank required answer did not stop the step");
+            assert.equal(blocked.field, "service", "a different field was the one that blocked");
+            assert.ok(blocked.message, "the field that blocked the step explains nothing");
+            assert.equal(
+              Number((await caseById(fixture, own.id)).revision),
+              untouched,
+              "a form that refused to submit still sent something",
+            );
+            evidence.regressions.requiredField = {
+              field: blocked.field,
+              stoppedAt: blocked.step,
+            };
+          },
+          // Screening: an answer outside what PCDC prepares stops the
+          // application where it stands, and says it is a service limit.
+          atStep: async (step) => {
+            if (step !== 2) return;
+            await waitForText(client, "City of residence", ARRIVAL_MS);
+            await waitForQuiet(client);
+            await client
+              .locator('input[name="other"][value="yes"]')
+              .click({ timeout: CLICK_MS });
+            await waitForText(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
+            const stopped = await client.evaluate(() => ({
+              continueDisabled: [
+                ...document.querySelectorAll("#intake-form button[type='submit']"),
+              ].every((button) => button.disabled),
+              submits: document.querySelectorAll('[data-case-action="SUBMIT"]').length,
+            }));
+            assert.equal(stopped.continueDisabled, true, "an unsupported answer still continues");
+            assert.equal(stopped.submits, 0, "an unsupported answer can still be submitted");
+            await waitForText(
+              client,
+              "This is a PCDC service limitation, not a judgement about your taxes.",
+              RENDER_MS,
+            );
+            evidence.regressions.screening =
+              "the out-of-scope notice appeared, Continue was disabled and nothing could be submitted";
+            await waitForQuiet(client);
+            await client
+              .locator('input[name="other"][value="no"]')
+              .click({ timeout: CLICK_MS });
+            await waitForTextGone(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
+          },
+        });
+        await waitForText(client, "Check your answers", RENDER_MS);
+        await shoot(client, "intake-check-your-answers");
+        await tickBox(client, "field-confirmed");
+        await act(client, "SUBMIT", { badge: "Received" }, { caseId: own.id });
+        // The version-1 window record: the step, and the ticked box.
+        const place = await readClientPlace(client, applicantA.userId);
+        assert.equal(place.stored.screen, "progress");
+        assert.equal(place.stored.selectedCaseId, own.id);
+        assert.equal(place.stored.formStep, 3);
+        assert.deepEqual(place.stored.openPanels, ["confirmed"]);
+        assert.equal((await caseById(fixture, own.id)).stage, "received");
+
+        // The office's version-1 Add a case: one call creates the case.
+        await choosePersona(staff, sam);
+        await openBoard(staff, OFFICE_BOARD_HEADING);
+        await clickAction(staff, "open-add-case");
+        await staff
+          .locator("#assisted-intake-form")
+          .waitFor({ state: "visible", timeout: RENDER_MS });
+        await clickAction(staff, "fill-assisted-intake");
+        await waitFor(
+          staff,
+          "the assisted intake form to be filled in",
+          () => Boolean(document.querySelector("#field-assisted-firstName")?.value),
+          undefined,
+          RENDER_MS,
+        );
+        // Creating a case is the form's own submit, not a case action — there
+        // is no case yet — so what proves a repeat is safe is that no case
+        // appeared.
+        const before = await workspaceCaseCount(fixture);
+        record(
+          "CREATE_ASSISTED",
+          await pressUntilEffect(staff, {
+            press: async () => {
+              await waitForQuiet(staff);
+              await staff
+                .locator('#assisted-intake-form button[type="submit"]')
+                .click({ timeout: CLICK_MS });
+            },
+            ready: HAS_TEXT,
+            arg: "The answers the office entered",
+            what: "the assisted application's own case workspace",
+            safeToRepeat: async () => (await workspaceCaseCount(fixture)) === before,
+          }),
+        );
+        const assistedReference = (await staff.locator("#case-title").innerText()).trim();
+        const assisted = await caseByReference(fixture, assistedReference);
+        assert.equal(assisted.owner_user_id, null, "an assisted case has a client account");
+        assert.equal(
+          Number(
+            (await one(fixture, "select intake_version from public.cases where id=$1", [assisted.id]))
+              .intake_version,
+          ),
+          1,
+        );
+        await tickBox(staff, "field-confirmed");
+        await act(
+          staff,
+          "SUBMIT",
+          { badge: "Received" },
+          { caseId: assisted.id, attributes: '[data-role="assisted-submit"]' },
+        );
+        evidence.regressions.versionOne = {
+          client: "blocked blank, screened, walked four steps and submitted",
+          office: "created in one call and submitted",
+        };
+      } finally {
+        await fixture.database.sql(
+          "update public.workspaces set default_intake_version=2 where id=$1",
+          [workspaceId],
+        );
+      }
+    });
+
+    // After the reset, which compares case sets. The story's workspace is on
+    // version 2, so this phase needs no switch of its own. The case it makes
+    // is never opened on a staff screen.
     //
     // Typing rule: text goes in with `fill`, or `focus` then the keyboard.
     // Nothing clicks into a field, because that click is itself a press, and it
@@ -1994,7 +2601,6 @@ async function runPermutation(t, roles) {
     // before.ready to review.submit. Everywhere else the phase moves the way a
     // person jumps around: a rail link (`go-substep`), an alert, a Change.
     await phase("a client walks the version-2 intake, sub-step by sub-step", async () => {
-      const { workspaceId } = fixture.database;
       let v2Win = null;
       let againWin = null;
       // The console lines this phase causes on purpose, by their place in the
@@ -2002,10 +2608,6 @@ async function runPermutation(t, roles) {
       // causes it, so nothing else can pass under its pattern.
       const excused = new Set();
       try {
-        await fixture.database.sql(
-          "update public.workspaces set default_intake_version=2 where id=$1",
-          [workspaceId],
-        );
         v2Win = await openWindow(clientEngine);
         const page = v2Win.page;
         const box = (id) => page.locator(`#field-client-${id}`);
@@ -2195,8 +2797,8 @@ async function runPermutation(t, roles) {
             ARRIVAL_MS,
           );
 
-        // Applicant B already has cases from earlier phases (a version-1 draft
-        // among them), so this is a new one, and every query below uses its id.
+        // Applicant B already has a case from an earlier phase (the offline
+        // draft), so this is a new one, and every query below uses its id.
         await loginTestUser({ page, actor: applicantB, fixture });
         const reference = await startApplication(page);
         const own = await caseByReference(fixture, reference);
@@ -2497,6 +3099,17 @@ async function runPermutation(t, roles) {
         // stale boxes back over the office's edit.
         await jump("about.you");
         await waitForQuiet(page);
+        // Warm the realtime path first: a no-change bump from the office whose
+        // re-read is waited for, so the change under the press is not the
+        // first one this window has seen in a while (the hold lasts 2 seconds,
+        // and a cold delivery in Firefox could outlast it).
+        const warmed = page.waitForResponse(
+          (response) => response.url().includes("/rest/v1/case_document_cards"),
+          { timeout: ARRIVAL_MS },
+        );
+        await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [own.id]);
+        await warmed;
+        await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /Unsaved changes/, "the draft must be clean for this check");
         await mark("#intake-v2-form", "__beforeOffice");
         const heldLink = railLink("about.address");
@@ -2504,24 +3117,28 @@ async function runPermutation(t, roles) {
         const pressAt = await heldLink.boundingBox();
         await page.mouse.move(pressAt.x + pressAt.width / 2, pressAt.y + pressAt.height / 2);
         await page.mouse.down();
-        // The re-read a realtime change causes ends with the document cards;
-        // the hold's 2-second safety timer is running, so it must land well
-        // inside it.
+        // The re-read a realtime change causes ends with the document cards.
+        // The wait is the suite's usual arrival time, not a tight window: a
+        // slow realtime delivery is not a failure here. What the check below
+        // pins is that the page has not redrawn by the time the re-read is in,
+        // which fails by itself if the hold's 2-second safety timer ran out.
         const reread = page.waitForResponse(
           (response) => response.url().includes("/rest/v1/case_document_cards"),
-          { timeout: 1500 },
+          { timeout: ARRIVAL_MS },
         );
+        const pressedAt = Date.now();
         await fixture.database.sql(
           `update public.cases set answers = answers || '{"tp_job_title":"Librarian"}'::jsonb,
              revision = revision + 1 where id=$1`,
           [own.id],
         );
         await reread;
+        const rereadMs = Date.now() - pressedAt;
         await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
         assert.equal(
           await marked("#intake-v2-form", "__beforeOffice"),
           true,
-          "the page redrew during the press, so the stale-box case was not reached",
+          `the page redrew during the press, so the stale-box case was not reached (the re-read came ${rereadMs} ms into the press; the hold lasts 2000 ms)`,
         );
         assert.equal(await box("tp_job_title").inputValue(), "Teacher");
         await page.mouse.up();
@@ -3221,10 +3838,6 @@ async function runPermutation(t, roles) {
           "the console lines this phase excuses are not the one refused form request",
         );
       } finally {
-        await fixture.database.sql(
-          "update public.workspaces set default_intake_version=1 where id=$1",
-          [workspaceId],
-        );
         await againWin?.context.close();
         await v2Win?.context.close();
       }

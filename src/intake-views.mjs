@@ -256,25 +256,48 @@ const statusOf = (card) => STATUS[card.status] ?? STATUS.not_done;
 const markButton = (slot, status, text, off = "") =>
   button(esc(text), "mark-card", "secondary", `data-slot="${esc(slot)}" data-status="${status}"${off}`);
 
+// The words on a card: the client's own (4b2), or the office's, which marks
+// for the client in front of it (Add a case). The office's reason line names
+// the question that asked for the card, never the client's "You said…".
+const CARD_WORDS = Object.freeze({
+  client: {
+    later: "I will send it later",
+    none: "I don't have this",
+    note: "Uploading arrives soon. For now, bring it or mark it below.",
+  },
+  office: {
+    later: "Later",
+    none: "Don't have",
+    note: "Uploads come later. Mark what the client will send later or doesn't have.",
+  },
+});
+
 // One card. `links` is false where the answers are locked (the progress page),
 // so the why line is plain text there. The optional "other" card has the
 // upload buttons but no marks and no status (ruling R1). `off` is
 // `offWhileBusy`: the marks and the why link wait for an action in flight.
-function docCard(card, { links = true, off = "" } = {}) {
+// `office` puts the card in the office's words (Add a case).
+export function docCard(card, { links = true, off = "", office = false } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
   const optional = card.group === "optional";
+  const words = office ? CARD_WORDS.office : CARD_WORDS.client;
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
   const whyText = card.why?.en ?? "";
-  const why = whyText
-    ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}"${off}>${esc(whyText)}</button>` : esc(whyText)}</p>`
-    : "";
+  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en" }) : "";
+  const why = office
+    ? asked
+      ? `<p class="doc-why">Asked by: ${esc(asked)}</p>`
+      : ""
+    : whyText
+      ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}"${off}>${esc(whyText)}</button>` : esc(whyText)}</p>`
+      : "";
   const hint = card.hint?.en ? `<p class="doc-hint">${esc(card.hint.en)}</p>` : "";
   const noteId = `${id}-note`;
-  const upload = `<div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("camera")} Take a photo</button><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("upload")} Choose a file</button></div><p class="doc-note" id="${noteId}">Uploading arrives soon. For now, bring it or mark it below.</p>`;
+  const upload = `<div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("camera")} Take a photo</button><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("upload")} Choose a file</button></div><p class="doc-note" id="${noteId}">${esc(words.note)}</p>`;
   const status = statusOf(card);
   const marks = optional
     ? ""
-    : `<div class="doc-marks">${markButton(card.slotId, "later", "I will send it later", off)}${markButton(card.slotId, "none", "I don't have this", off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", "Mark as not done", off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
+    : `<div class="doc-marks">${markButton(card.slotId, "later", words.later, off)}${markButton(card.slotId, "none", words.none, off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", "Mark as not done", off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
   return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(card.label?.en)}</h3><p class="doc-owner">${esc(card.ownerLine?.en)}</p>${why}${hint}${upload}${marks}</article>`;
 }
 

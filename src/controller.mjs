@@ -10,7 +10,9 @@ import {
   findQuestion,
   findSubstep,
   isMemberId,
+  missingToSubmit,
   stepsFor,
+  substepOfQuestion,
   substepsFor,
 } from "./intake-catalogue.mjs";
 import {
@@ -293,6 +295,18 @@ export function createController({
     // Version 2 only. A sub-step opened from the summary's Change link: its
     // primary button returns to the summary (§5.2).
     returnToSummary: false,
+    // The version-2 Add a case (spec 2026-10-04 §10). `officeDraft`: a new
+    // version-2 draft with no case yet; its first save creates the case.
+    // `officeDraftCaseId`: that create's case, held only while the case is
+    // still to be read and adopted. `officeSaving`: a Save draft or Send is
+    // in flight. `openAddSubsteps`: the page's open parts (sub-step ids, or
+    // "documents"). `addCaseShowMissing`: a refused Send marks what is
+    // missing. None of them is persisted, and none outlives the page.
+    officeDraft: false,
+    officeDraftCaseId: null,
+    officeSaving: false,
+    openAddSubsteps: ["before.ready"],
+    addCaseShowMissing: false,
     busy: false,
     // Window-local navigation
     screen: "access",
@@ -335,6 +349,12 @@ export function createController({
   // A version-2 sub-step change is waiting for its save (`goToSubstep`), or a
   // card mark is waiting for its pre-save or its own action (`cardAction`).
   let substepSaveInFlight = false;
+  // Which new office draft is open: moves each time one starts. A Save draft
+  // started for one draft adopts nothing once that draft is gone.
+  let officeDraftToken = 0;
+  // A version-2 save's envelope -> the draft it was built from, so what was
+  // typed while it was out survives the re-read once it lands.
+  const sentDrafts = new WeakMap();
   // A save carrying answer changes failed with an unknown outcome, so the
   // server may hold answers the draft doesn't (an undo after it, say). Until a
   // save succeeds, the draft is then never "dirty only because of visits"
@@ -604,6 +624,7 @@ export function createController({
     if (!presenter() || !store.getWorkspace) return;
     state.workspace = await store.getWorkspace();
     noteConnected();
+    enterOfficeDraftIfNeeded();
   }
 
   async function loadSelected() {
@@ -673,6 +694,7 @@ export function createController({
     state.visitedSubsteps = [];
     state.returnToSummary = false;
     state.revealed = [];
+    state.officeDraft = false;
     // Open panels are per case: a confirmation ticked on one application, or a
     // simulated upload failure on one request, means nothing on another.
     state.openPanels = [];
@@ -983,6 +1005,9 @@ export function createController({
     state.dialog = null;
     state.dialogContext = null;
     state.pendingCreateActionId = null;
+    state.officeDraftCaseId = null;
+    state.openAddSubsteps = ["before.ready"];
+    state.addCaseShowMissing = false;
     state.boardFilters = {};
     state.caseTab = "overview";
     state.boardSearchDraft = undefined;
@@ -1009,6 +1034,12 @@ export function createController({
   // ---- navigation (window-local) -----------------------------------------
 
   function navigate(screen) {
+    // A new office draft belongs to the Add a case page: leaving drops it.
+    if (screen !== "office-add-case") {
+      state.officeDraft = false;
+      state.officeDraftCaseId = null;
+      state.addCaseShowMissing = false;
+    }
     state.screen = screen;
     state.error = null;
     state.dialog = null;
@@ -1157,7 +1188,9 @@ export function createController({
   // `mode` and `personId` are what distinguish a client's own application from
   // one the office typed in for a walk-in; the idempotency, the receipt and the
   // "what happens next" hook are the same for both, so they are written once.
-  async function startCase({ mode, personId, answers }, afterReceipt) {
+  // `select: false` (the office's new draft) only creates: the caller reads
+  // and adopts the case itself.
+  async function startCase({ mode, personId, answers }, afterReceipt, { select = true } = {}) {
     if (creating) return null;
     creating = true;
     if (!state.pendingCreateActionId) {
@@ -1180,8 +1213,10 @@ export function createController({
       persistSession();
       try {
         await loadList();
-        await selectCase(receipt.caseId);
-        afterReceipt?.();
+        if (select) {
+          await selectCase(receipt.caseId);
+          afterReceipt?.();
+        }
       } catch (error) {
         noteFailure(error);
       }
@@ -1226,6 +1261,200 @@ export function createController({
     });
   }
 
+  // ---- the version-2 Add a case (spec 2026-10-04 §10) ---------------------
+  //
+  // The office takes in a walk-in client on a version-2 draft that has no case
+  // yet (`officeDraft`). Its first Save draft or Send creates an empty case,
+  // adopts it in place (the page and what was typed stay), then saves; Send
+  // then submits. A failure after the create keeps the case selected, so the
+  // next press saves to it: one draft never makes a second case.
+
+  // Add a case. With `caseId`, an office draft already saved opens on the page
+  // whatever the workspace's version: the open case's version picks the page.
+  // Without, the workspace's version decides: 2 starts a new office draft, 1
+  // is today's page. Before the workspace row has loaded, the draft starts
+  // when it arrives (`enterOfficeDraftIfNeeded`).
+  async function openAddCase({ caseId = null } = {}) {
+    requirePresenter("Only a volunteer can start an assisted application.");
+    if (caseId) {
+      await selectCase(caseId, { navigate: false });
+      state.officeDraft = false;
+      state.openAddSubsteps = ["before.ready"];
+    } else if (state.workspace && Number(state.workspace.defaultIntakeVersion) === 2) {
+      startOfficeDraft();
+    } else {
+      // No workspace yet (the draft starts when it arrives), or version 1:
+      // today's page never reads the selection, and a kept one would be shown
+      // as a new walk-in's.
+      clearSelection();
+      state.officeDraftCaseId = null;
+    }
+    navigate("office-add-case");
+  }
+
+  function startOfficeDraft() {
+    clearSelection();
+    officeDraftToken += 1;
+    state.officeDraft = true;
+    state.officeDraftCaseId = null;
+    state.openAddSubsteps = ["before.ready"];
+    state.addCaseShowMissing = false;
+  }
+
+  // On every workspace read: Add a case with no case and no draft, on a
+  // version-2 workspace, starts its draft (a reload, or a press before the
+  // row arrived). Never while a draft is open: a workspace change must not
+  // wipe what the office is typing.
+  function enterOfficeDraftIfNeeded() {
+    if (state.screen !== "office-add-case" || state.selectedCaseId || state.officeDraft) return;
+    if (Number(state.workspace?.defaultIntakeVersion) !== 2) return;
+    startOfficeDraft();
+    persistSession();
+  }
+
+  // An Add a case part opens or closes; opening one closes none.
+  function toggleAddSubstep(id) {
+    if (typeof id !== "string" || !id) return;
+    state.openAddSubsteps = state.openAddSubsteps.includes(id)
+      ? state.openAddSubsteps.filter((entry) => entry !== id)
+      : [...state.openAddSubsteps, id];
+    show();
+  }
+
+  // Save draft (`send: false`) and Send to the office (`send: true`).
+  // Returns, or throws:
+  //   * `{ sent: true }`: Send only. Saved and submitted; the office is on the
+  //     case page.
+  //   * `{ sent: false }` (no reason): Save draft only. The press ran to the
+  //     end: the case exists and any unsaved edit was saved. Typing that
+  //     landed during the save stays dirty for the next press, so a caller
+  //     that says "saved" also checks `dirty` and `saveState`.
+  //   * `{ sent: false, reason: "busy" }`: another save or create is in
+  //     flight. Nothing was done by this press.
+  //   * `{ sent: false, reason: "unconfirmed" }`: Send only. The box isn't
+  //     ticked; nothing at all was done.
+  //   * `{ sent: false, reason: "answers" }`: Send only. Saved, but something
+  //     is missing or invalid: nothing was submitted and the page marks it.
+  //   * `{ sent: false, reason: "left" }`: the office left the draft, or
+  //     opened another case, while it was out. Nothing more was done.
+  //   * thrown: a failure (offline, refused, a conflict), with its error
+  //     already on screen. Nothing more was done.
+  async function saveOfficeDraft({ send = false } = {}) {
+    if (state.officeSaving || substepSaveInFlight) return { sent: false, reason: "busy" };
+    if (send && !state.openPanels.includes("confirmed")) return { sent: false, reason: "unconfirmed" };
+    if (!state.savedCase && !state.officeDraft)
+      throw controllerError("NOT_FOUND", "Open an application first.");
+    // The flag is the one sub-step changes and card marks hold, so a mark
+    // can't race the save.
+    state.officeSaving = true;
+    substepSaveInFlight = true;
+    show();
+    try {
+      if (!state.savedCase) {
+        const adopted = await adoptOfficeCase();
+        if (adopted !== true) return { sent: false, reason: adopted };
+      }
+      const caseId = state.selectedCaseId;
+      if (state.dirty) await saveAnswers();
+      if (!send) return { sent: false };
+      if (state.selectedCaseId !== caseId || state.screen !== "office-add-case")
+        return { sent: false, reason: "left" };
+      return await sendOfficeDraft();
+    } finally {
+      state.officeSaving = false;
+      substepSaveInFlight = false;
+      show();
+    }
+  }
+
+  // The new draft's case: created once (an earlier create that landed is used
+  // again), read, and adopted in one step. True once adopted; "busy" while
+  // another create is in flight; "left" when the draft it was started for is
+  // gone after an await (left, another case opened, signed out, or a fresh
+  // draft started): the created case then stays, unselected.
+  async function adoptOfficeCase() {
+    const token = officeDraftToken;
+    const stillHere = () =>
+      state.officeDraft &&
+      officeDraftToken === token &&
+      state.screen === "office-add-case" &&
+      !state.selectedCaseId;
+    if (!state.officeDraftCaseId) {
+      const receipt = await startCase(
+        { mode: "assisted", personId: state.selectedPersonId, answers: {} },
+        null,
+        { select: false },
+      );
+      if (!receipt) return "busy";
+      if (!stillHere()) return "left";
+      state.officeDraftCaseId = receipt.caseId;
+    }
+    let record;
+    try {
+      record = await store.getCase(state.officeDraftCaseId);
+      noteConnected();
+    } catch (error) {
+      if (!stillHere()) return "left";
+      noteFailure(error);
+      show();
+      throw error;
+    }
+    if (!stillHere()) return "left";
+    if (!isVersionTwo(record)) {
+      // The workspace was set back to version 1 under this draft.
+      const error = controllerError(
+        "VALIDATION",
+        "This workspace now takes version-1 applications. Start again from Add a case.",
+      );
+      noteFailure(error);
+      show();
+      throw error;
+    }
+    // No await from here: nothing can land between the selection and the
+    // draft, and nothing on the page resets.
+    state.selectedCaseId = record.id;
+    state.savedCase = record;
+    state.caseTab = "overview";
+    state.officeDraft = false;
+    state.officeDraftCaseId = null;
+    commitDraft(mergeIntoDraft(serverAnswersOf(record), state.draftAnswers));
+    // Typed before the case existed, the draft was never pinned: pin it now,
+    // so a refresh before the save raises a choice instead of rebuilding it.
+    if (state.dirty && state.editBaseRevision === null)
+      state.editBaseRevision = Number(record.revision);
+    persistSession();
+    return true;
+  }
+
+  // Send, checked again from the draft (nothing missing or invalid is ever
+  // sent). Refused: every invalid answer is revealed, missing ones are marked,
+  // and every part holding one opens. Sent: the office lands on the case page.
+  async function sendOfficeDraft() {
+    const draft = state.draftAnswers;
+    const missing = missingToSubmit(2, draft);
+    const invalid = invalidAnswers(null, draft);
+    if (missing.length || invalid.length) {
+      for (const id of invalid) revealInvalid(id);
+      state.addCaseShowMissing = true;
+      const parts = new Set(state.openAddSubsteps);
+      for (const id of [...missing, ...invalid]) {
+        const part = substepOfQuestion(id.replace(/\[.*$/, ""));
+        if (part) parts.add(part);
+      }
+      state.openAddSubsteps = [...parts];
+      show();
+      return { sent: false, reason: "answers" };
+    }
+    await runAction("SUBMIT", { confirmed: true });
+    state.addCaseShowMissing = false;
+    try {
+      await selectCase(state.selectedCaseId);
+    } catch {
+      // The send landed; the failed read is on screen.
+    }
+    return { sent: true };
+  }
+
   // ---- editing and saving -------------------------------------------------
 
   // A retained save envelope carries the answers it was built from. It is only
@@ -1249,7 +1478,8 @@ export function createController({
     );
   };
 
-  const caseVersion = () => (isVersionTwo(state.savedCase) ? 2 : 1);
+  // A new office draft is version 2 before it has a case.
+  const caseVersion = () => (state.officeDraft || isVersionTwo(state.savedCase) ? 2 : 1);
 
   // A client answers for themselves; a presenter acts as a persona.
   const actingAsClient = () => state.principal?.access === "applicant";
@@ -1501,6 +1731,9 @@ export function createController({
       pendingAction = null;
       state.retryable = false;
       noteConnected();
+      // The draft as it is now, for a version-2 save: what was typed while the
+      // save was out is not in what was sent.
+      const typed = sentDrafts.has(action) ? state.draftAnswers : null;
       if (save) {
         state.dirty = false;
         state.editBaseRevision = null;
@@ -1511,6 +1744,7 @@ export function createController({
       // The action is done. A re-read that fails afterwards is a stale view,
       // never a failed action, and must not put the envelope back in hand.
       await refresh();
+      if (typed) keepLaterEdits(action, typed);
       state.busy = false;
       show();
       return receipt;
@@ -1543,6 +1777,23 @@ export function createController({
       show();
       throw error;
     }
+  }
+
+  // A version-2 save landed and the re-read rebuilt the draft from the
+  // server. Every answer the draft changed after the save's snapshot goes
+  // back on top, and the draft is dirty again when they differ from the
+  // server; anything else keeps the rebuild (`keepLocalOnly`).
+  function keepLaterEdits(action, typed) {
+    const sent = sentDrafts.get(action);
+    if (state.savedCase?.id !== action.caseId) return;
+    const later = {};
+    for (const [id, value] of Object.entries(typed))
+      if (JSON.stringify(value) !== JSON.stringify(sent[id])) later[id] = value;
+    if (!Object.keys(later).length) return;
+    state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
+    pruneRevealed();
+    if (!state.dirty && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2))
+      markDirty();
   }
 
   // Who this window is acting as, for an action that carries a persona. A
@@ -1581,6 +1832,7 @@ export function createController({
       payload: savePayload(),
     };
     if (version !== 2) return await dispatch(action, { save: true });
+    sentDrafts.set(action, state.draftAnswers);
     try {
       return await dispatchSave(action);
     } catch (error) {
@@ -1596,6 +1848,7 @@ export function createController({
         actionId: newActionId(),
         payload: { ...action.payload, answers: rest },
       };
+      sentDrafts.set(retry, sentDrafts.get(action));
       return await dispatchSave(retry, field);
     }
   }
@@ -1713,9 +1966,11 @@ export function createController({
   // the same way. The page disables the marks and the form's navigation while
   // `busy`, so these early returns are a safety net, not a silent drop.
   async function cardAction(type, payload) {
+    // First, so a mark during a new office draft's first save (no case yet)
+    // is ignored like any other.
+    if (substepSaveInFlight) return null;
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
-    if (substepSaveInFlight) return null;
     substepSaveInFlight = true;
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
@@ -1921,6 +2176,7 @@ export function createController({
       assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },
       revealed: [...state.revealed],
+      openAddSubsteps: [...state.openAddSubsteps],
       visitedSubsteps: [...state.visitedSubsteps],
       openPanels: [...state.openPanels],
       boardFilters: { ...state.boardFilters },
@@ -1946,6 +2202,9 @@ export function createController({
     selectCase,
     createCase,
     createAssistedCase,
+    openAddCase,
+    toggleAddSubstep,
+    saveOfficeDraft,
     runAssistanceAction,
     resetFixtures,
     loadCheckpoint,
