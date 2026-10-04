@@ -472,12 +472,15 @@ Expected: FAIL on the new test only.
 5. **The toggle:** replace the `toggle-sidebar` case body with:
 
 ```js
-      case "toggle-sidebar":
-        if (controller.getState().sidebarOpen) peek.collapsed();
-        else peek.pinned();
+      case "toggle-sidebar": {
+        const wasOpen = controller.getState().sidebarOpen;
         controller.toggleSidebar();
+        if (wasOpen) peek.collapsed();
         break;
+      }
 ```
+
+(Final-review ruling: the order is toggle first, then `collapsed()`. Pinning needs no `peek.pinned()` call, because the render's `applyPeek → setPinned(true)` already ends a peek; calling it first hid the peeked sidebar for a step.)
 
 6. **Escape:** at the top of the existing `document.addEventListener("keydown", …)` handler for dialogs, before `if (!controller.getState().dialog) return;`, add:
 

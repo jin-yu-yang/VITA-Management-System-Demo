@@ -146,7 +146,10 @@ if (!config) {
   const peek = createSidebarPeek({ onChange: () => applyPeek() });
   function applyPeek() {
     const shell = root.querySelector(".app-shell");
-    if (!shell) return;
+    if (!shell) {
+      peek.setPinned(true); // no sidebar on this screen: end any peek and its timers
+      return;
+    }
     const pinned = !shell.classList.contains("sidebar-closed");
     peek.setPinned(pinned);
     peek.hold(Boolean(controller.getState().dialog));
@@ -243,6 +246,9 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+    // A render that removed the focused sidebar control (and whose restore
+    // missed) must not leave the peek held.
+    peek.focus(peekZone(document.activeElement) === "sidebar" && keyboardFocus(document.activeElement));
     lastPlace = place;
   }
 
@@ -278,9 +284,9 @@ if (!config) {
   root.addEventListener("pointerout", (event) => peek.pointer(peekZone(event.relatedTarget), event.pointerType));
   // Only keyboard focus in the sidebar holds a peek (a mouse click focuses
   // buttons in Chrome). Within the sidebar the next focusin decides.
-  const keyboardFocus = (element) => {
+  function keyboardFocus(element) {
     try { return element.matches(":focus-visible"); } catch { return true; }
-  };
+  }
   root.addEventListener("focusin", (event) =>
     peek.focus(peekZone(event.target) === "sidebar" && keyboardFocus(event.target)));
   root.addEventListener("focusout", (event) => {
@@ -1315,9 +1321,13 @@ if (!config) {
         controller.clearBoardFilters();
         break;
       case "toggle-sidebar":
-        if (controller.getState().sidebarOpen) peek.collapsed();
-        else peek.pinned();
-        controller.toggleSidebar();
+        {
+          // Pinning needs no peek call: the render's applyPeek → setPinned(true)
+          // ends a peek. Collapsing marks the pointer as not to re-peek.
+          const wasOpen = controller.getState().sidebarOpen;
+          controller.toggleSidebar();
+          if (wasOpen) peek.collapsed();
+        }
         break;
       case "toggle-edit-contact":
         controller.togglePanel("edit-contact");
@@ -1706,6 +1716,7 @@ if (!config) {
   // Dialogs keep the keyboard inside them, and Escape always closes.
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !controller.getState().dialog) {
+      if (event.isComposing) return; // never block an IME's own cancel
       // applyPeek moves the keyboard to the toggle if it was in the sidebar.
       if (peek.escape()) event.preventDefault();
       return;

@@ -2016,6 +2016,7 @@ async function runPermutation(t, roles) {
       // Delegated listeners on root never see events from the removed nodes,
       // so the peek's pointer zone stays "sidebar".
       const bumped = samples.find((row) => row.fixture_key === "preparation_ready");
+      assert.ok(bumped, "the preparation_ready sample is missing");
       await waitForQuiet(staff);
       await staff.evaluate(() => document.querySelector("#main")?.setAttribute("data-peek-marker", "1"));
       await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [bumped.id]);
@@ -2024,6 +2025,9 @@ async function runPermutation(t, roles) {
         "the realtime change to rebuild the page",
         () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-peek-marker]"),
       );
+      // Testing that nothing happens: two close delays after the redraw, so a
+      // peek that the redraw broke has had its chance to close.
+      await staff.waitForTimeout(600);
       const redrawn = await sidebarState(staff);
       assert.equal(redrawn.peek, true, "the realtime redraw closed the peek");
       assert.equal(redrawn.hidden, false, "the realtime redraw hid the peeked sidebar");
@@ -2111,13 +2115,13 @@ async function runPermutation(t, roles) {
         { ...COLLAPSED, onToggle: true },
       );
 
-      // 8. Touch: no peek; a tap is a click, and pins.
+      // 8. Touch: no peek; a click after a touch hover pins.
       await toggle.dispatchEvent("pointerover", { pointerType: "touch", bubbles: true });
       // Testing that nothing happens: two close delays after a touch hover.
       await staff.waitForTimeout(600);
       assert.equal((await sidebarState(staff)).peek, false, "a touch hover opened a peek");
       await toggle.click({ timeout: CLICK_MS });
-      await waitSidebar(staff, "the tap to pin the sidebar", SIDEBAR_IS, PINNED);
+      await waitSidebar(staff, "the click after a touch hover to pin the sidebar", SIDEBAR_IS, PINNED);
       // Left pinned open, as the phase found it.
       await mouseToPageCentre();
 

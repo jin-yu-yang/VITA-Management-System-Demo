@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { appShell, staffSidebar, staffScreen, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
 import { icon, ICON_NAMES } from "../src/ui.mjs";
+import { toggleLabel } from "../src/sidebar-peek.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
 // so the one thing that must hold today is that a page without a sidebar is
@@ -599,6 +600,13 @@ test("the part 4c block styles the version-2 Add a case with tokens only", () =>
   assert.match(block, /\.add-sub-status\.is-needs::before\s*\{[^}]*content:/, "an icon as well as the words");
 });
 
+test("the shell's server-side toggle label matches the peek's label for pinned and collapsed", () => {
+  const open = appShell({ sidebar: "<nav></nav>", body: "<main></main>" });
+  assert.ok(open.includes(`aria-label="${toggleLabel({ pinned: true, peeking: false })}"`));
+  const closed = appShell({ sidebar: "<nav></nav>", body: "<main></main>", open: false });
+  assert.ok(closed.includes(`aria-label="${toggleLabel({ pinned: false, peeking: false })}"`));
+});
+
 test("app.mjs applies the sidebar peek in place after every render and feeds it events", () => {
   const app = readFileSync(new URL("../src/app.mjs", import.meta.url), "utf8");
   assert.match(app, /import \{[^}]*createSidebarPeek[^}]*\} from "\.\/sidebar-peek\.mjs"/);
@@ -612,7 +620,12 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
   // Only keyboard focus holds a peek.
   assert.match(app, /:focus-visible/);
   // The toggle tells the peek whether the click pinned or collapsed.
-  assert.match(app, /case "toggle-sidebar":[\s\S]{0,200}peek\.(collapsed|pinned)\(\)/);
+  assert.match(app, /case "toggle-sidebar":[\s\S]{0,300}controller\.toggleSidebar\(\);[\s\S]{0,100}peek\.collapsed\(\)/);
+  // A render re-syncs the peek's keyboard focus with where focus really is.
+  assert.match(app, /peek\.focus\(peekZone\(document\.activeElement\) === "sidebar" && keyboardFocus\(document\.activeElement\)\);\s*lastPlace = place;/);
+  // No shell on the screen ends any peek; Escape spares an IME composition.
+  assert.match(app, /if \(!shell\) \{[\s\S]{0,120}peek\.setPinned\(true\)/);
+  assert.match(app, /if \(event\.isComposing\) return;[\s\S]{0,200}peek\.escape\(\)/);
   assert.match(app, /peek\.escape\(\)/);
   // An open dialog holds the peek, and hiding the sidebar never strands the keyboard.
   assert.match(app, /peek\.hold\(Boolean\(controller\.getState\(\)\.dialog\)\)/);

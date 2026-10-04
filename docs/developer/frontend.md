@@ -129,8 +129,9 @@ Three rules the controller keeps:
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
-while a mouse rests on the toggle, and closes 300 ms after the pointer and the keyboard leave the
-toggle and the sidebar; a click pins it. [`src/sidebar-peek.mjs`](../../src/sidebar-peek.mjs)
+while a mouse rests on the toggle, and closes 300 ms after the pointer leaves the toggle and the
+sidebar, unless keyboard focus is in the sidebar or a dialog is open (focus on the toggle never
+holds it); a click pins it. [`src/sidebar-peek.mjs`](../../src/sidebar-peek.mjs)
 decides, and `app.mjs` applies the peek in place after every render, so a realtime redraw keeps
 it. An office screen chosen while a volunteer persona is active shows
 the work board instead. A version-2 case's page reads its answers by sub-step, with the contact,
@@ -372,9 +373,9 @@ on Escape; save states, countdowns and refusals are written in text and marked `
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (636) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (652) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (55) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form |
+| Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in
