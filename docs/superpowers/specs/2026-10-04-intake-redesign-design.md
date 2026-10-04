@@ -530,4 +530,4 @@ Household cards unless noted.
 
 | Rule id | Trigger | Label | Notes |
 |---|---|---|---|
-| `other` | always | Other documents / 其他文件 | Anything the list doesn't name. Prompt: "For example, a city tax notice, or a blank local tax form you received." |
+| `other` | always | Other documents / 其他文件 | **Optional** (decided 2026-10-04): always shown, upload buttons only, no Later / Don't have, never counted in a mark, 9.1's warnings or the progress page. Anything the list doesn't name. Prompt: "For example, a city tax notice, or a blank local tax form you received." |
