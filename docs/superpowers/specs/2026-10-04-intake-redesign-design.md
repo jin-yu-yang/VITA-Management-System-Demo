@@ -216,7 +216,7 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
   - `status`: `later`, `none` or null. No row, or a null status, means Not done. `uploaded` arrives with the uploads part.
   - **Rows are never deleted.** Realtime publishes inserts and updates only (`007_realtime_publication.sql:50`), because a deleted row can't be checked against the read policy. "Not done" is an update to null.
   - `group_override`: `needed` or null;
-  - `changed_by_person_id`, `changed_at`.
+  - `changed_at`. **No person column** (decided 2026-10-04): the client reads its own rows, and realtime sends them whole, so a staff person's id would reach the client. Who made each change is in `case_events`, which only staff read.
 - **When an answer change hides a card,** its row stays. If the answer comes back, the card comes back with its state.
 - **Actions:**
   - **`SET_DOCUMENT_CARD {slotId, status}`**, where status is `later`, `none` or `not_done` (which sets the status to null).
@@ -306,7 +306,7 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 - **Additional Comments** (`page5[0].AdditionalComments[0].AdditionalNotesComments[0]`) holds Q13.1, the "Not sure" line and the household overflow. When the text doesn't fit, the box ends with "(continued on page 7)", and a plain "Additional comments (continued)" page is added. Nothing is cut off.
   - The user's measurements of the box at the forms' own font size: about 5,000 Latin characters on the English form, 1,743 Chinese characters on the Simplified form and 3,569 on the Traditional form.
   - **To investigate in the plan:** a smaller font size (`/DA`) for Chinese text in that box.
-- **Form 15080:** when `gcf_consent = yes`, the 15080 page gets the typed signatures and dates (`gcf_tp_signature`, `gcf_tp_date`, `gcf_sp_signature`, `gcf_sp_date`).
+- **Form 15080:** when `gcf_consent = yes`, the 15080 page gets the typed signatures and dates (`gcf_tp_signature`, `gcf_tp_date`, `gcf_sp_signature`, `gcf_sp_date`). Otherwise page 6 stays in the PDF, blank.
 - **A "DRAFT – prepared from online answers, <date>, <Application ID>" stamp** on every page.
 - **The draft is flattened**, not left editable: it's for reading and printing, and it must not look like a finished form.
 - **The file** is named `13614-C-draft-<reference>[-zh-s|-zh-t].pdf` and opens in a new tab.
@@ -320,7 +320,8 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
   - **Fetched from a CDN at runtime, pinned to a version,** because Pages serves only what is committed.
   - **What is fetched must not depend on the text.** Fetching only the pieces a name needs would tell the CDN which Unicode ranges the client's personal details use. So the draft downloads the same file or files whatever the text says: the whole Simplified or Traditional font, cached by the browser after first use.
   - **The plan starts with a spike** that picks the source. Candidates: all of fontsource's pieces for one script (`@fontsource/noto-sans-sc` / `-tc`, about 100 pieces of about 35 KB each), or one OFL-licensed Noto Sans SC/TC file. In brainstorming, glyphs from fontsource pieces drew as dots through pdf-lib, while a TrueType system font drew correctly in the same script. Because one field's appearance can use only one font, the spike also decides whether Chinese text is drawn as text runs on the page (which flattening allows).
-  - The font loads only when an answer contains Chinese characters, whichever form is chosen.
+  - The font loads only when an answer has a character Helvetica can't encode (Chinese, or Latin letters outside WinAnsi such as "ễ" or "Ł"), whichever form is chosen. A character the downloaded font also lacks prints without its accent, or as `?`, and Additional Comments says so; the draft never fails on a name.
+- **A failed draft** writes "The draft could not be made. Close this tab and try again." into the tab it opened, and says the same on the page.
 
 ### 7.4 Where the button is
 

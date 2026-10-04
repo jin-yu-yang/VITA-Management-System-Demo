@@ -100,6 +100,7 @@ Background: in brainstorming, pdf-lib drew glyphs from `@fontsource/noto-sans-sc
 - [ ] **Step 2: Candidate A, fontsource pieces.** For one piece containing 林, try `embedFont` with each of: the `.woff`, the `.woff2`, `subset: true` and `subset: false`. Draw 林美 示例街100号 广东省 with `page.drawText`. Render page 1 with `sips -s format png <file>.pdf --out <file>.png` and look at the PNG. Record which combination, if any, draws real glyphs. Then measure the full set for one script: number of 400-weight pieces and total bytes.
 - [ ] **Step 3: Candidate B, one file.** Try a single OFL Noto Sans SC (and TC) TrueType or OpenType file served by jsDelivr, pinned to a tag or commit, for example the `google/fonts` repository's `ofl/notosanssc/` or `notofonts/noto-cjk`'s `Sans/` files. Record the URL, its size, whether it is CFF or glyf, and whether pdf-lib draws it correctly (same text, same render check).
 - [ ] **Step 4: Browser check.** For the best candidate, open a local page in Playwright Chromium that imports pdf-lib from an esbuild bundle, `fetch`es the font URL(s) (confirm jsDelivr answers with `access-control-allow-origin: *`), builds the PDF and returns its byte length. It must not throw.
+- [ ] **Step 4b: Latin coverage.** Check whether the chosen font draws Latin letters Helvetica can't encode: the fictional names "Nguyễn Thị Lan" and "Łukasz Żółć" and "Zoë Ångström". Record which characters it lacks (if any).
 - [ ] **Step 5: Field or runs.** Fill `page1[0].yourFirstName[0]` of the zh-s form with 美 through the field appearance (`updateFieldAppearances(font)`) and, separately, draw the same text at the widget's rectangle with `drawText`, then flatten. Pick `CJK_DRAW`: `"field"` only if one font file covers every character (candidate B) and the field route renders; otherwise `"runs"`.
 - [ ] **Step 6: Write the notes file** with: each candidate's result (with the rendered PNGs described in words), sizes, the Decision block above with real URLs and sha256 of each file (`shasum -a 256`), `DRAFT_FONT_FIXTURES` (package, version, path, matching sha256), and the licence (SIL OFL 1.1). Which font each form uses: `en` and `zh-s` use the Simplified font, `zh-t` the Traditional one. The Decision must satisfy: every file fetched in full regardless of the text; total under 25 MB per script; renders correctly.
 - [ ] **Step 7: Commit** the notes file only ("Draft 13614-C font spike: chosen source").
@@ -141,7 +142,7 @@ If no candidate renders correctly, stop and report BLOCKED with the evidence. Do
     - `visibleAnswers(2, { inc_sale_assets: "no", inc_sale_assets_prior_loss: "yes" })` has no `inc_sale_assets_prior_loss` key.
     - `gcf_sp_date` (from the 4c plan, now here): with `q = findQuestion(2, "gcf_sp_date")`, `isVisible(q, { gcf_consent: "yes", marital_status: "married", gcf_sp_signature: "Wei Lin" })` is true, and false when `gcf_consent` is `"no"`, when `marital_status` is `"never_married"`, or when `gcf_sp_signature` is absent.
     - `checkValue({ type: "id" }, "0123456789abcdef0123456789abcdef")` is null; `"XYZ"` and `"0123"` give `"Not a valid id."`.
-    - With `hh = findQuestion(2, "hh")`: `checkValue(hh, [{ first_name: "A" }])` is `"Each person needs an id."`; two members with the same `member_id` give `"Two people share an id."`; one member `{ member_id: "<32 hex>", first_name: "A" }` is null.
+    - With `hh = findQuestion(2, "hh")`: `checkValue(hh, [{ first_name: "A" }])` is `"Each person needs an id."`, and so is a member with `member_id: ""` or `"XYZ"` (the per-key loop passes `""` as unanswered, so the group check uses `isMemberId` on every member); two members with the same `member_id` give `"Two people share an id."`; one member `{ member_id: "<32 hex>", first_name: "A" }` is null.
     - `hh.fields[0].id === "member_id"` and `hh.fields[0].type === "id"` and `required` is false.
   - `tests/intake-build.test.mjs`:
     - Replace "the newest catalogue migration is 014…" (it hardcodes two migrations, a 4b carry-forward) with: 012 exists; the highest-numbered `NNN_intake_catalogue_<hash8>.sql` carries the current hash; no two catalogue migrations share a hash8.
@@ -155,7 +156,7 @@ If no candidate renders correctly, stop and report BLOCKED with the evidence. Do
     - `sampleValue` gains `case "id": return crypto.randomUUID().replaceAll("-", "");`.
     - `select type from vitally_private.intake_fields where version=2 and field_id='hh.member_id'` is `id`, and `required_to_submit` is false.
     - `select id, step from vitally_private.intake_substeps where version=2 order by position` matches `substepsFor(2)` (ids in order, `step` = the step's `n`).
-    - A version-2 `SAVE_ANSWERS` with `hh: [{ first_name: "A" }]` (no id) is refused `VT007`; with a malformed id refused; with two members sharing an id refused; with distinct ids accepted.
+    - A version-2 `SAVE_ANSWERS` with `hh: [{ first_name: "A" }]` (no id) is refused `VT007`; with `member_id: ""`, `null`, `"XYZ"` or 31 hex characters refused; with two members sharing an id refused; with distinct ids accepted.
     - `intake_missing` on answers whose members have every required field never lists `member_id`.
 - [ ] **Step 2: Run** `node --test tests/intake-catalogue.test.mjs tests/intake-build.test.mjs tests/sample-data.test.mjs`. Expected: FAIL on the new tests.
 - [ ] **Step 3: Change the two question drafts** (the same structure in both; senior wording in the senior file):
@@ -215,9 +216,16 @@ If no candidate renders correctly, stop and report BLOCKED with the evidence. Do
   - `load_intake_catalogue`: verbatim from 011, plus: `delete from vitally_private.intake_substeps where version = p_version;` next to the field delete; for each step, if `v_step ? 'substeps'`, it must be an array (else VALIDATION), and each element an object whose `id` is a string; insert `(p_version, id, v_n, position)` with a running position across the whole catalogue (a duplicate id fails on the primary key, which is fine).
   - `check_intake_value`: verbatim from 011, plus:
     - before the `group` branch: `if p_field.type = 'id' then return jsonb_typeof(p_value) = 'string' and (p_value#>>'{}') ~ '^[0-9a-f]{32}$'; end if;`
-    - inside the `group` branch, after the existing per-member checks: every member must have a `member_id` key that passes the `id` check, and the ids must be distinct: `if (select count(distinct m->>'member_id') from jsonb_array_elements(p_value) m) <> jsonb_array_length(p_value) or exists(select 1 from jsonb_array_elements(p_value) m where not (m ? 'member_id')) then return false; end if;`
+    - inside the `group` branch, after the existing per-member checks: every member's `member_id` must be a string matching `^[0-9a-f]{32}$`, and the ids must be distinct. The per-key loop can't do the first part: `check_intake_value` passes `""` (and null) as unset before any type branch (`011:219`), so `member_id: ""` would get through. So, explicitly:
+      ```sql
+      if exists(select 1 from jsonb_array_elements(p_value) m
+        where jsonb_typeof(m->'member_id') is distinct from 'string' or (m->>'member_id') !~ '^[0-9a-f]{32}$')
+       or (select count(distinct m->>'member_id') from jsonb_array_elements(p_value) m) <> jsonb_array_length(p_value) then
+       return false;
+      end if;
+      ```
   - End with the same `revoke all on all functions in schema vitally_private from public,anon,authenticated,service_role;` line 013 ends with.
-- [ ] **Step 6: Catalogue module.** In `src/intake-catalogue.mjs`, add `substepsFor`, `findSubstep`, `substepOfQuestion`, `substepQuestions`, `visibleAnswers` and `isMemberId` as specified in Interfaces. In `checkValue`, add `case "id": return /^[0-9a-f]{32}$/.test(value) ? null : "Not a valid id.";`. In `checkGroup`, after the per-key loop: a member without `member_id` returns `"Each person needs an id."`, and a repeated id returns `"Two people share an id."`.
+- [ ] **Step 6: Catalogue module.** In `src/intake-catalogue.mjs`, add `substepsFor`, `findSubstep`, `substepOfQuestion`, `substepQuestions`, `visibleAnswers` and `isMemberId` as specified in Interfaces. In `checkValue`, add `case "id": return /^[0-9a-f]{32}$/.test(value) ? null : "Not a valid id.";`. In `checkGroup`, after the per-key loop: a member whose `member_id` fails `isMemberId` (missing, `""`, or malformed) returns `"Each person needs an id."`, and a repeated id returns `"Two people share an id."`.
 - [ ] **Step 7: Samples.** In `src/sample-data.mjs`, each generated member gets `member_id: memberIdFor(n, index)`, where
   ```js
   // 32 lowercase hex characters, fixed by the seed and the member's place, so
@@ -323,7 +331,8 @@ The spouse photo-ID and SSN cards carry the hint `{ en: "Needed if you file toge
     - `visited` on a version-1 case is refused `VT007`.
     - A stored id no longer in `intake_substeps` is dropped on the next save that sends `visited` (insert a stale id with `update public.cases set intake_visited = intake_visited || '{gone.step}'` as the test superuser, then save).
   - **Cards:**
-    - The client marks `w2.household` `later` on their draft: one row, status `later`, `changed_by_person_id` null; a `case_events` row with action `SET_DOCUMENT_CARD`; no `client_events` row.
+    - The client marks `w2.household` `later` on their draft: one row, status `later`; a `case_events` row with action `SET_DOCUMENT_CARD`; no `client_events` row.
+    - The table has no column naming a person (`select column_name from information_schema.columns where table_name='case_document_cards'` is exactly `workspace_id, case_id, slot_id, status, group_override, changed_at`): the client reads its own rows and receives them whole over realtime, and who made each change is in the staff-only `case_events`.
     - `not_done` updates the status to null and the row stays (`count(*)` still 1).
     - Refused `VT007`: an unknown rule id (`nope.household`), an owner kind that doesn't fit (`w2.tp`, `photo_id.household`), a malformed slot, a bad status, extra payload keys, and either action on a version-1 case.
     - Staff: Sam may mark on an office draft (an owner-less version-2 case created as the presenter) and on the client's case after `SUBMIT`. Sam on the client's unsent draft is refused (`VT001` or `VT002`, whichever `lock_case` gives; assert that it is refused and nothing was written). Alex (no `admin`) is refused `VT001`.
@@ -348,12 +357,12 @@ The spouse photo-ID and SSN cards carry the hint `{ en: "Needed if you file toge
    slot_id text not null check (slot_id ~ '^[a-z0-9_]+\.(tp|sp|household|hh\.[0-9a-f]{32})$'),
    status text check (status is null or status in ('later','none')),
    group_override text check (group_override is null or group_override = 'needed'),
-   changed_by_person_id uuid,
    changed_at timestamptz not null default now(),
    primary key (case_id, slot_id),
-   foreign key (workspace_id, case_id) references public.cases(workspace_id, id) on delete cascade,
-   foreign key (workspace_id, changed_by_person_id) references public.people(workspace_id, id)
+   foreign key (workspace_id, case_id) references public.cases(workspace_id, id) on delete cascade
   );
+  -- No person column: the client reads these rows, and realtime sends them whole.
+  -- Who changed a card is in case_events (commit_action), which only staff read.
   alter table public.case_document_cards enable row level security;
   ```
   - **Select policy:** `visible_case_document_cards`, the same `using(...)` expression as `visible_case_contacts` (`011_intake_v2.sql:379`) with `case_contacts` replaced. Revoke all from public, anon, authenticated; grant select to authenticated; grant select, insert, update, delete to service_role.
@@ -441,10 +450,10 @@ The spouse photo-ID and SSN cards carry the hint `{ en: "Needed if you file toge
     returns jsonb language plpgsql security definer set search_path='' as $$
     begin
      if p_case.stage='closed' then raise sqlstate 'VT004' using message='INVALID_TRANSITION'; end if;
-     insert into public.case_document_cards as d (workspace_id, case_id, slot_id, status, changed_by_person_id, changed_at)
+     insert into public.case_document_cards as d (workspace_id, case_id, slot_id, status, changed_at)
      values (p_case.workspace_id, p_case.id, p_payload->>'slotId',
-      case when p_payload->>'status'='not_done' then null else p_payload->>'status' end, p_person.id, now())
-     on conflict (case_id, slot_id) do update set status=excluded.status, changed_by_person_id=excluded.changed_by_person_id, changed_at=now();
+      case when p_payload->>'status'='not_done' then null else p_payload->>'status' end, now())
+     on conflict (case_id, slot_id) do update set status=excluded.status, changed_at=now();
      return jsonb_build_object('detail',jsonb_build_object('slotId',p_payload->>'slotId','status',p_payload->>'status'));
     end;
     $$;
@@ -455,13 +464,13 @@ The spouse photo-ID and SSN cards carry the hint `{ en: "Needed if you file toge
      if p_case.stage='closed' then raise sqlstate 'VT004' using message='INVALID_TRANSITION'; end if;
      if p_payload->>'group'='maybe' then
       -- Only a card staff moved up can move back down.
-      update public.case_document_cards set group_override=null, changed_by_person_id=p_person.id, changed_at=now()
+      update public.case_document_cards set group_override=null, changed_at=now()
       where case_id=p_case.id and slot_id=p_payload->>'slotId' and group_override is not null;
       if not found then raise sqlstate 'VT007' using message='VALIDATION'; end if;
      else
-      insert into public.case_document_cards as d (workspace_id, case_id, slot_id, group_override, changed_by_person_id, changed_at)
-      values (p_case.workspace_id, p_case.id, p_payload->>'slotId', 'needed', p_person.id, now())
-      on conflict (case_id, slot_id) do update set group_override='needed', changed_by_person_id=excluded.changed_by_person_id, changed_at=now();
+      insert into public.case_document_cards as d (workspace_id, case_id, slot_id, group_override, changed_at)
+      values (p_case.workspace_id, p_case.id, p_payload->>'slotId', 'needed', now())
+      on conflict (case_id, slot_id) do update set group_override='needed', changed_at=now();
      end if;
      return jsonb_build_object('detail',jsonb_build_object('slotId',p_payload->>'slotId','group',p_payload->>'group'));
     end;
@@ -531,14 +540,16 @@ The spouse photo-ID and SSN cards carry the hint `{ en: "Needed if you file toge
   - `openForChange(id)`: `returnToSummary = true`, then `goToSubstep(id, { keepReturn: true })`.
   - `backToSummary()`: `goToSubstep("review.summary")` (which clears the return).
   - `currentSubstep()`: `resolveSubstep(state.formSubstep, …)`, computed from the draft and `cardsFor(state.draftAnswers, state.savedCase?.documentCards ?? [])`.
-  - `setDocumentCard(slotId, status)` and `setDocumentGroup(slotId, group)`: save first when `dirty` (a failed save stops here, leaving the error on screen), then dispatch the action through the same path as `runAction`.
+  - `setDocumentCard(slotId, status)` and `setDocumentGroup(slotId, group)`: on a draft, save first when `dirty` (a failed save stops here, leaving the error on screen); on any other stage, never save first. Then dispatch the action through the same path as `runAction`.
 - Produces (window state): `formSubstep` (a string matching `^[a-z]+\.[a-z_]+$`) and `revealedAnswers: { caseId, ids }` in `FIELDS`; `visitedSteps` removed from `FIELDS`.
 
 Behaviour to build (spec §3.1, §3.7, §3.8, §5.2):
 - **Opening a case** with no `formSubstep` (cleared by `clearSelection`) sets it to `firstUnfinishedSubstep(…)` once the case is loaded; a new case therefore opens at `before.ready`.
+- **Visits count only on a draft.** `visitsPending()` is false unless `savedCase.stage === "draft"`, so a submitted case is never dirty because of visits, and nothing tries to save them (the server refuses `SAVE_ANSWERS` on any other stage, `011:541`).
 - **Visits.** `visitedSubsteps` starts as the case's `intakeVisited`. Every refresh merges the server's set in (union). Ids the catalogue doesn't know (`findSubstep` null) are dropped before sending. `dirty` is `sendableDiffers(…) || visitsPending()`, where `visitsPending()` is true when the draft has a known visited id the server's `intakeVisited` lacks. Version-2 `saveAnswers` sends `{ answers, visited }` when acting as the client and the known visited set is non-empty; as a presenter it never sends `visited`.
 - **§3.8 in `applyCase`,** when `dirty` and a pin is set and `next.revision` is newer:
-  - stage changed → as today (conflict);
+  - stage changed with **only visits unsaved** (no answer or contact change pending) → take `next`, drop the unsaved visits (keep the server's), clear the pin and `dirty`, no conflict;
+  - stage changed with unsaved answers → as today (conflict);
   - `serverAnswersOf(current)` and `serverAnswersOf(next)` equal field by field by `sendable` value → move the pin to `next.revision`, take `next` as `savedCase`, merge visits, no conflict, draft untouched;
   - answers changed but `sendableDiffers(draft, serverAnswersOf(current))` is false (only visits unsaved) → take `next`, rebuild the draft with `keepLocalOnly`, merge visits, move the pin, no conflict;
   - otherwise → conflict, as today.
@@ -554,6 +565,7 @@ Behaviour to build (spec §3.1, §3.7, §3.8, §5.2):
   - `goToSubstep("before.service")` from `before.ready` with nothing edited saves once, with `visited: ["before.ready"]` and unchanged answers (the visit makes the draft dirty).
   - Revisiting an already-visited sub-step with nothing edited sends nothing.
   - A visited id the catalogue doesn't know (planted in `intakeVisited`) is never sent.
+  - **Card marks on a submitted case:** with visits planted in `visitedSubsteps` that the server lacks and the case `received`, `getState().dirty` is false and `setDocumentCard("w2.household", "later")` sends only `SET_DOCUMENT_CARD`. Two tabs: tab A leaves a sub-step (visits pending), tab B submits; when tab A's refresh brings `stage: "received"`, there is no conflict, and a card mark from tab A is sent.
   - §3.8: (a) typing on `about.you`, then a newer revision changing only `documentCards` arrives → no conflict, pin moved, typing kept, and the next save is accepted by the fake (expected revision = newest); (b) the same with a newer revision that changes `addr_city` → conflict; (c) only visits unsaved, and a newer revision changing `addr_city` → no conflict, the draft takes `addr_city`, visits kept and still sent; (d) a newer revision that changes the stage → as today.
   - `setDocumentCard("w2.household", "later")` while dirty sends `SAVE_ANSWERS` first, then `SET_DOCUMENT_CARD` with the newer revision; when that save fails, no card action is sent.
   - `openForChange("about.address")` sets `returnToSummary`; `backToSummary()` lands on `review.summary` and clears it; a `goToSubstep` from the rail clears it.
@@ -653,7 +665,7 @@ Behaviour to build (spec §3.1, §3.7, §3.8, §5.2):
 - Consumes: Task 1's Decision (`DRAFT_FONTS`, `CJK_DRAW`); Task 2's catalogue (`wording`, `findQuestion`, `formatAnswer`'s date and phone helpers).
 - Produces:
   - `draft-form.mjs` (pure): `FORM_FILES = { en: "src/forms/f13614c-2025.pdf", "zh-s": "src/forms/f13614cn-2025.pdf", "zh-t": "src/forms/f13614ct-2025.pdf" }`; `FORM_SHA256` (the three sums above); `draftFields(answers, { form, reference, today })` → `{ text: { [field]: string }, checks: string[], comments: string, consentPage: boolean }`.
-  - `draft-pdf.mjs`: `DRAFT_FONTS`, `CJK_DRAW` (from Task 1), `hasCjk(text)`, `async buildDraftPdf({ PDFLib, fontkit, formBytes, fontFiles, fields, stamp, flatten = true })` → `Uint8Array`.
+  - `draft-pdf.mjs`: `DRAFT_FONTS`, `CJK_DRAW` (from Task 1), `needsEmbeddedFont(text)` (true when any character can't be encoded by pdf-lib's standard Helvetica, that is, falls outside WinAnsi), `printable(text, font)` (the fallback below), `async buildDraftPdf({ PDFLib, fontkit, formBytes, fontFiles, fields, stamp, flatten = true })` → `Uint8Array`.
   - `src/vendor/pdf-lib.mjs`: `export { PDFDocument, StandardFonts, rgb } from "pdf-lib"; export { default as fontkit } from "@pdf-lib/fontkit";`, bundled like the Supabase bundle with its own banner.
 
 **The field map** (prefix every name with `form1[0].`; booleans tick; `—` means no box). Dates print as `MM/DD/YYYY`; phones as `(215) 555-0199`; middle names as their first letter.
@@ -693,15 +705,15 @@ The two zh-only marital names are the same questions in the same place: before r
 **Additional Comments**, in this order, separated by a blank line: Q13.1's text; `Not sure: <labels>` (the English wording of every visible not_sure answer, household ones as `Person <n> <sub-field wording>`, joined with ", "); `Other income: <inc_other_desc>`; `Other event: <evt_other_desc>`; one line per household member 5–10 in the spec's format (name · relationship · born · months · single or married · citizen · resident · student · disabled · IP PIN).
 
 - [ ] **Step 1: Failing tests.**
-  - `tests/draft-form.test.mjs` (pure): a fictional married client maps to the expected `text` and `checks` for a representative of each table row; Who answers tick the right You/Spouse/No boxes; a not_sure income item ticks nothing and appears in `Not sure:`; six household members fill rows 1–4 and put members 5–6 in comments; hidden answers are ignored (`visibleAnswers`); `consentPage` is true only for `gcf_consent = "yes"`; zh forms use the zh marital names and the zh `incomeRentingHouse` name; dates and phones format as stated; nothing in the "no box" row appears.
-  - `tests/draft-pdf.test.mjs` (node, with pdf-lib and fontkit from `node_modules`, reading `src/forms/`): the three files' sha256 equal `FORM_SHA256`; every name `draftFields` can produce for each form exists in that PDF (`getForm().getField`), including every Row1–Row4 name; a build with `flatten: false` round-trips (reload, read back a text field and a checkbox); a 6,000-character comment adds a seventh page titled "Additional comments (continued)" and the page-5 box ends with "(continued on page 7)"; the stamp appears on every page: decode each page's content streams (inflate when the stream's `/Filter` is `/FlateDecode`) and find `<4452414654` (the WinAnsi hex of "DRAFT", which is how pdf-lib writes standard-font text); the continued page is found the same way (hex of "Additional comments (continued)"); with Chinese text (a fictional 美 林), `buildDraftPdf` succeeds using `fontFiles` read from `DRAFT_FONT_FIXTURES` (byte-identical to the CDN files), and `hasCjk` routes to the font path; without Chinese text no font is read.
+  - `tests/draft-form.test.mjs` (pure): a fictional married client maps to the expected `text` and `checks` for a representative of each table row; Who answers tick the right You/Spouse/No boxes; a not_sure income item ticks nothing and appears in `Not sure:`; six household members fill rows 1–4 and put members 5–6 in comments; hidden answers are ignored (`visibleAnswers`); `consentPage` is true only for `gcf_consent = "yes"`, and with any other value (`"no"` or unanswered) `text` holds no `page6[0]` field even when signatures are in the draft; zh forms use the zh marital names and the zh `incomeRentingHouse` name; dates and phones format as stated; nothing in the "no box" row appears.
+  - `tests/draft-pdf.test.mjs` (node, with pdf-lib and fontkit from `node_modules`, reading `src/forms/`): the three files' sha256 equal `FORM_SHA256`; every name `draftFields` can produce for each form exists in that PDF (`getForm().getField`), including every Row1–Row4 name; a build with `flatten: false` round-trips (reload, read back a text field and a checkbox); a 6,000-character comment adds a seventh page titled "Additional comments (continued)" and the page-5 box ends with "(continued on page 7)"; the stamp appears on every page: decode each page's content streams (inflate when the stream's `/Filter` is `/FlateDecode`) and find `<4452414654` (the WinAnsi hex of "DRAFT", which is how pdf-lib writes standard-font text); the continued page is found the same way (hex of "Additional comments (continued)"); with Chinese text (a fictional 美 林) and with accented Latin names ("Nguyễn Thị Lan", "Łukasz Żółć"), `buildDraftPdf` succeeds using `fontFiles` read from `DRAFT_FONT_FIXTURES` (byte-identical to the CDN files), and `needsEmbeddedFont` routes to the font path; plain ASCII and WinAnsi names ("José Peña") read no font; a character neither font has (for example 𓀀, U+13000) prints as `?` without throwing, and Additional Comments gains "Some characters could not be printed. The online answers have them in full."; `needsEmbeddedFont("José")` is false and `needsEmbeddedFont("Nguyễn")` is true.
   - `tests/server.test.mjs`: `/src/vendor/pdf-lib.mjs` is served as JavaScript.
 - [ ] **Step 2: Run** `node --test tests/draft-form.test.mjs tests/draft-pdf.test.mjs`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
   - `npm i -D pdf-lib@1.17.1 @pdf-lib/fontkit@1.1.1` and the `DRAFT_FONT_FIXTURES` packages, all at exact versions.
   - `tools/build.mjs` builds both bundles: the existing Supabase one, and `tools/vendor-pdf-entry.mjs` → `src/vendor/pdf-lib.mjs` with a banner naming both pdf-lib versions. `npm run build:vendor` writes both. `tools/vendor-entry.mjs` stays Supabase-only.
-  - `draft-form.mjs` per the map; `draft-pdf.mjs`: load the form, `registerFontkit`, embed Helvetica (and the Chinese font when `hasCjk` of any value), set texts (Latin through `setText` + `updateFieldAppearances(helvetica)`; Chinese per `CJK_DRAW`), tick checks, set the document title to the file name (`setTitle`), fill the comments box by wrapping to its widget rectangle at its font size and moving overflow to a new page drawn as plain text, draw the stamp at the top margin of every page (9 pt, dark red), `flatten()`, `save()`.
-  - `app.mjs` `view-draft`: synchronously `const tab = window.open("", "_blank")` and, if it opened, write "Preparing your draft…" into it; then `await import("./vendor/pdf-lib.mjs")`, `fetch` the form (and the font files for that form when any value `hasCjk`: `en` and `zh-s` use `DRAFT_FONTS["zh-s"]`, `zh-t` uses `DRAFT_FONTS["zh-t"]`; checking each file's sha256 with `crypto.subtle.digest` against `DRAFT_FONTS` and refusing a mismatch with "The draft font could not be checked. Try again later."), build, `URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))`, then `tab.location.href = url`. When `tab` is null, fill `#draft-ready` with an `<a href="<url>" download="13614-C-draft-<reference>[-zh-s|-zh-t].pdf" target="_blank">Your draft is ready: open it</a>`. Revoke the URL after 60 seconds. Errors go to `notify`.
+  - `draft-form.mjs` per the map; `draft-pdf.mjs`: load the form, `registerFontkit`, embed Helvetica, and the downloaded font when `needsEmbeddedFont` is true for any value; set texts (a value Helvetica can encode through `setText` + `updateFieldAppearances(helvetica)`; any other value through the downloaded font, per `CJK_DRAW`). **Characters neither font has:** `printable(text, font)` first tries the text decomposed with its combining marks removed (`normalize("NFD").replace(/\p{M}/gu, "")`, so "ễ" becomes "e"), then replaces any character still missing with `?`. It never throws, and when it changed anything, Additional Comments gains the line "Some characters could not be printed. The online answers have them in full."; tick checks, set the document title to the file name (`setTitle`), fill the comments box by wrapping to its widget rectangle at its font size and moving overflow to a new page drawn as plain text, leave page 6 (Form 15080) blank unless `fields.consentPage` (the page stays in the PDF, with no signature or date); draw the stamp at the top margin of every page (9 pt, dark red), `flatten()`, `save()`.
+  - `app.mjs` `view-draft`: synchronously `const tab = window.open("", "_blank")` and, if it opened, write "Preparing your draft…" into it; then `await import("./vendor/pdf-lib.mjs")`, `fetch` the form (and the font files for that form when `needsEmbeddedFont` is true for any value: `en` and `zh-s` use `DRAFT_FONTS["zh-s"]`, `zh-t` uses `DRAFT_FONTS["zh-t"]`; checking each file's sha256 with `crypto.subtle.digest` against `DRAFT_FONTS` and refusing a mismatch with "The draft font could not be checked. Try again later."), build, `URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }))`, then `tab.location.href = url`. When `tab` is null, fill `#draft-ready` with an `<a href="<url>" download="13614-C-draft-<reference>[-zh-s|-zh-t].pdf" target="_blank">Your draft is ready: open it</a>`. Revoke the URL after 60 seconds. **On any failure** (import, fetch, font check, build), the tab never stays on "Preparing your draft…": write into it "The draft could not be made. Close this tab and try again." (`tab.document.body.textContent = …`), and `notify` the same sentence on the page. A test in `tests/draft-pdf.test.mjs` cannot open tabs, so this is checked in Task 10: route the form URL to a 500 with `page.route`, press "View Draft 13614-C", and read that sentence in the popup.
 - [ ] **Step 4: Run** `npm run build:vendor`, `npm test`. Expected: PASS.
 - [ ] **Step 5: Commit** ("Draft 13614-C: field maps for the three Rev. 10-2025 forms, the PDF builder and its vendor bundle").
 
@@ -735,4 +747,4 @@ Rewrite the phase "a client walks the nine-step intake on a version-2 workspace"
 ## Self-review notes (for the executor)
 
 - Spec coverage: §2 → Tasks 2, 5, 7; §3.1–§3.6 → Tasks 5–8; §3.7 → Tasks 4, 6; §3.8 → Task 6; §4 → Task 7; §5 → Tasks 6–8; §6 → Tasks 3, 4, 7; §7 → Tasks 1, 9; §9.1 → Task 2; §9.2 → Tasks 2, 4; §9.3 → Tasks 2 (migration-count test, `gcf_sp_date`), 5 (date parts, household references), 6 (Undo, reconcile), 7 (rail cue), 10 (console check); §11 → every task's tests. §8 (sidebar) and §10 (4c) are not in this plan.
-- Names used across tasks: `substepsFor`, `findSubstep`, `substepOfQuestion`, `substepQuestions`, `visibleAnswers`, `isMemberId` (Task 2); `cardsFor`, `CARD_RULES`, `RULE_TYPES`, `SLOT_PATTERN`, `CARD_SUBSTEPS` (Task 3); `intakeVisited`, `documentCards`, `SET_DOCUMENT_CARD`, `SET_DOCUMENT_GROUP` (Task 4); `visibleSubsteps`, `resolveSubstep`, `adjacentSubstep`, `substepStatus`, `stepRollup`, `firstUnfinishedSubstep`, `newMemberId` (Task 5); `formSubstep`, `visitedSubsteps`, `returnToSummary`, `goToSubstep`, `moveSubstep`, `openForChange`, `backToSummary`, `currentSubstep`, `setDocumentCard`, `setDocumentGroup`, `revealedAnswers` (Task 6); `intakeFormV2`, `submittedV2`, `progressDocumentsV2` (Task 7); `draftFields`, `FORM_FILES`, `FORM_SHA256`, `buildDraftPdf`, `DRAFT_FONTS`, `CJK_DRAW`, `hasCjk` (Task 9).
+- Names used across tasks: `substepsFor`, `findSubstep`, `substepOfQuestion`, `substepQuestions`, `visibleAnswers`, `isMemberId` (Task 2); `cardsFor`, `CARD_RULES`, `RULE_TYPES`, `SLOT_PATTERN`, `CARD_SUBSTEPS` (Task 3); `intakeVisited`, `documentCards`, `SET_DOCUMENT_CARD`, `SET_DOCUMENT_GROUP` (Task 4); `visibleSubsteps`, `resolveSubstep`, `adjacentSubstep`, `substepStatus`, `stepRollup`, `firstUnfinishedSubstep`, `newMemberId` (Task 5); `formSubstep`, `visitedSubsteps`, `returnToSummary`, `goToSubstep`, `moveSubstep`, `openForChange`, `backToSummary`, `currentSubstep`, `setDocumentCard`, `setDocumentGroup`, `revealedAnswers` (Task 6); `intakeFormV2`, `submittedV2`, `progressDocumentsV2` (Task 7); `draftFields`, `FORM_FILES`, `FORM_SHA256`, `buildDraftPdf`, `DRAFT_FONTS`, `CJK_DRAW`, `needsEmbeddedFont`, `printable` (Task 9).
