@@ -42,8 +42,14 @@
 ## Rulings made while planning
 
 - **"Resting" means 200 ms.** A peek opens after the mouse has rested on the toggle for 200 ms (`PEEK_OPEN_MS`). A pointer sweeping past the top-left corner then doesn't flash the sidebar, and a click within those 200 ms pins as today. Closing uses the spec's 300 ms (`PEEK_CLOSE_MS`).
-- **Focus inside the sidebar holds a peek open, the same as the pointer.** When it leaves and the pointer is outside both, the peek closes after the same 300 ms. Focus on the toggle doesn't count: a mouse click focuses the toggle in Chrome, and a toggle that kept focus would otherwise hold every later peek open after the mouse left. So Shift+Tab from the sidebar back to the toggle lets the peek close (the toggle stays visible).
-- **Escape behaves like a collapse.** It closes the peek, and peek then stays off until the pointer leaves the toggle, if it is on it. If focus was inside the sidebar, the keyboard moves to the toggle so it doesn't fall into a hidden element. An open dialog takes Escape first, as today.
+- **Only keyboard focus inside the sidebar holds a peek open, the same as the pointer.** When it leaves and the pointer is outside both, the peek closes after the same 300 ms. "Keyboard focus" means the focused element matches `:focus-visible`. Neither of these counts:
+  - **Focus on the toggle.** A mouse click focuses the toggle in Chrome, and a toggle that kept focus would hold every later peek open after the mouse left. So Shift+Tab from the sidebar back to the toggle lets the peek close; the toggle stays visible.
+  - **Focus from a mouse click inside the peeked sidebar.** Today every sidebar control navigates (focus goes to `#main`) or opens a dialog, so this is a safeguard for the sidebar content the redesign adds later (Groups, Pinned, Recent). It has no browser check.
+
+  **`focusout` never decides on its own.** When focus moves within the sidebar, the following `focusin` decides. `focusout` only clears the hold when focus goes outside the sidebar. At `focusout` time the next element doesn't match `:focus-visible` yet.
+- **Escape behaves like a collapse.** It closes the peek, and peek then stays off until the pointer leaves the toggle, if it is on it. An open dialog takes Escape first, as today.
+- **A peek never hides the keyboard.** Whenever `applyPeek` hides the sidebar while `document.activeElement` is inside it, the keyboard moves to the toggle, which is always visible. That covers Escape, the close timer and a dialog closing.
+- **An open dialog holds the peek** (`peek.hold(Boolean(state.dialog))` in `applyPeek`). "Need help?" sits in the sidebar, and a dialog returns the keyboard to the control that opened it. If the peek closed behind the dialog, that control would be hidden when the dialog closed. Once the dialog closes, the usual 300 ms close applies, and the rule above then moves the keyboard to the toggle.
 - **The suppression after a collapse applies only when the pointer is on the toggle.** A keyboard collapse with the mouse elsewhere doesn't leave peek stuck off.
 - **During a peek the toggle reads "Keep the sidebar open"**, with `aria-expanded="true"`. Pinned, it reads "Hide the sidebar"; collapsed, "Show the sidebar" (both as today).
 - **The peek uses the narrow-screen overlay's look at every width:** fixed on the left, the sidebar's width, above the page, with the same shadow. Below 800px a pinned sidebar is already that overlay.
@@ -237,6 +243,19 @@ test("Escape closes a peek and reports it; with no peek it does nothing", () => 
   assert.equal(peek.isPeeking(), false, "no re-peek while the pointer stays on the toggle");
 });
 
+test("an open dialog holds the peek; when it closes the usual delay applies", () => {
+  const { peek, clock } = setup();
+  peek.pointer("toggle", "mouse");
+  clock.advance(PEEK_OPEN_MS);
+  peek.hold(true);
+  peek.pointer(null, "mouse");
+  clock.advance(5000);
+  assert.equal(peek.isPeeking(), true);
+  peek.hold(false);
+  clock.advance(PEEK_CLOSE_MS);
+  assert.equal(peek.isPeeking(), false);
+});
+
 test("peekZone names the toggle, the sidebar, or nothing", () => {
   const el = (match) => ({ closest: (sel) => (sel === match ? {} : null) });
   assert.equal(peekZone(el(".sidebar-toggle")), "toggle");
@@ -289,6 +308,7 @@ export function createSidebarPeek({ setTimer = setTimeout, clearTimer = clearTim
   let zone = null; // where the mouse is: "toggle", "sidebar" or null
   let focusInside = false; // the keyboard is in the sidebar (not the toggle: a mouse click focuses it)
   let suppressed = false; // after a collapse or Escape, until the mouse leaves the toggle
+  let held = false; // a dialog is open: the peek doesn't close behind it
   let openTimer = null;
   let closeTimer = null;
 
@@ -300,10 +320,10 @@ export function createSidebarPeek({ setTimer = setTimeout, clearTimer = clearTim
     onChange();
   };
   const scheduleClose = () => {
-    if (!peeking || zone || focusInside || closeTimer !== null) return;
+    if (!peeking || zone || focusInside || held || closeTimer !== null) return;
     closeTimer = setTimer(() => {
       closeTimer = null;
-      if (!zone && !focusInside) set(false);
+      if (!zone && !focusInside && !held) set(false);
     }, PEEK_CLOSE_MS);
   };
   const end = () => { cancelOpen(); cancelClose(); set(false); };
@@ -341,6 +361,12 @@ export function createSidebarPeek({ setTimer = setTimeout, clearTimer = clearTim
       if (focusInside) cancelClose();
       else scheduleClose();
     },
+    // A dialog is (or isn't) open; while one is, the peek stays.
+    hold(on) {
+      held = Boolean(on);
+      if (held) cancelClose();
+      else scheduleClose();
+    },
     // The toggle was clicked and pinned the sidebar open.
     pinned() { end(); },
     // The toggle was clicked and collapsed the sidebar: no re-peek under the cursor.
@@ -362,7 +388,7 @@ export function createSidebarPeek({ setTimer = setTimeout, clearTimer = clearTim
 - [ ] **Step 4: Run the unit tests and see them pass**
 
 Run: `node --test tests/sidebar-peek.test.mjs`
-Expected: PASS, 13 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Write the failing wiring pins** (append to `tests/shell.test.mjs`; it already reads `app.mjs` for other source pins. If it doesn't, read it with `readFileSync(new URL("../src/app.mjs", import.meta.url), "utf8")`).
 
@@ -375,9 +401,14 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
   assert.match(app, /root\.innerHTML = views\.page\(state, screenFor\(state\)\);\s*applyPeek\(\);/);
   for (const event of ["pointerover", "pointerout", "focusin", "focusout"])
     assert.match(app, new RegExp(`root\\.addEventListener\\("${event}"`), event);
+  // Only keyboard focus holds a peek.
+  assert.match(app, /:focus-visible/);
   // The toggle tells the peek whether the click pinned or collapsed.
   assert.match(app, /case "toggle-sidebar":[\s\S]{0,200}peek\.(collapsed|pinned)\(\)/);
   assert.match(app, /peek\.escape\(\)/);
+  // An open dialog holds the peek, and hiding the sidebar never strands the keyboard.
+  assert.match(app, /peek\.hold\(Boolean\(controller\.getState\(\)\.dialog\)\)/);
+  assert.match(app, /if \(hadFocus\) toggle\?\.focus\(\)/);
 });
 ```
 
@@ -399,10 +430,9 @@ Expected: FAIL on the new test only.
     if (!shell) return;
     const pinned = !shell.classList.contains("sidebar-closed");
     peek.setPinned(pinned);
+    peek.hold(Boolean(controller.getState().dialog));
     const peeking = !pinned && peek.isPeeking();
     shell.classList.toggle("sidebar-peek", peeking);
-    const sidebar = shell.querySelector("#app-sidebar");
-    if (sidebar) sidebar.hidden = !pinned && !peeking;
     const toggle = shell.querySelector(".sidebar-toggle");
     if (toggle) {
       const label = toggleLabel({ pinned, peeking });
@@ -410,6 +440,14 @@ Expected: FAIL on the new test only.
       toggle.setAttribute("aria-label", label);
       toggle.setAttribute("title", label);
     }
+    const sidebar = shell.querySelector("#app-sidebar");
+    if (!sidebar) return;
+    const hide = !pinned && !peeking;
+    // A peek never hides the keyboard: closing it with focus inside moves
+    // the keyboard to the toggle, which is always visible.
+    const hadFocus = hide && !sidebar.hidden && sidebar.contains(document.activeElement);
+    sidebar.hidden = hide;
+    if (hadFocus) toggle?.focus();
   }
 ```
 
@@ -419,8 +457,16 @@ Expected: FAIL on the new test only.
 ```js
   root.addEventListener("pointerover", (event) => peek.pointer(peekZone(event.target), event.pointerType));
   root.addEventListener("pointerout", (event) => peek.pointer(peekZone(event.relatedTarget), event.pointerType));
-  root.addEventListener("focusin", (event) => peek.focus(peekZone(event.target) === "sidebar"));
-  root.addEventListener("focusout", (event) => peek.focus(peekZone(event.relatedTarget) === "sidebar"));
+  // Only keyboard focus in the sidebar holds a peek (a mouse click focuses
+  // buttons in Chrome). Within the sidebar the next focusin decides.
+  const keyboardFocus = (element) => {
+    try { return element.matches(":focus-visible"); } catch { return true; }
+  };
+  root.addEventListener("focusin", (event) =>
+    peek.focus(peekZone(event.target) === "sidebar" && keyboardFocus(event.target)));
+  root.addEventListener("focusout", (event) => {
+    if (peekZone(event.relatedTarget) !== "sidebar") peek.focus(false);
+  });
 ```
 
 5. **The toggle:** replace the `toggle-sidebar` case body with:
@@ -437,16 +483,13 @@ Expected: FAIL on the new test only.
 
 ```js
     if (event.key === "Escape" && !controller.getState().dialog) {
-      const inSidebar = Boolean(document.activeElement?.closest?.("#app-sidebar"));
-      if (peek.escape()) {
-        event.preventDefault();
-        if (inSidebar) root.querySelector(".sidebar-toggle")?.focus();
-      }
+      // applyPeek moves the keyboard to the toggle if it was in the sidebar.
+      if (peek.escape()) event.preventDefault();
       return;
     }
 ```
 
-`peek.escape()` calls `onChange` → `applyPeek()`, which hides the sidebar. The focus move comes after it, onto the toggle, which is always visible.
+`peek.escape()` calls `onChange` → `applyPeek()`, which hides the sidebar and moves the keyboard to the toggle if it was inside.
 
 - [ ] **Step 7: CSS** in `src/styles.css`, directly after the `@media (max-width: 800px) { .app-shell … }` block (~line 2884):
 
@@ -493,6 +536,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - `sidebarState(page)` returns `{ peek: shell.classList.contains("sidebar-peek"), hidden: sidebar.hidden, expanded, label, mainLeft }`, where `mainLeft` is `.app-main`'s `getBoundingClientRect().left`.
 - `waitSidebar(page, what, predicate)` wraps `waitFor` with `RENDER_MS`.
 
+Before step 1, set the staff window to `DESKTOP` (1280×900) with `setViewportSize` if an earlier phase left it narrower. Above 800px a pinned sidebar pushes the page, which step 6 measures.
+
 Rules:
 - Pointer moves use `page.mouse.move(x, y)`, with coordinates taken from `locator.boundingBox()`.
 - A press under test is one `locator.click()`.
@@ -503,9 +548,9 @@ Steps:
 1. **Collapse with no re-peek.** Starting pinned, record `mainLeft`. One click on the toggle collapses it (`expanded` "false", `hidden` true, "Show the sidebar"). The mouse is still on the toggle. After `waitForTimeout(600)` there is still no peek (`peek` false, `hidden` true).
 2. **Peek.** Move the mouse to the page centre, then back onto the toggle's centre. Wait for `peek` true, `hidden` false, `expanded` "true" and the label "Keep the sidebar open". `mainLeft` equals its collapsed value, so the page didn't move.
 3. **Stay.** Move the mouse into the sidebar (the centre of `#app-sidebar`'s box), then `waitForTimeout(600)`: still peeking.
-4. **The peek survives a realtime redraw.** Set `data-peek-marker` on `#main`. Cause a redraw from outside the window: the same no-change `revision` bump the 4b2 version-2 phase's warm-up uses, or `act` on another window, whichever that phase uses. Wait until the marker is gone (the page was rebuilt). Then check `peek` is still true and `hidden` false.
+4. **The peek survives a realtime redraw.** Set `data-peek-marker` on `#main`. Cause a redraw from outside the window by giving a case on the staff window's board a no-change bump: `await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [id])`. This is the same bump the 4b2 version-2 phase's warm-up uses. Take the id from one of the seeded samples, looked up the way earlier phases do. Wait until the marker is gone, which means the page was rebuilt, then check `peek` is still true and `hidden` false. The mouse rests in the sidebar the whole time. Delegated listeners on `root` never see events from the removed nodes, so the peek's pointer zone stays "sidebar".
 5. **Close after leaving.** Move the mouse to the page centre. Wait for `peek` false and `hidden` true; this takes 300 ms, so wait with `waitSidebar`.
-6. **Pin.** Peek again (mouse to the toggle, wait for the peek), then one click on the toggle: `peek` false, `hidden` false, `expanded` "true", "Hide the sidebar". `mainLeft` is greater than the collapsed value, because the page is pushed. Read `sessionStorage` through the window-state key the controller uses, or reload, to confirm `sidebarOpen` is saved as true: a reload shows it open.
+6. **Pin.** Peek again (mouse to the toggle, wait for the peek), then one click on the toggle: `peek` false, `hidden` false, `expanded` "true", "Hide the sidebar". `mainLeft` is greater than the collapsed value, because the page is pushed. Saving `sidebarOpen` per window is unchanged and already covered by `tests/controller.test.mjs`, so don't reload here.
 7. **Keyboard.**
    - Collapse with one click, then move the mouse to the page centre.
    - `focus()` the toggle: after `waitForTimeout(600)` there is no peek.
@@ -513,6 +558,12 @@ Steps:
    - Then peek with the mouse. Press Tab until `document.activeElement` is inside `#app-sidebar`, with at most 3 presses, starting from the focused toggle.
    - Move the mouse to the page centre. After `waitForTimeout(600)` it still peeks, because the keyboard holds it.
    - Press Escape: `peek` false, `hidden` true, and the keyboard is on the toggle (`document.activeElement` matches `.sidebar-toggle`).
+7a. **A dialog opened from a peek.**
+   - Peek with the mouse, then one `click()` on the sidebar's "Need help?" (`#app-sidebar [data-action="open-help"]`). The help dialog opens.
+   - Move the mouse to the page centre. After `waitForTimeout(600)` the peek is still there behind the dialog (`peek` true).
+   - Press Escape. The dialog closes and the keyboard goes back to "Need help?", with the sidebar still visible.
+   - Press Escape a second time. The focus that came back to "Need help?" after a key press may count as keyboard focus (`:focus-visible`), in which case it holds the peek and this Escape closes it. If it doesn't count, the peek is already closing on its own.
+   - Either way, wait for `peek` false. The keyboard ends on the toggle (`document.activeElement` matches `.sidebar-toggle`), not on a hidden control.
 8. **Touch.**
    - With the sidebar collapsed and the mouse at the page centre, dispatch a touch hover on the toggle: `toggle.dispatchEvent("pointerover", { pointerType: "touch", bubbles: true })`. Playwright's `dispatchEvent` builds a `PointerEvent` for a pointer event name.
    - After `waitForTimeout(600)` there is no peek.
