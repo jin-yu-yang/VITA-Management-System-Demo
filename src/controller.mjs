@@ -349,6 +349,12 @@ export function createController({
   // A version-2 sub-step change is waiting for its save (`goToSubstep`), or a
   // card mark is waiting for its pre-save or its own action (`cardAction`).
   let substepSaveInFlight = false;
+  // Which new office draft is open: moves each time one starts. A Save draft
+  // started for one draft adopts nothing once that draft is gone.
+  let officeDraftToken = 0;
+  // A version-2 save's envelope -> the draft it was built from, so what was
+  // typed while it was out survives the re-read once it lands.
+  const sentDrafts = new WeakMap();
   // A save carrying answer changes failed with an unknown outcome, so the
   // server may hold answers the draft doesn't (an undo after it, say). Until a
   // save succeeds, the draft is then never "dirty only because of visits"
@@ -1274,16 +1280,21 @@ export function createController({
       await selectCase(caseId, { navigate: false });
       state.officeDraft = false;
       state.openAddSubsteps = ["before.ready"];
-    } else if (!state.workspace) {
-      clearSelection();
-    } else if (Number(state.workspace.defaultIntakeVersion) === 2) {
+    } else if (state.workspace && Number(state.workspace.defaultIntakeVersion) === 2) {
       startOfficeDraft();
+    } else {
+      // No workspace yet (the draft starts when it arrives), or version 1:
+      // today's page never reads the selection, and a kept one would be shown
+      // as a new walk-in's.
+      clearSelection();
+      state.officeDraftCaseId = null;
     }
     navigate("office-add-case");
   }
 
   function startOfficeDraft() {
     clearSelection();
+    officeDraftToken += 1;
     state.officeDraft = true;
     state.officeDraftCaseId = null;
     state.openAddSubsteps = ["before.ready"];
@@ -1314,7 +1325,9 @@ export function createController({
   // `{ sent }`, with `reason` when nothing was sent on purpose: "busy" (one
   // save at a time), "unconfirmed" (the box isn't ticked: nothing at all is
   // done) or "answers" (saved, but something is missing or invalid: the page
-  // marks it). A failure is thrown, with its error already on screen.
+  // marks it) or "left" (the office left the draft, or opened another case,
+  // while it was out: nothing more is done). A failure is thrown, with its
+  // error already on screen.
   async function saveOfficeDraft({ send = false } = {}) {
     if (state.officeSaving || substepSaveInFlight) return { sent: false, reason: "busy" };
     if (send && !state.openPanels.includes("confirmed")) return { sent: false, reason: "unconfirmed" };
@@ -1326,9 +1339,15 @@ export function createController({
     substepSaveInFlight = true;
     show();
     try {
-      if (!state.savedCase && !(await adoptOfficeCase())) return { sent: false, reason: "busy" };
+      if (!state.savedCase) {
+        const adopted = await adoptOfficeCase();
+        if (adopted !== true) return { sent: false, reason: adopted };
+      }
+      const caseId = state.selectedCaseId;
       if (state.dirty) await saveAnswers();
       if (!send) return { sent: false };
+      if (state.selectedCaseId !== caseId || state.screen !== "office-add-case")
+        return { sent: false, reason: "left" };
       return await sendOfficeDraft();
     } finally {
       state.officeSaving = false;
@@ -1338,16 +1357,25 @@ export function createController({
   }
 
   // The new draft's case: created once (an earlier create that landed is used
-  // again), read, and adopted in one step. False while another create is in
-  // flight.
+  // again), read, and adopted in one step. True once adopted; "busy" while
+  // another create is in flight; "left" when the draft it was started for is
+  // gone after an await (left, another case opened, signed out, or a fresh
+  // draft started): the created case then stays, unselected.
   async function adoptOfficeCase() {
+    const token = officeDraftToken;
+    const stillHere = () =>
+      state.officeDraft &&
+      officeDraftToken === token &&
+      state.screen === "office-add-case" &&
+      !state.selectedCaseId;
     if (!state.officeDraftCaseId) {
       const receipt = await startCase(
         { mode: "assisted", personId: state.selectedPersonId, answers: {} },
         null,
         { select: false },
       );
-      if (!receipt) return false;
+      if (!receipt) return "busy";
+      if (!stillHere()) return "left";
       state.officeDraftCaseId = receipt.caseId;
     }
     let record;
@@ -1355,10 +1383,12 @@ export function createController({
       record = await store.getCase(state.officeDraftCaseId);
       noteConnected();
     } catch (error) {
+      if (!stillHere()) return "left";
       noteFailure(error);
       show();
       throw error;
     }
+    if (!stillHere()) return "left";
     if (!isVersionTwo(record)) {
       // The workspace was set back to version 1 under this draft.
       const error = controllerError(
@@ -1690,6 +1720,9 @@ export function createController({
       pendingAction = null;
       state.retryable = false;
       noteConnected();
+      // The draft as it is now, for a version-2 save: what was typed while the
+      // save was out is not in what was sent.
+      const typed = sentDrafts.has(action) ? state.draftAnswers : null;
       if (save) {
         state.dirty = false;
         state.editBaseRevision = null;
@@ -1700,6 +1733,7 @@ export function createController({
       // The action is done. A re-read that fails afterwards is a stale view,
       // never a failed action, and must not put the envelope back in hand.
       await refresh();
+      if (typed) keepLaterEdits(action, typed);
       state.busy = false;
       show();
       return receipt;
@@ -1732,6 +1766,23 @@ export function createController({
       show();
       throw error;
     }
+  }
+
+  // A version-2 save landed and the re-read rebuilt the draft from the
+  // server. Every answer the draft changed after the save's snapshot goes
+  // back on top, and the draft is dirty again when they differ from the
+  // server; anything else keeps the rebuild (`keepLocalOnly`).
+  function keepLaterEdits(action, typed) {
+    const sent = sentDrafts.get(action);
+    if (state.savedCase?.id !== action.caseId) return;
+    const later = {};
+    for (const [id, value] of Object.entries(typed))
+      if (JSON.stringify(value) !== JSON.stringify(sent[id])) later[id] = value;
+    if (!Object.keys(later).length) return;
+    state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
+    pruneRevealed();
+    if (!state.dirty && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2))
+      markDirty();
   }
 
   // Who this window is acting as, for an action that carries a persona. A
@@ -1770,6 +1821,7 @@ export function createController({
       payload: savePayload(),
     };
     if (version !== 2) return await dispatch(action, { save: true });
+    sentDrafts.set(action, state.draftAnswers);
     try {
       return await dispatchSave(action);
     } catch (error) {
@@ -1785,6 +1837,7 @@ export function createController({
         actionId: newActionId(),
         payload: { ...action.payload, answers: rest },
       };
+      sentDrafts.set(retry, sentDrafts.get(action));
       return await dispatchSave(retry, field);
     }
   }

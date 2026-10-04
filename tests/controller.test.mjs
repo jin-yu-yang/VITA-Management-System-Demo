@@ -3821,7 +3821,8 @@ test("a version-1 workspace keeps today's Add a case page and one-call creation"
   let state = controller.getState();
   assert.equal(state.screen, "office-add-case");
   assert.equal(state.officeDraft, false);
-  assert.equal(state.selectedCaseId, "case-a", "only the screen changes");
+  assert.equal(state.selectedCaseId, null, "today's page never reads the selection");
+  assert.equal(state.savedCase, null);
   assert.deepEqual(store.writes, []);
   await controller.createAssistedCase({ answers: { firstName: "Mei" } });
   assert.deepEqual(store.writes[0].answers, { firstName: "Mei" });
@@ -3851,5 +3852,182 @@ test("the adopted draft is pinned: a re-read of the new case before its save lan
   await saving;
   assert.equal(store.records.get("case-2").answers.tp_first_name, "Mei");
   assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+// ---- fix round 1 ----------------------------------------------------------
+
+// Starts a Save draft whose create is held, runs `meanwhile`, then lets the
+// create land. Returns the Save draft's result.
+async function leaveMidCreate(controller, store, meanwhile) {
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Lin" });
+  const release = holdCreates(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.getState().officeSaving, true, "the create is out");
+  await meanwhile();
+  release();
+  return await saving;
+}
+
+test("a create that lands after another case was opened adopts nothing and saves nothing", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  const result = await leaveMidCreate(controller, store, () => controller.selectCase("case-v2"));
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-v2");
+  assert.equal(state.savedCase.id, "case-v2");
+  assert.equal(state.screen, "staff-case");
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  assert.ok(store.records.has("case-2"), "the empty case stays, unselected");
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Mei");
+  assert.equal(state.officeSaving, false);
+  controller.stop();
+});
+
+test("a create that lands after the office left for the board adopts nothing and saves nothing", async () => {
+  const { controller, store } = await startOffice();
+  const result = await leaveMidCreate(controller, store, async () => controller.navigate("staff"));
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  const state = controller.getState();
+  assert.equal(state.screen, "staff");
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
+  controller.stop();
+});
+
+test("a create that lands after sign-out, or after a fresh draft started, adopts nothing", async () => {
+  const signedOut = await startOffice();
+  const result = await leaveMidCreate(signedOut.controller, signedOut.store, () => signedOut.controller.signOut());
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  let state = signedOut.controller.getState();
+  assert.equal(state.principal, null);
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(writesOf(signedOut.store, "SAVE_ANSWERS").length, 0);
+  signedOut.controller.stop();
+
+  const fresh = await startOffice();
+  const again = await leaveMidCreate(fresh.controller, fresh.store, () => fresh.controller.openAddCase());
+  assert.deepEqual(again, { sent: false, reason: "left" });
+  state = fresh.controller.getState();
+  assert.equal(state.officeDraft, true, "the fresh draft is untouched");
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(writesOf(fresh.store, "SAVE_ANSWERS").length, 0);
+  fresh.controller.stop();
+});
+
+test("a Send whose save outlives its case sends nothing", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase();
+  controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  controller.togglePanel("confirmed");
+  const release = holdSaves(store);
+  const sending = controller.saveOfficeDraft({ send: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.getState().savedCase.id, "case-2");
+  await controller.selectCase("case-v2");
+  release();
+  assert.deepEqual(await sending, { sent: false, reason: "left" });
+  assert.equal(writesOf(store, "SUBMIT").length, 0);
+  assert.equal(controller.getState().selectedCaseId, "case-v2");
+  controller.stop();
+});
+
+test("Add a case on a version-1 workspace drops a version-2 selection and a refused draft", async () => {
+  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  store.workspace = { ...store.workspace, defaultIntakeVersion: 1 };
+  await store.handlers.onChange({ table: "workspaces" });
+  await controller.selectCase("case-v2");
+  await controller.openAddCase();
+  let state = controller.getState();
+  assert.equal(state.screen, "office-add-case");
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.officeDraft, false);
+  controller.stop();
+
+  // Refused because the workspace went back to version 1, then Add a case again.
+  const refused = await startOffice();
+  await refused.controller.openAddCase();
+  refused.controller.editAnswers({ tp_first_name: "Lin" });
+  refused.store.workspace = { ...refused.store.workspace, defaultIntakeVersion: 1 };
+  await assert.rejects(refused.controller.saveOfficeDraft(), { code: "VALIDATION" });
+  assert.equal(refused.controller.getState().officeDraftCaseId, "case-2");
+  await refused.store.handlers.onChange({ table: "workspaces" });
+  await refused.controller.openAddCase();
+  state = refused.controller.getState();
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.officeDraftCaseId, null);
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(state.dirty, false);
+  assert.equal(state.screen, "office-add-case");
+  refused.controller.stop();
+});
+
+test("on a new office draft, typing while the first save is out is kept and still to send", async () => {
+  const { controller, store } = await startOffice();
+  await controller.openAddCase();
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const release = holdSaves(store);
+  const saving = controller.saveOfficeDraft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1);
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  let state = controller.getState();
+  assert.equal(store.records.get("case-2").answers.tp_first_name, "Mei");
+  assert.equal(Object.hasOwn(store.records.get("case-2").answers, "addr_city"), false);
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  assert.equal(state.dirty, true);
+  assert.equal(state.saveState, "unsaved");
+  await controller.saveOfficeDraft();
+  assert.equal(store.records.get("case-2").answers.addr_city, "Camden");
+  state = controller.getState();
+  assert.equal(state.dirty, false);
+  assert.equal(state.error, null);
+  controller.stop();
+});
+
+test("on the client's own version-2 draft, typing while a save is out is kept; the same value is not dirty", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  let release = holdSaves(store);
+  let saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  let state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Ming");
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  assert.equal(state.dirty, true);
+  await controller.saveAnswers();
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().dirty, false);
+
+  // Changed and changed back while the save is out: nothing new to send.
+  controller.editAnswers({ tp_first_name: "Lan" });
+  release = holdSaves(store);
+  saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ tp_first_name: "Mei" });
+  controller.editAnswers({ tp_first_name: "Lan" });
+  release();
+  await saving;
+  state = controller.getState();
+  assert.equal(state.draftAnswers.tp_first_name, "Lan");
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "saved");
   controller.stop();
 });
