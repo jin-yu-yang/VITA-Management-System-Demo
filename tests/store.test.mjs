@@ -513,11 +513,25 @@ test("the workspace read carries the fixture generation", async () => {
     fixtureGeneration: 7,
     defaultFollowupPersonId: "person-sam",
     currentSeason: 2025,
+    defaultIntakeVersion: 1,
   });
   await assert.rejects(
     () => createStore(fakeClient({ rows: { workspaces: [] } })).getWorkspace(),
     { code: "NOT_FOUND" },
   );
+});
+
+test("the workspace read carries its default intake version, 1 when absent", async () => {
+  // Add a case follows the workspace's version (spec 2026-09-30 §4.2): a row
+  // from before the column, or a null, reads as version 1.
+  const row = { id: "workspace-1", default_followup_person_id: null, fixture_generation: 1 };
+  const read = async (extra) =>
+    (await createStore(fakeClient({ access: "presenter", rows: { workspaces: [{ ...row, ...extra }] } })).getWorkspace())
+      .defaultIntakeVersion;
+  assert.equal(await read({ default_intake_version: 2 }), 2);
+  assert.equal(await read({ default_intake_version: "2" }), 2);
+  assert.equal(await read({ default_intake_version: null }), 1);
+  assert.equal(await read({}), 1);
 });
 
 test("a workspace row without a season column reads as any season", async () => {

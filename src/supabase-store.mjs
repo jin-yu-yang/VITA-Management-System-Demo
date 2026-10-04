@@ -339,6 +339,9 @@ export function createStore(client) {
         fixtureGeneration: Number(row.fixture_generation),
         defaultFollowupPersonId: row.default_followup_person_id,
         currentSeason: row.current_season == null ? null : Number(row.current_season),
+        // The version Add a case starts a new application at (spec 2026-09-30
+        // §4.2). A row from before the column reads as version 1.
+        defaultIntakeVersion: Number(row.default_intake_version ?? 1),
       };
     },
 
