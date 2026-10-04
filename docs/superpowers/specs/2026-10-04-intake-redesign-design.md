@@ -114,8 +114,9 @@ The redraw rules, invalid values and `withholdInvalid`, saving, the senior switc
 
 - **The case stores its visited sub-steps** in a new column, `cases.intake_visited text[]` (version 2 only, empty by default).
 - **`SAVE_ANSWERS` gains an optional `visited` key:** `{ answers, visited? }`, where `visited` is the full set of visited sub-step ids.
-  - The server checks every id against the sub-step list that the catalogue migration loads (`vitally_private.intake_substeps`), and refuses an unknown one (`VALIDATION`).
-  - It stores the union of what it had and what was sent, so a visit is never lost to an older window.
+  - The server checks every id it is sent against the sub-step list that the catalogue migration loads (`vitally_private.intake_substeps`), and refuses an unknown one (`VALIDATION`).
+  - It stores the union of what it had and what was sent, so a visit is never lost to an older window. **When it writes, it quietly drops stored ids that are no longer in the list.** A later catalogue that renames or removes a sub-step therefore never leaves an old id behind to be refused.
+  - **The client sends only ids its own catalogue knows.** A merged-in id that its catalogue doesn't have is dropped before sending, so a stale stored id can never block every save.
 - **Visits are saved with the draft.** Leaving a sub-step adds it to the draft's visited set. `dirty` (§2.5 of the earlier spec) also counts a visited set that differs from the server's, so the save that follows Continue, Back or a rail jump sends it even when no answer changed.
 - **A refresh merges** the server's visited set into the draft's (union).
 - **The office's Add a case never sends `visited`.** The office works from `showMissing`, not visits (4c).
@@ -125,7 +126,8 @@ The redraw rules, invalid values and `withholdInvalid`, saving, the senior switc
 Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer revision that arrives while the draft has unsaved edits raises the conflict screen (`applyCase`, `controller.mjs:390`), even when no answer changed. With card actions (§6.3) and stored visits, that would happen all the time.
 
 - **A newer revision that changes no answers, no contact field and not the stage** (compared with the snapshot it replaces) only moves the pinned base revision forward. It never raises the conflict screen. A visited set in it is merged (§3.7).
-- **A newer revision that does change answers** raises the conflict screen, as today. **A stage change** (another window submitted) is handled as today, without re-pinning.
+- **A newer revision that does change answers** raises the conflict screen **only when this window has unsaved answer or contact changes**, as today. **When only visits are unsaved** (the draft is dirty only because a sub-step was left), there is nothing to choose between: the window takes the newer case, merges the visits into it and moves the base forward, so the conflict screen never opens empty.
+- **A stage change** (another window submitted) is handled as today, without re-pinning.
 - **A card action saves the draft first when it has unsaved edits,** the same as a rail jump. This matters most on Add a case (4c), where fields and cards share one page.
 
 ## 4. Step 0 and step 8
@@ -413,8 +415,8 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
   - the catalogue's sub-steps (every step has one; every question is in exactly one);
   - visibility, and the hidden and unknown `formSubstep` fallbacks;
   - `formSubstep` and `revealedAnswers` in the window state;
-  - visits: leaving a sub-step makes the draft dirty, the save sends `visited`, and a refresh merges it;
-  - §3.8: a newer revision with no answer change moves the base without a conflict, and one with an answer change still raises it; a card action saves first when dirty;
+  - visits: leaving a sub-step makes the draft dirty, the save sends `visited`, and a refresh merges it; ids the client's catalogue doesn't know are never sent;
+  - §3.8: a newer revision with no answer change moves the base without a conflict; one with an answer change raises it only when this window has unsaved answer or contact changes, and with only visits unsaved takes the newer case and merges the visits; a card action saves first when dirty;
   - the status marks;
   - the 13614-C field maps: every mapped name exists in its pinned PDF;
   - a fictional fill round-trip;
@@ -423,7 +425,7 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
   - both card actions and their events;
   - refusals for an unknown rule id, a wrong owner kind, a group move without `receive_documents`, moving an answer-Needed card down, and a closed case;
   - a household member without `member_id`, with a malformed one, or with a duplicate refused, and `intake_missing` never listing it;
-  - `visited`: unknown ids refused, the union stored, and a payload without it accepted;
+  - `visited`: unknown ids sent are refused, the union stored, stored ids no longer in the sub-step list dropped on write, and a payload without it accepted;
   - the card read policy (client sees their own, staff not a client's unsent draft);
   - `SET_DOCUMENT_CARD` from admin staff on a submitted case accepted, and on a client's unsent draft refused; both actions refused on version 1;
   - `not_done` updates the row to null and never deletes it;
