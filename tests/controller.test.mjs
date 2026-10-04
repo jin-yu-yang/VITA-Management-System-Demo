@@ -3284,3 +3284,68 @@ test("a card mark and a sub-step change share one save at a time", async () => {
   assert.equal(second.controller.getState().error, null);
   second.controller.stop();
 });
+
+// A card mark is one action at a time from send to answer, not only during its
+// pre-save: a second mark, or a sub-step change, sent while the first mark is
+// in flight would carry the same expected revision and meet a false conflict.
+test("a second card mark while the first is in flight is ignored, so no false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  assert.equal(controller.getState().dirty, false, "no pre-save: the mark goes straight out");
+  const release = holdSaves(store);
+  const first = controller.setDocumentCard("w2.household", "later");
+  const second = controller.setDocumentCard("photo_id.tp", "none");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SET_DOCUMENT_CARD only");
+  release();
+  const [marked, ignored] = await Promise.allSettled([first, second]);
+  assert.equal(marked.status, "fulfilled");
+  assert.deepEqual(ignored, { status: "fulfilled", value: null });
+  assert.deepEqual(
+    store.writes.map((write) => [write.type, write.payload.slotId, write.expectedRevision]),
+    [["SET_DOCUMENT_CARD", "w2.household", 1]],
+  );
+  const state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.error, null);
+  assert.equal(state.savedCase.documentCards[0].status, "later");
+  // Once it has landed, the next mark goes through with the new revision.
+  await controller.setDocumentCard("photo_id.tp", "none");
+  assert.deepEqual(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a sub-step change or a Change link while a card mark is in flight is ignored, so no false conflict", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  const release = holdSaves(store);
+  const marking = controller.setDocumentCard("w2.household", "later");
+  const moving = controller.goToSubstep("before.service");
+  const continuing = controller.moveSubstep(1);
+  const changing = controller.openForChange("about.you");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "no visit save beside the mark");
+  release();
+  const results = await Promise.allSettled([marking, moving, continuing, changing]);
+  assert.deepEqual(results.map((result) => result.status), ["fulfilled", "fulfilled", "fulfilled", "fulfilled"]);
+  assert.deepEqual(store.writes.map((write) => write.type), ["SET_DOCUMENT_CARD"]);
+  const state = controller.getState();
+  assert.equal(state.formSubstep, "before.ready", "the page stays where it was");
+  assert.equal(state.returnToSummary, false);
+  assert.deepEqual(state.visitedSubsteps, [], "an ignored move records no visit");
+  assert.equal(state.dirty, false);
+  assert.notEqual(state.saveState, "failed");
+  assert.equal(state.conflict, null);
+  assert.equal(state.error, null);
+  // Once the mark has landed, the move goes through on the new revision.
+  await controller.goToSubstep("before.service");
+  assert.deepEqual(
+    store.writes.map((write) => [write.type, write.expectedRevision]),
+    [
+      ["SET_DOCUMENT_CARD", 1],
+      ["SAVE_ANSWERS", 2],
+    ],
+  );
+  assert.equal(controller.getState().formSubstep, "before.service");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});

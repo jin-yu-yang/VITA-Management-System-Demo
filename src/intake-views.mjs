@@ -115,6 +115,10 @@ function formView(state) {
     variant: variantOf(answers),
     openPanels: Array.isArray(state.openPanels) ? state.openPanels : [],
     marks: { answers, visited, revealed, cards },
+    // While an action is in flight the controller ignores a sub-step change
+    // or a card mark (one write at a time), so the page offers none: every
+    // control that moves the form or marks a card carries this attribute.
+    off: offWhileBusy(state),
     within: `${inStep.indexOf(current) + 1} of ${inStep.length}`,
   };
 }
@@ -122,6 +126,9 @@ function formView(state) {
 // ---------------------------------------------------------------------------
 // The rail tree (spec §3.2, §3.3)
 // ---------------------------------------------------------------------------
+
+// The attribute for a control that would send while an action is in flight.
+const offWhileBusy = (state) => (state?.busy ? " disabled" : "");
 
 // Each mark is one fixed span, so typing can restyle it in place (className
 // and textContent only); its icon is drawn by CSS keyed on the span's class.
@@ -144,10 +151,10 @@ function railStep(step, view) {
   const items = subs
     .map((substep) => {
       const here = substep.id === view.current;
-      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant))}</span>${here ? '<small class="rail-here">You are here</small>' : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
+      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant))}</span>${here ? '<small class="rail-here">You are here</small>' : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
     })
     .join("");
-  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">Show or hide the parts of ${esc(title)}</span></button><button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}">${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">Step ${n}: </span>` : ""}${esc(title)}</span>${markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, view.marks))}</span></button></div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
+  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">Show or hide the parts of ${esc(title)}</span></button><button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">Step ${n}: </span>` : ""}${esc(title)}</span>${markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, view.marks))}</span></button></div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
 }
 
 function rail(view) {
@@ -233,7 +240,7 @@ function actions(view, alerts) {
   } else {
     primary = `<button type="submit" class="btn primary"${off ? " disabled" : ""}>Continue ${icon("arrow")}</button>`;
   }
-  return `<div class="form-actions"><div>${when(visible[0] !== current, button(`${icon("back")} Back`, "back-step", "text"))}</div>${primary}</div>`;
+  return `<div class="form-actions"><div>${when(visible[0] !== current, button(`${icon("back")} Back`, "back-step", "text", view.off.trim()))}</div>${primary}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,19 +253,20 @@ const STATUS = Object.freeze({
   none: { word: "Don't have", icon: "close" },
 });
 const statusOf = (card) => STATUS[card.status] ?? STATUS.not_done;
-const markButton = (slot, status, text) =>
-  button(esc(text), "mark-card", "secondary", `data-slot="${esc(slot)}" data-status="${status}"`);
+const markButton = (slot, status, text, off = "") =>
+  button(esc(text), "mark-card", "secondary", `data-slot="${esc(slot)}" data-status="${status}"${off}`);
 
 // One card. `links` is false where the answers are locked (the progress page),
 // so the why line is plain text there. The optional "other" card has the
-// upload buttons but no marks and no status (ruling R1).
-function docCard(card, { links = true } = {}) {
+// upload buttons but no marks and no status (ruling R1). `off` is
+// `offWhileBusy`: the marks and the why link wait for an action in flight.
+function docCard(card, { links = true, off = "" } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
   const optional = card.group === "optional";
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
   const whyText = card.why?.en ?? "";
   const why = whyText
-    ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}">${esc(whyText)}</button>` : esc(whyText)}</p>`
+    ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}"${off}>${esc(whyText)}</button>` : esc(whyText)}</p>`
     : "";
   const hint = card.hint?.en ? `<p class="doc-hint">${esc(card.hint.en)}</p>` : "";
   const noteId = `${id}-note`;
@@ -266,7 +274,7 @@ function docCard(card, { links = true } = {}) {
   const status = statusOf(card);
   const marks = optional
     ? ""
-    : `<div class="doc-marks">${markButton(card.slotId, "later", "I will send it later")}${markButton(card.slotId, "none", "I don't have this")}${when(card.status !== "not_done", markButton(card.slotId, "not_done", "Mark as not done"))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
+    : `<div class="doc-marks">${markButton(card.slotId, "later", "I will send it later", off)}${markButton(card.slotId, "none", "I don't have this", off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", "Mark as not done", off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
   return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(card.label?.en)}</h3><p class="doc-owner">${esc(card.ownerLine?.en)}</p>${why}${hint}${upload}${marks}</article>`;
 }
 
@@ -288,11 +296,11 @@ function documentsBody(view) {
   const mine = cards.filter((card) => card.substep === substep.cards);
   const main = mine.filter((card) => card.group !== "maybe");
   const maybe = mine.filter((card) => card.group === "maybe");
-  if (!maybe.length) return `<div class="doc-list">${main.map((card) => docCard(card)).join("")}</div>`;
+  if (!maybe.length) return `<div class="doc-list">${main.map((card) => docCard(card, { off: view.off })).join("")}</div>`;
   const panel = `maybe:${substep.id}`;
   const open = view.openPanels.includes(panel);
   const listId = `doc-maybe-${esc(dashed(substep.id))}`;
-  return `<div class="doc-list">${main.map((card) => docCard(card)).join("")}</div><div class="doc-maybe"><button type="button" class="doc-maybe-toggle" data-action="toggle-panel" data-panel="${esc(panel)}" aria-expanded="${open}" aria-controls="${listId}">Maybe needed (${maybe.length})</button><div id="${listId}" class="doc-list"${open ? "" : " hidden"}>${open ? maybe.map((card) => docCard(card)).join("") : ""}</div></div>`;
+  return `<div class="doc-list">${main.map((card) => docCard(card, { off: view.off })).join("")}</div><div class="doc-maybe"><button type="button" class="doc-maybe-toggle" data-action="toggle-panel" data-panel="${esc(panel)}" aria-expanded="${open}" aria-controls="${listId}">Maybe needed (${maybe.length})</button><div id="${listId}" class="doc-list"${open ? "" : " hidden"}>${open ? maybe.map((card) => docCard(card, { off: view.off })).join("") : ""}</div></div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +365,7 @@ function checkBody(view, alerts) {
           `<div class="alerts-step"><h4>${esc(stepLabel(step))}</h4><ul>${items
             .map(
               (item) =>
-                `<li><button type="button" class="alert-item is-${item.kind}" data-action="go-substep" data-substep="${esc(item.substep)}"><span class="alert-q">${esc(itemLabel(item.id, view.variant))}</span><span class="alert-flag">${item.flag}</span>${icon("chevron")}</button></li>`,
+                `<li><button type="button" class="alert-item is-${item.kind}" data-action="go-substep" data-substep="${esc(item.substep)}"${view.off}><span class="alert-q">${esc(itemLabel(item.id, view.variant))}</span><span class="alert-flag">${item.flag}</span>${icon("chevron")}</button></li>`,
             )
             .join("")}</ul></div>`,
       )
@@ -369,11 +377,11 @@ function checkBody(view, alerts) {
     body += `<div class="warnings-block"><h3>You can still submit</h3><ul>${warnings.needed
       .map(
         (card) =>
-          `<li class="warning-item"><span class="warning-doc"><strong>${esc(card.label?.en)}</strong><small>${esc(card.ownerLine?.en)} · ${esc(statusOf(card).word)}</small></span><button type="button" class="btn secondary" data-action="go-substep" data-substep="documents.${esc(card.substep)}" data-focus="doc-${esc(dashed(card.slotId))}">Upload now</button></li>`,
+          `<li class="warning-item"><span class="warning-doc"><strong>${esc(card.label?.en)}</strong><small>${esc(card.ownerLine?.en)} · ${esc(statusOf(card).word)}</small></span><button type="button" class="btn secondary" data-action="go-substep" data-substep="documents.${esc(card.substep)}" data-focus="doc-${esc(dashed(card.slotId))}"${view.off}>Upload now</button></li>`,
       )
       .join("")}${when(
       n && firstDocuments,
-      `<li class="warning-maybe"><button type="button" class="inline" data-action="go-substep" data-substep="${esc(firstDocuments)}">${n} more ${n === 1 ? "document" : "documents"} may be needed</button></li>`,
+      `<li class="warning-maybe"><button type="button" class="inline" data-action="go-substep" data-substep="${esc(firstDocuments)}"${view.off}>${n} more ${n === 1 ? "document" : "documents"} may be needed</button></li>`,
     )}</ul></div>`;
   }
   if (!body) body = `<p class="alerts-empty">We found no alerts or warnings in your application.</p>`;
@@ -385,8 +393,9 @@ const row = (label, value) =>
 
 // Every visible answer, grouped by step and sub-step, through formatAnswer.
 // With `change`, each sub-step is listed with its Change link even when
-// nothing in it is answered yet; without, only what has answers.
-function answerSteps(answers, variant, { change }) {
+// nothing in it is answered yet; without, only what has answers. `off` is
+// `offWhileBusy` for the Change links.
+function answerSteps(answers, variant, { change, off = "" }) {
   const visible = new Set(visibleSubsteps(answers, []));
   const options = { variant, lang: "en" };
   const [stepClass, subClass] = change ? ["summary-step", "summary-sub"] : ["answer-step", "answer-sub"];
@@ -401,7 +410,7 @@ function answerSteps(answers, variant, { change }) {
           .join("");
         const title = esc(substepTitle(substep, variant));
         if (!change) return rows ? `<div class="${subClass}"><h3>${title}</h3>${rows}</div>` : "";
-        return `<div class="${subClass}"><div class="summary-sub-head"><h3>${title}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(substep.id)}">Change</button></div>${rows || '<p class="summary-none">Nothing answered yet.</p>'}</div>`;
+        return `<div class="${subClass}"><div class="summary-sub-head"><h3>${title}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(substep.id)}"${off}>Change</button></div>${rows || '<p class="summary-none">Nothing answered yet.</p>'}</div>`;
       })
       .join("");
     return subs ? `<section class="${stepClass}"><h2>${esc(stepTitle(step))}</h2>${subs}</section>` : "";
@@ -427,7 +436,7 @@ function documentsSummary(view) {
           ),
         )
         .join("");
-      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}">Change</button></div>${rows}</div>`;
+      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>Change</button></div>${rows}</div>`;
     })
     .join("");
   return subs ? `<section class="summary-step summary-documents"><h2>${esc(stepTitle(step))}</h2>${subs}</section>` : "";
@@ -436,7 +445,7 @@ function documentsSummary(view) {
 const formatDay = (date) => date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
 function summaryBody(view, today) {
-  const printed = `<div class="summary-print"><div class="summary-meta">${row("Application ID", view.record?.reference)}${row("Date", formatDay(today))}</div>${answerSteps(view.answers, view.variant, { change: true })}${documentsSummary(view)}</div>`;
+  const printed = `<div class="summary-print"><div class="summary-meta">${row("Application ID", view.record?.reference)}${row("Date", formatDay(today))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off })}${documentsSummary(view)}</div>`;
   const tools = `<div class="summary-tools">${button(`${icon("print")} Print`, "print-summary", "secondary")}${button(`${icon("file")} View Draft 13614-C`, "view-draft", "secondary", 'data-form="en"')}<span class="draft-languages">${button("简体中文版", "view-draft", "inline", 'data-form="zh-s" lang="zh-Hans"')}<span aria-hidden="true">·</span>${button("繁體中文版", "view-draft", "inline", 'data-form="zh-t" lang="zh-Hant"')}</span><p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
   return printed + tools;
 }
@@ -445,7 +454,7 @@ function submitBody(view, alerts) {
   const confirmed = view.openPanels.includes("confirmed");
   return `${when(
     alerts.length,
-    `<div class="notice amber" role="status">${icon("help")}<div><p>Some answers need attention before you can submit.</p><button type="button" class="inline" data-action="go-substep" data-substep="review.check">See the alerts</button></div></div>`,
+    `<div class="notice amber" role="status">${icon("help")}<div><p>Some answers need attention before you can submit.</p><button type="button" class="inline" data-action="go-substep" data-substep="review.check"${view.off}>See the alerts</button></div></div>`,
   )}<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>I have checked my answers</span></label><p class="field-note">This confirms your answers. It is not a signature on a tax form.</p>`;
 }
 
@@ -501,5 +510,5 @@ export function progressDocumentsV2(state) {
     return `<section class="panel open-documents" aria-labelledby="open-documents-title"><div class="summary-print">${head("Bring these to your visit")}${row("Application ID", record.reference)}${bringList(cards)}</div><div class="summary-tools">${button(`${icon("print")} Print`, "print-summary", "secondary")}</div></section>`;
   const open = cards.filter((card) => card.group === "needed" && (card.status === "not_done" || card.status === "later"));
   if (!open.length) return "";
-  return `<section class="panel open-documents" aria-labelledby="open-documents-title">${head("Open documents")}<p class="field-note">The office still needs these. You can mark each one below.</p><div class="doc-list">${open.map((card) => docCard(card, { links: false })).join("")}</div></section>`;
+  return `<section class="panel open-documents" aria-labelledby="open-documents-title">${head("Open documents")}<p class="field-note">The office still needs these. You can mark each one below.</p><div class="doc-list">${open.map((card) => docCard(card, { links: false, off: offWhileBusy(state) })).join("")}</div></section>`;
 }

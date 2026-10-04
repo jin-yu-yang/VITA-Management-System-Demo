@@ -994,6 +994,49 @@ test("a card's status reads Later or Don't have, and then offers Mark as not don
   assert.match(later, /You said 1 job\. Upload 1 W-2\./);
 });
 
+test("while an action is in flight, the form's navigation and the card marks are disabled", () => {
+  // The controller ignores a sub-step change or a mark while one is in flight
+  // (a second write would meet a false conflict); disabled, the page never
+  // offers one, so nothing is dropped silently.
+  const GUARDED = /<button[^>]*data-action="(?:go-substep|change-substep|back-step|back-to-summary|mark-card)"[^>]*>/g;
+  const tagsOf = (html) => html.match(GUARDED) ?? [];
+  const draftAnswers = { ...without(sample(), "tp_first_name"), email: "a@" };
+  const later = v2Case({ documentCards: [{ slotId: "w2.household", status: "later" }] });
+  const pages = [
+    { formSubstep: "about.you" },
+    { formSubstep: "about.address", returnToSummary: true },
+    { formSubstep: "documents.income", savedCase: later },
+    { formSubstep: "documents.identity", openPanels: ["maybe:documents.identity"] },
+    { formSubstep: "review.check", draftAnswers },
+    { formSubstep: "review.summary", savedCase: later },
+    { formSubstep: "review.submit", draftAnswers },
+  ];
+  const seen = new Set();
+  for (const page of pages) {
+    const idle = tagsOf(intakeScreen(v2State(page)));
+    const busy = tagsOf(intakeScreen(v2State({ ...page, busy: true })));
+    assert.ok(busy.length > 0 && busy.length === idle.length, page.formSubstep);
+    for (const tag of idle) assert.doesNotMatch(tag, /\sdisabled/, `${page.formSubstep}: ${tag}`);
+    for (const tag of busy) {
+      assert.match(tag, /\sdisabled[\s>]/, `${page.formSubstep}: ${tag}`);
+      seen.add(/data-action="([^"]+)"/.exec(tag)[1]);
+    }
+    // Opening and closing parts of the page sends nothing, so it stays live.
+    const busyHtml = intakeScreen(v2State({ ...page, busy: true }));
+    for (const toggle of busyHtml.match(/<button[^>]*data-action="(?:toggle-rail-step|toggle-panel)"[^>]*>/g) ?? [])
+      assert.doesNotMatch(toggle, /\sdisabled/, toggle);
+  }
+  assert.deepEqual([...seen].sort(), ["back-step", "back-to-summary", "change-substep", "go-substep", "mark-card"]);
+  // The progress page's marks too.
+  const progress = (busy) =>
+    progressScreen(baseState({ screen: "progress", busy, savedCase: v2Case({ stage: "received", answers: sample() }) }));
+  const idleMarks = tagsOf(progress(false));
+  const busyMarks = tagsOf(progress(true));
+  assert.ok(busyMarks.length > 0 && busyMarks.length === idleMarks.length);
+  for (const tag of idleMarks) assert.doesNotMatch(tag, /\sdisabled/, tag);
+  for (const tag of busyMarks) assert.match(tag, /\sdisabled[\s>]/, tag);
+});
+
 test("the optional Other documents card has the upload buttons but no marks and no status", () => {
   const html = intakeScreen(v2State({ formSubstep: "documents.other" }));
   const other = cardOf(html, "other.household");
