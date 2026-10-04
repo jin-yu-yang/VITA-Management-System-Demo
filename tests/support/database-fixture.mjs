@@ -122,7 +122,15 @@ export const assistanceArgs = ({
   p_type: type,
   p_note: note,
 });
-export async function createDatabaseFixture({ afterInitialize } = {}) {
+// `intakeVersion` is the version both of the fixture's workspaces are set to
+// while they are initialised, before anything seeds: 1 (the default), 2, or
+// `null` to leave the column default as the migrations left it.
+export async function createDatabaseFixture({
+  afterInitialize,
+  intakeVersion = 1,
+} = {}) {
+  if (intakeVersion !== null && intakeVersion !== 1 && intakeVersion !== 2)
+    throw new TypeError("intakeVersion must be 1, 2 or null.");
   const target = await assertTestTarget();
   const runManifest = await createRun(),
     run = ownedRun(runManifest);
@@ -622,6 +630,11 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
               "insert into vitally_private.test_workspaces(workspace_id,run_id) values($1,$2)",
               [setup.workspaceId, runManifest.runId],
             );
+            if (intakeVersion !== null)
+              await connection.query(
+                "update public.workspaces set default_intake_version = $2 where id = $1",
+                [setup.workspaceId, intakeVersion],
+              );
             if (afterInitialize)
               await afterInitialize({
                 workspaceId: setup.workspaceId,
