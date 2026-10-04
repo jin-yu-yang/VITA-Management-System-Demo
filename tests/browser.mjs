@@ -1997,9 +1997,10 @@ async function runPermutation(t, roles) {
       const { workspaceId } = fixture.database;
       let v2Win = null;
       let againWin = null;
-      // Console lines this phase causes on purpose. Each pattern is added
-      // beside the check that causes it; nothing else may appear.
-      const deliberate = [];
+      // The console lines this phase causes on purpose, by their place in the
+      // window's record: each is caught as it happens, beside the check that
+      // causes it, so nothing else can pass under its pattern.
+      const excused = new Set();
       try {
         await fixture.database.sql(
           "update public.workspaces set default_intake_version=2 where id=$1",
@@ -2584,6 +2585,50 @@ async function runPermutation(t, roles) {
         assert.equal(await answer("tp_job_title"), "Baker", "the rest of about.you was not saved");
         assert.equal(await answer("email"), "mei.lin@example.com", "an invalid email reached the server");
 
+        // The Submit guard (spec 2026-09-30 §2.5: nothing invalid is ever
+        // submitted). Submit's disabled state is drawn at render and typing
+        // never redraws, so a stale Submit can be on while the draft is not
+        // sendable: the press re-checks the draft itself. Here the button is
+        // turned on by hand, the one way to reach that state on purpose.
+        const forceSubmit = async () => {
+          await waitForQuiet(page);
+          await submitButton.evaluate((button) => {
+            button.disabled = false;
+          });
+          await submitButton.click({ timeout: CLICK_MS });
+        };
+        await jump("review.submit");
+        assert.equal(await chip(), "1 answer needs checking");
+        // The box unticked: nothing is sent, and the page says why.
+        await waitForQuiet(page);
+        await confirmBox.click({ timeout: CLICK_MS });
+        await confirmTicked(false);
+        await forceSubmit();
+        await waitFor(
+          page,
+          "the unconfirmed Submit to be refused",
+          () =>
+            document.querySelector("#toast")?.textContent.trim() ===
+            "Confirm that you have checked your answers first.",
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
+        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
+        // Ticked, with an invalid email and a missing city in the draft: the
+        // guard reveals them and goes to review.check, keyboard on its heading.
+        await tickBox(page, "field-confirmed");
+        assert.equal(await submitButton.isDisabled(), true, "Submit was drawn on with alerts");
+        await forceSubmit();
+        await waitForSubstep(page, "review.check");
+        await waitForQuiet(page);
+        assert.deepEqual(
+          { focus: await focused(), toast: await toast() },
+          { focus: "alerts-title", toast: "Some answers still need a change before you can send." },
+        );
+        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid draft was submitted");
+        assert.equal(await answer("email"), "mei.lin@example.com", "the guard sent the invalid email");
+
         // review.check lists both, in sub-step order, under the step.
         await jump("review.check");
         await waitForQuiet(page);
@@ -2998,15 +3043,26 @@ async function runPermutation(t, roles) {
           draft.fontMismatch = DRAFT_FONT_UNCHECKED;
 
           // The form itself refused: the tab and the toast say so. Chrome logs
-          // the refused request; that line, and only it, is expected here.
+          // the refused request as one console error; that one line is caught
+          // here and excused by its place, and nothing else this check logs is.
           const formUrl = `${fixture.appOrigin}/src/forms/f13614c-2025.pdf`;
+          const refusedForm = /^Failed to load resource: the server responded with a status of 500\b/;
           await page.route(formUrl, (route) => route.fulfill({ status: 500, body: "refused" }));
-          deliberate.push(/Failed to load resource: the server responded with a status of 500/);
+          const from = v2Win.errors.length;
+          const logged = page.waitForEvent("console", {
+            predicate: (message) => message.type() === "error" && refusedForm.test(message.text()),
+            timeout: ARRIVAL_MS,
+          });
           popup = await openDraft("en");
           await tabSays(popup, DRAFT_FAILED);
           await toastSays(DRAFT_FAILED);
+          await logged;
           await popup.close();
           await page.unroute(formUrl);
+          const caused = v2Win.errors.slice(from);
+          assert.equal(caused.length, 1, `the refused form logged ${caused.length} console errors`);
+          assert.match(caused[0], refusedForm);
+          excused.add(from);
           draft.failure = DRAFT_FAILED;
 
           // A blocked tab: the page offers the finished draft as a link.
@@ -3149,11 +3205,21 @@ async function runPermutation(t, roles) {
           openDocuments: await openSlots(),
           draft,
           secondWindowConsoleLines: againConsole,
-          consoleLines: assertConsoleQuiet(v2Win, {
-            name: "version-2 client window",
-            allow: deliberate,
-          }),
+          // Every console error but the excused one, with no pattern allowed.
+          consoleLines: assertConsoleQuiet(
+            { ...v2Win, errors: v2Win.errors.filter((_, at) => !excused.has(at)) },
+            { name: "version-2 client window", allow: [] },
+          ),
+          excusedConsoleLines: excused.size,
+          // The draft tabs are pages of their own: their console and page
+          // errors are not collected by the fixture, so none is checked.
+          popups: "the draft tabs' own console and page errors are not collected",
         };
+        assert.equal(
+          excused.size,
+          roles.client === "chrome" ? 1 : 0,
+          "the console lines this phase excuses are not the one refused form request",
+        );
       } finally {
         await fixture.database.sql(
           "update public.workspaces set default_intake_version=1 where id=$1",
