@@ -1,4 +1,19 @@
-import { languageLabel, serviceLabel } from "./intake-catalogue.mjs";
+import {
+  languageLabel,
+  serviceLabel,
+  CONTACT_FIELDS,
+  MATERIALS_ITEMS,
+  canSeeContact,
+  stepsFor,
+  substepsFor,
+  substepQuestions,
+  findQuestion,
+  wording,
+  isVisible,
+  isAnswered,
+} from "./intake-catalogue.mjs";
+import { formatAnswer, sendable } from "./intake-form.mjs";
+import { serverAnswersV2, variantOf } from "./intake-views.mjs";
 import {
   esc,
   icon,
@@ -175,6 +190,11 @@ export function decorateStaffCase(caseRecord, people = []) {
       ...review,
       reviewerName: nameOf(review?.reviewerId),
     }));
+  if (Array.isArray(caseRecord.materials))
+    decorated.materials = caseRecord.materials.map((entry) => ({
+      ...entry,
+      recordedByName: nameOf(entry?.recordedByPersonId),
+    }));
   if (Array.isArray(caseRecord.internalHistory))
     decorated.internalHistory = caseRecord.internalHistory.map((entry) => ({
       ...entry,
@@ -191,6 +211,11 @@ const PREPARATION_WORK_STAGES = Object.freeze(["preparing", "corrections_require
 const UNSETTLED_REQUEST_STATUSES = Object.freeze(["open", "awaiting_verification"]);
 
 export const CHOOSE_PERSONA = "Choose a volunteer persona to act as.";
+
+export const CONTACT_NOT_SHOWN =
+  "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed.";
+const MATERIALS_NOT_RECORDED =
+  "Materials are recorded by the office, and by the preparer and reviewer once the case is claimed.";
 
 const allowed = { allowed: true, reason: "" };
 const refused = (reason) => ({ allowed: false, reason });
@@ -288,6 +313,15 @@ export function staffEligibility(caseRecord, person) {
     return allowed;
   };
 
+  // Contact details and materials follow the database's works_on_case: office
+  // staff on any case, a volunteer only as its preparer or reviewer.
+  const seesContact = canSeeContact(record, person);
+  const editContact = () => {
+    if (Number(record.intakeVersion) !== 2) return refused("A version-1 case has no contact card.");
+    return seesContact ? allowed : refused(CONTACT_NOT_SHOWN);
+  };
+  const recordMaterials = () => (seesContact ? allowed : refused(MATERIALS_NOT_RECORDED));
+
   return {
     personId: id,
     canPrepare,
@@ -302,6 +336,9 @@ export function staffEligibility(caseRecord, person) {
     preparationWork: preparationWork(),
     reviewDecision: reviewDecision(),
     reviewContact: reviewContact(),
+    seesContact,
+    editContact: editContact(),
+    recordMaterials: recordMaterials(),
   };
 }
 
@@ -666,7 +703,14 @@ export function caseDetails(record) {
   )}${detailRow("Updated", record.updatedAt ? formatTime(record.updatedAt) : "No updates yet")}</section>`;
 }
 
-export function answersPanel(record) {
+// Version 1 keeps today's panel exactly; version 2 reads by step and sub-step.
+export function answersPanel(record, { person } = {}) {
+  return Number(record?.intakeVersion) === 2
+    ? answersPanelV2(record, { showContact: canSeeContact(record, person) })
+    : answersPanelV1(record);
+}
+
+export function answersPanelV1(record) {
   const answers = record.answers ?? {};
   const rows = Object.keys(ANSWER_LABELS)
     .filter((key) => String(answers[key] ?? "").trim())
@@ -675,6 +719,177 @@ export function answersPanel(record) {
   return `<section class="panel" aria-labelledby="answers-title"><div class="section-head"><h2 id="answers-title">What the client told us</h2></div>${
     rows || '<p class="muted">No answers were saved on this case.</p>'
   }<p class="field-note">These are the intake answers, exactly as saved. ${esc(TAXSLAYER_NOTE)}</p></section>`;
+}
+
+const CONTACT_QUESTION_IDS = new Set(Object.keys(CONTACT_FIELDS));
+const NOT_SURE = "not_sure";
+const withoutQuestionMark = (text) => text.replace(/\s*\?\s*$/, "");
+const answerRow = (label, value, className = "", flag = "") =>
+  `<div class="detail-row${className ? ` ${className}` : ""}"><span>${esc(label)}</span><strong>${esc(value)}${flag}</strong></div>`;
+const notSureFlag = (text = "Not sure") =>
+  `<span class="not-sure-flag">${icon("help")} ${esc(text)}</span>`;
+
+// The rows of one question, and how many of its answers are "Not sure".
+function answerRows(question, value, options) {
+  if (question.type === "group") {
+    const members = (Array.isArray(sendable(question, value)) ? sendable(question, value) : []).filter(
+      (member) => member && typeof member === "object" && !Array.isArray(member),
+    );
+    const rows = [];
+    let notSure = 0;
+    for (const member of members) {
+      const line = formatAnswer(question, [member], options);
+      if (line === null) continue;
+      const unsure = (question.fields ?? []).filter((field) => member[field.id] === NOT_SURE);
+      notSure += unsure.length;
+      rows.push(
+        unsure.length
+          ? answerRow(
+              wording(question, options),
+              line,
+              "is-not-sure",
+              notSureFlag(
+                `Not sure: ${unsure.map((field) => withoutQuestionMark(wording(field, options))).join(", ")}`,
+              ),
+            )
+          : answerRow(wording(question, options), line),
+      );
+    }
+    if (rows.length) return { rows, notSure };
+  }
+  const text = formatAnswer(question, value, options);
+  if (text === null) return { rows: [], notSure: 0, unanswered: true };
+  return value === NOT_SURE
+    ? { rows: [answerRow(wording(question, options), text, "is-not-sure", notSureFlag())], notSure: 1 }
+    : { rows: [answerRow(wording(question, options), text)], notSure: 0 };
+}
+
+/**
+ * A version-2 case's answers, read by step and sub-step (spec 2026-10-04 §10).
+ * The contact questions show only when `showContact` (D5). Nothing here is
+ * editable. "Not sure" is flagged with the words and an icon, and counted.
+ */
+export function answersPanelV2(record, { showContact = false } = {}) {
+  const answers = serverAnswersV2(record);
+  const variant = variantOf(answers);
+  const options = { variant, lang: "en" };
+  const substeps = substepsFor(2).filter((substep) => substep.kind === "questions");
+  let notSure = 0;
+  const steps = stepsFor(2)
+    .map((step) => {
+      const subs = substeps
+        .filter((substep) => substep.step.id === step.id)
+        .map((substep) => {
+          const rows = substepQuestions(substep.id)
+            .filter((question) => isVisible(question, answers))
+            .filter((question) => showContact || !CONTACT_QUESTION_IDS.has(question.id))
+            .flatMap((question) => {
+              const read = answerRows(question, answers[question.id], options);
+              notSure += read.notSure;
+              if (read.unanswered)
+                return question.required ? [answerRow(wording(question, options), "Not answered", "is-missing")] : [];
+              return read.rows;
+            });
+          return rows.length
+            ? `<div class="answers-sub"><h4>${esc(substep.title?.general?.en ?? "")}</h4>${rows.join("")}</div>`
+            : "";
+        })
+        .join("");
+      return subs ? `<section class="answers-step"><h3>${esc(step.title?.en ?? "")}</h3>${subs}</section>` : "";
+    })
+    .join("");
+  const count = notSure
+    ? `<p class="not-sure-count">${icon("help")} ${notSure} ${notSure === 1 ? "answer is" : "answers are"} "Not sure". Ask about them at the interview.</p>`
+    : "";
+  return `<section class="panel answers-v2" aria-labelledby="answers-title"><div class="section-head"><h2 id="answers-title">What the client told us</h2></div><p class="wording-used">Wording used: ${variant === "senior" ? "Senior" : "Standard"}</p>${count}${steps}</section>`;
+}
+
+// ---------------------------------------------------------------------------
+// The contact card and the materials card (Intake answers tab)
+// ---------------------------------------------------------------------------
+
+const tickBox = ({ id, name, value, label, checked, disabled, note = "" }) =>
+  `<label class="checkbox-row small" for="${id}"><input type="checkbox" id="${id}" name="${name}" value="${esc(value)}"${checked ? " checked" : ""}${disabled ? " disabled" : ""}><span>${esc(label)}${note}</span></label>`;
+
+/**
+ * The contact details of a version-2 case. Phones are read-only; staff edit the
+ * best time and the note only. `rights` is `staffEligibility(record, person)`
+ * and `ui` is `{ busy, openPanels }`.
+ */
+export function contactCard(record, rights, ui = {}) {
+  const head = '<div class="section-head"><h2 id="contact-title">Contact details</h2></div>';
+  if (!rights?.seesContact)
+    return `<section class="panel contact-card" aria-labelledby="contact-title">${head}<p class="muted">${esc(CONTACT_NOT_SHOWN)}</p></section>`;
+  const contact = record?.contact ?? {};
+  const shown = (id, value) => formatAnswer(findQuestion(2, id), value) ?? "Not given";
+  const open = (ui.openPanels ?? []).includes("edit-contact");
+  const canEdit = Boolean(rights.editContact?.allowed);
+  const times = findQuestion(2, "best_contact_time");
+  const ticked = Array.isArray(contact.bestContactTime) ? contact.bestContactTime : [];
+  const form = `<form id="contact-form" class="staff-form"><fieldset class="check-group"><legend>Best time to reach</legend>${times.options
+    .map((option) =>
+      tickBox({
+        id: `field-contact-${option.value}`,
+        name: "bestContactTime",
+        value: option.value,
+        label: option.label?.general?.en ?? option.value,
+        checked: ticked.includes(option.value),
+      }),
+    )
+    .join("")}</fieldset>${textarea(
+    "Note",
+    "bestContactNote",
+    contact.bestContactNote ?? "",
+    'maxlength="200" rows="2"',
+    "contact",
+  )}${caseSubmit("Save best time", "UPDATE_CONTACT", "primary", ui.busy ? "disabled" : "")}${button(
+    "Cancel",
+    "toggle-edit-contact",
+    "secondary",
+    'aria-expanded="true"',
+  )}</form>`;
+  return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${detailRow(
+    "Phone",
+    shown("tp_phone", contact.phone),
+  )}${detailRow("Spouse phone", shown("sp_phone", contact.spousePhone))}${detailRow(
+    "Best time to reach",
+    shown("best_contact_time", contact.bestContactTime),
+  )}${detailRow("Note", shown("best_contact_note", contact.bestContactNote))}${when(
+    canEdit && !open,
+    button("Edit best time", "toggle-edit-contact", "secondary", 'aria-expanded="false"'),
+  )}${when(canEdit && open, form)}</section>`;
+}
+
+/** The eleven materials, ticked once received. Everyone reads; `recordMaterials` saves. */
+export function materialsCard(record, rights, ui = {}) {
+  const may = Boolean(rights?.recordMaterials?.allowed);
+  const received = new Map((record?.materials ?? []).map((entry) => [entry?.item, entry]));
+  const boxes = MATERIALS_ITEMS.map((item) => {
+    const entry = received.get(item.id);
+    const note = entry
+      ? ` <small class="material-recorded">Recorded${entry.recordedByName ? ` by ${esc(entry.recordedByName)}` : ""} · ${esc(formatTime(entry.receivedAt))}</small>`
+      : "";
+    return tickBox({
+      id: `field-materials-${item.id}`,
+      name: "received",
+      value: item.id,
+      label: item.label.en,
+      checked: Boolean(entry),
+      disabled: !may,
+      note,
+    });
+  }).join("");
+  return `<section class="panel materials-card" aria-labelledby="materials-title"><div class="section-head"><h2 id="materials-title">Materials received</h2></div><form id="materials-form" class="staff-form"><fieldset class="check-group"><legend>Materials received</legend>${boxes}</fieldset>${
+    may
+      ? caseSubmit("Save materials", "RECORD_MATERIALS", "primary", ui.busy ? "disabled" : "")
+      : explain(rights?.recordMaterials ?? refused(MATERIALS_NOT_RECORDED))
+  }</form></section>`;
+}
+
+// What the Intake answers tab holds, shared with the office page.
+export function intakeAnswersTab(record, rights, ui = {}, person = null) {
+  const version2 = Number(record?.intakeVersion) === 2;
+  return `${answersPanel(record, { person })}${when(version2, contactCard(record, rights, ui))}${materialsCard(record, rights, ui)}`;
 }
 
 function requestCard(record, request, rights, ui) {
@@ -1071,7 +1286,13 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
         ? `${nextStep(record, rights, view)}${caseDetails(record)}${preparationPanel(record)}${reviewPanel(record)}`
         : `${caseDetails(record)}${notLoaded}`,
     ],
-    ["intake", "Intake answers", answersPanel(record)],
+    [
+      "intake",
+      "Intake answers",
+      // An applicant's record or a board row carries no materials and offers
+      // no action: it keeps the answers alone.
+      staffShaped ? intakeAnswersTab(record, rights, view, person) : answersPanel(record, { person }),
+    ],
     ["documents", "Documents", staffShaped ? documentsPanel(record, rights, view) : elsewhere],
     ["followup", "Follow-up", staffShaped ? followupPanel(record) : elsewhere],
     ["history", "History", historyPanel(record, staffShaped)],

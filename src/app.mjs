@@ -3,6 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
+import { formValuesWithLists } from "./form-values.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, missingToSubmit } from "./intake-catalogue.mjs";
 import {
@@ -747,6 +748,8 @@ if (!config) {
     RECORD_REVIEW_CONTACT: "The conversation is recorded.",
   });
   const CLAIMS = Object.freeze(["CLAIM_PREPARATION", "CLAIM_REVIEW"]);
+  // Actions whose form holds a checkbox group (contact best time, materials).
+  const LIST_FORMS = Object.freeze(["UPDATE_CONTACT", "RECORD_MATERIALS"]);
 
   async function runCaseAction(target, form = null) {
     const type = target.dataset.caseAction;
@@ -816,17 +819,27 @@ if (!config) {
     if (boardCaseId && state.savedCase?.id !== boardCaseId)
       await controller.selectCase(boardCaseId, { navigate: false });
     // The payload rules are a pure function of the control and its form.
-    const { payload } = payloadFor(
-      type,
-      target.dataset,
-      form ? Object.fromEntries(new FormData(form)) : {},
-    );
+    // The two forms with checkbox groups read repeated names as lists; every
+    // other form keeps its reader.
+    const readValues = LIST_FORMS.includes(type)
+      ? formValuesWithLists
+      : (formElement) => Object.fromEntries(new FormData(formElement));
+    const { payload } = payloadFor(type, target.dataset, form ? readValues(form) : {});
     // The receipt is the evidence the action landed. Nothing is announced
     // without it: a refusal throws before this line, and a `null` would mean
     // nothing was sent at all.
     const receipt = await controller.runAction(type, payload);
     // Sent: whatever was typed *for this action* is no longer a draft.
     clearFormDrafts(form);
+    // The best-time form puts itself away once the change has landed (the
+    // controller's dispatch already re-read the case).
+    if (
+      type === "UPDATE_CONTACT" &&
+      receipt &&
+      controller.getState().openPanels.includes("edit-contact")
+    ) {
+      controller.togglePanel("edit-contact");
+    }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
@@ -1096,6 +1109,12 @@ if (!config) {
         break;
       case "toggle-sidebar":
         controller.toggleSidebar();
+        break;
+      case "toggle-edit-contact":
+        controller.togglePanel("edit-contact");
+        root
+          .querySelector('[data-action="toggle-edit-contact"]')
+          ?.focus();
         break;
       case "set-case-tab":
         controller.setCaseTab(target.dataset.value);

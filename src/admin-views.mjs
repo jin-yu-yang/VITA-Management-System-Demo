@@ -27,7 +27,8 @@ import {
   caseHeader,
   caseTabs,
   caseDetails,
-  answersPanel,
+  intakeAnswersTab,
+  materialsCard,
   documentsPanel,
   historyPanel,
   staffEligibility,
@@ -713,8 +714,12 @@ export function renderAdminCase(caseRecord, ui = {}) {
       "intake",
       "Intake answers",
       draftForOffice
-        ? '<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>'
-        : answersPanel(record),
+        ? `<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>${
+            // A version-2 office draft has its own page (Add a case); a
+            // version-1 draft gains only the materials card, below the note.
+            Number(record.intakeVersion) === 2 ? "" : materialsCard(record, staffRights, view)
+          }`
+        : intakeAnswersTab(record, staffRights, view, person),
     ],
     ["documents", "Documents", documentsPanel(record, staffRights, view)],
     ["followup", "Follow-up", adminFollowupPanel(record, person, view)],

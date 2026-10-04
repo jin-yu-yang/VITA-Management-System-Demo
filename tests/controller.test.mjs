@@ -2205,6 +2205,9 @@ function v2Store({
       if (action.payload.visited)
         next.intakeVisited = [...new Set([...(record.intakeVisited ?? []), ...action.payload.visited])];
     }
+    // The office's best time and note go to the case's contact record; a null clears.
+    if (action.type === "UPDATE_CONTACT")
+      next.contact = { ...(record.contact ?? {}), ...action.payload };
     const setCard = (slotId, change) => {
       const cards = [...(record.documentCards ?? [])];
       const at = cards.findIndex((card) => card.slotId === slotId);
@@ -2222,6 +2225,23 @@ function v2Store({
   };
   return store;
 }
+
+test("the office's UPDATE_CONTACT leaves the case's contact changed and its revision the store's", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    contact: { phone: "2155550101", bestContactTime: ["weekday_evening"], bestContactNote: "After 6 pm." },
+    stage: "preparing",
+  });
+  await controller.runAction("UPDATE_CONTACT", { bestContactTime: ["weekend"] });
+  const saved = controller.getState().savedCase;
+  assert.deepEqual(saved.contact.bestContactTime, ["weekend"]);
+  assert.equal(saved.contact.phone, "2155550101", "the phone is never part of this action");
+  assert.equal(saved.contact.bestContactNote, "After 6 pm.", "a key the form did not send is left alone");
+  assert.equal(saved.revision, store.records.get("case-v2").revision);
+  assert.equal(store.writes.at(-1).type, "UPDATE_CONTACT");
+  assert.deepEqual(store.writes.at(-1).payload, { bestContactTime: ["weekend"] });
+  controller.stop();
+});
 
 // Somebody else's change to the open case: a newer revision of the record,
 // then the realtime signal for it.

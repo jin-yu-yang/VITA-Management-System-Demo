@@ -6,7 +6,9 @@ import {
   adminEligibility,
   ASSISTED_ANSWERS_FORM_ID,
 } from "../src/admin-views.mjs";
-import { decorateStaffCase } from "../src/staff-views.mjs";
+import { decorateStaffCase, answersPanelV1 } from "../src/staff-views.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
 import { payloadFor } from "../src/case-actions.mjs";
 import { describeStage } from "../src/domain.mjs";
@@ -813,4 +815,56 @@ test("the volunteer board searches client numbers in the workspace's current sea
   assert.match(html, /Search results<\/h2>/);
   assert.match(html, /VT-NOWW-2025/);
   assert.doesNotMatch(html, /VT-THEN-2024/);
+});
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 1: the answers, contact and materials cards on the office page.
+// ---------------------------------------------------------------------------
+
+const intakeTab = (html) =>
+  html.match(
+    /<div role="tabpanel" id="case-panel-intake"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-documents"/,
+  )[1];
+
+test("a submitted version-2 case shows the answers, the contact card and the materials card on the office page", () => {
+  const sample = makeSampleAnswers({ version: 2, seed: 2 });
+  const answers = Object.fromEntries(
+    Object.entries(sample).filter(([id]) => !Object.hasOwn(CONTACT_FIELDS, id)),
+  );
+  const record = officeCase({
+    stage: "received",
+    intakeVersion: 2,
+    answers,
+    contact: { phone: sample.tp_phone, bestContactTime: ["weekend"], bestContactNote: null },
+    materials: [{ item: "photo_id", receivedAt: "2026-09-14T15:00:00.000Z", recordedByPersonId: "sam" }],
+  });
+  const tab = intakeTab(renderAdminCase(record, { person: SAM }));
+  const at = (text) => tab.indexOf(text);
+  assert.ok(at("Wording used: Standard") >= 0);
+  assert.ok(at("Wording used") < at('class="panel contact-card"'));
+  assert.ok(at('class="panel contact-card"') < at('class="panel materials-card"'));
+  assert.match(tab, /\(215\) 555-01\d\d/);
+  assert.match(tab, /Weekends/);
+  assert.match(tab, /data-action="toggle-edit-contact"/);
+  assert.match(tab, /Recorded by Sam ·/);
+  assert.match(tab, /data-case-action="RECORD_MATERIALS"/);
+  // The form opens from the panel list the page is given.
+  const open = intakeTab(renderAdminCase(record, { person: SAM, openPanels: ["edit-contact"] }));
+  assert.match(open, /id="contact-form"/);
+});
+
+test("a submitted version-1 case shows today's panel plus the materials card, and no contact card", () => {
+  const record = officeCase({ stage: "received" });
+  const tab = intakeTab(renderAdminCase(record, { person: SAM }));
+  assert.ok(tab.startsWith(answersPanelV1(record)));
+  assert.doesNotMatch(tab, /contact-card|Wording used/);
+  assert.equal((tab.match(/class="panel materials-card"/g) ?? []).length, 1);
+  assert.match(tab, /data-case-action="RECORD_MATERIALS"/);
+});
+
+test("a version-1 office draft keeps its note, with the materials card below it", () => {
+  const record = officeCase({ stage: "draft", ownerUserId: null });
+  const tab = intakeTab(renderAdminCase(record, { person: SAM }));
+  assert.match(tab, /The office is filling in this walk-in client’s answers on Overview\./);
+  assert.ok(tab.indexOf("filling in") < tab.indexOf('class="panel materials-card"'));
 });

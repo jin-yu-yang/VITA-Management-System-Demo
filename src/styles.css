@@ -5003,3 +5003,152 @@ textarea::placeholder {
   }
 }
 /* end part 4b2 */
+
+/* Part 4c: staff views */
+/* The version-2 answers, read by step and sub-step. */
+.answers-v2 .wording-used {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--vt-muted);
+}
+.answers-step {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--vt-line);
+}
+.answers-step > h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.answers-sub {
+  margin-top: 10px;
+}
+.answers-sub > h4 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
+}
+.answers-v2 .detail-row {
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--vt-line);
+}
+.answers-v2 .detail-row > span,
+.contact-card .detail-row > span {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.answers-v2 .detail-row > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* A required answer nobody gave: the words say it, the colour only helps. */
+.detail-row.is-missing > strong {
+  color: var(--vt-stage-stopped);
+}
+.detail-row.is-missing {
+  background: var(--vt-stage-stopped-bg);
+  padding-inline: 8px;
+  border-radius: var(--vt-radius-sm);
+}
+/* "Not sure": an icon and the words, never colour alone. */
+.detail-row.is-not-sure {
+  background: var(--vt-stage-amend-bg);
+  padding-inline: 8px;
+  border-radius: var(--vt-radius-sm);
+}
+.not-sure-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--vt-stage-amend);
+  background: var(--vt-surface);
+  color: var(--vt-stage-amend);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.not-sure-flag .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.not-sure-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--vt-stage-amend);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+  font-size: 13px;
+  font-weight: 600;
+}
+.not-sure-count .icon {
+  flex-shrink: 0;
+}
+
+/* The contact card and the materials card. */
+.contact-card .btn,
+.materials-card .btn {
+  margin-top: 12px;
+}
+.contact-card .staff-form .btn + .btn {
+  margin-left: 8px;
+}
+.check-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.check-group > legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.check-group .checkbox-row.small {
+  min-height: var(--vt-tap);
+  margin: 0;
+  align-items: center;
+}
+.check-group .checkbox-row input {
+  height: 20px;
+  width: 20px;
+}
+.check-group .checkbox-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.material-recorded {
+  display: block;
+  color: var(--vt-muted);
+  font-size: 12px;
+}
+.materials-card .staff-form {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+@media (max-width: 480px) {
+  .contact-card .staff-form .btn {
+    width: 100%;
+  }
+  .contact-card .staff-form .btn + .btn {
+    margin-left: 0;
+  }
+  .not-sure-flag {
+    margin-left: 0;
+    margin-top: 4px;
+  }
+}
+/* end part 4c */
