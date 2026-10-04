@@ -598,3 +598,21 @@ test("the part 4c block styles the version-2 Add a case with tokens only", () =>
   assert.deepEqual(hexes, []);
   assert.match(block, /\.add-sub-status\.is-needs::before\s*\{[^}]*content:/, "an icon as well as the words");
 });
+
+test("app.mjs applies the sidebar peek in place after every render and feeds it events", () => {
+  const app = readFileSync(new URL("../src/app.mjs", import.meta.url), "utf8");
+  assert.match(app, /import \{[^}]*createSidebarPeek[^}]*\} from "\.\/sidebar-peek\.mjs"/);
+  // Applied straight after the page is replaced, before focus is restored,
+  // so a redraw keeps the peek and the keyboard can go back into the sidebar.
+  assert.match(app, /root\.innerHTML = views\.page\(state, screenFor\(state\)\);\s*applyPeek\(\);/);
+  for (const event of ["pointerover", "pointerout", "focusin", "focusout"])
+    assert.match(app, new RegExp(`root\\.addEventListener\\("${event}"`), event);
+  // Only keyboard focus holds a peek.
+  assert.match(app, /:focus-visible/);
+  // The toggle tells the peek whether the click pinned or collapsed.
+  assert.match(app, /case "toggle-sidebar":[\s\S]{0,200}peek\.(collapsed|pinned)\(\)/);
+  assert.match(app, /peek\.escape\(\)/);
+  // An open dialog holds the peek, and hiding the sidebar never strands the keyboard.
+  assert.match(app, /peek\.hold\(Boolean\(controller\.getState\(\)\.dialog\)\)/);
+  assert.match(app, /if \(hadFocus\) toggle\?\.focus\(\)/);
+});
