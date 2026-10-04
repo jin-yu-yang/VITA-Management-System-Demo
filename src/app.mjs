@@ -19,6 +19,8 @@ import {
   substepStatus,
 } from "./intake-form.mjs";
 import { cardsFor } from "./document-cards.mjs";
+import { FORM_FILES, draftFields } from "./draft-form.mjs";
+import { buildDraftPdf, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -891,6 +893,88 @@ if (!config) {
 
   // ---- navigation actions -----------------------------------------------
 
+  // The draft 13614-C (spec 2026-10-04 §7), built here in the browser: the
+  // PDF never leaves it. The tab opens at once, inside the press, because a
+  // tab opened after the build no longer counts as part of it and popup
+  // blockers stop it; the PDF is loaded into it when ready. pdf-lib and the
+  // form load only now, and the Chinese font only when some answer needs it
+  // (the same files whatever the text says).
+  const DRAFT_FAILED = "The draft could not be made. Close this tab and try again.";
+  const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again later.";
+
+  function writeTab(tab, text) {
+    try {
+      const page = tab.document;
+      page.title = "Draft 13614-C";
+      if (!page.body) page.documentElement?.append(page.createElement("body"));
+      page.body.textContent = text;
+    } catch {
+      // A tab we can no longer reach is left as it is.
+    }
+  }
+
+  async function fetchBytes(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async function fetchCheckedFont(file) {
+    const bytes = await fetchBytes(file.url);
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (hex !== file.sha256) {
+      const error = new Error(DRAFT_FONT_UNCHECKED);
+      error.draftFont = true;
+      throw error;
+    }
+    return bytes;
+  }
+
+  async function viewDraft(form) {
+    if (!Object.hasOwn(FORM_FILES, form)) return;
+    const tab = window.open("", "_blank");
+    if (tab) writeTab(tab, "Preparing your draft…");
+    const ready = root.querySelector("#draft-ready");
+    ready?.replaceChildren();
+    try {
+      const state = controller.getState();
+      const reference = state.savedCase?.reference ?? "";
+      const now = new Date();
+      const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+        .map((n) => String(n).padStart(2, "0"))
+        .join("-");
+      const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
+      const PDFLib = await import("./vendor/pdf-lib.mjs");
+      const [formBytes, fontFiles] = await Promise.all([
+        fetchBytes(FORM_FILES[form]),
+        fieldsNeedFont(fields) ? Promise.all(draftFontsFor(form).files.map(fetchCheckedFont)) : [],
+      ]);
+      const bytes = await buildDraftPdf({
+        PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
+        stamp: fields.stamp, fileName: fields.fileName,
+      });
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (tab && !tab.closed) {
+        tab.location.href = url;
+        return;
+      }
+      // The browser blocked even the early tab: offer a link instead.
+      if (ready) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fields.fileName;
+        link.target = "_blank";
+        link.textContent = "Your draft is ready: open it";
+        ready.replaceChildren(link);
+      }
+    } catch (error) {
+      if (tab && !tab.closed) writeTab(tab, DRAFT_FAILED);
+      notify(error?.draftFont ? DRAFT_FONT_UNCHECKED : DRAFT_FAILED);
+    }
+  }
+
   async function runNavigation(action, target) {
     const state = controller.getState();
     if (action.startsWith("edit-")) {
@@ -1079,7 +1163,7 @@ if (!config) {
         window.print();
         break;
       case "view-draft":
-        notify("The draft is not available yet.");
+        await viewDraft(target.dataset.form ?? "en");
         break;
       case "toggle-senior":
         controller.editAnswers({

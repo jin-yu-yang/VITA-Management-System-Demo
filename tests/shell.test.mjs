@@ -246,7 +246,22 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(app, /controller\.moveSubstep\(1\)/, "Continue moves one sub-step");
   assert.match(app, /controller\.moveSubstep\(-1\)/, "Back moves one sub-step");
   assert.match(app, /member_id: newMemberId\(\)/, "a new person gets a member id");
-  assert.match(app, /"The draft is not available yet\."/);
+  // Part 4b2 (Task 9): the draft 13614-C replaced the placeholder. The tab is
+  // opened inside the press, before anything is awaited; the bundle loads on
+  // demand; fonts are checked by sha256; a failure never leaves the tab on
+  // "Preparing your draft…". Task 10's browser story presses the buttons.
+  assert.doesNotMatch(app, /The draft is not available yet/);
+  const draft = app.slice(app.indexOf("async function viewDraft("), app.indexOf("async function runNavigation("));
+  assert.ok(draft.indexOf('window.open("", "_blank")') > 0, "the tab opens in the press");
+  assert.ok(draft.indexOf('window.open("", "_blank")') < draft.indexOf("await "), "before anything is awaited");
+  assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
+  assert.match(draft, /"Preparing your draft…"/);
+  assert.match(draft, /URL\.revokeObjectURL\(url\), 60_000/);
+  assert.match(draft, /"Your draft is ready: open it"/);
+  assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
+  assert.match(app, /"The draft could not be made\. Close this tab and try again\."/);
+  assert.match(app, /"The draft font could not be checked\. Try again later\."/);
+  assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   assert.match(app, /addEventListener\("afterprint"/);
   assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
   for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/])
