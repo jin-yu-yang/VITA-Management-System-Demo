@@ -224,7 +224,7 @@ test("printable keeps what the fonts have, strips accents, then uses ?", async (
   assert.equal(printable("Łukasz 美", helvetica), "?ukasz ?");
   doc.registerFontkit(fontkit);
   const files = await fontFilesFor("zh-s");
-  patchSubsetPadding(fontkit, files[0]);
+  patchSubsetPadding(fontkit, files.at(-1));
   const fonts = await Promise.all(files.map((bytes) => doc.embedFont(bytes, { subset: true })));
   assert.equal(printable("美 林 Łukasz Żółć Nguyễn", fonts), "美 林 Łukasz Żółć Nguyễn");
   assert.equal(printable("𓀀 Mei", fonts), "? Mei");
@@ -377,8 +377,24 @@ test("a character neither font has prints as ? and Additional Comments says so",
   assert.ok(runs.length > 0, "a run in an embedded font (two-byte glyph ids)");
 });
 
+test("the builder reaches the subset patch through the small Latin file, never by parsing the CJK one again", async () => {
+  const files = await fontFilesFor("zh-s");
+  const parsed = [];
+  const counting = {
+    ...fontkit,
+    create: (bytes, ...rest) => {
+      parsed.push(bytes.length);
+      return fontkit.create(bytes, ...rest);
+    },
+  };
+  const fields = draftFields({ ...BASE, tp_first_name: "美", sp_first_name: "Łukasz" }, { ...OPTIONS, form: "zh-s" });
+  await buildDraftPdf({ PDFLib, fontkit: counting, formBytes: await formBytes("zh-s"), fontFiles: files, fields, stamp: fields.stamp });
+  assert.equal(parsed.filter((length) => length === files[0].length).length, 1, "the 10 MB CJK file is parsed once, to embed it");
+  assert.equal(parsed.filter((length) => length === files.at(-1).length).length, 2, "the Latin file: the patch, then its embedding");
+});
+
 test("the subset padding patch: without it the subset is corrupt, with it every glyph decodes", async () => {
-  const [sc] = await fontFilesFor("zh-s");
+  const [sc, latin] = await fontFilesFor("zh-s");
   const text = "美 林 l o d 1 0 示例";
   const embed = async (kit) => {
     const doc = await PDFDocument.create();
@@ -398,9 +414,11 @@ test("the subset padding patch: without it the subset is corrupt, with it every 
   assert.notEqual(unpatched, fontkit);
   const [broken] = await embed(unpatched);
   assert.notDeepEqual(subsetProblems(broken, source), [], "the unpatched subset is caught");
-  // Patched (twice is harmless): consistent.
-  patchSubsetPadding(unpatched, sc);
-  patchSubsetPadding(unpatched, sc);
+  // Patched (twice is harmless): consistent. The builder patches through the
+  // small Latin file, never by parsing the 10 MB CJK one: the prototype is
+  // shared, so the CJK subset is padded all the same.
+  patchSubsetPadding(unpatched, latin);
+  patchSubsetPadding(unpatched, latin);
   const [fixed] = await embed(unpatched);
   assert.deepEqual(subsetProblems(fixed, source), []);
 });

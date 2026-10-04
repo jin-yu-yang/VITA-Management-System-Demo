@@ -935,8 +935,8 @@ if (!config) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, "Preparing your draft…");
-    const ready = root.querySelector("#draft-ready");
-    ready?.replaceChildren();
+    // An earlier press's link goes: this press makes a new draft.
+    root.querySelector("#draft-ready")?.replaceChildren();
     try {
       const state = controller.getState();
       const reference = state.savedCase?.reference ?? "";
@@ -955,14 +955,21 @@ if (!config) {
         stamp: fields.stamp, fileName: fields.fileName,
       });
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      // The link offered below goes with its URL: a dead link is worse than none.
+      let link = null;
+      window.setTimeout(() => {
+        URL.revokeObjectURL(url);
+        link?.remove();
+      }, 60_000);
       if (tab && !tab.closed) {
         tab.location.href = url;
         return;
       }
-      // The browser blocked even the early tab: offer a link instead.
+      // The browser blocked even the early tab: offer a link instead, in the
+      // page as it is now (a redraw during the build replaced #draft-ready).
+      const ready = root.querySelector("#draft-ready");
       if (ready) {
-        const link = document.createElement("a");
+        link = document.createElement("a");
         link.href = url;
         link.download = fields.fileName;
         link.target = "_blank";

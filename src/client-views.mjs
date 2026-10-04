@@ -422,10 +422,7 @@ export function progressScreen(state) {
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
   const firstName = isVersionTwo(record) ? answers.tp_first_name : answers.firstName;
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${firstName ? `Hello, ${esc(firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${when(
-    isVersionTwo(record),
-    progressDocumentsV2(state),
-  )}${
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">YOUR APPLICATION</span><h1>${firstName ? `Hello, ${esc(firstName)}.` : "Your application"}</h1><p>A little clarity on where things stand.</p></div><div class="id-pill">${icon("folder")}<div><small>APPLICATION ID</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>CLIENT NUMBER</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>Your progress</h2>${stageBadge(record.stage)}</div>${progressTrack(record.stage)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${isVersionTwo(record) ? progressDocumentsV2(state) : ""}${
     open.length
       ? open.map((request) => documentRequest(request, state)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>You’re all set for now.</h3><p>Your next action appears here if the office needs anything else.</p></div></div>`

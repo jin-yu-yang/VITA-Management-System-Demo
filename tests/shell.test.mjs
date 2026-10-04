@@ -256,8 +256,13 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.ok(draft.indexOf('window.open("", "_blank")') < draft.indexOf("await "), "before anything is awaited");
   assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
   assert.match(draft, /"Preparing your draft…"/);
-  assert.match(draft, /URL\.revokeObjectURL\(url\), 60_000/);
+  // The blocked-tab link goes with its URL, and is put into the page as it
+  // is after the build (a redraw during the build replaces #draft-ready).
+  assert.match(draft, /URL\.revokeObjectURL\(url\);\s+link\?\.remove\(\);\s+\}, 60_000\)/);
   assert.match(draft, /"Your draft is ready: open it"/);
+  const built = draft.indexOf("await buildDraftPdf(");
+  assert.ok(built > 0);
+  assert.ok(draft.indexOf('const ready = root.querySelector("#draft-ready")') > built, "#draft-ready is looked up after the build");
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   assert.match(app, /"The draft could not be made\. Close this tab and try again\."/);
   assert.match(app, /"The draft font could not be checked\. Try again later\."/);
@@ -387,9 +392,12 @@ test("the part 4b block styles the version-2 form with tokens only", () => {
     ".q-note.is-invalid",
     ".q-count",
     ".save-chip.checking",
-    ".still-list",
   ])
     assert.ok(block.includes(selector), `${selector} is styled`);
+  // Part 4b2 replaced 4b's numbered rail and its "Still to answer" list; no
+  // markup uses these any more, so their rules went with them.
+  for (const gone of [/\.rail[\s,{]/, /\.rail-num\b/, /\.rail-digit\b/, /\.rail-body\b/, /\.rail-title\b/, /\.q-section-head\b/, /\.still-/])
+    assert.doesNotMatch(css, gone);
   assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*color:\s*var\(--vt-age-late-ink\)[^}]*\}/);
   assert.match(block, /\.q-note\.is-invalid\s*\{[^}]*border-left:[^;}]*var\(--vt-phase-attention\)/);
   assert.match(block, /\.q-note\.is-missing\s*\{[^}]*color:\s*var\(--vt-age-soon-ink\)/);

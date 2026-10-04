@@ -260,7 +260,9 @@ export async function buildDraftPdf({
   const fonts = [];
   if (fieldsNeedFont(fields)) {
     if (!fontFiles || fontFiles.length === 0) throw new Error("The draft needs its font files.");
-    patchSubsetPadding(fontkit, fontFiles[0]);
+    // Any TrueType file reaches the shared prototype; the last is the small
+    // Latin one, so the 10 MB CJK file is not parsed an extra time for it.
+    patchSubsetPadding(fontkit, fontFiles.at(-1));
     for (const bytes of fontFiles) fonts.push(await doc.embedFont(bytes, { subset: true }));
   }
   // The first font that has the character draws it (printable() made sure one does).

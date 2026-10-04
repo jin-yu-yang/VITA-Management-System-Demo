@@ -4017,13 +4017,6 @@ textarea::placeholder {
 }
 
 /* ---- The rail ---- */
-.rail {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
 .rail-link {
   display: flex;
   align-items: flex-start;
@@ -4041,33 +4034,6 @@ textarea::placeholder {
 .rail-link:hover {
   background: var(--vt-primary-soft);
 }
-.rail-num {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border: 1px solid var(--vt-line);
-  border-radius: 50%;
-  background: var(--vt-surface);
-  font-size: 12px;
-  color: var(--vt-intake-hint);
-}
-.rail-num .icon {
-  display: none;
-  width: 15px;
-  height: 15px;
-}
-.rail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding-top: 3px;
-}
-.rail-title {
-  line-height: 1.35;
-}
 .rail-here {
   font-size: 10px;
   font-weight: 700;
@@ -4076,7 +4042,7 @@ textarea::placeholder {
   color: var(--vt-primary);
 }
 /* The mark is keyed on the status span's class alone, so an in-place class
-   change (spec §2.4 rule 2) restyles the circle and the words together. */
+   change (spec §2.4 rule 2) restyles it. */
 .rail-status {
   font-size: 12px;
   font-weight: 600;
@@ -4089,38 +4055,6 @@ textarea::placeholder {
 }
 .rail-status.is-none {
   color: var(--vt-intake-hint);
-}
-.rail-link:has(.rail-status.is-done) .rail-num {
-  border-color: var(--vt-stage-filing-bg);
-  background: var(--vt-stage-filing-bg);
-  color: var(--vt-stage-filing);
-}
-.rail-link:has(.rail-status.is-done) .rail-num .icon {
-  display: block;
-}
-.rail-link:has(.rail-status.is-done) .rail-digit {
-  display: none;
-}
-.rail-link:has(.rail-status.is-needs) .rail-num {
-  border-color: var(--vt-age-soon);
-  color: var(--vt-age-soon-ink);
-}
-/* The current step wins over its mark (the prefix matches the :has() rules'
-   specificity, and these come later). */
-.rail .rail-link[aria-current="step"] {
-  color: var(--vt-primary);
-  font-weight: 600;
-}
-.rail .rail-link[aria-current="step"] .rail-num {
-  border-color: var(--vt-primary);
-  background: var(--vt-primary);
-  color: #fff;
-}
-.rail .rail-link[aria-current="step"] .rail-num .icon {
-  display: none;
-}
-.rail .rail-link[aria-current="step"] .rail-digit {
-  display: inline;
 }
 .rail-progress {
   margin-top: 22px;
@@ -4164,11 +4098,6 @@ textarea::placeholder {
 /* ---- Sections and question cards ---- */
 .q-section {
   margin-bottom: 28px;
-}
-.q-section-head h2 {
-  margin: 0 0 6px;
-  font-size: 21px;
-  color: var(--vt-intake-ink);
 }
 .q-intro {
   font-size: 15px;
@@ -4405,76 +4334,6 @@ textarea::placeholder {
   color: var(--vt-intake-ink);
 }
 
-/* ---- Step 9: Still to answer ---- */
-.still-list {
-  margin-bottom: 28px;
-  padding: 24px;
-  border: 1px solid var(--vt-line);
-  border-radius: var(--vt-radius);
-  background: var(--vt-surface);
-}
-.still-list h2 {
-  margin: 0 0 6px;
-  font-size: 21px;
-  color: var(--vt-intake-ink);
-}
-.still-step h3 {
-  margin: 16px 0 4px;
-  font-size: 15px;
-  color: var(--vt-intake-ink);
-}
-.still-step ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.still-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: var(--vt-tap);
-  padding: 8px 4px;
-  border: 0;
-  border-bottom: 1px solid var(--vt-line);
-  background: transparent;
-  color: var(--vt-intake-ink);
-  text-align: left;
-  font-size: 15px;
-}
-.still-item:hover {
-  background: var(--vt-primary-soft);
-}
-.still-q {
-  flex: 1;
-  min-width: 0;
-}
-.still-flag {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.still-item.is-missing .still-flag {
-  color: var(--vt-age-soon-ink);
-}
-.still-item.is-invalid .still-flag {
-  color: var(--vt-age-late-ink);
-}
-.still-item .icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--vt-primary);
-}
-.still-done {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  font-weight: 600;
-  color: var(--vt-stage-filing);
-}
-
 /* ---- After submission: the read-only answers ---- */
 .answers-v2 {
   padding: 8px 24px 16px;
@@ -4503,36 +4362,14 @@ textarea::placeholder {
 
 /* ---- Narrow screens: no sideways scroll at 390px ---- */
 @media (max-width: 800px) {
-  .intake-v2 .rail {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
   .intake-v2 .rail-link {
     width: auto;
     padding: 0;
   }
-  .intake-v2 .rail-num {
-    width: var(--vt-tap);
-    height: var(--vt-tap);
-    font-size: 13px;
-  }
-  /* The step's words stay for screen readers; the circle carries the mark. */
-  .intake-v2 .rail-body {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
   .intake-v2 .rail-progress {
     margin-top: 12px;
   }
-  .q-card,
-  .still-list {
+  .q-card {
     padding: 18px 16px;
   }
   .hh-card {
