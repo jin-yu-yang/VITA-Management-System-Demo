@@ -5,7 +5,7 @@ import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { formValuesWithLists } from "./form-values.mjs";
 import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, missingToSubmit } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
@@ -19,6 +19,12 @@ import {
   stepRollup,
   substepStatus,
 } from "./intake-form.mjs";
+import {
+  addCaseParts,
+  addCaseCountText,
+  addCasePartStatus,
+  addCaseSendOff,
+} from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { buildDraftPdf, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
@@ -41,6 +47,11 @@ import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 // controller calls.
 
 const root = document.querySelector("#app");
+
+// The two version-2 forms: the client's own, and the office's Add a case.
+// Both are drawn from the controller's draft and share one wiring: the redraw
+// hold, the sweep, the quiet edit and the in-place notes (spec §2.4).
+const V2_FORMS = "#intake-v2-form, #add-case-v2-form";
 
 // Relative on purpose: the same files are served from a project subfolder on
 // GitHub Pages, where an absolute path would leave the site (Ruling R33/R34).
@@ -140,8 +151,13 @@ if (!config) {
     const state = controller.getState();
     // A version-2 case's place is its sub-step (resolved as the page resolves
     // it), so scroll and focus restore compare sub-steps; version 1 keeps
-    // its step index.
-    const place = `${state.screen}|${state.selectedCaseId}|${controller.currentSubstep() ?? state.formStep}`;
+    // its step index. Add a case is one place: an accordion toggle, a
+    // realtime redraw and the first save (which adopts a case) keep focus,
+    // caret and scroll.
+    const place =
+      state.screen === "office-add-case"
+        ? state.screen
+        : `${state.screen}|${state.selectedCaseId}|${controller.currentSubstep() ?? state.formStep}`;
     const wasV2 = v2OnPage();
     // A full rebuild replaces the fields, so remember where the keyboard was.
     // `describeFocus` decides what can be read; nothing it does may throw here,
@@ -202,7 +218,7 @@ if (!config) {
   // ---- the version-2 form's redraw hold (spec §2.4) ----------------------
 
   function v2OnPage() {
-    return Boolean(root.querySelector("#intake-v2-form"));
+    return Boolean(root.querySelector(V2_FORMS));
   }
 
   root.addEventListener("pointerdown", () => {
@@ -376,23 +392,30 @@ if (!config) {
     refreshOfficeDraft();
   }
 
-  // ---- the client's version-2 form (spec §2.4, §2.5) --------------------
+  // ---- the version-2 forms (spec §2.4, §2.5) ----------------------------
   //
-  // Its controls carry `data-control` and `data-q` (the question, "hh" for a
+  // Their controls carry `data-control` and `data-q` (the question, "hh" for a
   // household control), and are read with the renderer's own `readField` and
-  // `readForm`. `#field-confirmed` has no `data-q`, so it never matches.
-  const V2_CONTROLS = "#intake-v2-form [data-control][data-q]";
+  // `readForm`. `#field-confirmed` has no `data-q`, so it never matches. Each
+  // form is spelled out: `${V2_FORMS} [data-control]…` would match the client
+  // form element itself through its first part.
+  const V2_CONTROLS = "#intake-v2-form [data-control][data-q], #add-case-v2-form [data-control][data-q]";
   const isV2Case = (state) => Number(state.savedCase?.intakeVersion) === 2;
   // A sub-step or slot id in an element id: "about.you" → "about-you".
   const dashed = (id) => String(id ?? "").replace(/\./g, "-");
+
+  // The renderer's id scope of the form a control sits in: the client's own,
+  // or the office's on Add a case.
+  const scopeOf = (element) => (element?.closest?.("#add-case-v2-form") ? "office" : "client");
 
   // What a control answers, as plain values, so an update queued behind a
   // press can find its question again after the page has been replaced.
   function v2Ref(control) {
     const { q, member, sub } = control.dataset;
+    const scope = scopeOf(control);
     return member !== undefined && sub !== undefined
-      ? { q, member: Number(member), sub }
-      : { q };
+      ? { q, member: Number(member), sub, scope }
+      : { q, scope };
   }
 
   // The question a ref points at, its value in `draft`, the id base of its
@@ -400,17 +423,19 @@ if (!config) {
   function v2Answer(ref, draft) {
     const top = findQuestion(2, ref.q);
     if (!top) return null;
+    const scope = ref.scope ?? "client";
     if (ref.sub === undefined)
-      return { question: top, value: draft[ref.q], base: `field-client-${ref.q}`, id: ref.q };
+      return { question: top, value: draft[ref.q], base: `field-${scope}-${ref.q}`, id: ref.q };
     const question = (top.fields ?? []).find((field) => field.id === ref.sub);
     if (!question) return null;
     const members = Array.isArray(draft[ref.q]) ? draft[ref.q] : [];
     return {
       question,
       value: members[ref.member]?.[ref.sub],
-      base: `field-client-${ref.q}-${ref.member}-${ref.sub}`,
+      base: `field-${scope}-${ref.q}-${ref.member}-${ref.sub}`,
       id: `${ref.q}[${ref.member}].${ref.sub}`,
       group: top,
+      groupBase: `field-${scope}-${ref.q}`,
     };
   }
 
@@ -431,7 +456,12 @@ if (!config) {
     const draft = state.draftAnswers ?? {};
     const answer = v2Answer(ref, draft);
     if (!answer) return;
-    const showMissing = (state.visitedSubsteps ?? []).includes(controller.currentSubstep());
+    // Add a case marks what is missing only after a refused Send; the client's
+    // form once the sub-step has been left.
+    const showMissing =
+      ref.scope === "office"
+        ? Boolean(state.addCaseShowMissing)
+        : (state.visitedSubsteps ?? []).includes(controller.currentSubstep());
     const revealed = new Set(state.revealed ?? []);
     const note = document.getElementById(`${answer.base}-note`);
     if (note)
@@ -445,7 +475,7 @@ if (!config) {
       );
     if (answer.group)
       paintInPlace(
-        document.getElementById(`field-client-${ref.q}-note`),
+        document.getElementById(`${answer.groupBase}-note`),
         "q-note",
         noteState(answer.group, draft[ref.q], { showMissing, showInvalid: revealed.has(ref.q) }),
       );
@@ -474,6 +504,28 @@ if (!config) {
     paint(`rail-step-${substep.step.id}-status`, stepRollup(substep.step.id, marks));
   }
 
+  // Add a case's count of parts, each part's status and Send, from the draft
+  // now: className, textContent and Send's disabled only (spec §2.4 rule 2).
+  function paintAddCase() {
+    if (!root.querySelector("#add-case-v2-form")) return;
+    const state = controller.getState();
+    const parts = addCaseParts(state.draftAnswers ?? {});
+    const count = document.getElementById("add-case-count");
+    const text = addCaseCountText(parts);
+    if (count && count.textContent !== text) count.textContent = text;
+    for (const part of parts) {
+      const status = addCasePartStatus(part.needs);
+      paintInPlace(document.getElementById(`add-sub-${dashed(part.id)}-status`), "add-sub-status", status);
+    }
+    const send = document.getElementById("add-case-send");
+    if (send)
+      send.disabled = addCaseSendOff({
+        confirmed: (state.openPanels ?? []).includes("confirmed"),
+        busy: state.busy,
+        officeSaving: state.officeSaving,
+      });
+  }
+
   // A longtext's character count.
   function paintV2Count(ref) {
     const answer = v2Answer(ref, controller.getState().draftAnswers ?? {});
@@ -487,7 +539,7 @@ if (!config) {
   // (a step change, a save, a fill) draws the page. Empty household cards are
   // dropped, as `readForm` drops them.
   function sweepV2Form() {
-    const form = root.querySelector("#intake-v2-form");
+    const form = root.querySelector(V2_FORMS);
     if (!form) return;
     // A held redraw means the draft has moved on (a realtime change landed
     // during the press) and the boxes still show the old values: sweeping them
@@ -527,7 +579,9 @@ if (!config) {
       // what that render wrote, or finds its node gone.
       afterPress(() => {
         paintV2Note(ref, (_note, answer, revealed) => revealed.has(answer.id));
-        paintV2Rail();
+        // The rail is the client form's only; Add a case has its count instead.
+        if (ref.scope === "office") paintAddCase();
+        else paintV2Rail();
         refreshSaveChip();
       });
     // A full redraw only when the visible questions change (rule 3): the ids
@@ -537,15 +591,18 @@ if (!config) {
       field.type === "radio" || field.type === "checkbox" || field.tagName === "SELECT";
     let redraw = choice;
     if (!redraw && drivesVisibility(ref.q)) {
-      const form = field.closest("#intake-v2-form");
-      const renderedIds = new Set(
-        [...form.querySelectorAll("[data-q]")].map((element) => element.dataset.q),
-      );
-      redraw = needsRedraw(
-        renderedIds,
-        controller.currentSubstep(),
-        controller.getState().draftAnswers ?? {},
-      );
+      const form = field.closest(V2_FORMS);
+      const draft = controller.getState().draftAnswers ?? {};
+      const idsIn = (scope) =>
+        new Set([...scope.querySelectorAll("[data-q]")].map((element) => element.dataset.q));
+      if (form.id === "add-case-v2-form")
+        // Each open part against what the draft makes visible in it.
+        redraw = [...form.querySelectorAll(".add-sub[data-substep]")].some((part) => {
+          const id = part.dataset.substep;
+          const body = document.getElementById(`add-sub-${dashed(id)}-body`);
+          return id !== "documents" && body && !body.hidden && needsRedraw(idsIn(body), id, draft);
+        });
+      else redraw = needsRedraw(idsIn(form), controller.currentSubstep(), draft);
     }
     if (redraw) setTimeout(() => render(), 0);
   }
@@ -672,6 +729,20 @@ if (!config) {
   // the draft's back and the next render would throw the answers away.
   function fillAssistedIntake() {
     sampleSeed += 1;
+    if (root.querySelector("#add-case-v2-form")) {
+      // The version-2 page: what is in the boxes first, then its blank answers
+      // from the version-2 generator, through the draft like the client's own.
+      sweepV2Form();
+      const draft = controller.getState().draftAnswers ?? {};
+      const sample = makeSampleAnswers({
+        version: 2,
+        seed: sampleSeed,
+        married: draft.marital_status === "married",
+      });
+      controller.editAnswers(fillBlankAnswers(draft, sample, 2));
+      notify("Fictional details filled in. Nothing is saved yet.");
+      return;
+    }
     const generated = makeSampleAnswers({
       seed: sampleSeed,
       scenario: "ordinary",
@@ -995,6 +1066,42 @@ if (!config) {
     }
   }
 
+  // ---- leaving Add a case ----------------------------------------------
+  //
+  // What each exit from Add a case does once it may go. The confirm in the
+  // leave dialog runs these directly, past the guard.
+  const EXITS = Object.freeze({
+    "open-board": () => {
+      formDrafts.clear();
+      controller.navigate("staff");
+    },
+    "open-cases": () => {
+      formDrafts.clear();
+      controller.navigate("office-cases");
+    },
+    // Pressed again while on the page: a fresh draft, which is what it asks for.
+    "open-add-case": async () => {
+      formDrafts.clear();
+      await controller.openAddCase();
+    },
+  });
+
+  // On Add a case, an exit that would lose typed answers asks first: a new
+  // office draft with any answer, or a saved draft with unsaved edits. True
+  // when it asked (the exit then waits for the dialog). Sign out and the
+  // persona switch leave without asking.
+  function leaveAddCaseFirst(action, target) {
+    if (controller.getState().screen !== "office-add-case") return false;
+    sweepV2Form();
+    const state = controller.getState();
+    const loses = state.officeDraft
+      ? Object.values(state.draftAnswers ?? {}).some(isAnswered)
+      : Boolean(state.savedCase) && Boolean(state.dirty);
+    if (!loses) return false;
+    openDialog("leave-add-case", { to: action }, describeFocus(target));
+    return true;
+  }
+
   async function runNavigation(action, target) {
     const state = controller.getState();
     if (action.startsWith("edit-")) {
@@ -1020,12 +1127,12 @@ if (!config) {
         await controller.selectCase(target.dataset.caseId);
         break;
       case "open-board":
-        formDrafts.clear();
-        controller.navigate("staff");
+        if (leaveAddCaseFirst("open-board", target)) break;
+        EXITS["open-board"]();
         break;
       case "open-cases":
-        formDrafts.clear();
-        controller.navigate("office-cases");
+        if (leaveAddCaseFirst("open-cases", target)) break;
+        EXITS["open-cases"]();
         break;
       case "clear-pool-filters":
         controller.clearBoardFilters(POOL_FILTER_KEYS);
@@ -1035,9 +1142,50 @@ if (!config) {
           root.querySelector("#field-poolStage")?.focus();
         break;
       case "open-add-case":
-        formDrafts.clear();
-        controller.navigate("office-add-case");
+        if (leaveAddCaseFirst("open-add-case", target)) break;
+        await EXITS["open-add-case"]();
         break;
+      case "confirm-leave-add-case": {
+        const exit = EXITS[state.dialogContext?.to] ?? EXITS["open-board"];
+        closeDialog();
+        await exit();
+        break;
+      }
+      case "continue-add-case":
+        formDrafts.clear();
+        await controller.openAddCase({ caseId: target.dataset.caseId });
+        break;
+      case "toggle-add-substep": {
+        const id = target.dataset.substep ?? "";
+        sweepV2Form();
+        controller.toggleAddSubstep(id);
+        document.getElementById(`add-sub-${dashed(id)}-toggle`)?.focus();
+        break;
+      }
+      case "save-office-draft": {
+        sweepV2Form();
+        const { reason } = await controller.saveOfficeDraft();
+        // "busy" and "left": nothing was saved by this press, so nothing is said.
+        if (!reason) notify("The draft is saved. Nobody was emailed.");
+        // The button was off while the save ran, which dropped the keyboard;
+        // it goes back to it, unless the office has moved on to a field.
+        if (!root.contains(document.activeElement))
+          root.querySelector('[data-action="save-office-draft"]')?.focus();
+        break;
+      }
+      case "send-office-draft": {
+        sweepV2Form();
+        const { sent, reason } = await controller.saveOfficeDraft({ send: true });
+        if (sent) notify("The application is with the office.");
+        else if (reason === "answers") {
+          notify("The draft is saved. Some answers still need attention before it can be sent.");
+          root.querySelector("#add-case-count")?.focus();
+        } else if (reason === "unconfirmed") {
+          notify("Confirm that you have checked these answers with the client first.");
+          root.querySelector("#field-confirmed")?.focus();
+        }
+        break;
+      }
       case "fill-assisted-intake":
         fillAssistedIntake();
         break;
@@ -1347,7 +1495,8 @@ if (!config) {
       // Typing never adds an error, but clears one once the value is valid
       // or empty (the controller drops the id at the same moment).
       paintV2Note(ref, (note) => note.classList.contains("is-invalid"));
-      paintV2Rail();
+      if (ref.scope === "office") paintAddCase();
+      else paintV2Rail();
       paintV2Count(ref);
     } else if (field.closest(ANSWER_FORMS) && field.name && field.type !== "checkbox") {
       // An answer form first: the office's copy is also a `.staff-form`, and its
@@ -1397,6 +1546,9 @@ if (!config) {
   root.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
+    // Add a case has no submit: its bar's controls are buttons. Enter in a
+    // lone text box would otherwise reach `reportValidity`.
+    if (form.id === "add-case-v2-form") return;
     if (form.id === "intake-v2-form") {
       // Continue. Before `reportValidity`, which ignores `novalidate`: the
       // form warns but always moves on, and a half-typed `type="email"` would

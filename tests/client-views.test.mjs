@@ -19,10 +19,11 @@ import {
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
-import { stepsFor, findQuestion, findSubstep } from "../src/intake-catalogue.mjs";
+import { stepsFor, findQuestion, findSubstep, wording } from "../src/intake-catalogue.mjs";
 import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src/intake-form.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
-import { intakeFormV2 } from "../src/intake-views.mjs";
+import { intakeFormV2, docCard } from "../src/intake-views.mjs";
+import { icon } from "../src/ui.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
 // the HTML string itself. No DOM library, and nothing here may reach a store.
@@ -1297,4 +1298,30 @@ test("the progress page labels service and language codes, for both versions", (
   const v1 = progress(caseRecord({ stage: "received", answers: { service: "Drop-off", language: "Mandarin" } }));
   assert.match(v1, /<span>Service<\/span><strong>Drop-off<\/strong>/);
   assert.match(v1, /<span>Language<\/span><strong>Mandarin<\/strong>/);
+});
+
+// Part 4c (Task 4): the card is exported for Add a case. Without `office` it is
+// 4b2's markup byte for byte; with it, the marks and notes speak to the office.
+test("docCard without office is unchanged; with office it speaks to the office", () => {
+  const cards = cardsFor(makeSampleAnswers({ version: 2 }), []);
+  const w2 = cards.find((card) => card.slotId === "w2.household");
+  assert.equal(
+    docCard(w2, { links: false }),
+    `<article class="doc-card" id="doc-w2-household" data-slot="w2.household" tabindex="-1"><h3>W-2 from each job</h3><p class="doc-owner">For you</p><p class="doc-why">You said you had wages from a job</p><p class="doc-hint">You said 1 job. Upload 1 W-2.</p><div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="doc-w2-household-note">${icon("camera")} Take a photo</button><button type="button" class="btn secondary" disabled aria-describedby="doc-w2-household-note">${icon("upload")} Choose a file</button></div><p class="doc-note" id="doc-w2-household-note">Uploading arrives soon. For now, bring it or mark it below.</p><div class="doc-marks"><button type="button" class="btn secondary" data-action="mark-card" data-slot="w2.household" data-status="later">I will send it later</button><button type="button" class="btn secondary" data-action="mark-card" data-slot="w2.household" data-status="none">I don&#39;t have this</button></div><p class="doc-status is-not_done" id="doc-w2-household-status" tabindex="-1">${icon("upload")}<span class="sr-only">Status: </span>Not done</p></article>`,
+  );
+  assert.match(docCard(w2), /<p class="doc-why"><button type="button" class="inline" data-action="go-substep" data-substep="income\.wages">You said you had wages from a job<\/button><\/p>/);
+
+  const office = docCard({ ...w2, status: "later" }, { links: false, off: " disabled", office: true });
+  assert.match(office, /data-status="later" disabled>Later<\/button>/);
+  assert.match(office, /data-status="none" disabled>Don&#39;t have<\/button>/);
+  assert.match(office, /data-status="not_done" disabled>Mark as not done<\/button>/);
+  assert.match(office, new RegExp(`<p class="doc-why">Asked by: ${escText(wording(findQuestion(2, "inc_wages"), { variant: "general", lang: "en" }))}</p>`));
+  // The reason line never quotes the client ("You said…", "You wrote…").
+  assert.doesNotMatch(office, /<p class="doc-why">[^<]*You (said|wrote)/);
+  assert.doesNotMatch(office, /I will send|I don&#39;t have/);
+  assert.match(office, /<p class="doc-note" id="doc-w2-household-note">Uploads come later\. Mark what the client will send later or doesn&#39;t have\.<\/p>/);
+  // A card with no asking question has no reason line on the office's side.
+  const photo = cards.find((card) => card.slotId === "photo_id.tp");
+  assert.equal(photo.ask ?? null, null);
+  assert.doesNotMatch(docCard(photo, { links: false, office: true }), /doc-why/);
 });

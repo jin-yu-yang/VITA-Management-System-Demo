@@ -1,5 +1,28 @@
-import { languageLabel } from "./intake-catalogue.mjs";
-import { esc, icon, button, caseButton, stageBadge, textarea, clientNumberLabel, clientNumberTag } from "./ui.mjs";
+import {
+  languageLabel,
+  stepsFor,
+  substepsFor,
+  findSubstep,
+  substepQuestions,
+  isVisible,
+  missingToSubmit,
+  MATERIALS_ITEMS,
+} from "./intake-catalogue.mjs";
+import { renderQuestion, formatAnswer, invalidAnswers, visibleSubsteps } from "./intake-form.mjs";
+import { cardsFor, CARD_SUBSTEPS } from "./document-cards.mjs";
+import { docCard, variantOf } from "./intake-views.mjs";
+import { saveStatus } from "./client-views.mjs";
+import {
+  esc,
+  icon,
+  button,
+  caseButton,
+  stageBadge,
+  textarea,
+  clientNumberLabel,
+  clientNumberTag,
+  formatTime,
+} from "./ui.mjs";
 import {
   adminEligibility,
   answerField,
@@ -18,6 +41,8 @@ import {
   isAvailableWork,
   boardFilters,
   CHOOSE_PERSONA,
+  materialsCard,
+  staffEligibility,
 } from "./staff-views.mjs";
 
 // Sam's office screens that are not one case: the Follow-ups queue. Pure
@@ -346,4 +371,236 @@ export function renderAddCase(ui) {
   ).join("");
   const side = `<aside class="add-case-side"><section class="panel"><h2>Case info</h2>${detailRow("Application ID", "Assigned when the case is created")}${detailRow("Stage", "Draft until the office sends it")}${detailRow("Created by", person.name)}</section><section class="panel"><h2>What happens next</h2><p>${esc(ADD_CASE_SENTENCE)} You record the intake checks and send it from the case itself.</p></section></aside>`;
   return `${pill}<form id="assisted-intake-form" class="staff-form add-case-form"><div class="add-case-layout"><div class="add-case-sections">${sections}</div>${side}</div><div class="add-case-bar">${button("Cancel", "open-board", "text")}<p class="field-note">${esc(ADD_CASE_SENTENCE)}</p><button type="submit" class="btn primary" ${disabled}>${icon("arrow")} Create case</button></div></form>`;
+}
+
+// ---------------------------------------------------------------------------
+// The version-2 Add a case page (spec 2026-09-30 §4.2, as revised by
+// 2026-10-04 §10): each step a heading, one accordion per visible question
+// sub-step under it, and one Documents accordion. The page draws from the
+// controller's draft; `app.mjs` reads it back with the renderer's own readers.
+// ---------------------------------------------------------------------------
+
+const STEPS_V2 = stepsFor(2);
+const SUBSTEPS_V2 = substepsFor(2);
+// The client's numbering: "Before you start" is unnumbered, then 1–9.
+const NUMBERED_V2 = STEPS_V2.filter((step) => step.id !== "before").map((step) => step.id);
+const stepHeading = (step) => {
+  const n = NUMBERED_V2.indexOf(step.id) + 1;
+  return n > 0 ? `${n}. ${step.title?.en ?? ""}` : (step.title?.en ?? "");
+};
+const dashedId = (id) => String(id).replace(/\./g, "-");
+const inVariant = (text, variant) => text?.[variant]?.en ?? text?.general?.en ?? "";
+const SUMMARY_LIMIT = 140;
+
+/**
+ * The parts of a version-2 office draft (its visible question sub-steps, in
+ * catalogue order), each with whether it counts: it holds a required visible
+ * unanswered question or an invalid answer. Shared with `app.mjs`, which
+ * repaints the count and the statuses in place while the office types.
+ */
+export function addCaseParts(draft = {}) {
+  const answers = draft ?? {};
+  const missing = missingToSubmit(2, answers).map((id) => id.replace(/\[.*$/, ""));
+  return visibleSubsteps(answers, [])
+    .filter((id) => findSubstep(id)?.kind === "questions")
+    .map((id) => {
+      const ids = new Set(findSubstep(id).questions);
+      return { id, needs: missing.some((missed) => ids.has(missed)) || invalidAnswers(id, answers).length > 0 };
+    });
+}
+
+/** The bottom bar's count of parts that still need answers. */
+export function addCaseCountText(parts) {
+  const n = parts.filter((part) => part.needs).length;
+  return n === 0 ? "Every part is answered" : n === 1 ? "1 part still needs answers" : `${n} parts still need answers`;
+}
+
+/** A part's status, as the header button shows it open or closed. */
+export const addCasePartStatus = (needs) =>
+  needs ? { className: "is-needs", text: "Needs answers" } : { className: "is-none", text: "" };
+
+// Send is off only until the box is ticked, and while anything is in flight
+// (decision 2026-09-30, option a): missing answers never turn it off.
+export const addCaseSendOff = ({ confirmed, busy, officeSaving }) => !confirmed || Boolean(busy) || Boolean(officeSaving);
+
+const statusSpan = (id, needs) => {
+  const status = addCasePartStatus(needs);
+  return `<span id="add-sub-${esc(dashedId(id))}-status" class="add-sub-status ${status.className}">${esc(status.text)}</span>`;
+};
+
+// One accordion: its header button (title and status, open or closed), then
+// its summary when closed or its body when open. The body element is always
+// there, so the button's aria-controls names a real element.
+function accordion(id, title, { open, needs, summary = "", body = "" }) {
+  const key = esc(dashedId(id));
+  const toggle = `<h3 class="add-sub-head"><button type="button" class="add-sub-toggle" data-action="toggle-add-substep" data-substep="${esc(id)}" id="add-sub-${key}-toggle" aria-expanded="${open}" aria-controls="add-sub-${key}-body">${icon("expand")}<span class="add-sub-title">${esc(title)}</span>${statusSpan(id, needs)}</button></h3>`;
+  return `<div class="add-sub" data-substep="${esc(id)}">${toggle}${open ? "" : summary}<div id="add-sub-${key}-body" class="add-sub-body"${open ? "" : " hidden"}>${open ? body : ""}</div></div>`;
+}
+
+// A closed part: the answers it holds, on one line.
+function partSummary(id, answers, variant) {
+  const text = substepQuestions(id)
+    .filter((question) => isVisible(question, answers))
+    .map((question) => formatAnswer(question, answers[question.id], { variant, lang: "en" }))
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map((value) => String(value).replace(/\s*\n\s*/g, ", "))
+    .join(" · ");
+  const line = !text ? "Nothing entered yet" : text.length > SUMMARY_LIMIT ? `${text.slice(0, SUMMARY_LIMIT - 1)}…` : text;
+  return `<p class="add-sub-summary">${esc(line)}</p>`;
+}
+
+// An open part: its lead line, then its visible questions grouped by heading
+// as on the client form. Section intros speak to the client, so they stay off.
+function partBody(id, view) {
+  const { answers, variant } = view;
+  const groups = [];
+  for (const question of substepQuestions(id)) {
+    if (question.heading || !groups.length) groups.push({ heading: question.heading ?? null, questions: [] });
+    groups.at(-1).questions.push(question);
+  }
+  const lead = inVariant(findSubstep(id)?.lead, variant);
+  return `${lead ? `<p class="q-lead">${esc(lead)}</p>` : ""}${groups
+    .map((group) => ({ ...group, questions: group.questions.filter((question) => isVisible(question, answers)) }))
+    .filter((group) => group.questions.length)
+    .map(
+      (group) =>
+        `<div class="q-card">${group.heading ? `<h4 class="q-heading">${esc(inVariant(group.heading, variant))}</h4>` : ""}${group.questions
+          .map((question) =>
+            renderQuestion(question, answers[question.id], {
+              scope: "office",
+              variant,
+              lang: "en",
+              answers,
+              showMissing: view.showMissing,
+              revealed: view.revealed,
+            }),
+          )
+          .join("")}</div>`,
+    )
+    .join("")}`;
+}
+
+// The Documents accordion: every card in full, whatever the service (spec
+// 2026-10-04 §6.7), under the staff checklist's sub-step titles. The marks
+// need a case to land on, so they wait for the first save.
+function documentsBody(view) {
+  const cards = cardsFor(view.answers, view.savedCase?.documentCards ?? []);
+  const off = view.busy || view.officeSaving || !view.savedCase ? " disabled" : "";
+  const groups = CARD_SUBSTEPS.map((name) => {
+    const mine = cards.filter((card) => card.substep === name);
+    if (!mine.length) return "";
+    const title = findSubstep(`documents.${name}`)?.title?.general?.en ?? name;
+    return `<h4 class="add-docs-title">${esc(title)}</h4><div class="doc-list">${mine
+      .map((card) => docCard(card, { links: false, off, office: true }))
+      .join("")}</div>`;
+  }).join("");
+  return `${when(!view.savedCase, '<p class="field-note">Save the draft first to mark documents.</p>')}${groups}`;
+}
+
+function addStep(step, view) {
+  let parts;
+  if (step.id === "documents")
+    parts = accordion("documents", step.title?.en ?? "Documents", {
+      open: view.open.has("documents"),
+      needs: false,
+      body: view.open.has("documents") ? documentsBody(view) : "",
+    });
+  else
+    parts = view.parts
+      .filter((part) => findSubstep(part.id).step.id === step.id)
+      .map((part) => {
+        const open = view.open.has(part.id);
+        return accordion(part.id, inVariant(findSubstep(part.id).title, view.variant), {
+          open,
+          needs: part.needs,
+          summary: open ? "" : partSummary(part.id, view.answers, view.variant),
+          body: open ? partBody(part.id, view) : "",
+        });
+      })
+      .join("");
+  if (!parts) return "";
+  return `<section class="add-step" data-step-id="${esc(step.id)}" aria-labelledby="add-step-${esc(step.id)}-title"><h2 id="add-step-${esc(step.id)}-title">${esc(stepHeading(step))}</h2>${parts}</section>`;
+}
+
+// Before the first save there is no case to record materials on: the same
+// eleven items, shown and disabled.
+function materialsBeforeSave() {
+  const boxes = MATERIALS_ITEMS.map(
+    (item) =>
+      `<label class="checkbox-row small" for="field-materials-${esc(item.id)}"><input type="checkbox" id="field-materials-${esc(item.id)}" name="received" value="${esc(item.id)}" disabled><span>${esc(item.label.en)}</span></label>`,
+  ).join("");
+  return `<section class="panel materials-card" aria-labelledby="materials-title"><div class="section-head"><h2 id="materials-title">Materials received</h2></div><fieldset class="check-group"><legend>Materials received</legend>${boxes}</fieldset><p class="staff-reason" role="note">${icon("lock")} Save the draft first to record materials.</p></section>`;
+}
+
+// Who started the case: the earliest event's actor, named from the roster.
+function createdBy(record, people) {
+  const first = [...(record.internalHistory ?? [])]
+    .filter(Boolean)
+    .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")))[0];
+  const id = first?.actorPersonId;
+  return (id && (people ?? []).find((person) => person?.id === id)?.name) || "The office";
+}
+
+/**
+ * The version-2 Add a case page: a new office draft (no case yet) or a saved
+ * version-2 office draft. The frame in `views.mjs` holds the page's heading.
+ *
+ * @param {object} ui `{ person, busy, officeSaving, draftAnswers, savedCase,
+ *   openAddSubsteps, openPanels, addCaseShowMissing, revealed, dirty,
+ *   saveState, error, retryable, people }`, `savedCase` decorated
+ *   (`decorateStaffCase`)
+ */
+export function renderAddCaseV2(ui = {}) {
+  const view = ui ?? {};
+  const person = view.person ?? null;
+  const off = view.busy ? "disabled" : "";
+  const pill = `<p class="fiction-pill">${icon("spark")} Fictional data only · ${button("Fill fictional details", "fill-assisted-intake", "text", off)}</p>`;
+  const rights = adminEligibility({}, person);
+  if (!rights.assistedIntake.allowed) return `${pill}${explain(rights.assistedIntake)}`;
+  const record = view.savedCase ?? null;
+  const answers = view.draftAnswers ?? {};
+  const page = {
+    answers,
+    savedCase: record,
+    busy: Boolean(view.busy),
+    officeSaving: Boolean(view.officeSaving),
+    variant: variantOf(answers),
+    parts: addCaseParts(answers),
+    open: new Set(Array.isArray(view.openAddSubsteps) ? view.openAddSubsteps : []),
+    showMissing: Boolean(view.addCaseShowMissing),
+    revealed: new Set(view.revealed ?? []),
+  };
+  const confirmed = (view.openPanels ?? []).includes("confirmed");
+  const saving = page.busy || page.officeSaving;
+  const reference = record?.reference ?? null;
+
+  // The page's own two ways out carry ids, so closing the leave dialog puts
+  // the keyboard back on the one that opened it, not on the sidebar's twin.
+  const breadcrumb = `<nav aria-label="Breadcrumb" class="breadcrumb"><ol><li>${button("Work board", "open-board", "inline", 'id="add-case-to-board"')}</li><li aria-current="page">Add a case</li></ol></nav>`;
+  const meta = `<div class="application-meta"><span>Application ID: ${reference ? esc(reference) : "assigned when you save"}</span><span>Draft · ${saveStatus(view)}</span></div>`;
+  const form = `<form id="add-case-v2-form" class="add-case-steps" novalidate>${STEPS_V2.filter((step) => step.id !== "review")
+    .map((step) => addStep(step, page))
+    .join("")}</form>`;
+  const info = `<section class="panel" aria-labelledby="add-case-info-title"><h2 id="add-case-info-title">Case info</h2>${detailRow(
+    "Application ID",
+    reference ?? "Assigned when you save",
+  )}${detailRow("Stage", "Draft")}${detailRow("Created by", record ? createdBy(record, view.people) : (person?.name ?? ""))}${detailRow(
+    "Created at",
+    record ? formatTime(record.createdAt) : "When you save",
+  )}</section>`;
+  const materials = record
+    ? materialsCard(record, staffEligibility(record, person), { busy: saving })
+    : materialsBeforeSave();
+  const side = `<aside class="add-case-side">${info}${materials}</aside>`;
+  const bar = `<div class="add-case-bar">${button("Cancel", "open-board", "text", 'id="add-case-cancel"')}<p id="add-case-count" class="add-case-count" tabindex="-1">${esc(
+    addCaseCountText(page.parts),
+  )}</p>${button("Save draft", "save-office-draft", "secondary", saving ? "disabled" : "")}<div class="add-case-confirm"><label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${
+    confirmed ? "checked" : ""
+  }><span>I have checked these answers with the client</span></label><p class="field-note">This confirms the answers on screen. It is not a signature on a tax or consent form.</p></div>${button(
+    "Send to the office",
+    "send-office-draft",
+    "primary",
+    `id="add-case-send"${addCaseSendOff({ confirmed, busy: page.busy, officeSaving: page.officeSaving }) ? " disabled" : ""}`,
+  )}</div>`;
+  return `<div class="add-case-v2">${breadcrumb}${meta}${pill}<div class="add-case-layout">${form}${side}</div>${bar}</div>`;
 }

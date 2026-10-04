@@ -900,3 +900,39 @@ test("the office page's Documents tab starts with the checklist for a submitted 
   const v1 = renderAdminCase(officeCase({ stage: "received" }), { person: SAM });
   assert.doesNotMatch(v1, /doc-checklist/);
 });
+
+// ---------------------------------------------------------------------------
+// Part 4c, Task 4: a version-2 office draft continues in Add a case.
+// ---------------------------------------------------------------------------
+
+test("a version-2 office draft continues in Add a case; a version-1 one keeps its panel", () => {
+  const record = officeCase({
+    stage: "draft",
+    intakeVerified: false,
+    intakeVersion: 2,
+    answers: { tp_first_name: "Mei" },
+    contact: null,
+    materials: [],
+    documentCards: [],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const overview = html.match(/id="case-panel-overview"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-intake"/)[1];
+  assert.match(overview, /This walk-in client&#39;s answers are entered in Add a case\./);
+  assert.match(overview, /<button type="button" class="btn primary" data-action="continue-add-case" data-case-id="case-a"[^>]*>[\s\S]*?Continue in Add a case<\/button>/);
+  assert.doesNotMatch(html, /assisted-answers-form/);
+  assert.doesNotMatch(html, /data-case-action="SAVE_ANSWERS"/);
+  // The Intake answers tab holds the answers, contact and materials cards.
+  const tab = intakeTab(html);
+  assert.match(tab, /Wording used/);
+  assert.match(tab, /class="panel contact-card"/);
+  assert.match(tab, /class="panel materials-card"/);
+  assert.doesNotMatch(tab, /filling in this walk-in client/);
+  // Somebody without the office right is told why, with no way in.
+  const forAlex = renderAdminCase(record, { person: ALEX });
+  assert.doesNotMatch(forAlex, /data-action="continue-add-case"/);
+
+  // Version 1: today's panel, exactly.
+  const v1 = renderAdminCase(officeCase({ stage: "draft", intakeVerified: false, answers: {} }), { person: SAM });
+  assert.match(v1, /<form id="assisted-answers-form" class="staff-form">/);
+  assert.doesNotMatch(v1, /continue-add-case/);
+});
