@@ -41,19 +41,22 @@ const asFilters = (value) =>
       )
     : undefined;
 const asBoolean = (value) => (typeof value === "boolean" ? value : undefined);
-// The version-2 form's steps this window has left, and the ids whose error it
-// has shown, for one case (spec 2026-09-30 §2.5, §3.4). Anything malformed is
-// dropped whole: a half-trusted list would mark the wrong steps. A record from
-// before `revealed` existed reads as nothing revealed.
-const VISITED_STEP_LIMIT = 8;
-const asVisitedSteps = (value) => {
+// The version-2 form's place: a sub-step id's shape only ("about.you"). Whether
+// the catalogue has it is the controller's to decide; it sends an id it
+// doesn't know to the first sub-step (spec 2026-10-04 §3.1).
+const SUBSTEP_ID = /^[a-z]+\.[a-z_]+$/;
+const asSubstep = (value) =>
+  typeof value === "string" && SUBSTEP_ID.test(value) ? value : undefined;
+// The ids whose error this window has shown, for one case (spec 2026-09-30
+// §2.5). Anything malformed is dropped whole: a half-trusted list would show
+// the wrong errors. Visits are not here: they live on the server (§3.7), and a
+// 4b `visitedSteps` record is no longer read.
+const asRevealedAnswers = (value) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const { caseId, steps, revealed = [] } = value;
+  const { caseId, ids } = value;
   if (typeof caseId !== "string" || !caseId) return undefined;
-  if (!Array.isArray(steps) || !steps.every((step) => Number.isInteger(step) && step >= 0 && step <= VISITED_STEP_LIMIT))
-    return undefined;
-  if (!Array.isArray(revealed) || !revealed.every((id) => typeof id === "string")) return undefined;
-  return { caseId, steps: [...steps], revealed: [...revealed] };
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) return undefined;
+  return { caseId, ids: [...ids] };
 };
 
 // The stored fields, with the check each one has to pass to be restored. A
@@ -64,12 +67,13 @@ const FIELDS = Object.freeze({
   selectedCaseId: asString,
   selectedPersonId: asString,
   formStep: asStep,
+  formSubstep: asSubstep,
   openPanels: asNames,
   pendingCreateActionId: asString,
   boardFilters: asFilters,
   sidebarOpen: asBoolean,
   caseTab: asString,
-  visitedSteps: asVisitedSteps,
+  revealedAnswers: asRevealedAnswers,
 });
 
 /**

@@ -183,35 +183,58 @@ test("the case tab is kept as a string", () => {
   assert.deepEqual(window.read("user-1"), { screen: "staff-case" });
 });
 
-test("the visited steps and revealed errors of one case round-trip", () => {
+test("the version-2 sub-step is kept when it has a sub-step id's shape", () => {
   const sessionStorage = fakeSession();
   const window = createWindowState({ sessionStorage });
-  const visitedSteps = { caseId: "case-a", steps: [0, 1, 8], revealed: ["email", "hh[1].dob"] };
-  window.write("user-1", { screen: "intake", visitedSteps });
-  assert.deepEqual(window.read("user-1"), { screen: "intake", visitedSteps });
-
-  // A record written before `revealed` existed reads as none revealed.
-  window.write("user-1", { screen: "intake", visitedSteps: { caseId: "case-a", steps: [2] } });
-  assert.deepEqual(window.read("user-1").visitedSteps, { caseId: "case-a", steps: [2], revealed: [] });
+  window.write("user-1", { screen: "intake", formSubstep: "about.you" });
+  assert.deepEqual(window.read("user-1"), { screen: "intake", formSubstep: "about.you" });
+  window.write("user-1", { screen: "intake", formSubstep: "review.summary" });
+  assert.equal(window.read("user-1").formSubstep, "review.summary");
+  // The shape only: whether the catalogue has it is the controller's business.
+  window.write("user-1", { screen: "intake", formSubstep: "old.gone_away" });
+  assert.equal(window.read("user-1").formSubstep, "old.gone_away");
+  for (const formSubstep of ["About.You", 5, "about", "about.", ".you", "about.you.x", "about.you2", null, ["about.you"]]) {
+    window.write("user-1", { screen: "intake", formSubstep });
+    assert.deepEqual(window.read("user-1"), { screen: "intake" }, JSON.stringify(formSubstep));
+  }
 });
 
-test("a malformed visited-steps record is dropped whole", () => {
+test("the revealed answers of one case round-trip", () => {
   const sessionStorage = fakeSession();
   const window = createWindowState({ sessionStorage });
-  for (const visitedSteps of [
-    { caseId: 17, steps: [0], revealed: [] },
-    { steps: [0], revealed: [] },
-    { caseId: "case-a", steps: [0, 1.5], revealed: [] },
-    { caseId: "case-a", steps: ["1"], revealed: [] },
-    { caseId: "case-a", steps: [9], revealed: [] },
-    { caseId: "case-a", steps: [-1], revealed: [] },
-    { caseId: "case-a", steps: "0,1", revealed: [] },
-    { caseId: "case-a", steps: [0], revealed: ["email", 3] },
-    { caseId: "case-a", steps: [0], revealed: "email" },
-    ["case-a", [0]],
+  const revealedAnswers = { caseId: "case-a", ids: ["email", "hh[1].dob"] };
+  window.write("user-1", { screen: "intake", revealedAnswers });
+  assert.deepEqual(window.read("user-1"), { screen: "intake", revealedAnswers });
+  window.write("user-1", { screen: "intake", revealedAnswers: { caseId: "case-a", ids: [] } });
+  assert.deepEqual(window.read("user-1").revealedAnswers, { caseId: "case-a", ids: [] });
+});
+
+test("a malformed revealed-answers record is dropped whole", () => {
+  const sessionStorage = fakeSession();
+  const window = createWindowState({ sessionStorage });
+  for (const revealedAnswers of [
+    { caseId: 17, ids: [] },
+    { caseId: "", ids: [] },
+    { ids: ["email"] },
+    { caseId: "case-a" },
+    { caseId: "case-a", ids: ["email", 3] },
+    { caseId: "case-a", ids: "email" },
+    ["case-a", ["email"]],
     "case-a",
   ]) {
-    window.write("user-1", { screen: "intake", visitedSteps });
-    assert.deepEqual(window.read("user-1"), { screen: "intake" }, JSON.stringify(visitedSteps));
+    window.write("user-1", { screen: "intake", revealedAnswers });
+    assert.deepEqual(window.read("user-1"), { screen: "intake" }, JSON.stringify(revealedAnswers));
   }
+});
+
+test("a stored visited-steps record from 4b is ignored", () => {
+  const stale = JSON.stringify({
+    screen: "intake",
+    visitedSteps: { caseId: "case-a", steps: [0, 1], revealed: ["email"] },
+  });
+  const sessionStorage = fakeSession({ [windowStateKey("user-1")]: stale });
+  const window = createWindowState({ sessionStorage });
+  assert.deepEqual(window.read("user-1"), { screen: "intake" });
+  window.write("user-1", { screen: "intake", visitedSteps: { caseId: "case-a", steps: [0], revealed: [] } });
+  assert.deepEqual(JSON.parse(sessionStorage.raw(windowStateKey("user-1"))), { screen: "intake" });
 });
