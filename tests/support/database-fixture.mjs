@@ -69,6 +69,7 @@ const STATE_TABLES = Object.freeze([
   "reviews",
   "assistance_items",
   "case_contacts",
+  "case_document_cards",
   "case_materials",
 ]);
 // One key for the advisory lock that keeps fixture workspace setup exclusive
