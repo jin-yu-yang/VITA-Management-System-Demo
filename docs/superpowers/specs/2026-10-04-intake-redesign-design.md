@@ -1,6 +1,6 @@
 # The intake redesign: sub-steps, Documents, Review & submit
 
-**Status:** approved in brainstorming on 2026-10-04. Revised the same day after a recheck: visits stored on the server, revisions that change no answers, the hidden `member_id` type, the catalogue shape, the English 10-2025 form supplied, "not sure" on the draft, a text-independent font fetch, popup blockers, the pdf-lib bundle.
+**Status:** approved in brainstorming on 2026-10-04. Revised the same day after a recheck: visits stored on the server, revisions that change no answers, the hidden `member_id` type, the catalogue shape, the English 10-2025 form supplied, "not sure" on the draft, a text-independent font fetch, popup blockers, the pdf-lib bundle. Final recheck the same day: rows never deleted (realtime), stages, staff marks after submission, walk-ins see full cards, visible answers only in cardsFor, lead lines for split sections, resume place, print mode, empty household cards.
 
 **Revises:** `docs/superpowers/specs/2026-09-30-intake-screens-design.md`. §3 of that spec (the client's nine-step form) is replaced by this one for version 2. Its §2 (the shared renderer, redraw rules, invalid values) stays, with the renames in §3.6 below. Its §4–§6 (4c) are revised by §10 below.
 
@@ -32,6 +32,8 @@ The catalogue build (`tools/build-intake-catalogue.mjs`, its `STEPS` table) gain
 - Every step has at least one sub-step, so a step always expands and collapses the same way.
 - No field id changes. Titles, tips and the new hidden `hh.member_id` (§6.2) change, so the hash changes and a new catalogue migration ships it (§9.2).
 - A section's intro text shows on the first sub-step that holds questions from that section.
+- **Sub-steps split from Sections 9, 10 and 11 each get a lead line,** because their questions are short noun phrases ("Tips", "Mortgage interest") that need the question around them. Income sub-steps read "Did you or your spouse receive any of these in 2025?". Expense sub-steps read "Did you or your spouse pay for any of these in 2025?". `expenses.events` reads "Did any of these happen to you or your spouse in 2025?". The lead line is new wording for the group's review.
+- `documents.bring` comes first in the documents step's list, so the hidden-sub-step rule (§3.1) sends a client whose service changes away from same-day to `documents.identity`.
 
 ### 2.2 The layout
 
@@ -64,6 +66,7 @@ Titles are drafts. All new wording, English and Chinese, goes to the group for r
 - **`revealedAnswers: { caseId, ids }`** replaces 4b's `visitedSteps` in the window state, which only the version-2 form ever wrote. It holds only the revealed ids (§2.5 of the earlier spec). They stay per window, because invalid values never reach the server. The old `visitedSteps` is no longer read; a stale saved copy is ignored. It belongs to one case, exactly as `visitedSteps` did.
 - **When `formSubstep` names a sub-step that is now hidden** (Your spouse after the marital status changes, a Documents sub-step that lost its last card, `documents.bring` after the service changes), the client goes to **the next visible sub-step after it in catalogue order**, or to the last visible sub-step if none follows.
 - **When `formSubstep` names an id the catalogue doesn't have** (stale window state), there is no position to work from, so the client goes to the first sub-step.
+- **A case opened with no saved place** (a new window, another device) opens at the first visible sub-step that isn't Done, using the visits stored on the server (§3.7). A new case opens at `before.ready`.
 - The place key for scroll and focus restore (`app.mjs`) uses `formSubstep` for version-2 cases.
 
 ### 3.2 The rail tree
@@ -121,8 +124,8 @@ The redraw rules, invalid values and `withholdInvalid`, saving, the senior switc
 
 Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer revision that arrives while the draft has unsaved edits raises the conflict screen (`applyCase`, `controller.mjs:390`), even when no answer changed. With card actions (§6.3) and stored visits, that would happen all the time.
 
-- **A newer revision that changes no answers and no contact field** (compared with the snapshot it replaces) only moves the pinned base revision forward. It never raises the conflict screen. A visited set in it is merged (§3.7).
-- **A newer revision that does change answers** raises the conflict screen, as today.
+- **A newer revision that changes no answers, no contact field and not the stage** (compared with the snapshot it replaces) only moves the pinned base revision forward. It never raises the conflict screen. A visited set in it is merged (§3.7).
+- **A newer revision that does change answers** raises the conflict screen, as today. **A stage change** (another window submitted) is handled as today, without re-pinning.
 - **A card action saves the draft first when it has unsaved edits,** the same as a rail jump. This matters most on Add a case (4c), where fields and cards share one page.
 
 ## 4. Step 0 and step 8
@@ -156,7 +159,7 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 - Every visible answer, grouped by step and sub-step, through `formatAnswer`.
 - **A "Change" link on each sub-step** takes the client there with a return set: on that page the primary button reads "Back to summary", which saves and returns. A rail jump or reaching the summary clears the return.
 - **The document cards and their status** (Not done, Later, Don't have; Uploaded in the uploads part), so the printout shows what is still to come. Same-day: the "Bring these" list.
-- **Print:** the browser's print, with a print stylesheet that prints only the summary, the Application ID and the date.
+- **Print:** the browser's print, printing only the summary, the Application ID and the date. Today's print stylesheet (`styles.css:2255`) prints only an open modal (the reference card), so the summary print adds a class to `<body>` for the length of the print (removed on `afterprint`) that switches to a summary-only rule. The reference card's print is unchanged.
 - **View Draft 13614-C**, and beside it "简体中文版 · 繁體中文版" (§7).
 
 ### 5.3 `review.submit`: Submit
@@ -183,12 +186,14 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
   - the label, the "why" line with the question it links back to, and an optional hint, each EN/中文.
 - **The general and senior forms share it;** only the label wording varies.
 - **The answer rule:** yes (or `me` / `spouse` on a Who question) puts the card in Needed. not_sure puts the same card in Maybe needed. no and none hide it. Rows that say otherwise in Appendix A win.
+- **Only visible answers count.** A hidden question keeps its answer in the draft (the earlier spec's §3.4), so `cardsFor` reads answers through `isVisible`. Otherwise, for example, a stale `inc_sale_assets_prior_loss = yes` behind `inc_sale_assets = no` would still ask for last year's return.
+- **Rows that share an id and an owner make one card** (`bank`, `prior_return`). The strongest group wins: Needed over Maybe needed.
 - **`cardsFor(answers, cardState)`** is pure. It returns the visible cards. Each card has:
   - its `slotId`: `<rule id>.<owner>`, where the owner is `tp`, `sp`, `hh.<member_id>` or `household`;
   - its owner line (§6.5);
   - its group, after any staff move (§6.4);
   - its status.
-- **A server copy of the rule ids** (§9.2) lets the server check a slot id. A test keeps the two lists in step.
+- **A server copy of the rule ids, each with its card type** (§9.2), lets the server check a slot id. A test keeps the two lists in step.
 
 ### 6.2 A stable id for household members: `hh[].member_id`
 
@@ -196,6 +201,7 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 - **Required, but never a missing answer.** It is a catalogue sub-field with a new hidden type, `id`. The renderer, `isAnswered`, `missingToSubmit` and the server's `intake_missing` all skip it, so it never shows as "Needs an answer". Instead, the save refuses a household member whose `member_id` is missing, malformed or a duplicate within the case (`VALIDATION`). The id is 32 lowercase hex characters (`crypto.randomUUID()` without the dashes).
 - **No backfill.** No screen sets a workspace to version 2, so version-2 cases exist only in tests, which reseed.
 - **Never shown, never edited:** each household card carries it in a hidden input, `readField` and `readForm` read it, and "Add a person" generates it.
+- **It doesn't count as an answer.** 4b keeps a just-added, empty household card as `{}` and drops it from every save (`sendable`). A new card now holds `{ member_id }`, so "empty" means no key but `member_id`.
 - **Everything that writes a version-2 household member creates one:**
   - `makeSampleAnswers({ version: 2 })`;
   - `tests/support/intake-value-cases.mjs` and the intake tests;
@@ -205,21 +211,26 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 ### 6.3 Card state: the table `case_document_cards`
 
 - **One row per (case, `slot_id`):**
-  - `status`: `later` or `none`. No row means Not done. `uploaded` arrives with the uploads part.
+  - `status`: `later`, `none` or null. No row, or a null status, means Not done. `uploaded` arrives with the uploads part.
+  - **Rows are never deleted.** Realtime publishes inserts and updates only (`007_realtime_publication.sql:50`), because a deleted row can't be checked against the read policy. "Not done" is an update to null.
   - `group_override`: `needed` or null;
   - `changed_by_person_id`, `changed_at`.
 - **When an answer change hides a card,** its row stays. If the answer comes back, the card comes back with its state.
 - **Actions:**
-  - **`SET_DOCUMENT_CARD {slotId, status}`**, where status is `later`, `none` or `not_done` (which deletes the status).
-    - Who: the same check as `SAVE_ANSWERS` (`013_contact_materials.sql:95`), meaning the client for themselves, or a staff persona with `admin`.
-    - When: while the case is a draft or submitted, until it is closed.
-    - It writes a case event.
+  - **`SET_DOCUMENT_CARD {slotId, status}`**, where status is `later`, `none` or `not_done` (which sets the status to null).
+    - Who:
+      - the client, on their own case;
+      - or a staff persona with `admin`, on an office draft (Add a case) or on any case after it has been submitted;
+      - never staff on a client's unsent draft.
+    - When: at any stage except `closed`. Submitting moves a case from `draft` to `received` and on; there is no stage called "submitted".
+    - It writes a `case_events` row. Those are staff-only (`002_workflow_schema.sql:138`), so the client sees no history line.
+  - Both actions are version 2 only: a version-1 case refuses them (`VALIDATION`).
   - **`SET_DOCUMENT_GROUP {slotId, group}`**, where group is `needed` or `maybe`.
     - Who: a staff persona with `receive_documents`, as for `RECORD_DOCUMENT_RESPONSE` (`013_contact_materials.sql:121`).
     - What it changes: it moves a Maybe needed card up to Needed, or a card it moved back down. A card that is Needed because of an answer can't be moved down.
     - It writes a case event.
 - **Checks:** the rule id is known, the owner kind fits the rule's card type, and a `hh.<member_id>` owner is well formed. A card need not be visible to have state.
-- **Reading:** a select policy like `case_contacts`'s (`011_intake_v2.sql:379`): the client sees their own case's rows, and staff see a case's rows once it is not a client's unsent draft. `getCase` returns them as `documentCards`. The table joins the realtime publication, INSERT, UPDATE and DELETE, so a mark in one window shows in the other.
+- **Reading:** a select policy like `case_contacts`'s (`011_intake_v2.sql:379`): the client sees their own case's rows, and staff see a case's rows once it is not a client's unsent draft. `getCase` returns them as `documentCards`. The table joins the realtime publication, which carries inserts and updates, so a mark in one window shows in the other. The case's revision bump also refreshes it.
 - **Revisions:** card actions bump the case revision like every action. §3.8 keeps that from raising the conflict screen.
 
 ### 6.4 The screen
@@ -249,7 +260,8 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 
 - The case page shows the cards with their group and status.
 - It offers Move to Needed and Move to Maybe needed (`SET_DOCUMENT_GROUP`).
-- Add a case has a Documents accordion for marking Later or Don't have for a walk-in.
+- Add a case has a Documents accordion for marking Later or Don't have for a walk-in. **It shows the full cards with their marks for every service, same-day included:** the person is at the desk, and the office knows what they brought. Only the client's own form uses the "Bring these" list (§6.6).
+- After submission, admin staff can also mark a card Later or Don't have on the case page, for example when the client says at the interview that they don't have a 1099.
 
 ### 6.8 Left to the uploads part
 
@@ -312,6 +324,7 @@ Every action bumps the case revision (`003_action_core.sql:255`). Today, a newer
 
 - The client's `review.summary`.
 - The staff case page (4c), so a volunteer can print the client's answers on the paper form at the interview.
+- Version-2 cases only. Version 1's 17 answers don't map onto the form.
 
 ## 8. The sidebar: hover to peek, click to pin (its own PR)
 
@@ -340,6 +353,7 @@ The staff frame's toggle (`appShell` in `src/views.mjs`):
   - S0 gets the lines in §4.1.
 - **Upload Tips:**
   - **The upload convention changes.** "When a Tip says 'upload', show a file-upload button right under that question" becomes "The Tip names the document and says *You will upload it in the Documents step / 您将在「上传文件」步骤上传*." All uploads happen in one place, so the card list stays complete.
+  - **Every existing Tip that says "upload"** (for example Q9.9's brokerage statement and Q11.1's 1098-T) is reworded the same way.
   - **Document Tips are added,** using the card labels of Appendix A, to Q9.4, Q9.7, Q9.10, Q9.11, Q9.12, Q9.15, Q10.2, Q10.3, Q10.4, Q10.7, Q10.8, Q11.2, Q11.3, Q11.5, Q11.8, Q11.9 and Q11.11.
   - **Q9.2's Tip** names the tip-records card, including the app's tax summary for drivers.
   - **Q9.14's Tip** adds "If you drive or deliver with an app, also upload the app's yearly tax summary." It stays neutral, with no scope wording.
@@ -360,7 +374,7 @@ The schema comes first, because the generated catalogue migration only loads dat
   - `vitally_private.intake_substeps` (version, id, step), and the catalogue loader extended to fill it from `steps[].substeps[]`;
   - `cases.intake_visited`, `SAVE_ANSWERS`'s optional `visited` key (payload shape, id check, union store);
   - `case_document_cards`, its select policy and realtime;
-  - `SET_DOCUMENT_CARD` and `SET_DOCUMENT_GROUP`: payload checks, authority (§6.3), the closed-case refusal, handlers and their events;
+  - `SET_DOCUMENT_CARD` and `SET_DOCUMENT_GROUP`: payload checks, authority (§6.3, including the case-dependent half: the client's own case, office drafts and submitted cases), the closed-case and version-1 refusals, handlers and their `case_events` rows;
   - the server's rule-id list.
 - **`016_intake_catalogue_<hash8>.sql`** (generated by the build): the new catalogue, including the `gcf_sp_date` condition (moved here from 4c) and `hh.member_id`.
 - **4c's migrations follow.** 4c may need no catalogue migration now. The switch-over is **the migration after 4c's last one**, not a fixed number.
@@ -394,7 +408,8 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
 ## 11. Testing
 
 - **Unit:**
-  - `cardsFor`, row by row against Appendix A, with owners, same-day and staff moves;
+  - `cardsFor`, row by row against Appendix A, with owners, same-day and staff moves; hidden answers ignored; rows sharing an id merged;
+  - an empty household card holding only `member_id` dropped from the save;
   - the catalogue's sub-steps (every step has one; every question is in exactly one);
   - visibility, and the hidden and unknown `formSubstep` fallbacks;
   - `formSubstep` and `revealedAnswers` in the window state;
@@ -410,6 +425,8 @@ The 4c plan (`docs/superpowers/plans/2026-09-30-intake-screens-4c.md`) is rewrit
   - a household member without `member_id`, with a malformed one, or with a duplicate refused, and `intake_missing` never listing it;
   - `visited`: unknown ids refused, the union stored, and a payload without it accepted;
   - the card read policy (client sees their own, staff not a client's unsent draft);
+  - `SET_DOCUMENT_CARD` from admin staff on a submitted case accepted, and on a client's unsent draft refused; both actions refused on version 1;
+  - `not_done` updates the row to null and never deletes it;
   - the server rule-id list matching `document-cards.mjs`.
 - **Browser story:**
   - **The client phase walks every visible sub-step once with Continue,** which checks the rail tree and the step boundaries. Everywhere else uses rail jumps.
