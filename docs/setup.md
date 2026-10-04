@@ -302,7 +302,7 @@ check failed. Check, in this order:
 
 ## 4. Migrations
 
-Seventeen migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
+Nineteen migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
 but not because the files themselves are re-runnable — `001` and `002` create their tables with a
 plain `create table`, which fails the second time. What makes it safe is the ledger
 `tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
@@ -328,6 +328,8 @@ already applied, so **the migrations are run only through the migrator, never by
 | `015_intake_loader.sql` | The loader learns the redesigned catalogue: the hidden `id` field type (`hh.member_id`), the private `intake_substeps` table (one row per sub-step, in order), and household members refused without a well-formed, unique `member_id` |
 | `016_intake_catalogue_<hash8>.sql` | Generated: the redesigned catalogue (steps 0–9 with sub-steps) loaded through 015's loader |
 | `017_documents_and_visits.sql` | `cases.intake_visited` (the sub-steps a client has opened, sent with SAVE_ANSWERS); `case_document_cards` (one row per document card the client or staff marked; client-visible on own cases, staff after submit; inserts and updates published to Realtime; no person column); the SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP actions |
+| `018_document_card_authority.sql` | Card authority: staff mark and move a case's document cards when they work on it (office staff on any case, a volunteer as its preparer or reviewer), the same rule as contact details and materials; never on a client's unsent draft |
+| `019_fixtures_v2.sql` | The sample cases follow the workspace's version: in a version-2 workspace they are version-2 cases with answers, a `case_contacts` row and a household member with a fixed `member_id`. A checkpoint reload clears the sample's materials and card marks. No workspace's default version changes |
 
 Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one. The build writes one only when the catalogue's hash differs from the
@@ -375,15 +377,15 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is from the final run of part 4b (2026-09-30); re-run the
+suite's **last-verified count** is from the final run of part 4c (2026-10-04); re-run the
 commands yourself for the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
-| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 550/550 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
-| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 218/218 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
-| Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~75–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
-| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 53/53 | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below and one phase that switches its throwaway workspace to version 2 and walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits. Optional to re-run before every rehearsal, but recommended before a presentation. |
+| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 636/636 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
+| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 233/233 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
+| Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~55–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
+| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 55/55, ~13 min | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2 (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; and one phase sets the workspace back to version 1 to finish a draft in the old form and to create a case on the old Add a case. Optional to re-run before every rehearsal, but recommended before a presentation. |
 
 Install the second browser engine once, with the same scoped `PATH`, before the first auth-gate or
 story run (Chrome runs through an already-installed Google Chrome browser via
@@ -393,8 +395,8 @@ story run (Chrome runs through an already-installed Google Chrome browser via
 PATH="$VITALLY_NODE_BIN:$PATH" ./node_modules/.bin/playwright install firefox
 ```
 
-Versions observed in the last recorded run (2026-09-21): Google Chrome 153.0.8010.48, Playwright
-Firefox 155.0 (build 1543), Playwright 1.63.0, Supabase Auth/GoTrue `v2.196.0`, PostgREST `v16.3`,
+Versions observed in the last recorded run (browsers on 2026-10-04, the stack on 2026-09-21): Google
+Chrome 154.0.8037.97, Playwright Firefox 155.0 (build 1543), Playwright 1.63.0, Supabase Auth/GoTrue `v2.196.0`, PostgREST `v16.3`,
 Realtime `v2.130.0`.
 
 **What is simulated versus real, in every one of these runs.** The OTP **send** step

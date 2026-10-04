@@ -4,15 +4,15 @@
 
 Scope: the static pages and screenshots in `.stitch/designs` (current set listed under `currentScreens` in `.stitch/metadata.json`), compared with the running app (`src/*.mjs`, `src/styles.css`, the Supabase schema). `.stitch/captures` (the "before" screenshots) is kept for the presentation.
 
-**Status (updated Sep 30, 2026).**
+**Status (updated Oct 4, 2026).**
 - The group answered all twelve decisions (section 3), and the screens they affected were redesigned the same day.
 - Phase 0 of the plan is implemented on the `phase-0-foundations` branch.
 - Part 1 (work board, case page, client screens, office screens) is merged.
 - Part 2 (client numbers: one number per submitted case in each workspace and season, shown to the client and on the staff screens, and searchable from the work board) is merged.
 - Part 4a (the intake catalogue and its server side: the drafted questions in one catalogue, version-2 intake checks, contact details and materials, with nothing visible changed yet) is merged.
 - Part 4b (the client's nine-step version-2 intake, with the senior switch; built and tested, reachable once part 4c switches the default intake version) is merged (#40).
-- Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is in review. It replaced the nine-step layout before any client sees version 2.
-- Part 4c is paused and will be re-planned onto 4b2: staff read version-2 answers, with a contact card (D5) and the materials checklist (D9); the version-2 Add a case; and last, the switch-over that makes new cases version 2. Existing cases keep their version.
+- Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is merged (#43). It replaced the nine-step layout before any client sees version 2.
+- Part 4c (re-planned onto 4b2) is in review: staff read version-2 answers by step and sub-step with "Not sure" flagged, a contact card (D5) and the materials checklist (D9, on version-1 cases too), the client's document checklist with office marks and Needed/Maybe moves, and the draft 13614-C on the case page; the version-2 Add a case, one accordion per sub-step plus Documents. Version 2 is ready. The switch-over that makes new cases version 2 is held until the group has reviewed the new wording (decided Oct 4, 2026); it ships as its own small PR. Existing cases keep their version.
 - Next: part 4d (the intake in Chinese), then removing version 1 as its own part once no version-1 case is open.
 - Decided on Sep 30, 2026, while planning 4c:
   - The version-2 intake has **no service-scope stop**. An out-of-scope application submits normally, and the office handles scope at its intake checks. This is a known gap, not a regression; scope rules may return later, written for the new questions.

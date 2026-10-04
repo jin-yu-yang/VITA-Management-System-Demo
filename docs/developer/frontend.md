@@ -16,6 +16,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Screens](#screens)
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
+- [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
 - [Live updates](#live-updates)
@@ -128,8 +129,9 @@ Three rules the controller keeps:
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). An office screen chosen while a volunteer persona is active shows
-the work board instead. On `main`, Add a case is today's version-1 page and the staff case page
-has no version-2 answers panel yet; part 4c adds both, with the contact and materials cards.
+the work board instead. A version-2 case's page reads its answers by sub-step, with the contact,
+materials and document-checklist cards, and Add a case follows the workspace's version
+([below](#staff-views-and-add-a-case-version-2)).
 
 ## Rendering
 
@@ -214,6 +216,57 @@ when that may happen:
 Before a save or a step change, `sweepV2Form` reads the whole form into the draft once more (for
 values that arrived without an `input` event, such as autofill); it is skipped while a redraw is
 held, because the boxes may then show an older value than the draft.
+
+## Staff views and Add a case (version 2)
+
+Part 4c's staff side. Every rule comes from the shared modules (`intake-catalogue.mjs`,
+`intake-form.mjs`, `document-cards.mjs`); nothing here re-implements one. Version-1 cases render
+exactly as before, apart from the materials card.
+
+**The case page's Intake answers tab** (`intakeAnswersTab` in `staff-views.mjs`, shared by the
+volunteer and office pages):
+
+- `answersPanelV2`: "What the client told us" by step (`<h3>`) and sub-step (`<h4>`), only the
+  visible questions, a required unanswered one as "Not answered", "Wording used: Standard" or
+  "Senior", and every "Not sure" answer flagged with an icon and the words, then counted.
+- **Contact details (D5).** Shown only when `canSeeContact(record, person)`: the office on any
+  case, a volunteer once they are the case's preparer or reviewer. Otherwise the card says only
+  "Contact details are shown to the office, and to the preparer and reviewer once the case is
+  claimed." and the contact questions are left out of the answers. Staff edit the best time and
+  the note ("Edit best time", UPDATE_CONTACT), never a phone.
+- **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
+  anyone who passes `canSeeContact`, read-only for everyone else. On version-1 cases too.
+- **The draft 13614-C** buttons (4b2's `view-draft` wiring), only for people who pass
+  `canSeeContact`, because the draft prints the phones.
+
+The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
+(`src/form-values.mjs`); `Object.fromEntries(new FormData(form))` would keep only the last box.
+
+**The Documents tab** starts with the client's document checklist (`documentChecklist`): every
+card `cardsFor` gives, grouped like the client's Documents step, in the office's words ("Later",
+"Don't have", "Mark as not done"; "Asked by: <question>"). Staff who work on the case (018) mark
+cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_GROUP, shown as
+"Needed (moved up by the office)"). The optional "other" card has no marks.
+
+**Add a case** picks its page by the open case's version, and by
+`workspace.defaultIntakeVersion` only for a new draft. Version 1 keeps today's page and its
+one-call `createAssistedCase`. Version 2 is `renderAddCaseV2` in `office-views.mjs`:
+
+- One accordion per visible question sub-step under its step's heading, plus one Documents
+  accordion with the office's cards. `review` sub-steps are not on the page; its bottom bar
+  sends. The first open part is `before.ready`. Fields are `field-office-<id>`.
+- A new office draft has no case (`officeDraft`, no `savedCase`): `saveOfficeDraft()` creates an
+  empty case on the first Save draft, adopts it in place and saves into it, and never creates a
+  second. Until then the materials card and the document marks are off ("Save the draft first…").
+  The office never sends visits.
+- The bottom bar counts parts ("n parts still need answers", "Every part is answered"). "Send to
+  the office" is off only until `#field-confirmed` is ticked (and while saving). A press with
+  missing or invalid answers saves the draft and is refused: "Needs an answer" shows, every part
+  that counts opens, and the keyboard goes to the count.
+- Leaving with unsaved answers (Cancel, the breadcrumb, "Back to Follow-ups", the sidebar's
+  links, or Add a case again) asks "Leave without saving?" first; Sign out and the persona switch
+  don't ask. A conflict with another window shows the shared reconcile choice.
+- The same redraw rules as the client's form bind `#add-case-v2-form`.
 
 ## Events and actions
 
@@ -314,9 +367,9 @@ on Escape; save states, countdowns and refusals are written in text and marked `
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (429) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (636) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (53) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard) |
+| Story (55) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

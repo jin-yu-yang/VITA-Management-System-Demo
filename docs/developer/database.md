@@ -22,7 +22,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is seventeen plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is nineteen plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -44,6 +44,8 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `015_intake_loader.sql` | The loader for the redesigned catalogue: the hidden `id` field type (`hh.member_id`); the private `intake_substeps` table, one row per sub-step in order; household members refused without a well-formed, unique `member_id` |
 | `016_intake_catalogue_<hash8>.sql` | Generated: the redesigned catalogue (steps 0–9 with sub-steps), loaded through 015 |
 | `017_documents_and_visits.sql` | `cases.intake_visited`; `case_document_cards`; `document_card_rules()`; the SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP actions; SAVE_ANSWERS takes an optional `visited` list |
+| `018_document_card_authority.sql` | Card authority: SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP for staff who work on the case (`works_on_case`: office staff on any case, a volunteer as its preparer or reviewer), no longer a capability |
+| `019_fixtures_v2.sql` | Samples follow the workspace's version: version-2 samples (answers, a `case_contacts` row, a household member with a fixed `member_id`) in a version-2 workspace; a checkpoint reload clears the sample's materials and card marks |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -86,7 +88,8 @@ version of a function, use the **last** file that defines it:
 | Function | Current definition |
 | --- | --- |
 | `public.vitally_apply_action` | `017_documents_and_visits.sql` |
-| `vitally_private.check_operation_authority`, `check_payload`, `check_authority` | `017_documents_and_visits.sql` |
+| `vitally_private.check_operation_authority`, `check_authority` | `018_document_card_authority.sql` |
+| `vitally_private.check_payload` | `017_documents_and_visits.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `017_documents_and_visits.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
@@ -95,7 +98,8 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.intake_answer_keys` | `003_action_core.sql` (version 1's whitelist) |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
-| `vitally_private.seed_fixtures`, `apply_fixture_scenario`, `fixture_answers` | `009_fixtures_and_realtime.sql` |
+| `vitally_private.seed_fixtures`, `apply_fixture_scenario`, `fixture_answers_v2`, `fixture_contact_v2` | `019_fixtures_v2.sql` |
+| `vitally_private.fixture_answers` | `009_fixtures_and_realtime.sql` (version 1's samples) |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
 To list every function with its file and line:
@@ -329,8 +333,8 @@ shorthands in the table:
 | `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required`, or an assisted `draft` | | → `closed`; cancels open requests and tasks | Yes |
 | `UPDATE_CONTACT` | Owner on own draft; `followup` or `admin` person; a preparer or reviewer on their own case | Draft (owner); any (staff) | Version-2 case (a version-1 case has no contacts row) | Edits best time and note in `case_contacts`; never a phone | No |
 | `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
-| `SET_DOCUMENT_CARD` | Applicant owner, or presenter + `admin` person (never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |
-| `SET_DOCUMENT_GROUP` | Presenter + `receive_documents` person (never on a client's unsent draft) | Any but `closed` | `maybe` only undoes a staff `needed` | Sets or clears the card's `group_override` | No |
+| `SET_DOCUMENT_CARD` | Applicant owner, or presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |
+| `SET_DOCUMENT_GROUP` | Presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | `maybe` only undoes a staff `needed` | Sets or clears the card's `group_override` | No |
 
 Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an extra key is a
 `VALIDATION` error, not ignored. The browser builds them in
@@ -433,10 +437,14 @@ Migration 009 seeds six sample cases, one per story point (`preparation_ready`,
   `ready_for_review`, `corrections_required`. The case keeps its id, reference and owner.
 - **Bindings** (`vitally_private.fixture_client_bindings`) let a client account own a sample case
   after every reset. The roster command sets them from `sampleCaseOwners`.
-- **The samples are version-1 cases.** 009's `seed_fixtures` inserts version-1 answers, and 011's
-  insert trigger refuses non-empty answers on a version-2 insert, so on `main` a reset works only
-  in a workspace whose `default_intake_version` is 1 (every workspace today). Part 4c's
-  switch-over migration makes seeding follow the workspace's version.
+- **The samples follow the workspace's version** (019). In a version-1 workspace they are exactly
+  009's. In a version-2 workspace each is inserted empty (011's insert trigger allows nothing
+  else), then gets its answers from `fixture_answers_v2` and a `case_contacts` row from
+  `fixture_contact_v2` (phones `2155550101`–`06`, best time weekday evenings) before its scenario
+  is applied. Their household member carries a fixed `member_id`. No migration yet changes a
+  workspace's `default_intake_version`: the switch-over is held for the group's wording review.
+- **A checkpoint clears office work on the sample:** its `case_materials` and
+  `case_document_cards` rows go with the rest of its workflow records; its `case_contacts` row stays.
 
 None of this belongs in production. See the [roadmap](production-roadmap.md#5-demo-only-parts).
 
@@ -545,7 +553,7 @@ removed in its own part after the switch-over. Its keys live in four places that
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 199 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 233 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.
@@ -562,6 +570,8 @@ What the suite covers, by file:
 | `database-fixtures.mjs` | Sample seeding, reset, checkpoints |
 | `database-client-numbers.mjs` | Client numbers: assignment on submit, seasons, no reuse, the backfill |
 | `database-intake.mjs` | Intake versions, the catalogue load, version-2 saves and submits, contact details, materials, and the browser-against-database comparison of every check |
+| `database-redesign.mjs` | Visits, `case_document_cards` and the two card actions (017), and who may mark and move cards (018) |
+| `database-intake-default.mjs` | The fixture's `intakeVersion` option, version-2 samples, and a checkpoint that clears materials and card marks (019) |
 | `database-realtime.mjs` | Realtime privacy between clients and for staff tables |
 | `database-store.mjs` | The browser's data adapter against the real database |
 

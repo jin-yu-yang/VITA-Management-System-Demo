@@ -617,6 +617,67 @@ export const railSub = (page, id) =>
     return span ? { className: span.className, text: span.textContent.trim() } : null;
   }, id);
 
+/**
+ * Wait until a version-2 draft is open on any sub-step: where a case opens
+ * depends on what the client has done, and some callers only need the form.
+ */
+export const waitForIntakeV2 = (page, timeout = ARRIVAL_MS) =>
+  waitFor(
+    page,
+    "the version-2 intake form",
+    () => Boolean(document.querySelector("#intake-v2-form")?.dataset.substep),
+    undefined,
+    timeout,
+  );
+
+/**
+ * Move the version-2 form by its rail, the way a person jumps around: a
+ * collapsed step is opened by its toggle first (its links are hidden until
+ * then), then the sub-step's link is pressed once. The move saves whatever is
+ * dirty, and arrival is the form's own `data-substep`.
+ */
+export async function railJump(page, id) {
+  const step = id.split(".")[0];
+  await waitForQuiet(page);
+  const open = await page.evaluate(
+    (wanted) =>
+      document.querySelector(`.rail-toggle[data-step-id="${wanted}"]`)?.getAttribute("aria-expanded") ===
+      "true",
+    step,
+  );
+  if (!open) {
+    await page.locator(`.rail-toggle[data-step-id="${step}"]`).click({ timeout: CLICK_MS });
+    await waitFor(
+      page,
+      `the rail step ${step} to open`,
+      (wanted) => document.getElementById(`rail-subs-${wanted}`)?.hidden === false,
+      step,
+      RENDER_MS,
+    );
+    await waitForQuiet(page);
+  }
+  await page.locator(`.rail-sublink[data-substep="${id}"]`).click({ timeout: CLICK_MS });
+  await waitForSubstep(page, id);
+}
+
+/**
+ * Choose one radio answer on a version-2 form. A radio redraws the page around
+ * itself, so its label is pressed and the rebuilt radio is read back, not
+ * `check()`ed: the element Playwright pressed is gone by then.
+ */
+export async function chooseAnswer(page, id, value, scope = "client") {
+  const radio = `#field-${scope}-${id}-${value}`;
+  await waitForQuiet(page);
+  await page.locator(`label[for="field-${scope}-${id}-${value}"]`).click({ timeout: CLICK_MS });
+  await waitFor(
+    page,
+    `${id} to come back as ${value}`,
+    (selector) => document.querySelector(selector)?.checked === true,
+    radio,
+    RENDER_MS,
+  );
+}
+
 export const waitForCaseWorkspace = (page, reference, timeout = ARRIVAL_MS) =>
   waitFor(
     page,
