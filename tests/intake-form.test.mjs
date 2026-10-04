@@ -1,13 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  CATALOGUE, stepsFor, findQuestion, wording, checkValue,
+  CATALOGUE, stepsFor, findQuestion, wording, checkValue, substepsFor, substepQuestions, isMemberId, isVisible, isAnswered, missingToSubmit,
 } from "../src/intake-catalogue.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
 import { esc } from "../src/ui.mjs";
 import {
   renderQuestion, valuesFromControls, mergeIntoDraft, drivesVisibility, visibleIds,
   needsRedraw, noteState, invalidAnswers, sendable, withholdInvalid, withheldFields,
-  sendableDiffers, keepLocalOnly, countText, stepStatus, renderRichText, formatAnswer,
+  sendableDiffers, keepLocalOnly, countText, renderRichText, formatAnswer,
+  visibleSubsteps, resolveSubstep, adjacentSubstep, substepStatus, stepRollup,
+  firstUnfinishedSubstep, newMemberId,
 } from "../src/intake-form.mjs";
 
 // Part 4b, Task 2 (docs/superpowers/specs/2026-09-30-intake-screens-design.md §2).
@@ -67,7 +70,7 @@ const roundTrip = (question, value, options = {}) =>
 const text = (qid, value) => ({ q: qid, type: "text", value, checked: false });
 const box = (qid, choice, checked, type = "checkbox") => ({ q: qid, type, value: choice, checked });
 
-// Step 2 (index 1) with every visible required question answered.
+// "About you": every visible required question answered.
 const STEP2 = {
   tp_first_name: "Mei", tp_last_name: "Lin", tp_dob: "1961-04-12", tp_job_title: "Cook",
   tp_phone: "2155550100", addr_street: "10 Race St", addr_city: "Philadelphia",
@@ -127,7 +130,7 @@ test("who shows My spouse only while married", () => {
 });
 
 test("a ranged number inside a household card: its range as text, no min or max", () => {
-  const html = client(HH, [{ first_name: "Ming" }], { answers: { has_household_members: "yes" } });
+  const html = client(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Ming" }], { answers: { has_household_members: "yes" } });
   const months = sub("months_lived");
   const tag = /<input\b[^>]*id="field-client-hh-0-months_lived"[^>]*>/.exec(html)?.[0];
   assert.ok(tag, "months_lived input");
@@ -157,7 +160,7 @@ test("longtext: 5000 limit and a count container; countText near the limit", () 
 
 test("no control is required, min, max or pattern; every radio and checkbox id is unique", () => {
   const answers = { marital_status: "married", has_household_members: "yes" };
-  const members = [{ first_name: "Ming" }, { first_name: "Bo" }];
+  const members = [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Ming" }, { member_id: "fedcba9876543210fedcba9876543210", first_name: "Bo" }];
   const page = ALL.map((question) => client(question, question.id === "hh" ? members : null, { answers })).join("");
   const controls = [...page.matchAll(/<(input|select|textarea)\b[^>]*>/g)].map((m) => m[0]);
   assert.ok(controls.length > 100);
@@ -213,12 +216,32 @@ test("drivesVisibility: conditions of questions, tips and who's spouse", () => {
   assert.deepEqual(drivers, ["gcf_sp_signature"]);
 });
 
-test.todo("needsRedraw compares the rendered ids with the ids the draft makes visible — rewritten in Task 5");
+test("visibleIds and needsRedraw: the ids a sub-step shows now against the ids on the page", () => {
+  assert.ok(visibleIds("about.marital", {}).has("marital_status"));
+  assert.ok(!visibleIds("about.marital", {}).has("married_last_day"));
+  assert.ok(visibleIds("about.marital", { marital_status: "married" }).has("married_last_day"));
+  // A sub-step never lists another sub-step's question.
+  assert.ok(!visibleIds("about.you", {}).has("marital_status"));
+  assert.equal(visibleIds("about.spouse", { marital_status: "never_married" }).size, 0);
+  assert.ok(visibleIds("about.spouse", { marital_status: "married" }).has("sp_first_name"));
+  // null is every sub-step.
+  assert.ok(visibleIds(null, {}).has("tp_first_name") && visibleIds(null, {}).has("service"));
+  // needsRedraw: a missing or extra id redraws; a hidden driver's value does not.
+  const rendered = new Set(visibleIds("about.spouse", { marital_status: "never_married" }));
+  assert.equal(needsRedraw(rendered, "about.spouse", { marital_status: "married" }), true);
+  const spouse = visibleIds("about.spouse", { marital_status: "married" });
+  assert.equal(needsRedraw(spouse, "about.spouse", { marital_status: "married" }), false);
+  assert.equal(needsRedraw(spouse, "about.spouse", { marital_status: "never_married" }), true);
+  assert.equal(needsRedraw([...spouse].slice(1), "about.spouse", { marital_status: "married" }), true);
+  assert.equal(needsRedraw(new Set(visibleIds("household.members", { has_household_members: "yes" })), "household.members", { has_household_members: "yes" }), false);
+  assert.equal(needsRedraw(new Set(["has_household_members"]), "household.members", { has_household_members: "yes" }), true);
+  assert.equal(needsRedraw(new Set(["has_household_members"]), "household.members", { has_household_members: "no" }), false);
+});
 
 test("every question has its note container, referenced by its controls", () => {
   const answers = { marital_status: "married", has_household_members: "yes" };
   for (const question of ALL) {
-    for (const value of [null, question.type === "group" ? [{ first_name: "Ming" }] : null]) {
+    for (const value of [null, question.type === "group" ? [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Ming" }] : null]) {
       for (const showMissing of [false, true]) {
         const html = client(question, value, { answers, showMissing });
         const note = new RegExp(`<p id="field-client-${question.id}-note" class="q-note[^"]*" aria-live="polite">`);
@@ -230,7 +253,7 @@ test("every question has its note container, referenced by its controls", () => 
       }
     }
   }
-  const hh = client(HH, [{ first_name: "Ming" }], { answers });
+  const hh = client(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Ming" }], { answers });
   assert.match(hh, /<p id="field-client-hh-0-first_name-note" class="q-note[^"]*" aria-live="polite">/);
   assert.match(/<input\b[^>]*id="field-client-hh-0-first_name"[^>]*>/.exec(hh)[0], /aria-describedby="field-client-hh-0-first_name-note"/);
 });
@@ -252,13 +275,296 @@ test("noteState: invalid outranks missing; only when shown", () => {
   assert.ok(client(email, "a@", { showMissing: true }).includes('<p id="field-client-email-note" class="q-note" aria-live="polite"></p>'));
 });
 
-test.todo("invalidAnswers: visible questions, catalogue order, through sendable — rewritten in Task 5");
+test("invalidAnswers: visible questions of a sub-step, catalogue order, through sendable", () => {
+  const answers = { tp_dob: "2025-02-30", email: "a@", addr_zip: " 12345 " };
+  assert.deepEqual(invalidAnswers("about.you", answers), ["tp_dob", "email"]);
+  assert.deepEqual(invalidAnswers("about.address", answers), []);
+  assert.deepEqual(invalidAnswers("about.address", { addr_zip: "1234" }), ["addr_zip"]);
+  assert.deepEqual(invalidAnswers(null, answers), ["tp_dob", "email"]);
+  // A hidden question is never checked.
+  assert.deepEqual(invalidAnswers("about.spouse", { marital_status: "never_married", sp_dob: "2025-02-30" }), []);
+  assert.deepEqual(invalidAnswers("about.spouse", { marital_status: "married", sp_dob: "2025-02-30" }), ["sp_dob"]);
+  assert.deepEqual(invalidAnswers(null, { ...answers, marital_status: "married", sp_dob: "2025-02-30" }), ["tp_dob", "email", "sp_dob"]);
+  // Documents, review and unknown sub-steps hold no questions.
+  for (const id of ["documents.identity", "review.check", "nowhere.at_all"]) assert.deepEqual(invalidAnswers(id, answers), []);
+});
 
-test.todo("household errors belong to the member's sub-field — rewritten in Task 5");
+test("household errors belong to the member's sub-field", () => {
+  const id = "0123456789abcdef0123456789abcdef";
+  const other = "fedcba9876543210fedcba9876543210";
+  const answers = {
+    has_household_members: "yes",
+    hh: [{ member_id: id, first_name: "Ming" }, { member_id: other, first_name: "Bo", dob: "2025-02-30" }],
+  };
+  assert.deepEqual(invalidAnswers("household.members", answers), ["hh[1].dob"]);
+  assert.deepEqual(invalidAnswers("about.you", answers), []);
+  // The member's own sub-field note shows the reason, the group note stays quiet.
+  const html = client(HH, answers.hh, { answers, revealed: new Set(["hh[1].dob"]) });
+  assert.ok(html.includes('<p id="field-client-hh-1-dob-note" class="q-note is-invalid" aria-live="polite">Enter a real date as YYYY-MM-DD.</p>'));
+  assert.ok(html.includes('<p id="field-client-hh-note" class="q-note" aria-live="polite"></p>'));
+  assert.ok(html.includes('<p id="field-client-hh-0-dob-note" class="q-note" aria-live="polite"></p>'));
+});
 
-test.todo("stepStatus: missing and invalid are computed from the draft alone — rewritten in Task 5");
+// ---------------------------------------------------------------------------
+// Sub-steps (intake redesign 4b2, Task 5)
+// ---------------------------------------------------------------------------
 
-test.todo("stepStatus: done, needs and none — rewritten in Task 5");
+const NO_CARDS = cardsFor({});
+const ids = (list) => list.map((x) => x.id);
+// Valid answers to every visible required question, found by filling until nothing is left.
+function fillAll() {
+  const valueFor = (question, n) => {
+    switch (question.type) {
+      case "email": return "mei@example.com";
+      case "phone": return "2155550100";
+      case "zip": return "19107";
+      case "year": return "2020";
+      case "date": return "1961-04-12";
+      case "number": return String(question.min ?? 1);
+      case "choice": case "yesno": return question.options[0].value;
+      case "multi": return [question.options[0].value];
+      case "who": return ["me"];
+      case "id": return newMemberId({ getRandomValues: (bytes) => bytes.fill(n + 1) });
+      default: return "Mei";
+    }
+  };
+  const answers = {};
+  for (let pass = 0; pass < 20; pass++) {
+    for (const question of ALL) {
+      if (!isVisible(question, answers) || !question.required || isAnswered(answers[question.id])) continue;
+      answers[question.id] = question.type === "group"
+        ? [Object.fromEntries(question.fields.filter((f) => f.required || f.type === "id").map((f) => [f.id, valueFor(f, 0)]))]
+        : valueFor(question, 0);
+    }
+  }
+  assert.deepEqual(missingToSubmit(2, answers), []);
+  assert.deepEqual(invalidAnswers(null, answers), []);
+  return answers;
+}
+const ctx = (answers, extra = {}) => ({ answers, visited: [], revealed: new Set(), cards: cardsFor(answers), ...extra });
+
+test("visibleSubsteps: questions by visibility, documents by service and cards, review always", () => {
+  const none = visibleSubsteps({}, NO_CARDS);
+  const all = ids(substepsFor(2));
+  assert.deepEqual(none, all.filter((id) => none.includes(id)), "catalogue order");
+  assert.ok(!none.includes("about.spouse") && !none.includes("documents.bring"));
+  assert.deepEqual(none.slice(-3), ["review.check", "review.summary", "review.submit"]);
+  assert.ok(none.includes("before.ready") && none.includes("documents.identity") && none.includes("documents.other"));
+  // The other four documents sub-steps need a card of their own.
+  assert.ok(!none.includes("documents.income") && !none.includes("documents.expenses") && !none.includes("documents.events"));
+  const withWages = { inc_wages: "yes" };
+  assert.ok(visibleSubsteps(withWages, cardsFor(withWages)).includes("documents.income"));
+  // The spouse sub-step follows the marital status.
+  assert.ok(visibleSubsteps({ marital_status: "married" }, NO_CARDS).includes("about.spouse"));
+  assert.ok(!visibleSubsteps({ marital_status: "never_married" }, NO_CARDS).includes("about.spouse"));
+  // Same-day: the documents step is only documents.bring.
+  const sameDay = { service: "same_day", inc_wages: "yes" };
+  const docs = visibleSubsteps(sameDay, cardsFor(sameDay)).filter((id) => id.startsWith("documents."));
+  assert.deepEqual(docs, ["documents.bring"]);
+  // A questions sub-step is visible when any of its questions is, whatever the others do.
+  assert.ok(visibleSubsteps({}, NO_CARDS).includes("household.members"));
+  assert.ok(substepQuestions("household.members").some((question) => question.id === "hh" && question.showIf.length > 0));
+});
+
+test("resolveSubstep: visible stays; hidden goes to the next visible, else the last; unknown goes first", () => {
+  const cards = NO_CARDS;
+  assert.equal(resolveSubstep("about.you", {}, cards), "about.you");
+  assert.equal(resolveSubstep("about.spouse", { marital_status: "never_married" }, cards), "about.situation");
+  assert.equal(resolveSubstep("documents.bring", {}, cards), "documents.identity");
+  assert.equal(resolveSubstep("nowhere.at_all", {}, cards), "before.ready");
+  assert.equal(resolveSubstep(null, {}, cards), "before.ready");
+  assert.equal(resolveSubstep(undefined, {}, cards), "before.ready");
+  // A client left on documents.identity when the service becomes same-day: the next visible
+  // sub-step after it, which skips the rest of the documents step.
+  const sameDay = { service: "same_day" };
+  assert.equal(resolveSubstep("documents.identity", sameDay, cardsFor(sameDay)), "notes.anything");
+  // With nothing visible after it, the last visible one: hide the whole tail by hiding the last
+  // questions sub-step's followers (the review ones are always visible, so it is review.submit).
+  assert.equal(resolveSubstep("review.submit", {}, NO_CARDS), "review.submit");
+});
+
+test("adjacentSubstep: the visible neighbour of the resolved place, null at either end", () => {
+  assert.equal(adjacentSubstep("about.irs", {}, NO_CARDS, 1), "household.members");
+  assert.equal(adjacentSubstep("household.members", {}, NO_CARDS, -1), "about.irs");
+  assert.equal(adjacentSubstep("before.ready", {}, NO_CARDS, -1), null);
+  assert.equal(adjacentSubstep("review.submit", {}, NO_CARDS, 1), null);
+  // From a hidden sub-step the neighbour is taken from where it resolves to.
+  assert.equal(adjacentSubstep("about.spouse", { marital_status: "never_married" }, NO_CARDS, -1), "about.marital");
+  assert.equal(adjacentSubstep("about.spouse", { marital_status: "married" }, NO_CARDS, -1), "about.marital");
+  assert.equal(adjacentSubstep("about.spouse", { marital_status: "never_married" }, NO_CARDS, 1), "about.irs");
+  assert.equal(adjacentSubstep("nowhere.at_all", {}, NO_CARDS, 1), visibleSubsteps({}, NO_CARDS)[1]);
+});
+
+test("substepStatus: blank until visited; Done needs a visit; Needs answers; a revealed invalid answer counts unvisited", () => {
+  const empty = ctx({});
+  assert.deepEqual(substepStatus("before.ready", empty), { key: "none", text: "" });
+  assert.deepEqual(substepStatus("before.ready", { ...empty, visited: ["before.ready"] }), { key: "done", text: "Done" });
+  assert.deepEqual(substepStatus("before.ready", { ...empty, visited: new Set(["before.ready"]) }), { key: "done", text: "Done" });
+  // Visited with a required answer missing.
+  const missingFirst = ctx({ ...STEP2, tp_first_name: null }, { visited: ["about.you"] });
+  assert.deepEqual(substepStatus("about.you", missingFirst), { key: "needs", text: "Needs answers" });
+  assert.deepEqual(substepStatus("about.you", ctx(STEP2, { visited: ["about.you"] })), { key: "done", text: "Done" });
+  // Complete but not visited: blank. Missing but not visited: blank.
+  assert.deepEqual(substepStatus("about.you", ctx(STEP2)), { key: "none", text: "" });
+  assert.deepEqual(substepStatus("about.you", ctx({ ...STEP2, tp_first_name: null })), { key: "none", text: "" });
+  // A revealed invalid email counts even unvisited (4b's rule kept); an unrevealed one doesn't.
+  const badEmail = { ...STEP2, email: "a@" };
+  assert.deepEqual(substepStatus("about.you", ctx(badEmail, { revealed: new Set(["email"]) })), { key: "needs", text: "Needs answers" });
+  assert.deepEqual(substepStatus("about.you", ctx(badEmail, { visited: ["about.you"] })), { key: "done", text: "Done" });
+  // Missing comes from the draft, whether or not it is in the sub-step's own questions.
+  assert.deepEqual(substepStatus("about.address", ctx({ ...STEP2, addr_zip: null }, { visited: ["about.you", "about.address"] })), { key: "needs", text: "Needs answers" });
+  // A household member's missing sub-field belongs to the household sub-step.
+  const id = "0123456789abcdef0123456789abcdef";
+  const hh = { has_household_members: "yes", hh: [{ member_id: id, first_name: "Ming" }] };
+  assert.ok(missingToSubmit(2, hh).some((m) => m.startsWith("hh[0].")));
+  assert.equal(substepStatus("household.members", ctx(hh, { visited: ["household.members"] })).key, "needs");
+  // An unknown id has no mark.
+  assert.deepEqual(substepStatus("nowhere.at_all", empty), { key: "none", text: "" });
+});
+
+test("substepStatus: documents sub-steps follow their Needed cards", () => {
+  const notDone = ctx({}, { visited: ["documents.identity"] });
+  assert.ok(notDone.cards.some((c) => c.slotId === "photo_id.tp" && c.status === "not_done"));
+  assert.deepEqual(substepStatus("documents.identity", notDone), { key: "docs", text: "Needs documents" });
+  assert.deepEqual(substepStatus("documents.identity", ctx({})), { key: "none", text: "" });
+  // Later and Don't have both clear it, but only when every Needed card is dealt with.
+  const state = (status) => ["photo_id.tp", "ssn.tp"].map((slotId) => ({ slotId, status }));
+  assert.deepEqual(substepStatus("documents.identity", { ...notDone, cards: cardsFor({}, state("later")) }), { key: "done", text: "Done" });
+  assert.deepEqual(substepStatus("documents.identity", { ...notDone, cards: cardsFor({}, state("none")) }), { key: "done", text: "Done" });
+  assert.equal(substepStatus("documents.identity", { ...notDone, cards: cardsFor({}, [{ slotId: "photo_id.tp", status: "later" }]) }).key, "docs");
+  // A Maybe card never counts.
+  const maybe = { inc_wages: "not_sure" };
+  const maybeCards = cardsFor(maybe);
+  assert.ok(maybeCards.some((c) => c.substep === "income" && c.group === "maybe"));
+  assert.equal(substepStatus("documents.income", { answers: maybe, cards: maybeCards, visited: ["documents.income"] }).key, "done");
+  // The optional Other card never makes a sub-step Needs documents (ruling R1).
+  assert.ok(notDone.cards.some((c) => c.substep === "other" && c.group === "optional" && c.status === "not_done"));
+  assert.deepEqual(substepStatus("documents.other", { ...notDone, visited: ["documents.other"] }), { key: "done", text: "Done" });
+  // The same-day sheet has no statuses: Done once visited.
+  const sameDay = { service: "same_day" };
+  assert.deepEqual(substepStatus("documents.bring", ctx(sameDay)), { key: "none", text: "" });
+  assert.deepEqual(substepStatus("documents.bring", ctx(sameDay, { visited: ["documents.bring"] })), { key: "done", text: "Done" });
+});
+
+test("substepStatus: the review sub-steps", () => {
+  const complete = { ...STEP2 };
+  assert.deepEqual(substepStatus("review.summary", ctx(complete)), { key: "none", text: "" });
+  assert.deepEqual(substepStatus("review.summary", ctx(complete, { visited: ["review.summary"] })), { key: "done", text: "Done" });
+  // review.check: Done only when visited with nothing missing and nothing invalid.
+  assert.equal(substepStatus("review.check", ctx({}, { visited: ["review.check"] })).key, "none");
+  assert.equal(substepStatus("review.check", ctx({ ...complete }, { visited: ["review.check"] })).key, "none"); // the rest of the form is still blank
+  const everything = fillAll();
+  assert.deepEqual(substepStatus("review.check", ctx(everything, { visited: ["review.check"] })), { key: "done", text: "Done" });
+  assert.equal(substepStatus("review.check", ctx(everything)).key, "none");
+  assert.equal(substepStatus("review.check", ctx({ ...everything, email: "a@" }, { visited: ["review.check"] })).key, "none");
+  // review.submit is never marked.
+  assert.deepEqual(substepStatus("review.submit", ctx(everything, { visited: ["review.submit"] })), { key: "none", text: "" });
+});
+
+test("stepRollup: needs, then docs, then done only when all are done", () => {
+  const visited = ["about.you", "about.address", "about.marital", "about.situation", "about.irs"];
+  const answers = { ...STEP2 };
+  // about.you is complete; about.marital is visited with its required answer missing.
+  assert.deepEqual(stepRollup("about", ctx(answers, { visited })), { key: "needs", text: "Needs answers" });
+  assert.deepEqual(stepRollup("about", ctx(answers)), { key: "none", text: "" });
+  // Done only when every visible sub-step is Done.
+  const oneDone = stepRollup("before", ctx({ service: "online", language: "english" }, { visited: ["before.ready", "before.service"] }));
+  assert.deepEqual(oneDone, { key: "none", text: "" });
+  assert.deepEqual(
+    stepRollup("before", ctx({ service: "online", language: "english" }, { visited: ["before.ready", "before.service", "before.language"] })),
+    { key: "done", text: "Done" },
+  );
+  // Documents: a Needed card still Not done reads Needs documents when nothing needs answers.
+  assert.deepEqual(stepRollup("documents", ctx({}, { visited: ["documents.identity", "documents.other"] })), { key: "docs", text: "Needs documents" });
+  const later = cardsFor({}, ["photo_id.tp", "ssn.tp"].map((slotId) => ({ slotId, status: "later" })));
+  assert.deepEqual(stepRollup("documents", ctx({}, { visited: ["documents.identity", "documents.other"], cards: later })), { key: "done", text: "Done" });
+  // Only visible sub-steps count: the hidden spouse sub-step can't hold a step back.
+  const never = { ...STEP2, marital_status: "never_married" };
+  assert.equal(visibleSubsteps(never, cardsFor(never)).includes("about.spouse"), false);
+  assert.equal(stepRollup("nowhere", ctx({})).key, "none");
+});
+
+test("firstUnfinishedSubstep: resume at the first visible sub-step that isn't Done", () => {
+  const { cards } = ctx({});
+  assert.equal(firstUnfinishedSubstep({}, cards, [], new Set()), "before.ready");
+  const answers = { service: "online", language: "english", ...STEP2 };
+  const visited = ["before.ready", "before.service", "before.language", "about.you"];
+  assert.equal(firstUnfinishedSubstep(answers, cardsFor(answers), visited, new Set()), "about.address");
+  // A visited sub-step with something missing is where the client resumes.
+  assert.equal(firstUnfinishedSubstep({ ...answers, tp_job_title: null }, cardsFor(answers), visited, new Set()), "about.you");
+  // Everything Done: review.check.
+  const everything = fillAll();
+  const all = visibleSubsteps(everything, cardsFor(everything));
+  const laterAll = cardsFor(everything, cardsFor(everything).map((card) => ({ slotId: card.slotId, status: "later" })));
+  assert.equal(firstUnfinishedSubstep(everything, laterAll, all, new Set()), "review.check");
+  assert.equal(firstUnfinishedSubstep(everything, laterAll, all.filter((id) => !id.startsWith("review.")), new Set()), "review.check");
+  // Visited review.check and summary leave review.submit, which is never Done: still review.check.
+  assert.equal(firstUnfinishedSubstep(everything, laterAll, all, new Set(["email"])), "review.check");
+});
+
+test("newMemberId: 32 lowercase hex characters from 16 random bytes", () => {
+  assert.equal(newMemberId({ getRandomValues: (bytes) => bytes.fill(171) }), "ab".repeat(16));
+  assert.equal(newMemberId({ getRandomValues: (bytes) => bytes.fill(5) }), "05".repeat(16));
+  const real = newMemberId();
+  assert.ok(isMemberId(real));
+  assert.notEqual(newMemberId(), real);
+});
+
+test("a household card renders its member_id as a hidden control and nothing else for it", () => {
+  const id = "0123456789abcdef0123456789abcdef";
+  const members = [{ member_id: id, first_name: "A" }];
+  const html = client(HH, members, { answers: { has_household_members: "yes" } });
+  assert.ok(html.includes(`<input type="hidden" data-control data-q="hh" data-member="0" data-sub="member_id" value="${id}">`));
+  // No label, no note, no visible text box for it; the id's wording appears nowhere.
+  assert.ok(!html.includes("hh-0-member_id"));
+  assert.ok(!html.includes("Person id"));
+  assert.equal([...html.matchAll(/data-sub="member_id"/g)].length, 1);
+  // Read back with the other sub-fields.
+  assert.deepEqual(roundTrip(HH, members, { answers: { has_household_members: "yes" } }), members);
+  const two = [{ member_id: id, first_name: "A" }, { member_id: "fedcba9876543210fedcba9876543210", last_name: "B" }];
+  assert.deepEqual(roundTrip(HH, two), two);
+  assert.deepEqual(valuesFromControls([{ q: "hh", member: "0", sub: "member_id", type: "hidden", value: id, checked: false }], { keepEmptyMembers: true }), { hh: [{ member_id: id }] });
+  // A card holding only its id is empty: dropped unless empty cards are kept, and then the id stays.
+  assert.deepEqual(valuesFromControls([{ q: "hh", member: "0", sub: "member_id", type: "hidden", value: id, checked: false }]), { hh: null });
+});
+
+test("sendable drops a household card holding only its member_id", () => {
+  const id = "0123456789abcdef0123456789abcdef";
+  assert.deepEqual(sendable(HH, [{ member_id: id }]), []);
+  assert.deepEqual(sendable(HH, [{ member_id: id, first_name: " A " }]), [{ member_id: id, first_name: "A" }]);
+  assert.deepEqual(sendable(HH, [{ member_id: id }, { member_id: "fedcba9876543210fedcba9876543210", first_name: "Bo" }]), [{ member_id: "fedcba9876543210fedcba9876543210", first_name: "Bo" }]);
+  // A card with a name but no id is kept, and the group note says why (Each person needs an id.).
+  assert.deepEqual(sendable(HH, [{ first_name: "A" }]), [{ first_name: "A" }]);
+  assert.deepEqual(noteState(HH, [{ first_name: "A" }], { showInvalid: true }), { text: "Each person needs an id.", className: "is-invalid" });
+  assert.deepEqual(noteState(HH, [{ member_id: "0123456789abcdef0123456789abcdef" }], { showInvalid: true }), { text: "", className: "" });
+});
+
+test("date parts: each is stripped of non-digits, and a stored value splits at its first two dashes", () => {
+  const part = (name, value) => ({ q: "tp_dob", part: name, type: "text", value, checked: false });
+  assert.deepEqual(valuesFromControls([part("month", "0-4"), part("day", "12"), part("year", "1961")]), { tp_dob: "1961-04-12" });
+  assert.deepEqual(valuesFromControls([part("month", " 4/"), part("day", "1 2"), part("year", "19a61")]), { tp_dob: "1961-4-12" });
+  const boxes = (value) => Object.fromEntries(descriptorsFrom(client(q("tp_dob"), value)).map((d) => [d.part, d.value]));
+  assert.deepEqual(boxes("1961--12"), { month: "", day: "12", year: "1961" });
+  assert.deepEqual(boxes("1961-04-12"), { month: "04", day: "12", year: "1961" });
+  assert.deepEqual(boxes("-04-12"), { month: "04", day: "12", year: "" });
+  // Never more than three parts: the rest stays in the day box.
+  assert.deepEqual(boxes("1961-04-12-7"), { month: "04", day: "12-7", year: "1961" });
+});
+
+test("the household fieldset points at its note and its tips", () => {
+  const members = Array.from({ length: 10 }, (_, n) => ({ member_id: newMemberId({ getRandomValues: (b) => b.fill(n + 1) }), first_name: `P${n}` }));
+  const withTips = { ...HH, tips: { general: [{ en: "Include everyone who lives with you." }] } };
+  const html = client(withTips, members, { answers: { has_household_members: "yes" } });
+  assert.ok(!html.includes('data-action="add-member"'), "10 members: no Add a person");
+  const fieldset = /<fieldset\b[^>]*data-q="hh"[^>]*>/.exec(html)[0];
+  const describedBy = attr(fieldset, "aria-describedby").split(" ");
+  assert.ok(describedBy.includes("field-client-hh-note") && describedBy.includes("field-client-hh-tips"));
+  assert.match(html, /<div class="q-tips" id="field-client-hh-tips">/);
+  assert.match(html, /<p id="field-client-hh-note" class="q-note/);
+  // Without tips the fieldset names its note only.
+  const plain = /<fieldset\b[^>]*data-q="hh"[^>]*>/.exec(client(HH, members.slice(0, 1)))[0];
+  assert.equal(attr(plain, "aria-describedby"), "field-client-hh-note");
+});
 
 test("email with an inner space is invalid in the browser (spec §2.5)", () => {
   assert.equal(checkValue(q("email"), "mei lin@example.com"), "Enter a valid email address.");
@@ -296,11 +602,11 @@ test("round trip: render with a value, read the controls back", () => {
   assert.equal(roundTrip(q("tp_first_name"), `O'Brien "Mei"`), `O'Brien "Mei"`);
   const members = [
     {
-      first_name: "Xiao Ming", last_name: "Wang", dob: "2015-03-14", relationship: "son_daughter",
+      member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", dob: "2015-03-14", relationship: "son_daughter",
       months_lived: "12", married: "single", us_citizen: "yes", resident_na: "yes",
       fulltime_student: "no", disabled: "no", ippin: "not_sure",
     },
-    { first_name: "Bo" },
+    { member_id: "fedcba9876543210fedcba9876543210", first_name: "Bo" },
   ];
   assert.deepEqual(roundTrip(HH, members, { answers: { has_household_members: "yes" } }), members);
   // Empty values.
@@ -416,7 +722,7 @@ test("formatAnswer", () => {
   // The catalogue's relationship label is "Son / Daughter" (no "Son" option exists).
   const relationship = label(sub("relationship").options.find((o) => o.value === "son_daughter"));
   assert.equal(
-    formatAnswer(HH, [{ first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
+    formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
     `Xiao Ming Wang · ${relationship} · born Mar 14, 2015 · 12 months`,
   );
   for (const empty of [null, undefined, "", "  ", []]) assert.equal(formatAnswer(q("tp_first_name"), empty), null);
