@@ -39,6 +39,7 @@ import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
+import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -139,6 +140,38 @@ if (!config) {
     return client.clientScreen(state);
   }
 
+  // ---- the staff sidebar's peek (spec 2026-10-04 §8) -----------------------
+  // Never saved and never a render: the peek is applied to the page in place,
+  // after every render too, so a realtime redraw keeps it.
+  const peek = createSidebarPeek({ onChange: () => applyPeek() });
+  function applyPeek() {
+    const shell = root.querySelector(".app-shell");
+    if (!shell) {
+      peek.setPinned(true); // no sidebar on this screen: end any peek and its timers
+      return;
+    }
+    const pinned = !shell.classList.contains("sidebar-closed");
+    peek.setPinned(pinned);
+    peek.hold(Boolean(controller.getState().dialog));
+    const peeking = !pinned && peek.isPeeking();
+    shell.classList.toggle("sidebar-peek", peeking);
+    const toggle = shell.querySelector(".sidebar-toggle");
+    if (toggle) {
+      const label = toggleLabel({ pinned, peeking });
+      toggle.setAttribute("aria-expanded", String(pinned || peeking));
+      toggle.setAttribute("aria-label", label);
+      toggle.setAttribute("title", label);
+    }
+    const sidebar = shell.querySelector("#app-sidebar");
+    if (!sidebar) return;
+    const hide = !pinned && !peeking;
+    // A peek never hides the keyboard: closing it with focus inside moves
+    // the keyboard to the toggle, which is always visible.
+    const hadFocus = hide && !sidebar.hidden && sidebar.contains(document.activeElement);
+    sidebar.hidden = hide;
+    if (hadFocus) toggle?.focus();
+  }
+
   function render(focus = false) {
     if (quiet) return;
     // On the version-2 form a render waits for the press (or the composition)
@@ -167,6 +200,7 @@ if (!config) {
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
     root.innerHTML = views.page(state, screenFor(state));
+    applyPeek();
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     tickCooldown(state);
@@ -212,6 +246,9 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+    // A render that removed the focused sidebar control (and whose restore
+    // missed) must not leave the peek held.
+    peek.focus(peekZone(document.activeElement) === "sidebar" && keyboardFocus(document.activeElement));
     lastPlace = place;
   }
 
@@ -237,6 +274,24 @@ if (!config) {
   window.addEventListener("contextmenu", release, true); // right-click, Ctrl+click
   window.addEventListener("blur", release);
   document.addEventListener("visibilitychange", release);
+  // A pointerover on root itself is Chrome moving the hover to root when a
+  // render removed the node under a resting mouse; the pointer didn't move,
+  // so it is not a leave (it would end the no-re-peek after a collapse). The
+  // pointerout that follows it names the new node.
+  root.addEventListener("pointerover", (event) => {
+    if (event.target !== root) peek.pointer(peekZone(event.target), event.pointerType);
+  });
+  root.addEventListener("pointerout", (event) => peek.pointer(peekZone(event.relatedTarget), event.pointerType));
+  // Only keyboard focus in the sidebar holds a peek (a mouse click focuses
+  // buttons in Chrome). Within the sidebar the next focusin decides.
+  function keyboardFocus(element) {
+    try { return element.matches(":focus-visible"); } catch { return true; }
+  }
+  root.addEventListener("focusin", (event) =>
+    peek.focus(peekZone(event.target) === "sidebar" && keyboardFocus(event.target)));
+  root.addEventListener("focusout", (event) => {
+    if (peekZone(event.relatedTarget) !== "sidebar") peek.focus(false);
+  });
   root.addEventListener("compositionstart", () => { composing = true; });
   root.addEventListener("compositionend", () => { composing = false; setTimeout(flushHeld, 0); });
   function flushHeld() {
@@ -1266,7 +1321,13 @@ if (!config) {
         controller.clearBoardFilters();
         break;
       case "toggle-sidebar":
-        controller.toggleSidebar();
+        {
+          // Pinning needs no peek call: the render's applyPeek → setPinned(true)
+          // ends a peek. Collapsing marks the pointer as not to re-peek.
+          const wasOpen = controller.getState().sidebarOpen;
+          controller.toggleSidebar();
+          if (wasOpen) peek.collapsed();
+        }
         break;
       case "toggle-edit-contact":
         controller.togglePanel("edit-contact");
@@ -1654,6 +1715,12 @@ if (!config) {
 
   // Dialogs keep the keyboard inside them, and Escape always closes.
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !controller.getState().dialog) {
+      if (event.isComposing) return; // never block an IME's own cancel
+      // applyPeek moves the keyboard to the toggle if it was in the sidebar.
+      if (peek.escape()) event.preventDefault();
+      return;
+    }
     if (!controller.getState().dialog) return;
     if (event.key === "Escape") {
       event.preventDefault();

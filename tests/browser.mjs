@@ -1917,6 +1917,223 @@ async function runPermutation(t, roles) {
       };
     });
 
+    await phase("the sidebar peeks under a resting mouse and pins on a click", async () => {
+      // The staff window, while it is quiet (spec 2026-10-04 §8). Above 800px
+      // a pinned sidebar pushes the page, which step 6 measures; a screenshot
+      // phase leaves the window at DESKTOP, but say so rather than assume it.
+      const size = staff.viewportSize();
+      if (size?.width !== DESKTOP.width || size?.height !== DESKTOP.height)
+        await staff.setViewportSize(DESKTOP);
+      const toggle = staff.locator(".sidebar-toggle");
+      const sidebar = staff.locator("#app-sidebar");
+      const sidebarState = (page) =>
+        page.evaluate(() => {
+          const shell = document.querySelector(".app-shell");
+          const button = document.querySelector(".sidebar-toggle");
+          return {
+            peek: shell?.classList.contains("sidebar-peek") ?? null,
+            hidden: document.querySelector("#app-sidebar")?.hidden ?? null,
+            expanded: button?.getAttribute("aria-expanded") ?? null,
+            label: button?.getAttribute("aria-label") ?? null,
+            mainLeft: document.querySelector(".app-main")?.getBoundingClientRect().left ?? null,
+          };
+        });
+      // In the page: does the sidebar read as `wanted` (any of its keys)?
+      const SIDEBAR_IS = (wanted) => {
+        const shell = document.querySelector(".app-shell");
+        const button = document.querySelector(".sidebar-toggle");
+        const now = {
+          peek: shell?.classList.contains("sidebar-peek") ?? null,
+          hidden: document.querySelector("#app-sidebar")?.hidden ?? null,
+          expanded: button?.getAttribute("aria-expanded") ?? null,
+          label: button?.getAttribute("aria-label") ?? null,
+          onToggle: Boolean(document.activeElement?.matches(".sidebar-toggle")),
+        };
+        return Object.entries(wanted).every(([key, value]) => now[key] === value);
+      };
+      const waitSidebar = async (page, what, predicate, arg) => {
+        try {
+          await waitFor(page, what, predicate, arg, RENDER_MS);
+        } catch (error) {
+          error.message += ` The sidebar read: ${JSON.stringify(await sidebarState(page))}`;
+          throw error;
+        }
+      };
+      const PINNED = { peek: false, hidden: false, expanded: "true", label: "Hide the sidebar" };
+      const COLLAPSED = { peek: false, hidden: true, expanded: "false", label: "Show the sidebar" };
+      const PEEKING = { peek: true, hidden: false, expanded: "true", label: "Keep the sidebar open" };
+      const centreOf = async (locator, what) => {
+        const box = await locator.boundingBox();
+        assert.ok(box, `${what} has no box to point at`);
+        return [box.x + box.width / 2, box.y + box.height / 2];
+      };
+      const mouseOnToggle = async () => staff.mouse.move(...(await centreOf(toggle, "the toggle")));
+      const mouseToPageCentre = async () => {
+        const { width, height } = staff.viewportSize();
+        await staff.mouse.move(width / 2, height / 2);
+      };
+      const peekWithMouse = async (when) => {
+        await mouseOnToggle();
+        await waitSidebar(staff, `the sidebar to peek ${when}`, SIDEBAR_IS, PEEKING);
+      };
+      const keyboardOnToggle = (what) =>
+        waitSidebar(staff, what, SIDEBAR_IS, { onToggle: true });
+
+      await waitForQuiet(staff);
+      await mouseToPageCentre();
+      const found = await sidebarState(staff);
+      assert.equal(
+        await staff.evaluate(SIDEBAR_IS, PINNED),
+        true,
+        `the phase expects the sidebar pinned open, as the story leaves it: ${JSON.stringify(found)}`,
+      );
+      const pinnedLeft = found.mainLeft;
+
+      // 1. Collapse with no re-peek: the mouse is still on the toggle.
+      await toggle.click({ timeout: CLICK_MS });
+      await waitSidebar(staff, "the click to collapse the sidebar", SIDEBAR_IS, COLLAPSED);
+      const collapsedLeft = (await sidebarState(staff)).mainLeft;
+      // Testing that nothing happens: two close delays with the mouse resting.
+      await staff.waitForTimeout(600);
+      const afterCollapse = await sidebarState(staff);
+      assert.equal(afterCollapse.peek, false, "the sidebar peeked again under the click that collapsed it");
+      assert.equal(afterCollapse.hidden, true, "the collapsed sidebar is showing");
+
+      // 2. Peek: off the toggle and back on, over the page without pushing it.
+      await mouseToPageCentre();
+      await peekWithMouse("under the resting mouse");
+      const peeking = await sidebarState(staff);
+      assert.equal(peeking.mainLeft, collapsedLeft, "the peek pushed the page");
+
+      // 3. Stay: the mouse in the sidebar keeps it open.
+      await staff.mouse.move(...(await centreOf(sidebar, "the peeked sidebar")));
+      // Testing that nothing happens: two close delays with the mouse in the sidebar.
+      await staff.waitForTimeout(600);
+      assert.equal((await sidebarState(staff)).peek, true, "the peek closed with the mouse in the sidebar");
+
+      // 4. The peek survives a realtime redraw. A no-change bump on the case
+      // this window has open (also on its board), from outside the window.
+      // Delegated listeners on root never see events from the removed nodes,
+      // so the peek's pointer zone stays "sidebar".
+      const bumped = samples.find((row) => row.fixture_key === "preparation_ready");
+      assert.ok(bumped, "the preparation_ready sample is missing");
+      await waitForQuiet(staff);
+      await staff.evaluate(() => document.querySelector("#main")?.setAttribute("data-peek-marker", "1"));
+      await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [bumped.id]);
+      await waitFor(
+        staff,
+        "the realtime change to rebuild the page",
+        () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-peek-marker]"),
+      );
+      // Testing that nothing happens: two close delays after the redraw, so a
+      // peek that the redraw broke has had its chance to close.
+      await staff.waitForTimeout(600);
+      const redrawn = await sidebarState(staff);
+      assert.equal(redrawn.peek, true, "the realtime redraw closed the peek");
+      assert.equal(redrawn.hidden, false, "the realtime redraw hid the peeked sidebar");
+
+      // 5. Close after leaving: 300 ms after the mouse leaves both.
+      await mouseToPageCentre();
+      await waitSidebar(staff, "the peek to close after the mouse left", SIDEBAR_IS, COLLAPSED);
+
+      // 6. Pin: a click during a peek pins it, and the page is pushed.
+      await peekWithMouse("again");
+      await toggle.click({ timeout: CLICK_MS });
+      await waitSidebar(staff, "the click during the peek to pin the sidebar", SIDEBAR_IS, PINNED);
+      const pinned = await sidebarState(staff);
+      assert.ok(
+        pinned.mainLeft > collapsedLeft,
+        `the pinned sidebar did not push the page (${pinned.mainLeft} against ${collapsedLeft})`,
+      );
+
+      // 7. Keyboard: focus doesn't peek, Enter pins, Tab keeps, Escape closes.
+      await toggle.click({ timeout: CLICK_MS });
+      await waitSidebar(staff, "the click to collapse the sidebar again", SIDEBAR_IS, COLLAPSED);
+      await mouseToPageCentre();
+      await toggle.focus();
+      await keyboardOnToggle("the toggle to hold the keyboard");
+      // Testing that nothing happens: two close delays with the keyboard on the toggle.
+      await staff.waitForTimeout(600);
+      assert.equal((await sidebarState(staff)).peek, false, "focusing the toggle opened a peek");
+      await staff.keyboard.press("Enter");
+      await waitSidebar(staff, "Enter on the toggle to pin the sidebar", SIDEBAR_IS, PINNED);
+      await keyboardOnToggle("the keyboard to stay on the toggle after Enter");
+      await staff.keyboard.press("Enter");
+      await waitSidebar(staff, "Enter on the toggle to collapse the sidebar", SIDEBAR_IS, COLLAPSED);
+      await keyboardOnToggle("the keyboard to stay on the toggle after the second Enter");
+      await peekWithMouse("with the keyboard on the toggle");
+      const inSidebar = () =>
+        staff.evaluate(() => Boolean(document.activeElement?.closest("#app-sidebar")));
+      let tabs = 0;
+      while (tabs < 3 && !(await inSidebar())) {
+        await staff.keyboard.press("Tab");
+        tabs += 1;
+      }
+      assert.equal(await inSidebar(), true, `${tabs} presses of Tab did not reach the peeked sidebar`);
+      await mouseToPageCentre();
+      // Testing that nothing happens: two close delays with the keyboard in the sidebar.
+      await staff.waitForTimeout(600);
+      assert.equal((await sidebarState(staff)).peek, true, "the peek closed with the keyboard in the sidebar");
+      await staff.keyboard.press("Escape");
+      await waitSidebar(staff, "Escape to close the peek", SIDEBAR_IS, { ...COLLAPSED, onToggle: true });
+
+      // 7a. A dialog opened from a peek holds it, and the keyboard never ends
+      // on a hidden control.
+      await peekWithMouse("before Need help?");
+      await staff.locator('#app-sidebar [data-action="open-help"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the help dialog to open from the peek",
+        () => Boolean(document.querySelector(".modal")),
+        undefined,
+        RENDER_MS,
+      );
+      await mouseToPageCentre();
+      // Testing that nothing happens: two close delays with the dialog open.
+      await staff.waitForTimeout(600);
+      assert.equal((await sidebarState(staff)).peek, true, "the peek closed behind the dialog");
+      await staff.keyboard.press("Escape");
+      await waitFor(
+        staff,
+        "the dialog to close and give the keyboard back to Need help? in the visible sidebar",
+        () =>
+          document.querySelector(".modal") === null &&
+          document.activeElement?.dataset?.action === "open-help" &&
+          document.querySelector("#app-sidebar")?.hidden === false,
+        undefined,
+        RENDER_MS,
+      );
+      // The focus handed back after a key press may count as keyboard focus
+      // and hold the peek, which this Escape then closes; if it doesn't, the
+      // peek is already closing on its own. Either way it ends on the toggle.
+      const beforeSecondEscape = await sidebarState(staff);
+      await staff.keyboard.press("Escape");
+      await waitSidebar(
+        staff,
+        "the peek to close after the dialog, with the keyboard on the toggle",
+        SIDEBAR_IS,
+        { ...COLLAPSED, onToggle: true },
+      );
+
+      // 8. Touch: no peek; a click after a touch hover pins.
+      await toggle.dispatchEvent("pointerover", { pointerType: "touch", bubbles: true });
+      // Testing that nothing happens: two close delays after a touch hover.
+      await staff.waitForTimeout(600);
+      assert.equal((await sidebarState(staff)).peek, false, "a touch hover opened a peek");
+      await toggle.click({ timeout: CLICK_MS });
+      await waitSidebar(staff, "the click after a touch hover to pin the sidebar", SIDEBAR_IS, PINNED);
+      // Left pinned open, as the phase found it.
+      await mouseToPageCentre();
+
+      evidence.regressions.sidebarPeek = {
+        result:
+          "collapse with no re-peek, peek without pushing, stay, a realtime redraw kept it, close after leaving, pin, keyboard, a dialog held it, touch",
+        mainLeft: { pinnedBefore: pinnedLeft, collapsed: collapsedLeft, peeking: peeking.mainLeft, pinned: pinned.mainLeft },
+        tabsIntoSidebar: tabs,
+        peekHeldByReturnedFocus: beforeSecondEscape.peek,
+      };
+    });
+
     await phase("the office takes in a walk-in client's application and its document", async () => {
       await choosePersona(staff, sam);
       await openBoard(staff, OFFICE_BOARD_HEADING);

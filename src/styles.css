@@ -2883,6 +2883,18 @@ textarea::placeholder {
   }
 }
 
+/* Sidebar peek (spec 2026-10-04 §8): a collapsed sidebar shown over the page
+   while the mouse rests on its toggle or in it. It never pushes the page;
+   app.mjs adds .sidebar-peek in place. */
+.app-shell.sidebar-closed.sidebar-peek .app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(var(--vt-sidebar-width), 85vw);
+  z-index: 30;
+  box-shadow: 0 12px 40px rgb(42 39 69 / 0.18);
+}
+/* end sidebar peek */
+
 .btn.chip {
   padding: 4px 14px;
   border-radius: 999px;
