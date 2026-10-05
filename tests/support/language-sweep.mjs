@@ -36,12 +36,22 @@ function zhLatinWords() {
 }
 const ZH_WORDS = zhLatinWords();
 
+// The whole tokens of the test's data values: each value split on whitespace
+// and on @ . / , ( ). A word is allowed only as a whole token, so a short
+// English word ("a", "in", "record", "town") never hides inside an email or a
+// file name. "-" is not a separator: the word pattern below keeps hyphens, so
+// the screen's words are VT-AB2C-DE3F, demo-mileage-record-2025 and
+// chinatown-pcdc, which are exactly these tokens; splitting them further would
+// only let their parts ("record", "demo") pass on their own.
+export const dataTokens = (data = []) =>
+  new Set(data.flatMap((value) => String(value).split(/[\s@./,()]+/)).filter(Boolean));
+
 // Latin words in `text` that aren't allowed. `data` holds the test's own
-// values (reference, email, names, phone, office address).
+// values (reference, email, names, phone, office address); a word passes only
+// as one of their whole tokens.
 export function latinLeaks(text, data = []) {
-  const allowed = new Set([...FIXED, ...ZH_WORDS]);
-  const dataText = data.join(" ");
-  return (text.match(/[A-Za-z][A-Za-z0-9'’-]*/g) ?? []).filter((w) => !allowed.has(w) && !dataText.includes(w));
+  const allowed = new Set([...FIXED, ...ZH_WORDS, ...dataTokens(data)]);
+  return (text.match(/[A-Za-z][A-Za-z0-9'’-]*/g) ?? []).filter((w) => !allowed.has(w));
 }
 
 // ---------------------------------------------------------------------------

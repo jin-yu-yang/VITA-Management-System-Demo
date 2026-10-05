@@ -35,7 +35,7 @@ import {
   missingToSubmit,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
-import { sourceText, viewLang } from "./language.mjs";
+import { sourceText } from "./language.mjs";
 import { t } from "./client-text.mjs";
 
 const when = (condition, html) => (condition ? html : "");
@@ -533,7 +533,7 @@ export function submittedV2(state) {
  * your visit" list. Empty when there is nothing open, or once the case is
  * closed (the server refuses card marks then).
  */
-export function progressDocumentsV2(state, lang = viewLang(state)) {
+export function progressDocumentsV2(state, lang = "en") {
   const record = state.savedCase;
   if (!record || record.stage === "closed") return "";
   const answers = serverAnswersV2(record);

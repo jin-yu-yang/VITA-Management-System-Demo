@@ -211,7 +211,7 @@ export const TEXT = Object.freeze({
   "conflict.office": { en: "The office’s values", zh: "办公室的内容" },
   "conflict.keep_mine": { en: "Keep my edits", zh: "保留我的修改" },
   "conflict.use_office": { en: "Use the office’s values", zh: "使用办公室的内容" },
-  "conflict.note": { en: "Whichever you choose stays unsaved until you save it, and the office’s copy decides who wins if it changes again.", zh: "无论选择哪一边，在您保存之前都不会保存。如果办公室的版本再次改变，以办公室的版本为准。" },
+  "conflict.note": { en: "Whichever you choose stays unsaved until you save it, and the office’s copy decides who wins if it changes again.", zh: "无论选择哪一边，在您保存之前都不会保存。如果办公室的版本在您保存前再次改变，您需要重新选择。" },
   // The version-1 form: English only, under this note (spec §2)
   "v1.english_only": { en: "This older application is available in English only.", zh: "这份较早的申请只有英文版本。" },
   // The progress page (client-views.mjs progressScreen)
@@ -303,6 +303,8 @@ export const SENTENCES = Object.freeze({
   "Enter an email address, for example name@example.org.": "请输入电子邮箱，例如 name@example.org。",
   "That code is invalid or has expired. Request a new code.": "验证码无效或已过期。请索取新的验证码。",
   "Sign-in could not be completed. Please try again.": "无法完成登录。请再试一次。",
+  // controller.mjs: the sign-in fallback when an error carries no message
+  "Sign-in could not be completed.": "无法完成登录。",
   // controller.mjs: the conflict messages a client sees, and the notices (*_NOTICE)
   "Someone else changed this application. The newest version is shown — check it and try again.": "其他人修改了这份申请。现在显示的是最新版本，请检查后再试一次。",
   "Someone else changed this application while you were editing. Choose which answers to keep.": "您编辑期间，其他人修改了这份申请。请选择要保留哪些回答。",

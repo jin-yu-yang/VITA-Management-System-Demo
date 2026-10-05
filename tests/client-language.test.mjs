@@ -14,6 +14,7 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 import {
   textOf,
   latinLeaks,
+  dataTokens,
   historySentences,
   migrationSentences,
   REQUEST_PREFIX,
@@ -223,6 +224,19 @@ for (const [name, state] of Object.entries(STATES)) {
   });
 }
 
+test("latinLeaks matches data by whole token: short English words never hide inside the data", () => {
+  const html = render({ ...STATES["progress: a request, history and a document sent"], lang: "zh-Hans" });
+  assert.deepEqual(latinLeaks(textOf(html), DATA), []);
+  const injected = html.replace("您的进度", "您的进度 a record in town");
+  assert.notEqual(injected, html);
+  assert.deepEqual(latinLeaks(textOf(injected), DATA), ["a", "record", "in", "town"]);
+  // The data's own tokens still pass: the email, the file name and the reference.
+  const tokens = dataTokens(DATA);
+  for (const word of ["lin", "mei", "example", "org", "demo-mileage-record-2025", "pdf", "chinatown-pcdc", "vita", REFERENCE])
+    assert.ok(tokens.has(word), word);
+  for (const word of ["a", "in", "town", "record", "demo", "chinatown"]) assert.ok(!tokens.has(word), word);
+});
+
 test("English is the default: the same states render in English without a language", () => {
   for (const state of Object.values(STATES)) {
     const english = render(state);
@@ -393,6 +407,10 @@ test("every errors.mjs, controller, auth and notice sentence is a SENTENCES key"
   assert.ok(errorsThrown.length >= 15);
   errorsThrown.forEach((s) => wanted.add(s));
   [...controller.matchAll(/requirePresenter\(\s*("(?:[^"\\]|\\.)*")/g)].forEach((m) => wanted.add(literal(m[1])));
+  // The fallbacks a sign-in error falls back on when it carries no message
+  const fallbacks = [...controller.matchAll(/message:\s*[\w?.]+\s*\?\?\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
+  assert.ok(fallbacks.includes("Sign-in could not be completed."));
+  fallbacks.forEach((s) => wanted.add(s));
   const constants = [...controller.matchAll(/const (\w+_(?:NOTICE|MESSAGE)) =\s*("(?:[^"\\]|\\.)*")/g)];
   const notices = constants.filter(([, name]) => name.endsWith("_NOTICE"));
   assert.ok(notices.length >= 2);
