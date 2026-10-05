@@ -49,6 +49,7 @@ The UI redesign is built in parts, following the
 | 3 | Lifecycle stages: the ~25 stages in [`return-lifecycle.svg`](docs/media/return-lifecycle.svg) replace today's 9 | Planned |
 | 4 | [New intake](docs/superpowers/specs/2026-09-30-intake-screens-design.md): the drafted questions in steps 0–9 with sub-steps, standard and senior wording, best time to reach, the materials checklist, document cards, Review & submit and a draft 13614-C ([redesign spec](docs/superpowers/specs/2026-10-04-intake-redesign-design.md)). 4a catalogue and server, 4b client form, 4b2 redesign | 4a, 4b, 4b2 done |
 | | 4c: staff version-2 answers by sub-step, contact, materials and the document checklist; the version-2 Add a case; version 2 ready, switch-over held for the wording review. Then 4d Chinese, then removing version 1 | 4c done |
+| | 4d: [Chinese on screen](docs/superpowers/specs/2026-10-05-chinese-on-screen-design.md): the whole client side in 简体 and 繁體 (Traditional derived at build time with OpenCC `tw`, characters only); staff stay English. Version-1 applications stay English under a note | 4d done |
 | 5–8 | Access and masking, returning clients, team features, dashboards | Planned |
 
 Case messaging/SMS, real document uploads, scheduling, mobile layouts, and certification levels

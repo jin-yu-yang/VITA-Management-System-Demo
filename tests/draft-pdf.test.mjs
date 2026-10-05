@@ -94,6 +94,45 @@ const drawnLines = (page) =>
     .map((m) => Buffer.from(m[1], "hex").toString("latin1"))
     .filter((line) => !line.startsWith("DRAFT ") && !line.includes("\x00"));
 
+/**
+ * Every line of text drawn on the page, whatever its font, top to bottom:
+ * { y, text }. Runs in an embedded font are read back through its ToUnicode
+ * map; Helvetica runs are WinAnsi. Only the draft's own fonts count (the
+ * Chinese forms print text of their own), and the stamp is left out.
+ */
+function drawnText(page) {
+  const fonts = page.node.Resources().lookup(PDFName.of("Font"));
+  const maps = new Map();
+  const decoderOf = (name) => {
+    if (!maps.has(name)) {
+      const toUnicode = fonts.lookup(PDFName.of(name))?.lookup(PDFName.of("ToUnicode"));
+      if (!toUnicode) maps.set(name, null);
+      else {
+        const map = new Map();
+        for (const m of decoded(toUnicode).toString("latin1").matchAll(/<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,8})>/g))
+          map.set(m[1].toUpperCase(), String.fromCharCode(...m[2].match(/.{4}/g).map((h) => parseInt(h, 16))));
+        maps.set(name, map);
+      }
+    }
+    return maps.get(name);
+  };
+  const lines = new Map();
+  let font = null;
+  let y = null;
+  for (const m of pageContent(page).matchAll(/\/(\S+) [\d.]+ Tf|[-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ ([-\d.]+) Tm|<([0-9A-Fa-f]*)>\s*Tj/g)) {
+    if (m[1] !== undefined) font = m[1];
+    else if (m[2] !== undefined) y = Number(m[2]);
+    else if (/^(NotoSans(SC|TC)?-Regular|Helvetica)-\d+$/.test(font)) {
+      const map = decoderOf(font);
+      const text = map
+        ? m[3].match(/.{4}/g).map((gid) => map.get(gid.toUpperCase()) ?? "\uFFFD").join("")
+        : Buffer.from(m[3], "hex").toString("latin1");
+      lines.set(y, (lines.get(y) ?? "") + text);
+    }
+  }
+  return [...lines].map(([at, text]) => ({ y: at, text })).filter((line) => !line.text.startsWith("DRAFT ")).sort((a, b) => b.y - a.y);
+}
+
 /** The embedded TrueType files (FontFile2) of a saved PDF, with their ToUnicode maps. */
 function embeddedFonts(doc) {
   const found = [];
@@ -356,6 +395,41 @@ test("Chinese comments with no spaces wrap by characters and continue on page 7"
   const glyphRuns = (page) => [...pageContent(page).matchAll(/<(00[0-9A-Fa-f]*)>\s*Tj/g)].length;
   assert.equal(glyphRuns(doc.getPage(4)), 29);
   assert.ok(glyphRuns(doc.getPage(6)) > 0);
+});
+
+test("a Chinese draft with a generated line needs the font even when every answer is Latin; English does not", () => {
+  const answers = { ...BASE, inc_tips: "not_sure" };
+  assert.equal(fieldsNeedFont(draftFields(answers, { ...OPTIONS, form: "en" })), false);
+  for (const form of ["zh-s", "zh-t"]) assert.equal(fieldsNeedFont(draftFields(answers, { ...OPTIONS, form })), true, form);
+  // No generated line, Latin answers: still no font on a Chinese form (the 4b2 rule).
+  assert.equal(fieldsNeedFont(draftFields(BASE, { ...OPTIONS, form: "zh-s" })), false);
+});
+
+test("a 简体 form with six household members and long notes overflows in Chinese as in English", async () => {
+  const files = await fontFilesFor("zh-s");
+  const notes = Array.from({ length: 26 }, (_, i) => `第 ${i + 1} 张收据在蓝色文件夹里。`).join("\n");
+  const hh = ["安", "博", "才", "丹", "伊", "飞"].map((first, i) => ({
+    member_id: String(i + 1).padStart(32, "0"), first_name: first, last_name: "林", dob: `201${i}-0${i + 1}-1${i}`,
+    relationship: "son_daughter", months_lived: "12", married: "single",
+    us_citizen: "yes", resident_na: "yes", fulltime_student: "no", disabled: "no", ippin: i === 5 ? "not_sure" : "no",
+  }));
+  const answers = { ...BASE, additional_notes: notes, inc_tips: "not_sure", has_household_members: "yes", hh };
+  const { doc, fields } = await build(answers, { form: "zh-s", fontFiles: files });
+  assert.equal(fieldsNeedFont(fields), true);
+  assert.equal(doc.getPageCount(), 7);
+  const box = drawnText(doc.getPage(4));
+  const seventh = drawnText(doc.getPage(6));
+  // The box's 30th ruled line says where the rest went; page 7 has its title.
+  assert.deepEqual(box.at(-1), { y: 560 - 29 * 18, text: "(continued on page 7)" });
+  assert.equal(seventh[0].text, "Additional comments (continued)");
+  // Nothing cut off, in order: what the two pages print is the comments, wrapped.
+  const printed = [...box.slice(0, -1), ...seventh.slice(1)].map((line) => line.text).join("");
+  assert.equal(printed.replace(/\s+/g, ""), fields.comments.replace(/\s+/g, ""));
+  assert.ok(fields.comments.includes("不确定：成员 6：是否持有身份保护码（IP PIN）？、小费"));
+  // The household overflow rows are Chinese and continue on page 7.
+  const rest = seventh.map((line) => line.text).join("\n");
+  assert.match(rest, /成员 5：伊 林 · 子女 · 2014年5月14日出生 · 居住 12 个月 · 未婚 · 美国公民：是/);
+  assert.match(rest, /成员 6：飞 林 · 子女 · 2015年6月15日出生 · /);
 });
 
 test("a character neither font has prints as ? and Additional Comments says so", async () => {

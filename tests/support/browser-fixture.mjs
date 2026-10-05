@@ -155,6 +155,15 @@ export async function assertAuthenticatedUser(
     .getByRole("heading", { name: heading, exact: true })
     .first()
     .waitFor(timeout === undefined ? undefined : { timeout });
+  await assertStoredSession(page, userId);
+}
+
+/**
+ * The session half of `assertAuthenticatedUser`, with no screen in it: the
+ * SDK's stored session belongs to this user and carries an access token, and
+ * the app wrote its window state. Only ids and booleans leave the page.
+ */
+export async function assertStoredSession(page, userId) {
   const stored = await page.evaluate(
     ({ stateKey }) => {
       const key = Object.keys(localStorage).find((name) =>
@@ -293,6 +302,49 @@ export async function loginTestUser({ page, actor, fixture, otp, heading }) {
   }
 }
 
+/**
+ * `loginTestUser` with no text in its locators, for a page that is not in
+ * English (spec 2026-10-05 §6). The same route, the same one POST, the same
+ * release in a `finally`, and the same proof of the session; only the way
+ * the controls are found differs:
+ *
+ *   * the address goes into `#field-email` and `#email-form`'s submit sends it;
+ *   * the code field `#field-code` appearing is the sign that the send was
+ *     answered (the code step renders only then), in place of the English
+ *     neutral message;
+ *   * `#code-form`'s submit verifies;
+ *   * the applications screen is recognised by its own form and its Start
+ *     button, `#lookup-form` and `[data-action="start-application"]` in `#main`.
+ */
+export async function loginTestUserById({ page, actor, fixture, otp }) {
+  const code = otp ?? (await fixture.generateOtp(actor.email));
+  assert.match(String(code), /^[0-9]+$/);
+  const route = createSendRoute({ frontendOrigin: fixture.appOrigin });
+  await page.route(fixture.sendPattern, route.handler);
+  let pending = null;
+  try {
+    await page.locator("#field-email").fill(actor.email);
+    await page.locator('#email-form button[type="submit"]').click();
+    await page.locator("#field-code").waitFor();
+    await page.locator("#field-code").fill(String(code));
+    await page.locator('#code-form button[type="submit"]').click();
+    await page
+      .locator('#main #lookup-form ~ .start-row [data-action="start-application"]')
+      .waitFor({ timeout: SIGNED_IN_TIMEOUT_MS });
+    await assertStoredSession(page, actor.userId);
+    return { posts: route.posts, preflights: route.preflights, otp: code };
+  } catch (error) {
+    pending = error;
+    throw error;
+  } finally {
+    await page.unroute(fixture.sendPattern, route.handler).catch(() => {});
+    // As in requestCode's release: a failure the handler collected is the
+    // precise cause; the count is checked only when nothing else failed.
+    if (route.failures.length) throw route.failures[0];
+    if (!pending) assert.equal(route.posts, 1);
+  }
+}
+
 export async function createBrowserFixture({ intakeVersion = 1 } = {}) {
   const target = await assertTestTarget();
   const database = await createDatabaseFixture({ intakeVersion });
@@ -387,8 +439,13 @@ export async function createBrowserFixture({ intakeVersion = 1 } = {}) {
       // engine's own notice for a request the server refused — a deliberately
       // wrong code produces one — so a caller that expects a refusal checks
       // what they say rather than only that there are none.
-      async newPage({ viewport = { width: 1280, height: 900 } } = {}) {
-        const context = await browser.newContext({ viewport });
+      //
+      // `locale` is pinned (spec 2026-10-05 §6): a first visit takes its
+      // language from `navigator.languages`, so a machine whose browser runs
+      // in Chinese would otherwise start an English story in Chinese. The one
+      // phase that works in Chinese asks for its own.
+      async newPage({ viewport = { width: 1280, height: 900 }, locale = "en-US" } = {}) {
+        const context = await browser.newContext({ viewport, locale });
         const page = await context.newPage();
         const errors = [];
         const pageErrors = [];

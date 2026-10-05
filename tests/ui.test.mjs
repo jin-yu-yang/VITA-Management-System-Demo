@@ -417,3 +417,30 @@ test("a case without a number says why", () => {
     '<span class="client-number none">Never sent</span>',
   );
 });
+
+// Part 4d: times, days, badges and client numbers in the client's language.
+test("times and days follow the language; English is the default", async () => {
+  const { formatTime } = await import("../src/ui.mjs");
+  const value = new Date(2026, 9, 5, 15, 4).toISOString();
+  assert.equal(formatTime(value, "en"), formatTime(value));
+  assert.match(formatTime(value), /^Oct 5/);
+  assert.match(formatTime(value, "zh-Hans"), /10月5日/);
+  assert.match(formatTime(value, "zh-Hant"), /月/);
+  assert.equal(formatTime("not a date", "zh-Hans"), "");
+  const now = new Date(2026, 8, 14, 12, 0).getTime();
+  const at = (day, hour = 9) => new Date(2026, 8, day, hour, 0).toISOString();
+  assert.equal(relativeDay(at(14), now, "zh-Hans"), "今天");
+  assert.equal(relativeDay(at(13, 23), now, "zh-Hans"), "昨天");
+  assert.equal(relativeDay(at(12), now, "zh-Hans"), "2 天前");
+  assert.match(relativeDay(at(3), now, "zh-Hans"), /9月3日/);
+  assert.equal(relativeDay(at(12), now, "en"), "2 days ago");
+});
+
+test("badges and client-number labels follow the language", () => {
+  assert.match(stageBadge("reviewing", "zh-Hans"), /<i><\/i>\p{Script=Han}/u);
+  assert.equal(stageBadge("reviewing", "en"), stageBadge("reviewing"));
+  assert.equal(clientNumberLabel({ clientNumber: null, stage: "draft" }, "zh-Hans"), "尚无编号");
+  assert.equal(clientNumberLabel({ clientNumber: null, stage: "closed" }, "zh-Hans"), "从未发送");
+  assert.equal(clientNumberLabel({ clientNumber: 93, stage: "received" }, "zh-Hans"), "#093");
+  assert.equal(clientNumberTag({ clientNumber: null, stage: "draft" }, "zh-Hans"), '<span class="client-number none">尚无编号</span>');
+});

@@ -147,16 +147,19 @@ Removing database objects is a new migration that drops or revokes them; never e
 
 ## 6. Language and accessibility
 
-**Bilingual.** The version-2 catalogue already holds every question, option and tip in English
-and Chinese (`wording(question, { lang })`), and part 4d puts the Chinese on screen. Everything
-else is English and inline: in the view modules, in
-`describeStage` ([`src/domain.mjs`](../../src/domain.mjs)), in the error copy
-([`src/errors.mjs`](../../src/errors.mjs)), and **in the database**, which writes client progress
-messages (`client_events.message`) as English sentences. For Chinese:
+**Bilingual.** Part 4d did the browser side. Client screens are in English, 简体 or 繁體, chosen
+with a switch and saved per browser. The version-2 catalogue holds every question, option and tip
+in English and Chinese (`wording(question, { lang })`). Every other client string is in the
+client text table, `TEXT` in [`src/client-text.mjs`](../../src/client-text.mjs). Sentences that
+arrive in English (error and sign-in messages, and the client progress messages the database
+still stores as English sentences in `client_events.message`) are translated in the browser by
+matching the whole sentence (`SENTENCES`). Traditional is generated at build time from the
+Simplified with OpenCC `tw`, characters only ([`src/zh-hant.mjs`](../../src/zh-hant.mjs)). Staff
+screens stay English. For production:
 
-- Move browser strings into message catalogues with a language switch.
 - Change the database to store a message key and parameters in `client_events` instead of a
-  sentence, and translate in the browser. Existing rows need a migration or a fallback.
+  sentence, and translate by key in the browser, so a reworded sentence cannot fall back to
+  English. Existing rows need a migration or a fallback.
 - Intake answers that are shown back to staff need consistent stored values (codes) with
   translated labels. Version 2 already stores codes (`drop_off`, `mandarin`) and shows labels
   (`serviceLabel`, `languageLabel`, `formatAnswer`); version 1 stores English labels.

@@ -10,8 +10,12 @@ import {
   needsRedraw, noteState, invalidAnswers, sendable, withholdInvalid, withheldFields,
   sendableDiffers, keepLocalOnly, countText, renderRichText, formatAnswer,
   visibleSubsteps, resolveSubstep, adjacentSubstep, substepStatus, stepRollup,
-  firstUnfinishedSubstep, newMemberId,
+  firstUnfinishedSubstep, newMemberId, datePartsFor, formatDate, rangeText, invalidText,
 } from "../src/intake-form.mjs";
+import { setHantMap } from "../src/hant.mjs";
+import HANT_MAP from "../src/zh-hant.mjs";
+import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
+import { readFileSync } from "node:fs";
 
 // Part 4b, Task 2 (docs/superpowers/specs/2026-09-30-intake-screens-design.md §2).
 
@@ -728,4 +732,244 @@ test("formatAnswer", () => {
   for (const empty of [null, undefined, "", "  ", []]) assert.equal(formatAnswer(q("tp_first_name"), empty), null);
   assert.equal(formatAnswer(q("us_citizen"), []), null);
   assert.equal(formatAnswer(HH, [{}]), null);
+});
+
+// ---------------------------------------------------------------------------
+// Part 4d, Task 3: the form's text in the screen language
+// (docs/superpowers/specs/2026-10-05-chinese-on-screen-design.md §3.2). Without
+// lang, every function above still returns today's English.
+// ---------------------------------------------------------------------------
+
+const LANGUAGES = ["en", "zh-Hans", "zh-Hant"];
+const HAN = /\p{Script=Han}/u;
+const inLang = (pair, lang) => (lang === "en" ? pair.en : lang === "zh-Hans" ? pair.zh : HANT_MAP[pair.zh]);
+const withHant = (fn) => {
+  setHantMap(HANT_MAP);
+  try {
+    fn();
+  } finally {
+    setHantMap(null);
+  }
+};
+// Answers under which every condition of `conditions` holds.
+const satisfying = (conditions) =>
+  Object.fromEntries((conditions ?? []).map((c) => [c.field, c.op === "eq" ? c.value : c.op === "filled" ? "x" : "__other__"]));
+const optionsOf = (question) =>
+  question.type === "who" ? CATALOGUE.fixedOptions.who.options
+    : question.type === "yesno" ? question.options.map((o) => CATALOGUE.fixedOptions.yesno.options.find((y) => y.value === o.value) ?? o)
+      : question.options ?? [];
+
+test("every question's wording, option and tip renders in all three languages; zh-Hant is the map's value", () => {
+  withHant(() => {
+    const every = [...ALL, ...HH.fields.filter((f) => f.type !== "id")];
+    let tipCount = 0;
+    for (const question of every)
+      for (const variant of ["general", "senior"])
+        for (const lang of LANGUAGES) {
+          const where = `${question.id} ${variant} ${lang}`;
+          const title = inLang(question.wording[variant] ?? question.wording.general, lang);
+          assert.ok(title, where);
+          const html = client(question, null, { variant, lang, answers: { marital_status: "married" } });
+          assert.ok(html.includes(esc(title)), where);
+          for (const option of optionsOf(question)) {
+            const text = inLang(option.label[variant] ?? option.label.general, lang);
+            assert.ok(text, `${where} ${option.value}`);
+            assert.ok(html.includes(`>${esc(text)}<`), `${where} ${option.value}`);
+          }
+          for (const tip of question.tips?.[variant] ?? question.tips?.general ?? []) {
+            const text = inLang(tip, lang);
+            assert.ok(text, `${where} tip`);
+            const shown = client(question, null, { variant, lang, answers: { marital_status: "married", ...satisfying(tip.showIf) } });
+            assert.ok(shown.includes(renderRichText(text)), `${where} tip ${text.slice(0, 30)}`);
+            tipCount += 1;
+          }
+        }
+    assert.ok(tipCount > 0);
+  });
+});
+
+test("date boxes: year, month, day in Chinese, month, day, year in English; ids unchanged; the year box marked by its part", () => {
+  assert.deepEqual(datePartsFor().map((p) => p.part), ["month", "day", "year"]);
+  assert.deepEqual(datePartsFor("en").map((p) => [p.part, p.label, p.hint, p.size]), [["month", "Month", "MM", 2], ["day", "Day", "DD", 2], ["year", "Year", "YYYY", 4]]);
+  withHant(() => {
+    for (const lang of ["zh-Hans", "zh-Hant"]) {
+      assert.deepEqual(datePartsFor(lang).map((p) => [p.part, p.label, p.hint, p.size]), [["year", "年", "YYYY", 4], ["month", "月", "MM", 2], ["day", "日", "DD", 2]], lang);
+      const html = client(q("tp_dob"), "1961-04-12", { lang });
+      const order = [...html.matchAll(/<label for="field-client-tp_dob-(\w+)" class="q-date-part is-(\w+)"><span>([^<]*)<\/span>/g)].map((m) => [m[1], m[2], m[3]]);
+      assert.deepEqual(order, [["year", "year", "年"], ["month", "month", "月"], ["day", "day", "日"]], lang);
+      assert.match(html, /id="field-client-tp_dob-year"[^>]*placeholder="YYYY" value="1961"/);
+    }
+  });
+  for (const options of [{}, { lang: "en" }]) {
+    const html = client(q("tp_dob"), "1961-04-12", options);
+    const order = [...html.matchAll(/<label for="field-client-tp_dob-(\w+)" class="q-date-part is-(\w+)"><span>([^<]*)<\/span>/g)].map((m) => [m[1], m[2], m[3]]);
+    assert.deepEqual(order, [["month", "month", "Month"], ["day", "day", "Day"], ["year", "year", "Year"]]);
+  }
+});
+
+test("styles: the year box is widened by its part, not its position", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /\.q-date-part:last-child/);
+  assert.equal(css.match(/\.q-date-part\.is-year input\.q-input\s*\{/g)?.length, 2);
+});
+
+test("formatDate: Apr 12, 1961 in English, 1961年4月12日 in Chinese; a partial date as is", () => {
+  assert.equal(formatDate("1961-04-12"), "Apr 12, 1961");
+  assert.equal(formatDate("1961-04-12", "en"), "Apr 12, 1961");
+  assert.equal(formatDate("1961-04-12", "zh-Hans"), "1961年4月12日");
+  assert.equal(formatDate("1961-04-12", "zh-Hant"), "1961年4月12日");
+  for (const lang of LANGUAGES) {
+    assert.equal(formatDate("1961--12", lang), "1961--12");
+    assert.equal(formatDate("-04-12", lang), "-04-12");
+    assert.equal(formatDate("1961-13-01", lang), "1961-13-01");
+  }
+});
+
+test("formatAnswer in Chinese: dates, labels and the household line", () => {
+  withHant(() => {
+    assert.equal(formatAnswer(q("tp_dob"), "1961-04-12", { lang: "zh-Hans" }), "1961年4月12日");
+    const me = CATALOGUE.fixedOptions.who.options.find((o) => o.value === "me").label.general.zh;
+    const spouse = CATALOGUE.fixedOptions.who.options.find((o) => o.value === "spouse").label.general.zh;
+    assert.equal(formatAnswer(q("us_citizen"), ["me", "spouse"], { lang: "zh-Hans" }), `${me}、${spouse}`);
+    assert.equal(formatAnswer(q("us_citizen"), ["me", "spouse"], { lang: "zh-Hant" }), `${HANT_MAP[me]}、${HANT_MAP[spouse]}`);
+    const relationship = sub("relationship").options.find((o) => o.value === "son_daughter").label.general.zh;
+    const member = { member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" };
+    assert.equal(formatAnswer(HH, [member], { lang: "zh-Hans" }), `Xiao Ming Wang · ${relationship} · 2015年3月14日出生 · 居住 12 个月`);
+    assert.equal(formatAnswer(HH, [{ ...member, months_lived: "1" }]), `Xiao Ming Wang · ${label(sub("relationship").options.find((o) => o.value === "son_daughter"))} · born Mar 14, 2015 · 1 month`);
+  });
+});
+
+test("rangeText and countText in all three languages", () => {
+  const months = sub("months_lived");
+  assert.equal(rangeText(months), "0 to 12");
+  assert.equal(rangeText(months, "en"), "0 to 12");
+  assert.equal(rangeText(months, "zh-Hans"), "0 至 12");
+  assert.equal(rangeText({ min: 1 }, "en"), "1 or more");
+  assert.equal(rangeText({ min: 1 }, "zh-Hans"), "1 或以上");
+  assert.equal(rangeText({}, "zh-Hans"), "");
+  assert.equal(countText("a".repeat(4612), "en"), "4,612 of 5,000 characters");
+  assert.equal(countText("a".repeat(4612), "zh-Hans"), "已输入 4,612 / 5,000 个字");
+  assert.equal(countText("a".repeat(4500), "zh-Hans"), "");
+  withHant(() => {
+    assert.equal(rangeText(months, "zh-Hant"), "0 至 12");
+    assert.equal(rangeText({ min: 1 }, "zh-Hant"), "1 或以上");
+    assert.equal(countText("a".repeat(4612), "zh-Hant"), "已輸入 4,612 / 5,000 個字");
+    assert.ok(renderQuestion(months, null, { lang: "zh-Hant" }).includes('<span class="q-range">0 至 12</span>'));
+    assert.ok(client(q("additional_notes"), "a".repeat(4612), { lang: "zh-Hant" }).includes("已輸入 4,612 / 5,000 個字"));
+  });
+});
+
+test("the note in Chinese: Needs an answer and the answer checks' messages", () => {
+  const first = q("tp_first_name");
+  assert.deepEqual(noteState(first, null, { showMissing: true, lang: "zh-Hans" }), { text: "需要回答", className: "is-missing" });
+  assert.deepEqual(noteState(q("email"), "a@", { showInvalid: true, lang: "zh-Hans" }), { text: "请输入有效的电子邮箱。", className: "is-invalid" });
+  assert.deepEqual(noteState(first, "x".repeat(201), { showInvalid: true, lang: "zh-Hans" }), { text: "最多 200 个字", className: "is-invalid" });
+  assert.deepEqual(noteState(sub("months_lived"), "13", { showInvalid: true, lang: "zh-Hans" }), { text: "请输入 0 至 12 之间的数字", className: "is-invalid" });
+  assert.ok(client(first, null, { showMissing: true, lang: "zh-Hans" }).includes('class="q-note is-missing" aria-live="polite">需要回答</p>'));
+  withHant(() => {
+    assert.deepEqual(noteState(first, null, { showMissing: true, lang: "zh-Hant" }), { text: "需要回答", className: "is-missing" });
+    assert.equal(invalidText("Enter a valid email address.", "zh-Hant"), HANT_MAP["请输入有效的电子邮箱。"]);
+  });
+  // English: the reason as checkValue gave it.
+  assert.equal(invalidText("Use at most 200 characters."), "Use at most 200 characters.");
+  assert.equal(invalidText("Use at most 200 characters.", "en"), "Use at most 200 characters.");
+});
+
+test("a household member's note names the sub-field by its wording in Chinese; English keeps the id", () => {
+  const badDob = [{ member_id: "0".repeat(31) + "1", dob: "1961-02-30" }];
+  const reason = checkValue(HH, badDob);
+  assert.equal(reason, "dob: Enter a real date as YYYY-MM-DD.");
+  const dob = sub("dob");
+  const zh = noteState(HH, badDob, { showInvalid: true, lang: "zh-Hans" }).text;
+  assert.equal(zh, `${wording(dob, { lang: "zh-Hans" })}：${invalidText("Enter a real date as YYYY-MM-DD.", "zh-Hans")}`);
+  assert.doesNotMatch(zh, /dob/);
+  withHant(() => {
+    const hant = noteState(HH, badDob, { showInvalid: true, lang: "zh-Hant" }).text;
+    assert.ok(hant.startsWith(`${HANT_MAP[dob.wording.general.zh]}：`), hant);
+  });
+  // English is byte for byte what it was: the id and checkValue's reason.
+  assert.equal(noteState(HH, badDob, { showInvalid: true }).text, reason);
+  assert.equal(invalidText(reason, "en", HH), reason);
+  // Without the household, or for a sub-field it lacks, the id stands.
+  assert.equal(invalidText(reason, "zh-Hans"), `dob：${invalidText("Enter a real date as YYYY-MM-DD.", "zh-Hans")}`);
+  assert.ok(invalidText("nope: Expected text.", "zh-Hans", HH).startsWith("nope："));
+});
+
+test("every message checkValue can return reads in Chinese through invalidText", () => {
+  const reasons = new Set();
+  const add = (question, value) => {
+    const reason = checkValue(question, value);
+    assert.ok(reason, `${question.id ?? question.type} ${JSON.stringify(value)}`);
+    reasons.add(reason);
+  };
+  for (const row of INTAKE_VALUE_CASES) if (!row.js) add(q(row.field), row.value);
+  // A bad value of each type, and every rule of the household.
+  add(q("tp_first_name"), "x".repeat(201));
+  add(q("additional_notes"), "x".repeat(5001));
+  add(q("gcf_tp_signature"), "x".repeat(201));
+  add(q("email"), "a@");
+  add(q("tp_phone"), "123");
+  add(q("addr_zip"), "1234");
+  add(q("tp_dob"), "1961-02-30");
+  add(q("spouse_death_year"), "61");
+  add(q("inc_wages_job_count"), "two");
+  add(q("inc_wages_job_count"), "1234567");
+  add(sub("months_lived"), "13");
+  add(q("marital_status"), "unknown");
+  add(q("married_last_day"), "maybe");
+  add(q("us_citizen"), ["none", "me"]);
+  add(q("us_citizen"), ["me", "me"]);
+  add(q("us_citizen"), ["stranger"]);
+  add(q("us_citizen"), "me");
+  add(q("best_contact_time"), "x");
+  add(q("tp_first_name"), 7);
+  add(sub("member_id"), "XYZ");
+  add({ id: "odd", type: "odd" }, "x");
+  add(HH, "Bo");
+  add(HH, Array.from({ length: 11 }, (_, i) => ({ member_id: (i + 1).toString(16).padStart(32, "0") })));
+  add(HH, [null]);
+  add(HH, [{ member_id: "0".repeat(31) + "1", extra: "x" }]);
+  add(HH, [{ member_id: "0".repeat(31) + "1", dob: "1961-02-30" }]);
+  add(HH, [{ first_name: "Ming" }]);
+  add(HH, [{ member_id: "0".repeat(31) + "1" }, { member_id: "0".repeat(31) + "1" }]);
+  assert.ok(reasons.size >= 25, `${reasons.size} distinct messages`);
+  withHant(() => {
+    for (const reason of reasons)
+      for (const lang of ["zh-Hans", "zh-Hant"]) {
+        const text = invalidText(reason, lang);
+        assert.match(text, HAN, `${lang}: ${reason}`);
+        assert.doesNotMatch(text, /\b(Enter|Use|Choose|Expected|Digits|At most|Not|No|Each|Two|Unknown)\b/, `${lang}: ${reason} → ${text}`);
+      }
+  });
+});
+
+test("part statuses, household buttons and the select's blank option in Chinese", () => {
+  const visited = ["about.you"];
+  assert.deepEqual(substepStatus("about.you", { answers: {}, visited, lang: "zh-Hans" }), { key: "needs", text: "需要回答" });
+  assert.deepEqual(stepRollup("about", { answers: {}, visited, lang: "zh-Hans" }), { key: "needs", text: "需要回答" });
+  assert.deepEqual(substepStatus("review.summary", { visited: ["review.summary"], lang: "zh-Hans" }), { key: "done", text: "已完成" });
+  assert.deepEqual(substepStatus("review.summary", { visited: [], lang: "zh-Hans" }), { key: "none", text: "" });
+  const docs = substepsFor(2).find((s) => s.kind === "documents" && s.cards !== "bring" && s.cards !== "other");
+  const owing = [{ substep: docs.cards, group: "needed", status: "not_done" }];
+  assert.deepEqual(substepStatus(docs.id, { visited: [docs.id], cards: owing, lang: "zh-Hans" }), { key: "docs", text: "需要文件" });
+  // English unchanged without lang.
+  assert.deepEqual(substepStatus(docs.id, { visited: [docs.id], cards: owing }), { key: "docs", text: "Needs documents" });
+
+  const member = { member_id: "0123456789abcdef0123456789abcdef", first_name: "Ming" };
+  const zh = client(HH, [member], { lang: "zh-Hans" });
+  assert.ok(zh.includes(">成员 1</h3>"));
+  assert.ok(zh.includes('aria-label="移除成员 1"'));
+  assert.match(zh, /data-action="remove-member"[^>]*>移除<\/button>/);
+  assert.match(zh, /data-action="add-member"[^>]*>添加一位成员<\/button>/);
+  const en = client(HH, [member]);
+  assert.ok(en.includes(">Person 1</h3>") && en.includes('aria-label="Remove person 1"'));
+  assert.match(en, /data-action="add-member"[^>]*>Add a person<\/button>/);
+
+  const relationship = sub("relationship");
+  assert.ok(renderQuestion(relationship, null, { lang: "zh-Hans" }).includes('<option value="">请选择</option>'));
+  assert.ok(renderQuestion(relationship, null).includes('<option value="">Select an option</option>'));
+  withHant(() => {
+    assert.ok(renderQuestion(relationship, null, { lang: "zh-Hant" }).includes(`<option value="">${HANT_MAP["请选择"]}</option>`));
+    assert.match(client(HH, [member], { lang: "zh-Hant" }), new RegExp(`data-action="add-member"[^>]*>${HANT_MAP["添加一位成员"]}</button>`));
+  });
 });

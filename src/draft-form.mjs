@@ -9,7 +9,9 @@
 // names for those. Every name below is written without the `form1[0].` prefix
 // that `draftFields` adds.
 import { CATALOGUE, findQuestion, isAnswered, isVisible, visibleAnswers, wording } from "./intake-catalogue.mjs";
-import { formatAnswer } from "./intake-form.mjs";
+import { formatAnswer, formatDate } from "./intake-form.mjs";
+import { sourceText } from "./language.mjs";
+import { t } from "./client-text.mjs";
 
 export const FORM_FILES = Object.freeze({
   en: "src/forms/f13614c-2025.pdf",
@@ -218,13 +220,17 @@ const ROW_COLUMNS = [
   "usCitizen", "residentUSCandaMexico", "fullTimeStudent", "totallyPermanentlyDisabled", "issuedIPPIN",
 ];
 const rowBox = (k, column) => `${P1}namesOf[0].Row${k}[0].${column}[0]`;
+// [answer id, table column, the overflow line's word for it (a text key)]
 const MEMBER_YES_NO = [
-  ["us_citizen", "usCitizen", "citizen"],
-  ["resident_na", "residentUSCandaMexico", "resident"],
-  ["fulltime_student", "fullTimeStudent", "student"],
-  ["disabled", "totallyPermanentlyDisabled", "disabled"],
-  ["ippin", "issuedIPPIN", "IP PIN"],
+  ["us_citizen", "usCitizen", "draft.citizen"],
+  ["resident_na", "residentUSCandaMexico", "draft.resident"],
+  ["fulltime_student", "fullTimeStudent", "draft.student"],
+  ["disabled", "totallyPermanentlyDisabled", "draft.disabled"],
+  ["ippin", "issuedIPPIN", "draft.ippin"],
 ];
+
+// The language of each form's generated lines (spec 2026-10-05 §3.5).
+const FORM_LANG = Object.freeze({ en: "en", "zh-s": "zh-Hans", "zh-t": "zh-Hant" });
 
 const familyOf = (form) => {
   if (!Object.hasOwn(FORM_FILES, form)) throw new Error(`Unknown draft form: ${form}`);
@@ -287,29 +293,43 @@ function isoDay(today) {
 
 const HH = findQuestion(2, "hh");
 const hhField = (id) => (HH?.fields ?? []).find((field) => field.id === id);
-const englishLabel = (question, value) =>
-  (question?.options ?? []).find((option) => option.value === value)?.label?.general?.en ?? String(value);
-const englishWording = (question) => wording(question, { variant: "general", lang: "en" });
-const YES_NO_WORD = { yes: "yes", no: "no", not_sure: "not sure" };
+// An option's general label in `lang` (the table rows use English).
+const labelIn = (question, value, lang) => {
+  const label = (question?.options ?? []).find((option) => option.value === value)?.label?.general;
+  return label ? sourceText({ en: label.en, zh: label.zh }, lang) : String(value);
+};
+const englishLabel = (question, value) => labelIn(question, value, "en");
+const generalWording = (question, lang) => wording(question, { variant: "general", lang });
+const YES_NO_WORD = { yes: "draft.yes", no: "draft.no", not_sure: "draft.not_sure_word" };
+// The English lines keep the form's own MM/DD/YYYY; Chinese lines read 1961年4月12日.
+const lineDate = (value, lang) => (lang === "en" ? usDate(value) : oneLine(formatDate(String(value), lang)));
 
-/** "Person 5: name · relationship · born · months · single or married · citizen · …" */
-function memberLine(member, n) {
+/**
+ * "Person 5: name · relationship · born · months · single or married · citizen: yes · …",
+ * in the form's language. Every piece is in `lang` before it is joined; the
+ * name is as typed.
+ */
+function memberLine(member, n, lang) {
   const name = [member.first_name, member.last_name].filter(isAnswered).map(oneLine).join(" ");
   const parts = [name];
-  if (isAnswered(member.relationship)) parts.push(englishLabel(hhField("relationship"), member.relationship));
-  if (isAnswered(member.dob)) parts.push(`born ${usDate(member.dob)}`);
+  if (isAnswered(member.relationship)) parts.push(labelIn(hhField("relationship"), member.relationship, lang));
+  if (isAnswered(member.dob)) parts.push(t("member.born", { date: lineDate(member.dob, lang) }, lang));
+  // n only picks "month" or "months": exactly "1" is one.
   if (isAnswered(member.months_lived))
-    parts.push(`${oneLine(member.months_lived)} ${member.months_lived === "1" ? "month" : "months"}`);
-  if (isAnswered(member.married)) parts.push(member.married === "married" ? "married" : "single");
+    parts.push(t("member.months", { n: member.months_lived === "1" ? 1 : 2, count: oneLine(member.months_lived) }, lang));
+  if (isAnswered(member.married)) parts.push(t(member.married === "married" ? "draft.married" : "draft.single", {}, lang));
   for (const [id, , word] of MEMBER_YES_NO)
-    if (isAnswered(member[id])) parts.push(`${word}: ${YES_NO_WORD[member[id]] ?? oneLine(member[id])}`);
-  return `Person ${n}: ${parts.filter(isAnswered).join(" · ")}`;
+    if (isAnswered(member[id])) {
+      const answer = Object.hasOwn(YES_NO_WORD, member[id]) ? t(YES_NO_WORD[member[id]], {}, lang) : oneLine(member[id]);
+      parts.push(t("draft.member_answer", { field: t(word, {}, lang), answer }, lang));
+    }
+  return t("draft.member_line", { person: t("member.person", { n }, lang), parts: parts.filter(isAnswered).join(" · ") }, lang);
 }
 
 const ALL_QUESTIONS = CATALOGUE.steps.flatMap((step) => step.sections.flatMap((section) => section.questions));
 
-/** The English wording of every visible not_sure answer, in catalogue order. */
-function notSureLabels(answers) {
+/** The wording of every visible not_sure answer, in catalogue order, in `lang`. */
+function notSureLabels(answers, lang) {
   const labels = [];
   for (const question of ALL_QUESTIONS) {
     if (!Object.hasOwn(answers, question.id)) continue;
@@ -317,23 +337,25 @@ function notSureLabels(answers) {
     if (question.type === "group") {
       (Array.isArray(value) ? value : []).forEach((member, i) => {
         for (const field of question.fields ?? [])
-          if (member?.[field.id] === "not_sure") labels.push(`Person ${i + 1} ${englishWording(field)}`);
+          if (member?.[field.id] === "not_sure")
+            labels.push(t("draft.not_sure_person", { person: t("member.person", { n: i + 1 }, lang), field: generalWording(field, lang) }, lang));
       });
-    } else if (value === "not_sure") labels.push(englishWording(question));
+    } else if (value === "not_sure") labels.push(generalWording(question, lang));
   }
   return labels;
 }
 
-function commentsFor(answers, members) {
+/** Additional Comments: the client's notes as typed, then the generated lines in `lang`. */
+function commentsFor(answers, members, lang) {
   const blocks = [];
   if (isAnswered(answers.additional_notes)) blocks.push(String(answers.additional_notes).replace(/\r\n?/g, "\n").trim());
-  const notSure = notSureLabels(answers);
-  if (notSure.length) blocks.push(`Not sure: ${notSure.join(", ")}`);
+  const notSure = notSureLabels(answers, lang);
+  if (notSure.length) blocks.push(t("draft.not_sure", { items: notSure.join(t("form.list_separator", {}, lang)) }, lang));
   if (answers.inc_other === "yes" && isAnswered(answers.inc_other_desc))
-    blocks.push(`Other income: ${oneLine(answers.inc_other_desc)}`);
+    blocks.push(t("draft.other_income", { text: oneLine(answers.inc_other_desc) }, lang));
   if (answers.evt_other === "yes" && isAnswered(answers.evt_other_desc))
-    blocks.push(`Other event: ${oneLine(answers.evt_other_desc)}`);
-  const overflow = members.slice(ROWS).map((member, i) => memberLine(member, ROWS + i + 1));
+    blocks.push(t("draft.other_event", { text: oneLine(answers.evt_other_desc) }, lang));
+  const overflow = members.slice(ROWS).map((member, i) => memberLine(member, ROWS + i + 1, lang));
   if (overflow.length) blocks.push(overflow.join("\n"));
   return blocks.join("\n\n");
 }
@@ -345,7 +367,9 @@ function commentsFor(answers, members) {
 /**
  * The boxes of one form for these answers.
  * `form` is "en", "zh-s" or "zh-t"; `reference` the Application ID; `today`
- * a "YYYY-MM-DD" string or a Date (the stamp's date).
+ * a "YYYY-MM-DD" string or a Date (the stamp's date). The generated lines of
+ * Additional Comments are in the form's language (English, Simplified, or
+ * Traditional through the map); the stamp and the table rows stay English.
  * Returns `{ text, checks, comments, consentPage }`, plus the `stamp` and the
  * `fileName` the builder and the page use.
  */
@@ -413,7 +437,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
     }
   });
 
-  const comments = commentsFor(visible, members);
+  const comments = commentsFor(visible, members, FORM_LANG[form]);
   const day = usDate(isoDay(today));
   const stamp = ["DRAFT – prepared from online answers", day, oneLine(reference)].filter(Boolean).join(", ");
   const suffix = form === "en" ? "" : `-${form}`;

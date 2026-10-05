@@ -2,6 +2,8 @@
 // nothing here persists anything: the database owns stages, authority and
 // revisions (see `supabase/migrations/`), and this file only names what the
 // browser is allowed to show and to send.
+import { isLang } from "./language.mjs";
+import { t } from "./client-text.mjs";
 
 export const INTAKE_ANSWER_KEYS = Object.freeze([
   "service",
@@ -135,13 +137,14 @@ const UNKNOWN_STAGE = Object.freeze({
 });
 // A fresh copy, so a caller that edits what it renders cannot change the table.
 // An unrecognised stage — including an inherited property name — falls back to
-// neutral copy rather than showing nothing or guessing a milestone.
-export function describeStage(stage) {
-  return {
-    ...(Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "")
-      ? STAGE_DESCRIPTIONS[stage]
-      : UNKNOWN_STAGE),
-  };
+// neutral copy rather than showing nothing or guessing a milestone. Chinese
+// comes from the client text table (stage.<stage>.label / .client); English,
+// the default, is this table.
+export function describeStage(stage, lang = "en") {
+  const known = Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "");
+  if (!isLang(lang) || lang === "en") return { ...(known ? STAGE_DESCRIPTIONS[stage] : UNKNOWN_STAGE) };
+  const key = known ? stage : "unknown";
+  return { label: t(`stage.${key}.label`, {}, lang), clientMessage: t(`stage.${key}.client`, {}, lang) };
 }
 
 // The volunteer work board's three tabs (spec 2026-09-28, section 5), on

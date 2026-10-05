@@ -22,6 +22,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Live updates](#live-updates)
 - [Sign-in](#sign-in)
 - [Window state](#window-state)
+- [Client languages](#client-languages)
 - [Styling and accessibility](#styling-and-accessibility)
 - [Testing](#testing)
 - [Recipes](#recipes)
@@ -355,6 +356,62 @@ id. Each field has its own shape check (`FIELDS`); a malformed one is dropped, a
 steps are ignored unless they belong to the open case. Two windows can show different things; two accounts in one browser never share a view; signing
 out clears it. It never stores codes, tokens or answers.
 
+## Client languages
+
+Every client screen is in English, Simplified Chinese (简体) or Traditional Chinese (繁體), chosen
+with the switch in the client bar and saved per browser in `localStorage["vitally.lang"]`. A first
+visit takes its language from `navigator.languages`. Staff and presenter screens are always
+English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
+character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
+the 繁體 draft 13614-C is made (which leaves the screen's language as it is). A saved 繁體 waits at
+most five seconds for it at startup, then starts in 简体 with a toast; a retry after a failed fetch
+asks for a fresh URL (`./zh-hant.mjs?r=1`, …), since some browsers cache a failed module.
+The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-screen-design.md).
+
+| Module | Holds |
+| --- | --- |
+| [`language.mjs`](../../src/language.mjs) | `LANGS` (`"en"`, `"zh-Hans"`, `"zh-Hant"`), the browser default and storage, `viewLang`, `sourceText`, `localeOf` |
+| [`client-text.mjs`](../../src/client-text.mjs) | `TEXT` (every client-screen string, `en` and `zh`) with `t`; `SENTENCES` (English that arrives finished) with `sentence` and `historyLine` |
+| [`hant.mjs`](../../src/hant.mjs) | the Traditional registry: `setHantMap`, `toHant`, `hantReady` |
+| [`zh-hant.mjs`](../../src/zh-hant.mjs) | the generated map, Simplified source string → Traditional; never edit it by hand |
+
+- **The screen's language** is `viewLang(state)`: `state.lang` for a client and for every screen
+  before sign-in, and `"en"` for a presenter. A renderer reads it once and passes `lang` down.
+  `app.mjs` sets `<html lang>` and `document.title` after each render.
+- **Screen text** is a `TEXT` key, `t(key, params, lang)`. An entry is `{ en, zh }`; `{name}`
+  placeholders are filled from `params`, and `en` may be `{ one, other }`, chosen by `params.n`.
+  Escape the result as usual (`esc(t(…))`). Text `app.mjs` writes itself (toasts, the countdown)
+  also goes through `t`, with `screenLang()`; a source test fails on a bare `notify("…")`.
+- **Sentences that arrive in English** (error messages, sign-in messages, the history the
+  database writes) are shown with `sentence(text, lang)`: a sentence with no entry in
+  `SENTENCES` stays English. History lines go through `historyLine`, which keeps the office's
+  request title as typed. A new `client_events` sentence in a migration needs an entry; a unit
+  test reads the migrations and checks.
+- **Catalogue and card text** (questions, options, tips, step titles, document cards) already
+  carries `{ en, zh }`. Read it only through `sourceText(pair, lang)`, the one boundary that
+  applies `toHant` for 繁體; never index a pair with the screen language.
+- **Shared functions default to English.** Every function that makes text takes `lang` last, with
+  the default `"en"`, so staff screens call it unchanged.
+- **Never translated:** what the client typed, Application IDs, email addresses and text the
+  office typed (shown as is, with no `lang` attribute).
+- **Fonts and spacing** follow `<html lang>` in the `/* Part 4d */` block of `styles.css`: the two
+  font variables gain each script's system fonts, and Latin letter-spacing is undone.
+
+### Add or change client text
+
+1. Add the key to `TEXT` (or the sentence to `SENTENCES`) with its English and drafted Simplified
+   Chinese, using the catalogue's terms. The table is the group's wording-review list.
+2. Render it with `t(key, params, lang)` (or `sentence`).
+3. Rebuild the Traditional map: `npm run build:hant` regenerates `src/zh-hant.mjs` from every
+   Simplified source string (the text table, the sentences, the catalogue and the cards). Commit
+   the regenerated file. `npm run build:hant -- --check` regenerates in memory and fails if the
+   committed map differs; `tests/hant.test.mjs` fails on a missing or stale key.
+4. Read the new Traditional lines: where a Simplified character has several Traditional ones
+   (复 → 復/複, 发 → 發/髮…) and OpenCC picked the wrong one, reword or add an override with one
+   line of reason to `tools/hant-overrides.mjs`.
+5. `tests/client-language.test.mjs` renders every client screen in both Chinese scripts and
+   fails on any English left over, or any Simplified character left in 繁體.
+
 ## Styling and accessibility
 
 All styles are in [`src/styles.css`](../../src/styles.css). Redesigned screens use the `--vt-*`
@@ -366,16 +423,17 @@ screens at 720 px and 390 px wide and checks that nothing scrolls sideways.
 
 Conventions already in place: every field has a `<label>`; dialogs keep and return focus and close
 on Escape; save states, countdowns and refusals are written in text and marked `role="status"` or
-`role="alert"` so screen readers announce them; keyboard focus survives live updates. The product spec asks for Chinese as well as English; there is no translation layer yet
-(see the [roadmap](production-roadmap.md#6-language-and-accessibility)).
+`role="alert"` so screen readers announce them; keyboard focus survives live updates. Client screens are in English, 简体 and 繁體
+([Client languages](#client-languages)); the language switch keeps each button's own `lang`, and
+the keyboard stays on the pressed one.
 
 ## Testing
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (652) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (865) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form |
+| Story (59) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form, and one works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

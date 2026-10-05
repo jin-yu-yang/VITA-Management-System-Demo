@@ -1,4 +1,6 @@
 import { describeStage } from "./domain.mjs";
+import { localeOf } from "./language.mjs";
+import { t } from "./client-text.mjs";
 
 export const esc = (v) =>
   String(v ?? "").replace(
@@ -93,6 +95,8 @@ export const input = (
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><input id="${fieldId(name, scope)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 export const textarea = (label, name, value = "", extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><textarea id="${fieldId(name, scope)}" name="${name}" ${extra}>${esc(value)}</textarea></label>`;
+// Stays English: only the version-1 form (English) and staff screens use it.
+// The version-2 form's select is intake-form.mjs's, through t("form.select_option").
 export const select = (label, name, value, options, extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><select id="${fieldId(name, scope)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {
@@ -123,12 +127,12 @@ export const ANSWER_LABELS = Object.freeze({
   documents: "Income documents",
 });
 
-// One time format for every screen. An unusable value renders as nothing at
-// all rather than "Invalid Date".
-export function formatTime(value) {
+// One time format for every screen, in the language's locale (English by
+// default). An unusable value renders as nothing at all rather than "Invalid Date".
+export function formatTime(value, lang = "en") {
   const at = new Date(value ?? "");
   if (Number.isNaN(at.getTime())) return "";
-  return at.toLocaleString("en-US", {
+  return at.toLocaleString(localeOf(lang), {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -141,25 +145,25 @@ export function formatTime(value) {
 // sending it ("Never sent") — a closed case with no number was never submitted.
 export const formatClientNumber = (n) =>
   n === null || n === undefined ? null : `#${String(n).padStart(3, "0")}`;
-export const clientNumberLabel = (record) =>
+export const clientNumberLabel = (record, lang = "en") =>
   formatClientNumber(record?.clientNumber) ??
-  (record?.stage === "closed" ? "Never sent" : "No number yet");
-export const clientNumberTag = (record) =>
-  `<span class="client-number${record?.clientNumber == null ? " none" : ""}">${esc(clientNumberLabel(record))}</span>`;
+  t(record?.stage === "closed" ? "client_number.never" : "client_number.none", {}, lang);
+export const clientNumberTag = (record, lang = "en") =>
+  `<span class="client-number${record?.clientNumber == null ? " none" : ""}">${esc(clientNumberLabel(record, lang))}</span>`;
 
 // How long ago, in days, for lists where the minute does not matter. Dates are
 // compared as calendar days in the viewer's time zone, so a case updated late
 // last night reads "Yesterday", not "Today".
-export function relativeDay(value, now = Date.now()) {
+export function relativeDay(value, now = Date.now(), lang = "en") {
   const at = new Date(value ?? "");
   if (Number.isNaN(at.getTime())) return "";
   const today = new Date(now);
   const calendarDay = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
   const days = Math.round((calendarDay(today) - calendarDay(at)) / 86_400_000);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-  return at.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (days <= 0) return t("day.today", {}, lang);
+  if (days === 1) return t("day.yesterday", {}, lang);
+  if (days < 7) return t("day.ago", { n: days }, lang);
+  return at.toLocaleDateString(localeOf(lang), { month: "short", day: "numeric" });
 }
 
 // The ARIA tab pattern's keys: the arrows move one tab and wrap around, Home
@@ -211,8 +215,8 @@ const STAGE_TONES = Object.freeze({
   review_approved: "filing",
   closed: "neutral",
 });
-export const stageBadge = (stage) =>
-  `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage).label)}</span>`;
+export const stageBadge = (stage, lang = "en") =>
+  `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage, lang).label)}</span>`;
 
 // Rebuilding the page loses the keyboard, so the wiring layer records where it
 // was first — by **id** before name, because a name is not unique on a page any

@@ -6,6 +6,8 @@ import {
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
+import { setHantMap } from "../src/hant.mjs";
+import HANT_MAP from "../src/zh-hant.mjs";
 
 const q = (id) => findQuestion(2, id);
 
@@ -25,7 +27,7 @@ test("wording differs by variant where the drafts differ, and by language", () =
   assert.ok(differing);
   assert.notEqual(wording(differing, { variant: "general" }), wording(differing, { variant: "senior" }));
   assert.equal(wording(differing), differing.wording.general.en);
-  assert.equal(wording(differing, { lang: "zh", variant: "senior" }), differing.wording.senior.zh);
+  assert.equal(wording(differing, { lang: "zh-Hans", variant: "senior" }), differing.wording.senior.zh);
 });
 
 test("isVisible: eq, ne, filled, arrays and AND", () => {
@@ -292,4 +294,43 @@ test("a household needs a well-formed, unique id on every member", () => {
   assert.equal(checkValue(hh, [{ member_id: A }, { member_id: B }]), null);
   assert.equal(checkValue(hh, [{ member_id: A, first_name: "A" }]), null);
   assert.equal(checkValue(hh, [{ member_id: A }, {}]), "Each person needs an id.");
+});
+
+// Part 4d, Task 3 (docs/superpowers/specs/2026-10-05-chinese-on-screen-design.md §3.2):
+// catalogue lookups go through sourceText; English is unchanged without lang.
+
+test("wording in the screen language: zh-Hans is the catalogue's zh, zh-Hant the map's value", () => {
+  setHantMap(HANT_MAP);
+  try {
+    const all = stepsFor(2).flatMap((s) => s.sections.flatMap((x) => x.questions));
+    const every = [...all, ...all.flatMap((x) => x.fields ?? [])];
+    for (const question of every)
+      for (const variant of ["general", "senior"]) {
+        const w = question.wording[variant] ?? question.wording.general;
+        assert.equal(wording(question, { variant }), w.en, question.id);
+        assert.equal(wording(question, { variant, lang: "en" }), w.en, question.id);
+        assert.equal(wording(question, { variant, lang: "zh-Hans" }), w.zh, question.id);
+        assert.equal(wording(question, { variant, lang: "zh-Hant" }), HANT_MAP[w.zh], question.id);
+        assert.notEqual(HANT_MAP[w.zh], undefined, question.id);
+      }
+    assert.equal(wording(q("tp_first_name"), { lang: "fr" }), q("tp_first_name").wording.general.en);
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("service and language labels in the screen language; English and unknown values unchanged", () => {
+  setHantMap(HANT_MAP);
+  try {
+    const service = q("service").options.find((o) => o.value === "drop_off");
+    const language = q("language").options.find((o) => o.value === "cantonese");
+    assert.equal(serviceLabel("drop_off", "zh-Hans"), service.label.general.zh);
+    assert.equal(serviceLabel("drop_off", "zh-Hant"), HANT_MAP[service.label.general.zh]);
+    assert.equal(languageLabel("cantonese", "zh-Hans"), language.label.general.zh);
+    assert.equal(languageLabel("cantonese", "en"), "Cantonese");
+    assert.equal(serviceLabel("Federal return", "zh-Hans"), "Federal return");
+    assert.equal(languageLabel(undefined, "zh-Hans"), undefined);
+  } finally {
+    setHantMap(null);
+  }
 });

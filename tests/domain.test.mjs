@@ -218,3 +218,38 @@ test("each of today's stages belongs to exactly one board tab, or none", () => {
   for (const [record, tab] of cases)
     assert.equal(phaseTab(record), tab, JSON.stringify(record));
 });
+
+// Part 4d: stage text in the client's language; English unchanged by default.
+test("describeStage takes a language; English is the default and unchanged", async () => {
+  const { setHantMap } = await import("../src/hant.mjs");
+  const { default: MAP } = await import("../src/zh-hant.mjs");
+  const english = describeStage("reviewing");
+  assert.deepEqual(describeStage("reviewing", "en"), english);
+  assert.equal(english.clientMessage, "An independent reviewer is checking your return.");
+  const zh = describeStage("reviewing", "zh-Hans");
+  assert.match(zh.clientMessage, /\p{Script=Han}/u);
+  assert.match(zh.label, /\p{Script=Han}/u);
+  assert.deepEqual(Object.keys(zh).sort(), ["clientMessage", "label"]);
+  for (const stage of [...STAGES, "nonsense", null]) {
+    const text = describeStage(stage, "zh-Hans");
+    assert.match(text.label, /\p{Script=Han}/u, String(stage));
+    assert.match(text.clientMessage, /\p{Script=Han}/u, String(stage));
+    assert.deepEqual(describeStage(stage, "fr"), describeStage(stage), "an unknown language is English");
+  }
+  assert.equal(new Set(STAGES.map((stage) => describeStage(stage, "zh-Hans").label)).size, STAGES.length);
+  setHantMap(MAP);
+  try {
+    assert.equal(describeStage("reviewing", "zh-Hant").clientMessage, MAP[zh.clientMessage]);
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("the text table's English stage entries match STAGE_DESCRIPTIONS", async () => {
+  const { t } = await import("../src/client-text.mjs");
+  for (const stage of [...STAGES, "unknown"]) {
+    const english = describeStage(stage === "unknown" ? "nonsense" : stage);
+    assert.equal(t(`stage.${stage}.label`), english.label, stage);
+    assert.equal(t(`stage.${stage}.client`), english.clientMessage, stage);
+  }
+});

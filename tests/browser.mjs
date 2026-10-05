@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   createBrowserFixture,
   loginTestUser,
+  loginTestUserById,
   requestCode,
   submitVerificationCode,
 } from "./support/browser-fixture.mjs";
@@ -70,6 +71,10 @@ import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { DRAFT_FONT_FIXTURES } from "../src/draft-pdf.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
 import { CONTACT_NOT_SHOWN } from "../src/staff-views.mjs";
+import { findSubstep } from "../src/intake-catalogue.mjs";
+import { t as say, sentence } from "../src/client-text.mjs";
+import { describeStage } from "../src/domain.mjs";
+import HANT from "../src/zh-hant.mjs";
 
 // Task 10A: the demonstration story (spec §9) driven through two real engines,
 // twice with the roles swapped, against the isolated local stack — plus the
@@ -2454,7 +2459,8 @@ async function runPermutation(t, roles) {
     });
 
     await phase("two presenter windows in one browser keep their own persona", async () => {
-      const context = await staffEngine.browser.newContext({ viewport: DESKTOP });
+      // English, as every context but the Chinese phase's (spec 2026-10-05 §6).
+      const context = await staffEngine.browser.newContext({ viewport: DESKTOP, locale: "en-US" });
       try {
         const tabOne = await openTab(context, fixture.appOrigin);
         await loginTestUser({
@@ -4057,6 +4063,180 @@ async function runPermutation(t, roles) {
       } finally {
         await againWin?.context.close();
         await v2Win?.context.close();
+      }
+    });
+
+    // Part 4d (spec 2026-10-05 §6): one client works in Chinese from the
+    // browser's own language, and the Traditional map is fetched only when
+    // 繁體 is chosen. It runs after the 4b2 phase, which also signs applicant B
+    // in and reads their applications list. Controls are found by id and
+    // data-action only; Chinese text is read only where the wording is the
+    // check, and it comes from the app's own tables so a wording review that
+    // changes a line does not break the story.
+    await phase("a client works in Chinese, and 繁體 loads only when chosen", async () => {
+      let zhWin = null;
+      try {
+        zhWin = await clientEngine.newPage({ locale: "zh-CN" });
+        const page = zhWin.page;
+        const hantRequests = [];
+        page.on("request", (request) => {
+          if (new URL(request.url()).pathname.endsWith("/src/zh-hant.mjs")) hantRequests.push(request.url());
+        });
+        const lang = () => page.evaluate(() => document.documentElement.lang);
+        const langIs = (wanted) =>
+          waitFor(page, `<html lang> to be ${wanted}`, (code) => document.documentElement.lang === code, wanted, ARRIVAL_MS);
+        const textOf = (selector) =>
+          page.evaluate((wanted) => document.querySelector(wanted)?.textContent.trim() ?? null, selector);
+        // A toast would cover part of a screenshot: wait for it to go.
+        const shootQuiet = async (name) => {
+          await waitFor(page, "the toast to close", () => !document.querySelector("#toast.visible"), undefined, ARRIVAL_MS);
+          await waitForQuiet(page);
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await shoot(page, name);
+        };
+
+        // ---- Before sign-in: 简体 from navigator.languages ----------------
+        await langIs("zh-Hans");
+        assert.equal(
+          await page.evaluate(() => document.querySelector('label[for="field-email"] > span')?.textContent.trim() ?? null),
+          say("signin.email", {}, "zh-Hans"),
+        );
+        assert.equal(say("signin.email", {}, "zh-Hans"), "电子邮箱");
+        await loginTestUserById({ page, actor: applicantB, fixture });
+        assert.equal(await lang(), "zh-Hans", "signing in changed the language");
+
+        // ---- A new application, filled, then the rail ----------------------
+        await clickAction(page, "start-application");
+        await page.locator(".reference-card strong").waitFor({ state: "visible", timeout: ARRIVAL_MS });
+        const reference = (await page.locator(".reference-card strong").innerText()).trim();
+        const own = await caseByReference(fixture, reference);
+        assert.ok(own, "the generated reference names no case");
+        await clickAction(page, "continue-intake");
+        await waitForSubstep(page, "before.ready");
+        await clickAction(page, "fill-fictional");
+        await waitFor(
+          page,
+          "the fill to be announced in Chinese",
+          (wanted) => document.querySelector("#toast")?.textContent.includes(wanted),
+          say("toast.fictional_filled", {}, "zh-Hans"),
+          RENDER_MS,
+        );
+
+        await railJump(page, "about.you");
+        assert.equal(await textOf(".form-workspace .page-intro h1"), findSubstep("about.you").title.general.zh);
+        // 年 / 月 / 日, in that order in the page; the ids are unchanged.
+        assert.deepEqual(
+          await page.evaluate(() =>
+            [...document.querySelectorAll('input[id^="field-client-tp_dob-"]')].map((input) => [
+              input.id,
+              input.closest("label")?.querySelector("span")?.textContent.trim() ?? null,
+            ]),
+          ),
+          [
+            ["field-client-tp_dob-year", "年"],
+            ["field-client-tp_dob-month", "月"],
+            ["field-client-tp_dob-day", "日"],
+          ],
+        );
+        await waitForQuiet(page);
+        await page.locator("#field-client-tp_dob-year").fill("1961");
+        await page.locator("#field-client-tp_dob-month").fill("04");
+        await page.locator("#field-client-tp_dob-day").fill("12");
+        await shootQuiet("zh-intake");
+
+        // The move saves the date the boxes hold.
+        await railJump(page, "review.check");
+        assert.equal(await caseAnswer(fixture, own.id, "tp_dob"), "1961-04-12");
+        assert.equal(await textOf("#alerts-title"), say("review.alerts_title", {}, "zh-Hans"));
+        await shootQuiet("zh-review");
+
+        // The summary holds the Change links and the draft buttons: the
+        // screen's own form comes first.
+        await railJump(page, "review.summary");
+        assert.equal(
+          await textOf('#intake-v2-form [data-action="change-substep"]'),
+          say("summary.change", {}, "zh-Hans"),
+        );
+        assert.equal(
+          await page.locator('[data-action="view-draft"]').first().getAttribute("data-form"),
+          "zh-s",
+        );
+
+        await railJump(page, "review.submit");
+        await tickBox(page, "field-confirmed");
+        await waitForQuiet(page);
+        await page.locator('#intake-v2-form [data-case-action="SUBMIT"]').click({ timeout: CLICK_MS });
+
+        // ---- The progress page, in 简体 ------------------------------------
+        const statusHans = describeStage("received", "zh-Hans").clientMessage;
+        await waitFor(
+          page,
+          "the status in Chinese",
+          (wanted) => document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+          statusHans,
+          ARRIVAL_MS,
+        );
+        assert.equal((await caseById(fixture, own.id)).stage, "received");
+        // The submit's history sentence, translated (spec §3.3).
+        const received = sentence(
+          "Application received. A volunteer will check your information and documents.",
+          "zh-Hans",
+        );
+        assert.match(received, /^已收到申请/);
+        await waitFor(
+          page,
+          "the translated history line",
+          (wanted) => [...document.querySelectorAll(".timeline-item p")].some((line) => line.textContent.trim() === wanted),
+          received,
+          ARRIVAL_MS,
+        );
+        await shootQuiet("zh-progress");
+
+        // ---- 繁體, with one click: the map is fetched now and only now ----
+        assert.deepEqual(hantRequests, [], "the Traditional map was fetched before 繁體 was chosen");
+        const hantButton = '[data-action="set-language"][data-value="zh-Hant"]';
+        await waitForQuiet(page);
+        await page.locator(hantButton).click({ timeout: CLICK_MS });
+        await langIs("zh-Hant");
+        assert.equal(
+          await page.evaluate((selector) => document.activeElement?.matches(selector) ?? false, hantButton),
+          true,
+          "the keyboard left the 繁體 button",
+        );
+        assert.notEqual(HANT[statusHans], undefined, "the map has no Traditional for the status");
+        assert.equal(await textOf(".status-explanation"), HANT[statusHans]);
+        assert.equal(hantRequests.length, 1, "the Traditional map was not fetched exactly once");
+
+        // ---- A reload keeps 繁體 ------------------------------------------
+        await page.reload();
+        await langIs("zh-Hant");
+        await waitFor(
+          page,
+          "the status in Traditional after the reload",
+          (wanted) => document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+          HANT[statusHans],
+          ARRIVAL_MS,
+        );
+
+        // ---- Back to English, and the window is left that way -------------
+        await waitForQuiet(page);
+        await page.locator('[data-action="set-language"][data-value="en"]').click({ timeout: CLICK_MS });
+        await langIs("en");
+        await waitFor(
+          page,
+          "the status in English",
+          (wanted) => document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+          describeStage("received").clientMessage,
+          ARRIVAL_MS,
+        );
+        evidence.story.chinese = {
+          reference,
+          hantRequestsAtSwitch: 1,
+          hantRequestsAfterReload: hantRequests.length,
+          consoleLines: assertConsoleQuiet(zhWin, { name: "Chinese client window", allow: [] }),
+        };
+      } finally {
+        await zhWin?.context.close();
       }
     });
 

@@ -4,7 +4,7 @@
 
 Scope: the static pages and screenshots in `.stitch/designs` (current set listed under `currentScreens` in `.stitch/metadata.json`), compared with the running app (`src/*.mjs`, `src/styles.css`, the Supabase schema). `.stitch/captures` (the "before" screenshots) is kept for the presentation.
 
-**Status (updated Oct 4, 2026).**
+**Status (updated Oct 5, 2026).**
 - The group answered all twelve decisions (section 3), and the screens they affected were redesigned the same day.
 - Phase 0 of the plan is implemented on the `phase-0-foundations` branch.
 - Part 1 (work board, case page, client screens, office screens) is merged.
@@ -13,7 +13,8 @@ Scope: the static pages and screenshots in `.stitch/designs` (current set listed
 - Part 4b (the client's nine-step version-2 intake, with the senior switch; built and tested, reachable once part 4c switches the default intake version) is merged (#40).
 - Part 4b2 (the intake redesign: sub-steps on a rail tree, document cards, Review & submit and the draft 13614-C) is merged (#43). It replaced the nine-step layout before any client sees version 2.
 - Part 4c (re-planned onto 4b2) is done: staff read version-2 answers by step and sub-step with "Not sure" flagged, a contact card (D5) and the materials checklist (D9, on version-1 cases too), the client's document checklist with office marks and Needed/Maybe moves, and the draft 13614-C on the case page; the version-2 Add a case, one accordion per sub-step plus Documents. Version 2 is ready. The switch-over (migration 020) that makes new cases version 2 is held until the group has reviewed the new wording (decided Oct 4, 2026); it ships as its own small PR. Existing cases keep their version.
-- Next: part 4d (the intake in Chinese), then removing version 1 as its own part once no version-1 case is open.
+- Part 4d (Chinese on screen) is done: every client screen, the version-2 intake, Review & submit, Documents, the progress page, history and error sentences in 简体 and 繁體, chosen with the switch in the client bar and saved per browser. Traditional is derived at build time with OpenCC `tw`, characters only; staff screens stay English, and version-1 applications stay English under a note. The new text goes to the group's wording review; screenshots are `screens/implemented-zh-*.png`.
+- Next: removing version 1 as its own part once no version-1 case is open.
 - Decided on Sep 30, 2026, while planning 4c:
   - The version-2 intake has **no service-scope stop**. An out-of-scope application submits normally, and the office handles scope at its intake checks. This is a known gap, not a regression; scope rules may return later, written for the new questions.
   - On Add a case, the office confirms "I have checked these answers with the client" before sending.

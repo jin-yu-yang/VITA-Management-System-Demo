@@ -29,6 +29,7 @@ import {
 } from "./intake-form.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { createWindowState } from "./window-state.mjs";
+import { isLang, readLanguage, writeLanguage } from "./language.mjs";
 
 // The one place browser state lives. It owns what is loaded, what is being
 // edited, and which action envelope is in flight; it renders nothing and knows
@@ -243,8 +244,15 @@ export function createController({
   clock = () => Date.now(),
   newActionId = () => crypto.randomUUID(),
   cooldownSeconds = 65,
+  // The browser's own storage for the language (spec 2026-10-05 §2): kept
+  // per browser, never in the window state. null when it is blocked.
+  localStorage = null,
+  languages = [],
 }) {
   const state = {
+    // The client's language: "en", "zh-Hans" or "zh-Hant". Staff screens
+    // ignore it (viewLang). Saved per browser, never in sessionStorage.
+    lang: readLanguage({ storage: localStorage, languages }),
     // Identity and transport. `session` is what the last identity attempt
     // learned, and it is deliberately three-valued: a visitor who is signed out
     // and a server that cannot be reached must never be shown the same screen,
@@ -1138,6 +1146,24 @@ export function createController({
     state.sidebarOpen = !state.sidebarOpen;
     persistSession();
     show();
+  }
+
+  // ---- the language (spec 2026-10-05 §2) -------------------------------
+
+  // The client's own choice: saved for this browser, then drawn. An unknown
+  // language throws and changes nothing.
+  function setLanguage(lang) {
+    writeLanguage(lang, { storage: localStorage });
+    state.lang = lang;
+    show();
+  }
+
+  // A language chosen elsewhere (another tab), or startup's fallback when the
+  // Traditional map can't load: set, never written, so the saved choice stays.
+  function adoptLanguage(lang, { draw = true } = {}) {
+    if (!isLang(lang)) throw new Error(`Unknown language: ${lang}`);
+    state.lang = lang;
+    if (draw) show();
   }
 
   function setCaseTab(value) {
@@ -2213,6 +2239,8 @@ export function createController({
     clearBoardFilters,
     setBoardSearchDraft,
     toggleSidebar,
+    setLanguage,
+    adoptLanguage,
     setCaseTab,
     editAnswers,
     revealInvalid,

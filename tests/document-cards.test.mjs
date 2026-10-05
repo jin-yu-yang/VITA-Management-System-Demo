@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  CARD_RULES, CARD_SUBSTEPS, RULE_TYPES, SLOT_PATTERN, cardsFor,
+  CARD_RULES, CARD_SUBSTEPS, CARD_TEMPLATES, CARD_WHY, RULE_TYPES, SLOT_PATTERN, cardsFor,
 } from "../src/document-cards.mjs";
 import { findQuestion } from "../src/intake-catalogue.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { LANGS, sourceText } from "../src/language.mjs";
+import { setHantMap } from "../src/hant.mjs";
+import MAP from "../src/zh-hant.mjs";
 
 const ID_A = "a".repeat(32);
 const ID_B = "0123456789abcdef0123456789abcdef";
@@ -52,18 +56,18 @@ test("household members: Maybe-needed SSN cards in list order, only with a valid
   const cards = cardsFor(answers).filter((c) => c.ruleId === "ssn" && c.owner.startsWith("hh."));
   assert.deepEqual(cards.map((c) => c.slotId), [`ssn.hh.${ID_A}`, `ssn.hh.${ID_B}`]);
   assert.deepEqual(cards.map((c) => c.group), ["maybe", "maybe"]);
-  assert.deepEqual(cards[0].ownerLine, { en: "Kai Chen", zh: "Kai Chen" });
-  assert.deepEqual(cards[1].ownerLine, { en: "Person 4", zh: "成员 4" });
+  assert.deepEqual(cards[0].ownerLine, { en: "Kai Chen", zh: "Kai Chen", literal: true });
+  assert.deepEqual(cards[1].ownerLine, { en: "Person 4", zh: { template: "成员 {n}", params: { n: 4 } } });
   // hidden: household answers behind has_household_members = no
   assert.deepEqual(slots({ ...answers, has_household_members: "no" }), ["photo_id.tp", "ssn.tp", "other.household"]);
 });
 
 test("owner lines for the client and the spouse", () => {
   assert.deepEqual(find(single, "photo_id.tp").ownerLine, { en: "You", zh: "本人" });
-  assert.deepEqual(find({ ...single, tp_first_name: "Ana", tp_last_name: "Reyes" }, "photo_id.tp").ownerLine, { en: "Ana Reyes", zh: "Ana Reyes" });
-  assert.deepEqual(find({ ...single, tp_first_name: "Ana" }, "photo_id.tp").ownerLine, { en: "Ana", zh: "Ana" });
+  assert.deepEqual(find({ ...single, tp_first_name: "Ana", tp_last_name: "Reyes" }, "photo_id.tp").ownerLine, { en: "Ana Reyes", zh: "Ana Reyes", literal: true });
+  assert.deepEqual(find({ ...single, tp_first_name: "Ana" }, "photo_id.tp").ownerLine, { en: "Ana", zh: "Ana", literal: true });
   assert.deepEqual(find({ marital_status: "married" }, "photo_id.sp").ownerLine, { en: "Your spouse", zh: "配偶" });
-  assert.deepEqual(find(married, "photo_id.sp").ownerLine, { en: "Mei Lin", zh: "Mei Lin" });
+  assert.deepEqual(find(married, "photo_id.sp").ownerLine, { en: "Mei Lin", zh: "Mei Lin", literal: true });
 });
 
 test("owner lines for shared and household cards", () => {
@@ -87,8 +91,8 @@ test("wages: yes is Needed, not_sure is Maybe needed, no is none", () => {
 
 test("w2 hint comes from the job count", () => {
   const hint = (count) => find({ ...single, inc_wages: "yes", inc_wages_job_count: count }, "w2.household").hint;
-  assert.deepEqual(hint("2"), { en: "You said 2 jobs. Upload 2 W-2s.", zh: "您说有 2 份工作，请上传 2 张 W-2。" });
-  assert.deepEqual(hint("1"), { en: "You said 1 job. Upload 1 W-2.", zh: "您说有 1 份工作，请上传 1 张 W-2。" });
+  assert.deepEqual(hint("2"), { en: "You said 2 jobs. Upload 2 W-2s.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 2 } } });
+  assert.deepEqual(hint("1"), { en: "You said 1 job. Upload 1 W-2.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 1 } } });
   assert.equal(hint(""), null);
   assert.equal(hint(undefined), null);
   assert.equal(hint("0"), null);
@@ -97,9 +101,9 @@ test("w2 hint comes from the job count", () => {
 
 test("other income and other event show the client's description", () => {
   const oi = find({ ...single, inc_other: "yes", inc_other_desc: "Jury duty pay" }, "other_income.household");
-  assert.deepEqual(oi.why, { en: "You wrote: Jury duty pay", zh: "您填写的是：Jury duty pay" });
+  assert.deepEqual(oi.why, { en: "You wrote: Jury duty pay", zh: { template: "您填写的是：{written}", params: { written: "Jury duty pay" } } });
   const oe = find({ ...single, evt_other: "yes", evt_other_desc: "Bought a car" }, "other_event.household");
-  assert.deepEqual(oe.why, { en: "You wrote: Bought a car", zh: "您填写的是：Bought a car" });
+  assert.deepEqual(oe.why, { en: "You wrote: Bought a car", zh: { template: "您填写的是：{written}", params: { written: "Bought a car" } } });
   const blank = find({ ...single, inc_other: "yes", inc_other_desc: "  " }, "other_income.household");
   assert.equal(blank.why.en, "You said you had other income");
   // hidden description (inc_other = no) is not read
@@ -362,4 +366,112 @@ test("every answer-driven card has a why line and the question it links to", () 
   const ssnHh = find({ ...single, has_household_members: "yes", hh: [{ member_id: ID_A }] }, `ssn.hh.${ID_A}`);
   assert.equal(ssnHh.ask, "hh");
   assert.ok(ssnHh.why.en);
+});
+
+// Part 4d: card text in three languages (spec 2026-10-05 §2, §4)
+
+const FIELDS = ["label", "hint", "why", "ownerLine"];
+const ALL_YES = (() => {
+  const a = {
+    marital_status: "married", tp_first_name: "Ana", sp_first_name: "Mei", has_household_members: "yes",
+    hh: [{ member_id: ID_A, first_name: "Kai", ippin: "yes", months_lived: "3" }, { member_id: ID_B, ippin: "not_sure" }],
+    inc_wages_job_count: "2", inc_other_desc: "Jury duty pay", evt_other_desc: "Bought a car",
+    evt_brought_prior_return: "yes", refund_method: "split", payment_method: "bank_account",
+    ippin: ["me", "spouse"], on_visa: ["me", "spouse"], digital_assets: ["me"],
+  };
+  for (const [, trigger] of APPENDIX_A) for (const [key, value] of Object.entries(trigger)) if (value === "yes") a[key] = "yes";
+  return a;
+})();
+const SAMPLE_SETS = [
+  ...Array.from({ length: 21 }, (_, seed) => [false, true].map((married) => makeSampleAnswers({ version: 2, seed, married }))).flat(),
+  ALL_YES,
+];
+
+test("every card field reads in English, Simplified and Traditional", () => {
+  setHantMap(MAP);
+  try {
+    let seen = 0;
+    for (const answers of SAMPLE_SETS) {
+      for (const card of cardsFor(answers)) {
+        for (const field of FIELDS) {
+          if (card[field] == null) continue;
+          assert.equal(typeof card[field].en, "string", `${card.slotId} ${field}: en is a plain string`);
+          for (const lang of LANGS) assert.ok(sourceText(card[field], lang).trim(), `${card.slotId} ${field} ${lang}`);
+          seen++;
+        }
+      }
+    }
+    assert.ok(seen > 500, `checked ${seen} fields`);
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("every non-literal Chinese source on a card is in the Traditional map", () => {
+  const missing = new Set();
+  for (const answers of SAMPLE_SETS) {
+    for (const card of cardsFor(answers)) {
+      for (const field of FIELDS) {
+        const pair = card[field];
+        if (pair == null || pair.literal) continue;
+        const source = typeof pair.zh === "string" ? pair.zh : pair.zh?.template;
+        if (!Object.hasOwn(MAP, source)) missing.add(`${card.slotId} ${field}: ${source}`);
+      }
+    }
+  }
+  assert.deepEqual([...missing], []);
+});
+
+test("a name on the owner line is literal and never converted", () => {
+  setHantMap(MAP);
+  try {
+    const answers = { ...single, tp_first_name: "Ana", tp_last_name: "发达" };
+    const line = find(answers, "photo_id.tp").ownerLine;
+    assert.deepEqual(line, { en: "Ana 发达", zh: "Ana 发达", literal: true });
+    assert.equal(sourceText(line, "zh-Hant"), "Ana 发达");
+    assert.equal(sourceText(find(single, "photo_id.tp").ownerLine, "zh-Hant"), "本人");
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("the W-2 hint: English as today, Simplified and Traditional from the template", () => {
+  const hint = find({ ...single, inc_wages: "yes", inc_wages_job_count: "2" }, "w2.household").hint;
+  assert.equal(sourceText(hint, "en"), "You said 2 jobs. Upload 2 W-2s.");
+  assert.equal(sourceText(hint, "zh-Hans"), "您说有 2 份工作，请上传 2 张 W-2。");
+  setHantMap(MAP);
+  try {
+    const converted = MAP[CARD_TEMPLATES.w2_hint];
+    assert.ok(converted, "the template is in the map");
+    assert.equal(sourceText(hint, "zh-Hant"), converted.replaceAll("{n}", "2"));
+    assert.match(sourceText(hint, "zh-Hant"), /請上傳 2 張 W-2/);
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("the client's words in a why line are filled in after conversion", () => {
+  setHantMap(MAP);
+  try {
+    const why = find({ ...single, inc_other: "yes", inc_other_desc: "发票" }, "other_income.household").why;
+    assert.equal(sourceText(why, "en"), "You wrote: 发票");
+    assert.equal(sourceText(why, "zh-Hant"), `${MAP[CARD_TEMPLATES.wrote].replace("{written}", "")}发票`);
+  } finally {
+    setHantMap(null);
+  }
+});
+
+test("CARD_WHY holds every said() line, frozen, and the rules use its entries", () => {
+  assert.ok(Object.isFrozen(CARD_WHY));
+  assert.ok(Object.isFrozen(CARD_TEMPLATES));
+  const said = Object.values(CARD_WHY).filter((p) => p.en.startsWith("You said "));
+  assert.equal(said.length, 43);
+  for (const pair of said) assert.ok(pair.zh.startsWith("您说"), pair.en);
+  const whys = new Set(Object.values(CARD_WHY));
+  for (const rule of CARD_RULES) if (rule.why && rule.why.en.startsWith("You said ") && !["w2", "custody"].includes(rule.id)) assert.ok(whys.has(rule.why), rule.id);
+  for (const answers of SAMPLE_SETS) {
+    for (const card of cardsFor(answers)) {
+      if (card.why && !card.why.zh?.template && card.ruleId !== "w2" && card.ruleId !== "custody") assert.ok(whys.has(card.why), `${card.slotId} why comes from CARD_WHY`);
+    }
+  }
 });
