@@ -5,6 +5,7 @@ import {
 } from "../src/draft-form.mjs";
 import { findQuestion, wording } from "../src/intake-catalogue.mjs";
 import { setHantMap } from "../src/hant.mjs";
+import * as OpenCC from "opencc-js";
 import HANT_MAP from "../src/zh-hant.mjs";
 
 // Every name below is written without the "form1[0]." prefix the module adds.
@@ -457,6 +458,19 @@ test("the 繁體 form: the same lines through the Traditional map; the client's 
   assert.ok(comments.startsWith("我的 1099 表还没收到。\n\n不確定：是否有其他人（如父母或成年子女）可以在其報稅表上將您或配偶列為受撫養人？、成員 1：是否持有身份保護碼（IP PIN）？、小費、"));
   // Without the map the form would print Simplified: the test above sees the difference.
   assert.notEqual(draft(answers, { ...OPTIONS, form: "zh-t" }).comments, comments);
+});
+
+test("the 繁體 form with the map loaded: no generated character is left in Simplified", () => {
+  // Not sure answers, six people (two past the form's rows) and client text
+  // whose characters are the same in both scripts.
+  const answers = { ...MARRIED, hh: SIX, additional_notes: "我的 1099 表", inc_other_desc: "工作", evt_other_desc: "工作" };
+  const { comments } = withHant(() => draft(answers, { ...OPTIONS, form: "zh-t" }));
+  const converter = OpenCC.Converter({ from: "cn", to: "tw" });
+  assert.match(comments, /不確定：/);
+  assert.match(comments, /成員 6：/);
+  const left = [...comments].filter((ch) => converter(ch) !== ch);
+  assert.deepEqual(left, [], `still Simplified: ${left.join("")}`);
+  assert.equal(converter(comments), comments);
 });
 
 test("Chinese member lines: option labels, dates and words in the form's language", () => {

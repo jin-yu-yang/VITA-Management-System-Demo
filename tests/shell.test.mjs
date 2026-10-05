@@ -809,15 +809,24 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.match(app, /localStorage: readLocalStorage\(\)/);
   assert.match(app, /languages: /);
   // The map is loaded on demand and registered.
-  assert.match(app, /setHantMap\(\(await import\("\.\/zh-hant\.mjs"\)\)\.default\)/);
+  assert.match(app, /const loadHant = createHantLoader\(\(url\) => import\(url\)\);/);
+  assert.match(readFileSync(new URL("../src/hant.mjs", import.meta.url), "utf8"), /failures === 0 \? "\.\/zh-hant\.mjs" : `\.\/zh-hant\.mjs\?r=\$\{failures\}`/);
   // One request helper for the switch, other tabs and startup: only the newest wish applies.
   assert.match(app, /const languageRequests = createLanguageRequests\(\{ hantReady, loadHant \}\);/);
-  assert.equal(app.match(/await loadHant\(\)/g), null, "nothing awaits the map outside the request helper");
+  // Outside the request helper, only the 繁體 draft awaits the map, and it
+  // changes no language: the draft's lines need it whatever the screen shows.
+  assert.deepEqual(app.match(/await loadHant\(\)/g), ["await loadHant()"], "one await of the map outside the request helper");
+  assert.match(
+    app,
+    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t" && !hantReady\(\)\) await loadHant\(\);\s*const fields = draftFields\(/,
+  );
+  // Startup waits five seconds at most for a saved 繁體's map.
+  assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
   // Startup in 繁體: loaded before start through a request; 繁體 still wanted
   // without its map means 简体, undrawn, and the toast after the first render.
   assert.match(
     app,
-    /if \(controller\.getState\(\)\.lang === "zh-Hant"\) \{\s*await languageRequests\.want\("zh-Hant", \(\) => \{\}\);\s*if \(controller\.getState\(\)\.lang === "zh-Hant" && !hantReady\(\)\) \{\s*controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);\s*pendingToast = "toast\.hant_failed_start";\s*\}\s*\}\s*controllerStarted = true;\s*await controller\.start\(\);\s*\}\s*$/,
+    /if \(controller\.getState\(\)\.lang === "zh-Hant"\) \{[^]*?const outcome = await languageRequests\.want\("zh-Hant", \(\) => \{\}, \{ timeoutMs: HANT_START_TIMEOUT_MS \}\);\s*if \(controller\.getState\(\)\.lang === "zh-Hant" && \(outcome === "failed" \|\| !hantReady\(\)\)\) \{\s*controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);\s*pendingToast = "toast\.hant_failed_start";\s*\}\s*\}\s*controllerStarted = true;\s*await controller\.start\(\);\s*\}\s*$/,
   );
   assert.match(app, /if \(pendingToast[\s\S]{0,200}notify\(t\(pendingToast, \{\}, lang\)\);[\s\S]{0,40}pendingToast = null;/);
   // The switch: sweep, then a request (a failure keeps the language).

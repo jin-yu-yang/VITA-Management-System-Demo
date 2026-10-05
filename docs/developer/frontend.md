@@ -362,7 +362,10 @@ Every client screen is in English, Simplified Chinese (简体) or Traditional Ch
 with the switch in the client bar and saved per browser in `localStorage["vitally.lang"]`. A first
 visit takes its language from `navigator.languages`. Staff and presenter screens are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
-character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen.
+character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
+the 繁體 draft 13614-C is made (which leaves the screen's language as it is). A saved 繁體 waits at
+most five seconds for it at startup, then starts in 简体 with a toast; a retry after a failed fetch
+asks for a fresh URL (`./zh-hant.mjs?r=1`, …), since some browsers cache a failed module.
 The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-screen-design.md).
 
 | Module | Holds |

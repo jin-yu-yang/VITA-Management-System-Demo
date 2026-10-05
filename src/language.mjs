@@ -6,7 +6,7 @@ import { toHant } from "./hant.mjs";
 
 export const LANGS = Object.freeze(["en", "zh-Hans", "zh-Hant"]);
 export const STORAGE_KEY = "vitally.lang";
-const LOCALES = Object.freeze({ en: "en-US", "zh-Hans": "zh-CN", "zh-Hant": "zh-HK" });
+const LOCALES = Object.freeze({ en: "en-US", "zh-Hans": "zh-CN", "zh-Hant": "zh-TW" });
 
 export const localeOf = (lang) => LOCALES[lang] ?? LOCALES.en;
 export const isLang = (value) => LANGS.includes(value);
@@ -80,16 +80,31 @@ export function sourceText(pair, lang = "en") {
 // load, and a wish whose load lands after a newer one is dropped, so a slow
 // load never undoes (or saves over) a later choice. `want` answers
 // "applied", "stale" (a newer wish came first) or "failed" (the map could
-// not load and this is still the newest wish).
+// not load and this is still the newest wish). With `timeoutMs`, a load
+// that has not landed by then counts as failed, and the turn is made stale:
+// the map may still arrive and register, but this turn never applies.
 export function createLanguageRequests({ hantReady, loadHant }) {
   let latest = 0;
-  async function want(lang, apply) {
+  async function want(lang, apply, { timeoutMs } = {}) {
     const turn = ++latest;
     if (lang === "zh-Hant" && !hantReady()) {
+      let timer = null;
+      const late = Symbol("late");
       try {
-        await loadHant();
+        const load = loadHant();
+        const loaded =
+          timeoutMs > 0
+            ? await Promise.race([load, new Promise((resolve) => { timer = setTimeout(() => resolve(late), timeoutMs); })])
+            : await load;
+        if (loaded === late) {
+          if (turn !== latest) return "stale";
+          latest += 1; // this turn is over: nothing it started may apply
+          return "failed";
+        }
       } catch {
         return turn === latest ? "failed" : "stale";
+      } finally {
+        clearTimeout(timer);
       }
       if (turn !== latest) return "stale";
     }

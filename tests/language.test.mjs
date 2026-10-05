@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { LANGS, STORAGE_KEY, defaultLanguage, readLanguage, writeLanguage, createLanguageRequests, sourceText, viewLang, localeOf, fill } from "../src/language.mjs";
-import { setHantMap, toHant, hantReady } from "../src/hant.mjs";
+import { setHantMap, toHant, hantReady, createHantLoader } from "../src/hant.mjs";
 import { TEXT, SENTENCES, t, sentence } from "../src/client-text.mjs";
 
 const memoryStorage = (initial = {}) => {
@@ -48,7 +48,7 @@ test("staff screens are English; everything else follows the chosen language", (
   assert.equal(viewLang({}), "en");
   assert.equal(localeOf("en"), "en-US");
   assert.equal(localeOf("zh-Hans"), "zh-CN");
-  assert.equal(localeOf("zh-Hant"), "zh-HK");
+  assert.equal(localeOf("zh-Hant"), "zh-TW");
 });
 
 test("fill puts each {name} in, and leaves an unknown one visible", () => {
@@ -211,4 +211,50 @@ test("language requests: of two 繁體 loads only the newest applies; a failure 
   const lone = again.want("zh-Hant", () => assert.fail("never applied"));
   failing.pending[1].reject();
   assert.equal(await lone, "failed");
+});
+
+test("language requests: a startup load that outlasts its timeout fails, and a late map never applies", async () => {
+  const loads = deferredLoads();
+  const requests = createLanguageRequests(loads);
+  const applied = [];
+  const outcome = await requests.want("zh-Hant", (lang) => applied.push(lang), { timeoutMs: 10 });
+  assert.equal(outcome, "failed");
+  assert.deepEqual(applied, []);
+  // The map lands after the timeout: registered, but the timed-out turn stays over.
+  loads.pending[0].resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(loads.hantReady(), true);
+  assert.deepEqual(applied, [], "the late map did not switch to 繁體");
+  // A later press applies at once.
+  assert.equal(await requests.want("zh-Hant", (lang) => applied.push(lang)), "applied");
+  assert.deepEqual(applied, ["zh-Hant"]);
+
+  // A load that lands in time applies; a newer wish during the wait makes the timeout stale.
+  const quick = deferredLoads();
+  const inTime = createLanguageRequests(quick);
+  const pending = inTime.want("zh-Hant", (lang) => applied.push(`quick ${lang}`), { timeoutMs: 1000 });
+  quick.pending[0].resolve();
+  assert.equal(await pending, "applied");
+  const slow = deferredLoads();
+  const overtaken = createLanguageRequests(slow);
+  const waiting = overtaken.want("zh-Hant", () => assert.fail("never applied"), { timeoutMs: 10 });
+  assert.equal(await overtaken.want("en", () => {}), "applied");
+  assert.equal(await waiting, "stale");
+});
+
+test("the map's loader asks for a fresh URL after a failure, and keeps the path relative", async () => {
+  const asked = [];
+  let fail = 2;
+  const loadHant = createHantLoader(async (url) => {
+    asked.push(url);
+    if (fail-- > 0) throw new Error("offline");
+    return { default: { "身份证件": "身份證件" } };
+  });
+  setHantMap(null);
+  await assert.rejects(loadHant());
+  await assert.rejects(loadHant());
+  await loadHant();
+  assert.deepEqual(asked, ["./zh-hant.mjs", "./zh-hant.mjs?r=1", "./zh-hant.mjs?r=2"]);
+  assert.equal(toHant("身份证件"), "身份證件");
+  setHantMap(null);
 });

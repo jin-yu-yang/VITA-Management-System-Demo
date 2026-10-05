@@ -152,17 +152,23 @@ export function sendable(question, value) {
 /**
  * checkValue's reason in the screen language. checkValue stays English (the
  * database mirrors it); fixed reasons go through SENTENCES, the two built with
- * numbers through text keys. English returns the reason as it is.
+ * numbers through text keys. English returns the reason as it is. `question`
+ * is the one checked: for a household, a sub-field's reason is named by the
+ * sub-field's wording (its id when the household or the sub-field is unknown).
  */
-export function invalidText(reason, lang = "en") {
+export function invalidText(reason, lang = "en", question = null) {
   if (typeof reason !== "string" || !isLang(lang) || lang === "en") return reason;
   let m;
   if ((m = /^Use at most (\d+) characters\.$/.exec(reason))) return t("invalid.too_long", { limit: num(m[1], lang) }, lang);
   if ((m = /^Enter a number from (\d+) to (\d+)\.$/.exec(reason)))
     return t("invalid.number_range", { min: num(m[1], lang), max: num(m[2], lang) }, lang);
   if ((m = /^Unknown field (.+)\.$/.exec(reason))) return t("invalid.unknown_field", { field: m[1] }, lang);
-  // checkGroup's "<sub-field id>: <reason>": the id stays, the reason is translated.
-  if ((m = /^(\w+): (.+)$/.exec(reason))) return t("invalid.member_field", { field: m[1], reason: invalidText(m[2], lang) }, lang);
+  // checkGroup's "<sub-field id>: <reason>": the sub-field's wording, and the reason translated.
+  if ((m = /^(\w+): (.+)$/.exec(reason))) {
+    const field = question?.type === "group" ? (question.fields ?? []).find((f) => f.id === m[1]) : null;
+    const name = (field && wording(field, { lang })) || m[1];
+    return t("invalid.member_field", { field: name, reason: invalidText(m[2], lang) }, lang);
+  }
   return sentence(reason, lang);
 }
 
@@ -171,7 +177,7 @@ export function noteState(question, value, { showMissing = false, showInvalid = 
   const sent = sendable(question, value);
   if (showInvalid) {
     const reason = checkValue(question, sent);
-    if (reason) return { text: invalidText(reason, lang), className: "is-invalid" };
+    if (reason) return { text: invalidText(reason, lang, question), className: "is-invalid" };
   }
   if (showMissing && question?.required && !isAnswered(sent)) return { text: t("note.needs_answer", {}, lang), className: "is-missing" };
   return { text: "", className: "" };

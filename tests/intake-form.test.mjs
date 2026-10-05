@@ -875,6 +875,26 @@ test("the note in Chinese: Needs an answer and the answer checks' messages", () 
   assert.equal(invalidText("Use at most 200 characters.", "en"), "Use at most 200 characters.");
 });
 
+test("a household member's note names the sub-field by its wording in Chinese; English keeps the id", () => {
+  const badDob = [{ member_id: "0".repeat(31) + "1", dob: "1961-02-30" }];
+  const reason = checkValue(HH, badDob);
+  assert.equal(reason, "dob: Enter a real date as YYYY-MM-DD.");
+  const dob = sub("dob");
+  const zh = noteState(HH, badDob, { showInvalid: true, lang: "zh-Hans" }).text;
+  assert.equal(zh, `${wording(dob, { lang: "zh-Hans" })}：${invalidText("Enter a real date as YYYY-MM-DD.", "zh-Hans")}`);
+  assert.doesNotMatch(zh, /dob/);
+  withHant(() => {
+    const hant = noteState(HH, badDob, { showInvalid: true, lang: "zh-Hant" }).text;
+    assert.ok(hant.startsWith(`${HANT_MAP[dob.wording.general.zh]}：`), hant);
+  });
+  // English is byte for byte what it was: the id and checkValue's reason.
+  assert.equal(noteState(HH, badDob, { showInvalid: true }).text, reason);
+  assert.equal(invalidText(reason, "en", HH), reason);
+  // Without the household, or for a sub-field it lacks, the id stands.
+  assert.equal(invalidText(reason, "zh-Hans"), `dob：${invalidText("Enter a real date as YYYY-MM-DD.", "zh-Hans")}`);
+  assert.ok(invalidText("nope: Expected text.", "zh-Hans", HH).startsWith("nope："));
+});
+
 test("every message checkValue can return reads in Chinese through invalidText", () => {
   const reasons = new Set();
   const add = (question, value) => {

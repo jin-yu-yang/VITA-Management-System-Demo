@@ -398,7 +398,7 @@ permutation on a Firefox-staff wait that a single staff press never satisfied ("
 call…" waiting for the chosen persona once; "the office takes in a walk-in…" waiting for the
 materials mark twice). It is intermittent and not tied to one commit: that permutation on its own
 failed once at `bc1994e` and passed at `a91e1f5`, `a704402` and `957cbba`, and no commit between
-them touches a staff screen. If a run stops there, run it again; a run on a quiet machine is the
+them touches a staff-view file. If a run stops there, run it again; a run on a quiet machine is the
 better check.
 
 Install the second browser engine once, with the same scoped `PATH`, before the first auth-gate or

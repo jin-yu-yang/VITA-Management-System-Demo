@@ -11,3 +11,20 @@ export function setHantMap(next) {
 export const hantReady = () => map !== null;
 
 export const toHant = (text) => (map && typeof text === "string" && Object.hasOwn(map, text) ? map[text] : text);
+
+// The map's loader. `importModule` is the caller's own import(), so the path
+// stays relative to the page's modules. Some engines cache a failed module
+// fetch, so after a failure each retry asks for a fresh URL (?r=1, ?r=2, …);
+// the first try is the plain path.
+export function createHantLoader(importModule) {
+  let failures = 0;
+  return async function loadHant() {
+    const url = failures === 0 ? "./zh-hant.mjs" : `./zh-hant.mjs?r=${failures}`;
+    try {
+      setHantMap((await importModule(url)).default);
+    } catch (error) {
+      failures += 1;
+      throw error;
+    }
+  };
+}

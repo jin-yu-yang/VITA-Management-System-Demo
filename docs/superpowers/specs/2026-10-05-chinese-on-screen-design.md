@@ -172,11 +172,13 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **Overrides:** `tools/hant-overrides.mjs` holds hand-written replacements applied after conversion, for example where 发 or 干 has several Traditional forms. Each override carries a one-line reason. It starts with whatever the first build's review turns up.
 - **Output:** `src/zh-hant.mjs`, a checked-in map from each Simplified string to its Traditional form (keys sorted), plus `toHant(text)`.
   - A missing entry falls back to the Simplified text and never fails.
-- **Loading:** the map is loaded only when 繁體 is chosen. Switching imports it, then redraws. English and 简体 users never download it.
+- **Loading:** the map is loaded only when 繁體 is chosen. Switching imports it, then redraws. English and 简体 users never download it unless they open the 繁體 draft 13614-C, whose generated lines need it; making that draft leaves the screen language as it is.
   - **A failed switch:** the language stays as it was, and a toast says so.
   - **Starting in 繁體** (saved in the browser): `app.mjs` loads the map before the first page is drawn. **If that load fails, the page starts in 简体 (decision 2026-10-05)**, the same language in the other script. The saved choice stays 繁體, so the next visit tries again.
     - The fallback sets the language without drawing, because the controller hasn't started.
     - The toast is raised after the first render, when the toast element exists.
+    - **A stalled load** counts as failed after five seconds, so the page is never blank. That startup turn is over: a map that lands later is registered but never switches the page to 繁體.
+  - **A retry after a failure** asks for a fresh URL (`./zh-hant.mjs?r=1`, then `?r=2`, …), because some engines cache a failed module fetch; the first try is the plain path.
   - **The import path is relative** (`import("./zh-hant.mjs")` from `src/app.mjs`), so it works under GitHub Pages' sub-path.
   - **Every override must land:** the build fails if an override's Traditional text doesn't appear in every string it applies to, or if it matches no string.
 
@@ -184,7 +186,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 
 - **Dates:** one helper per kind in `src/ui.mjs`; no screen keeps its own `"en-US"`.
   - **Dates in answers** are formatted by hand from a per-language month list. This replaces `MONTHS` (`src/intake-form.mjs:25`). English stays "Apr 12, 1961"; Chinese is "1961年4月12日".
-  - **Times** (history, status) use `Intl` with `en-US`, `zh-CN` or `zh-HK`.
+  - **Times** (history, status) use `Intl` with `en-US`, `zh-CN` or `zh-TW` (Taiwan, like 繁體's characters and font), each with its own clock convention.
 - **The date boxes:**
   - **Order:** in Chinese the three boxes are ordered 年 / 月 / 日; English keeps month / day / year.
   - **Labels and placeholders** come from the text table (`DATE_PARTS`, `src/intake-form.mjs:20`).

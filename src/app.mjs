@@ -41,7 +41,7 @@ import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
 import { STORAGE_KEY, createLanguageRequests, isLang, viewLang } from "./language.mjs";
-import { setHantMap, hantReady } from "./hant.mjs";
+import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, sentence } from "./client-text.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
@@ -82,10 +82,12 @@ function readLocalStorage() {
   }
 }
 
-// The Traditional map (spec 2026-10-05 §4) loads only when 繁體 is chosen.
-async function loadHant() {
-  setHantMap((await import("./zh-hant.mjs")).default);
-}
+// The Traditional map (spec 2026-10-05 §4) loads only when 繁體 is chosen,
+// or when the 繁體 draft 13614-C is made. A retry after a failure asks for a
+// fresh URL (hant.mjs).
+const loadHant = createHantLoader((url) => import(url));
+// How long a saved 繁體 waits for its map before startup shows 简体.
+const HANT_START_TIMEOUT_MS = 5000;
 
 if (!config) {
   // Nothing to sign in to. Say what to set, and stop before any SDK loads.
@@ -1115,6 +1117,9 @@ if (!config) {
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
         .map((n) => String(n).padStart(2, "0"))
         .join("-");
+      // The 繁體 draft's lines need the map, whatever the screen language;
+      // loading it changes nothing on screen. A failure is draft.failed.
+      if (form === "zh-t" && !hantReady()) await loadHant();
       const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
@@ -1806,8 +1811,10 @@ if (!config) {
   // could not load, the page shows 简体 (the saved choice stays) and says so
   // once it is drawn.
   if (controller.getState().lang === "zh-Hant") {
-    await languageRequests.want("zh-Hant", () => {});
-    if (controller.getState().lang === "zh-Hant" && !hantReady()) {
+    // A load still hanging after HANT_START_TIMEOUT_MS fails, and its turn is
+    // stale: a map that lands later never switches the page to 繁體.
+    const outcome = await languageRequests.want("zh-Hant", () => {}, { timeoutMs: HANT_START_TIMEOUT_MS });
+    if (controller.getState().lang === "zh-Hant" && (outcome === "failed" || !hantReady())) {
       controller.adoptLanguage("zh-Hans", { draw: false });
       pendingToast = "toast.hant_failed_start";
     }
