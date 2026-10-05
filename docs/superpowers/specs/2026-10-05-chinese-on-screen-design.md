@@ -43,7 +43,16 @@
 - **Staff screens are always English** whatever is stored, and have no switch. That includes the presenter's window.
 - **`<html lang>`** follows the language on client screens and is `en` on staff screens.
 - **Switching never loses work.** On the version-2 form typed text is swept into the draft first, as for every action. Answers are codes, so they don't change. The press goes through the redraw hold. Scroll and the current sub-step stay.
-- **A version-1 draft stays English.** A client in Chinese who opens one sees a one-line note, in their language, that this older application is available in English only.
+- **A version-1 draft's form stays English, but its frame follows the language.** The top bar, banners, footer and toasts are translated as on any client screen. A client in Chinese who opens one sees a one-line note, in their language, that this older application is available in English only. The form body carries `lang="en"`, so screen readers read it in English inside a Chinese page.
+- **Shared modules default to English.**
+  - `intake-form.mjs`, `document-cards.mjs`, `ui.mjs` and the stage descriptions are also used by staff screens and Add a case.
+  - Every function that produces text takes `lang` with the default `"en"`.
+  - Only client paths pass the chosen language.
+  - Examples: invalid-answer messages, `formatAnswer`, stage badges and `clientMessage`.
+- **The language is applied at render time, never stored as text.**
+  - State that holds a sentence today keeps holding the English sentence: `authMessage`, also saved in the window's access record; `error.message`; and notices.
+  - Each is translated when it's drawn (§3.4), so switching language re-translates what's already on screen.
+  - Toasts raised on client screens are translated when they're raised.
 
 ## 3. What is translated
 
@@ -77,6 +86,10 @@
 - what the client typed (names, addresses, notes);
 - Application IDs and email addresses;
 - text the office types (§3.2).
+
+### 3.0 Attributes count as text
+
+`aria-label`, `title`, `placeholder` and `alt` on client screens are translated like visible text. For example, the switch group's "Language" label and the logo's "ViTally home" are translated. The switch's own button names stay in their own language: English, 简体中文 and 繁體中文.
 
 ### 3.1 The application history
 
@@ -147,7 +160,10 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **`language.mjs`:** defaults from `navigator.languages` (`zh-TW`, `zh-HK`, `zh-CN`, `zh`, `en-US`, empty) and the blocked-storage fallback.
 - **Nothing left in English:**
   - Every client screen is rendered in `zh-Hans`, with sample answers and every state that changes the text (sign-in steps, each intake sub-step, Review with alerts, Documents, submitted, progress with a request and history, banners, the help dialog, toasts, errors).
-  - The test flags any run of Latin words in the visible text that isn't on a short allow-list:
+  - The sample answers' free-text fields (names, address, notes) are Chinese, so the allow-list stays short and any Latin text found is a leak.
+  - The sweep reads visible text and the `aria-label`, `title`, `placeholder` and `alt` attributes.
+  - The version-1 form body (`lang="en"`) is excluded.
+  - The test flags any run of Latin words that isn't on a short allow-list:
     - the client's own text;
     - Application IDs and email addresses;
     - form and document names (W-2, 1099, ITIN, IRS, 13614-C and the like);
@@ -175,6 +191,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
   - submits, and checks the progress page in Chinese, including a history line;
   - switches to 繁體 once and checks a few strings;
   - checks that the Traditional map was requested only then (no request for `src/zh-hant.mjs` before the switch).
+- **Locators:** the phase finds controls by id and `data-action`, never by English text, and waits for Chinese strings only where it checks wording. Any shared story helper it needs that matches English text gets a text-free variant.
 - **Every other phase stays in English.**
 
 **Screenshots:** three 简体 shots in `docs/design/screens/`, of the intake, Review & submit and the progress page, for the group's review.
