@@ -28,6 +28,7 @@
   - **Glossary:**
     - 申请 (application), 申请编号 (Application ID), 客户编号 (client number);
     - 志愿者 (volunteer), 办公室 (the office), PCDC 办公室;
+    - PCDC's own Chinese name, 费城华埠发展会 (Philadelphia Chinatown Development Corporation), used in the footer; Traditional comes out as 費城華埠發展會 through the map;
     - 报税表 (tax return), 草稿 (draft), 不确定 (not sure);
     - 社安卡, ITIN 信, 带照片的身份证件, 验证码 (verification code), 电子邮箱 (email address);
     - 保存 (save), 发送 (send), 提交 (submit), 继续 (continue), 返回 (back);
@@ -67,12 +68,12 @@
 - **`sourceText` shapes:**
   - `{ en, zh }`: static.
   - `{ en, zh, literal: true }`: client data, returned as is.
-  - `{ en, zh: { template, params } }`: the template is converted, then filled.
-  - `en` may be `{ one, other }` with `params.n`.
+  - `{ en, zh: { template, params } }`: the template is converted, then filled. On cards, `en` stays the plain English string computed as today, so the English path never changes.
+  - Text-table entries (not cards) may have `en` as `{ one, other }`, chosen with `params.n`.
 - **The sweep's allow-list** is built by `tests/support/language-sweep.mjs` from:
   - the Latin words inside the catalogue's and cards' `zh` text;
   - a fixed list: ViTally, PCDC, English, W-2, W-2s, 1099, 1098, 1095, ITIN, IRS, IP, PIN, SSN, EAD, 13614-C, CP01A, TIN, Philadelphia, PA, Pages;
-  - each test's own data values: reference, email, names, phone, office address.
+  - each test's own data values: reference, email, names and phone, plus `OFFICE_CONTACT.phone` and `OFFICE_CONTACT.email` (`src/ui.mjs`), which every page with `officeContact()` shows.
 - **The resend countdown, the draft link and every client toast use `t()` keys** (`toast.*`, `signin.*`, `draft.*`). Toast calls on staff-only paths stay literal and are listed in the source test's allow-list with a comment.
 
 ## File map
@@ -381,7 +382,7 @@ export function sentence(text, lang = "en") {
   - `npm run build:hant` (writes `src/zh-hant.mjs`) and `npm run build:hant -- --check` (exits 1 with a message if the file differs);
   - `src/zh-hant.mjs`, with `export default Object.freeze({ "<simplified>": "<traditional>", … })` and its keys sorted.
 
-- [ ] **Step 1: Install the converter** (approved download): `npm install --save-dev --save-exact opencc-js`. Add `"build:hant": "node tools/build-hant.mjs"` to `scripts`.
+- [ ] **Step 1: Install the converter** (approved download): `npm install --save-dev --save-exact opencc-js`. Check the package's entry point. This plan uses `import * as OpenCC from "opencc-js"` and `OpenCC.Converter({ from: "cn", to: "hk" })`; if the installed version exports differently, adapt every import the same way and say so in the report. Add `"build:hant": "node tools/build-hant.mjs"` to `scripts`.
 
 - [ ] **Step 2: Write the failing tests** (`tests/hant.test.mjs`)
 
@@ -557,7 +558,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - `formatAnswer(question, value, { variant, lang })`;
   - `noteState(…, { lang })` and any other exported text function in `intake-form.mjs` gain `lang` (list each in the report);
   - `datePartsFor(lang)`;
-  - `formatDay(iso, lang)`;
+  - `formatDate(iso, lang)`;
   - `countText(value, lang)`;
   - `rangeText(question, lang)`.
 
@@ -569,7 +570,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - `DATE_PARTS` becomes `datePartsFor(lang)`. In English it returns `[month, day, year]` as today; in Chinese it returns `[year, month, day]`.
   - Labels and placeholders come from `t("date.year")`, `t("date.month")`, `t("date.day")` (年, 月, 日) and `t("date.year_hint")` and the like (YYYY, MM, DD stay as they are in Chinese, so the format is unambiguous).
   - Ids stay `${base}-${part}`.
-- **`MONTHS`** becomes `formatDay(iso, lang)`. English stays `Apr 12, 1961`. Chinese is `1961年4月12日`, hand-built from the parts; a partial date is formatted as far as it goes, the same as today's English.
+- **`MONTHS`** becomes `formatDate(iso, lang)`. English stays `Apr 12, 1961`. Chinese is `1961年4月12日`, hand-built from the parts; a partial date is formatted as far as it goes, the same as today's English.
 - **Text table keys:**
   - `rangeText` → `range.or_more` ("{min} or more" / "{min} 或以上") and `range.between` ("{min} to {max}" / "{min} 至 {max}");
   - the long-answer counter → `count.long` ("{length} of {limit} characters" / "已输入 {length} / {limit} 个字");
@@ -584,8 +585,8 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - `wording`, `optionLabel` (through `renderQuestion`) and `tipsOf` return non-empty text for every catalogue question, option and tip in all three languages. In `zh-Hant` they return the map's value; set the map with `setHantMap(MAP)`.
   - `wording(q, { lang: "zh-Hans" })` equals the catalogue's `zh`.
   - The date boxes come in the order `year, month, day` for `zh-Hans` and `zh-Hant`, and `month, day, year` for `en`. The ids are unchanged, and the labels are 年 / 月 / 日.
-  - `formatDay("1961-04-12", "zh-Hans")` is "1961年4月12日"; with `en` it's "Apr 12, 1961".
-  - `formatAnswer` of a date in Chinese uses `formatDay`.
+  - `formatDate("1961-04-12", "zh-Hans")` is "1961年4月12日"; with `en` it's "Apr 12, 1961".
+  - `formatAnswer` of a date in Chinese uses `formatDate`.
   - `rangeText` and `countText` work in all three languages.
   - The note's "Needs an answer" appears in Chinese.
   - Every existing `intake-form` and `intake-catalogue` test still passes without `lang` (English unchanged).
@@ -614,11 +615,11 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
 **What changes:**
 - **`document-cards.mjs`:**
   - Each of the 43 `said("…", "…")` calls becomes an entry in `CARD_WHY = Object.freeze({ <rule>_<what>: said(…), … })` at the top of the file, and the rule references `CARD_WHY.<name>`.
-  - `w2Hint` returns `{ hint: { en: { one: "You said 1 job. Upload 1 W-2.", other: "You said {n} jobs. Upload {n} W-2s." }, zh: { template: CARD_TEMPLATES.w2_hint, params: { n } }, params: { n } } }`.
+  - `w2Hint` keeps today's computed English string, so `en` is "You said 2 jobs. Upload 2 W-2s." as now, and only `zh` becomes a template: `{ hint: { en: <today's English>, zh: { template: CARD_TEMPLATES.w2_hint, params: { n } } } }`.
   - `wroteWhy` returns `{ why: { en: …, zh: { template: CARD_TEMPLATES.wrote, params: { written } } } }`, with the English built as today.
-  - In `ownerLineOf`, a name gives `{ en: name, zh: name, literal: true }`. "Person n" is a template. "You", "Your spouse", "For you and your spouse", "For you" and "For your household" are static pairs in `CARD_TEMPLATES`.
+  - In `ownerLineOf`, a name gives `{ en: name, zh: name, literal: true }`. "Person n" keeps its English string and gets `zh: { template: CARD_TEMPLATES.person, params: { n } }`. "You", "Your spouse", "For you and your spouse", "For you" and "For your household" are static pairs in `CARD_TEMPLATES`.
   - `CARD_TEMPLATES` holds the `zh` template strings: `w2_hint`, `wrote`, `person`, and the static owner pairs.
-  - Card consumers that read `.en` (staff checklist, office views, the client views until Task 7) keep working: every field still has a string `en`, except plural `en`, which those consumers must read through `sourceText(field, "en")`. Grep the consumers and change each `card.<field>?.en` to `sourceText(card.<field>, "en")`.
+  - **Every card text field keeps a plain English string in `en`,** computed as today, and only `zh` changes shape. Card consumers that read `.en` (staff checklist, office views, the client views until Task 7) are therefore untouched, and the existing card tests' English assertions stay as they are.
 - **`tools/hant-sources.mjs`:** `collectSimplified()` also walks `CARD_RULES`, `CARD_WHY` and `CARD_TEMPLATES`, through `walkPairs`, with templates added as strings.
 - **`domain.mjs`:** `STAGE_DESCRIPTIONS` keeps its English. `describeStage(stage, lang)` returns `label` and `clientMessage` from `t("stage.<stage>.label")` and `t("stage.<stage>.client")` for `zh`, and the English table for `en`. The unknown stage uses `stage.unknown.*`.
 - **`ui.mjs`:**
@@ -660,6 +661,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
     - `controller.setLanguage(lang)`, which writes, sets `state.lang` and calls `show()`;
     - `controller.adoptLanguage(lang)`, which sets and calls `show()` without writing, for the `storage` event.
   - **The switch:** `languageSwitch(lang)` renders three buttons, `data-action="set-language" data-value="<lang>" lang="<lang>" aria-pressed`, inside `<div class="language-switch" role="group" aria-label="${t("frame.language")}">`. There's no "coming soon" note and nothing is disabled.
+  - **`clientHeader(state)`** calls `languageSwitch(viewLang(state))`. Task 6 translates the rest of the header.
   - **`page(state, body)`** sets nothing on the document. `app.mjs` sets `document.documentElement.lang = viewLang(state)` and `document.title` after each render.
 
 **`app.mjs`:**
@@ -681,6 +683,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - every `notify("…")` on a client path. Name them `toast.*`: "Your answers are saved.", "Confirm that you have checked your answers first.", "Some answers still need a change before you can send.", "Your application was sent to the office.", "Your sample document was sent.", "Application ID copied.", "Select the ID on the card to copy it.", "Sent again.", the fictional-fill toasts and the reconcile toasts;
   - the in-place notes, statuses and counter, which pass `lang` to Task 3's functions;
   - the draft link "Your draft is ready: open it" and the popup tab's text (`draft.*`);
+  - `DRAFT_FAILED` and `DRAFT_FONT_UNCHECKED` (`notify(error?.draftFont ? … : …)`), which become `draft.failed` and `draft.font_unchecked` keys;
   - `notify(error?.message ?? "Something went wrong.")`, which becomes `notify(sentence(error?.message ?? "Something went wrong.", lang))`.
 - **Staff-only `notify` literals stay English.** The source test's allow-list names them, with a comment saying why.
 
@@ -725,7 +728,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
 
   Staff and presenter dialogs stay English, because `viewLang` is `en` there. `setupNeeded` stays English.
 - **`client-views.mjs`:**
-  - the email and code steps, labels and placeholders, troubleshooting and the footnote;
+  - the email and code steps, labels and placeholders, troubleshooting and the footnote. That includes `codeStep`'s own countdown text and Resend label, which use the same `signin.*` keys as Task 5's `app.mjs` countdown, so the first render and the live update agree;
   - `authFailure`, whose message goes through `sentence`, as does `state.authMessage`;
   - the applications list (`applicationRow`, `relativeDay` with `lang`, stage badges);
   - the reference screen;
@@ -745,6 +748,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - every sentence in `errors.mjs` `SAFE_MESSAGES`;
   - every literal `controllerError(…, "…")` sentence in `controller.mjs`;
   - every sentence in `auth.mjs`, including `NEUTRAL_SEND_MESSAGE`;
+  - every notice constant in `controller.mjs` that reaches `state.notice`, such as `FIXTURES_GONE_NOTICE` (grep for `_NOTICE`), because a client can see the notice banner after a reset;
   - "Something went wrong.".
 - **`tests/support/language-sweep.mjs`:**
 
@@ -830,7 +834,7 @@ export function latinLeaks(text, data = []) {
   - `checkBody`;
   - `answerSteps`, with Change links and answer values through `formatAnswer(…, { lang })`;
   - `documentsSummary`;
-  - `summaryBody`, whose `formatDay` uses `lang` (the long date in Chinese is "2026年10月5日");
+  - `summaryBody`, whose local `formatDay` (today's long date) is renamed `formatToday(date, lang)`, so it doesn't clash with Task 3's exported `formatDate`. In Chinese the long date is "2026年10月5日";
   - `submitBody`, whose confirmation, Submit and Print come from the table.
 - **The draft buttons** keep `data-form` `en`, `zh-s` and `zh-t`. Their order puts the current language's form first (`zh-Hans` → `zh-s`, `zh-Hant` → `zh-t`, `en` → `en`), and their labels come from the table.
 - **`submittedV2`** and **`progressDocumentsV2`**.
@@ -862,7 +866,7 @@ export function latinLeaks(text, data = []) {
 - **`commentsFor`, `notSureLabels` and `memberLine`** take `lang`:
   - question wording through `wording(q, { variant: "general", lang })`;
   - option labels through `sourceText`;
-  - dates through `formatDay`;
+  - dates through `formatDate`;
   - the joining words and labels from `TEXT`: `draft.not_sure` ("Not sure: {items}" / "不确定：{items}"), `draft.other_income`, `draft.other_event`, `draft.person` ("Person {n}" / "成员 {n}"), `draft.born`, `draft.months` (plural), `draft.married`, `draft.single`, and the yes/no/not-sure words;
   - the list separator: ", " in English and "、" in Chinese.
 - **The English form's output stays byte-for-byte as today.**
@@ -890,21 +894,16 @@ export function latinLeaks(text, data = []) {
 - [ ] **Step 1: CSS** (the `/* Part 4d */ … /* end part 4d */` block at the end of `src/styles.css`):
 
 ```css
-/* Part 4d: Chinese on screen (spec 2026-10-05 §5). System fonts only; each
-   script gets its own regional glyphs; spacing that suits Latin is undone. */
-:lang(zh-Hans) body,
-:lang(zh-Hans) .client-shell {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+/* Part 4d: Chinese on screen (spec 2026-10-05 §5). System fonts only, through
+   the two font variables every rule already uses; each script gets its own
+   regional glyphs; spacing that suits Latin is undone. */
+html:lang(zh-Hans) {
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --vt-serif: Georgia, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
 }
-:lang(zh-Hant) body,
-:lang(zh-Hant) .client-shell {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
-}
-:lang(zh-Hans) h1, :lang(zh-Hans) h2, :lang(zh-Hans) h3 {
-  font-family: Georgia, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-}
-:lang(zh-Hant) h1, :lang(zh-Hant) h2, :lang(zh-Hant) h3 {
-  font-family: Georgia, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+html:lang(zh-Hant) {
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  --vt-serif: Georgia, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
 }
 :lang(zh) .overline,
 :lang(zh) h1,
@@ -919,6 +918,8 @@ export function latinLeaks(text, data = []) {
 /* end part 4d */
 ```
 
+  Every `font-family` in `styles.css` already uses `var(--vt-sans)` or `var(--vt-serif)` (nine each), so redefining the two variables on `html:lang(…)` reaches them all. The switch buttons carry their own `lang`, but they're inside an `html` with the page's language, so the variables don't flip per button.
+
   Then check the two negative letter-spacing headings (`styles.css:129`, `:294`) render with `letter-spacing: 0` under `:lang(zh)`. Raise the selector's specificity if needed, and say so in the report. Also check the rail, the bottom buttons and the switch at 390px in both scripts: no sideways scroll, and no label cut off.
 - [ ] **Step 2: Pin the browser locale.** `locale: "en-US"` goes in `tests/support/browser-fixture.mjs`'s `newPage` (`browser.newContext({ viewport, locale })`, with `locale = "en-US"` as an option) and in `tests/browser.mjs`'s presenter-tabs `newContext`.
 - [ ] **Step 3: Text-free sign-in helpers.** `tests/support/browser-fixture.mjs` gets `loginTestUserById({ page, actor, fixture })`. It's the same flow as `loginTestUser`, with these locators:
@@ -931,7 +932,7 @@ export function latinLeaks(text, data = []) {
 - [ ] **Step 4: The phase** `"a client works in Chinese, and 繁體 loads only when chosen"`. It goes after "a version-1 draft still finishes in the old form", in its own context from `engine.newPage({ locale: "zh-CN" })` on the client engine, signed in as applicant B through `loginTestUserById`.
   - Record every request whose URL ends with `/src/zh-hant.mjs`.
   - Before sign-in, `html[lang]` is `zh-Hans` and the email field's label is 电子邮箱.
-  - After sign-in, start a new application, `continue-intake`, and press Fill fictional details (`data-action`).
+  - After sign-in, press `[data-action="start-application"]`, then `continue-intake`, then Fill fictional details (all by `data-action`).
   - Rail-jump (`railJump`) to `about.you`:
     - the step heading is the catalogue's `zh` title;
     - the date boxes come in the order 年, 月, 日 (`#field-client-tp_dob-year` comes before `-month` in the DOM);
@@ -975,7 +976,8 @@ export function latinLeaks(text, data = []) {
 - **Names:**
   - Task 1: `LANGS`, `STORAGE_KEY`, `defaultLanguage`, `readLanguage`, `writeLanguage`, `sourceText`, `viewLang`, `localeOf`, `fill`, `setHantMap`, `toHant`, `hantReady`, `TEXT`, `SENTENCES`, `t`, `sentence`.
   - Task 2: `collectSimplified`, `walkPairs`, `convertAll`, `renderMap`, `build:hant`.
-  - Task 3: `datePartsFor`, `formatDay`, `countText`, `rangeText`.
+  - Task 3: `datePartsFor`, `formatDate`, `countText`, `rangeText`.
+  - Task 7: `formatToday` (local to `intake-views.mjs`).
   - Task 4: `CARD_WHY`, `CARD_TEMPLATES`.
   - Task 5: `setLanguage`, `adoptLanguage`, `loadHant`, `languageSwitch(lang)`.
   - Task 6: `historyLine`, `textOf`, `latinLeaks`.
