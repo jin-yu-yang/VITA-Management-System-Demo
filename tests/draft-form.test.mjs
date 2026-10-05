@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   FORM_FILES, FORM_SHA256, draftFields, draftFieldNames,
 } from "../src/draft-form.mjs";
+import { findQuestion, wording } from "../src/intake-catalogue.mjs";
+import { setHantMap } from "../src/hant.mjs";
+import HANT_MAP from "../src/zh-hant.mjs";
 
 // Every name below is written without the "form1[0]." prefix the module adds.
 const F = (name) => `form1[0].${name}`;
@@ -240,20 +243,21 @@ test("income, expense and event items tick only on yes; not_sure goes to Not sur
   );
 });
 
+// Six fictional household members: rows 1–4 fit the form, 5–6 overflow.
+const SIX = [
+  ["Ana", "Lin", "2015-06-07", "son_daughter", "12", "single", "yes", "yes", "no", "no", "no"],
+  ["Bo", "Lin", "2012-01-02", "stepchild", "6", "single", "no", "yes", "yes", "no", "yes"],
+  ["Cai", "Lin", "1940-03-04", "parent", "12", "married", "yes", "no", "no", "yes", "not_sure"],
+  ["Dan", "Lin", "2001-07-08", "sibling", "9", "single", "not_sure", "yes", "yes", "no", "no"],
+  ["Eva", "Lin", "2019-09-10", "grandchild", "12", "single", "yes", "yes", "no", "no", "no"],
+  ["Fei", "Lin", "1999-11-12", "none", "3", "married", "no", "not_sure", "no", "no", "yes"],
+].map(([first, last, dob, rel, months, married, citizen, resident, student, disabled, ippin], i) => ({
+  member_id: ids(i + 1), first_name: first, last_name: last, dob, relationship: rel, months_lived: months, married,
+  us_citizen: citizen, resident_na: resident, fulltime_student: student, disabled, ippin,
+}));
+
 test("household rows 1–4 on the form, members 5–6 in Additional Comments", () => {
-  const people = [
-    ["Ana", "Lin", "2015-06-07", "son_daughter", "12", "single", "yes", "yes", "no", "no", "no"],
-    ["Bo", "Lin", "2012-01-02", "stepchild", "6", "single", "no", "yes", "yes", "no", "yes"],
-    ["Cai", "Lin", "1940-03-04", "parent", "12", "married", "yes", "no", "no", "yes", "not_sure"],
-    ["Dan", "Lin", "2001-07-08", "sibling", "9", "single", "not_sure", "yes", "yes", "no", "no"],
-    ["Eva", "Lin", "2019-09-10", "grandchild", "12", "single", "yes", "yes", "no", "no", "no"],
-    ["Fei", "Lin", "1999-11-12", "none", "3", "married", "no", "not_sure", "no", "no", "yes"],
-  ];
-  const hh = people.map(([first, last, dob, rel, months, married, citizen, resident, student, disabled, ippin], i) => ({
-    member_id: ids(i + 1), first_name: first, last_name: last, dob, relationship: rel, months_lived: months, married,
-    us_citizen: citizen, resident_na: resident, fulltime_student: student, disabled, ippin,
-  }));
-  const { text, comments } = draft({ ...MARRIED, hh });
+  const { text, comments } = draft({ ...MARRIED, hh: SIX });
   const row = (k, column) => text[F(`page1[0].namesOf[0].Row${k}[0].${column}[0]`)];
   assert.equal(row(1, "nameFirstLast"), "Ana Lin");
   assert.equal(row(1, "dateOfBirth"), "06/07/2015");
@@ -388,4 +392,95 @@ test("draftFieldNames covers all four household rows and the 15080 fields", () =
       assert.ok(names.includes(F(`page6[0].${name}[0]`)), name);
     assert.ok(names.includes(F("page5[0].AdditionalComments[0].AdditionalNotesComments[0]")));
   }
+});
+
+// ---------------------------------------------------------------------------
+// The generated lines in the form's language (spec 2026-10-05 §3.5)
+// ---------------------------------------------------------------------------
+
+const zhWording = (id) => wording(findQuestion(2, id), { lang: "zh-Hans" });
+const withHant = (fn) => {
+  setHantMap(HANT_MAP);
+  try {
+    return fn();
+  } finally {
+    setHantMap(null);
+  }
+};
+
+test("the 简体 form: Not sure in Chinese with the catalogue's wording, joined with 、", () => {
+  const { comments } = draft(MARRIED, { ...OPTIONS, form: "zh-s" });
+  const notSure = [
+    zhWording("claimed_by_other"),
+    "成员 1：是否持有身份保护码（IP PIN）？",
+    "小费",
+    zhWording("inc_self_employed_prior_loss"),
+    "持有健康储蓄账户（HSA）",
+    zhWording("evt_energy"),
+  ];
+  assert.equal(
+    comments,
+    [
+      "My 1099-INT has not arrived yet.",
+      `不确定：${notSure.join("、")}`,
+      "其他收入：Jury duty",
+      "其他事项：Bought a car",
+    ].join("\n\n"),
+  );
+  assert.ok(comments.includes("不确定：是否有其他人（如父母或成年子女）可以在其报税表上将您或配偶列为受抚养人？、成员 1："));
+});
+
+test("the 繁體 form: the same lines through the Traditional map; the client's text as typed", () => {
+  const answers = { ...MARRIED, additional_notes: "我的 1099 表还没收到。", inc_other_desc: "陪审员报酬" };
+  const { comments } = withHant(() => draft(answers, { ...OPTIONS, form: "zh-t" }));
+  const hant = (simplified) => {
+    assert.ok(Object.hasOwn(HANT_MAP, simplified), simplified);
+    return HANT_MAP[simplified];
+  };
+  const notSure = [
+    hant(zhWording("claimed_by_other")),
+    `成員 1：${hant(wording(findQuestion(2, "hh").fields.find((f) => f.id === "ippin"), { lang: "zh-Hans" }))}`,
+    hant("小费"),
+    hant(zhWording("inc_self_employed_prior_loss")),
+    hant("持有健康储蓄账户（HSA）"),
+    hant(zhWording("evt_energy")),
+  ];
+  assert.equal(
+    comments,
+    [
+      "我的 1099 表还没收到。",
+      `不確定：${notSure.join("、")}`,
+      "其他收入：陪审员报酬",
+      "其他事項：Bought a car",
+    ].join("\n\n"),
+  );
+  assert.ok(comments.startsWith("我的 1099 表还没收到。\n\n不確定：是否有其他人（如父母或成年子女）可以在其報稅表上將您或配偶列為受撫養人？、成員 1：是否持有身份保護碼（IP PIN）？、小費、"));
+  // Without the map the form would print Simplified: the test above sees the difference.
+  assert.notEqual(draft(answers, { ...OPTIONS, form: "zh-t" }).comments, comments);
+});
+
+test("Chinese member lines: option labels, dates and words in the form's language", () => {
+  const zhLines = [
+    "成员 5：Eva Lin · 孙子女/外孙子女 · 2019年9月10日出生 · 居住 12 个月 · 未婚 · 美国公民：是 · 美加墨居民：是 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：否",
+    "成员 6：Fei Lin · 无亲属关系 · 1999年11月12日出生 · 居住 3 个月 · 已婚 · 美国公民：否 · 美加墨居民：不确定 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：是",
+  ];
+  const simplified = draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-s" });
+  assert.equal(simplified.comments.split("\n\n").at(-1), zhLines.join("\n"));
+  assert.match(simplified.comments, /成员 3：是否持有身份保护码（IP PIN）？、成员 4：是否为美国公民？、成员 6：2025 年，此人是否居住在美国/);
+  // One month, in Traditional.
+  const one = [...SIX.slice(0, 4), { ...SIX[4], months_lived: "1" }];
+  const traditional = withHant(() => draft({ ...MARRIED, hh: one }, { ...OPTIONS, form: "zh-t" }));
+  assert.equal(
+    traditional.comments.split("\n\n").at(-1),
+    "成員 5：Eva Lin · 孫子女/外孫子女 · 2019年9月10日出生 · 居住 1 個月 · 未婚 · 美國公民：是 · 美加墨居民：是 · 全日制學生：否 · 完全且永久性殘疾：否 · 身份保護碼：否",
+  );
+  // The English form keeps "1 month".
+  assert.match(draft({ ...MARRIED, hh: one }).comments, /Person 5: Eva Lin · Grandchild · born 09\/10\/2019 · 1 month · single · /);
+});
+
+test("the English form's generated lines do not change with the Traditional map loaded", () => {
+  const plain = draft({ ...MARRIED, hh: SIX });
+  const loaded = withHant(() => draft({ ...MARRIED, hh: SIX }));
+  assert.equal(loaded.comments, plain.comments);
+  assert.ok(!/\p{Script=Han}/u.test(plain.comments));
 });
