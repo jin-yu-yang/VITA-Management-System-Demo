@@ -34,7 +34,14 @@
   - **That mapping happens in one place.** Today the shared modules index the catalogue straight with `lang`: `wording()` (`intake-catalogue.mjs:43`) returns "" for an unknown code, so questions would show blank titles, and `optionLabel` and `tipsOf` (`intake-form.mjs:40`, `:105`) fall back to English.
   - **The fix:** one boundary function in `src/language.mjs`, `sourceText(pair, lang)`. It takes a catalogue- or card-style `{ en, zh }` value and the screen language, reads `en` for `en` and `zh` for both Chinese codes, then applies `toHant` for `zh-Hant`. `wording`, `optionLabel`, `tipsOf`, the document cards and every other catalogue lookup go through it, and none indexes the catalogue with the screen language itself.
   - A missing `zh` falls back to `en`, as today.
-- **`src/language.mjs`** reads and writes `localStorage["vitally.lang"]`, every access in try/catch; blocked storage means English. The first visit defaults from `navigator.languages`:
+  - **Its input shapes:**
+    - `{ en, zh }`: static.
+    - `{ en, zh, literal: true }`: the client's own words, such as a name, returned as is.
+    - `{ en, zh: { template, params } }`: the template is converted, then filled.
+
+    On document cards, `en` stays the plain English string computed as today, so staff screens and every English path are unchanged.
+  - **`toHant` lives in its own small module, `src/hant.mjs`,** a registry the generated map is put into when it loads, so no module statically imports the large map.
+- **`src/language.mjs`** reads and writes `localStorage["vitally.lang"]`, every access in try/catch; blocked storage means English. Reading `window.localStorage` itself can throw SecurityError in blocked or private storage, so `app.mjs` reads it inside try/catch too and passes `null` on failure. The first visit defaults from `navigator.languages`:
   - `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant*` give `zh-Hant`;
   - any other `zh*` gives `zh-Hans`;
   - anything else gives `en`.
@@ -77,7 +84,7 @@
   - the top bar (logo label, Help, Save & exit, Sign out);
   - the connection, notice and problem banners;
   - the "Need help?" dialog;
-  - the footer;
+  - the footer, which uses PCDC's own Chinese name, 费城华埠发展会 (費城華埠發展會 in Traditional);
   - toasts;
   - the "unreachable" and "no access" screens.
 - **Sign-in:** the email and code steps, the troubleshooting text and the footnote.
@@ -113,6 +120,11 @@
   - The controller's own `controllerError` sentences, 18 today.
   - The sign-in sentences from `auth.mjs` and the controller (for example `NEUTRAL_SEND_MESSAGE`), which are also saved in the window's sign-in record.
   - The history sentences (§3.3).
+  - The controller's notice constants (`*_NOTICE`), which a client can see in the notice banner after a reset.
+  - `case-actions.mjs`'s messages for the client's own actions (`SUBMIT`, `SEND_DOCUMENT`), such as "This request is no longer on screen.". The label-built messages of staff-only actions (`${label} is required.`) stay English, because staff screens are English.
+  - **The answer checks' messages** from `checkValue` (`intake-catalogue.mjs`, mirrored by the database), such as "Enter a valid email address." and "Enter a 5-digit ZIP code.", shown in a question's note.
+    - `checkValue` keeps returning English, because its sentences are part of the shared rules.
+    - The note translates them when drawing: fixed sentences through the sentence table, and the two built ones ("Use at most {limit} characters.", "Enter a number from {min} to {max}.") through keys with their numbers.
 - **How they're translated:** one sentence-keyed table in `client-text.mjs`, from the exact English sentence to its `zh`. The lookup happens when the sentence is drawn on a client screen.
 - **Unknown sentences show in English.** Codes are too coarse to translate by, because `VALIDATION` alone covers many sentences.
 - **A unit test pins every sentence** in `errors.mjs`, every literal `controllerError` sentence in `controller.mjs`, and every sentence in `auth.mjs` to an entry. Staff-only sentences cost nothing to include.
@@ -162,7 +174,11 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
   - A missing entry falls back to the Simplified text and never fails.
 - **Loading:** the map is loaded only when 繁體 is chosen. Switching imports it, then redraws. English and 简体 users never download it.
   - **A failed switch:** the language stays as it was, and a toast says so.
-  - **Starting in 繁體** (saved in the browser): `app.mjs` loads the map before the first page is drawn. **If that load fails, the page starts in 简体 (decision 2026-10-05)**, the same language in the other script, with a toast. The saved choice stays 繁體, so the next visit tries again.
+  - **Starting in 繁體** (saved in the browser): `app.mjs` loads the map before the first page is drawn. **If that load fails, the page starts in 简体 (decision 2026-10-05)**, the same language in the other script. The saved choice stays 繁體, so the next visit tries again.
+    - The fallback sets the language without drawing, because the controller hasn't started.
+    - The toast is raised after the first render, when the toast element exists.
+  - **The import path is relative** (`import("./zh-hant.mjs")` from `src/app.mjs`), so it works under GitHub Pages' sub-path.
+  - **Every override must land:** the build fails if an override's Traditional text doesn't appear in every string it applies to, or if it matches no string.
 
 ## 5. Formatting, fonts and layout
 
@@ -173,10 +189,12 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
   - **Order:** in Chinese the three boxes are ordered 年 / 月 / 日; English keeps month / day / year.
   - **Labels and placeholders** come from the text table (`DATE_PARTS`, `src/intake-form.mjs:20`).
   - **Ids** stay `${base}-${part}`, so code that fills them by id is unaffected, and the form reads them by name, so nothing stored changes.
+  - **Widths follow the part, not the position.** Today `.q-date-part:last-child` (`styles.css:4317`, `:4396`) widens the last box, which is the year. In Chinese the last box is the day. Each box gets a class for its part, and the wide rule targets the year's class.
+- **The version-2 `<select>`'s blank option,** "Select an option" (`intake-form.mjs:374`), is translated. `ui.mjs`'s `select()` has the same English text, but only the version-1 form and staff screens use it, so it stays English.
 - **Range hints** ("65 or more", "0 to 10", `rangeText`, `src/intake-form.mjs:305`), the long-answer counter and every other assembled phrase go through the text table.
 - **Numbers** keep the same digits and grouping.
 - **Plurals:** English entries may have `one` and `other`; Chinese has one form. `t()` takes both shapes.
-- **Fonts:** no Chinese web font is downloaded. Under `:lang(zh-Hans)` and `:lang(zh-Hant)`, system fallbacks follow the Latin fonts:
+- **Fonts:** no Chinese web font is downloaded. Every rule already takes its font from `--vt-sans` or `--vt-serif`, so `html:lang(zh-Hans)` and `html:lang(zh-Hant)` redefine those two variables, with system fallbacks after the Latin fonts:
   - 简体: PingFang SC, Microsoft YaHei, Noto Sans SC;
   - 繁體: PingFang HK, Microsoft JhengHei, Noto Sans TC.
 
@@ -205,6 +223,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
     - Application IDs and email addresses;
     - form and document names (W-2, 1099, ITIN, IRS, 13614-C and the like);
     - the brand (ViTally, PCDC);
+    - fixed data the app shows as is: the office's phone and email, and the sample document's file name (`demo-mileage-record-2025.pdf`);
     - any Latin word that appears in the reviewed Simplified source text itself, the catalogue's and the cards' `zh` (for example 工卡（EAD）). That text is deliberate, so the allow-list is derived from it rather than kept by hand.
 - **The same sweep in `zh-Hant`:** a 繁體 path that misses `toHant`, or indexes the catalogue with the screen language, would show Simplified or English, and the 简体 sweep can't see it. So the sweep also runs in `zh-Hant`. It checks that no English leaks, and that the visible text (and the four attributes) has no character that `opencc-js` (`hk`) would still change, meaning no Simplified character survives. `opencc-js` is already a dev dependency, so the test can call it.
 - **A source test on `app.mjs`:** it flags user-visible string literals that don't go through `t()`, namely `notify("`, `notify('`, `notify(\``, and `.textContent = "` or `'` or a template literal. A short, commented allow-list covers staff-only and operator paths.
@@ -227,7 +246,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 
 **Browser story:**
 - **Pin the locale in the existing contexts.** The first visit now defaults from `navigator.languages`, so a machine whose browser runs in Chinese could start the existing story in Chinese. Both `newContext` calls get `locale: "en-US"`: `tests/support/browser-fixture.mjs:391` and `tests/browser.mjs:2457`.
-- **One new phase in its own `locale: "zh-CN"` context,** which also tests the default from the browser:
+- **One new phase in its own `locale: "zh-CN"` context,** which also tests the default from the browser. It comes after the 4b2 version-2 phase, just before the console check: the 4b2 phase and its reopen also sign in as applicant B and use the applications list, so a case submitted earlier in Chinese could change what they find.
   - the client starts in 简体 before sign-in;
   - walks the version-2 intake with Fill and rail jumps through Review & submit;
   - submits, and checks the progress page in Chinese, including a history line;

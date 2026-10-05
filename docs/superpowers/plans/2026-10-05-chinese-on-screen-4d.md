@@ -73,7 +73,7 @@
 - **The sweep's allow-list** is built by `tests/support/language-sweep.mjs` from:
   - the Latin words inside the catalogue's and cards' `zh` text;
   - a fixed list: ViTally, PCDC, English, W-2, W-2s, 1099, 1098, 1095, ITIN, IRS, IP, PIN, SSN, EAD, 13614-C, CP01A, TIN, Philadelphia, PA, Pages;
-  - each test's own data values: reference, email, names and phone, plus `OFFICE_CONTACT.phone` and `OFFICE_CONTACT.email` (`src/ui.mjs`), which every page with `officeContact()` shows.
+  - each test's own data values: reference, email, names and phone, plus `OFFICE_CONTACT.phone` and `OFFICE_CONTACT.email` (`src/ui.mjs`), which every page with `officeContact()` shows, and the sample document's file name `demo-mileage-record-2025.pdf` (the progress page's request card shows it as is).
 - **The resend countdown, the draft link and every client toast use `t()` keys** (`toast.*`, `signin.*`, `draft.*`). Toast calls on staff-only paths stay literal and are listed in the source test's allow-list with a comment.
 
 ## File map
@@ -589,7 +589,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 - **Text table keys:**
   - `rangeText` → `range.or_more` ("{min} or more" / "{min} 或以上") and `range.between` ("{min} to {max}" / "{min} 至 {max}");
   - the long-answer counter → `count.long` ("{length} of {limit} characters" / "已输入 {length} / {limit} 个字");
-  - notes → `note.needs_answer` ("Needs an answer" / "需要回答") and each invalid-answer message (`invalid.*`; list them from `checkValue`'s callers in `intake-form.mjs`);
+  - notes → `note.needs_answer` ("Needs an answer" / "需要回答");
+  - **the answer checks' messages:**
+    - `checkValue` (`intake-catalogue.mjs`) keeps returning English, because it's the shared rule mirrored by the database.
+    - `noteState(question, value, { …, lang })` translates the reason it shows through a new `invalidText(reason, lang)`. Fixed sentences ("Enter a valid email address.", "Enter a 10-digit phone number.", "Enter a 5-digit ZIP code.", "Enter a real date as YYYY-MM-DD.", "Enter a 4-digit year.", "Digits only.", "At most 6 digits.", "Not one of the choices.", "Choose yes or no.", and `checkGroup`'s) go through `SENTENCES`.
+    - The two built ones are matched by pattern and go through keys: `/^Use at most (\d+) characters\.$/` → `invalid.too_long` ("最多 {limit} 个字"), and `/^Enter a number from (\d+) to (\d+)\.$/` → `invalid.number_range` ("请输入 {min} 至 {max} 之间的数字").
+    - A test runs every message `checkValue` can return (feed it a bad value of each type) through `invalidText` in `zh-Hans` and expects Chinese.
   - part statuses → `status.needs` ("Needs answers" / "需要回答"), `status.docs` ("Needs documents" / "需要文件") and `status.done` ("Done" / "已完成");
   - household → `member.remove` ("Remove" / "移除") and `member.add` ("Add a person" / "添加一位成员");
   - "No one" and every other English literal in `intake-form.mjs` that reaches the screen, including the version-2 `<select>`'s blank option, "Select an option" (`intake-form.mjs:374`), which becomes `form.select_option` ("Select an option" / "请选择").
