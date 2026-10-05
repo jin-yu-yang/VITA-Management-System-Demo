@@ -43,9 +43,9 @@
 - **The page title** (`document.title`, today "ViTally · PCDC community tax help · 2025 tax year") follows the language on client screens and is English on staff screens.
 - **No answer is pre-filled from the screen language (decision 2026-10-05).** The intake's "preferred language for service" (`language`) is a different question from the reading script, and the client answers it themselves.
 - **The switch** (`languageSwitch` in `src/views.mjs`):
-  - Its three buttons become live with `data-action="set-language"` and `data-lang`. `aria-pressed` marks the current one, and the "Chinese coming soon" note goes.
+  - Its three buttons become live with `data-action="set-language"` and `data-value="<lang>"`, with no separate `data-lang`. `aria-pressed` marks the current one, and the "Chinese coming soon" note goes.
   - It stays in the client top bar, which is on every client screen, sign-in included.
-  - After the redraw the keyboard stays on the pressed button. Each switch button carries `data-value="<lang>"`. `describeFocus` (`ui.mjs:271`) finds a button again by its action plus the related keys in `RELATED_KEYS`, which include `data-value` but not `data-lang`. Without it, focus would land on the first `set-language` button, English.
+  - After the redraw the keyboard stays on the pressed button. `describeFocus` (`ui.mjs:271`) finds a button again by its action plus the related keys in `RELATED_KEYS`, which include `data-value` but not `data-lang`. Without it, focus would land on the first `set-language` button, English.
 - **Staff screens are always English** whatever is stored, and have no switch. That includes the presenter's window.
 - **Screens shown before anyone is known follow the stored language,** because they come before the app knows whether this is a client or a presenter: sign-in, "unreachable" and "no access". So does a presenter's sign-in in a browser set to Chinese. That's accepted: the presenter's screens turn English once signed in.
 - **`<html lang>`** follows the language on client screens and is `en` on staff screens.
@@ -152,8 +152,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **Inputs:** every Simplified string a client can see:
   - the catalogue's `zh`;
   - the cards' `zh`;
-  - the client text table;
-  - the draft's Simplified lines.
+  - the client text table, which also holds the draft lines' joining words and separators (the lines themselves are assembled from these pieces and are never inputs).
 - **Templates:** a string with a placeholder (`您填写的是：{written}`) is converted as a template, and the client's text is filled in afterwards, never converted. `document-cards.mjs`'s inline `zh` strings that embed client text become placeholder templates.
 - **`toHant` looks up source strings and templates only, never assembled text.** The map is keyed by exact Simplified strings, so assembled text would miss and silently fall back to Simplified. Assembled text includes joined tips, "不确定：a、b", a filled template, and a sentence plus a title.
   - Each piece is converted before it's interpolated or joined, never the result.
@@ -194,9 +193,11 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 **Unit:**
 - **The text table:** every key has `en` and `zh`; both carry the same `{placeholders}`; plural entries have `one` and `other`.
 - **`language.mjs`:** defaults from `navigator.languages` (`zh-TW`, `zh-HK`, `zh-CN`, `zh`, `en-US`, empty) and the blocked-storage fallback.
+- **`sourceText`:** `en` reads `en`, `zh-Hans` reads `zh`, `zh-Hant` reads `zh` through `toHant`, and a missing `zh` falls back to `en`. `wording`, `optionLabel` and `tipsOf` return non-empty text for every catalogue question and option in all three languages.
 - **Nothing left in English:**
-  - Every client screen is rendered in `zh-Hans`, with sample answers and every state that changes the text (sign-in steps, each intake sub-step, Review with alerts, Documents, submitted, progress with a request and history, banners, the help dialog, toasts, errors).
-  - The sample answers' free-text fields (names, address, notes) are Chinese, so the allow-list stays short and any Latin text found is a leak.
+  - Every client screen is rendered in `zh-Hans`, with sample answers and every state that changes the text (sign-in steps, each intake sub-step, Review with alerts, Documents, submitted, progress with a request and history, banners, the help dialog, errors).
+  - Toasts and other text `app.mjs` writes directly never go through a view, so the sweep can't see them. They're covered by the `app.mjs` source test and the text-table tests below.
+  - The sample answers' free-text fields (names, address, notes), and the office's request title and message, are Chinese written only with characters that are the same in both scripts (for example 林, 美, 中山路). The allow-list stays short, any Latin text found is a leak, and the 繁體 check below never trips on the client's or the office's own words, which are never converted.
   - The sweep reads visible text and the `aria-label`, `title`, `placeholder` and `alt` attributes.
   - The version-1 form body (`lang="en"`) is excluded.
   - The test flags any run of Latin words that isn't on a short allow-list:
@@ -212,7 +213,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
   - date order per language (年 / 月 / 日 in Chinese, month / day / year in English) and date-box labels and placeholders;
   - the hand-formatted answer dates;
   - range hints;
-  - times in all three languages.
+  - times in all three languages. These are exact-string unit tests in Node. The browser phase never asserts an exact time string, because engines' `Intl` output differs slightly, for example in spacing around 下午.
 - **The draft:**
   - the 简体 form's generated lines are Simplified with catalogue wording;
   - **the 繁體 form's lines go through the Traditional map** (one test);
