@@ -8,6 +8,35 @@ export const TEXT = Object.freeze({
   // The frame
   "frame.skip": { en: "Skip to content", zh: "跳到主要内容" },
   "frame.language": { en: "Language", zh: "语言" },
+  // The browser tab's title (app.mjs after every render; the English is index.html's)
+  "frame.title": { en: "ViTally · PCDC community tax help · 2025 tax year", zh: "ViTally · PCDC 社区报税协助 · 2025 报税年度" },
+  // Sign-in: the resend countdown and button, patched in place by app.mjs
+  "signin.countdown": { en: "You can request another code in {n} seconds.", zh: "{n} 秒后可以再索取一次验证码。" },
+  "signin.resend_in": { en: "Resend code in {n}s", zh: "{n} 秒后可重新发送验证码" },
+  "signin.resend": { en: "Resend code", zh: "重新发送验证码" },
+  // Toasts on client paths (app.mjs); staff-only toasts stay English
+  "toast.saved": { en: "Your answers are saved.", zh: "您的回答已保存。" },
+  "toast.confirm_first": { en: "Confirm that you have checked your answers first.", zh: "请先确认您已核对过您的回答。" },
+  "toast.needs_change": { en: "Some answers still need a change before you can send.", zh: "有些回答需要修改后才能发送。" },
+  "toast.sent": { en: "Your application was sent to the office.", zh: "您的申请已发送给办公室。" },
+  "toast.document_sent": { en: "Your sample document was sent.", zh: "您的示例文件已发送。" },
+  "toast.started": { en: "A new fictional application is ready.", zh: "新的虚构申请已准备好。" },
+  "toast.id_copied": { en: "Application ID copied.", zh: "已复制申请编号。" },
+  "toast.id_select": { en: "Select the ID on the card to copy it.", zh: "请选取卡片上的申请编号，再复制。" },
+  "toast.sent_again": { en: "Sent again.", zh: "已重新发送。" },
+  "toast.fictional_filled": { en: "Fictional details filled in. Nothing is saved yet.", zh: "已填入虚构资料，尚未保存。" },
+  "toast.fictional_replaced": { en: "A different fictional example replaced the answers. Nothing is saved yet.", zh: "已用另一组虚构示例替换了回答，尚未保存。" },
+  "toast.reconcile_mine": { en: "Your answers are kept. Save when you are ready.", zh: "已保留您的回答。准备好后请保存。" },
+  "toast.reconcile_office": { en: "The office’s answers are loaded. Save when you are ready.", zh: "已载入办公室的回答。准备好后请保存。" },
+  // Traditional Chinese loads on demand: the switch's failure, and a saved 繁體 that fell back at startup
+  "toast.hant_failed": { en: "Traditional Chinese couldn't load. Try again.", zh: "无法载入繁体中文，请再试一次。" },
+  "toast.hant_failed_start": { en: "Traditional Chinese couldn't load. Showing Simplified Chinese.", zh: "无法载入繁体中文，暂以简体中文显示。" },
+  // The draft 13614-C (app.mjs viewDraft): the new tab's text, the fallback link and the failures
+  "draft.tab_title": { en: "Draft 13614-C", zh: "13614-C 草稿" },
+  "draft.preparing": { en: "Preparing your draft…", zh: "正在准备您的草稿…" },
+  "draft.link": { en: "Your draft is ready: open it", zh: "您的草稿已准备好：打开草稿" },
+  "draft.failed": { en: "The draft could not be made. Close this tab and try again.", zh: "无法生成草稿。请关闭此标签页后再试一次。" },
+  "draft.font_unchecked": { en: "The draft font could not be checked. Try again later.", zh: "无法核对草稿所用的字体。请稍后再试。" },
   // Counts
   "count.parts": { en: { one: "1 part still needs answers", other: "{n} parts still need answers" }, zh: "还有 {n} 个部分需要回答" },
   // The version-2 form (intake-form.mjs): the long-answer counter
@@ -77,6 +106,8 @@ export const TEXT = Object.freeze({
 // Sentences that arrive in English (spec §3.2, §3.3): errors, sign-in, history.
 export const SENTENCES = Object.freeze({
   "You do not have access to this step.": "您无权进行这一步。",
+  // app.mjs: a refused action with no message of its own
+  "Something went wrong.": "出了点问题。",
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",

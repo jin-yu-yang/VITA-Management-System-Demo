@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { appShell, staffSidebar, staffScreen, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
-import { icon, ICON_NAMES } from "../src/ui.mjs";
+import { icon, ICON_NAMES, describeFocus, focusSelectors } from "../src/ui.mjs";
+import { TEXT, SENTENCES } from "../src/client-text.mjs";
 import { toggleLabel } from "../src/sidebar-peek.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
@@ -109,14 +110,53 @@ test("the client top bar: logo home, language, help, save on intake, sign out", 
   assert.doesNotMatch(signedOut, /data-action="sign-out"/);
 });
 
-test("the language switch offers English and says Chinese is coming", () => {
-  const html = languageSwitch();
-  assert.match(html, /<div class="language-switch" role="group" aria-label="Language">/);
-  assert.match(html, /<button type="button" class="lang current" lang="en" aria-pressed="true">English<\/button>/);
-  assert.match(html, /lang="zh-Hans" disabled[^>]*>简体中文/);
-  assert.match(html, /lang="zh-Hant" disabled[^>]*>繁體中文/);
-  assert.match(html, /<span class="lang-note">Chinese coming soon<\/span>/);
-  assert.doesNotMatch(html, /data-action=/, "the switch does nothing yet");
+// Part 4d: the switch is live. Each button keeps its own lang and name, and
+// carries data-value so describeFocus brings the keyboard back to it.
+test("the language switch offers three live languages and marks the chosen one", () => {
+  assert.match(languageSwitch("en"), /^<div class="language-switch" role="group" aria-label="Language">/);
+  const html = languageSwitch("zh-Hant");
+  assert.match(html, /^<div class="language-switch" role="group" aria-label="[^"]+">/);
+  const buttons = html.match(/<button[^>]*>[^<]*<\/button>/g);
+  assert.equal(buttons.length, 3);
+  for (const [lang, name] of [["en", "English"], ["zh-Hans", "简体中文"], ["zh-Hant", "繁體中文"]]) {
+    const one = buttons.find((b) => b.includes(`lang="${lang}"`));
+    assert.ok(one, lang);
+    assert.match(one, /type="button"/);
+    assert.match(one, /data-action="set-language"/);
+    assert.match(one, new RegExp(`data-value="${lang}"`));
+    assert.match(one, new RegExp(`>${name}</button>$`));
+    assert.match(one, new RegExp(`aria-pressed="${lang === "zh-Hant"}"`));
+    assert.doesNotMatch(one, /disabled|data-lang/);
+  }
+  assert.doesNotMatch(html, /coming soon|lang-note/i, "no coming-soon note");
+  // The group's name is in the screen language; the buttons' names never are.
+  assert.match(languageSwitch("zh-Hans"), /aria-label="语言"/);
+  assert.match(languageSwitch(), /data-value="en"[^>]*aria-pressed="true"|aria-pressed="true"[^>]*data-value="en"/);
+  assert.match(languageSwitch("zh-Hant"), /class="lang current"[^>]*lang="zh-Hant"/);
+});
+
+test("the client header's switch shows the view language", () => {
+  const header = clientHeader({ principal: { access: "applicant" }, screen: "applications", lang: "zh-Hans" });
+  assert.match(header, /lang="zh-Hans"[^>]*aria-pressed="true"/);
+  const signedOut = clientHeader({ principal: null, screen: "access", lang: "zh-Hant" });
+  assert.match(signedOut, /lang="zh-Hant"[^>]*aria-pressed="true"/);
+});
+
+test("describeFocus brings the keyboard back to the pressed language button", () => {
+  const pressed = { tagName: "BUTTON", id: "", name: "", dataset: { action: "set-language", value: "zh-Hans" } };
+  const focus = describeFocus(pressed);
+  assert.deepEqual(focus.related, [{ attribute: "data-value", value: "zh-Hans" }]);
+  assert.deepEqual(focusSelectors(focus), ['[data-action="set-language"][data-value="zh-Hans"]']);
+});
+
+test("the page frame speaks the view language: a client's, never a presenter's", () => {
+  const client = page({ principal: { access: "applicant" }, connection: "online", screen: "applications", lang: "zh-Hans" }, "<main></main>");
+  assert.match(client, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
+  const signedOut = page({ principal: null, connection: "online", screen: "access", lang: "zh-Hans" }, "<main></main>");
+  assert.match(signedOut, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
+  const presenter = page({ principal: { access: "presenter" }, connection: "online", screen: "staff", lang: "zh-Hans" }, "<main></main>");
+  assert.match(presenter, /^<a class="skip" href="#main">Skip to content<\/a>/);
+  assert.match(page({ principal: null, connection: "online", screen: "access" }, "<main></main>"), /Skip to content/);
 });
 
 test("the help dialog gives the office phone and email", () => {
@@ -256,17 +296,20 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.ok(draft.indexOf('window.open("", "_blank")') > 0, "the tab opens in the press");
   assert.ok(draft.indexOf('window.open("", "_blank")') < draft.indexOf("await "), "before anything is awaited");
   assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
-  assert.match(draft, /"Preparing your draft…"/);
+  // Part 4d: its text is a key now (draft.preparing is "Preparing your draft…").
+  assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\)\)/);
   // The blocked-tab link goes with its URL, and is put into the page as it
   // is after the build (a redraw during the build replaces #draft-ready).
   assert.match(draft, /URL\.revokeObjectURL\(url\);\s+link\?\.remove\(\);\s+\}, 60_000\)/);
-  assert.match(draft, /"Your draft is ready: open it"/);
+  assert.match(draft, /link\.textContent = t\("draft\.link", \{\}, screenLang\(\)\)/);
   const built = draft.indexOf("await buildDraftPdf(");
   assert.ok(built > 0);
   assert.ok(draft.indexOf('const ready = root.querySelector("#draft-ready")') > built, "#draft-ready is looked up after the build");
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
-  assert.match(app, /"The draft could not be made\. Close this tab and try again\."/);
-  assert.match(app, /"The draft font could not be checked\. Try again later\."/);
+  // Part 4d: the two failures are keys; their English is unchanged.
+  assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
+  assert.equal(TEXT["draft.failed"].en, "The draft could not be made. Close this tab and try again.");
+  assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   assert.match(app, /addEventListener\("afterprint"/);
   assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
@@ -630,4 +673,135 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
   // An open dialog holds the peek, and hiding the sidebar never strands the keyboard.
   assert.match(app, /peek\.hold\(Boolean\(controller\.getState\(\)\.dialog\)\)/);
   assert.match(app, /if \(hadFocus\) toggle\?\.focus\(\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Part 4d (Task 5): app.mjs's own text. It has no DOM harness, so the wiring
+// is pinned at the source.
+// ---------------------------------------------------------------------------
+
+// Toasts on staff-only paths stay English (spec 2026-10-05 §2: staff screens
+// are always English). Each is listed with the path that raises it.
+const STAFF_ONLY_TOASTS = Object.freeze([
+  // fillAssistedIntake: the office's fill on Add a case and the assisted forms
+  "Fictional details filled in. Nothing is saved yet.",
+  "There is no assisted intake form on screen.",
+  "Fictional details filled in. Nothing is created or sent yet.",
+  "Every box already has an answer. Nothing was replaced.",
+  // runCaseAction SUBMIT, presenter branch only
+  "The application is with the office. Record the intake checks next.",
+  // runAssistanceAction RESOLVE: the office's help-request drawer
+  "Say what you helped with before resolving this request.",
+  // save-office-draft / send-office-draft: Add a case
+  "The draft is saved. Nobody was emailed.",
+  "The application is with the office.",
+  "The draft is saved. Some answers still need attention before it can be sent.",
+  "Confirm that you have checked these answers with the client first.",
+  // confirm-reset-fixtures: the presenter panel
+  "The sample cases were rebuilt. Nothing else was touched.",
+  // assisted-intake-form and checkpoint-form: the office board and presenter panel
+  "An assisted application is ready. Nobody was emailed.",
+  "The sample case was moved to that point in the story.",
+]);
+
+const appSource = () => readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
+
+// Each notify(…) call's argument, up to its matching parenthesis.
+function notifyArguments(source) {
+  const found = [];
+  for (const match of source.matchAll(/\bnotify\(/g)) {
+    let depth = 1;
+    let i = match.index + match[0].length;
+    const start = i;
+    let quote = null;
+    for (; i < source.length && depth > 0; i += 1) {
+      const c = source[i];
+      if (quote) {
+        if (c === "\\") i += 1;
+        else if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") quote = c;
+      else if (c === "(") depth += 1;
+      else if (c === ")") depth -= 1;
+    }
+    found.push(source.slice(start, i - 1));
+  }
+  return found;
+}
+
+test("app.mjs writes no client text of its own: toasts and patched text go through t() or sentence()", () => {
+  const app = appSource();
+  // The direct forms first: a literal straight into notify or textContent.
+  for (const match of app.matchAll(/notify\(\s*(["'`])((?:(?!\1).)*)\1/g))
+    assert.ok(STAFF_ONLY_TOASTS.includes(match[2]), `literal toast outside the staff allow-list: ${match[2]}`);
+  for (const match of app.matchAll(/\.textContent = (["'`])((?:(?!\1).)+)\1/g))
+    assert.fail(`literal textContent: ${match[2]}`);
+  // Then every literal inside any notify(…), ternaries included. A text key
+  // ("toast.saved") is not text, and the error path's own fallback is a sentence.
+  const calls = notifyArguments(app);
+  assert.ok(calls.length > 20, "found the notify calls");
+  for (const call of calls)
+    for (const literal of call.matchAll(/(["'`])((?:(?!\1).)*)\1/g)) {
+      const text = literal[2];
+      if (/^[a-z_]+(\.[a-z_]+)+$/.test(text)) {
+        assert.ok(Object.hasOwn(TEXT, text), `unknown text key ${text}`);
+        continue;
+      }
+      if (call.startsWith("sentence(") && Object.hasOwn(SENTENCES, text)) continue;
+      assert.ok(STAFF_ONLY_TOASTS.includes(text), `toast outside the staff allow-list: ${text}`);
+    }
+  // Every allow-listed toast is really there (the list does not go stale).
+  for (const text of STAFF_ONLY_TOASTS) assert.ok(app.includes(`"${text}"`), `still raised: ${text}`);
+  // The error path's message is a sentence in the view language.
+  assert.doesNotMatch(app, /notify\(error\?\.message \?\? "Something went wrong\."\)/);
+  assert.match(app, /notify\(sentence\(error\?\.message \?\? "Something went wrong\.", /);
+  // The draft's own messages are keys now.
+  assert.doesNotMatch(app, /DRAFT_FAILED|DRAFT_FONT_UNCHECKED/);
+  assert.match(app, /"draft\.failed"/);
+  assert.match(app, /"draft\.font_unchecked"/);
+  // The resend countdown and button, and the in-place form text, take the view language.
+  for (const key of ["signin.countdown", "signin.resend_in", "signin.resend", "draft.link", "draft.preparing", "draft.tab_title"])
+    assert.match(app, new RegExp(`"${key.replace(".", "\\.")}"`), key);
+  assert.match(app, /noteState\(answer\.question, answer\.value, \{[\s\S]{0,160}lang/);
+  assert.match(app, /noteState\(answer\.group, draft\[ref\.q\], \{[^}]*lang/);
+  assert.match(app, /countText\(answer\.value, lang\)/);
+  assert.match(app, /const marks = \{[\s\S]{0,300}lang/);
+});
+
+test("app.mjs: the switch, the saved language, other tabs, and the document's lang and title", () => {
+  const app = appSource();
+  // localStorage can throw just by being read.
+  assert.doesNotMatch(app, /localStorage: window\.localStorage/);
+  assert.match(app, /try \{\s*return window\.localStorage;\s*\} catch/);
+  assert.match(app, /localStorage: readLocalStorage\(\)/);
+  assert.match(app, /languages: /);
+  // The map is loaded on demand and registered.
+  assert.match(app, /setHantMap\(\(await import\("\.\/zh-hant\.mjs"\)\)\.default\)/);
+  // Startup in 繁體: loaded before start; on failure 简体, undrawn, and the toast after the first render.
+  assert.match(
+    app,
+    /if \(controller\.getState\(\)\.lang === "zh-Hant"\)[\s\S]{0,200}await loadHant\(\);[\s\S]{0,200}controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);[\s\S]{0,120}pendingToast = "toast\.hant_failed_start";[\s\S]{0,200}await controller\.start\(\);\s*\}\s*$/,
+  );
+  assert.match(app, /if \(pendingToast[\s\S]{0,200}notify\(t\(pendingToast, \{\}, lang\)\);[\s\S]{0,40}pendingToast = null;/);
+  // The switch: sweep, load 繁體 if needed (a failure keeps the language), then set.
+  assert.match(
+    app,
+    /case "set-language": \{[\s\S]{0,400}sweepV2Form\(\);[\s\S]{0,200}!hantReady\(\)[\s\S]{0,200}await loadHant\(\);[\s\S]{0,120}notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\)\);\s*break;[\s\S]{0,120}controller\.setLanguage\(lang\);/,
+  );
+  // Other tabs follow, without writing it back.
+  assert.match(
+    app,
+    /window\.addEventListener\("storage", async \(event\) => \{[\s\S]{0,200}event\.key !== STORAGE_KEY[\s\S]{0,300}isLang\(lang\)[\s\S]{0,300}sweepV2Form\(\);[\s\S]{0,300}await loadHant\(\);[\s\S]{0,300}controller\.adoptLanguage\(lang\);/,
+  );
+  // After every render: <html lang> and the title in the view language.
+  assert.match(
+    app,
+    /root\.innerHTML = views\.page\(state, screenFor\(state\)\);\s*applyPeek\(\);\s*const lang = viewLang\(state\);\s*document\.documentElement\.lang = lang;\s*document\.title = t\("frame\.title", \{\}, lang\);/,
+  );
+});
+
+test("index.html keeps lang=\"en\" and today's title, which frame.title repeats", () => {
+  const html = readFileSync(fileURLToPath(new URL("../index.html", import.meta.url)), "utf8");
+  assert.match(html, /<html lang="en">/);
+  const title = html.match(/<title>([^<]*)<\/title>/)[1];
+  assert.equal(TEXT["frame.title"].en, title);
 });

@@ -254,6 +254,8 @@ function build(options = {}) {
     clock: options.clock,
     newActionId: options.newActionId,
     cooldownSeconds: options.cooldownSeconds,
+    localStorage: options.localStorage,
+    languages: options.languages,
   });
   return { controller, events, sessionStorage, renders };
 }
@@ -4061,5 +4063,80 @@ test("a conflict on a saved office draft is reconciled on Add a case, then saves
   assert.equal(Object.hasOwn(saves[0].payload, "visited"), false, "the office never sends visits");
   assert.equal(controller.getState().saveState, "saved");
   assert.equal(controller.getState().screen, "office-add-case");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// Part 4d: the language (spec 2026-10-05 §2). Saved per browser in
+// localStorage; never part of the window state in sessionStorage.
+// ---------------------------------------------------------------------------
+
+test("the language comes from the browser's saved choice, else its languages", () => {
+  const saved = build({ store: fakeStore(), localStorage: fakeSession({ "vitally.lang": "zh-Hant" }), languages: ["en-US"] });
+  assert.equal(saved.controller.getState().lang, "zh-Hant");
+  const fromBrowser = build({ store: fakeStore(), localStorage: fakeSession(), languages: ["zh-CN", "en"] });
+  assert.equal(fromBrowser.controller.getState().lang, "zh-Hans");
+  const nothing = build({ store: fakeStore() });
+  assert.equal(nothing.controller.getState().lang, "en", "no storage and no languages is English");
+  const blocked = {
+    getItem() { throw new Error("SecurityError"); },
+    setItem() { throw new Error("SecurityError"); },
+  };
+  const refused = build({ store: fakeStore(), localStorage: blocked, languages: ["zh-TW"] });
+  assert.equal(refused.controller.getState().lang, "zh-Hant", "blocked storage falls back to the browser's languages");
+  refused.controller.setLanguage("en");
+  assert.equal(refused.controller.getState().lang, "en", "a choice that cannot be saved still lasts for this page");
+});
+
+test("setLanguage saves the choice and redraws; an unknown language throws", async () => {
+  const localStorage = fakeSession();
+  const { controller, renders } = build({ store: fakeStore(), localStorage, languages: ["en"] });
+  await controller.start();
+  const before = renders.count;
+  controller.setLanguage("zh-Hans");
+  assert.equal(controller.getState().lang, "zh-Hans");
+  assert.equal(localStorage.raw("vitally.lang"), "zh-Hans");
+  assert.equal(renders.count, before + 1);
+  assert.equal(renders.focus.at(-1), false, "a language change keeps the keyboard where it is");
+  assert.throws(() => controller.setLanguage("fr"), /Unknown language/);
+  assert.equal(controller.getState().lang, "zh-Hans", "a refused language changes nothing");
+  assert.equal(localStorage.raw("vitally.lang"), "zh-Hans");
+  controller.stop();
+});
+
+test("adoptLanguage follows a choice made elsewhere without writing it", async () => {
+  const localStorage = fakeSession({ "vitally.lang": "zh-Hant" });
+  const { controller, renders } = build({ store: fakeStore(), localStorage });
+  // Startup's fallback: nothing is drawn before start.
+  controller.adoptLanguage("zh-Hans", { draw: false });
+  assert.equal(controller.getState().lang, "zh-Hans");
+  assert.equal(renders.count, 0);
+  assert.equal(localStorage.raw("vitally.lang"), "zh-Hant", "the saved choice stays");
+  await controller.start();
+  const before = renders.count;
+  // Another tab's choice (the storage event): drawn, not written back.
+  controller.adoptLanguage("en");
+  assert.equal(controller.getState().lang, "en");
+  assert.equal(renders.count, before + 1);
+  assert.equal(localStorage.raw("vitally.lang"), "zh-Hant");
+  assert.throws(() => controller.adoptLanguage("fr"), /Unknown language/);
+  controller.stop();
+});
+
+test("the window state never holds the language", async () => {
+  const sessionStorage = fakeSession();
+  const localStorage = fakeSession();
+  const { controller } = build({ store: fakeStore(), sessionStorage, localStorage });
+  await controller.start();
+  controller.setLanguage("zh-Hant");
+  controller.toggleSidebar(); // a change that writes the window state
+  controller.navigate("applications");
+  const keys = sessionStorage.keys();
+  assert.ok(keys.length > 0, "the window state was written");
+  for (const key of keys) {
+    assert.doesNotMatch(key, /lang/i, key);
+    assert.doesNotMatch(String(sessionStorage.raw(key)), /"lang"|zh-Hant/, key);
+  }
+  assert.deepEqual(localStorage.keys(), ["vitally.lang"]);
   controller.stop();
 });

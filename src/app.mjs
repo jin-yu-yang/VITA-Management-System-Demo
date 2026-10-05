@@ -40,6 +40,9 @@ import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
+import { STORAGE_KEY, isLang, viewLang } from "./language.mjs";
+import { setHantMap, hantReady } from "./hant.mjs";
+import { t, sentence } from "./client-text.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -69,6 +72,21 @@ async function readConfig() {
 
 const config = await readConfig();
 
+// The browser's localStorage can throw just by being read (blocked or private
+// storage), so it is read here, every time, and null stands in for it.
+function readLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+// The Traditional map (spec 2026-10-05 §4) loads only when 繁體 is chosen.
+async function loadHant() {
+  setHantMap((await import("./zh-hant.mjs")).default);
+}
+
 if (!config) {
   // Nothing to sign in to. Say what to set, and stop before any SDK loads.
   root.innerHTML = views.setupNeeded();
@@ -91,9 +109,16 @@ if (!config) {
     sessionStorage: window.sessionStorage,
     windowEvents: window,
     cooldownSeconds: config.authResendCooldownSeconds,
+    localStorage: readLocalStorage(),
+    languages: [...(navigator.languages ?? [navigator.language])],
   });
+  // The screen language now, for text this file writes itself.
+  const screenLang = () => viewLang(controller.getState());
 
   let toastTimer = null;
+  // A toast that has to wait for the first render, when #toast exists: a
+  // saved 繁體 whose map could not load at startup.
+  let pendingToast = null;
   let cooldownTimer = null;
   // Where the keyboard was when a dialog opened (a `describeFocus` record), so
   // closing it returns to that very control — the row's own Log a call button,
@@ -201,6 +226,13 @@ if (!config) {
     const scrollY = window.scrollY;
     root.innerHTML = views.page(state, screenFor(state));
     applyPeek();
+    const lang = viewLang(state);
+    document.documentElement.lang = lang;
+    document.title = t("frame.title", {}, lang);
+    if (pendingToast && root.querySelector("#toast")) {
+      notify(t(pendingToast, {}, lang));
+      pendingToast = null;
+    }
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     tickCooldown(state);
@@ -386,13 +418,13 @@ if (!config) {
     const resend = root.querySelector('[data-action="resend-code"]');
     if (!countdown || !resend) return;
     if (secondsLeft > 0) {
-      countdown.textContent = `You can request another code in ${secondsLeft} seconds.`;
-      resend.textContent = `Resend code in ${secondsLeft}s`;
+      countdown.textContent = t("signin.countdown", { n: secondsLeft }, screenLang());
+      resend.textContent = t("signin.resend_in", { n: secondsLeft }, screenLang());
       resend.disabled = true;
       return;
     }
     countdown.textContent = "";
-    resend.textContent = "Resend code";
+    resend.textContent = t("signin.resend", {}, screenLang());
     resend.disabled = false;
   }
 
@@ -526,13 +558,14 @@ if (!config) {
         noteState(answer.question, answer.value, {
           showMissing,
           showInvalid: showInvalid(note, answer, revealed),
+          lang: viewLang(state),
         }),
       );
     if (answer.group)
       paintInPlace(
         document.getElementById(`${answer.groupBase}-note`),
         "q-note",
-        noteState(answer.group, draft[ref.q], { showMissing, showInvalid: revealed.has(ref.q) }),
+        noteState(answer.group, draft[ref.q], { showMissing, showInvalid: revealed.has(ref.q), lang: viewLang(state) }),
       );
   }
 
@@ -549,6 +582,7 @@ if (!config) {
       visited: state.visitedSubsteps ?? [],
       revealed: new Set(state.revealed ?? []),
       cards: cardsFor(answers, state.savedCase?.documentCards ?? []),
+      lang: viewLang(state),
     };
     const paint = (id, status) =>
       paintInPlace(document.getElementById(id), "rail-status", {
@@ -583,11 +617,13 @@ if (!config) {
 
   // A longtext's character count.
   function paintV2Count(ref) {
-    const answer = v2Answer(ref, controller.getState().draftAnswers ?? {});
+    const state = controller.getState();
+    const answer = v2Answer(ref, state.draftAnswers ?? {});
     if (answer?.question.type !== "longtext") return;
+    const lang = viewLang(state);
     const count = document.getElementById(`${answer.base}-count`);
-    if (count && count.textContent !== countText(answer.value))
-      count.textContent = countText(answer.value);
+    if (count && count.textContent !== countText(answer.value, lang))
+      count.textContent = countText(answer.value, lang);
   }
 
   // Every rendered answer into the draft, quietly: the action that follows
@@ -747,11 +783,7 @@ if (!config) {
           ? { ...cleared, ...generated }
           : fillBlankAnswers(draft, generated, 2),
       );
-      notify(
-        replaceEverything
-          ? "A different fictional example replaced the answers. Nothing is saved yet."
-          : "Fictional details filled in. Nothing is saved yet.",
-      );
+      notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
       return;
     }
     const generated = makeSampleAnswers({
@@ -765,11 +797,7 @@ if (!config) {
         ? generated
         : fillBlankAnswers(state.draftAnswers, generated),
     );
-    notify(
-      replaceEverything
-        ? "A different fictional example replaced the answers. Nothing is saved yet."
-        : "Fictional details filled in. Nothing is saved yet.",
-    );
+    notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
   }
 
   // The office's own "fill fictional details", the same generator the client's
@@ -840,11 +868,7 @@ if (!config) {
       // which the server keeps outside `answers`.
       fromServer: !useMine,
     });
-    notify(
-      useMine
-        ? "Your answers are kept. Save when you are ready."
-        : "The office’s answers are loaded. Save when you are ready.",
-    );
+    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()));
     // On Add a case the choice's panel goes once made, and its button with it:
     // the keyboard goes to Save draft, the next thing to press.
     if (controller.getState().screen === "office-add-case" && !root.contains(document.activeElement))
@@ -897,11 +921,11 @@ if (!config) {
         controller.editAnswers(Object.fromEntries(new FormData(form)));
       await controller.saveAnswers();
       clearFormDrafts(form);
-      notify("Your answers are saved.");
+      notify(t("toast.saved", {}, screenLang()));
       return;
     }
     if (type === "SUBMIT" && !state.openPanels.includes("confirmed")) {
-      notify("Confirm that you have checked your answers first.");
+      notify(t("toast.confirm_first", {}, screenLang()));
       return;
     }
     if (type === "SUBMIT" && isV2Case(state)) {
@@ -929,7 +953,7 @@ if (!config) {
         // Submit stays off: the alerts list says what to fix, and the
         // keyboard goes to its heading.
         await controller.goToSubstep("review.check");
-        notify("Some answers still need a change before you can send.");
+        notify(t("toast.needs_change", {}, screenLang()));
         focusV2Arrival();
         return;
       }
@@ -985,13 +1009,13 @@ if (!config) {
         return;
       }
       controller.navigate("progress");
-      notify("Your application was sent to the office.");
+      notify(t("toast.sent", {}, screenLang()));
       return;
     }
     if (type === "RESPOND_DOCUMENT") {
       if (controller.getState().openPanels.includes("upload-failed"))
         controller.togglePanel("upload-failed");
-      notify("Your sample document was sent.");
+      notify(t("toast.document_sent", {}, screenLang()));
       return;
     }
     // A claim opens the case that was just taken on.
@@ -1042,13 +1066,11 @@ if (!config) {
   // blockers stop it; the PDF is loaded into it when ready. pdf-lib and the
   // form load only now, and the Chinese font only when some answer needs it
   // (the same files whatever the text says).
-  const DRAFT_FAILED = "The draft could not be made. Close this tab and try again.";
-  const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again later.";
-
   function writeTab(tab, text) {
     try {
       const page = tab.document;
-      page.title = "Draft 13614-C";
+      page.title = t("draft.tab_title", {}, screenLang());
+      page.documentElement?.setAttribute("lang", screenLang());
       if (!page.body) page.documentElement?.append(page.createElement("body"));
       page.body.textContent = text;
     } catch {
@@ -1067,7 +1089,7 @@ if (!config) {
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
     const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
     if (hex !== file.sha256) {
-      const error = new Error(DRAFT_FONT_UNCHECKED);
+      const error = new Error(t("draft.font_unchecked"));
       error.draftFont = true;
       throw error;
     }
@@ -1077,7 +1099,7 @@ if (!config) {
   async function viewDraft(form) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
-    if (tab) writeTab(tab, "Preparing your draft…");
+    if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
     // An earlier press's link goes: this press makes a new draft.
     root.querySelector("#draft-ready")?.replaceChildren();
     try {
@@ -1116,12 +1138,12 @@ if (!config) {
         link.href = url;
         link.download = fields.fileName;
         link.target = "_blank";
-        link.textContent = "Your draft is ready: open it";
+        link.textContent = t("draft.link", {}, screenLang());
         ready.replaceChildren(link);
       }
     } catch (error) {
-      if (tab && !tab.closed) writeTab(tab, DRAFT_FAILED);
-      notify(error?.draftFont ? DRAFT_FONT_UNCHECKED : DRAFT_FAILED);
+      if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
+      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()));
     }
   }
 
@@ -1343,7 +1365,7 @@ if (!config) {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
         const started = await controller.createCase();
-        if (started) notify("A new fictional application is ready.");
+        if (started) notify(t("toast.started", {}, screenLang()));
         break;
       }
       case "continue-intake":
@@ -1446,7 +1468,7 @@ if (!config) {
         }
         if (dirty) await controller.saveAnswers();
         controller.navigate("applications");
-        notify("Your answers are saved.");
+        notify(t("toast.saved", {}, screenLang()));
         break;
       }
       case "fill-fictional":
@@ -1483,10 +1505,10 @@ if (!config) {
       case "copy-reference":
         try {
           await navigator.clipboard.writeText(state.savedCase?.reference ?? "");
-          notify("Application ID copied.");
+          notify(t("toast.id_copied", {}, screenLang()));
         } catch {
           openDialog("print");
-          notify("Select the ID on the card to copy it.");
+          notify(t("toast.id_select", {}, screenLang()));
         }
         break;
       case "print-reference":
@@ -1509,7 +1531,7 @@ if (!config) {
         // the controller answers null and says so on screen. "Sent again."
         // would be a claim that something left this window.
         const sent = await controller.retryLast();
-        if (sent) notify("Sent again.");
+        if (sent) notify(t("toast.sent_again", {}, screenLang()));
         break;
       }
       case "retry-connection":
@@ -1524,6 +1546,24 @@ if (!config) {
       case "close-dialog":
         closeDialog();
         break;
+      // The language switch (spec 2026-10-05 §2). What is in the boxes first,
+      // since the redraw rebuilds them; 繁體's map on first use. The redraw
+      // puts the keyboard back on the pressed button (its data-value).
+      case "set-language": {
+        const lang = target.dataset.value;
+        if (!isLang(lang)) break;
+        sweepV2Form();
+        if (lang === "zh-Hant" && !hantReady()) {
+          try {
+            await loadHant();
+          } catch {
+            notify(t("toast.hant_failed", {}, screenLang()));
+            break;
+          }
+        }
+        controller.setLanguage(lang);
+        break;
+      }
       default:
         break;
     }
@@ -1545,7 +1585,7 @@ if (!config) {
     } catch (error) {
       // The controller has already recorded the failure and re-rendered; this
       // only makes sure a refused action is announced rather than silent.
-      notify(error?.message ?? "Something went wrong.");
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
     }
   });
 
@@ -1631,7 +1671,7 @@ if (!config) {
           await moveV2(() => controller.backToSummary());
         else await moveV2(() => controller.moveSubstep(1));
       } catch (error) {
-        notify(error?.message ?? "Something went wrong.");
+        notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
       }
       return;
     }
@@ -1689,7 +1729,7 @@ if (!config) {
         controller.setFormStep(Math.min(3, state.formStep + 1));
       }
     } catch (error) {
-      notify(error?.message ?? "Something went wrong.");
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
     }
   });
 
@@ -1744,6 +1784,36 @@ if (!config) {
       first.focus();
     }
   });
+
+  // Another tab chose a language: this one follows, without writing it back.
+  window.addEventListener("storage", async (event) => {
+    if (event.key !== STORAGE_KEY) return;
+    const storage = readLocalStorage();
+    if (!storage || event.storageArea !== storage) return;
+    const lang = event.newValue;
+    if (!isLang(lang) || lang === controller.getState().lang) return;
+    sweepV2Form();
+    if (lang === "zh-Hant" && !hantReady()) {
+      try {
+        await loadHant();
+      } catch {
+        notify(t("toast.hant_failed", {}, screenLang()));
+        return;
+      }
+    }
+    controller.adoptLanguage(lang);
+  });
+
+  // A saved 繁體 needs its map before the first render. If it can't load, the
+  // page shows 简体 (the saved choice stays) and says so once it is drawn.
+  if (controller.getState().lang === "zh-Hant") {
+    try {
+      await loadHant();
+    } catch {
+      controller.adoptLanguage("zh-Hans", { draw: false });
+      pendingToast = "toast.hant_failed_start";
+    }
+  }
 
   await controller.start();
 }

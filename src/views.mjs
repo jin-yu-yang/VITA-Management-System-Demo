@@ -1,4 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
+import { viewLang } from "./language.mjs";
+import { t } from "./client-text.mjs";
 import {
   renderStaffBoard,
   renderStaffCase,
@@ -29,10 +31,21 @@ import {
 
 const when = (condition, html) => (condition ? html : "");
 
-// The switcher shows what the client form will offer. Only English works until
-// the intake is translated (roadmap part 4), so the others are visibly off.
-export function languageSwitch() {
-  return `<div class="language-switch" role="group" aria-label="Language"><button type="button" class="lang current" lang="en" aria-pressed="true">English</button><button type="button" class="lang" lang="zh-Hans" disabled title="Coming soon">简体中文</button><button type="button" class="lang" lang="zh-Hant" disabled title="Coming soon">繁體中文</button><span class="lang-note">Chinese coming soon</span></div>`;
+// The language switch (spec 2026-10-05 §2): three live buttons, each in its
+// own language and named in it, whatever the screen language is. `data-value`
+// is what brings the keyboard back to the pressed one after the redraw.
+const SWITCH = Object.freeze([
+  ["en", "English"],
+  ["zh-Hans", "简体中文"],
+  ["zh-Hant", "繁體中文"],
+]);
+
+export function languageSwitch(lang = "en") {
+  const buttons = SWITCH.map(([code, name]) => {
+    const pressed = code === lang;
+    return `<button type="button" class="lang${pressed ? " current" : ""}" data-action="set-language" data-value="${code}" lang="${code}" aria-pressed="${pressed}">${name}</button>`;
+  }).join("");
+  return `<div class="language-switch" role="group" aria-label="${esc(t("frame.language", {}, lang))}">${buttons}</div>`;
 }
 
 // The version-2 form's wording switch (spec 2026-09-30 §3.2, §3.4): it edits
@@ -46,7 +59,7 @@ function seniorSwitch(pressed) {
 export function clientHeader(state) {
   const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
   const onV2Draft = onDraft && Number(state?.savedCase?.intakeVersion) === 2;
-  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch()}${when(
+  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch(viewLang(state))}${when(
     onV2Draft,
     seniorSwitch(state?.draftAnswers?.form_version === "senior"),
   )}${button(
@@ -116,7 +129,7 @@ export function page(state, body) {
   const presenter = state?.principal?.access === "presenter";
   const top = presenter ? "" : clientHeader(state);
   const main = presenter ? body : `<div class="client-shell">${body}</div>`;
-  return `<a class="skip" href="#main">Skip to content</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
