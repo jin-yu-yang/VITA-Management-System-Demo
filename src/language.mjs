@@ -41,24 +41,36 @@ export function writeLanguage(lang, { storage }) {
 export const viewLang = (state) =>
   state?.principal?.access === "presenter" ? "en" : isLang(state?.lang) ? state.lang : "en";
 
-export const fill = (template, params = {}) =>
-  String(template).replace(/\{(\w+)\}/g, (whole, name) =>
-    Object.hasOwn(params, name) ? String(params[name]) : whole,
+// null params mean none. One pass, so a value that holds braces is never re-read.
+export const fill = (template, params) => {
+  const given = params ?? {};
+  return String(template).replace(/\{(\w+)\}/g, (whole, name) =>
+    Object.hasOwn(given, name) ? String(given[name]) : whole,
   );
+};
 
-const plural = (en, params) =>
+// A plain string is returned as is; { one, other } is chosen by params.n.
+export const plural = (en, params) =>
   typeof en === "string" ? en : Number(params?.n) === 1 ? en.one : en.other;
 
 // One catalogue- or card-style value in the screen language. zh may be a
 // template ({ template, params }): the template is converted, then filled, so
-// the client's own words are never converted.
+// the client's own words are never converted. A plain-string en is finished
+// English (cards put client text in it) and is returned verbatim; only a
+// plural en is chosen and filled. An unknown language is English.
 export function sourceText(pair, lang = "en") {
   if (!pair) return "";
-  const params = pair.params ?? (typeof pair.zh === "object" ? pair.zh?.params : undefined) ?? {};
-  const english = () => fill(plural(pair.en ?? "", params), params);
-  if (pair.literal) return lang === "en" ? String(pair.en ?? "") : String(pair.zh ?? pair.en ?? "");
-  if (lang === "en" || pair.zh === undefined || pair.zh === null || pair.zh === "") return english();
-  const convert = (s) => (lang === "zh-Hant" ? toHant(s) : s);
-  if (typeof pair.zh === "object") return fill(convert(pair.zh.template), pair.zh.params ?? {});
+  const screen = isLang(lang) ? lang : "en";
+  const zh = pair.zh !== null && typeof pair.zh === "object" ? pair.zh : null;
+  const params = pair.params ?? zh?.params ?? {};
+  const english = () => {
+    const en = pair.en ?? "";
+    return typeof en === "string" ? en : fill(plural(en, params), params);
+  };
+  if (pair.literal) return screen === "en" ? String(pair.en ?? "") : String(pair.zh ?? pair.en ?? "");
+  const convert = (s) => (screen === "zh-Hant" ? toHant(s) : s);
+  if (screen === "en") return english();
+  if (zh) return typeof zh.template === "string" && zh.template !== "" ? fill(convert(zh.template), params) : english();
+  if (typeof pair.zh !== "string" || pair.zh === "") return english();
   return convert(pair.zh);
 }

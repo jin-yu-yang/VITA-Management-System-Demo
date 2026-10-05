@@ -105,8 +105,54 @@ test("every TEXT entry has en and zh with the same placeholders", () => {
   const names = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
   for (const [key, entry] of Object.entries(TEXT)) {
     assert.ok(entry.en && entry.zh, `${key} needs en and zh`);
-    const ens = typeof entry.en === "string" ? [entry.en] : [entry.en.one, entry.en.other];
-    if (typeof entry.en !== "string") assert.ok(entry.en.one && entry.en.other, `${key} plural needs one and other`);
-    for (const en of ens) assert.equal(names(en), names(entry.zh), `${key} placeholders differ`);
+    if (typeof entry.en === "string") {
+      assert.equal(names(entry.en), names(entry.zh), `${key} placeholders differ`);
+      continue;
+    }
+    assert.ok(entry.en.one && entry.en.other, `${key} plural needs one and other`);
+    assert.equal(names(entry.en.other), names(entry.zh), `${key} placeholders differ`);
+    const allowed = names(entry.zh).split(",");
+    for (const name of names(entry.en.one).split(",").filter(Boolean)) {
+      assert.ok(allowed.includes(name), `${key} one-form uses {${name}}, which zh lacks`);
+    }
   }
+});
+
+test("a plain-string en is verbatim: client text with braces is never filled", () => {
+  setHantMap({ "您写了：{written}": "您寫了：{written}" });
+  const card = { en: "You wrote: {n} cars", zh: { template: "x {n}", params: { n: "3" } } };
+  assert.equal(sourceText(card, "en"), "You wrote: {n} cars");
+  const typed = { en: "You wrote: {n} 辆", zh: { template: "您写了：{written}", params: { written: "{n} 辆" } } };
+  assert.equal(sourceText(typed, "en"), "You wrote: {n} 辆");
+  assert.equal(sourceText(typed, "zh-Hans"), "您写了：{n} 辆");
+  assert.equal(sourceText(typed, "zh-Hant"), "您寫了：{n} 辆");
+  setHantMap(null);
+});
+
+test("sourceText: one params for the plural English and the Chinese template", () => {
+  const pair = { en: { one: "{n} job", other: "{n} jobs" }, zh: { template: "{n} 份工作" }, params: { n: 4 } };
+  assert.equal(sourceText(pair, "en"), "4 jobs");
+  assert.equal(sourceText(pair, "zh-Hans"), "4 份工作");
+  assert.equal(sourceText({ ...pair, params: { n: 1 } }, "en"), "1 job");
+});
+
+test("sourceText: an unknown language is English; a zh object without a template is English", () => {
+  const pair = { en: "Photo ID", zh: "带照片的身份证件" };
+  for (const lang of [undefined, null, "fr", ""]) assert.equal(sourceText(pair, lang), "Photo ID", `lang ${lang}`);
+  assert.equal(sourceText({ en: "林美", zh: "林美", literal: true }, "fr"), "林美");
+  assert.equal(sourceText({ en: "Photo ID", zh: { params: { n: 1 } } }, "zh-Hans"), "Photo ID");
+  assert.equal(sourceText({ en: "Photo ID", zh: {} }, "zh-Hant"), "Photo ID");
+});
+
+test("t: plural entries, null params, unknown language", () => {
+  setHantMap({ "还有 {n} 个部分需要回答": "還有 {n} 個部分需要回答" });
+  assert.equal(t("count.parts", { n: 1 }, "en"), "1 part still needs answers");
+  assert.equal(t("count.parts", { n: 3 }, "en"), "3 parts still need answers");
+  assert.equal(t("count.parts", { n: 3 }, "zh-Hans"), "还有 3 个部分需要回答");
+  assert.equal(t("count.parts", { n: 3 }, "zh-Hant"), "還有 3 個部分需要回答");
+  assert.equal(t("frame.skip", null, "en"), "Skip to content");
+  for (const lang of [undefined, null, "fr"]) assert.equal(t("frame.skip", {}, lang), "Skip to content", `lang ${lang}`);
+  assert.equal(fill("Hello {name}", null), "Hello {name}");
+  assert.equal(sentence("You do not have access to this step.", "fr"), "You do not have access to this step.");
+  setHantMap(null);
 });
