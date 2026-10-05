@@ -417,6 +417,11 @@ test("Hong Kong forms, no vocabulary swaps", () => {
   assert.equal(out["信息"], "信息", "hk keeps the word; twp would give 資訊");
 });
 
+test("every override really lands in the generated map", async () => {
+  const values = Object.values(MAP);
+  for (const o of OVERRIDES) assert.ok(values.some((v) => v.includes(o.to)), `override ${o.from} → ${o.to} is not in the map`);
+});
+
 test("overrides apply after conversion, and each has a reason", () => {
   for (const o of OVERRIDES) {
     assert.equal(typeof o.from, "string");
@@ -488,6 +493,7 @@ export default Object.freeze([]);
 ```js
 // npm run build:hant — writes src/zh-hant.mjs; `-- --check` only compares.
 import { readFile, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import * as OpenCC from "opencc-js";
 import { collectSimplified } from "./hant-sources.mjs";
 import OVERRIDES from "./hant-overrides.mjs";
@@ -503,6 +509,14 @@ export function convertAll(strings, converter, overrides) {
       traditional = traditional.split(converter(from)).join(to);
     }
     out[simplified] = traditional;
+  }
+  // OpenCC can convert a fragment on its own differently from inside the full
+  // sentence, so an override's search can miss. Every override must land.
+  for (const { from, to } of overrides) {
+    const wanted = strings.filter((s) => s.includes(from));
+    if (wanted.length && !wanted.every((s) => out[s].includes(to)))
+      throw new Error(`Override ${from} → ${to} did not apply to every string that has it`);
+    if (!wanted.length) throw new Error(`Override ${from} matches no source string`);
   }
   return out;
 }
@@ -534,7 +548,7 @@ async function main() {
   await writeFile(TARGET, text);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
 ```
 
 - [ ] **Step 7: Run** `npm run build:hant`. Then read the generated map for wrong picks: search it for 發, 髮, 乾, 幹, 干, 後, 后, 裏, 裡, 著 and 着, and check each in context. Add an override with a reason for each wrong pick, then build again.
@@ -568,6 +582,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
 - **`labelTable` / `labelOf`** keep the option objects and return `sourceText(option.label.general, lang)`.
 - **Date boxes:**
   - `DATE_PARTS` becomes `datePartsFor(lang)`. In English it returns `[month, day, year]` as today; in Chinese it returns `[year, month, day]`.
+  - **The year box is marked by its part, not its position.** `styles.css:4317` and `:4396` widen `.q-date-part:last-child`, which is the year today. In Chinese order the last box is the day, so the year would get the narrow box and the day the wide one. Each date label gets a class for its part (`q-date-part is-year`, `is-month`, `is-day`), and both rules change from `.q-date-part:last-child input.q-input` to `.q-date-part.is-year input.q-input`. English renders the same, since the year is still last.
   - Labels and placeholders come from `t("date.year")`, `t("date.month")`, `t("date.day")` (年, 月, 日) and `t("date.year_hint")` and the like (YYYY, MM, DD stay as they are in Chinese, so the format is unambiguous).
   - Ids stay `${base}-${part}`.
 - **`MONTHS`** becomes `formatDate(iso, lang)`. English stays `Apr 12, 1961`. Chinese is `1961年4月12日`, hand-built from the parts; a partial date is formatted as far as it goes, the same as today's English.
@@ -577,7 +592,8 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - notes → `note.needs_answer` ("Needs an answer" / "需要回答") and each invalid-answer message (`invalid.*`; list them from `checkValue`'s callers in `intake-form.mjs`);
   - part statuses → `status.needs` ("Needs answers" / "需要回答"), `status.docs` ("Needs documents" / "需要文件") and `status.done` ("Done" / "已完成");
   - household → `member.remove` ("Remove" / "移除") and `member.add` ("Add a person" / "添加一位成员");
-  - "No one" and every other English literal in `intake-form.mjs` that reaches the screen.
+  - "No one" and every other English literal in `intake-form.mjs` that reaches the screen, including the version-2 `<select>`'s blank option, "Select an option" (`intake-form.mjs:374`), which becomes `form.select_option` ("Select an option" / "请选择").
+  - **`ui.mjs` `select()` stays English.** It also hard-codes "Select an option", but only the version-1 form (English, excluded from the sweep) and staff screens use it. A comment says so.
 
   The numbers are formatted with `toLocaleString(localeOf(lang))`.
 
@@ -585,6 +601,7 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
   - `wording`, `optionLabel` (through `renderQuestion`) and `tipsOf` return non-empty text for every catalogue question, option and tip in all three languages. In `zh-Hant` they return the map's value; set the map with `setHantMap(MAP)`.
   - `wording(q, { lang: "zh-Hans" })` equals the catalogue's `zh`.
   - The date boxes come in the order `year, month, day` for `zh-Hans` and `zh-Hant`, and `month, day, year` for `en`. The ids are unchanged, and the labels are 年 / 月 / 日.
+  - The year label carries `is-year` in every language. A source test on `styles.css` finds no `.q-date-part:last-child` rule left, and finds the two `.q-date-part.is-year input.q-input` rules.
   - `formatDate("1961-04-12", "zh-Hans")` is "1961年4月12日"; with `en` it's "Apr 12, 1961".
   - `formatAnswer` of a date in Chinese uses `formatDate`.
   - `rangeText` and `countText` work in all three languages.
@@ -659,15 +676,16 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
     - `createController({ …, localStorage = null, languages = [] })`;
     - `state.lang`, read at creation by `readLanguage({ storage: localStorage, languages })`;
     - `controller.setLanguage(lang)`, which writes, sets `state.lang` and calls `show()`;
-    - `controller.adoptLanguage(lang)`, which sets and calls `show()` without writing, for the `storage` event.
+    - `controller.adoptLanguage(lang, { draw = true } = {})`, which sets `state.lang` without writing and calls `show()` unless `draw` is false. The `storage` event uses the default; startup uses `{ draw: false }`.
   - **The switch:** `languageSwitch(lang)` renders three buttons, `data-action="set-language" data-value="<lang>" lang="<lang>" aria-pressed`, inside `<div class="language-switch" role="group" aria-label="${t("frame.language")}">`. There's no "coming soon" note and nothing is disabled.
   - **`clientHeader(state)`** calls `languageSwitch(viewLang(state))`. Task 6 translates the rest of the header.
   - **`page(state, body)`** sets nothing on the document. `app.mjs` sets `document.documentElement.lang = viewLang(state)` and `document.title` after each render.
 
 **`app.mjs`:**
+- **Reading storage:** `window.localStorage` can throw SecurityError just by being read, in blocked or private storage. `app.mjs` reads it inside try/catch (`let storage = null; try { storage = window.localStorage; } catch {}`) and passes `storage` (or `null`) to `createController`. It does the same in the `storage` listener and anywhere else.
 - **Startup:**
   - Before `controller.start()`, if `controller.getState().lang === "zh-Hant"`, await `loadHant()`.
-  - On failure, call `controller.adoptLanguage("zh-Hans")` (the saved choice stays) and queue the toast `toast.hant_failed_start` ("Traditional Chinese couldn't load. Showing Simplified Chinese." / "无法载入繁体中文，暂以简体中文显示。").
+  - On failure, call `controller.adoptLanguage("zh-Hans", { draw: false })`, so nothing is drawn before `controller.start()` has run (the saved choice stays). Keep the toast in a `pendingToast` variable. `render()` raises it with `notify` after the first render, when `#toast` exists, then clears it. The toast is `toast.hant_failed_start` ("Traditional Chinese couldn't load. Showing Simplified Chinese." / "无法载入繁体中文，暂以简体中文显示。").
   - `loadHant` is `setHantMap((await import("./zh-hant.mjs")).default)`.
 - **`set-language`:**
   - Sweep the version-2 form first (`sweepV2Form()`).
@@ -740,7 +758,16 @@ if (import.meta.url === `file://${process.argv[1]}`) await main();
     - the request cards with translated labels (需要的文件, 办公室留言) and the office's title and message as typed;
     - the history lines: `entry.message` goes through `historyLine(entry.message, lang)` (below).
 - **History** (`client-text.mjs`):
-  - `SENTENCES` gets every client-event sentence written by the migrations. To list them, grep `supabase/migrations/*.sql` for `'message',` and the seeded `insert into public.client_events`.
+  - `SENTENCES` gets every client-event sentence written by the migrations. One helper, `migrationSentences()` in `tests/support/language-sweep.mjs`, finds them, and both the history pin and the table use it. Spell out its parsing:
+    - **A sentence** is a single-quoted SQL string literal (with `''` unescaped to `'`) that comes straight after `'message',` (optional whitespace), or straight after `then` inside a `case when … then '…' end` that is itself the value after `'message',`. That second form covers the contact sentence, "A volunteer spoke with you about the next service step.".
+    - **Excluded:**
+      - `'message'` inside an array (`array['message','title']`), because the next token after `'message',` isn't a quoted literal;
+      - `'message',2000` (a number);
+      - `'message',p_person.id` and any other identifier;
+      - a literal followed by `||` (the request prefix, handled by `historyLine`).
+    - **The request prefix** `'A volunteer requested a document: '||…` is recognised on its own. The helper returns it separately, and the test checks `historyLine` handles it.
+    - **The seeded inserts** in `009_fixtures_and_realtime.sql` and `019_fixtures_v2.sql` (`insert into public.client_events(…, message, …) values(…)` and `select … '…' …`) are parsed for the literal in the `message` position. Read the two statements and match their exact shape: a literal in a `values(…)` list at the column index of `message`.
+    - **A unit test of the helper itself** feeds it a small SQL sample containing each excluded form and each real form, and checks exactly the right sentences come out.
   - `historyLine(message, lang)`:
     - if `message` starts with the English request prefix `"A volunteer requested a document: "`, it returns `t("history.requested", { title })` (志愿者请求了一份文件：{title}), keeping the title as typed;
     - otherwise it returns `sentence(message, lang)`.
@@ -804,10 +831,11 @@ export function latinLeaks(text, data = []) {
   - The sample free text (names, address) uses characters common to both scripts, such as 林 and 美.
   - For each render:
     - `latinLeaks(textOf(html), data)` is empty;
-    - in `zh-Hant`, `OpenCC.Converter({ from: "cn", to: "hk" })(textOf(html)) === textOf(html)`.
+    - in `zh-Hant`, `OpenCC.Converter({ from: "cn", to: "hk" })(textOf(html)) === textOf(html)`. This assumes converting already-Traditional text again changes nothing, which OpenCC doesn't guarantee for every character, override output included. **If a false positive turns up,** switch the check to a character-level "Simplified-only" set: the characters that the converter changes when given one character at a time, minus every character that appears in any value of `src/zh-hant.mjs`. Flag only those, and say so in the report.
   - **The version-1 intake screen** isn't swept. One test checks its note shows in Chinese and its body is inside `lang="en"`.
   - **The history pin:** every `'message','…'` sentence in `supabase/migrations/*.sql` (and the seeded `client_events` sentences) is a `SENTENCES` key, and the request prefix is handled by `historyLine`.
-  - **The sentence pin:** every `SAFE_MESSAGES` value, every literal `controllerError` sentence and every `auth.mjs` sentence is a `SENTENCES` key.
+  - **The sentence pin:** every `SAFE_MESSAGES` value, every literal `controllerError` sentence, every `auth.mjs` sentence and every `*_NOTICE` constant is a `SENTENCES` key.
+  - **`case-actions.mjs`'s messages reach a client too,** through the click handler's `notify(error.message)`. The client's own case actions are `SUBMIT` and `SEND_DOCUMENT` (the `caseButton`s in `client-views.mjs` and `intake-views.mjs`; check there are no others). The test calls `payloadFor(type, {}, {})` for each, collects the message it throws, and expands it to its exact sentence (for example "This request is no longer on screen."). Each must be a `SENTENCES` key, as must "This step is not available.". The label-built messages of staff-only actions (`${label} is required.` and the like) stay English, because staff screens are English. The plan accepts that, and a comment in `client-text.mjs` says so.
 
 - [ ] **Step 1: Write the sweep helper and the failing tests.** Run them. Expected: FAIL.
 - [ ] **Step 2: Implement.** Add the `TEXT` and `SENTENCES` entries with drafted `zh`, then run `npm run build:hant`.
@@ -929,7 +957,7 @@ html:lang(zh-Hant) {
   - `#code-form button[type=submit]`.
 
   It waits for `#main` of the applications screen with `[data-action="open-intake"]` or a `.application-row`; check the real markup. It keeps the same route and release handling.
-- [ ] **Step 4: The phase** `"a client works in Chinese, and 繁體 loads only when chosen"`. It goes after "a version-1 draft still finishes in the old form", in its own context from `engine.newPage({ locale: "zh-CN" })` on the client engine, signed in as applicant B through `loginTestUserById`.
+- [ ] **Step 4: The phase** `"a client works in Chinese, and 繁體 loads only when chosen"`. It goes **after the 4b2 phase "a client walks the version-2 intake, sub-step by sub-step"**, just before "nothing threw, and every console line was one we asked for". That phase and its reopen in a fresh context also sign in as applicant B and use `start-application`, `continue-intake` and the applications list, so a case the Chinese phase submitted earlier could change what they find, in its own context from `engine.newPage({ locale: "zh-CN" })` on the client engine, signed in as applicant B through `loginTestUserById`.
   - Record every request whose URL ends with `/src/zh-hant.mjs`.
   - Before sign-in, `html[lang]` is `zh-Hans` and the email field's label is 电子邮箱.
   - After sign-in, press `[data-action="start-application"]`, then `continue-intake`, then Fill fictional details (all by `data-action`).
