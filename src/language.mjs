@@ -74,3 +74,27 @@ export function sourceText(pair, lang = "en") {
   if (typeof pair.zh !== "string" || pair.zh === "") return english();
   return convert(pair.zh);
 }
+
+// The newest language wish wins (app.mjs). Each press of the switch, each
+// storage event and startup takes a turn; 繁體's map may take a while to
+// load, and a wish whose load lands after a newer one is dropped, so a slow
+// load never undoes (or saves over) a later choice. `want` answers
+// "applied", "stale" (a newer wish came first) or "failed" (the map could
+// not load and this is still the newest wish).
+export function createLanguageRequests({ hantReady, loadHant }) {
+  let latest = 0;
+  async function want(lang, apply) {
+    const turn = ++latest;
+    if (lang === "zh-Hant" && !hantReady()) {
+      try {
+        await loadHant();
+      } catch {
+        return turn === latest ? "failed" : "stale";
+      }
+      if (turn !== latest) return "stale";
+    }
+    apply(lang);
+    return "applied";
+  }
+  return { want };
+}

@@ -40,7 +40,7 @@ import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
-import { STORAGE_KEY, isLang, viewLang } from "./language.mjs";
+import { STORAGE_KEY, createLanguageRequests, isLang, viewLang } from "./language.mjs";
 import { setHantMap, hantReady } from "./hant.mjs";
 import { t, sentence } from "./client-text.mjs";
 
@@ -119,6 +119,12 @@ if (!config) {
   // A toast that has to wait for the first render, when #toast exists: a
   // saved 繁體 whose map could not load at startup.
   let pendingToast = null;
+  // The switch, other tabs and startup all ask for a language here; only the
+  // newest wish is applied once 繁體's map has loaded.
+  const languageRequests = createLanguageRequests({ hantReady, loadHant });
+  // Nothing is drawn before controller.start(): a language adopted earlier
+  // is drawn by start's own first render.
+  let controllerStarted = false;
   let cooldownTimer = null;
   // Where the keyboard was when a dialog opened (a `describeFocus` record), so
   // closing it returns to that very control — the row's own Log a call button,
@@ -1553,15 +1559,9 @@ if (!config) {
         const lang = target.dataset.value;
         if (!isLang(lang)) break;
         sweepV2Form();
-        if (lang === "zh-Hant" && !hantReady()) {
-          try {
-            await loadHant();
-          } catch {
-            notify(t("toast.hant_failed", {}, screenLang()));
-            break;
-          }
-        }
-        controller.setLanguage(lang);
+        // A press made while 繁體 is still loading wins over it.
+        const outcome = await languageRequests.want(lang, (wanted) => controller.setLanguage(wanted));
+        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()));
         break;
       }
       default:
@@ -1786,34 +1786,33 @@ if (!config) {
   });
 
   // Another tab chose a language: this one follows, without writing it back.
+  // It is the newest wish, so it also wins over a 繁體 load still in flight.
   window.addEventListener("storage", async (event) => {
     if (event.key !== STORAGE_KEY) return;
     const storage = readLocalStorage();
     if (!storage || event.storageArea !== storage) return;
     const lang = event.newValue;
-    if (!isLang(lang) || lang === controller.getState().lang) return;
+    if (!isLang(lang)) return;
     sweepV2Form();
-    if (lang === "zh-Hant" && !hantReady()) {
-      try {
-        await loadHant();
-      } catch {
-        notify(t("toast.hant_failed", {}, screenLang()));
-        return;
-      }
-    }
-    controller.adoptLanguage(lang);
+    const outcome = await languageRequests.want(lang, (wanted) => {
+      if (wanted !== controller.getState().lang)
+        controller.adoptLanguage(wanted, { draw: controllerStarted });
+    });
+    if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()));
   });
 
-  // A saved 繁體 needs its map before the first render. If it can't load, the
-  // page shows 简体 (the saved choice stays) and says so once it is drawn.
+  // A saved 繁體 needs its map before the first render. If another tab chose
+  // meanwhile, its choice stands. If 繁體 is still the language but its map
+  // could not load, the page shows 简体 (the saved choice stays) and says so
+  // once it is drawn.
   if (controller.getState().lang === "zh-Hant") {
-    try {
-      await loadHant();
-    } catch {
+    await languageRequests.want("zh-Hant", () => {});
+    if (controller.getState().lang === "zh-Hant" && !hantReady()) {
       controller.adoptLanguage("zh-Hans", { draw: false });
       pendingToast = "toast.hant_failed_start";
     }
   }
 
+  controllerStarted = true;
   await controller.start();
 }

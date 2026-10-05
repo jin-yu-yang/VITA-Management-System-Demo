@@ -776,22 +776,27 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.match(app, /languages: /);
   // The map is loaded on demand and registered.
   assert.match(app, /setHantMap\(\(await import\("\.\/zh-hant\.mjs"\)\)\.default\)/);
-  // Startup in 繁體: loaded before start; on failure 简体, undrawn, and the toast after the first render.
+  // One request helper for the switch, other tabs and startup: only the newest wish applies.
+  assert.match(app, /const languageRequests = createLanguageRequests\(\{ hantReady, loadHant \}\);/);
+  assert.equal(app.match(/await loadHant\(\)/g), null, "nothing awaits the map outside the request helper");
+  // Startup in 繁體: loaded before start through a request; 繁體 still wanted
+  // without its map means 简体, undrawn, and the toast after the first render.
   assert.match(
     app,
-    /if \(controller\.getState\(\)\.lang === "zh-Hant"\)[\s\S]{0,200}await loadHant\(\);[\s\S]{0,200}controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);[\s\S]{0,120}pendingToast = "toast\.hant_failed_start";[\s\S]{0,200}await controller\.start\(\);\s*\}\s*$/,
+    /if \(controller\.getState\(\)\.lang === "zh-Hant"\) \{\s*await languageRequests\.want\("zh-Hant", \(\) => \{\}\);\s*if \(controller\.getState\(\)\.lang === "zh-Hant" && !hantReady\(\)\) \{\s*controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);\s*pendingToast = "toast\.hant_failed_start";\s*\}\s*\}\s*controllerStarted = true;\s*await controller\.start\(\);\s*\}\s*$/,
   );
   assert.match(app, /if \(pendingToast[\s\S]{0,200}notify\(t\(pendingToast, \{\}, lang\)\);[\s\S]{0,40}pendingToast = null;/);
-  // The switch: sweep, load 繁體 if needed (a failure keeps the language), then set.
+  // The switch: sweep, then a request (a failure keeps the language).
   assert.match(
     app,
-    /case "set-language": \{[\s\S]{0,400}sweepV2Form\(\);[\s\S]{0,200}!hantReady\(\)[\s\S]{0,200}await loadHant\(\);[\s\S]{0,120}notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\)\);\s*break;[\s\S]{0,120}controller\.setLanguage\(lang\);/,
+    /case "set-language": \{[\s\S]{0,200}sweepV2Form\(\);[\s\S]{0,200}const outcome = await languageRequests\.want\(lang, \(wanted\) => controller\.setLanguage\(wanted\)\);\s*if \(outcome === "failed"\) notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\)\);\s*break;/,
   );
-  // Other tabs follow, without writing it back.
+  // Other tabs follow through a request, without writing it back, and draw nothing before start.
   assert.match(
     app,
-    /window\.addEventListener\("storage", async \(event\) => \{[\s\S]{0,200}event\.key !== STORAGE_KEY[\s\S]{0,300}isLang\(lang\)[\s\S]{0,300}sweepV2Form\(\);[\s\S]{0,300}await loadHant\(\);[\s\S]{0,300}controller\.adoptLanguage\(lang\);/,
+    /window\.addEventListener\("storage", async \(event\) => \{[\s\S]{0,200}event\.key !== STORAGE_KEY[\s\S]{0,300}isLang\(lang\)[\s\S]{0,100}sweepV2Form\(\);\s*const outcome = await languageRequests\.want\(lang, \(wanted\) => \{[\s\S]{0,120}controller\.adoptLanguage\(wanted, \{ draw: controllerStarted \}\);/,
   );
+  assert.ok(app.indexOf('window.addEventListener("storage"') < app.indexOf("controllerStarted = true;"));
   // After every render: <html lang> and the title in the view language.
   assert.match(
     app,

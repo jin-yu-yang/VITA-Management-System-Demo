@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LANGS, STORAGE_KEY, defaultLanguage, readLanguage, writeLanguage, sourceText, viewLang, localeOf, fill } from "../src/language.mjs";
+import { LANGS, STORAGE_KEY, defaultLanguage, readLanguage, writeLanguage, createLanguageRequests, sourceText, viewLang, localeOf, fill } from "../src/language.mjs";
 import { setHantMap, toHant, hantReady } from "../src/hant.mjs";
 import { TEXT, SENTENCES, t, sentence } from "../src/client-text.mjs";
 
@@ -155,4 +155,60 @@ test("t: plural entries, null params, unknown language", () => {
   assert.equal(fill("Hello {name}", null), "Hello {name}");
   assert.equal(sentence("You do not have access to this step.", "fr"), "You do not have access to this step.");
   setHantMap(null);
+});
+
+// app.mjs's switch, storage event and startup share one of these: a 繁體 load
+// that lands after a newer choice must neither redraw nor save it.
+function deferredLoads() {
+  let ready = false;
+  const pending = [];
+  return {
+    hantReady: () => ready,
+    loadHant: () =>
+      new Promise((resolve, reject) =>
+        pending.push({ resolve: () => { ready = true; resolve(); }, reject: () => reject(new Error("offline")) }),
+      ),
+    pending,
+  };
+}
+
+test("language requests: a slow 繁體 load never overrides a newer choice", async () => {
+  const loads = deferredLoads();
+  const requests = createLanguageRequests(loads);
+  const applied = [];
+  const apply = (lang) => applied.push(lang);
+  const hant = requests.want("zh-Hant", apply); // waits for the map
+  const english = requests.want("en", apply); // pressed meanwhile: applied at once
+  assert.equal(await english, "applied");
+  assert.deepEqual(applied, ["en"]);
+  loads.pending[0].resolve();
+  assert.equal(await hant, "stale");
+  assert.deepEqual(applied, ["en"], "the late load did not flip back to 繁體");
+  // Once loaded, 繁體 applies at once.
+  assert.equal(await requests.want("zh-Hant", apply), "applied");
+  assert.deepEqual(applied, ["en", "zh-Hant"]);
+});
+
+test("language requests: of two 繁體 loads only the newest applies; a failure is reported only when newest", async () => {
+  const loads = deferredLoads();
+  const requests = createLanguageRequests(loads);
+  const applied = [];
+  const first = requests.want("zh-Hant", (lang) => applied.push(`first ${lang}`));
+  const second = requests.want("zh-Hant", (lang) => applied.push(`second ${lang}`));
+  loads.pending[0].resolve();
+  loads.pending[1].resolve();
+  assert.equal(await first, "stale");
+  assert.equal(await second, "applied");
+  assert.deepEqual(applied, ["second zh-Hant"]);
+
+  const failing = deferredLoads();
+  const again = createLanguageRequests(failing);
+  const older = again.want("zh-Hant", () => assert.fail("never applied"));
+  const newer = again.want("zh-Hans", () => {});
+  failing.pending[0].reject();
+  assert.equal(await older, "stale", "an outdated failure says nothing");
+  assert.equal(await newer, "applied");
+  const lone = again.want("zh-Hant", () => assert.fail("never applied"));
+  failing.pending[1].reject();
+  assert.equal(await lone, "failed");
 });
