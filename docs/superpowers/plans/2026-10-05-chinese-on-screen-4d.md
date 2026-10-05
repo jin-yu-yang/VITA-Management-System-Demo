@@ -409,12 +409,12 @@ test("the committed map is what the build makes now", async () => {
   assert.equal(committed, fresh, "run npm run build:hant");
 });
 
-test("common Traditional characters, no vocabulary swaps", () => {
+test("Taiwan character forms, no vocabulary swaps", () => {
   const converter = OpenCC.Converter({ from: "cn", to: "tw" });
   const out = convertAll(["带照片的身份证件", "软件", "信息"], converter, []);
   assert.equal(out["带照片的身份证件"], "帶照片的身份證件");
-  assert.equal(out["软件"], "軟件", "hk keeps the word; twp would give 軟體");
-  assert.equal(out["信息"], "信息", "hk keeps the word; twp would give 資訊");
+  assert.equal(out["软件"], "軟件", "tw keeps the word; twp would give 軟體");
+  assert.equal(out["信息"], "信息", "tw keeps the word; twp would give 資訊");
 });
 
 test("every override really lands in the generated map", async () => {
@@ -553,7 +553,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 - [ ] **Step 7: Run** `npm run build:hant`. Then read the generated map for wrong picks: search it for 發, 髮, 乾, 幹, 干, 後, 后, 裏, 裡, 著 and 着, and check each in context. Add an override with a reason for each wrong pick, then build again.
 - [ ] **Step 8: Run** `node --test tests/hant.test.mjs`, `npm run build:hant -- --check`, then `npm test`. Expected: PASS.
-- [ ] **Step 9: Commit** ("Part 4d: Traditional derived at build time (OpenCC, common Traditional)").
+- [ ] **Step 9: Commit** ("Part 4d: Traditional derived at build time (OpenCC tw, characters only)").
 
 ---
 
