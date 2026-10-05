@@ -196,7 +196,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **Plurals:** English entries may have `one` and `other`; Chinese has one form. `t()` takes both shapes.
 - **Fonts:** no Chinese web font is downloaded. Every rule already takes its font from `--vt-sans` or `--vt-serif`, so `html:lang(zh-Hans)` and `html:lang(zh-Hant)` redefine those two variables, with system fallbacks after the Latin fonts:
   - 简体: PingFang SC, Microsoft YaHei, Noto Sans SC;
-  - 繁體: PingFang HK, Microsoft JhengHei, Noto Sans TC.
+  - 繁體: PingFang TC, Microsoft JhengHei, Noto Sans TC (Taiwan forms, matching OpenCC `tw`, decision 2026-10-05).
 
   Serif headings use the same sans fallbacks in Chinese.
 - **Letter-spacing goes to 0 under `:lang(zh)`:**

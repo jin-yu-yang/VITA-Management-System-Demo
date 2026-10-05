@@ -5458,17 +5458,23 @@ html:lang(zh-Hans) {
   --vt-serif: Georgia, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
 }
 html:lang(zh-Hant) {
-  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
-  --vt-serif: Georgia, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  --vt-serif: Georgia, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
 }
 /* Same specificity as `.narrow h1`, `.hero h1` and `.welcome-card h2`, and
-   later, so these win. The action card's label and the ID pill's captions
-   are spaced uppercase captions too. */
+   later, so these win. The other selectors are the client screens' captions
+   that carry Latin tracking: the action card's label, the ID pill's and the
+   reference card's captions, the rail's "you are here" and the same-day
+   list's "maybe" note. */
 :lang(zh) .overline,
 :lang(zh) h1,
 :lang(zh) h2,
 :lang(zh) .action-label,
-:lang(zh) .id-pill small {
+:lang(zh) .id-pill small,
+:lang(zh) .reference-card > p,
+:lang(zh) .reference-card > span small,
+:lang(zh) .rail-here,
+:lang(zh) .bring-maybe {
   letter-spacing: 0;
 }
 :lang(zh) p,
