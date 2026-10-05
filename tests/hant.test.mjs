@@ -13,19 +13,19 @@ test("the map holds exactly the current Simplified source strings", () => {
 });
 
 test("the committed map is what the build makes now", async () => {
-  const converter = OpenCC.Converter({ from: "cn", to: "t" });
+  const converter = OpenCC.Converter({ from: "cn", to: "tw" });
   const fresh = renderMap(convertAll(collectSimplified(), converter, OVERRIDES));
   const { readFile } = await import("node:fs/promises");
   const committed = await readFile(new URL("../src/zh-hant.mjs", import.meta.url), "utf8");
   assert.equal(committed, fresh, "run npm run build:hant");
 });
 
-test("common Traditional characters, no vocabulary swaps", () => {
-  const converter = OpenCC.Converter({ from: "cn", to: "t" });
+test("Taiwan character forms, no vocabulary swaps", () => {
+  const converter = OpenCC.Converter({ from: "cn", to: "tw" });
   const out = convertAll(["带照片的身份证件", "软件", "信息"], converter, []);
   assert.equal(out["带照片的身份证件"], "帶照片的身份證件");
-  assert.equal(out["软件"], "軟件", "t keeps the word; twp would give 軟體");
-  assert.equal(out["信息"], "信息", "t keeps the word; twp would give 資訊");
+  assert.equal(out["软件"], "軟件", "tw keeps the word; twp would give 軟體");
+  assert.equal(out["信息"], "信息", "tw keeps the word; twp would give 資訊");
 });
 
 test("every override really lands in the generated map", async () => {
