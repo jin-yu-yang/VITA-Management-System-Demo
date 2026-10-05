@@ -275,6 +275,63 @@ export const TEXT = Object.freeze({
   "doc.status.not_done": { en: "Not done", zh: "未完成" },
   "doc.status.later": { en: "Later", zh: "稍后提供" },
   "doc.status.none": { en: "Don't have", zh: "没有" },
+  // The version-2 intake's sidebar and rail (intake-views.mjs); "Step {n}: " is read before the step's name
+  "intake.overline": { en: "YOUR APPLICATION", zh: "您的申请" },
+  "intake.sidebar_1": { en: "A few steps.", zh: "只需几个步骤。" },
+  "intake.sidebar_2": { en: "We’re here to help.", zh: "我们随时为您提供帮助。" },
+  "intake.help_title": { en: "Prefer to talk it through?", zh: "想和志愿者直接沟通？" },
+  "intake.help_body": { en: "Our volunteers can help at the PCDC office, or by phone.", zh: "我们的志愿者可以在 PCDC 办公室或通过电话为您提供帮助。" },
+  "rail.nav": { en: "Form steps", zh: "表格步骤" },
+  "rail.all_steps": { en: "All steps", zh: "所有步骤" },
+  "rail.toggle": { en: "Show or hide the parts of {title}", zh: "显示或隐藏{title}的各个部分" },
+  "rail.step": { en: "Step {n}: ", zh: "第 {n} 步：" },
+  "rail.here": { en: "You are here", zh: "您在这里" },
+  "rail.part": { en: "Part {n} of {total}", zh: "第 {n} 部分，共 {total} 部分" },
+  // The version-2 intake's page header, the before.ready line and the actions
+  "intake.step_overline": { en: "STEP {n} OF {total} · {name}", zh: "第 {n} 步，共 {total} 步 · {name}" },
+  "intake.within": { en: "{n} of {total}", zh: "{n} / {total}" },
+  "intake.will_bring": { en: "You will get a list of what to bring.", zh: "您会收到一份需要携带的文件清单。" },
+  "intake.will_upload": { en: "You will upload them in the Documents step.", zh: "您稍后会在上传文件这一步上传这些文件。" },
+  "intake.continue": { en: "Continue", zh: "继续" },
+  "intake.back": { en: "Back", zh: "返回" },
+  "intake.back_to_summary": { en: "Back to summary", zh: "返回申请摘要" },
+  "intake.submit": { en: "Submit application", zh: "提交申请" },
+  // The fictional-data tools above the version-2 form (client-views.mjs); version 1 stays English
+  "fiction.only": { en: "Fictional data only", zh: "仅限虚构资料" },
+  "fiction.fill": { en: "Fill fictional details", zh: "填入虚构资料" },
+  "fiction.another": { en: "Generate another example", zh: "生成另一组示例" },
+  // The Documents step: the Maybe needed group's toggle
+  "doc.maybe_count": { en: "Maybe needed ({n})", zh: "可能需要（{n}）" },
+  // Review & submit: the check page (alerts block Submit, warnings don't)
+  "review.intro": { en: "Please review your application and check it for accuracy and completeness before you submit it.", zh: "提交之前，请检查您的申请，确认内容准确、完整。" },
+  "review.free": { en: "The IRS Volunteer Income Tax Assistance (VITA) program is completely free if you qualify. We will never ask you to pay.", zh: "如果您符合资格，IRS 志愿者报税协助（VITA）计划完全免费。我们绝不会要求您付费。" },
+  "review.alerts_title": { en: "Alerts and warnings", zh: "问题和提醒" },
+  "review.fix_first": { en: "Fix before you submit", zh: "提交前请先修正" },
+  "review.can_submit": { en: "You can still submit", zh: "您仍然可以提交" },
+  "review.upload_now": { en: "Upload now", zh: "现在上传" },
+  "review.more_maybe": { en: { one: "{n} more document may be needed", other: "{n} more documents may be needed" }, zh: "还有 {n} 份文件可能需要提供" },
+  "review.empty": { en: "We found no alerts or warnings in your application.", zh: "您的申请没有需要处理的问题或提醒。" },
+  "alert.missing": { en: "Needs an answer", zh: "需要回答" },
+  "alert.invalid": { en: "Needs a change", zh: "需要修改" },
+  "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },
+  // Review & submit: the summary, its Change links and printed date, and the draft 13614-C buttons
+  // (the current language's form comes first; the others are named in the screen's script)
+  "summary.change": { en: "Change", zh: "修改" },
+  "summary.none": { en: "Nothing answered yet.", zh: "尚未回答任何问题。" },
+  "summary.date": { en: "Date", zh: "日期" },
+  "draft.view": { en: "View Draft 13614-C", zh: "查看 13614-C 草稿" },
+  "draft.form_en": { en: "English version", zh: "英文版" },
+  "draft.form_zh_s": { en: "简体中文版", zh: "简体中文版" },
+  "draft.form_zh_t": { en: "繁體中文版", zh: "繁体中文版" },
+  // Review & submit: the confirmation
+  "submit.attention": { en: "Some answers need attention before you can submit.", zh: "有些回答需要处理后才能提交。" },
+  "submit.see_alerts": { en: "See the alerts", zh: "查看问题" },
+  "submit.confirm": { en: "I have checked my answers", zh: "我已核对过我的回答" },
+  "submit.note": { en: "This confirms your answers. It is not a signature on a tax form.", zh: "这只是确认您的回答，并不是在报税表上签名。" },
+  // The submitted page (intake-views.mjs submittedV2)
+  "submitted.title": { en: "Your answers are with the office", zh: "办公室已收到您的回答" },
+  "submitted.note": { en: "A volunteer makes corrections after submission, so these answers are read-only here.", zh: "提交后由志愿者负责更正，所以这里的回答只能查看，不能修改。" },
+  "submitted.progress": { en: "See your progress", zh: "查看进度" },
 });
 
 // Sentences that arrive in English (spec §3.2, §3.3): errors, sign-in, history.

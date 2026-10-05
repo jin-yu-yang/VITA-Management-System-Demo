@@ -11,6 +11,10 @@ import { NEUTRAL_SEND_MESSAGE } from "../src/auth.mjs";
 import { payloadFor, SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { OFFICE_CONTACT } from "../src/ui.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { visibleSubsteps } from "../src/intake-form.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
+import { findQuestion } from "../src/intake-catalogue.mjs";
+import { intakeFormV2 } from "../src/intake-views.mjs";
 import {
   textOf,
   latinLeaks,
@@ -447,4 +451,168 @@ test("the client's own case actions refuse in sentences the table knows", () => 
     assert.ok(Object.hasOwn(SENTENCES, text), text);
     assert.notEqual(sentence(text, "zh-Hans"), text);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The version-2 intake (Task 7): every visible sub-step, Review & submit,
+// Documents, the submitted page and the progress page's open cards
+// ---------------------------------------------------------------------------
+
+// The married sample, its free text (names, job titles, the contact note and
+// the street) in characters that are the same in both scripts.
+const intakeAnswers = (overrides = {}) => {
+  const answers = makeSampleAnswers({ version: 2, seed: 1, married: true });
+  return {
+    ...answers,
+    tp_first_name: "美",
+    tp_last_name: "林",
+    tp_job_title: "工人",
+    best_contact_note: "晚上",
+    addr_street: "中山路 100",
+    sp_first_name: "文",
+    sp_last_name: "林",
+    sp_job_title: "店主",
+    hh: answers.hh.map((member) => ({ ...member, first_name: "中", last_name: "林" })),
+    ...overrides,
+  };
+};
+
+const intakeCase = (overrides = {}) =>
+  v2Case({ stage: "draft", clientNumber: null, answers: {}, documentCards: [], ...overrides });
+
+const ALL_VISIBLE = visibleSubsteps(intakeAnswers(), cardsFor(intakeAnswers(), []));
+
+const intakeState = (overrides = {}) =>
+  baseState({
+    screen: "intake",
+    savedCase: intakeCase(),
+    draftAnswers: intakeAnswers(),
+    formSubstep: "before.ready",
+    visitedSubsteps: ALL_VISIBLE,
+    revealed: [],
+    ...overrides,
+  });
+
+// Later, Don't have and Not done side by side, and the Maybe needed card still open.
+const MARKED = [
+  { slotId: "ssn.tp", status: "later" },
+  { slotId: "photo_id.sp", status: "none" },
+  { slotId: "w2.household", status: "later" },
+];
+
+// Alerts of each kind: a missing answer, a household member's missing date
+// and an invalid email, with document warnings beside them.
+const withAlerts = () => {
+  const answers = intakeAnswers({ email: "lin.mei@" });
+  delete answers.tp_phone;
+  answers.hh = answers.hh.map(({ dob, ...member }) => member);
+  return answers;
+};
+
+const INTAKE_STATES = {
+  ...Object.fromEntries(
+    ALL_VISIBLE.map((id) => [
+      `intake: ${id}`,
+      intakeState({ formSubstep: id, savedCase: intakeCase({ documentCards: MARKED }), openPanels: [`maybe:${id}`] }),
+    ]),
+  ),
+  "intake: the senior wording": intakeState({ formSubstep: "about.you", draftAnswers: intakeAnswers({ form_version: "senior" }) }),
+  "intake: Back to summary, a conflict, a failed save and an error": intakeState({
+    formSubstep: "about.address",
+    returnToSummary: true,
+    conflict: { serverRevision: 7, baseRevision: 6 },
+    saveState: "failed",
+    retryable: true,
+    error: { code: "CONFLICT", message: "Someone else updated this application. Refresh and try again." },
+  }),
+  "intake: an invalid answer revealed": intakeState({ formSubstep: "about.you", draftAnswers: withAlerts(), revealed: ["email", "tp_phone"] }),
+  "review: alerts and warnings": intakeState({
+    formSubstep: "review.check",
+    draftAnswers: withAlerts(),
+    savedCase: intakeCase({ documentCards: MARKED }),
+  }),
+  "review: no alerts and no warnings": intakeState({
+    formSubstep: "review.check",
+    draftAnswers: intakeAnswers({ service: "same_day" }),
+  }),
+  "review: the summary with marked cards": intakeState({ formSubstep: "review.summary", savedCase: intakeCase({ documentCards: MARKED }) }),
+  "review: the summary with nothing answered in a part": intakeState({ formSubstep: "review.summary", draftAnswers: withAlerts() }),
+  "review: submit with alerts": intakeState({ formSubstep: "review.submit", draftAnswers: withAlerts() }),
+  "review: submit, confirmed and busy": intakeState({ formSubstep: "review.submit", openPanels: ["confirmed"], busy: true, saveState: "saving" }),
+  "same-day: the bring list": intakeState({ formSubstep: "documents.bring", draftAnswers: intakeAnswers({ service: "same_day" }) }),
+  "same-day: the summary": intakeState({ formSubstep: "review.summary", draftAnswers: intakeAnswers({ service: "same_day" }) }),
+  "the submitted page": intakeState({
+    savedCase: intakeCase({
+      stage: "received",
+      answers: intakeAnswers(),
+      contact: { phone: "2155550123", spousePhone: null, bestContactTime: ["weekday_morning"], bestContactNote: "晚上" },
+    }),
+    draftAnswers: {},
+  }),
+  "progress: open document cards, Later and Not done": baseState({
+    screen: "progress",
+    savedCase: v2Case({ stage: "received", answers: intakeAnswers(), documentCards: MARKED }),
+  }),
+};
+
+for (const [name, state] of Object.entries(INTAKE_STATES)) {
+  test(`简体: ${name} has nothing left in English`, () => {
+    const html = render({ ...state, lang: "zh-Hans" });
+    assert.deepEqual(latinLeaks(textOf(html), DATA), []);
+    assert.match(textOf(html), /\p{Script=Han}/u);
+  });
+  test(`繁體: ${name} has nothing in English and no Simplified character`, () => {
+    const html = render({ ...state, lang: "zh-Hant" });
+    assert.deepEqual(latinLeaks(textOf(html), DATA), []);
+    const text = textOf(withoutSwitchNames(html));
+    assert.equal(toTw(text), text);
+  });
+}
+
+test("the intake sweep covers every visible sub-step of the married sample", () => {
+  assert.ok(ALL_VISIBLE.length >= 30, ALL_VISIBLE.length);
+  for (const id of ["about.spouse", "household.members", "documents.identity", "notes.anything", "review.submit"])
+    assert.ok(ALL_VISIBLE.includes(id), id);
+  // The free text holds no Latin letters beyond the city and state.
+  const latin = Object.entries(intakeAnswers()).filter(
+    ([id, value]) => typeof value === "string" && /[A-Za-z]/.test(value) && findQuestion(2, id)?.type === "text",
+  );
+  assert.deepEqual(latin.map(([id]) => id).sort(), ["addr_city", "addr_state"]);
+});
+
+test("English is the default on every intake state too", () => {
+  for (const state of Object.values(INTAKE_STATES)) assert.equal(render({ ...state, lang: "en" }), render(state));
+});
+
+test("the draft buttons put the current language's form first, then the other two", () => {
+  const forms = (lang) =>
+    [...client.intakeScreen(intakeState({ formSubstep: "review.summary", lang })).matchAll(/data-action="view-draft" data-form="([^"]+)"/g)].map(
+      (m) => m[1],
+    );
+  assert.deepEqual(forms("en"), ["en", "zh-s", "zh-t"]);
+  assert.deepEqual(forms("zh-Hans"), ["zh-s", "en", "zh-t"]);
+  assert.deepEqual(forms("zh-Hant"), ["zh-t", "en", "zh-s"]);
+  // The first is the main button, named from the table; the others are named in the screen's script.
+  const zh = client.intakeScreen(intakeState({ formSubstep: "review.summary", lang: "zh-Hans" }));
+  assert.match(zh, new RegExp(`data-form="zh-s"[^>]*>[\\s\\S]*?${t("draft.view", {}, "zh-Hans")}</button>`));
+  assert.match(zh, new RegExp(`data-form="en"[^>]*>${t("draft.form_en", {}, "zh-Hans")}</button>`));
+  const hant = client.intakeScreen(intakeState({ formSubstep: "review.summary", lang: "zh-Hant" }));
+  assert.match(hant, /data-form="zh-s"[^>]*>簡體中文版<\/button>/);
+});
+
+test("the summary's printed date is today's long date in the screen's language", () => {
+  const today = new Date(2026, 9, 5);
+  const html = (lang) => intakeFormV2(intakeState({ formSubstep: "review.summary", lang }), { today });
+  assert.match(html("zh-Hans"), /2026年10月5日/);
+  assert.match(html("zh-Hant"), /2026年10月5日/);
+  assert.match(html(undefined), /October 5, 2026/);
+});
+
+test("the intake's Change links, alerts and Upload now keep their actions in Chinese", () => {
+  const html = render({ ...INTAKE_STATES["review: alerts and warnings"], lang: "zh-Hans" });
+  assert.match(html, /data-action="go-substep" data-substep="household\.members"[^>]*><span class="alert-q">成员 1：/);
+  assert.ok(html.includes(t("alert.missing", {}, "zh-Hans")) && html.includes(t("alert.invalid", {}, "zh-Hans")));
+  assert.match(html, new RegExp(`data-focus="doc-w2-household"[^>]*>${t("review.upload_now", {}, "zh-Hans")}<`));
+  const summary = render({ ...INTAKE_STATES["review: the summary with marked cards"], lang: "zh-Hans" });
+  assert.match(summary, /data-action="change-substep" data-substep="about\.address">修改<\/button>/);
 });

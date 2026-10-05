@@ -286,7 +286,12 @@ function sameAnswer(a, b) {
 // Intake
 // ---------------------------------------------------------------------------
 
-const fictionalTools = `<div class="fiction-tools"><span class="demo-fiction">Fictional data only</span>${button(`${icon("spark")} Fill fictional details`, "fill-fictional", "demo")}${button(`${icon("refresh")} Generate another example`, "regenerate-fictional", "demo subtle")}</div>`;
+// The fictional-data tools: English on version 1, the client's language on version 2.
+const fictionTools = (lang = "en") => {
+  const say = (key) => esc(t(key, {}, lang));
+  return `<div class="fiction-tools"><span class="demo-fiction">${say("fiction.only")}</span>${button(`${icon("spark")} ${say("fiction.fill")}`, "fill-fictional", "demo")}${button(`${icon("refresh")} ${say("fiction.another")}`, "regenerate-fictional", "demo subtle")}</div>`;
+};
+const fictionalTools = fictionTools();
 
 function intakeBody(state) {
   const a = state.draftAnswers ?? {};
@@ -401,7 +406,7 @@ export function intakeScreen(state) {
 
 function intakeScreenV2(state) {
   return state.savedCase.stage === "draft"
-    ? intakeFormV2(state, { saveStatus, conflictForm, fictionalTools })
+    ? intakeFormV2(state, { saveStatus, conflictForm, fictionalTools: fictionTools(viewLang(state)) })
     : submittedV2(state);
 }
 
