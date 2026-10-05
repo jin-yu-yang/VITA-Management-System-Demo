@@ -8,7 +8,7 @@
 | Decision | Choice |
 |---|---|
 | Where Chinese reaches | **The whole client side.** Staff and presenter screens stay English. |
-| Scripts | **Simplified and Traditional.** Traditional is **derived from the Simplified at build time** (OpenCC's common Traditional (`t`), characters only, no vocabulary swaps; decision 2026-10-05), with hand-written overrides. |
+| Scripts | **Simplified and Traditional.** Traditional is **derived from the Simplified at build time** (OpenCC's Taiwan character forms (`tw`), characters only, no vocabulary swaps; decision 2026-10-05), with hand-written overrides. |
 | Where the choice is kept | **Per browser** (`localStorage`), defaulting from the browser's languages. No migration. |
 | Who writes the Chinese | **Claude drafts the Simplified** for all screen text. Everything goes to the group's wording review; 4d ships complete and wording is corrected in a follow-up. |
 | How text is organised | **A keyed text table** (`src/client-text.mjs`) plus a **generated Traditional map** (`src/zh-hant.mjs`). |
@@ -160,7 +160,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 ## 4. Generating Traditional
 
 - **Tool:** `tools/build-hant.mjs` (`npm run build:hant`), using `opencc-js` pinned to an exact version as a dev dependency. Downloading it from npm is approved.
-  - **Conversion:** Simplified → **common Traditional characters** (OpenCC `t`, decision 2026-10-05, replacing the earlier Hong Kong choice), with no phrase or vocabulary conversion, so the wording stays the reviewed Simplified wording in the other script. OpenCC's Hong Kong target follows the HK government glyph standard (税, 户, 兑, 説, 閲), which many Traditional readers take for Simplified; `t` gives 稅, 戶, 兌, 說, 閱, as most Traditional print does.
+  - **Conversion:** Simplified → **common Traditional characters, OpenCC `tw`** (decision 2026-10-05, replacing the earlier Hong Kong choice), characters only, with no phrase or vocabulary conversion (`twp` would swap words; `tw` doesn't), so the wording stays the reviewed Simplified wording in the other script. OpenCC's Hong Kong target follows the HK government glyph standard (税, 户, 兑, 説, 閲), which many Traditional readers take for Simplified, and its `t` target writes reference forms such as 爲 and 峯. `tw` gives what most Traditional readers see: 為, 著, 裡, 峰, 稅, 說.
 - **Inputs:** every Simplified string a client can see:
   - the catalogue's `zh`;
   - the cards' `zh`;
@@ -225,7 +225,7 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
     - the brand (ViTally, PCDC);
     - fixed data the app shows as is: the office's phone and email, and the sample document's file name (`demo-mileage-record-2025.pdf`);
     - any Latin word that appears in the reviewed Simplified source text itself, the catalogue's and the cards' `zh` (for example 工卡（EAD）). That text is deliberate, so the allow-list is derived from it rather than kept by hand.
-- **The same sweep in `zh-Hant`:** a 繁體 path that misses `toHant`, or indexes the catalogue with the screen language, would show Simplified or English, and the 简体 sweep can't see it. So the sweep also runs in `zh-Hant`. It checks that no English leaks, and that the visible text (and the four attributes) has no character that `opencc-js` (`t`) would still change, meaning no Simplified character survives. `opencc-js` is already a dev dependency, so the test can call it.
+- **The same sweep in `zh-Hant`:** a 繁體 path that misses `toHant`, or indexes the catalogue with the screen language, would show Simplified or English, and the 简体 sweep can't see it. So the sweep also runs in `zh-Hant`. It checks that no English leaks, and that the visible text (and the four attributes) has no character that `opencc-js` (`tw`) would still change, meaning no Simplified character survives. `opencc-js` is already a dev dependency, so the test can call it.
 - **A source test on `app.mjs`:** it flags user-visible string literals that don't go through `t()`, namely `notify("`, `notify('`, `notify(\``, and `.textContent = "` or `'` or a template literal. A short, commented allow-list covers staff-only and operator paths.
 - **History:** every client-event sentence in `supabase/migrations/*.sql` has an entry, and the request prefix keeps the office's title as typed.
 - **Formatting:**
