@@ -31,6 +31,9 @@
 
 - **Three values:** `en`, `zh-Hans` and `zh-Hant`, the switch buttons' own `lang` attributes.
   - Catalogue and card text: `zh-Hans` reads `zh`; `zh-Hant` reads `zh` and looks it up in the Traditional map (§4).
+  - **That mapping happens in one place.** Today the shared modules index the catalogue straight with `lang`: `wording()` (`intake-catalogue.mjs:43`) returns "" for an unknown code, so questions would show blank titles, and `optionLabel` and `tipsOf` (`intake-form.mjs:40`, `:105`) fall back to English.
+  - **The fix:** one boundary function in `src/language.mjs`, `sourceText(pair, lang)`. It takes a catalogue- or card-style `{ en, zh }` value and the screen language, reads `en` for `en` and `zh` for both Chinese codes, then applies `toHant` for `zh-Hant`. `wording`, `optionLabel`, `tipsOf`, the document cards and every other catalogue lookup go through it, and none indexes the catalogue with the screen language itself.
+  - A missing `zh` falls back to `en`, as today.
 - **`src/language.mjs`** reads and writes `localStorage["vitally.lang"]`, every access in try/catch; blocked storage means English. The first visit defaults from `navigator.languages`:
   - `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant*` give `zh-Hant`;
   - any other `zh*` gives `zh-Hans`;
@@ -42,7 +45,7 @@
 - **The switch** (`languageSwitch` in `src/views.mjs`):
   - Its three buttons become live with `data-action="set-language"` and `data-lang`. `aria-pressed` marks the current one, and the "Chinese coming soon" note goes.
   - It stays in the client top bar, which is on every client screen, sign-in included.
-  - After the redraw the keyboard stays on the pressed button.
+  - After the redraw the keyboard stays on the pressed button. Each switch button carries `data-value="<lang>"`. `describeFocus` (`ui.mjs:271`) finds a button again by its action plus the related keys in `RELATED_KEYS`, which include `data-value` but not `data-lang`. Without it, focus would land on the first `set-language` button, English.
 - **Staff screens are always English** whatever is stored, and have no switch. That includes the presenter's window.
 - **Screens shown before anyone is known follow the stored language,** because they come before the app knows whether this is a client or a presenter: sign-in, "unreachable" and "no access". So does a presenter's sign-in in a browser set to Chinese. That's accepted: the presenter's screens turn English once signed in.
 - **`<html lang>`** follows the language on client screens and is `en` on staff screens.
@@ -57,6 +60,14 @@
   - State that holds a sentence today keeps holding the English sentence: `authMessage`, also saved in the window's access record; `error.message`; and notices.
   - Each is translated when it's drawn (§3.2), so switching language re-translates what's already on screen.
   - Toasts raised on client screens are translated when they're raised.
+- **`app.mjs` writes client text that never goes through a view, and all of it goes through `t()` with the current language.** That includes:
+  - the sign-in resend countdown, "Resend code in Ns" (`app.mjs:389–395`);
+  - about 15 literal `notify("…")` toasts on client paths, such as "Your answers are saved." and "Application ID copied.";
+  - the version-2 form's in-place notes and long-answer counter (`:503`, `:570`, `:590`);
+  - the draft link "Your draft is ready: open it" (`:1119`) and the popup tab's own text (`:1053`);
+  - the click handler's `notify(error?.message …)`, which carries an English error sentence and goes through the sentence table (§3.2).
+  
+  In-place updates read the current language too, so no English appears between renders. Toasts and in-place text raised from staff screens stay English. The language used is the screen's effective one, which is English on staff screens.
 
 ## 3. What is translated
 
@@ -129,6 +140,8 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **The English form:** English lines, as today.
 - **The 简体 form:** Simplified lines, with question wording taken from the catalogue's `zh`.
 - **The 繁體 form:** Traditional lines, through the Traditional map.
+- **Everything inside those lines follows the form's language,** not only the question wording: option labels and dates go through `formatAnswer` with the form's `lang`, and the joining words and separators come from the text table.
+- **How much fits changes.** Chinese lines change how much fits in Additional Comments and where lines wrap. The 4b2 overflow tests use English counts, so the plan adds one Chinese overflow case, on a 简体 form, whose lines overflow the box.
 - **The font follows from this.** A 简体 or 繁體 draft with any generated line now always contains Chinese, so it fetches the Noto font even when every answer is in Latin letters. Today that happens only when an answer is in Chinese. The 4b2 font rules are unchanged. Only the English form keeps "no font for Latin-only answers", which the 4c staff phase asserts.
 - **Existing tests that pin English lines on a Chinese form change on purpose.** For example, `tests/draft-form.test.mjs`'s "Not sure:" line is checked on the English form. The plan lists each test it changes.
 
@@ -142,6 +155,9 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
   - the client text table;
   - the draft's Simplified lines.
 - **Templates:** a string with a placeholder (`您填写的是：{written}`) is converted as a template, and the client's text is filled in afterwards, never converted. `document-cards.mjs`'s inline `zh` strings that embed client text become placeholder templates.
+- **`toHant` looks up source strings and templates only, never assembled text.** The map is keyed by exact Simplified strings, so assembled text would miss and silently fall back to Simplified. Assembled text includes joined tips, "不确定：a、b", a filled template, and a sentence plus a title.
+  - Each piece is converted before it's interpolated or joined, never the result.
+  - The boundary function (§2) is where catalogue pieces are converted, and `t()` is where table entries are converted, both before any `{param}` is filled.
 - **Overrides:** `tools/hant-overrides.mjs` holds hand-written replacements applied after conversion, for example where 发 or 干 has several Traditional forms. Each override carries a one-line reason. It starts with whatever the first build's review turns up.
 - **Output:** `src/zh-hant.mjs`, a checked-in map from each Simplified string to its Traditional form (keys sorted), plus `toHant(text)`.
   - A missing entry falls back to the Simplified text and never fails.
@@ -189,6 +205,8 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
     - form and document names (W-2, 1099, ITIN, IRS, 13614-C and the like);
     - the brand (ViTally, PCDC);
     - any Latin word that appears in the reviewed Simplified source text itself, the catalogue's and the cards' `zh` (for example 工卡（EAD）). That text is deliberate, so the allow-list is derived from it rather than kept by hand.
+- **The same sweep in `zh-Hant`:** a 繁體 path that misses `toHant`, or indexes the catalogue with the screen language, would show Simplified or English, and the 简体 sweep can't see it. So the sweep also runs in `zh-Hant`. It checks that no English leaks, and that the visible text (and the four attributes) has no character that `opencc-js` (`hk`) would still change, meaning no Simplified character survives. `opencc-js` is already a dev dependency, so the test can call it.
+- **A source test on `app.mjs`:** it flags user-visible string literals that don't go through `t()`, namely `notify("`, `notify('`, `notify(\``, and `.textContent = "` or `'` or a template literal. A short, commented allow-list covers staff-only and operator paths.
 - **History:** every client-event sentence in `supabase/migrations/*.sql` has an entry, and the request prefix keeps the office's title as typed.
 - **Formatting:**
   - date order per language (年 / 月 / 日 in Chinese, month / day / year in English) and date-box labels and placeholders;
@@ -198,6 +216,8 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **The draft:**
   - the 简体 form's generated lines are Simplified with catalogue wording;
   - **the 繁體 form's lines go through the Traditional map** (one test);
+  - option labels and dates in Chinese lines are in the form's language;
+  - one Chinese overflow case;
   - the English form is unchanged.
 - **The Traditional map:**
   - its keys are exactly the current Simplified strings (nothing missing, nothing stale);
