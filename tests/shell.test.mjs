@@ -159,6 +159,40 @@ test("the page frame speaks the view language: a client's, never a presenter's",
   assert.match(page({ principal: null, connection: "online", screen: "access" }, "<main></main>"), /Skip to content/);
 });
 
+// Part 4d Task 6: the client frame in the client's language; staff stays English.
+test("the client top bar, footer and dialogs speak the client's language", async () => {
+  const { setHantMap } = await import("../src/hant.mjs");
+  const { default: MAP } = await import("../src/zh-hant.mjs");
+  const draft = {
+    principal: { access: "applicant" },
+    screen: "intake",
+    savedCase: { stage: "draft", intakeVersion: 2 },
+    draftAnswers: {},
+    lang: "zh-Hans",
+  };
+  const header = clientHeader(draft);
+  assert.match(header, /aria-label="ViTally 首页"/);
+  assert.match(header, /data-action="toggle-senior"[\s\S]*长者版<\/button>/);
+  assert.match(header, /data-action="open-help"[^>]*>[\s\S]*需要帮助？/);
+  assert.match(header, /data-action="save-exit"[^>]*>保存并退出/);
+  assert.match(header, /data-action="sign-out"[^>]*>[\s\S]*退出登录/);
+  const frame = page({ ...draft, connection: "online", dialog: "help" }, "<main></main>");
+  assert.match(frame, /<footer class="site-footer"><span>ViTally · 费城华埠发展会（PCDC）<\/span>/);
+  assert.match(frame, /aria-label="关闭对话框"/);
+  assert.match(frame, /<span class="overline">ViTally · 随时为您提供帮助<\/span>/);
+  setHantMap(MAP);
+  try {
+    assert.match(page({ ...draft, lang: "zh-Hant", connection: "online" }, ""), /費城華埠發展會/);
+  } finally {
+    setHantMap(null);
+  }
+  // A presenter's help dialog and every staff dialog stay English.
+  const presenter = page({ principal: { access: "presenter" }, connection: "online", screen: "staff", dialog: "help", lang: "zh-Hans" }, "");
+  assert.match(presenter, /A real person can help\./);
+  assert.match(presenter, /aria-label="Close dialog"/);
+  assert.match(dialog({ dialog: "reset-fixtures", lang: "zh-Hans", principal: { access: "presenter" } }), /PRESENTER CONTROLS/);
+});
+
 test("the help dialog gives the office phone and email", () => {
   const html = page({ principal: { access: "applicant" }, connection: "online", screen: "applications", dialog: "help" }, "<main></main>");
   assert.match(html, /href="tel:\+12159226156"/);

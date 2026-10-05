@@ -35,6 +35,8 @@ import {
   missingToSubmit,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
+import { sourceText, viewLang } from "./language.mjs";
+import { t } from "./client-text.mjs";
 
 const when = (condition, html) => (condition ? html : "");
 
@@ -248,9 +250,9 @@ function actions(view, alerts) {
 // ---------------------------------------------------------------------------
 
 const STATUS = Object.freeze({
-  not_done: { word: "Not done", icon: "upload" },
-  later: { word: "Later", icon: "clock" },
-  none: { word: "Don't have", icon: "close" },
+  not_done: { word: "Not done", key: "doc.status.not_done", icon: "upload" },
+  later: { word: "Later", key: "doc.status.later", icon: "clock" },
+  none: { word: "Don't have", key: "doc.status.none", icon: "close" },
 });
 const statusOf = (card) => STATUS[card.status] ?? STATUS.not_done;
 const markButton = (slot, status, text, off = "") =>
@@ -259,11 +261,13 @@ const markButton = (slot, status, text, off = "") =>
 // The words on a card: the client's own (4b2), or the office's, which marks
 // for the client in front of it (Add a case). The office's reason line names
 // the question that asked for the card, never the client's "You said…".
+// The client's words are text keys (the English is the same); the office's
+// are English, like every staff screen.
 const CARD_WORDS = Object.freeze({
   client: {
-    later: "I will send it later",
-    none: "I don't have this",
-    note: "Uploading arrives soon. For now, bring it or mark it below.",
+    later: "doc.later",
+    none: "doc.none",
+    note: "doc.note",
   },
   office: {
     later: "Later",
@@ -276,13 +280,18 @@ const CARD_WORDS = Object.freeze({
 // so the why line is plain text there. The optional "other" card has the
 // upload buttons but no marks and no status (ruling R1). `off` is
 // `offWhileBusy`: the marks and the why link wait for an action in flight.
-// `office` puts the card in the office's words (Add a case).
-export function docCard(card, { links = true, off = "", office = false } = {}) {
+// `office` puts the card in the office's words (Add a case), which are always
+// English; otherwise `lang` is the client's language (spec 2026-10-05 §3).
+// Card text reaches the screen through sourceText.
+export function docCard(card, { links = true, off = "", office = false, lang = "en" } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
   const optional = card.group === "optional";
-  const words = office ? CARD_WORDS.office : CARD_WORDS.client;
+  const language = office ? "en" : lang;
+  const say = (key) => t(key, {}, language);
+  const text = (pair) => (language === "en" ? (pair?.en ?? "") : sourceText(pair, language));
+  const words = office ? CARD_WORDS.office : Object.fromEntries(Object.entries(CARD_WORDS.client).map(([k, key]) => [k, say(key)]));
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
-  const whyText = card.why?.en ?? "";
+  const whyText = text(card.why);
   const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en" }) : "";
   const why = office
     ? asked
@@ -291,24 +300,26 @@ export function docCard(card, { links = true, off = "", office = false } = {}) {
     : whyText
       ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}"${off}>${esc(whyText)}</button>` : esc(whyText)}</p>`
       : "";
-  const hint = card.hint?.en ? `<p class="doc-hint">${esc(card.hint.en)}</p>` : "";
+  const hintText = card.hint?.en ? text(card.hint) : "";
+  const hint = hintText ? `<p class="doc-hint">${esc(hintText)}</p>` : "";
   const noteId = `${id}-note`;
-  const upload = `<div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("camera")} Take a photo</button><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("upload")} Choose a file</button></div><p class="doc-note" id="${noteId}">${esc(words.note)}</p>`;
+  const upload = `<div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("camera")} ${esc(say("doc.take_photo"))}</button><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("upload")} ${esc(say("doc.choose_file"))}</button></div><p class="doc-note" id="${noteId}">${esc(words.note)}</p>`;
   const status = statusOf(card);
   const marks = optional
     ? ""
-    : `<div class="doc-marks">${markButton(card.slotId, "later", words.later, off)}${markButton(card.slotId, "none", words.none, off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", "Mark as not done", off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">Status: </span>${esc(status.word)}</p>`;
-  return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(card.label?.en)}</h3><p class="doc-owner">${esc(card.ownerLine?.en)}</p>${why}${hint}${upload}${marks}</article>`;
+    : `<div class="doc-marks">${markButton(card.slotId, "later", words.later, off)}${markButton(card.slotId, "none", words.none, off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", say("doc.mark_not_done"), off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">${esc(say("doc.status"))}</span>${esc(language === "en" ? status.word : say(status.key))}</p>`;
+  return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(text(card.label))}</h3><p class="doc-owner">${esc(text(card.ownerLine))}</p>${why}${hint}${upload}${marks}</article>`;
 }
 
 // Same-day: a printable checklist, Needed first and then Maybe needed, with no
 // buttons and no statuses. The optional card is neither, so it is left out.
-function bringList(cards) {
+function bringList(cards, lang = "en") {
+  const text = (pair) => (lang === "en" ? (pair?.en ?? "") : sourceText(pair, lang));
   const items = [...cards.filter((card) => card.group === "needed"), ...cards.filter((card) => card.group === "maybe")];
   return `<ul class="bring-list">${items
     .map((card) => {
       const maybe = card.group === "maybe";
-      return `<li class="bring-item${maybe ? " is-maybe" : ""}"><strong>${esc(card.label?.en)}</strong><span class="doc-owner">${esc(card.ownerLine?.en)}</span>${card.hint?.en ? `<span class="doc-hint">${esc(card.hint.en)}</span>` : ""}${maybe ? '<small class="bring-maybe">Maybe needed</small>' : ""}</li>`;
+      return `<li class="bring-item${maybe ? " is-maybe" : ""}"><strong>${esc(text(card.label))}</strong><span class="doc-owner">${esc(text(card.ownerLine))}</span>${card.hint?.en ? `<span class="doc-hint">${esc(text(card.hint))}</span>` : ""}${maybe ? `<small class="bring-maybe">${esc(t("doc.maybe", {}, lang))}</small>` : ""}</li>`;
     })
     .join("")}</ul>`;
 }
@@ -522,16 +533,17 @@ export function submittedV2(state) {
  * your visit" list. Empty when there is nothing open, or once the case is
  * closed (the server refuses card marks then).
  */
-export function progressDocumentsV2(state) {
+export function progressDocumentsV2(state, lang = viewLang(state)) {
   const record = state.savedCase;
   if (!record || record.stage === "closed") return "";
   const answers = serverAnswersV2(record);
   const cards = cardsFor(answers, record.documentCards ?? []);
+  const say = (key) => esc(t(key, {}, lang));
   const head = (title) =>
     `<div class="section-head"><h2 id="open-documents-title">${title}</h2></div>`;
   if (isSameDay(answers))
-    return `<section class="panel open-documents" aria-labelledby="open-documents-title"><div class="summary-print">${head("Bring these to your visit")}${row("Application ID", record.reference)}${bringList(cards)}</div><div class="summary-tools">${button(`${icon("print")} Print`, "print-summary", "secondary")}</div></section>`;
+    return `<section class="panel open-documents" aria-labelledby="open-documents-title"><div class="summary-print">${head(say("doc.bring"))}${row(t("id.application", {}, lang), record.reference)}${bringList(cards, lang)}</div><div class="summary-tools">${button(`${icon("print")} ${say("doc.print")}`, "print-summary", "secondary")}</div></section>`;
   const open = cards.filter((card) => card.group === "needed" && (card.status === "not_done" || card.status === "later"));
   if (!open.length) return "";
-  return `<section class="panel open-documents" aria-labelledby="open-documents-title">${head("Open documents")}<p class="field-note">The office still needs these. You can mark each one below.</p><div class="doc-list">${open.map((card) => docCard(card, { links: false, off: offWhileBusy(state) })).join("")}</div></section>`;
+  return `<section class="panel open-documents" aria-labelledby="open-documents-title">${head(say("doc.open"))}<p class="field-note">${say("doc.open_note")}</p><div class="doc-list">${open.map((card) => docCard(card, { links: false, off: offWhileBusy(state), lang })).join("")}</div></section>`;
 }

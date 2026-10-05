@@ -1325,3 +1325,38 @@ test("docCard without office is unchanged; with office it speaks to the office",
   assert.equal(photo.ask ?? null, null);
   assert.doesNotMatch(docCard(photo, { links: false, office: true }), /doc-why/);
 });
+
+// Part 4d Task 6: the progress page's cards and request in the client's language.
+test("docCard speaks the client's language; the office's card stays English whatever lang says", () => {
+  const cards = cardsFor(makeSampleAnswers({ version: 2 }), []);
+  const w2 = cards.find((card) => card.slotId === "w2.household");
+  const zh = docCard({ ...w2, status: "later" }, { links: false, lang: "zh-Hans" });
+  assert.match(zh, /<h3>每份工作的 W-2<\/h3>/);
+  assert.match(zh, /<p class="doc-owner">本人<\/p>/);
+  assert.match(zh, /<p class="doc-hint">您说有 1 份工作，请上传 1 张 W-2。<\/p>/);
+  assert.match(zh, /data-status="later">我稍后再提供<\/button>/);
+  assert.match(zh, /data-status="not_done">标记为未完成<\/button>/);
+  assert.match(zh, /<span class="sr-only">状态：<\/span>稍后提供<\/p>/);
+  assert.equal(docCard(w2, { links: false, lang: "en" }), docCard(w2, { links: false }));
+  assert.equal(docCard(w2, { links: false, office: true, lang: "zh-Hans" }), docCard(w2, { links: false, office: true }));
+});
+
+test("a document request labels the office's words in Chinese and shows them as typed", () => {
+  const state = (lang) =>
+    baseState({
+      screen: "progress",
+      lang,
+      savedCase: caseRecord({
+        stage: "preparing",
+        requests: [{ id: "req-1", title: "Mileage record", message: "Please send it.", status: "open" }],
+        history: [{ id: "e1", message: "A volunteer requested a document: Mileage record", createdAt: "2026-01-02T15:04:05Z" }],
+      }),
+    });
+  const zh = progressScreen(state("zh-Hans"));
+  assert.match(zh, /<span class="request-label">需要的文件<\/span><h2>Mileage record<\/h2><span class="request-label">办公室留言<\/span><p>Please send it\.<\/p>/);
+  assert.match(zh, /<p>志愿者请求了一份文件：Mileage record<\/p>/);
+  const en = progressScreen(state("en"));
+  assert.doesNotMatch(en, /request-label/);
+  assert.match(en, /<h2>Mileage record<\/h2><p>Please send it\.<\/p>/);
+  assert.match(en, /<p>A volunteer requested a document: Mileage record<\/p>/);
+});

@@ -1,6 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
-import { t } from "./client-text.mjs";
+import { t, sentence } from "./client-text.mjs";
 import {
   renderStaffBoard,
   renderStaffCase,
@@ -50,25 +50,26 @@ export function languageSwitch(lang = "en") {
 
 // The version-2 form's wording switch (spec 2026-09-30 §3.2, §3.4): it edits
 // form_version, so the wording changes at once and the answers stay as they are.
-function seniorSwitch(pressed) {
-  return `<button type="button" class="senior-switch" data-action="toggle-senior" aria-pressed="${pressed ? "true" : "false"}"><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>Senior version</button>`;
+function seniorSwitch(pressed, lang = "en") {
+  return `<button type="button" class="senior-switch" data-action="toggle-senior" aria-pressed="${pressed ? "true" : "false"}"><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>${esc(t("frame.senior", {}, lang))}</button>`;
 }
 
 // The client frame's top bar (spec section 7): the logo takes you home, then
 // the language, help, Save & exit while a draft is open, and sign out.
 export function clientHeader(state) {
+  const lang = viewLang(state);
   const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
   const onV2Draft = onDraft && Number(state?.savedCase?.intakeVersion) === 2;
-  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="ViTally home"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch(viewLang(state))}${when(
+  return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="${esc(t("frame.home", {}, lang))}"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch(lang)}${when(
     onV2Draft,
-    seniorSwitch(state?.draftAnswers?.form_version === "senior"),
+    seniorSwitch(state?.draftAnswers?.form_version === "senior", lang),
   )}${button(
-    `${icon("help")} Need help?`,
+    `${icon("help")} ${esc(t("frame.help", {}, lang))}`,
     "open-help",
     "text",
-  )}${when(onDraft, button("Save &amp; exit", "save-exit", "secondary"))}${when(
+  )}${when(onDraft, button(esc(t("frame.save_exit", {}, lang)), "save-exit", "secondary"))}${when(
     state?.principal,
-    button(`${icon("signout")} Sign out`, "sign-out", "text"),
+    button(`${icon("signout")} ${esc(t("frame.sign_out", {}, lang))}`, "sign-out", "text"),
   )}</div></header>`;
 }
 
@@ -77,11 +78,9 @@ export function clientHeader(state) {
 export function connectionNotice(state) {
   if (state.connection === "online" || state.connection === "unknown") return "";
   const reconnecting = state.connection === "reconnecting";
-  return `<div class="connection-notice" role="status">${icon("clock")}<span>${
-    reconnecting
-      ? "The connection dropped and is being retried. What you see may be out of date, and actions cannot be confirmed until it is back."
-      : "No connection to the server. You can read this page, but nothing can be saved or sent until the connection returns."
-  }</span></div>`;
+  return `<div class="connection-notice" role="status">${icon("clock")}<span>${esc(
+    t(reconnecting ? "frame.reconnecting" : "frame.offline", {}, viewLang(state)),
+  )}</span></div>`;
 }
 
 // Something worth saying that is not a failure: today, that somebody rebuilt
@@ -89,7 +88,8 @@ export function connectionNotice(state) {
 // status, not an alert, and it is dismissed by the same control.
 function noticeBanner(state) {
   if (!state.notice) return "";
-  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(state.notice)}</span>${button("Dismiss", "dismiss-error", "inline")}</div>`;
+  const lang = viewLang(state);
+  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(sentence(state.notice, lang))}</span>${button(esc(t("frame.dismiss", {}, lang)), "dismiss-error", "inline")}</div>`;
 }
 
 // The office's two drawers: the modal frame placed at the right edge.
@@ -106,11 +106,12 @@ function problemBanner(state) {
   // `drawerError`); a second alert behind an aria-modal dialog would be
   // announced twice and could not be reached.
   if (DRAWERS.includes(state.dialog)) return "";
-  return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(state.error.message)}</span>${when(state.retryable, button("Try again", "retry-action", "inline"))}${button("Dismiss", "dismiss-error", "inline")}</div>`;
+  const lang = viewLang(state);
+  return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(sentence(state.error.message, lang))}</span>${when(state.retryable, button(esc(t("frame.try_again", {}, lang)), "retry-action", "inline"))}${button(esc(t("frame.dismiss", {}, lang)), "dismiss-error", "inline")}</div>`;
 }
 
-export function footer() {
-  return `<footer class="site-footer"><span>ViTally · Philadelphia Chinatown Development Corporation (PCDC)</span><span>Course prototype · Tax year 2025 · No real taxpayer data</span></footer>`;
+export function footer(lang = "en") {
+  return `<footer class="site-footer"><span>${esc(t("footer.org", {}, lang))}</span><span>${esc(t("footer.note", {}, lang))}</span></footer>`;
 }
 
 // The redesigned staff frame: a collapsible sidebar beside the page body, with
@@ -129,7 +130,7 @@ export function page(state, body) {
   const presenter = state?.principal?.access === "presenter";
   const top = presenter ? "" : clientHeader(state);
   const main = presenter ? body : `<div class="client-shell">${body}</div>`;
-  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer()}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.
@@ -144,12 +145,14 @@ SUPABASE_PUBLISHABLE_KEY=your-publishable-key</code></pre><p>Then restart the se
 // someone who is already signed in — so this says what is actually known and
 // offers another attempt. Focus and `online` events retry on their own too.
 export function unreachableScreen(state) {
-  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">NO CONNECTION</span><h1>ViTally cannot reach the server</h1><p>${esc(state.error?.message ?? "The demo cannot reach the server. Check the connection.")}</p></div><div class="panel"><p>You are not signed out — this browser simply could not check. Nothing has been lost, and nothing was sent.</p>${button(`${icon("refresh")} Try again`, "retry-connection", "primary full")}<p class="field-note">This page also retries by itself when the connection returns or when you come back to this window.</p></div></main>`;
+  const lang = viewLang(state);
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">${esc(t("unreachable.overline", {}, lang))}</span><h1>${esc(t("unreachable.title", {}, lang))}</h1><p>${esc(sentence(state.error?.message ?? "The demo cannot reach the server. Check the connection.", lang))}</p></div><div class="panel"><p>${esc(t("unreachable.body", {}, lang))}</p>${button(`${icon("refresh")} ${esc(t("frame.try_again", {}, lang))}`, "retry-connection", "primary full")}<p class="field-note">${esc(t("unreachable.note", {}, lang))}</p></div></main>`;
 }
 
 // Signed in, but this account has no active membership in a workspace.
 export function noAccessScreen(state) {
-  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("lock")}</div><div class="page-intro centered"><span class="overline">NOT ON THIS ROSTER</span><h1>This account has no access</h1><p>${esc(state.error?.message ?? "You do not have access to this step.")}</p></div><div class="panel"><p>ViTally is a closed demo: an organiser adds each address before it can be used. Ask the person running this session to add yours, then sign in again.</p>${button("Sign out", "sign-out", "primary full")}</div></main>`;
+  const lang = viewLang(state);
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("lock")}</div><div class="page-intro centered"><span class="overline">${esc(t("no_access.overline", {}, lang))}</span><h1>${esc(t("no_access.title", {}, lang))}</h1><p>${esc(sentence(state.error?.message ?? "You do not have access to this step.", lang))}</p></div><div class="panel"><p>${esc(t("no_access.body", {}, lang))}</p>${button(esc(t("frame.sign_out", {}, lang)), "sign-out", "primary full")}</div></main>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,15 +366,18 @@ const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
 
 export function dialog(state) {
   if (!state.dialog) return "";
+  // The client's dialogs speak the view language; on staff screens it is English.
+  const lang = viewLang(state);
+  const say = (key) => esc(t(key, {}, lang));
   let title = "";
   let body = "";
   if (state.dialog === "help") {
-    title = "A real person can help.";
-    body = `<p>Contact the PCDC office if you need help with your application, cannot find your Application ID, or cannot read the inbox you signed up with.</p><div class="contact-option">${icon("home")}<div><strong>Call or email the PCDC office</strong>${officeContact()}</div></div><div class="info-note">${icon("shield")}<p>Volunteers follow the site’s identity-check process before restoring access or changing contact details.</p></div>`;
+    title = t("help.title", {}, lang);
+    body = `<p>${say("help.body")}</p><div class="contact-option">${icon("home")}<div><strong>${say("help.contact")}</strong>${officeContact()}</div></div><div class="info-note">${icon("shield")}<p>${say("help.identity")}</p></div>`;
   }
   if (state.dialog === "regenerate") {
-    title = "Replace the fictional answers?";
-    body = `<p>This replaces every answer in this form with a different fictional example, including answers you edited. Your email address, Application ID and current stage do not change.</p><div class="info-note">${icon("help")}<p>Nothing is saved until you save the form, so you can still step back through the form and check it first.</p></div>${button("Replace with another example", "confirm-regenerate", "primary full")}${button("Keep my answers", "close-dialog", "text")}`;
+    title = t("regenerate.title", {}, lang);
+    body = `<p>${say("regenerate.body")}</p><div class="info-note">${icon("help")}<p>${say("regenerate.note")}</p></div>${button(say("regenerate.confirm"), "confirm-regenerate", "primary full")}${button(say("regenerate.keep"), "close-dialog", "text")}`;
   }
   if (state.dialog === "leave-add-case") {
     title = "Leave without saving?";
@@ -415,14 +421,14 @@ export function dialog(state) {
     }
   }
   if (state.dialog === "print") {
-    title = "Your application reference card";
-    body = `<div class="print-card"><strong>ViTally · PCDC Community Tax Assistance</strong><span>APPLICATION ID</span><b>${esc(state.savedCase?.reference)}</b>${state.savedCase?.clientNumber != null ? `<span>CLIENT NUMBER</span><b>${esc(formatClientNumber(state.savedCase.clientNumber))}</b>` : ""}<p>2025 tax year · Sign in with your email to return.</p></div><p class="field-note">This card holds no tax answers and no sign-in code.</p>${button(`${icon("print")} Print this card`, "print-now", "primary full")}`;
+    title = t("print.title", {}, lang);
+    body = `<div class="print-card"><strong>${say("print.org")}</strong><span>${say("id.application_caps")}</span><b>${esc(state.savedCase?.reference)}</b>${state.savedCase?.clientNumber != null ? `<span>${say("id.client_number_caps")}</span><b>${esc(formatClientNumber(state.savedCase.clientNumber))}</b>` : ""}<p>${say("print.return")}</p></div><p class="field-note">${say("print.note")}</p>${button(`${icon("print")} ${say("print.button")}`, "print-now", "primary full")}`;
   }
   const drawer = DRAWERS.includes(state.dialog);
   const overline = drawer
     ? "OFFICE FOLLOW-UP"
     : PRESENTER_DIALOGS.includes(state.dialog)
       ? "PRESENTER CONTROLS"
-      : "ViTally · HERE TO HELP";
-  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="Close dialog">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+      : t("dialog.overline", {}, lang);
+  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="${say("dialog.close")}">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
 }
