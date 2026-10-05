@@ -3338,17 +3338,6 @@ textarea::placeholder {
   font-weight: 700;
   box-shadow: 0 1px 2px rgb(42 39 69 / 0.12);
 }
-.language-switch .lang:disabled {
-  opacity: 0.55;
-}
-.language-switch .lang-note {
-  align-self: center;
-  margin-left: 8px;
-  padding-right: 6px;
-  font-size: 12px;
-  color: var(--vt-intake-hint);
-  white-space: nowrap;
-}
 .client-shell {
   color: var(--vt-intake-ink);
   background: var(--vt-background);
@@ -5460,3 +5449,85 @@ textarea::placeholder {
   }
 }
 /* end part 4c */
+
+/* Part 4d: Chinese on screen (spec 2026-10-05 §5). System fonts only, through
+   the two font variables every rule already uses; each script gets its own
+   regional glyphs; spacing that suits Latin is undone. */
+html:lang(zh-Hans) {
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --vt-serif: Georgia, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+html:lang(zh-Hant) {
+  --vt-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  --vt-serif: Georgia, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+}
+/* Same specificity as `.narrow h1`, `.hero h1` and `.welcome-card h2`, and
+   later, so these win. The action card's label and the ID pill's captions
+   are spaced uppercase captions too. */
+:lang(zh) .overline,
+:lang(zh) h1,
+:lang(zh) h2,
+:lang(zh) .action-label,
+:lang(zh) .id-pill small {
+  letter-spacing: 0;
+}
+:lang(zh) p,
+:lang(zh) li,
+:lang(zh) .field-note {
+  line-height: 1.75;
+}
+
+/* The language switch: hover as the client bar's text buttons do; the focus
+   ring sits close, so it never spills onto the next button. */
+.language-switch .lang:not(.current):hover {
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+}
+.language-switch .lang:focus-visible {
+  position: relative;
+  outline-offset: 1px;
+}
+
+/* A version-1 application in Chinese: a one-line note in the client's
+   language above the English body (spec §2). */
+.v1-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 11px 16px;
+  font-size: 14px;
+  background: var(--vt-primary-soft);
+  color: var(--vt-ink);
+  border-radius: var(--vt-radius-sm);
+}
+.v1-note .icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--vt-primary);
+}
+/* The intake's wrapper: the note keeps to the workspace's width, with the
+   client bar's side gutters. */
+.v1-english {
+  padding-top: 20px;
+}
+.v1-english > .v1-note {
+  width: min(1180px, calc(100% - 56px));
+  margin: 0 auto;
+}
+@media (max-width: 800px) {
+  .v1-english > .v1-note {
+    width: calc(100% - 32px);
+  }
+}
+
+/* Whose words the office's request is, above its title and its message. */
+.request-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vt-stage-amend);
+}
+/* end part 4d */

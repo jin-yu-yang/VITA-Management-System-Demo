@@ -39,7 +39,12 @@ PATH="$VITALLY_NODE_BIN:$PATH" "$VITALLY_NODE" "$VITALLY_NPM" ci
 ```
 
 `npm ci` installs the exact-pinned dependencies from `package-lock.json`: `@supabase/supabase-js`,
-and (dev) `esbuild`, `pg`, `playwright`, and the `supabase` CLI. Docker must be running for the
+and (dev) `esbuild`, `pg`, `playwright`, the `supabase` CLI, and `opencc-js`. `opencc-js` is used
+only at build and test time, never in the browser: `npm run build:hant` derives the Traditional
+Chinese map `src/zh-hant.mjs` from every Simplified source string (OpenCC `tw`, characters only,
+plus `tools/hant-overrides.mjs`), `npm run build:hant -- --check` fails if the committed map is out
+of date, and the unit tests use it to check that no Simplified character survives on a 繁體 screen.
+Run `npm run build:hant` after adding or changing any Chinese text, and commit the regenerated map. Docker must be running for the
 local Supabase stack and its tests. On this Mac, if Docker is not otherwise on `PATH`, add
 `/Users/jinyuyang/.docker/bin` to the **command's** `PATH` (shown in the database/auth/browser test
 commands below).
@@ -377,15 +382,22 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is below. The unit and browser-story counts were last verified on the sidebar peek/pin PR (2026-10-04), the others on the final run of part 4c (2026-10-04); re-run the
+suite's **last-verified count** is below. All four were last verified on the final task of part 4d (2026-10-05); re-run the
 commands yourself for the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
-| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 652/652 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
+| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 861/861 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the client text in three languages (every client screen swept in 简体 and 繁體, and the Traditional map checked against `opencc-js`), the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
 | Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 233/233 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
-| Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~55–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
-| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 57/57, ~11–13 min | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2 (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase sets the workspace back to version 1 to finish a draft in the old form and to create a case on the old Add a case; and one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch). Optional to re-run before every rehearsal, but recommended before a presentation. |
+| Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~25–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
+| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 59 tests, ~11–13 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2 (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase sets the workspace back to version 1 to finish a draft in the old form and to create a case on the old Add a case; and one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
+
+On 2026-10-05 (part 4d's last task, a busy machine) the Firefox-client/Chrome-staff permutation
+passed every phase, the new Chinese phase included, twice; the Chrome-client/Firefox-staff
+permutation stopped both times in an earlier staff phase on a Firefox-staff timing wait ("Sam
+records the call…" waiting for the persona, then "the office takes in a walk-in…" waiting for the
+materials mark). The same permutation at the commit before part 4d's last task stopped at the same
+persona wait, so it is not caused by that change; it is recorded here until it is looked into.
 
 Install the second browser engine once, with the same scoped `PATH`, before the first auth-gate or
 story run (Chrome runs through an already-installed Google Chrome browser via
