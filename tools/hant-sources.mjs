@@ -1,8 +1,9 @@
 // Every Simplified string a client can see, as source strings (spec §4): the
-// catalogue's zh, the client text table and its sentences. Task 4 adds the
-// document cards' tables. Assembled text is never collected.
+// catalogue's zh, the client text table and its sentences, and the document
+// cards' rules, why lines and templates. Assembled text is never collected.
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import { TEXT, SENTENCES } from "../src/client-text.mjs";
+import { CARD_RULES, CARD_WHY, CARD_TEMPLATES } from "../src/document-cards.mjs";
 
 const HAN = /\p{Script=Han}/u;
 
@@ -24,6 +25,13 @@ export function collectSimplified() {
   walkPairs(CATALOGUE, out);
   for (const entry of Object.values(TEXT)) out.add(entry.zh);
   for (const zh of Object.values(SENTENCES)) out.add(zh);
+  walkPairs(CARD_RULES, out);
+  walkPairs(CARD_WHY, out);
+  // A CARD_TEMPLATES string is a zh template; the rest are static pairs.
+  for (const value of Object.values(CARD_TEMPLATES)) {
+    if (typeof value === "string") out.add(value);
+    else walkPairs(value, out);
+  }
   return [...out].filter((s) => HAN.test(s)).sort();
 }
 

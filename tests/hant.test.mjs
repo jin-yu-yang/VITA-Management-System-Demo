@@ -50,3 +50,19 @@ test("templates keep their {placeholders}", () => {
     assert.equal(names(traditional), names(simplified), simplified);
   }
 });
+
+test("the collector includes the document cards' tables (Part 4d Task 4)", async () => {
+  const { CARD_RULES, CARD_WHY, CARD_TEMPLATES } = await import("../src/document-cards.mjs");
+  const wanted = new Set(collectSimplified());
+  for (const pair of Object.values(CARD_WHY)) assert.ok(wanted.has(pair.zh), pair.zh);
+  for (const value of Object.values(CARD_TEMPLATES)) {
+    const zh = typeof value === "string" ? value : value.zh;
+    assert.ok(wanted.has(zh), zh);
+  }
+  for (const rule of CARD_RULES) {
+    assert.ok(wanted.has(rule.label.zh), rule.id);
+    if (rule.hint) assert.ok(wanted.has(rule.hint.zh), `${rule.id} hint`);
+    if (rule.why) assert.ok(wanted.has(rule.why.zh), `${rule.id} why`);
+  }
+  assert.ok(wanted.has(CARD_TEMPLATES.w2_hint) && CARD_TEMPLATES.w2_hint.includes("{n}"));
+});
