@@ -93,6 +93,8 @@ export const input = (
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><input id="${fieldId(name, scope)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 export const textarea = (label, name, value = "", extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><textarea id="${fieldId(name, scope)}" name="${name}" ${extra}>${esc(value)}</textarea></label>`;
+// Stays English: only the version-1 form (English) and staff screens use it.
+// The version-2 form's select is intake-form.mjs's, through t("form.select_option").
 export const select = (label, name, value, options, extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><select id="${fieldId(name, scope)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {

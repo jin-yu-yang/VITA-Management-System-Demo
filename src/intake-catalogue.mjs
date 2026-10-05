@@ -1,6 +1,7 @@
 // Reads the generated intake catalogue (version 2). Version 1 is not in the
 // catalogue; its code lives elsewhere and is untouched.
 import CATALOGUE_DATA from "./intake-catalogue-data.mjs";
+import { sourceText } from "./language.mjs";
 
 export const CATALOGUE = CATALOGUE_DATA;
 export const MATERIALS_ITEMS = CATALOGUE_DATA.materials;
@@ -39,8 +40,12 @@ export const substepQuestions = (substepId) =>
 /** The hidden household member id: 32 lowercase hexadecimal characters. */
 export const isMemberId = (value) => typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
 
-export const wording = (question, { variant = "general", lang = "en" } = {}) =>
-  question?.wording?.[variant]?.[lang] ?? question?.wording?.general?.[lang] ?? "";
+// The catalogue is never indexed with the screen language: its { en, zh } pair
+// goes through sourceText, which serves zh to both Chinese languages.
+export const wording = (question, { variant = "general", lang = "en" } = {}) => {
+  const w = question?.wording;
+  return sourceText({ en: w?.[variant]?.en ?? w?.general?.en, zh: w?.[variant]?.zh ?? w?.general?.zh }, lang);
+};
 
 /** Answered: not null/undefined, not "" after trim, not an empty array. Task 3's SQL mirrors this. */
 export const isAnswered = (value) =>
@@ -231,13 +236,15 @@ export function missingToSubmit(version, answers = {}, contact = {}) {
 // Service and language labels. Version 2 stores codes, version 1 stores labels.
 // ---------------------------------------------------------------------------
 
-const labelTable = (id) =>
-  new Map(
-    (findQuestion(2, id)?.options ?? []).map((o) => [o.value, o.label?.general?.en ?? o.value]),
-  );
+const labelTable = (id) => new Map((findQuestion(2, id)?.options ?? []).map((o) => [o.value, o]));
 const SERVICE_LABELS = labelTable("service");
 const LANGUAGE_LABELS = labelTable("language");
 
-const labelOf = (table, value) => (typeof value === "string" && table.has(value) ? table.get(value) : value);
-export const serviceLabel = (value) => labelOf(SERVICE_LABELS, value);
-export const languageLabel = (value) => labelOf(LANGUAGE_LABELS, value);
+// A stored label (version 1) or an unknown code comes back as it is.
+const labelOf = (table, value, lang) => {
+  if (typeof value !== "string" || !table.has(value)) return value;
+  const option = table.get(value);
+  return sourceText({ en: option.label?.general?.en ?? option.value, zh: option.label?.general?.zh }, lang);
+};
+export const serviceLabel = (value, lang = "en") => labelOf(SERVICE_LABELS, value, lang);
+export const languageLabel = (value, lang = "en") => labelOf(LANGUAGE_LABELS, value, lang);

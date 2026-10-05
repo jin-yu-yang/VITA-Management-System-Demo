@@ -4297,7 +4297,7 @@ textarea::placeholder {
   color: var(--vt-primary);
 }
 
-/* ---- Dates: Month / Day / Year ---- */
+/* ---- Dates: Month / Day / Year (年 / 月 / 日 in Chinese); the year box is the wide one ---- */
 .q-date {
   display: flex;
   flex-wrap: wrap;
@@ -4314,7 +4314,7 @@ textarea::placeholder {
   width: 76px;
   text-align: center;
 }
-.q-date-part:last-child input.q-input {
+.q-date-part.is-year input.q-input {
   width: 108px;
 }
 
@@ -4393,7 +4393,7 @@ textarea::placeholder {
   .q-date-part input.q-input {
     width: 64px;
   }
-  .q-date-part:last-child input.q-input {
+  .q-date-part.is-year input.q-input {
     width: 92px;
   }
   .q-segmented .q-option span {

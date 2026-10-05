@@ -9,6 +9,8 @@ import {
   CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
   checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions,
 } from "./intake-catalogue.mjs";
+import { sourceText, localeOf, isLang } from "./language.mjs";
+import { t, sentence } from "./client-text.mjs";
 
 const TEXT_LIKE = new Set(["text", "longtext", "signature", "email", "phone", "zip", "year", "number", "date"]);
 const TEXT_LIMIT = 200; // checkValue's limit for text and signature
@@ -17,12 +19,21 @@ const COUNT_FROM = LONGTEXT_LIMIT - 500; // the count shows within 500 of the li
 const SELECT_OVER = 6; // a choice with more options than this is a <select>
 const MEMBER_LIMIT = 10;
 const NONE = "none"; // "No one": clears the other options of a multi or who
-const DATE_PARTS = [
-  ["month", "Month", "MM", 2],
-  ["day", "Day", "DD", 2],
-  ["year", "Year", "YYYY", 4],
-];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Every text function here takes `lang` (default "en"); with "en" its output is
+// today's English, byte for byte. Staff screens call them without it.
+const num = (n, lang) => Number(n).toLocaleString(localeOf(lang));
+
+/**
+ * The date boxes in the reading order of the language: month, day, year in
+ * English; year, month, day (年 / 月 / 日) in Chinese. Ids stay base-<part>.
+ */
+export function datePartsFor(lang = "en") {
+  const box = (part, size) => ({ part, label: t(`date.${part}`, {}, lang), hint: t(`date.${part}_hint`, {}, lang), size });
+  const [year, month, day] = [box("year", 4), box("month", 2), box("day", 2)];
+  return isLang(lang) && lang !== "en" ? [year, month, day] : [month, day, year];
+}
 
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const asSet = (value) => (value instanceof Set ? value : new Set(Array.isArray(value) ? value : []));
@@ -36,8 +47,10 @@ const questionsOf = (substepId) =>
 // Options, tips and rich text
 // ---------------------------------------------------------------------------
 
-const optionLabel = (option, { variant = "general", lang = "en" } = {}) =>
-  option?.label?.[variant]?.[lang] ?? option?.label?.general?.[lang] ?? option?.label?.general?.en ?? option?.value ?? "";
+const optionLabel = (option, { variant = "general", lang = "en" } = {}) => {
+  const l = option?.label;
+  return sourceText({ en: l?.[variant]?.en ?? l?.general?.en ?? option?.value ?? "", zh: l?.[variant]?.zh ?? l?.general?.zh }, lang);
+};
 
 const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
 
@@ -99,10 +112,11 @@ export function renderRichText(text) {
 }
 
 // A tip with a condition renders only while it holds. Upload tips are text only.
+// Each tip is converted on its own, before the tips are joined.
 const tipsOf = (question, { variant, lang, answers }) =>
   (question.tips?.[variant] ?? question.tips?.general ?? [])
     .filter((tip) => isVisible(tip, answers))
-    .map((tip) => tip[lang] ?? tip.en ?? "")
+    .map((tip) => sourceText({ en: tip.en ?? "", zh: tip.zh }, lang))
     .filter((tip) => tip !== "");
 
 // ---------------------------------------------------------------------------
@@ -135,14 +149,31 @@ export function sendable(question, value) {
   return TEXT_LIKE.has(question.type) && typeof value === "string" ? value.trim() : value;
 }
 
+/**
+ * checkValue's reason in the screen language. checkValue stays English (the
+ * database mirrors it); fixed reasons go through SENTENCES, the two built with
+ * numbers through text keys. English returns the reason as it is.
+ */
+export function invalidText(reason, lang = "en") {
+  if (typeof reason !== "string" || !isLang(lang) || lang === "en") return reason;
+  let m;
+  if ((m = /^Use at most (\d+) characters\.$/.exec(reason))) return t("invalid.too_long", { limit: num(m[1], lang) }, lang);
+  if ((m = /^Enter a number from (\d+) to (\d+)\.$/.exec(reason)))
+    return t("invalid.number_range", { min: num(m[1], lang), max: num(m[2], lang) }, lang);
+  if ((m = /^Unknown field (.+)\.$/.exec(reason))) return t("invalid.unknown_field", { field: m[1] }, lang);
+  // checkGroup's "<sub-field id>: <reason>": the id stays, the reason is translated.
+  if ((m = /^(\w+): (.+)$/.exec(reason))) return t("invalid.member_field", { field: m[1], reason: invalidText(m[2], lang) }, lang);
+  return sentence(reason, lang);
+}
+
 /** The note's text and class. For a household sub-field, `question` is the sub-field. */
-export function noteState(question, value, { showMissing = false, showInvalid = false } = {}) {
+export function noteState(question, value, { showMissing = false, showInvalid = false, lang = "en" } = {}) {
   const sent = sendable(question, value);
   if (showInvalid) {
     const reason = checkValue(question, sent);
-    if (reason) return { text: reason, className: "is-invalid" };
+    if (reason) return { text: invalidText(reason, lang), className: "is-invalid" };
   }
-  if (showMissing && question?.required && !isAnswered(sent)) return { text: "Needs an answer", className: "is-missing" };
+  if (showMissing && question?.required && !isAnswered(sent)) return { text: t("note.needs_answer", {}, lang), className: "is-missing" };
   return { text: "", className: "" };
 }
 
@@ -172,11 +203,9 @@ export function invalidAnswers(substepId, answers = {}) {
 }
 
 /** "4,612 of 5,000 characters" within 500 of the limit, otherwise "". */
-export const countText = (value) => {
+export const countText = (value, lang = "en") => {
   const length = typeof value === "string" ? value.length : 0;
-  return length > COUNT_FROM
-    ? `${length.toLocaleString("en-US")} of ${LONGTEXT_LIMIT.toLocaleString("en-US")} characters`
-    : "";
+  return length > COUNT_FROM ? t("count.long", { length: num(length, lang), limit: num(LONGTEXT_LIMIT, lang) }, lang) : "";
 };
 
 // ---------------------------------------------------------------------------
@@ -226,21 +255,18 @@ export function adjacentSubstep(id, answers, cards, delta) {
   return at < 0 ? null : visible[at + delta] ?? null;
 }
 
-const MARKS = {
-  needs: { key: "needs", text: "Needs answers" },
-  docs: { key: "docs", text: "Needs documents" },
-  done: { key: "done", text: "Done" },
-  none: { key: "none", text: "" },
-};
-const mark = (key) => ({ ...MARKS[key] });
+const MARKS = { needs: "status.needs", docs: "status.docs", done: "status.done", none: null };
+const markIn = (key, lang = "en") => ({ key, text: MARKS[key] ? t(MARKS[key], {}, lang) : "" });
 
 /**
  * The rail mark of one sub-step (spec §3.3). `visited` is an array or Set of
- * sub-step ids, `revealed` a Set of answer ids, `cards` cardsFor's output.
+ * sub-step ids, `revealed` a Set of answer ids, `cards` cardsFor's output,
+ * `lang` the language of the mark's text.
  * Missing and invalid come from the draft alone. An invalid answer counts only
  * once revealed, so typing never flips the mark. A visit is required for Done.
  */
-export function substepStatus(id, { answers = {}, visited = [], revealed = new Set(), cards = [] } = {}) {
+export function substepStatus(id, { answers = {}, visited = [], revealed = new Set(), cards = [], lang = "en" } = {}) {
+  const mark = (key) => markIn(key, lang);
   const substep = findSubstep(id);
   if (!substep) return mark("none");
   const draft = answers ?? {};
@@ -272,6 +298,7 @@ export function substepStatus(id, { answers = {}, visited = [], revealed = new S
 
 /** A step's mark over its visible sub-steps: needs > docs > done when all are > none. */
 export function stepRollup(stepId, ctx = {}) {
+  const mark = (key) => markIn(key, ctx.lang);
   const visible = new Set(visibleSubsteps(ctx.answers, ctx.cards));
   const keys = substepsFor(2)
     .filter((substep) => substep.step.id === stepId && visible.has(substep.id))
@@ -302,12 +329,13 @@ export function newMemberId(random = globalThis.crypto) {
 // Rendering
 // ---------------------------------------------------------------------------
 
-const rangeText = (question) =>
+/** A number's range hint: "0 to 12", "1 or more", or "" without a range. */
+export const rangeText = (question, lang = "en") =>
   question.min === undefined && question.max === undefined
     ? ""
     : question.max === undefined
-      ? `${question.min} or more`
-      : `${question.min ?? 0} to ${question.max}`;
+      ? t("range.or_more", { min: num(question.min, lang) }, lang)
+      : t("range.between", { min: num(question.min ?? 0, lang), max: num(question.max, lang) }, lang);
 
 // One question's markup. `base` is its id (field-<scope>-<id>), `data` the
 // data-* attributes every control carries, and `wrapQ` the wrapper's data-q
@@ -315,7 +343,7 @@ const rangeText = (question) =>
 function renderField(question, value, ctx) {
   const { base, data, wrapQ, variant, lang, answers } = ctx;
   const type = question.type;
-  const note = noteState(question, value, { showMissing: ctx.showMissing, showInvalid: ctx.showInvalid });
+  const note = noteState(question, value, { showMissing: ctx.showMissing, showInvalid: ctx.showInvalid, lang });
   const tips = tipsOf(question, { variant, lang, answers });
   const noteId = `${base}-note`;
   const tipsId = `${base}-tips`;
@@ -333,7 +361,7 @@ function renderField(question, value, ctx) {
 
   const single = (input, extra = "") =>
     `<div class="${cls}"${wrap}><label for="${base}" class="q-label">${title}${extra}</label>${input}${tipsHtml}${
-      type === "longtext" ? `<p id="${countId}" class="q-count">${esc(countText(value))}</p>` : ""
+      type === "longtext" ? `<p id="${countId}" class="q-count">${esc(countText(value, lang))}</p>` : ""
     }${noteHtml}</div>`;
   const group = (inner) =>
     `<fieldset class="${cls}"${wrap}><legend class="q-label">${title}</legend>${inner}${tipsHtml}${noteHtml}</fieldset>`;
@@ -350,7 +378,7 @@ function renderField(question, value, ctx) {
     case "zip":
     case "year":
     case "number": {
-      const range = rangeText(question);
+      const range = rangeText(question, lang);
       return single(
         `<input id="${base}" ${control} class="q-input" type="text" inputmode="numeric" value="${esc(text)}">`,
         range ? ` <span class="q-range">${esc(range)}</span>` : "",
@@ -361,9 +389,9 @@ function renderField(question, value, ctx) {
       const [year, month, day] = /^([^-]*)-([^-]*)-(.*)$/.exec(text)?.slice(1) ?? [text, "", ""];
       const parts = { year, month, day };
       return group(
-        `<div class="q-date">${DATE_PARTS.map(
-          ([part, name, hint, size]) =>
-            `<label for="${base}-${part}" class="q-date-part"><span>${name}</span><input id="${base}-${part}" ${control} data-date-part="${part}" class="q-input" type="text" inputmode="numeric" maxlength="${size}" placeholder="${hint}" value="${esc(parts[part])}"></label>`,
+        `<div class="q-date">${datePartsFor(lang).map(
+          ({ part, label, hint, size }) =>
+            `<label for="${base}-${part}" class="q-date-part is-${part}"><span>${esc(label)}</span><input id="${base}-${part}" ${control} data-date-part="${part}" class="q-input" type="text" inputmode="numeric" maxlength="${size}" placeholder="${esc(hint)}" value="${esc(parts[part])}"></label>`,
         ).join("")}</div>`,
       );
     }
@@ -371,7 +399,7 @@ function renderField(question, value, ctx) {
     case "yesno": {
       if (type === "choice" && options.length > SELECT_OVER)
         return single(
-          `<select id="${base}" ${control} class="q-input"><option value="">Select an option</option>${options
+          `<select id="${base}" ${control} class="q-input"><option value="">${esc(t("form.select_option", {}, lang))}</option>${options
             .map(
               (option) =>
                 `<option value="${esc(option.value)}"${option.value === value ? " selected" : ""}>${esc(optionLabel(option, { variant, lang }))}</option>`,
@@ -412,7 +440,7 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
   const qid = esc(question.id);
   const base = `field-${esc(scope)}-${qid}`;
   const members = Array.isArray(value) ? value : [];
-  const note = noteState(question, value, { showMissing, showInvalid: revealed.has(question.id) });
+  const note = noteState(question, value, { showMissing, showInvalid: revealed.has(question.id), lang });
   const noteId = `${base}-note`;
   const tips = tipsOf(question, { variant, lang, answers });
   const cards = members
@@ -438,16 +466,16 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
           }),
         )
         .join("");
-      return `<div class="hh-card" role="group" aria-labelledby="${memberBase}-title">${hiddenId}<div class="hh-card-head"><h3 class="hh-card-title" id="${memberBase}-title">Person ${n + 1}</h3>${button(
-        "Remove",
+      return `<div class="hh-card" role="group" aria-labelledby="${memberBase}-title">${hiddenId}<div class="hh-card-head"><h3 class="hh-card-title" id="${memberBase}-title">${esc(t("member.person", { n: n + 1 }, lang))}</h3>${button(
+        esc(t("member.remove", {}, lang)),
         "remove-member",
         "secondary",
-        `data-member="${n}" aria-label="Remove person ${n + 1}"`,
+        `data-member="${n}" aria-label="${esc(t("member.remove_label", { n: n + 1 }, lang))}"`,
       )}</div>${subs}</div>`;
     })
     .join("");
   const add =
-    members.length < MEMBER_LIMIT ? button("Add a person", "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
+    members.length < MEMBER_LIMIT ? button(esc(t("member.add", {}, lang)), "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
   const tipsId = `${base}-tips`;
   const describedBy = [tips.length ? tipsId : null, noteId].filter(Boolean).join(" ");
   return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
@@ -687,11 +715,16 @@ export function keepLocalOnly(previousDraft, server, version) {
 // Read-only text (spec §2.3)
 // ---------------------------------------------------------------------------
 
-// Split, never new Date(…), which shifts a date by the time zone.
-function formatDate(value) {
+/**
+ * An answer date: "Apr 12, 1961" in English, "1961年4月12日" in Chinese. Split,
+ * never new Date(…), which shifts a date by the time zone. A partial or
+ * impossible-month date comes back as it is, in every language.
+ */
+export function formatDate(value, lang = "en") {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   const month = m ? MONTHS[Number(m[2]) - 1] : undefined;
-  return month ? `${month} ${Number(m[3])}, ${m[1]}` : value;
+  if (!month) return value;
+  return isLang(lang) && lang !== "en" ? `${m[1]}年${Number(m[2])}月${Number(m[3])}日` : `${month} ${Number(m[3])}, ${m[1]}`;
 }
 
 function formatPhone(value) {
@@ -704,9 +737,11 @@ function memberLine(question, member, options) {
   const name = [member.first_name, member.last_name].filter(isAnswered).join(" ");
   const parts = [name];
   if (isAnswered(member.relationship)) parts.push(labelOf(field("relationship"), member.relationship, options));
-  if (isAnswered(member.dob)) parts.push(`born ${formatDate(member.dob)}`);
+  const lang = options.lang;
+  if (isAnswered(member.dob)) parts.push(t("member.born", { date: formatDate(member.dob, lang) }, lang));
+  // n only picks "month" or "months": exactly "1" is one, as before.
   if (isAnswered(member.months_lived))
-    parts.push(`${member.months_lived} ${member.months_lived === "1" ? "month" : "months"}`);
+    parts.push(t("member.months", { n: member.months_lived === "1" ? 1 : 2, count: member.months_lived }, lang));
   return parts.filter(isAnswered).join(" · ");
 }
 
@@ -718,7 +753,7 @@ export function formatAnswer(question, value, { variant = "general", lang = "en"
   const options = { variant, lang };
   switch (question.type) {
     case "date":
-      return typeof sent === "string" ? formatDate(sent) : String(sent);
+      return typeof sent === "string" ? formatDate(sent, lang) : String(sent);
     case "phone":
       return typeof sent === "string" ? formatPhone(sent) : String(sent);
     case "choice":
@@ -726,7 +761,7 @@ export function formatAnswer(question, value, { variant = "general", lang = "en"
       return labelOf(question, sent, options);
     case "multi":
     case "who":
-      return (Array.isArray(sent) ? sent : [sent]).map((item) => labelOf(question, item, options)).join(", ");
+      return (Array.isArray(sent) ? sent : [sent]).map((item) => labelOf(question, item, options)).join(t("form.list_separator", {}, lang));
     case "group": {
       const lines = (Array.isArray(sent) ? sent : [])
         .filter(isPlainObject)
