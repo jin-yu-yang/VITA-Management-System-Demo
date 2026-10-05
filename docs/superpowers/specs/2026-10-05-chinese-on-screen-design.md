@@ -36,11 +36,15 @@
   - any other `zh*` gives `zh-Hans`;
   - anything else gives `en`.
 - **The controller** holds `state.lang`; `setLanguage(lang)` saves it and redraws. It isn't part of the per-user window state, because it has to work before sign-in.
+- **Other tabs follow (decision 2026-10-05).** `app.mjs` listens for the browser's `storage` event on `vitally.lang`, so another tab of the same browser redraws in the new language at once. A move to 繁體 loads the map first (§4). Typed text is swept first there too.
+- **The page title** (`document.title`, today "ViTally · PCDC community tax help · 2025 tax year") follows the language on client screens and is English on staff screens.
+- **No answer is pre-filled from the screen language (decision 2026-10-05).** The intake's "preferred language for service" (`language`) is a different question from the reading script, and the client answers it themselves.
 - **The switch** (`languageSwitch` in `src/views.mjs`):
   - Its three buttons become live with `data-action="set-language"` and `data-lang`. `aria-pressed` marks the current one, and the "Chinese coming soon" note goes.
   - It stays in the client top bar, which is on every client screen, sign-in included.
   - After the redraw the keyboard stays on the pressed button.
 - **Staff screens are always English** whatever is stored, and have no switch. That includes the presenter's window.
+- **Screens shown before anyone is known follow the stored language,** because they come before the app knows whether this is a client or a presenter: sign-in, "unreachable" and "no access". So does a presenter's sign-in in a browser set to Chinese. That's accepted: the presenter's screens turn English once signed in.
 - **`<html lang>`** follows the language on client screens and is `en` on staff screens.
 - **Switching never loses work.** On the version-2 form typed text is swept into the draft first, as for every action. Answers are codes, so they don't change. The press goes through the redraw hold. Scroll and the current sub-step stay.
 - **A version-1 draft's form stays English, but its frame follows the language.** The top bar, banners, footer and toasts are translated as on any client screen. A client in Chinese who opens one sees a one-line note, in their language, that this older application is available in English only. The form body carries `lang="en"`, so screen readers read it in English inside a Chinese page.
@@ -51,7 +55,7 @@
   - Examples: invalid-answer messages, `formatAnswer`, stage badges and `clientMessage`.
 - **The language is applied at render time, never stored as text.**
   - State that holds a sentence today keeps holding the English sentence: `authMessage`, also saved in the window's access record; `error.message`; and notices.
-  - Each is translated when it's drawn (§3.4), so switching language re-translates what's already on screen.
+  - Each is translated when it's drawn (§3.2), so switching language re-translates what's already on screen.
   - Toasts raised on client screens are translated when they're raised.
 
 ## 3. What is translated
@@ -78,20 +82,32 @@
   - Additional Notes;
   - the submitted page.
 - **The draft 13614-C buttons on Review & submit** keep all three forms. The current language's form comes first, then the other two.
-- **The progress page:** status, client number, requests, sending a document, the open document cards and the history (§3.1).
-- **Errors:** the app's own messages are translated by error code. An unknown server message falls back to its English text.
+- **The progress page:** status, client number, requests, sending a document, the open document cards and the history (§3.3).
+- **Errors, sign-in messages and notices:** translated by exact English sentence (§3.2).
 - **The version-1 note** (§2).
 
 **As typed, never translated:**
 - what the client typed (names, addresses, notes);
 - Application IDs and email addresses;
-- text the office types (§3.2).
+- text the office types (§3.4).
 
-### 3.0 Attributes count as text
+### 3.1 Attributes count as text
 
 `aria-label`, `title`, `placeholder` and `alt` on client screens are translated like visible text. For example, the switch group's "Language" label and the logo's "ViTally home" are translated. The switch's own button names stay in their own language: English, 简体中文 and 繁體中文.
 
-### 3.1 The application history
+### 3.2 Sentences that arrive in English (decision 2026-10-05)
+
+- **What they are:** many messages reach the screen as a finished English sentence.
+  - `errors.mjs`'s one sentence per code.
+  - The controller's own `controllerError` sentences, 18 today.
+  - The sign-in sentences from `auth.mjs` and the controller (for example `NEUTRAL_SEND_MESSAGE`), which are also saved in the window's sign-in record.
+  - The history sentences (§3.3).
+- **How they're translated:** one sentence-keyed table in `client-text.mjs`, from the exact English sentence to its `zh`. The lookup happens when the sentence is drawn on a client screen.
+- **Unknown sentences show in English.** Codes are too coarse to translate by, because `VALIDATION` alone covers many sentences.
+- **A unit test pins every sentence** in `errors.mjs`, every literal `controllerError` sentence in `controller.mjs`, and every sentence in `auth.mjs` to an entry. Staff-only sentences cost nothing to include.
+- **Toasts raised on client screens** use keys, not sentences, and are translated when raised.
+
+### 3.3 The application history
 
 - **Where it comes from:** each `client_events` row holds an action code and an English sentence written by the database. Every sentence in the migrations is fixed, except "A volunteer requested a document: " followed by the title the office typed.
 - **Translated in the browser, keyed by the exact stored English sentence.** Keying on the sentence also covers the seeded sample rows, and stays right if one action ever writes two sentences.
@@ -99,20 +115,22 @@
 - **Unknown sentences show in English.** No migration; the database keeps writing English.
 - **A unit test pins every sentence found in `supabase/migrations/*.sql` to an entry.**
 
-### 3.2 Text the office types
+### 3.4 Text the office types
 
 - **Request titles and messages, and the title inside the history line, are shown as typed.**
 - **Only the labels around them are translated** (for example 需要的文件, 办公室留言), so the client sees whose words they are.
 - **No `lang` attribute is set on them** (they could be English or Chinese).
 - **No machine translation.**
 
-### 3.3 The draft 13614-C's generated lines
+### 3.5 The draft 13614-C's generated lines
 
 These are the lines the app writes onto the form: Additional Comments, "Not sure" lines and household overflow rows.
 
 - **The English form:** English lines, as today.
 - **The 简体 form:** Simplified lines, with question wording taken from the catalogue's `zh`.
 - **The 繁體 form:** Traditional lines, through the Traditional map.
+- **The font follows from this.** A 简体 or 繁體 draft with any generated line now always contains Chinese, so it fetches the Noto font even when every answer is in Latin letters. Today that happens only when an answer is in Chinese. The 4b2 font rules are unchanged. Only the English form keeps "no font for Latin-only answers", which the 4c staff phase asserts.
+- **Existing tests that pin English lines on a Chinese form change on purpose.** For example, `tests/draft-form.test.mjs`'s "Not sure:" line is checked on the English form. The plan lists each test it changes.
 
 ## 4. Generating Traditional
 
@@ -127,7 +145,9 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
 - **Overrides:** `tools/hant-overrides.mjs` holds hand-written replacements applied after conversion, for example where 发 or 干 has several Traditional forms. Each override carries a one-line reason. It starts with whatever the first build's review turns up.
 - **Output:** `src/zh-hant.mjs`, a checked-in map from each Simplified string to its Traditional form (keys sorted), plus `toHant(text)`.
   - A missing entry falls back to the Simplified text and never fails.
-- **Loading:** the map is loaded only when 繁體 is chosen. Switching imports it, then redraws. If the import fails, the language stays as it was and a toast says so. English and 简体 users never download it.
+- **Loading:** the map is loaded only when 繁體 is chosen. Switching imports it, then redraws. English and 简体 users never download it.
+  - **A failed switch:** the language stays as it was, and a toast says so.
+  - **Starting in 繁體** (saved in the browser): `app.mjs` loads the map before the first page is drawn. **If that load fails, the page starts in 简体 (decision 2026-10-05)**, the same language in the other script, with a toast. The saved choice stays 繁體, so the next visit tries again.
 
 ## 5. Formatting, fonts and layout
 
@@ -167,7 +187,8 @@ These are the lines the app writes onto the form: Additional Comments, "Not sure
     - the client's own text;
     - Application IDs and email addresses;
     - form and document names (W-2, 1099, ITIN, IRS, 13614-C and the like);
-    - the brand (ViTally, PCDC).
+    - the brand (ViTally, PCDC);
+    - any Latin word that appears in the reviewed Simplified source text itself, the catalogue's and the cards' `zh` (for example 工卡（EAD）). That text is deliberate, so the allow-list is derived from it rather than kept by hand.
 - **History:** every client-event sentence in `supabase/migrations/*.sql` has an entry, and the request prefix keeps the office's title as typed.
 - **Formatting:**
   - date order per language (年 / 月 / 日 in Chinese, month / day / year in English) and date-box labels and placeholders;
