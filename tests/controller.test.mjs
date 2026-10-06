@@ -4633,3 +4633,46 @@ test("a sub-step change during a Retry sends no second save", async () => {
   assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
   controller.stop();
 });
+
+// ---- cleanup: a create that lands after sign-out ---------------------------
+
+test("a client's create that lands after sign-out reloads no list and selects nothing", async () => {
+  const store = fakeStore();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const create = store.createCase;
+  store.createCase = async (request) => {
+    await gate;
+    return create(request);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  const creating = controller.createCase();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.signOut();
+  const before = store.calls.length;
+  release();
+  const receipt = await creating;
+  assert.ok(receipt?.caseId, "the case exists: the receipt still comes back");
+  assert.deepEqual(store.calls.slice(before), ["createCase"], "no list or case read for the signed-out window");
+  const state = controller.getState();
+  assert.equal(state.principal, null);
+  assert.deepEqual(state.cases, []);
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.screen, "access");
+  controller.stop();
+});
+
+test("an office create that lands after sign-out reloads no list", async () => {
+  const { controller, store } = await startOffice();
+  let before = 0;
+  const result = await leaveMidCreate(controller, store, async () => {
+    await controller.signOut();
+    before = store.calls.length;
+  });
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  assert.deepEqual(store.calls.slice(before).filter((call) => call === "listCases"), [], "no list read after sign-out");
+  assert.deepEqual(controller.getState().cases, []);
+  controller.stop();
+});

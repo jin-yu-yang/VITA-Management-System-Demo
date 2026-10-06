@@ -1255,8 +1255,13 @@ export function createController({
       personId: personId ?? null,
       answers,
     };
+    // Who asked: a sign-out (or another sign-in) while the create is out
+    // replaces both, and that window must not read or select anything for it.
+    const { session, principal } = state;
     try {
       const receipt = await store.createCase(request);
+      // The case exists, but this window has signed out since: nothing more.
+      if (state.session !== session || state.principal !== principal) return receipt;
       // The receipt is the point of no return: the case exists, so the pending
       // id is spent and a later read failure cannot make it look unstarted.
       state.pendingCreateActionId = null;
