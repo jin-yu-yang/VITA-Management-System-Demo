@@ -382,7 +382,9 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is below. All four were last verified on the final task of part 4d (2026-10-05, at commit `957cbba`; the story at the first full pass, see the note below the table); re-run the
+suite's **last-verified count** is below. The unit, auth gate and story counts were last verified on the version-2 correctness cleanup
+(2026-10-06; the story twice, see the note below the table), and the database count on the final
+task of part 4d (2026-10-05, at commit `957cbba`), since the cleanup changed no SQL; re-run the
 commands yourself for the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
