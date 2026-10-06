@@ -357,6 +357,12 @@ export function createController({
   // A version-2 sub-step change is waiting for its save (`goToSubstep`), or a
   // card mark is waiting for its pre-save or its own action (`cardAction`).
   let substepSaveInFlight = false;
+  // While the flag is held: a promise that settles when it is dropped, so a
+  // Save pressed meanwhile can wait its turn (`takeFlag`, `dropFlag`).
+  let flagFree = null;
+  // The version-2 save out now (`{ caseId, promise }`), so a Save pressed
+  // meanwhile can learn how it ended.
+  let saveOut = null;
   // Which new office draft is open: moves each time one starts. A Save draft
   // started for one draft adopts nothing once that draft is gone.
   let officeDraftToken = 0;
@@ -368,6 +374,11 @@ export function createController({
   // save succeeds, the draft is then never "dirty only because of visits"
   // (spec 2026-10-04 §3.8), so a newer revision is not taken without a choice.
   let answersInDoubt = false;
+  // The revision the open version-2 case's last save made, from its receipt
+  // (`{ caseId, revision }`). A re-read that fails after the save leaves
+  // savedCase older, and the next pin must not be a revision the save moved
+  // past, or the next save meets a conflict with this person's own save.
+  let landedRevision = null;
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
   let pendingReset = null;
@@ -576,11 +587,25 @@ export function createController({
   }
 
   // The base revision moves forward to `record`. A retained save envelope
-  // still expects the old revision, so it could only be refused now.
+  // still expects the old revision, so it could only be refused now. What is
+  // left to save is measured again against the newer snapshot, as in
+  // `commitDraft`: nothing left (the visits, say, are already there) clears
+  // the pin and settles the chip. A save refused as a conflict is answered by
+  // the move, so its failure and its banner go too.
   function movePin(record) {
     state.editBaseRevision = Number(record.revision);
     state.conflict = null;
     forgetPendingSave();
+    const refused = state.saveState === "failed" && state.error?.code === "CONFLICT";
+    if (refused) state.error = null;
+    if (!sendableDiffers(state.draftAnswers, serverAnswersOf(record), 2) && !visitsPending()) {
+      state.dirty = false;
+      state.editBaseRevision = null;
+      if (state.saveState === "unsaved" || state.saveState === "failed")
+        state.saveState = settledState();
+    } else if (refused) {
+      state.saveState = "unsaved";
+    }
   }
 
   // A case opened with no saved place opens at its first unfinished sub-step
@@ -697,6 +722,7 @@ export function createController({
     state.saveState = "idle";
     stateBeforeEdit = "idle";
     answersInDoubt = false;
+    landedRevision = null;
     state.formStep = 0;
     state.formSubstep = null;
     state.visitedSubsteps = [];
@@ -1229,8 +1255,13 @@ export function createController({
       personId: personId ?? null,
       answers,
     };
+    // Who asked: a sign-out (or another sign-in) while the create is out
+    // replaces both, and that window must not read or select anything for it.
+    const { session, principal } = state;
     try {
       const receipt = await store.createCase(request);
+      // The case exists, but this window has signed out since: nothing more.
+      if (state.session !== session || state.principal !== principal) return receipt;
       // The receipt is the point of no return: the case exists, so the pending
       // id is spent and a later read failure cannot make it look unstarted.
       state.pendingCreateActionId = null;
@@ -1373,7 +1404,7 @@ export function createController({
     // The flag is the one sub-step changes and card marks hold, so a mark
     // can't race the save.
     state.officeSaving = true;
-    substepSaveInFlight = true;
+    takeFlag();
     show();
     try {
       if (!state.savedCase) {
@@ -1381,14 +1412,14 @@ export function createController({
         if (adopted !== true) return { sent: false, reason: adopted };
       }
       const caseId = state.selectedCaseId;
-      if (state.dirty) await saveAnswers();
+      if (state.dirty) await saveNow();
       if (!send) return { sent: false };
       if (state.selectedCaseId !== caseId || state.screen !== "office-add-case")
         return { sent: false, reason: "left" };
       return await sendOfficeDraft();
     } finally {
       state.officeSaving = false;
-      substepSaveInFlight = false;
+      dropFlag();
       show();
     }
   }
@@ -1620,9 +1651,19 @@ export function createController({
   // goes Unsaved.
   function markDirty() {
     if (state.editBaseRevision === null && state.savedCase)
-      state.editBaseRevision = Number(state.savedCase.revision);
+      state.editBaseRevision = pinRevision();
     markUnsaved();
     state.dirty = true;
+  }
+
+  // The open version-2 case's revision as this window last knew it: the
+  // snapshot's, or the one its last save's receipt named when the re-read
+  // after that save failed.
+  function pinRevision() {
+    const revision = Number(state.savedCase.revision);
+    return landedRevision?.caseId === state.savedCase.id
+      ? Math.max(revision, landedRevision.revision)
+      : revision;
   }
 
   // Unsaved, remembering what it replaced when that was a settled state, or a
@@ -1675,13 +1716,13 @@ export function createController({
     persistSession();
     if (state.dirty) {
       const caseId = state.selectedCaseId;
-      substepSaveInFlight = true;
+      takeFlag();
       try {
-        await saveAnswers();
+        await saveNow();
       } catch {
         // Already on screen: the save state is "failed" and the error is set.
       } finally {
-        substepSaveInFlight = false;
+        dropFlag();
       }
       // Another case was opened during the save: this move belongs to the old one.
       if (state.selectedCaseId !== caseId) return;
@@ -1760,12 +1801,16 @@ export function createController({
       // The draft as it is now, for a version-2 save: what was typed while the
       // save was out is not in what was sent.
       const typed = sentDrafts.has(action) ? state.draftAnswers : null;
-      if (save) {
+      // A save that lands after another case was opened says nothing about
+      // the open case: its edits, pin and chip are its own.
+      if (save && state.selectedCaseId === action.caseId) {
         state.dirty = false;
         state.editBaseRevision = null;
         state.conflict = null;
         state.saveState = "saved";
         answersInDoubt = false;
+        if (typed && Number.isFinite(Number(receipt?.revision)))
+          landedRevision = { caseId: action.caseId, revision: Number(receipt.revision) };
       }
       // The action is done. A re-read that fails afterwards is a stale view,
       // never a failed action, and must not put the envelope back in hand.
@@ -1776,6 +1821,13 @@ export function createController({
       return receipt;
     } catch (error) {
       state.busy = false;
+      // A save that fails after another case was opened is not the open
+      // case's failure: its chip, its banner and its retry stay as they are.
+      if (save && state.selectedCaseId !== action.caseId) {
+        if (error?.code === "OFFLINE") state.connection = "offline";
+        show();
+        throw error;
+      }
       if (save) state.saveState = "failed";
       if (UNKNOWN_OUTCOME.includes(error?.code)) {
         // The server may already have applied it. The retry must be the same
@@ -1828,7 +1880,68 @@ export function createController({
   const actingPersonId = (personId) =>
     presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
 
+  // The one-save-at-a-time flag, which sub-step changes, card marks, the
+  // office's Save draft, a version-2 Retry and a Save all hold.
+  function takeFlag() {
+    substepSaveInFlight = true;
+    let free;
+    flagFree = { promise: new Promise((resolve) => (free = resolve)), free };
+  }
+
+  function dropFlag() {
+    substepSaveInFlight = false;
+    flagFree?.free();
+    flagFree = null;
+  }
+
+  // A version-2 save, known as the one out until it settles.
+  async function trackSave(caseId, promise) {
+    const out = { caseId, promise };
+    saveOut = out;
+    try {
+      return await promise;
+    } finally {
+      if (saveOut === out) saveOut = null;
+    }
+  }
+
+  // A save asked for on its own (Save, Save & exit, Submit's save first). It
+  // saves or fails visibly. Version 2 holds the one-save-at-a-time flag, so
+  // no second save goes out at the same expected revision. Pressed while
+  // another save is out, it waits for that save: when that was this case's
+  // save and it failed, so does this; otherwise what is still unsaved is
+  // saved after it. Resolves to the receipt, or null when the case it was
+  // pressed on is no longer open (nothing was saved for it). Version 1 as
+  // today.
   async function saveAnswers() {
+    if (caseVersion() !== 2) return await saveNow();
+    const caseId = state.selectedCaseId;
+    let waited = null;
+    let receipt = null;
+    while (substepSaveInFlight) {
+      const out = saveOut;
+      if (out && out !== waited) {
+        waited = out;
+        try {
+          const done = await out.promise;
+          if (out.caseId === caseId) receipt = done;
+        } catch (error) {
+          if (out.caseId === caseId && state.selectedCaseId === caseId) throw error;
+        }
+      } else await flagFree.promise;
+    }
+    if (state.selectedCaseId !== caseId) return null;
+    // The save it waited for took everything: nothing is left to send.
+    if (receipt && !state.dirty) return receipt;
+    takeFlag();
+    try {
+      return await saveNow();
+    } finally {
+      dropFlag();
+    }
+  }
+
+  async function saveNow() {
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
     if (state.conflict) {
@@ -1844,7 +1957,7 @@ export function createController({
       actionId: newActionId(),
       caseId: state.savedCase.id,
       expectedRevision:
-        state.editBaseRevision ?? Number(state.savedCase.revision),
+        state.editBaseRevision ?? (version === 2 ? pinRevision() : Number(state.savedCase.revision)),
       // A client answers for themselves. The office answering for a walk-in
       // client sends its own persona: the database accepts SAVE_ANSWERS from a
       // presenter only with an `admin` person on an owner-less draft, and
@@ -1859,6 +1972,11 @@ export function createController({
     };
     if (version !== 2) return await dispatch(action, { save: true });
     sentDrafts.set(action, state.draftAnswers);
+    return await trackSave(action.caseId, sendVersionTwo(action));
+  }
+
+  // A version-2 save's envelope sent, with its one retry without a field.
+  async function sendVersionTwo(action) {
     try {
       return await dispatchSave(action);
     } catch (error) {
@@ -1867,7 +1985,8 @@ export function createController({
       // second refusal takes the usual failure path. Today's server names no
       // field, so this waits for a server that does.
       const field = refusedField(error, action);
-      if (!field) throw error;
+      // Another case was opened meanwhile: the old one's save is not retried.
+      if (!field || state.selectedCaseId !== action.caseId) throw error;
       const { [field]: _left, ...rest } = action.payload.answers;
       const retry = {
         ...action,
@@ -1887,6 +2006,7 @@ export function createController({
     } catch (error) {
       if (
         UNKNOWN_OUTCOME.includes(error?.code) &&
+        state.selectedCaseId === action.caseId &&
         sendableDiffers(action.payload.answers, serverAnswersOf(state.savedCase), 2)
       )
         answersInDoubt = true;
@@ -1972,7 +2092,9 @@ export function createController({
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
-      expectedRevision: Number(state.savedCase.revision),
+      // As a save's pin: the revision this window last knew, the receipt's
+      // when the re-read after a save failed.
+      expectedRevision: pinRevision(),
       personId: actingPersonId(personId),
       type,
       payload: payload ?? {},
@@ -1997,12 +2119,12 @@ export function createController({
     if (substepSaveInFlight) return null;
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
-    substepSaveInFlight = true;
+    takeFlag();
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
         const caseId = state.selectedCaseId;
         try {
-          await saveAnswers();
+          await saveNow();
         } catch {
           return null;
         }
@@ -2011,7 +2133,7 @@ export function createController({
       }
       return await runAction(type, payload);
     } finally {
-      substepSaveInFlight = false;
+      dropFlag();
     }
   }
 
@@ -2191,7 +2313,15 @@ export function createController({
       return null;
     }
     const { action, save, omit } = pendingAction;
-    return await dispatch(action, { save, omit });
+    if (!save || caseVersion() !== 2) return await dispatch(action, { save, omit });
+    // A version-2 save: one at a time, like any other.
+    if (substepSaveInFlight) return null;
+    takeFlag();
+    try {
+      return await trackSave(action.caseId, dispatch(action, { save, omit }));
+    } finally {
+      dropFlag();
+    }
   }
 
   function getState() {

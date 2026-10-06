@@ -10,9 +10,10 @@ import {
 import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
+import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
-  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, draftFontsFor,
-  fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
+  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontsFor,
+  draftLink, fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
 } from "../src/draft-pdf.mjs";
 
 // Node, with pdf-lib and fontkit from node_modules. The fonts are the
@@ -509,4 +510,106 @@ test("the committed vendor bundle builds a Chinese draft whose subsets decode", 
   assert.equal(fonts.length, 2);
   const sources = files.map((b) => fontkit.create(b));
   for (const font of fonts) assert.deepEqual(subsetProblems(font, sources), []);
+});
+
+// The link offered when the browser blocks the draft's tab (app.mjs viewDraft)
+// is kept here, not in the page: every full redraw replaces #draft-ready, and
+// the link is drawn again after each one until it is opened or expires.
+test("the blocked-tab draft link outlives redraws until it is opened or its URL expires", () => {
+  const timers = [];
+  const revoked = [];
+  let expired = 0;
+  const offers = createDraftOffer({
+    revoke: (url) => revoked.push(url),
+    onExpire: () => { expired += 1; },
+    setTimer: (fn, ms) => timers.push({ fn, ms }),
+  });
+  assert.equal(offers.current("case-1"), null, "nothing to offer yet");
+
+  // A tab that opened: its URL is revoked after a minute, and no link is offered.
+  offers.keep("blob:tab");
+  assert.equal(timers[0].ms, 60_000);
+  assert.equal(offers.current("case-1"), null);
+
+  // A blocked tab: the link is offered on its own case only, as often as asked.
+  offers.keep("blob:one");
+  offers.offer({ url: "blob:one", fileName: "Draft-13614-C-VT-TEST.pdf", caseId: "case-1", userId: "user-1" });
+  for (let redraw = 0; redraw < 3; redraw += 1)
+    assert.deepEqual(offers.current("case-1", "user-1"), { url: "blob:one", fileName: "Draft-13614-C-VT-TEST.pdf", caseId: "case-1", userId: "user-1" });
+  assert.equal(offers.current("case-2", "user-1"), null, "never on another case's page");
+
+  // Expiry revokes the URL and ends the offer.
+  timers[1].fn();
+  assert.deepEqual(revoked, ["blob:one"]);
+  assert.equal(offers.current("case-1", "user-1"), null);
+  assert.equal(expired, 1);
+  timers[0].fn();
+  assert.deepEqual(revoked, ["blob:one", "blob:tab"], "every draft's URL is revoked");
+
+  // Opened (or replaced by a new press): no longer drawn, but its URL lives out its minute.
+  offers.keep("blob:two");
+  offers.offer({ url: "blob:two", fileName: "a.pdf", caseId: "case-1", userId: "user-1" });
+  offers.drop();
+  assert.equal(offers.current("case-1", "user-1"), null);
+  // An older URL's expiry never ends a newer offer.
+  offers.keep("blob:three");
+  offers.offer({ url: "blob:three", fileName: "b.pdf", caseId: "case-1", userId: "user-1" });
+  timers[2].fn();
+  assert.deepEqual(revoked.at(-1), "blob:two");
+  assert.equal(offers.current("case-1", "user-1").url, "blob:three");
+});
+
+// The draft holds the answers of whoever made it (unsaved edits included):
+// another person signing in to the same tab within its minute, even on the
+// same case, never sees it, and signing out ends it at once.
+test("the blocked-tab draft link belongs to who made it: a sign-out or another user ends it", () => {
+  const revoked = [];
+  let expired = 0;
+  const timers = [];
+  const offers = createDraftOffer({
+    revoke: (url) => revoked.push(url),
+    onExpire: () => { expired += 1; },
+    setTimer: (fn) => timers.push(fn),
+  });
+  offers.keep("blob:mine");
+  offers.offer({ url: "blob:mine", fileName: "a.pdf", caseId: "case-1", userId: "user-1" });
+  assert.equal(offers.current("case-1", "user-2"), null, "never shown to another user");
+  offers.follow("user-1");
+  assert.equal(offers.current("case-1", "user-1").url, "blob:mine", "the same user keeps it");
+  offers.follow(null); // signed out
+  assert.deepEqual(revoked, ["blob:mine"], "revoked at once");
+  assert.equal(offers.current("case-1", "user-1"), null, "and not back after signing in again");
+  timers[0]();
+  assert.equal(expired, 0, "its later expiry has nothing left to end");
+
+  offers.keep("blob:theirs");
+  offers.offer({ url: "blob:theirs", fileName: "b.pdf", caseId: "case-1", userId: "user-1" });
+  offers.follow("user-2"); // another user signed in
+  assert.equal(revoked.at(-1), "blob:theirs");
+  assert.equal(offers.current("case-1", "user-2"), null);
+  assert.equal(offers.current("case-1", "user-1"), null);
+});
+
+// A keyboard user on the link keeps it across a redraw: the render's focus
+// restore finds it again by its id (app.mjs showDraftLink draws it before the
+// restore runs).
+test("the blocked-tab draft link can be found again by the focus restore", () => {
+  const made = [];
+  const fakeDocument = {
+    createElement: (tag) => {
+      const element = { tagName: tag.toUpperCase(), dataset: {}, id: "", name: undefined };
+      made.push(element);
+      return element;
+    },
+  };
+  const link = draftLink(fakeDocument, { url: "blob:one", fileName: "13614-C-draft-VT-TEST-en.pdf" }, "Your draft is ready: open it");
+  assert.equal(made.length, 1);
+  assert.equal(link.tagName, "A");
+  assert.equal(link.href, "blob:one");
+  assert.equal(link.download, "13614-C-draft-VT-TEST-en.pdf");
+  assert.equal(link.target, "_blank");
+  assert.equal(link.textContent, "Your draft is ready: open it");
+  const focus = describeFocus(link);
+  assert.ok(focus, "the focus restore has something to look for");
+  assert.deepEqual(focusSelectors(focus), ['[id="draft-ready-link"]']);
 });

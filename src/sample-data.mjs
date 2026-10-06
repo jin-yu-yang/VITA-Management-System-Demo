@@ -1,5 +1,6 @@
 import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 import { findQuestion, isAnswered } from "./intake-catalogue.mjs";
+import { newMemberId } from "./intake-form.mjs";
 
 const sharedAnswers = Object.freeze({
   service: "Drop-off",
@@ -220,4 +221,40 @@ function fillBlankVersionTwo(current, generated) {
     else if (isAnswered(generated[key])) result[key] = generated[key];
   }
   return result;
+}
+
+/**
+ * Version 2: the fictional details as a draft patch, from the draft as typed
+ * and a `makeSampleAnswers({ version: 2 })` sample. A fill touches blank
+ * answers only. `replaceEverything` is the new example plus a clear of every
+ * other answer already in the draft; the wording choice (`form_version`) and
+ * the email stay.
+ *
+ * Each generated household member gets a fresh id (`newId`). The sample's ids
+ * are fixed by the seed, and the page's seed starts again on every load, so
+ * the same id would come back for a new person after a remove and a reload
+ * and take over the removed person's card marks (`ssn.hh.<id>`). A household
+ * already in the draft is kept by a fill, ids and all.
+ */
+export function fictionalAnswers(draft = {}, generated = {}, { replaceEverything = false, newId = newMemberId } = {}) {
+  const current = draft ?? {};
+  const takesHousehold = Array.isArray(generated?.hh) && (replaceEverything || !isAnswered(current.hh));
+  const fresh = takesHousehold
+    ? { ...generated, hh: generated.hh.map((member) => ({ ...member, member_id: newId() })) }
+    : generated;
+  if (!replaceEverything) return fillBlankAnswers(current, fresh, 2);
+  const cleared = Object.fromEntries(
+    Object.keys(current)
+      // The senior switch is the person's choice of wording, not an answer.
+      .filter(
+        (key) =>
+          key !== "form_version" &&
+          // The email is the person's own, as version 1 keeps the verified one.
+          key !== "email" &&
+          findQuestion(2, key) &&
+          !(key in generated),
+      )
+      .map((key) => [key, null]),
+  );
+  return { ...cleared, ...fresh };
 }

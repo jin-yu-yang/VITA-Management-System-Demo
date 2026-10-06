@@ -88,23 +88,14 @@ export function createLanguageRequests({ hantReady, loadHant }) {
   async function want(lang, apply, { timeoutMs } = {}) {
     const turn = ++latest;
     if (lang === "zh-Hant" && !hantReady()) {
-      let timer = null;
-      const late = Symbol("late");
       try {
-        const load = loadHant();
-        const loaded =
-          timeoutMs > 0
-            ? await Promise.race([load, new Promise((resolve) => { timer = setTimeout(() => resolve(late), timeoutMs); })])
-            : await load;
-        if (loaded === late) {
+        if ((await within(loadHant(), timeoutMs)) === LATE) {
           if (turn !== latest) return "stale";
           latest += 1; // this turn is over: nothing it started may apply
           return "failed";
         }
       } catch {
         return turn === latest ? "failed" : "stale";
-      } finally {
-        clearTimeout(timer);
       }
       if (turn !== latest) return "stale";
     }
@@ -112,4 +103,28 @@ export function createLanguageRequests({ hantReady, loadHant }) {
     return "applied";
   }
   return { want };
+}
+
+// The 繁體 draft 13614-C needs the map whatever the screen language (app.mjs
+// viewDraft), and waits for it no longer than startup does: a load that has
+// not landed by `timeoutMs` rejects, as a failed load does, so the draft
+// fails rather than staying on "Preparing your draft…". The map may still
+// arrive later and register.
+export async function loadHantWithin({ hantReady, loadHant }, timeoutMs) {
+  if (hantReady()) return;
+  if ((await within(loadHant(), timeoutMs)) === LATE)
+    throw new Error("The Traditional map did not load in time.");
+}
+
+// `promise`'s value, or LATE once `timeoutMs` has passed without it (no
+// limit when timeoutMs is not positive). A rejection before then rejects.
+const LATE = Symbol("late");
+async function within(promise, timeoutMs) {
+  if (!(timeoutMs > 0)) return await promise;
+  let timer = null;
+  try {
+    return await Promise.race([promise, new Promise((resolve) => { timer = setTimeout(() => resolve(LATE), timeoutMs); })]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

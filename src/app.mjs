@@ -3,8 +3,8 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { formValuesWithLists } from "./form-values.mjs";
-import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
+import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft } from "./form-values.mjs";
+import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
   countText,
@@ -27,7 +27,7 @@ import {
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
-import { buildDraftPdf, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
+import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -40,7 +40,7 @@ import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
-import { STORAGE_KEY, createLanguageRequests, isLang, viewLang } from "./language.mjs";
+import { STORAGE_KEY, createLanguageRequests, isLang, loadHantWithin, viewLang } from "./language.mjs";
 import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, sentence } from "./client-text.mjs";
 
@@ -86,7 +86,8 @@ function readLocalStorage() {
 // or when the 繁體 draft 13614-C is made. A retry after a failure asks for a
 // fresh URL (hant.mjs).
 const loadHant = createHantLoader((url) => import(url));
-// How long a saved 繁體 waits for its map before startup shows 简体.
+// How long a saved 繁體 waits for its map before startup shows 简体; the
+// 繁體 draft waits as long before it fails.
 const HANT_START_TIMEOUT_MS = 5000;
 
 if (!config) {
@@ -159,8 +160,18 @@ if (!config) {
   // at any moment — a realtime change, a persona click, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. It is
   // dropped the moment the text is sent or the person moves to another case, so
-  // nothing can reappear where it does not belong.
+  // nothing can reappear where it does not belong. A tick not yet sent is kept
+  // the same way, as `{ checked }` (form-values.mjs), and is also dropped when
+  // its form is put away unsent (Cancel, or its dialog closing).
   const formDrafts = new Map();
+  // The link offered when the browser blocks the draft's tab. It lives here,
+  // not in the page: every render draws it again (showDraftLink) until it is
+  // opened, a new press replaces it, its URL is revoked a minute on, or its
+  // maker is no longer the one signed in.
+  const draftOffers = createDraftOffer({
+    revoke: (url) => URL.revokeObjectURL(url),
+    onExpire: () => showDraftLink(),
+  });
 
   function screenFor(state) {
     if (!state.principal) {
@@ -243,6 +254,7 @@ if (!config) {
     }
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
+    showDraftLink();
     tickCooldown(state);
     const opened = Boolean(state.dialog) && state.dialog !== shownDialog;
     shownDialog = state.dialog ?? null;
@@ -356,14 +368,21 @@ if (!config) {
     for (const field of form.querySelectorAll("[id]")) formDrafts.delete(field.id);
   }
 
+  // A form put away unsent takes its ticks with it: opened again, it shows
+  // what is saved. (Its typed text is kept, as it always was.)
+  function clearFormTicks(form) {
+    if (!form) return;
+    for (const field of form.querySelectorAll("input[type=checkbox][id], input[type=radio][id]"))
+      formDrafts.delete(field.id);
+  }
+
   // Staff form fields are not rendered from controller state — they are blank
-  // boxes for text that only exists until it is sent — so what was typed is put
-  // back by hand after a rebuild, and only into a field that is still empty.
+  // boxes for text that only exists until it is sent, and boxes ticked from
+  // what is saved — so what was typed is put back by hand after a rebuild, only
+  // into a field that is still empty, and an unsent tick (or untick) as it was.
   function restoreFormDrafts() {
-    for (const [id, value] of formDrafts) {
-      const field = root.querySelector(`#${CSS.escape(id)}`);
-      if (field && !field.value) field.value = value;
-    }
+    for (const [id, value] of formDrafts)
+      restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back
@@ -751,6 +770,8 @@ if (!config) {
       (views.DRAWERS.includes(controller.getState().dialog)
         ? "#office-queue-title"
         : null);
+    // A dialog's form closes with it; ticks left unsent go too.
+    for (const form of root.querySelectorAll(".modal form")) clearFormTicks(form);
     controller.closeDialog();
     const opener = findField(focusBeforeDialog);
     if (opener) opener.focus();
@@ -773,24 +794,7 @@ if (!config) {
       // A regenerate is the new example plus a clear of every other answer
       // already in the draft (the wording choice kept); a fill touches blank
       // answers only.
-      const cleared = Object.fromEntries(
-        Object.keys(draft)
-          // The senior switch is the person's choice of wording, not an answer.
-          .filter(
-            (key) =>
-              key !== "form_version" &&
-              // The email is the person's own, as version 1 keeps the verified one.
-              key !== "email" &&
-              findQuestion(2, key) &&
-              !(key in generated),
-          )
-          .map((key) => [key, null]),
-      );
-      controller.editAnswers(
-        replaceEverything
-          ? { ...cleared, ...generated }
-          : fillBlankAnswers(draft, generated, 2),
-      );
+      controller.editAnswers(fictionalAnswers(draft, generated, { replaceEverything }));
       notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
       return;
     }
@@ -830,7 +834,7 @@ if (!config) {
         seed: sampleSeed,
         married: draft.marital_status === "married",
       });
-      controller.editAnswers(fillBlankAnswers(draft, sample, 2));
+      controller.editAnswers(fictionalAnswers(draft, sample));
       notify("Fictional details filled in. Nothing is saved yet.");
       return;
     }
@@ -927,7 +931,9 @@ if (!config) {
       // into the same draft, and the save is still the controller's.
       if (form?.matches?.(ANSWER_FORMS))
         controller.editAnswers(Object.fromEntries(new FormData(form)));
-      await controller.saveAnswers();
+      // Null: the case it was pressed on is no longer open, so nothing was
+      // saved for it. A failure throws, and is shown by the caller.
+      if (!(await controller.saveAnswers())) return;
       clearFormDrafts(form);
       notify(t("toast.saved", {}, screenLang()));
       return;
@@ -965,7 +971,7 @@ if (!config) {
         focusV2Arrival();
         return;
       }
-      if (controller.getState().dirty) await controller.saveAnswers();
+      if (controller.getState().dirty && !(await controller.saveAnswers())) return;
     }
     if (type === "RESPOND_DOCUMENT" && state.openPanels.includes("upload-failure")) {
       // The simulated failure never reaches the server, so there is nothing to
@@ -1104,22 +1110,47 @@ if (!config) {
     return bytes;
   }
 
+  // The blocked-tab link, drawn into #draft-ready from draftOffers: after
+  // every render (which replaced it; before the render's focus restore, which
+  // finds it by its id) and whenever the offer changes. It is drawn only for
+  // the user who made it, on the page of the case it was made for; anyone
+  // else signed in, or nobody, ends it first, whatever the screen.
+  function showDraftLink() {
+    const state = controller.getState();
+    const userId = state.principal?.userId ?? null;
+    draftOffers.follow(userId);
+    const ready = root.querySelector("#draft-ready");
+    if (!ready) return;
+    const offer = draftOffers.current(state.savedCase?.id ?? null, userId);
+    if (!offer) {
+      ready.replaceChildren();
+      return;
+    }
+    const link = draftLink(document, offer, t("draft.link", {}, screenLang()));
+    link.addEventListener("click", () => draftOffers.drop());
+    ready.replaceChildren(link);
+  }
+
   async function viewDraft(form) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
     // An earlier press's link goes: this press makes a new draft.
-    root.querySelector("#draft-ready")?.replaceChildren();
+    draftOffers.drop();
+    showDraftLink();
     try {
       const state = controller.getState();
+      const caseId = state.savedCase?.id ?? null;
+      const userId = state.principal?.userId ?? null;
       const reference = state.savedCase?.reference ?? "";
       const now = new Date();
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
         .map((n) => String(n).padStart(2, "0"))
         .join("-");
       // The 繁體 draft's lines need the map, whatever the screen language;
-      // loading it changes nothing on screen. A failure is draft.failed.
-      if (form === "zh-t" && !hantReady()) await loadHant();
+      // loading it changes nothing on screen. A failure, or a load still
+      // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
+      if (form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
       const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
@@ -1131,27 +1162,16 @@ if (!config) {
         stamp: fields.stamp, fileName: fields.fileName,
       });
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-      // The link offered below goes with its URL: a dead link is worse than none.
-      let link = null;
-      window.setTimeout(() => {
-        URL.revokeObjectURL(url);
-        link?.remove();
-      }, 60_000);
+      // Revoked a minute on; a link offered below goes with it.
+      draftOffers.keep(url);
       if (tab && !tab.closed) {
         tab.location.href = url;
         return;
       }
-      // The browser blocked even the early tab: offer a link instead, in the
-      // page as it is now (a redraw during the build replaced #draft-ready).
-      const ready = root.querySelector("#draft-ready");
-      if (ready) {
-        link = document.createElement("a");
-        link.href = url;
-        link.download = fields.fileName;
-        link.target = "_blank";
-        link.textContent = t("draft.link", {}, screenLang());
-        ready.replaceChildren(link);
-      }
+      // The browser blocked even the early tab: offer a link instead, drawn
+      // into the page as it is now and again after every redraw.
+      draftOffers.offer({ url, fileName: fields.fileName, caseId, userId });
+      showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
       notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()));
@@ -1363,6 +1383,8 @@ if (!config) {
         }
         break;
       case "toggle-edit-contact":
+        // Cancel: the best time opens again as saved.
+        clearFormTicks(root.querySelector("#contact-form"));
         controller.togglePanel("edit-contact");
         root
           .querySelector('[data-action="toggle-edit-contact"]')
@@ -1375,8 +1397,9 @@ if (!config) {
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
+        // Nor after a sign-out while it was out: the sign-in screen has no case.
         const started = await controller.createCase();
-        if (started) notify(t("toast.started", {}, screenLang()));
+        if (started && controller.getState().principal) notify(t("toast.started", {}, screenLang()));
         break;
       }
       case "continue-intake":
@@ -1477,7 +1500,8 @@ if (!config) {
           sweepV2Form();
           dirty = controller.getState().dirty;
         }
-        if (dirty) await controller.saveAnswers();
+        // Not saved: no "Saved", and the page stays.
+        if (dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
         notify(t("toast.saved", {}, screenLang()));
         break;
@@ -1621,7 +1645,12 @@ if (!config) {
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
       // of any record until the action that carries it is sent.
-      formDrafts.set(field.id, field.value);
+      if (!isCheckable(field)) formDrafts.set(field.id, field.value);
+      // A tick likewise — except a box drawn from state (a toggle with its own
+      // action, the "I have checked" box, an answer form's), which a redraw
+      // already draws as it is.
+      else if (!field.matches("[data-action], #field-confirmed") && !field.closest(ANSWER_FORMS))
+        for (const [id, draft] of checkDrafts(field)) formDrafts.set(id, draft);
     } else if (field.name === "lookup") controller.setLookup(field.value);
     else if (field.name === "boardSearch") controller.setBoardSearchDraft(field.value);
     // Kept in state so a re-render re-renders them rather than blanking them.

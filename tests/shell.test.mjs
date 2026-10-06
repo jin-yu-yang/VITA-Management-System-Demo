@@ -332,13 +332,31 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
   // Part 4d: its text is a key now (draft.preparing is "Preparing your draft…").
   assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\)\)/);
-  // The blocked-tab link goes with its URL, and is put into the page as it
-  // is after the build (a redraw during the build replaces #draft-ready).
-  assert.match(draft, /URL\.revokeObjectURL\(url\);\s+link\?\.remove\(\);\s+\}, 60_000\)/);
-  assert.match(draft, /link\.textContent = t\("draft\.link", \{\}, screenLang\(\)\)/);
+  // The blocked-tab link goes with its URL (draft-pdf.mjs createDraftOffer),
+  // and is offered after the build. It is kept outside the page and drawn
+  // into #draft-ready after every render, so a redraw within its minute never
+  // drops it; opening it, or a new press, ends the offer.
+  assert.match(app, /const draftOffers = createDraftOffer\(\{\s*revoke: \(url\) => URL\.revokeObjectURL\(url\),\s*onExpire: \(\) => showDraftLink\(\),\s*\}\);/);
+  assert.match(draft, /draftOffers\.drop\(\);\s*showDraftLink\(\);/, "an earlier press's link goes");
+  assert.match(draft, /draftOffers\.keep\(url\);/);
   const built = draft.indexOf("await buildDraftPdf(");
   assert.ok(built > 0);
-  assert.ok(draft.indexOf('const ready = root.querySelector("#draft-ready")') > built, "#draft-ready is looked up after the build");
+  assert.ok(draft.indexOf("draftOffers.offer(") > built, "the link is offered after the build");
+  const show = app.slice(app.indexOf("function showDraftLink("), app.indexOf("async function viewDraft("));
+  assert.match(show, /draftLink\(document, offer, t\("draft\.link", \{\}, screenLang\(\)\)\)/);
+  // The offer is its maker's: any other principal (or none) ends it before
+  // anything is drawn, and only that user's offer is ever drawn.
+  assert.match(show, /const userId = state\.principal\?\.userId \?\? null;\s*draftOffers\.follow\(userId\);\s*const ready = root\.querySelector\("#draft-ready"\);/);
+  assert.match(show, /draftOffers\.current\(state\.savedCase\?\.id \?\? null, userId\)/);
+  assert.match(draft, /draftOffers\.offer\(\{ url, fileName: fields\.fileName, caseId, userId \}\)/);
+  assert.match(show, /addEventListener\("click", \(\) => draftOffers\.drop\(\)\)/, "an opened link is not drawn again");
+  // Showing the link comes before the render's focus restore, so a keyboard
+  // user on it stays on it (it has an id: draft-pdf.mjs draftLink).
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.ok(renderBody.indexOf("showDraftLink();") > renderBody.indexOf("root.innerHTML = views.page("), "every render draws the link again");
+  assert.ok(renderBody.indexOf("showDraftLink();") < renderBody.indexOf("restoreField("), "before the focus restore");
+  // A create that lands after sign-out announces nothing on the sign-in screen.
+  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started && controller\.getState\(\)\.principal\) notify\(t\("toast\.started", \{\}, screenLang\(\)\)\);/);
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
   assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
@@ -813,14 +831,17 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.match(readFileSync(new URL("../src/hant.mjs", import.meta.url), "utf8"), /failures === 0 \? "\.\/zh-hant\.mjs" : `\.\/zh-hant\.mjs\?r=\$\{failures\}`/);
   // One request helper for the switch, other tabs and startup: only the newest wish applies.
   assert.match(app, /const languageRequests = createLanguageRequests\(\{ hantReady, loadHant \}\);/);
-  // Outside the request helper, only the 繁體 draft awaits the map, and it
+  // Outside the request helper, only the 繁體 draft waits for the map, and it
   // changes no language: the draft's lines need it whatever the screen shows.
-  assert.deepEqual(app.match(/await loadHant\(\)/g), ["await loadHant()"], "one await of the map outside the request helper");
+  // It waits no longer than startup does (language.mjs loadHantWithin): a
+  // hung load fails the draft (draft.failed) rather than leaving the tab on
+  // "Preparing your draft…".
+  assert.doesNotMatch(app, /await loadHant\(\)/, "nothing awaits the map without a timeout");
   assert.match(
     app,
-    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t" && !hantReady\(\)\) await loadHant\(\);\s*const fields = draftFields\(/,
+    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = draftFields\(/,
   );
-  // Startup waits five seconds at most for a saved 繁體's map.
+  // Startup waits five seconds at most for a saved 繁體's map, and the draft as long.
   assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
   // Startup in 繁體: loaded before start through a request; 繁體 still wanted
   // without its map means 简体, undrawn, and the toast after the first render.
@@ -852,4 +873,32 @@ test("index.html keeps lang=\"en\" and today's title, which frame.title repeats"
   assert.match(html, /<html lang="en">/);
   const title = html.match(/<title>([^<]*)<\/title>/)[1];
   assert.equal(TEXT["frame.title"].en, title);
+});
+
+// Cleanup (version-2 save path): a Save that saved nothing for the open case
+// resolves to null. Save, Save & exit and Submit's save first then neither
+// say "Saved", nor leave, nor submit.
+test("app.mjs treats a Save that saved nothing as not saved", () => {
+  const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
+  const save = app.slice(app.indexOf('if (type === "SAVE_ANSWERS") {'), app.indexOf('if (type === "SUBMIT" && !state.openPanels'));
+  assert.match(save, /if \(!\(await controller\.saveAnswers\(\)\)\) return;\s+clearFormDrafts\(form\);\s+notify\(t\("toast\.saved"/);
+  const submit = app.slice(app.indexOf('if (type === "SUBMIT" && isV2Case(state)) {'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
+  assert.match(submit, /if \(controller\.getState\(\)\.dirty && !\(await controller\.saveAnswers\(\)\)\) return;/);
+  const exit = app.slice(app.indexOf('case "save-exit": {'), app.indexOf('case "fill-fictional":'));
+  assert.match(exit, /if \(dirty && !\(await controller\.saveAnswers\(\)\)\) break;\s+controller\.navigate\("applications"\);/);
+});
+
+test("an unsent tick in a staff form is kept across a redraw, and goes when its form is put away", () => {
+  const app = appSource();
+  // Recorded on input as { checked } (form-values.mjs), except a box drawn
+  // from state; put back by restoreDraft after every render.
+  assert.match(app, /if \(!isCheckable\(field\)\) formDrafts\.set\(field\.id, field\.value\);/);
+  assert.match(
+    app,
+    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\) && !field\.closest\(ANSWER_FORMS\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) formDrafts\.set\(id, draft\);/,
+  );
+  assert.match(app, /for \(const \[id, value\] of formDrafts\)\s+restoreDraft\(root\.querySelector\(`#\$\{CSS\.escape\(id\)\}`\), value\);/);
+  // Cancel on the best time, and any dialog closing, drop their ticks.
+  assert.match(app, /case "toggle-edit-contact":\s+\/\/[^\n]*\n\s+clearFormTicks\(root\.querySelector\("#contact-form"\)\);/);
+  assert.match(app, /for \(const form of root\.querySelectorAll\("\.modal form"\)\) clearFormTicks\(form\);\s+controller\.closeDialog\(\);/);
 });

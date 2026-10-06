@@ -396,3 +396,60 @@ export async function buildDraftPdf({
   doc.setTitle(fileName, { showInWindowTitleBar: true });
   return doc.save();
 }
+
+// ---------------------------------------------------------------------------
+// The blocked-tab link (app.mjs viewDraft)
+// ---------------------------------------------------------------------------
+
+// When the browser blocks the draft's tab, the page offers a link instead.
+// The offer is kept here rather than in the page: every full redraw replaces
+// #draft-ready, so app.mjs draws the link again after each render until it
+// is opened (or a new press replaces it) or its URL expires. Every draft's
+// URL, offered or not, is revoked after `lifetimeMs`; a dead link is worse
+// than none, so its offer ends then too and `onExpire` lets the page redraw
+// the link's place. The draft holds the answers of whoever made it, unsaved
+// edits included, so the offer is that user's alone: `follow` ends it (and
+// revokes its URL at once) as soon as anyone else, or nobody, is signed in.
+export function createDraftOffer({ revoke, onExpire = () => {}, setTimer = setTimeout, lifetimeMs = 60_000 }) {
+  let offer = null;
+  return {
+    keep(url) {
+      setTimer(() => {
+        revoke(url);
+        if (offer?.url !== url) return;
+        offer = null;
+        onExpire();
+      }, lifetimeMs);
+    },
+    // { url, fileName, caseId, userId }: the link for that user on that case's page.
+    offer(next) {
+      offer = { ...next };
+    },
+    // The link to draw for `userId` on `caseId`'s page now, or null.
+    current(caseId, userId) {
+      return offer && offer.caseId === caseId && offer.userId === userId ? { ...offer } : null;
+    },
+    // Who is signed in now (null: nobody).
+    follow(userId) {
+      if (!offer || offer.userId === userId) return;
+      revoke(offer.url);
+      offer = null;
+    },
+    drop() {
+      offer = null;
+    },
+  };
+}
+
+// The link itself. Its id lets the render's focus restore find it again, so
+// a keyboard user on it stays on it across a redraw.
+export const DRAFT_LINK_ID = "draft-ready-link";
+export function draftLink(document, { url, fileName }, text) {
+  const link = document.createElement("a");
+  link.id = DRAFT_LINK_ID;
+  link.href = url;
+  link.download = fileName;
+  link.target = "_blank";
+  link.textContent = text;
+  return link;
+}

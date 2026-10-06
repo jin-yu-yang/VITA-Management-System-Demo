@@ -229,6 +229,24 @@ export async function waitForQuiet(page, { quiet = QUIET_MS, timeout = ARRIVAL_M
   );
 }
 
+/**
+ * Make a change from outside this window (`change`, usually a no-change
+ * update on a case it shows) and wait until it has rebuilt the page: `#main`
+ * carries a marker before the change, and a rebuilt `#main` does not.
+ */
+export async function rebuiltBy(page, change, what = "a change from elsewhere") {
+  await page.evaluate(() => document.querySelector("#main")?.setAttribute("data-rebuild-marker", "1"));
+  await change();
+  await waitFor(
+    page,
+    `${what} to rebuild the page`,
+    () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-rebuild-marker]"),
+    undefined,
+    ARRIVAL_MS,
+  );
+  await waitForQuiet(page);
+}
+
 export async function clickAction(page, action, { attributes = "", timeout = CLICK_MS } = {}) {
   await waitForQuiet(page);
   await page.locator(`[data-action="${action}"]${attributes}`).first().click({ timeout });
@@ -547,8 +565,16 @@ export const readAlerts = async (page) =>
 export const WORK_BOARD_HEADING = "Work board";
 export const OFFICE_BOARD_HEADING = "Office queue";
 
-/** Act as one volunteer in this window, and wait for the screen to agree. */
+/**
+ * Act as one volunteer in this window, and wait for the screen to agree.
+ *
+ * One press, sent into a still page: a phase usually starts right after the
+ * other window's work, whose redraw burst can replace the persona panel under
+ * the press, and then nothing is chosen at all (seen on Firefox staff under
+ * load, in "Sam records the call…" and "Morgan reviews…").
+ */
 export async function choosePersona(page, personId) {
+  await waitForQuiet(page);
   await page
     .locator(`[data-action="select-person"][data-person-id="${personId}"]`)
     .click({ timeout: CLICK_MS });

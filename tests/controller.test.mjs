@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
-import { CONTACT_FIELDS, isMemberId } from "../src/intake-catalogue.mjs";
-import { withholdInvalid } from "../src/intake-form.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
+import { newMemberId, renderQuestion, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
+import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -3256,6 +3257,178 @@ test("every household member in the draft has a member id", async () => {
   simple.controller.stop();
 });
 
+// The household's controls as the page renders them, read back the way
+// `readForm` (empty cards dropped) and `readField` (kept) read the DOM: each
+// <input data-control> as a descriptor, the hidden member id included.
+function householdControls(members) {
+  const html = renderQuestion(findQuestion(2, "hh"), members, { answers: { has_household_members: "yes", hh: members } });
+  return [...html.matchAll(/<input\b[^>]*\bdata-control\b[^>]*>/g)].map(([tag]) => {
+    const attr = (name) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
+    const descriptor = { q: attr("data-q"), type: attr("type"), value: attr("value") ?? "", checked: /\schecked\b/.test(tag) };
+    if (attr("data-member") !== undefined) descriptor.member = Number(attr("data-member"));
+    if (attr("data-sub") !== undefined) descriptor.sub = attr("data-sub");
+    if (attr("data-date-part") !== undefined) descriptor.part = attr("data-date-part");
+    return descriptor;
+  });
+}
+
+// Task 2 of cleanup-v2-correctness, "not reproduced": `withMemberIds` gives an
+// id-less member the id the previous draft had at the same index, so a card
+// mark (`ssn.hh.<id>`) would move to whoever arrived there. No path in the app
+// produces an id-less member at a shifted index; this pins each one: the mark
+// on An's card stays on An or on nobody, never on another person.
+// The page's fictional details (app.mjs `fictional` and the office's
+// `fillAssistedIntake`): the seed starts again at 1 on every page load and the
+// sample's member id is fixed by the seed. After a remove and a reload, a fill
+// must not bring back a removed person's id, or the regenerated person takes
+// over that person's card marks.
+test("fictional details after a reload never reuse a removed member's id or inherit its card marks", async () => {
+  for (const replaceEverything of [false, true]) {
+    const store = v2Store({ answers: { tp_first_name: "Mei" } });
+    const sessionStorage = fakeSession();
+    const page = async () => {
+      const built = build({ store, sessionStorage });
+      await built.controller.start();
+      await built.controller.selectCase("case-v2");
+      return built.controller;
+    };
+    const fill = (controller) => {
+      const draft = controller.getState().draftAnswers;
+      const sample = makeSampleAnswers({ version: 2, seed: 1, married: draft.marital_status === "married" });
+      controller.editAnswers(fictionalAnswers(draft, sample, { replaceEverything }));
+    };
+    const laterOnHousehold = (controller) =>
+      cardsFor(controller.getState().draftAnswers, controller.getState().savedCase.documentCards).filter(
+        (card) => card.ruleId === "ssn" && card.owner.startsWith("hh.") && card.status === "later",
+      );
+
+    let controller = await page();
+    fill(controller);
+    await controller.saveAnswers();
+    const first = controller.getState().draftAnswers.hh[0].member_id;
+    await controller.setDocumentCard(`ssn.hh.${first}`, "later");
+    assert.equal(laterOnHousehold(controller).length, 1);
+    controller.removeMember(0);
+    await controller.saveAnswers();
+    assert.equal(controller.getState().draftAnswers.hh, null);
+    controller.stop();
+
+    // A reload: the page's seed starts again.
+    controller = await page();
+    fill(controller);
+    const again = controller.getState().draftAnswers.hh[0].member_id;
+    assert.ok(isMemberId(again));
+    assert.notEqual(again, first, `replaceEverything ${replaceEverything}: the removed person's id came back`);
+    assert.deepEqual(laterOnHousehold(controller), [], "the new person starts with no marks");
+    controller.stop();
+  }
+});
+
+// The fill gives generated members fresh ids; members already in the draft
+// keep theirs, and the sample's own ids stay fixed by the seed.
+test("fictional details give generated household members fresh ids and leave the draft's own alone", () => {
+  const sample = makeSampleAnswers({ version: 2, seed: 1 });
+  const fixed = sample.hh[0].member_id;
+  const fresh = ["000000000000000000000000000000f1", "000000000000000000000000000000f2"];
+  const newId = () => fresh.shift();
+  assert.equal(fictionalAnswers({}, sample, { newId }).hh[0].member_id, "000000000000000000000000000000f1");
+  assert.equal(fictionalAnswers({ tp_first_name: "Mei" }, sample, { replaceEverything: true, newId }).hh[0].member_id, "000000000000000000000000000000f2");
+  assert.equal(sample.hh[0].member_id, fixed, "the sample is never changed in place");
+  assert.equal(makeSampleAnswers({ version: 2, seed: 1 }).hh[0].member_id, fixed, "still fixed by the seed");
+  const own = [{ member_id: "000000000000000000000000000000a1", first_name: "An" }];
+  assert.equal(fictionalAnswers({ hh: own }, sample, { newId: () => assert.fail("no id for a kept household") }).hh, own);
+});
+
+test("a household member's card mark stays with that person on every path that changes the household", async () => {
+  const A = "000000000000000000000000000000a1";
+  const B = "000000000000000000000000000000b2";
+  const household = [
+    { member_id: A, first_name: "An", last_name: "Lee" },
+    { member_id: B, first_name: "Bo", last_name: "Lee" },
+  ];
+  const documentCards = [{ slotId: `ssn.hh.${A}`, status: "later", groupOverride: null, changedAt: "2026-10-04T12:00:00Z" }];
+  const marked = (controller) =>
+    cardsFor(controller.getState().draftAnswers, documentCards)
+      .filter((card) => card.ruleId === "ssn" && card.status === "later")
+      .map((card) => card.ownerLine.en);
+  const ids = (controller) => controller.getState().draftAnswers.hh?.map((member) => member.member_id) ?? null;
+  const open = () => openV2({ answers: { has_household_members: "yes", hh: household }, documentCards });
+
+  // Opening: the server's ids are the draft's.
+  let { controller, store, sessionStorage } = await open();
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+
+  // The form read: every rendered card carries its hidden id, so An's emptied
+  // card is dropped (readForm) and Bo arrives at index 0 with Bo's own id.
+  const emptied = householdControls([{ member_id: A }, household[1]]);
+  assert.equal(emptied.filter((d) => d.sub === "member_id").length, 2, "one hidden id per card");
+  const read = valuesFromControls(emptied);
+  assert.deepEqual(read.hh.map((member) => member.member_id), [B]);
+  controller.editAnswers(read);
+  assert.deepEqual(ids(controller), [B]);
+  assert.deepEqual(marked(controller), []);
+  // readField keeps the empty card, id and all.
+  controller.editAnswers(valuesFromControls(householdControls(household), { keepEmptyMembers: true }));
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+  controller.stop();
+
+  // Remove, then add (the page's add: a fresh id): nobody inherits An's.
+  ({ controller } = await open());
+  controller.removeMember(0);
+  assert.deepEqual(ids(controller), [B]);
+  controller.editAnswers({ hh: [...controller.getState().draftAnswers.hh, { member_id: newMemberId() }] });
+  assert.equal(ids(controller)[0], B);
+  assert.ok(isMemberId(ids(controller)[1]) && ![A, B].includes(ids(controller)[1]));
+  assert.deepEqual(marked(controller), []);
+  controller.stop();
+
+  // Fictional details: "fill" keeps the household, "replace everything" puts
+  // in the example's own member with the example's own id.
+  ({ controller } = await open());
+  const generated = makeSampleAnswers({ version: 2, seed: 1 });
+  controller.editAnswers(fillBlankAnswers(controller.getState().draftAnswers, generated, 2));
+  assert.deepEqual(ids(controller), [A, B]);
+  controller.editAnswers({ ...generated });
+  assert.deepEqual(ids(controller), [generated.hh[0].member_id]);
+  assert.ok(![A, B].includes(generated.hh[0].member_id));
+  assert.deepEqual(marked(controller), []);
+  controller.stop();
+
+  // Reconcile: the office's side comes with the server's ids; one's own side
+  // with the draft's.
+  ({ controller, store } = await open());
+  controller.editAnswers({ tp_first_name: "Mei" });
+  await remoteChange(store, { answers: { has_household_members: "yes", hh: [household[1]] } });
+  assert.equal(controller.getState().conflict?.code, "REMOTE_CHANGED");
+  await controller.reconcileAnswers({ answers: {}, expectedServerRevision: store.records.get("case-v2").revision, fromServer: true });
+  assert.deepEqual(ids(controller), [B]);
+  assert.deepEqual(marked(controller), []);
+  controller.editAnswers({ tp_first_name: "Mei", hh: household });
+  await remoteChange(store, { answers: { has_household_members: "yes", hh: [household[1]], tp_first_name: "Lan" } });
+  await controller.reconcileAnswers({
+    answers: controller.getState().draftAnswers,
+    expectedServerRevision: store.records.get("case-v2").revision,
+  });
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+  controller.stop();
+
+  // Restoring a session: no answer is kept in the window, so the draft is the
+  // server's again, ids and all.
+  ({ controller, store, sessionStorage } = await open());
+  controller.removeMember(0);
+  controller.stop();
+  for (const key of sessionStorage.keys()) assert.ok(!sessionStorage.raw(key).includes(B), key);
+  const restored = build({ store, sessionStorage });
+  await restored.controller.start();
+  await restored.controller.selectCase("case-v2");
+  assert.deepEqual(ids(restored.controller), [A, B]);
+  assert.deepEqual(marked(restored.controller), ["An Lee"]);
+  restored.controller.stop();
+});
+
 test("§3.8: after a failed save of an answer and its undo, a newer revision's answers are a choice, not taken", async () => {
   // The failed save may have landed: the newer revision may be that very
   // edit, which the person undid. Taking it silently would bring it back.
@@ -4138,5 +4311,400 @@ test("the window state never holds the language", async () => {
     assert.doesNotMatch(String(sessionStorage.raw(key)), /"lang"|zh-Hant/, key);
   }
   assert.deepEqual(localStorage.keys(), ["vitally.lang"]);
+  controller.stop();
+});
+
+// Cleanup: the version-2 save path. A save that lands after another case was
+// opened, a re-read that fails after a save, a visit recorded while a save is
+// out, and the chip after a quiet re-pin.
+// ---------------------------------------------------------------------------
+
+test("a save that lands after another case was opened leaves that case's edits dirty", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the first case's save landed");
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-w");
+  assert.equal(state.draftAnswers.addr_city, "Camden", "the open case's typing is kept");
+  assert.equal(state.dirty, true);
+  assert.equal(state.editBaseRevision, 1);
+  assert.equal(state.saveState, "unsaved");
+  await controller.saveAnswers();
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a save whose re-read fails still pins the next edit to the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().savedCase.revision, 1, "the re-read failed");
+  controller.editAnswers({ addr_city: "Camden" });
+  assert.equal(controller.getState().editBaseRevision, 2);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().conflict, null);
+  controller.stop();
+});
+
+test("a save whose re-read fails, then a Save with nothing changed, expects the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  assert.equal(controller.getState().dirty, false);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a sub-step change ignored during a save records no visit, and the next one sends it", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  await Promise.all([saving, moving]);
+  let state = controller.getState();
+  assert.deepEqual(state.visitedSubsteps, [], "the ignored change recorded nothing");
+  assert.equal(state.formSubstep, "before.ready");
+  assert.equal(state.dirty, false);
+  await controller.goToSubstep("before.service");
+  assert.deepEqual(store.writes.at(-1).payload.visited, ["before.ready"]);
+  assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
+  assert.equal(controller.getState().dirty, false);
+  controller.stop();
+});
+
+test("a re-pin that leaves nothing to send settles the chip", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true);
+  assert.equal(controller.getState().saveState, "failed");
+  // The save in doubt had landed after all: the next read shows its visit.
+  await remoteChange(store, { intakeVisited: ["before.ready"] });
+  const state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.dirty, false, "nothing differs from the server");
+  assert.equal(state.editBaseRevision, null);
+  assert.equal(state.saveState, "idle");
+  assert.equal(chip(controller), "Up to date");
+  controller.stop();
+});
+
+test("a save refused as a conflict that a quiet re-pin answers leaves no failure behind", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  // A card mark in another tab whose change has not reached this window.
+  const record = store.records.get("case-v2");
+  store.records.set("case-v2", {
+    ...record,
+    revision: 2,
+    documentCards: [{ slotId: "w2.household", status: "later", groupOverride: null, changedAt: "2026-10-04T12:00:00Z" }],
+  });
+  await assert.rejects(controller.saveAnswers(), { code: "CONFLICT" });
+  const state = controller.getState();
+  assert.equal(state.conflict, null, "nothing to choose between");
+  assert.equal(state.editBaseRevision, 2);
+  assert.equal(state.dirty, true);
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.error, null);
+  assert.equal(chip(controller), "Unsaved changes");
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a sub-step change or a card mark during an explicit Save sends no second save", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  const marking = controller.setDocumentCard("w2.household", "later");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([saving, moving, marking]);
+  assert.deepEqual(store.writes.map((write) => [write.type, write.expectedRevision]), [["SAVE_ANSWERS", 1]]);
+  const state = controller.getState();
+  assert.equal(state.error, null, "no conflict banner");
+  assert.equal(state.saveState, "saved");
+  assert.equal(state.dirty, false);
+  controller.stop();
+});
+
+test("a save that fails after another case was opened leaves that case's chip, banner and retry alone", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  store.failNext = offline();
+  release();
+  await assert.rejects(saving, { code: "OFFLINE" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-w");
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.error, null);
+  assert.equal(state.retryable, false);
+  assert.equal(state.dirty, true);
+  assert.equal(await controller.retryLast(), null, "the first case's save is not retried here");
+  assert.equal(store.writes.length, 1);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).caseId, "case-w");
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("a save whose re-read fails, then a card mark, expects the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  await controller.setDocumentCard("w2.household", "later");
+  assert.deepEqual(store.writes.at(-1).type, "SET_DOCUMENT_CARD");
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().error, null);
+  assert.equal(store.records.get("case-v2").documentCards.length, 1);
+  controller.stop();
+});
+
+// Fix round 1 (I1): an explicit Save while another save is out waits for it,
+// then saves what is still unsaved, or fails visibly; it is never a quiet null.
+test("Save during a sub-step change's save waits for it, then sends what was typed since", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  release();
+  await moving;
+  const receipt = await saving;
+  assert.ok(receipt, "Save says it saved only when it did");
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.deepEqual(store.writes.map((write) => write.expectedRevision), [1, 2], "one save after the other");
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("Save during a sub-step change's save that fails fails too, and sends nothing more", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  store.failNext = offline();
+  release();
+  await moving;
+  await assert.rejects(saving, { code: "OFFLINE" });
+  assert.equal(store.writes.length, 1);
+  assert.equal(controller.getState().saveState, "failed");
+  assert.equal(controller.getState().dirty, true);
+  controller.stop();
+});
+
+test("Save on a case opened while the old case's save is out saves the open case", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  release();
+  await moving;
+  assert.ok(await saving);
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+// Fix round 1 (minor): the old case's failure is not the open case's doubt,
+// and its refusal is not retried.
+test("an unknown outcome for the old case's save leaves the open case's visit-only draft settling quietly", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: { tp_first_name: "Lan" } }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  store.failNext = offline();
+  release();
+  await assert.rejects(saving, { code: "OFFLINE" });
+  // Only a visit is unsaved on the open case.
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true);
+  const record = store.records.get("case-w");
+  store.records.set("case-w", { ...record, revision: record.revision + 1, answers: { tp_first_name: "Lan", addr_city: "Camden" } });
+  await store.handlers.onChange({ table: "cases", caseId: "case-w" });
+  const state = controller.getState();
+  assert.equal(state.conflict, null, "nothing to choose between");
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("a refusal naming a field for the old case's save is not retried once another case is open", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming", tp_dob: "1980-01-01" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  store.refusals.push(Object.assign(new Error("refused"), { code: "VALIDATION", field: "tp_dob" }));
+  release();
+  await assert.rejects(saving, { code: "VALIDATION" });
+  assert.equal(store.writes.length, 1, "no retry for the case that was left");
+  controller.stop();
+});
+
+// Fix round 1 (minor): Retry is a version-2 save like any other.
+test("a sub-step change during a Retry sends no second save", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveAnswers(), { code: "OFFLINE" });
+  assert.equal(controller.getState().retryable, true);
+  const release = holdSaves(store);
+  const retrying = controller.retryLast();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([retrying, moving]);
+  assert.equal(controller.getState().error, null, "no conflict banner");
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
+  controller.stop();
+});
+
+// ---- cleanup: a create that lands after sign-out ---------------------------
+
+test("a client's create that lands after sign-out reloads no list and selects nothing", async () => {
+  const store = fakeStore();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const create = store.createCase;
+  store.createCase = async (request) => {
+    await gate;
+    return create(request);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  const creating = controller.createCase();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.signOut();
+  const before = store.calls.length;
+  release();
+  const receipt = await creating;
+  assert.ok(receipt?.caseId, "the case exists: the receipt still comes back");
+  assert.deepEqual(store.calls.slice(before), ["createCase"], "no list or case read for the signed-out window");
+  const state = controller.getState();
+  assert.equal(state.principal, null);
+  assert.deepEqual(state.cases, []);
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.screen, "access");
+  controller.stop();
+});
+
+test("an office create that lands after sign-out reloads no list", async () => {
+  const { controller, store } = await startOffice();
+  let before = 0;
+  const result = await leaveMidCreate(controller, store, async () => {
+    await controller.signOut();
+    before = store.calls.length;
+  });
+  assert.deepEqual(result, { sent: false, reason: "left" });
+  assert.deepEqual(store.calls.slice(before).filter((call) => call === "listCases"), [], "no list read after sign-out");
+  assert.deepEqual(controller.getState().cases, []);
+  controller.stop();
+});
+
+test("a client's create that lands after signing out and back in reloads no list and selects nothing", async () => {
+  // A fresh principal object on every read, as the real store returns.
+  const store = fakeStore();
+  const getPrincipal = store.getPrincipal;
+  store.getPrincipal = async () => ({ ...(await getPrincipal()) });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const create = store.createCase;
+  store.createCase = async (request) => {
+    await gate;
+    return create(request);
+  };
+  const auth = { ...idleAuth(), verifyCode: async () => {} };
+  const { controller } = build({ store, auth });
+  await controller.start();
+  const creating = controller.createCase();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.signOut();
+  await controller.verifyCode("123456");
+  assert.equal(controller.getState().session, "present", "signed in again: the session alone looks unchanged");
+  assert.ok(controller.getState().principal);
+  const before = store.calls.length;
+  release();
+  await creating;
+  assert.deepEqual(store.calls.slice(before), ["createCase"], "no list or case read for the earlier sign-in");
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.notEqual(state.screen, "reference");
   controller.stop();
 });

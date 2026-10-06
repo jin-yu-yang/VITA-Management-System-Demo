@@ -25,3 +25,38 @@ export function formValuesWithLists(form, data = new FormData(form)) {
   }
   return values;
 }
+
+// ---- What a staff form holds until it is sent ----------------------------
+//
+// app.mjs keeps it by field id (formDrafts) and puts it back after every
+// redraw, because a redraw rebuilds each staff form from what is saved. Typed
+// text is kept as its string. A checkbox's or radio's value is its option and
+// is never empty, so a tick is kept as its own state: `{ checked }`.
+
+export const isCheckable = (field) => field?.type === "checkbox" || field?.type === "radio";
+
+/**
+ * The [id, draft] pairs one input event on a checkbox or radio records. A
+ * radio records its whole group: the one it turned off sent no event.
+ */
+export function checkDrafts(field) {
+  const group =
+    field.type === "radio" && field.name && field.form
+      ? [...field.form.elements].filter((other) => other.type === "radio" && other.name === field.name)
+      : [field];
+  return group.filter((one) => one.id).map((one) => [one.id, { checked: Boolean(one.checked) }]);
+}
+
+/**
+ * Put one draft back into the field a redraw built. Typed text only fills a
+ * box the redraw left empty; a tick (or an untick) goes back as it was, unless
+ * the box is now disabled, when it would not be sent.
+ */
+export function restoreDraft(field, draft) {
+  if (!field) return;
+  if (draft !== null && typeof draft === "object") {
+    if (isCheckable(field) && !field.disabled) field.checked = draft.checked;
+    return;
+  }
+  if (!field.value) field.value = draft;
+}

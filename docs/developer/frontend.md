@@ -156,7 +156,11 @@ compensate, all in `app.mjs` and [`ui.mjs`](../../src/ui.mjs):
   whose row disappeared gets no focus rather than another row's button.
 - **Staff form drafts.** Text typed in staff forms (reasons, notes, findings) is kept in a
   `formDrafts` map by field id and put back after each rebuild. It is cleared only for the form
-  that was submitted.
+  that was submitted. An unsent tick in a staff form's checkboxes (materials, the best time, the
+  close-case confirmation) is kept the same way, as `{ checked }`; see `checkDrafts` and
+  `restoreDraft` in [`form-values.mjs`](../../src/form-values.mjs). Ticks are also dropped when
+  their form is put away unsent (the best time's Cancel, or a dialog closing). Boxes drawn from
+  state (toggles with their own action, the "I have checked" box, answer forms) are not kept.
 - **In-place patches.** The sign-in countdown and the intake save indicator update their text
   without a rebuild, so they never interrupt typing.
 - **Dialogs** take focus when they open and return it to the control that opened them.
@@ -431,7 +435,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (865) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (897) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (59) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form, and one works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
