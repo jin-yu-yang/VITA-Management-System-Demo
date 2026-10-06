@@ -1401,7 +1401,7 @@ export function createController({
         if (adopted !== true) return { sent: false, reason: adopted };
       }
       const caseId = state.selectedCaseId;
-      if (state.dirty) await saveAnswers();
+      if (state.dirty) await saveNow();
       if (!send) return { sent: false };
       if (state.selectedCaseId !== caseId || state.screen !== "office-add-case")
         return { sent: false, reason: "left" };
@@ -1707,7 +1707,7 @@ export function createController({
       const caseId = state.selectedCaseId;
       substepSaveInFlight = true;
       try {
-        await saveAnswers();
+        await saveNow();
       } catch {
         // Already on screen: the save state is "failed" and the error is set.
       } finally {
@@ -1810,6 +1810,13 @@ export function createController({
       return receipt;
     } catch (error) {
       state.busy = false;
+      // A save that fails after another case was opened is not the open
+      // case's failure: its chip, its banner and its retry stay as they are.
+      if (save && state.selectedCaseId !== action.caseId) {
+        if (error?.code === "OFFLINE") state.connection = "offline";
+        show();
+        throw error;
+      }
       if (save) state.saveState = "failed";
       if (UNKNOWN_OUTCOME.includes(error?.code)) {
         // The server may already have applied it. The retry must be the same
@@ -1849,22 +1856,10 @@ export function createController({
     const later = {};
     for (const [id, value] of Object.entries(typed))
       if (JSON.stringify(value) !== JSON.stringify(sent[id])) later[id] = value;
-    const edited = Object.keys(later).length > 0;
-    if (edited) {
-      state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
-      pruneRevealed();
-    }
-    if (state.dirty) return;
-    // A visit recorded while the save was out is still to send, as in
-    // `commitDraft`. Not when the re-read failed: against a snapshot older
-    // than the save, every visit it sent would look unsent.
-    const behind =
-      landedRevision?.caseId === action.caseId &&
-      Number(state.savedCase.revision) < landedRevision.revision;
-    if (
-      (edited && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2)) ||
-      (!behind && visitsPending())
-    )
+    if (!Object.keys(later).length) return;
+    state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
+    pruneRevealed();
+    if (!state.dirty && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2))
       markDirty();
   }
 
@@ -1874,7 +1869,23 @@ export function createController({
   const actingPersonId = (personId) =>
     presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
 
+  // A save asked for on its own (Save, Save & exit, Submit's save first).
+  // Version 2 takes the one-save-at-a-time flag that sub-step changes and
+  // card marks hold, so none of them can send a second save at the same
+  // expected revision and meet a false conflict. A press while another save
+  // is out is ignored, as a second sub-step change is. Version 1 as today.
   async function saveAnswers() {
+    if (caseVersion() !== 2) return await saveNow();
+    if (substepSaveInFlight) return null;
+    substepSaveInFlight = true;
+    try {
+      return await saveNow();
+    } finally {
+      substepSaveInFlight = false;
+    }
+  }
+
+  async function saveNow() {
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
     if (state.conflict) {
@@ -1913,7 +1924,8 @@ export function createController({
       // second refusal takes the usual failure path. Today's server names no
       // field, so this waits for a server that does.
       const field = refusedField(error, action);
-      if (!field) throw error;
+      // Another case was opened meanwhile: the old one's save is not retried.
+      if (!field || state.selectedCaseId !== action.caseId) throw error;
       const { [field]: _left, ...rest } = action.payload.answers;
       const retry = {
         ...action,
@@ -1933,6 +1945,7 @@ export function createController({
     } catch (error) {
       if (
         UNKNOWN_OUTCOME.includes(error?.code) &&
+        state.selectedCaseId === action.caseId &&
         sendableDiffers(action.payload.answers, serverAnswersOf(state.savedCase), 2)
       )
         answersInDoubt = true;
@@ -2018,7 +2031,9 @@ export function createController({
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
-      expectedRevision: Number(state.savedCase.revision),
+      // As a save's pin: the revision this window last knew, the receipt's
+      // when the re-read after a save failed.
+      expectedRevision: pinRevision(),
       personId: actingPersonId(personId),
       type,
       payload: payload ?? {},
@@ -2048,7 +2063,7 @@ export function createController({
       if (state.savedCase.stage === "draft" && state.dirty) {
         const caseId = state.selectedCaseId;
         try {
-          await saveAnswers();
+          await saveNow();
         } catch {
           return null;
         }

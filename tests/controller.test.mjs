@@ -4209,7 +4209,7 @@ test("a save whose re-read fails, then a Save with nothing changed, expects the 
   controller.stop();
 });
 
-test("a visit recorded while a save is out is still to send once the save lands", async () => {
+test("a sub-step change ignored during a save records no visit, and the next one sends it", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
   controller.editAnswers({ tp_first_name: "Ming" });
   const release = holdSaves(store);
@@ -4218,12 +4218,12 @@ test("a visit recorded while a save is out is still to send once the save lands"
   const moving = controller.goToSubstep("before.service");
   await new Promise((resolve) => setImmediate(resolve));
   release();
-  await Promise.allSettled([saving, moving]);
-  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the save landed");
-  assert.deepEqual(store.records.get("case-v2").intakeVisited, [], "the visit has not reached the server");
-  assert.deepEqual(controller.getState().visitedSubsteps, ["before.ready"]);
-  assert.equal(controller.getState().dirty, true, "the visit is still to send");
-  await controller.saveAnswers();
+  await Promise.all([saving, moving]);
+  let state = controller.getState();
+  assert.deepEqual(state.visitedSubsteps, [], "the ignored change recorded nothing");
+  assert.equal(state.formSubstep, "before.ready");
+  assert.equal(state.dirty, false);
+  await controller.goToSubstep("before.service");
   assert.deepEqual(store.writes.at(-1).payload.visited, ["before.ready"]);
   assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
   assert.equal(controller.getState().dirty, false);
@@ -4269,5 +4269,70 @@ test("a save refused as a conflict that a quiet re-pin answers leaves no failure
   assert.equal(store.writes.at(-1).expectedRevision, 2);
   assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
   assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a sub-step change or a card mark during an explicit Save sends no second save", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  const marking = controller.setDocumentCard("w2.household", "later");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([saving, moving, marking]);
+  assert.deepEqual(store.writes.map((write) => [write.type, write.expectedRevision]), [["SAVE_ANSWERS", 1]]);
+  const state = controller.getState();
+  assert.equal(state.error, null, "no conflict banner");
+  assert.equal(state.saveState, "saved");
+  assert.equal(state.dirty, false);
+  controller.stop();
+});
+
+test("a save that fails after another case was opened leaves that case's chip, banner and retry alone", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  store.failNext = offline();
+  release();
+  await assert.rejects(saving, { code: "OFFLINE" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-w");
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.error, null);
+  assert.equal(state.retryable, false);
+  assert.equal(state.dirty, true);
+  assert.equal(await controller.retryLast(), null, "the first case's save is not retried here");
+  assert.equal(store.writes.length, 1);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).caseId, "case-w");
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("a save whose re-read fails, then a card mark, expects the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  await controller.setDocumentCard("w2.household", "later");
+  assert.deepEqual(store.writes.at(-1).type, "SET_DOCUMENT_CARD");
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().error, null);
+  assert.equal(store.records.get("case-v2").documentCards.length, 1);
   controller.stop();
 });
