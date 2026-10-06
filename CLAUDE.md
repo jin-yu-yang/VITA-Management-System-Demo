@@ -15,7 +15,18 @@ ViTally is a classroom demonstration of a VITA (Volunteer Income Tax Assistance)
 - **The same goes for `docs/superpowers/plans/`, `docs/superpowers/reviews/` and `docs/superpowers/notes/`.** They record how parts 1–4d were designed and built.
 - **Don't remove, move or rewrite them, and don't add new files there.** New design work and plans belong to an OpenSpec change (see Workflow routing below).
 - **When a change touches an area that a historical document covers,** read that document during `/opsx:explore`. Carry the behaviour that still holds into the change's delta specs as testable requirements.
-- **If a canonical spec and a historical document disagree,** the canonical spec, together with the code and its tests, wins.
+
+### Authority order
+
+When sources disagree, use this order:
+
+1. Explicit user instructions for the current task
+2. The active OpenSpec change artifacts, for the scope of that change
+3. Canonical specifications under `openspec/specs/`
+4. Current code and tests as implementation evidence
+5. Historical documents under `docs/superpowers/`
+
+Code or tests that disagree with a canonical specification indicate possible specification drift or an implementation defect. Do not silently change either side to match the other; surface the conflict.
 
 ## Workflow routing (read on session start)
 
@@ -25,19 +36,26 @@ This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schem
 
 | Trigger you observe | What to do |
 |---|---|
-| User starts a narrative "design discussion / let's brainstorm" | Run verbal `superpowers:brainstorming`, but **do NOT** write to `docs/superpowers/specs/`. Once the conversation converges per the 5 criteria below, promote to `/opsx:propose` |
+| User starts a narrative design discussion / "let's brainstorm" | Use Superpowers brainstorming discipline conversationally. Keep all output in the conversation; do not create any artifact. When the 5 promotion criteria hold, suggest `/opsx:propose`. |
 | User invokes `/opsx:new` / `/opsx:ff` / `/opsx:propose` directly | Follow the schema's flow; artifact instructions inject at each step |
 | User explicitly says bug fix / typo / config tweak / doc update | Direct PR — **do NOT** open a change (see skip rules below) |
 | User is mid-change | Advance with `/opsx:continue`, `/opsx:apply`, `/opsx:verify`, or `/opsx:archive` |
 
 ### When NOT to use opsx (direct PR)
 
-| Scenario | Direct PR? |
-|---|---|
-| New feature / new capability / architectural change / breaking change | ❌ Use opsx |
-| Bug fix (no contract change) / test backfill / linter tweak / non-breaking upgrade / typo / docs / config value tweak | ✅ Direct PR |
+Low-risk cases:
 
-Principle: **process ceremony scales with risk**. External contracts / schema / cross-system integration / compliance → opsx. Otherwise → direct PR.
+- a bug fix with no contract change;
+- a test backfill;
+- a linter tweak;
+- a non-breaking dependency upgrade;
+- a typo;
+- documentation;
+- a config value tweak.
+
+Use opsx for new capabilities, behavior or contract changes, architecture changes, schema changes, cross-system integrations, breaking changes, and compliance boundaries.
+
+Use a direct PR only when the work preserves the intended behavior and fits one of the low-risk cases above.
 
 ### Verbal brainstorm → opsx promotion criteria
 
@@ -46,7 +64,7 @@ All 5 must hold before promoting (any missing → keep brainstorming, **never** 
 1. **Scope locked** — one sentence describes what's in / out
 2. **Major design forks resolved** — alternatives weighed; remaining TBDs have an owner and impact-scope statement
 3. **Cross-system dependencies mapped** — ready / mockable / genuinely unknown — pick one per dep
-4. **Acceptance criteria stateable** — concrete pass conditions (here: `npm test`, `npm run test:database` and `npm run test:browser` pass, plus the change's deliverables)
+4. **Acceptance criteria stateable** — concrete pass conditions: the change's deliverables, plus the checks that cover what it touches (see Verification below)
 5. **Conversation converging** — recent turns are confirmations, not new alternatives
 
 When all 5 hold → proactively suggest "ready to `/opsx:propose`?" — wait for user ack. Never auto-trigger.
@@ -76,11 +94,14 @@ Full detail: [superpowers-bridge README §Entry & exit gates](https://github.com
   - Screen text lives in `src/client-text.mjs` (English and 简体), and catalogue text in the catalogue.
   - 繁體 is generated: after any 简体 change, run `npm run build:hant` and commit `src/zh-hant.mjs`.
   - Staff screens stay English.
-- **Commands:**
-  - `npm test` (unit);
-  - `npm run db:migrate:test`, `npm run test:database`;
-  - `npm run test:auth-browser`, `npm run test:browser` (Playwright, about 11–16 minutes);
-  - `npm run build:hant -- --check`.
+- **Verification:** run the checks that cover what the change touches, not every suite every time.
+  - **Always:** `npm test` (unit).
+  - **Migrations, SQL functions or other database behaviour:** `npm run db:migrate:test`, then `npm run test:database`.
+  - **Sign-in:** `npm run test:auth-browser`.
+  - **Anything a browser shows or does** (views, `app.mjs`, the controller, CSS, the story): `npm run test:browser` (Playwright, about 11–16 minutes).
+  - **Client text in Chinese:** `npm run build:hant -- --check`.
+  - **Server-only changes** (for example `server.mjs` or `tools/`): their unit tests, plus any suite whose behaviour they reach.
+  - Say which checks you ran and why the others weren't needed.
 - **Git:**
   - Teammates merge into `main`, so sync with `main` before pushing.
   - Leave the untracked `VITA-Management-System-Demo/` directory, `.claude/worktrees/` and `.stitch/captures` alone.
