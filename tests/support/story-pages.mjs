@@ -229,6 +229,24 @@ export async function waitForQuiet(page, { quiet = QUIET_MS, timeout = ARRIVAL_M
   );
 }
 
+/**
+ * Make a change from outside this window (`change`, usually a no-change
+ * update on a case it shows) and wait until it has rebuilt the page: `#main`
+ * carries a marker before the change, and a rebuilt `#main` does not.
+ */
+export async function rebuiltBy(page, change, what = "a change from elsewhere") {
+  await page.evaluate(() => document.querySelector("#main")?.setAttribute("data-rebuild-marker", "1"));
+  await change();
+  await waitFor(
+    page,
+    `${what} to rebuild the page`,
+    () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-rebuild-marker]"),
+    undefined,
+    ARRIVAL_MS,
+  );
+  await waitForQuiet(page);
+}
+
 export async function clickAction(page, action, { attributes = "", timeout = CLICK_MS } = {}) {
   await waitForQuiet(page);
   await page.locator(`[data-action="${action}"]${attributes}`).first().click({ timeout });

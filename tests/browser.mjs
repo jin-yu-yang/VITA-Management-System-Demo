@@ -49,6 +49,7 @@ import {
   readClientPlace,
   readFixtureIndicator,
   readPersona,
+  rebuiltBy,
   redactAddresses,
   resetSampleCases,
   screenshotDir,
@@ -934,7 +935,18 @@ async function runPermutation(t, roles) {
       await staff.locator("#contact-form").waitFor({ state: "visible", timeout: RENDER_MS });
       await waitForQuiet(staff);
       await staff.locator("#field-contact-weekend").check({ timeout: CLICK_MS });
-      await waitForQuiet(staff);
+      // A tick not yet saved survives a redraw from elsewhere (a no-change
+      // update on this case), as typed text does.
+      await rebuiltBy(
+        staff,
+        () => fixture.database.sql("update public.cases set revision=revision where id=$1", [classCase.id]),
+        "a no-change update on the class case",
+      );
+      assert.equal(
+        await staff.locator("#field-contact-weekend").isChecked(),
+        true,
+        "a redraw from elsewhere took the unsaved Weekends tick",
+      );
       await staff
         .locator('#contact-form button[data-case-action="UPDATE_CONTACT"]')
         .click({ timeout: CLICK_MS });
@@ -2273,7 +2285,19 @@ async function runPermutation(t, roles) {
       );
       await waitForQuiet(staff);
       await staff.locator(".add-case-side #materials-form").getByLabel("Photo ID", { exact: true }).check({ timeout: CLICK_MS });
-      await waitForQuiet(staff);
+      // The tick survives a redraw from elsewhere before Save (a no-change
+      // update on the new case): a redraw used to untick it, and Save then
+      // recorded nothing.
+      await rebuiltBy(
+        staff,
+        () => fixture.database.sql("update public.cases set revision=revision where id=$1", [assisted.id]),
+        "a no-change update on the walk-in case",
+      );
+      assert.equal(
+        await staff.locator("#field-materials-photo_id").isChecked(),
+        true,
+        "a redraw from elsewhere took the unsaved Photo ID tick",
+      );
       await staff.locator('.add-case-side button[data-case-action="RECORD_MATERIALS"]').click({ timeout: CLICK_MS });
       await waitFor(
         staff,

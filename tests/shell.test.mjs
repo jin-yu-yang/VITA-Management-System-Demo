@@ -887,3 +887,18 @@ test("app.mjs treats a Save that saved nothing as not saved", () => {
   const exit = app.slice(app.indexOf('case "save-exit": {'), app.indexOf('case "fill-fictional":'));
   assert.match(exit, /if \(dirty && !\(await controller\.saveAnswers\(\)\)\) break;\s+controller\.navigate\("applications"\);/);
 });
+
+test("an unsent tick in a staff form is kept across a redraw, and goes when its form is put away", () => {
+  const app = appSource();
+  // Recorded on input as { checked } (form-values.mjs), except a box drawn
+  // from state; put back by restoreDraft after every render.
+  assert.match(app, /if \(!isCheckable\(field\)\) formDrafts\.set\(field\.id, field\.value\);/);
+  assert.match(
+    app,
+    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\) && !field\.closest\(ANSWER_FORMS\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) formDrafts\.set\(id, draft\);/,
+  );
+  assert.match(app, /for \(const \[id, value\] of formDrafts\)\s+restoreDraft\(root\.querySelector\(`#\$\{CSS\.escape\(id\)\}`\), value\);/);
+  // Cancel on the best time, and any dialog closing, drop their ticks.
+  assert.match(app, /case "toggle-edit-contact":\s+\/\/[^\n]*\n\s+clearFormTicks\(root\.querySelector\("#contact-form"\)\);/);
+  assert.match(app, /for \(const form of root\.querySelectorAll\("\.modal form"\)\) clearFormTicks\(form\);\s+controller\.closeDialog\(\);/);
+});
