@@ -28,49 +28,90 @@ When sources disagree, use this order:
 
 Code or tests that disagree with a canonical specification indicate possible specification drift or an implementation defect. Do not silently change either side to match the other; surface the conflict.
 
-## Workflow routing (read on session start)
+## Workflow routing (read at session start)
 
-This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) to bridge OpenSpec and Superpowers. It is the project's default schema (`openspec/config.yaml`), and the schema itself is in `openspec/schemas/superpowers-bridge/`. Integration rules (language, artifact paths, PRECHECK) follow that bridge's README; this section is the routing guidance for Claude.
+This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) to connect OpenSpec and Superpowers. It is the default schema (`openspec/config.yaml`). The schema is in `openspec/schemas/superpowers-bridge/`. Its README has the full rationale.
 
-### Entry routing
+### 1. Decide: change or direct PR
 
-| Trigger you observe | What to do |
-|---|---|
-| User starts a narrative design discussion / "let's brainstorm" | Use Superpowers brainstorming discipline conversationally. Keep all output in the conversation; do not create any artifact. When the 5 promotion criteria hold, suggest `/opsx:propose`. |
-| User invokes `/opsx:propose` directly | Follow the schema's flow; artifact instructions inject at each step |
-| User explicitly says bug fix / typo / config tweak / doc update | Direct PR — **do NOT** open a change (see skip rules below) |
-| User is mid-change | Advance with `/opsx:apply` or `/opsx:archive`; produce `verify.md` and `retrospective.md` as described under "Commands installed" below |
+Open a change for:
+- a new capability;
+- a change to behavior or to a contract;
+- an architecture change;
+- a database schema change;
+- a cross-system integration;
+- a breaking change;
+- a compliance boundary.
 
-### Commands installed
-
-This project installs only OpenSpec's six core commands: `/opsx:propose`, `/opsx:explore`, `/opsx:apply`, `/opsx:update`, `/opsx:sync` and `/opsx:archive`.
-
-- `/opsx:new`, `/opsx:ff`, `/opsx:continue` and `/opsx:verify` aren't installed. Adding them needs `openspec config profile`, which changes each developer's global OpenSpec config, so don't run it (decision 2026-10-05).
-- The schema's `verify` and `retrospective` artifacts are still required. After `/opsx:apply` completes, produce each one from the CLI's own instructions and template:
-  - `openspec status --change "<name>" --json` shows what is ready;
-  - `openspec instructions <artifact> --change "<name>" --json` gives that artifact's rules and template.
-
-  Follow the verify artifact's PRECHECK and checks in full. It names the `openspec-verify-change` skill, which isn't installed here; do its checks directly instead.
-
-### When NOT to use opsx (direct PR)
-
-Low-risk cases:
-
+Use a direct PR only when the work keeps the intended behavior and is one of these:
 - a bug fix with no contract change;
 - a test backfill;
-- a linter tweak;
+- a linter or build-tool tweak;
 - a non-breaking dependency upgrade;
-- a typo;
-- documentation;
+- a typo or documentation update;
 - a config value tweak.
 
-Use opsx for new capabilities, behavior or contract changes, architecture changes, schema changes, cross-system integrations, breaking changes, and compliance boundaries.
+If you are not sure, ask the user.
 
-Use a direct PR only when the work preserves the intended behavior and fits one of the low-risk cases above.
+### 2. Lifecycle of a change
 
-### Verbal brainstorm → opsx promotion criteria
+Do the steps in this order.
 
-All 5 must hold before promoting (any missing → keep brainstorming, **never** write to `docs/superpowers/specs/`):
+1. **Explore (optional).** Run `/opsx:explore`. If the change touches an area that a historical document covers, read that document now.
+2. **Brainstorm in the conversation.** Use the Superpowers brainstorming discipline. Do not write files. Continue until all 5 promotion criteria hold (section 6). Then ask: "Ready to `/opsx:propose`?" Wait for the user to agree. Never start propose without that agreement.
+3. **Propose.** Run `/opsx:propose <change-name>`. It creates `openspec/changes/<change-name>/` and every artifact that apply needs, in this order: `brainstorm.md`; `proposal.md` and `design.md`; `specs/<capability>/spec.md`; `tasks.md`; `plan.md`.
+   - `brainstorm.md` records the design that the user agreed to in step 2. Do not ask again about decisions settled there.
+   - The schema runs `superpowers:brainstorming` for `brainstorm.md` and `superpowers:writing-plans` for `plan.md`. Both write into the change folder (section 7).
+   - Propose can stop to ask the user a question. Answer it, then continue.
+   - Propose never starts apply.
+4. **Complete the planning artifacts.** If propose stops before `plan.md` is done:
+   - Run `openspec status --change "<change-name>" --json` to find the next ready artifact.
+   - Run `openspec instructions <artifact> --change "<change-name>" --json` to get its rules and template.
+   - Write the artifact. Repeat until `plan.md` is done.
+
+   Then ask the user to review the planning artifacts. Do not start apply until the user agrees.
+5. **Apply.** Run `/opsx:apply <change-name>`. It creates a git worktree and runs `plan.md` with subagent-driven development. It checks off `tasks.md`. Do steps 6 to 9 in the same worktree.
+6. **Verify.** `openspec status` shows `verify` as ready once `plan.md` exists. Do not write it before apply is complete.
+   - Get the rules with `openspec instructions verify --change "<change-name>" --json`.
+   - Follow its PRECHECK and all of its checks. The `openspec-verify-change` skill is not installed, so do its checks directly.
+   - Write `verify.md`. If a blocking check fails, fix the problem and verify again.
+7. **Retrospective.** Get the rules with `openspec instructions retrospective --change "<change-name>" --json`. Write `retrospective.md`. Include the working notes that must survive (section 7, last bullet).
+8. **Archive.** Merge `main` into the change branch. Then run `/opsx:archive <change-name>`. It merges the delta specs into `openspec/specs/` and moves the folder to `openspec/changes/archive/YYYY-MM-DD-<change-name>/`.
+9. **Finish.** Use `superpowers:finishing-a-development-branch`. Open the PR last, so that it contains the complete archived change.
+
+### 3. Resume a change
+
+At the start of a session, or when the user is in the middle of a change:
+1. Run `openspec list` to find active changes.
+2. Run `openspec status --change "<change-name>" --json`.
+3. Read the change's artifacts. If apply has started, read its ledger too (section 7).
+4. Judge whether apply is complete from the `tasks.md` checkboxes and the commits on the change branch. Do not judge it from `openspec status`.
+5. Continue from the first lifecycle step that is not complete. Do not create a new change for the same work.
+
+### 4. Commands
+
+This project installs six OpenSpec commands: `/opsx:propose`, `/opsx:explore`, `/opsx:apply`, `/opsx:update`, `/opsx:sync` and `/opsx:archive`.
+
+The bridge README uses four commands that are not installed. Use these replacements:
+
+| README command   | Use instead |
+|------------------|-------------|
+| `/opsx:new`      | `/opsx:propose` |
+| `/opsx:ff`       | `/opsx:propose` |
+| `/opsx:continue` | `openspec status` and `openspec instructions` (lifecycle steps 4 and 7) |
+| `/opsx:verify`   | `openspec instructions verify` (lifecycle step 6) |
+
+Do not run `openspec config profile`. It changes each developer's global OpenSpec config (decision 2026-10-05).
+
+### 5. Change names and scope
+
+- Name a change in kebab-case, starting with a verb, for example `add-office-follow-up-reminders`. Do not add a date. Archive adds it.
+- One change has one clear result. If an architecture change is too large, split it into several changes.
+- Write delta specs only for the capabilities that the change touches.
+
+### 6. Promotion criteria (verbal brainstorm → propose)
+
+All 5 must hold before you suggest propose. If any is missing, keep brainstorming.
 
 1. **Scope locked** — one sentence describes what's in / out
 2. **Major design forks resolved** — alternatives weighed; remaining TBDs have an owner and impact-scope statement
@@ -78,16 +119,17 @@ All 5 must hold before promoting (any missing → keep brainstorming, **never** 
 4. **Acceptance criteria stateable** — concrete pass conditions: the change's deliverables, plus the checks that cover what it touches (see Verification below)
 5. **Conversation converging** — recent turns are confirmations, not new alternatives
 
-When all 5 hold → proactively suggest "ready to `/opsx:propose`?" — wait for user ack. Never auto-trigger.
+### 7. Where the output goes
 
-### Front-door anti-patterns (don't do)
+Durable output goes into the change folder, `openspec/changes/<change-name>/`. That includes the brainstorm and the plan.
 
-- Letting brainstorming write to `docs/superpowers/specs/`
-- Letting writing-plans write to `docs/superpowers/plans/`
-- Promoting to opsx with unresolved blocking TBDs
-- Opening a change for bug fix / typo
+- The `superpowers:brainstorming` and `superpowers:writing-plans` skills default to `docs/superpowers/`. In a change, redirect them to `brainstorm.md` and `plan.md`.
 
-Full detail: [superpowers-bridge README §Entry & exit gates](https://github.com/JiangWay/openspec-schemas/blob/main/superpowers-bridge/README.md#entry--exit-gates).
+Working notes from apply are scratch:
+- Subagent-driven development keeps its ledger (`progress.md`), task briefs, reports and review packages in `.superpowers/sdd/plan/` inside the change's worktree. The folder is named after `plan.md`. Git ignores it.
+- Never commit these files. Never copy them into the change folder or `docs/superpowers/`.
+- Every change's plan file is named `plan.md`, so all changes share the folder name `plan`. Run apply for one change per worktree. If the ledger's first line names another change's `plan.md`, stop and ask the user.
+- Before the workspace is deleted, copy into `retrospective.md` every ruling, parked finding and deferred minor finding that the ledger records. The ledger does not survive the change.
 
 ## Project rules
 
