@@ -4676,3 +4676,35 @@ test("an office create that lands after sign-out reloads no list", async () => {
   assert.deepEqual(controller.getState().cases, []);
   controller.stop();
 });
+
+test("a client's create that lands after signing out and back in reloads no list and selects nothing", async () => {
+  // A fresh principal object on every read, as the real store returns.
+  const store = fakeStore();
+  const getPrincipal = store.getPrincipal;
+  store.getPrincipal = async () => ({ ...(await getPrincipal()) });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const create = store.createCase;
+  store.createCase = async (request) => {
+    await gate;
+    return create(request);
+  };
+  const auth = { ...idleAuth(), verifyCode: async () => {} };
+  const { controller } = build({ store, auth });
+  await controller.start();
+  const creating = controller.createCase();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.signOut();
+  await controller.verifyCode("123456");
+  assert.equal(controller.getState().session, "present", "signed in again: the session alone looks unchanged");
+  assert.ok(controller.getState().principal);
+  const before = store.calls.length;
+  release();
+  await creating;
+  assert.deepEqual(store.calls.slice(before), ["createCase"], "no list or case read for the earlier sign-in");
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.notEqual(state.screen, "reference");
+  controller.stop();
+});

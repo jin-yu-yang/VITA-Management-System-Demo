@@ -343,10 +343,20 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.ok(built > 0);
   assert.ok(draft.indexOf("draftOffers.offer(") > built, "the link is offered after the build");
   const show = app.slice(app.indexOf("function showDraftLink("), app.indexOf("async function viewDraft("));
-  assert.match(show, /link\.textContent = t\("draft\.link", \{\}, screenLang\(\)\)/);
+  assert.match(show, /draftLink\(document, offer, t\("draft\.link", \{\}, screenLang\(\)\)\)/);
+  // The offer is its maker's: any other principal (or none) ends it before
+  // anything is drawn, and only that user's offer is ever drawn.
+  assert.match(show, /const userId = state\.principal\?\.userId \?\? null;\s*draftOffers\.follow\(userId\);\s*const ready = root\.querySelector\("#draft-ready"\);/);
+  assert.match(show, /draftOffers\.current\(state\.savedCase\?\.id \?\? null, userId\)/);
+  assert.match(draft, /draftOffers\.offer\(\{ url, fileName: fields\.fileName, caseId, userId \}\)/);
   assert.match(show, /addEventListener\("click", \(\) => draftOffers\.drop\(\)\)/, "an opened link is not drawn again");
+  // Showing the link comes before the render's focus restore, so a keyboard
+  // user on it stays on it (it has an id: draft-pdf.mjs draftLink).
   const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
   assert.ok(renderBody.indexOf("showDraftLink();") > renderBody.indexOf("root.innerHTML = views.page("), "every render draws the link again");
+  assert.ok(renderBody.indexOf("showDraftLink();") < renderBody.indexOf("restoreField("), "before the focus restore");
+  // A create that lands after sign-out announces nothing on the sign-in screen.
+  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started && controller\.getState\(\)\.principal\) notify\(t\("toast\.started", \{\}, screenLang\(\)\)\);/);
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
   assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);

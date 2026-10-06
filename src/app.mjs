@@ -27,7 +27,7 @@ import {
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
-import { buildDraftPdf, createDraftOffer, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
+import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -164,7 +164,8 @@ if (!config) {
   const formDrafts = new Map();
   // The link offered when the browser blocks the draft's tab. It lives here,
   // not in the page: every render draws it again (showDraftLink) until it is
-  // opened, a new press replaces it, or its URL is revoked a minute on.
+  // opened, a new press replaces it, its URL is revoked a minute on, or its
+  // maker is no longer the one signed in.
   const draftOffers = createDraftOffer({
     revoke: (url) => URL.revokeObjectURL(url),
     onExpire: () => showDraftLink(),
@@ -1099,21 +1100,22 @@ if (!config) {
   }
 
   // The blocked-tab link, drawn into #draft-ready from draftOffers: after
-  // every render (which replaced it) and whenever the offer changes. It is
-  // drawn only on the page of the case it was made for.
+  // every render (which replaced it; before the render's focus restore, which
+  // finds it by its id) and whenever the offer changes. It is drawn only for
+  // the user who made it, on the page of the case it was made for; anyone
+  // else signed in, or nobody, ends it first, whatever the screen.
   function showDraftLink() {
+    const state = controller.getState();
+    const userId = state.principal?.userId ?? null;
+    draftOffers.follow(userId);
     const ready = root.querySelector("#draft-ready");
     if (!ready) return;
-    const offer = draftOffers.current(controller.getState().savedCase?.id ?? null);
+    const offer = draftOffers.current(state.savedCase?.id ?? null, userId);
     if (!offer) {
       ready.replaceChildren();
       return;
     }
-    const link = document.createElement("a");
-    link.href = offer.url;
-    link.download = offer.fileName;
-    link.target = "_blank";
-    link.textContent = t("draft.link", {}, screenLang());
+    const link = draftLink(document, offer, t("draft.link", {}, screenLang()));
     link.addEventListener("click", () => draftOffers.drop());
     ready.replaceChildren(link);
   }
@@ -1128,6 +1130,7 @@ if (!config) {
     try {
       const state = controller.getState();
       const caseId = state.savedCase?.id ?? null;
+      const userId = state.principal?.userId ?? null;
       const reference = state.savedCase?.reference ?? "";
       const now = new Date();
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
@@ -1156,7 +1159,7 @@ if (!config) {
       }
       // The browser blocked even the early tab: offer a link instead, drawn
       // into the page as it is now and again after every redraw.
-      draftOffers.offer({ url, fileName: fields.fileName, caseId });
+      draftOffers.offer({ url, fileName: fields.fileName, caseId, userId });
       showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
@@ -1381,8 +1384,9 @@ if (!config) {
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
+        // Nor after a sign-out while it was out: the sign-in screen has no case.
         const started = await controller.createCase();
-        if (started) notify(t("toast.started", {}, screenLang()));
+        if (started && controller.getState().principal) notify(t("toast.started", {}, screenLang()));
         break;
       }
       case "continue-intake":
