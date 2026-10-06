@@ -332,13 +332,21 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
   // Part 4d: its text is a key now (draft.preparing is "Preparing your draft…").
   assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\)\)/);
-  // The blocked-tab link goes with its URL, and is put into the page as it
-  // is after the build (a redraw during the build replaces #draft-ready).
-  assert.match(draft, /URL\.revokeObjectURL\(url\);\s+link\?\.remove\(\);\s+\}, 60_000\)/);
-  assert.match(draft, /link\.textContent = t\("draft\.link", \{\}, screenLang\(\)\)/);
+  // The blocked-tab link goes with its URL (draft-pdf.mjs createDraftOffer),
+  // and is offered after the build. It is kept outside the page and drawn
+  // into #draft-ready after every render, so a redraw within its minute never
+  // drops it; opening it, or a new press, ends the offer.
+  assert.match(app, /const draftOffers = createDraftOffer\(\{\s*revoke: \(url\) => URL\.revokeObjectURL\(url\),\s*onExpire: \(\) => showDraftLink\(\),\s*\}\);/);
+  assert.match(draft, /draftOffers\.drop\(\);\s*showDraftLink\(\);/, "an earlier press's link goes");
+  assert.match(draft, /draftOffers\.keep\(url\);/);
   const built = draft.indexOf("await buildDraftPdf(");
   assert.ok(built > 0);
-  assert.ok(draft.indexOf('const ready = root.querySelector("#draft-ready")') > built, "#draft-ready is looked up after the build");
+  assert.ok(draft.indexOf("draftOffers.offer(") > built, "the link is offered after the build");
+  const show = app.slice(app.indexOf("function showDraftLink("), app.indexOf("async function viewDraft("));
+  assert.match(show, /link\.textContent = t\("draft\.link", \{\}, screenLang\(\)\)/);
+  assert.match(show, /addEventListener\("click", \(\) => draftOffers\.drop\(\)\)/, "an opened link is not drawn again");
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.ok(renderBody.indexOf("showDraftLink();") > renderBody.indexOf("root.innerHTML = views.page("), "every render draws the link again");
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
   assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);

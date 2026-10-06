@@ -11,7 +11,7 @@ import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
 import {
-  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, draftFontsFor,
+  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontsFor,
   fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
 } from "../src/draft-pdf.mjs";
 
@@ -509,4 +509,51 @@ test("the committed vendor bundle builds a Chinese draft whose subsets decode", 
   assert.equal(fonts.length, 2);
   const sources = files.map((b) => fontkit.create(b));
   for (const font of fonts) assert.deepEqual(subsetProblems(font, sources), []);
+});
+
+// The link offered when the browser blocks the draft's tab (app.mjs viewDraft)
+// is kept here, not in the page: every full redraw replaces #draft-ready, and
+// the link is drawn again after each one until it is opened or expires.
+test("the blocked-tab draft link outlives redraws until it is opened or its URL expires", () => {
+  const timers = [];
+  const revoked = [];
+  let expired = 0;
+  const offers = createDraftOffer({
+    revoke: (url) => revoked.push(url),
+    onExpire: () => { expired += 1; },
+    setTimer: (fn, ms) => timers.push({ fn, ms }),
+  });
+  assert.equal(offers.current("case-1"), null, "nothing to offer yet");
+
+  // A tab that opened: its URL is revoked after a minute, and no link is offered.
+  offers.keep("blob:tab");
+  assert.equal(timers[0].ms, 60_000);
+  assert.equal(offers.current("case-1"), null);
+
+  // A blocked tab: the link is offered on its own case only, as often as asked.
+  offers.keep("blob:one");
+  offers.offer({ url: "blob:one", fileName: "Draft-13614-C-VT-TEST.pdf", caseId: "case-1" });
+  for (let redraw = 0; redraw < 3; redraw += 1)
+    assert.deepEqual(offers.current("case-1"), { url: "blob:one", fileName: "Draft-13614-C-VT-TEST.pdf", caseId: "case-1" });
+  assert.equal(offers.current("case-2"), null, "never on another case's page");
+
+  // Expiry revokes the URL and ends the offer.
+  timers[1].fn();
+  assert.deepEqual(revoked, ["blob:one"]);
+  assert.equal(offers.current("case-1"), null);
+  assert.equal(expired, 1);
+  timers[0].fn();
+  assert.deepEqual(revoked, ["blob:one", "blob:tab"], "every draft's URL is revoked");
+
+  // Opened (or replaced by a new press): no longer drawn, but its URL lives out its minute.
+  offers.keep("blob:two");
+  offers.offer({ url: "blob:two", fileName: "a.pdf", caseId: "case-1" });
+  offers.drop();
+  assert.equal(offers.current("case-1"), null);
+  // An older URL's expiry never ends a newer offer.
+  offers.keep("blob:three");
+  offers.offer({ url: "blob:three", fileName: "b.pdf", caseId: "case-1" });
+  timers[2].fn();
+  assert.deepEqual(revoked.at(-1), "blob:two");
+  assert.equal(offers.current("case-1").url, "blob:three");
 });

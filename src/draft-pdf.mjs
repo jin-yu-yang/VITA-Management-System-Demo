@@ -396,3 +396,39 @@ export async function buildDraftPdf({
   doc.setTitle(fileName, { showInWindowTitleBar: true });
   return doc.save();
 }
+
+// ---------------------------------------------------------------------------
+// The blocked-tab link (app.mjs viewDraft)
+// ---------------------------------------------------------------------------
+
+// When the browser blocks the draft's tab, the page offers a link instead.
+// The offer is kept here rather than in the page: every full redraw replaces
+// #draft-ready, so app.mjs draws the link again after each render until it
+// is opened (or a new press replaces it) or its URL expires. Every draft's
+// URL, offered or not, is revoked after `lifetimeMs`; a dead link is worse
+// than none, so its offer ends then too and `onExpire` lets the page redraw
+// the link's place.
+export function createDraftOffer({ revoke, onExpire = () => {}, setTimer = setTimeout, lifetimeMs = 60_000 }) {
+  let offer = null;
+  return {
+    keep(url) {
+      setTimer(() => {
+        revoke(url);
+        if (offer?.url !== url) return;
+        offer = null;
+        onExpire();
+      }, lifetimeMs);
+    },
+    // { url, fileName, caseId }: the link for that case's page.
+    offer(next) {
+      offer = { ...next };
+    },
+    // The link to draw on `caseId`'s page now, or null.
+    current(caseId) {
+      return offer && offer.caseId === caseId ? { ...offer } : null;
+    },
+    drop() {
+      offer = null;
+    },
+  };
+}

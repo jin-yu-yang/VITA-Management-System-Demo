@@ -27,7 +27,7 @@ import {
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
-import { buildDraftPdf, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
+import { buildDraftPdf, createDraftOffer, draftFontsFor, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -162,6 +162,13 @@ if (!config) {
   // dropped the moment the text is sent or the person moves to another case, so
   // nothing can reappear where it does not belong.
   const formDrafts = new Map();
+  // The link offered when the browser blocks the draft's tab. It lives here,
+  // not in the page: every render draws it again (showDraftLink) until it is
+  // opened, a new press replaces it, or its URL is revoked a minute on.
+  const draftOffers = createDraftOffer({
+    revoke: (url) => URL.revokeObjectURL(url),
+    onExpire: () => showDraftLink(),
+  });
 
   function screenFor(state) {
     if (!state.principal) {
@@ -244,6 +251,7 @@ if (!config) {
     }
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
+    showDraftLink();
     tickCooldown(state);
     const opened = Boolean(state.dialog) && state.dialog !== shownDialog;
     shownDialog = state.dialog ?? null;
@@ -1090,14 +1098,36 @@ if (!config) {
     return bytes;
   }
 
+  // The blocked-tab link, drawn into #draft-ready from draftOffers: after
+  // every render (which replaced it) and whenever the offer changes. It is
+  // drawn only on the page of the case it was made for.
+  function showDraftLink() {
+    const ready = root.querySelector("#draft-ready");
+    if (!ready) return;
+    const offer = draftOffers.current(controller.getState().savedCase?.id ?? null);
+    if (!offer) {
+      ready.replaceChildren();
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = offer.url;
+    link.download = offer.fileName;
+    link.target = "_blank";
+    link.textContent = t("draft.link", {}, screenLang());
+    link.addEventListener("click", () => draftOffers.drop());
+    ready.replaceChildren(link);
+  }
+
   async function viewDraft(form) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
     // An earlier press's link goes: this press makes a new draft.
-    root.querySelector("#draft-ready")?.replaceChildren();
+    draftOffers.drop();
+    showDraftLink();
     try {
       const state = controller.getState();
+      const caseId = state.savedCase?.id ?? null;
       const reference = state.savedCase?.reference ?? "";
       const now = new Date();
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
@@ -1118,27 +1148,16 @@ if (!config) {
         stamp: fields.stamp, fileName: fields.fileName,
       });
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-      // The link offered below goes with its URL: a dead link is worse than none.
-      let link = null;
-      window.setTimeout(() => {
-        URL.revokeObjectURL(url);
-        link?.remove();
-      }, 60_000);
+      // Revoked a minute on; a link offered below goes with it.
+      draftOffers.keep(url);
       if (tab && !tab.closed) {
         tab.location.href = url;
         return;
       }
-      // The browser blocked even the early tab: offer a link instead, in the
-      // page as it is now (a redraw during the build replaced #draft-ready).
-      const ready = root.querySelector("#draft-ready");
-      if (ready) {
-        link = document.createElement("a");
-        link.href = url;
-        link.download = fields.fileName;
-        link.target = "_blank";
-        link.textContent = t("draft.link", {}, screenLang());
-        ready.replaceChildren(link);
-      }
+      // The browser blocked even the early tab: offer a link instead, drawn
+      // into the page as it is now and again after every redraw.
+      draftOffers.offer({ url, fileName: fields.fileName, caseId });
+      showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
       notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()));
