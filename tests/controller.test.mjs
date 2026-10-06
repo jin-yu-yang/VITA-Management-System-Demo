@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
-import { CONTACT_FIELDS, isMemberId } from "../src/intake-catalogue.mjs";
-import { withholdInvalid } from "../src/intake-form.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
+import { newMemberId, renderQuestion, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
+import { fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
+import { cardsFor } from "../src/document-cards.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -3254,6 +3255,116 @@ test("every household member in the draft has a member id", async () => {
   simple.controller.editAnswers({ hh: [{ first_name: "A" }] });
   assert.ok(isMemberId(simple.controller.getState().draftAnswers.hh[0].member_id));
   simple.controller.stop();
+});
+
+// The household's controls as the page renders them, read back the way
+// `readForm` (empty cards dropped) and `readField` (kept) read the DOM: each
+// <input data-control> as a descriptor, the hidden member id included.
+function householdControls(members) {
+  const html = renderQuestion(findQuestion(2, "hh"), members, { answers: { has_household_members: "yes", hh: members } });
+  return [...html.matchAll(/<input\b[^>]*\bdata-control\b[^>]*>/g)].map(([tag]) => {
+    const attr = (name) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
+    const descriptor = { q: attr("data-q"), type: attr("type"), value: attr("value") ?? "", checked: /\schecked\b/.test(tag) };
+    if (attr("data-member") !== undefined) descriptor.member = Number(attr("data-member"));
+    if (attr("data-sub") !== undefined) descriptor.sub = attr("data-sub");
+    if (attr("data-date-part") !== undefined) descriptor.part = attr("data-date-part");
+    return descriptor;
+  });
+}
+
+// Task 2 of cleanup-v2-correctness, "not reproduced": `withMemberIds` gives an
+// id-less member the id the previous draft had at the same index, so a card
+// mark (`ssn.hh.<id>`) would move to whoever arrived there. No path in the app
+// produces an id-less member at a shifted index; this pins each one: the mark
+// on An's card stays on An or on nobody, never on another person.
+test("a household member's card mark stays with that person on every path that changes the household", async () => {
+  const A = "000000000000000000000000000000a1";
+  const B = "000000000000000000000000000000b2";
+  const household = [
+    { member_id: A, first_name: "An", last_name: "Lee" },
+    { member_id: B, first_name: "Bo", last_name: "Lee" },
+  ];
+  const documentCards = [{ slotId: `ssn.hh.${A}`, status: "later", groupOverride: null, changedAt: "2026-10-04T12:00:00Z" }];
+  const marked = (controller) =>
+    cardsFor(controller.getState().draftAnswers, documentCards)
+      .filter((card) => card.ruleId === "ssn" && card.status === "later")
+      .map((card) => card.ownerLine.en);
+  const ids = (controller) => controller.getState().draftAnswers.hh?.map((member) => member.member_id) ?? null;
+  const open = () => openV2({ answers: { has_household_members: "yes", hh: household }, documentCards });
+
+  // Opening: the server's ids are the draft's.
+  let { controller, store, sessionStorage } = await open();
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+
+  // The form read: every rendered card carries its hidden id, so An's emptied
+  // card is dropped (readForm) and Bo arrives at index 0 with Bo's own id.
+  const emptied = householdControls([{ member_id: A }, household[1]]);
+  assert.equal(emptied.filter((d) => d.sub === "member_id").length, 2, "one hidden id per card");
+  const read = valuesFromControls(emptied);
+  assert.deepEqual(read.hh.map((member) => member.member_id), [B]);
+  controller.editAnswers(read);
+  assert.deepEqual(ids(controller), [B]);
+  assert.deepEqual(marked(controller), []);
+  // readField keeps the empty card, id and all.
+  controller.editAnswers(valuesFromControls(householdControls(household), { keepEmptyMembers: true }));
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+  controller.stop();
+
+  // Remove, then add (the page's add: a fresh id): nobody inherits An's.
+  ({ controller } = await open());
+  controller.removeMember(0);
+  assert.deepEqual(ids(controller), [B]);
+  controller.editAnswers({ hh: [...controller.getState().draftAnswers.hh, { member_id: newMemberId() }] });
+  assert.equal(ids(controller)[0], B);
+  assert.ok(isMemberId(ids(controller)[1]) && ![A, B].includes(ids(controller)[1]));
+  assert.deepEqual(marked(controller), []);
+  controller.stop();
+
+  // Fictional details: "fill" keeps the household, "replace everything" puts
+  // in the example's own member with the example's own id.
+  ({ controller } = await open());
+  const generated = makeSampleAnswers({ version: 2, seed: 1 });
+  controller.editAnswers(fillBlankAnswers(controller.getState().draftAnswers, generated, 2));
+  assert.deepEqual(ids(controller), [A, B]);
+  controller.editAnswers({ ...generated });
+  assert.deepEqual(ids(controller), [generated.hh[0].member_id]);
+  assert.ok(![A, B].includes(generated.hh[0].member_id));
+  assert.deepEqual(marked(controller), []);
+  controller.stop();
+
+  // Reconcile: the office's side comes with the server's ids; one's own side
+  // with the draft's.
+  ({ controller, store } = await open());
+  controller.editAnswers({ tp_first_name: "Mei" });
+  await remoteChange(store, { answers: { has_household_members: "yes", hh: [household[1]] } });
+  assert.equal(controller.getState().conflict?.code, "REMOTE_CHANGED");
+  await controller.reconcileAnswers({ answers: {}, expectedServerRevision: store.records.get("case-v2").revision, fromServer: true });
+  assert.deepEqual(ids(controller), [B]);
+  assert.deepEqual(marked(controller), []);
+  controller.editAnswers({ tp_first_name: "Mei", hh: household });
+  await remoteChange(store, { answers: { has_household_members: "yes", hh: [household[1]], tp_first_name: "Lan" } });
+  await controller.reconcileAnswers({
+    answers: controller.getState().draftAnswers,
+    expectedServerRevision: store.records.get("case-v2").revision,
+  });
+  assert.deepEqual(ids(controller), [A, B]);
+  assert.deepEqual(marked(controller), ["An Lee"]);
+  controller.stop();
+
+  // Restoring a session: no answer is kept in the window, so the draft is the
+  // server's again, ids and all.
+  ({ controller, store, sessionStorage } = await open());
+  controller.removeMember(0);
+  controller.stop();
+  for (const key of sessionStorage.keys()) assert.ok(!sessionStorage.raw(key).includes(B), key);
+  const restored = build({ store, sessionStorage });
+  await restored.controller.start();
+  await restored.controller.selectCase("case-v2");
+  assert.deepEqual(ids(restored.controller), [A, B]);
+  assert.deepEqual(marked(restored.controller), ["An Lee"]);
+  restored.controller.stop();
 });
 
 test("§3.8: after a failed save of an answer and its undo, a newer revision's answers are a choice, not taken", async () => {
