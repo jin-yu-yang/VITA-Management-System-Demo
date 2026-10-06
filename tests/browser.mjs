@@ -3931,6 +3931,26 @@ async function runPermutation(t, roles) {
             download: `13614-C-draft-${reference}-zh-s.pdf`,
             blob: true,
           });
+          // The link outlives a redraw from elsewhere, and so does the
+          // keyboard on it: it is drawn again after every render, with the
+          // id the render's focus restore looks for. Nothing opens the PDF.
+          await waitForQuiet(page);
+          await page.locator("#draft-ready-link").focus({ timeout: CLICK_MS });
+          assert.equal(
+            await page.evaluate(() => document.activeElement?.id ?? null),
+            "draft-ready-link",
+            "the draft link did not take the keyboard",
+          );
+          await redrawFromElsewhere();
+          draft.blockedAfterRedraw = await page.evaluate(() => ({
+            link: document.querySelector("#draft-ready #draft-ready-link")?.textContent.trim() ?? null,
+            focused: document.activeElement?.id ?? null,
+          }));
+          assert.deepEqual(
+            draft.blockedAfterRedraw,
+            { link: "Your draft is ready: open it", focused: "draft-ready-link" },
+            "a redraw from elsewhere took the draft link or the keyboard on it",
+          );
           assert.deepEqual(strayRequests, [], "the draft reached for a CDN file it was not given");
           await page.unrouteAll({ behavior: "wait" });
         }

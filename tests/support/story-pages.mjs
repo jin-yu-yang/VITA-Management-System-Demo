@@ -547,8 +547,16 @@ export const readAlerts = async (page) =>
 export const WORK_BOARD_HEADING = "Work board";
 export const OFFICE_BOARD_HEADING = "Office queue";
 
-/** Act as one volunteer in this window, and wait for the screen to agree. */
+/**
+ * Act as one volunteer in this window, and wait for the screen to agree.
+ *
+ * One press, sent into a still page: a phase usually starts right after the
+ * other window's work, whose redraw burst can replace the persona panel under
+ * the press, and then nothing is chosen at all (seen on Firefox staff under
+ * load, in "Sam records the call…" and "Morgan reviews…").
+ */
 export async function choosePersona(page, personId) {
+  await waitForQuiet(page);
   await page
     .locator(`[data-action="select-person"][data-person-id="${personId}"]`)
     .click({ timeout: CLICK_MS });
