@@ -357,6 +357,12 @@ export function createController({
   // A version-2 sub-step change is waiting for its save (`goToSubstep`), or a
   // card mark is waiting for its pre-save or its own action (`cardAction`).
   let substepSaveInFlight = false;
+  // While the flag is held: a promise that settles when it is dropped, so a
+  // Save pressed meanwhile can wait its turn (`takeFlag`, `dropFlag`).
+  let flagFree = null;
+  // The version-2 save out now (`{ caseId, promise }`), so a Save pressed
+  // meanwhile can learn how it ended.
+  let saveOut = null;
   // Which new office draft is open: moves each time one starts. A Save draft
   // started for one draft adopts nothing once that draft is gone.
   let officeDraftToken = 0;
@@ -1393,7 +1399,7 @@ export function createController({
     // The flag is the one sub-step changes and card marks hold, so a mark
     // can't race the save.
     state.officeSaving = true;
-    substepSaveInFlight = true;
+    takeFlag();
     show();
     try {
       if (!state.savedCase) {
@@ -1408,7 +1414,7 @@ export function createController({
       return await sendOfficeDraft();
     } finally {
       state.officeSaving = false;
-      substepSaveInFlight = false;
+      dropFlag();
       show();
     }
   }
@@ -1705,13 +1711,13 @@ export function createController({
     persistSession();
     if (state.dirty) {
       const caseId = state.selectedCaseId;
-      substepSaveInFlight = true;
+      takeFlag();
       try {
         await saveNow();
       } catch {
         // Already on screen: the save state is "failed" and the error is set.
       } finally {
-        substepSaveInFlight = false;
+        dropFlag();
       }
       // Another case was opened during the save: this move belongs to the old one.
       if (state.selectedCaseId !== caseId) return;
@@ -1869,19 +1875,64 @@ export function createController({
   const actingPersonId = (personId) =>
     presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
 
-  // A save asked for on its own (Save, Save & exit, Submit's save first).
-  // Version 2 takes the one-save-at-a-time flag that sub-step changes and
-  // card marks hold, so none of them can send a second save at the same
-  // expected revision and meet a false conflict. A press while another save
-  // is out is ignored, as a second sub-step change is. Version 1 as today.
+  // The one-save-at-a-time flag, which sub-step changes, card marks, the
+  // office's Save draft, a version-2 Retry and a Save all hold.
+  function takeFlag() {
+    substepSaveInFlight = true;
+    let free;
+    flagFree = { promise: new Promise((resolve) => (free = resolve)), free };
+  }
+
+  function dropFlag() {
+    substepSaveInFlight = false;
+    flagFree?.free();
+    flagFree = null;
+  }
+
+  // A version-2 save, known as the one out until it settles.
+  async function trackSave(caseId, promise) {
+    const out = { caseId, promise };
+    saveOut = out;
+    try {
+      return await promise;
+    } finally {
+      if (saveOut === out) saveOut = null;
+    }
+  }
+
+  // A save asked for on its own (Save, Save & exit, Submit's save first). It
+  // saves or fails visibly. Version 2 holds the one-save-at-a-time flag, so
+  // no second save goes out at the same expected revision. Pressed while
+  // another save is out, it waits for that save: when that was this case's
+  // save and it failed, so does this; otherwise what is still unsaved is
+  // saved after it. Resolves to the receipt, or null when the case it was
+  // pressed on is no longer open (nothing was saved for it). Version 1 as
+  // today.
   async function saveAnswers() {
     if (caseVersion() !== 2) return await saveNow();
-    if (substepSaveInFlight) return null;
-    substepSaveInFlight = true;
+    const caseId = state.selectedCaseId;
+    let waited = null;
+    let receipt = null;
+    while (substepSaveInFlight) {
+      const out = saveOut;
+      if (out && out !== waited) {
+        waited = out;
+        try {
+          const done = await out.promise;
+          if (out.caseId === caseId) receipt = done;
+        } catch (error) {
+          if (out.caseId === caseId && state.selectedCaseId === caseId) throw error;
+        }
+      } else await flagFree.promise;
+    }
+    if (state.selectedCaseId !== caseId) return null;
+    // The save it waited for took everything: nothing is left to send.
+    if (receipt && !state.dirty) return receipt;
+    takeFlag();
     try {
       return await saveNow();
     } finally {
-      substepSaveInFlight = false;
+      dropFlag();
     }
   }
 
@@ -1916,6 +1967,11 @@ export function createController({
     };
     if (version !== 2) return await dispatch(action, { save: true });
     sentDrafts.set(action, state.draftAnswers);
+    return await trackSave(action.caseId, sendVersionTwo(action));
+  }
+
+  // A version-2 save's envelope sent, with its one retry without a field.
+  async function sendVersionTwo(action) {
     try {
       return await dispatchSave(action);
     } catch (error) {
@@ -2058,7 +2114,7 @@ export function createController({
     if (substepSaveInFlight) return null;
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
-    substepSaveInFlight = true;
+    takeFlag();
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
         const caseId = state.selectedCaseId;
@@ -2072,7 +2128,7 @@ export function createController({
       }
       return await runAction(type, payload);
     } finally {
-      substepSaveInFlight = false;
+      dropFlag();
     }
   }
 
@@ -2252,7 +2308,15 @@ export function createController({
       return null;
     }
     const { action, save, omit } = pendingAction;
-    return await dispatch(action, { save, omit });
+    if (!save || caseVersion() !== 2) return await dispatch(action, { save, omit });
+    // A version-2 save: one at a time, like any other.
+    if (substepSaveInFlight) return null;
+    takeFlag();
+    try {
+      return await trackSave(action.caseId, dispatch(action, { save, omit }));
+    } finally {
+      dropFlag();
+    }
   }
 
   function getState() {

@@ -853,3 +853,16 @@ test("index.html keeps lang=\"en\" and today's title, which frame.title repeats"
   const title = html.match(/<title>([^<]*)<\/title>/)[1];
   assert.equal(TEXT["frame.title"].en, title);
 });
+
+// Cleanup (version-2 save path): a Save that saved nothing for the open case
+// resolves to null. Save, Save & exit and Submit's save first then neither
+// say "Saved", nor leave, nor submit.
+test("app.mjs treats a Save that saved nothing as not saved", () => {
+  const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
+  const save = app.slice(app.indexOf('if (type === "SAVE_ANSWERS") {'), app.indexOf('if (type === "SUBMIT" && !state.openPanels'));
+  assert.match(save, /if \(!\(await controller\.saveAnswers\(\)\)\) return;\s+clearFormDrafts\(form\);\s+notify\(t\("toast\.saved"/);
+  const submit = app.slice(app.indexOf('if (type === "SUBMIT" && isV2Case(state)) {'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
+  assert.match(submit, /if \(controller\.getState\(\)\.dirty && !\(await controller\.saveAnswers\(\)\)\) return;/);
+  const exit = app.slice(app.indexOf('case "save-exit": {'), app.indexOf('case "fill-fictional":'));
+  assert.match(exit, /if \(dirty && !\(await controller\.saveAnswers\(\)\)\) break;\s+controller\.navigate\("applications"\);/);
+});

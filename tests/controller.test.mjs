@@ -4336,3 +4336,127 @@ test("a save whose re-read fails, then a card mark, expects the revision the sav
   assert.equal(store.records.get("case-v2").documentCards.length, 1);
   controller.stop();
 });
+
+// Fix round 1 (I1): an explicit Save while another save is out waits for it,
+// then saves what is still unsaved, or fails visibly; it is never a quiet null.
+test("Save during a sub-step change's save waits for it, then sends what was typed since", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  release();
+  await moving;
+  const receipt = await saving;
+  assert.ok(receipt, "Save says it saved only when it did");
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.deepEqual(store.writes.map((write) => write.expectedRevision), [1, 2], "one save after the other");
+  assert.equal(controller.getState().dirty, false);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("Save during a sub-step change's save that fails fails too, and sends nothing more", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  store.failNext = offline();
+  release();
+  await moving;
+  await assert.rejects(saving, { code: "OFFLINE" });
+  assert.equal(store.writes.length, 1);
+  assert.equal(controller.getState().saveState, "failed");
+  assert.equal(controller.getState().dirty, true);
+  controller.stop();
+});
+
+test("Save on a case opened while the old case's save is out saves the open case", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  const saving = controller.saveAnswers();
+  release();
+  await moving;
+  assert.ok(await saving);
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+// Fix round 1 (minor): the old case's failure is not the open case's doubt,
+// and its refusal is not retried.
+test("an unknown outcome for the old case's save leaves the open case's visit-only draft settling quietly", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: { tp_first_name: "Lan" } }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  store.failNext = offline();
+  release();
+  await assert.rejects(saving, { code: "OFFLINE" });
+  // Only a visit is unsaved on the open case.
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true);
+  const record = store.records.get("case-w");
+  store.records.set("case-w", { ...record, revision: record.revision + 1, answers: { tp_first_name: "Lan", addr_city: "Camden" } });
+  await store.handlers.onChange({ table: "cases", caseId: "case-w" });
+  const state = controller.getState();
+  assert.equal(state.conflict, null, "nothing to choose between");
+  assert.equal(state.draftAnswers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("a refusal naming a field for the old case's save is not retried once another case is open", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming", tp_dob: "1980-01-01" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  store.refusals.push(Object.assign(new Error("refused"), { code: "VALIDATION", field: "tp_dob" }));
+  release();
+  await assert.rejects(saving, { code: "VALIDATION" });
+  assert.equal(store.writes.length, 1, "no retry for the case that was left");
+  controller.stop();
+});
+
+// Fix round 1 (minor): Retry is a version-2 save like any other.
+test("a sub-step change during a Retry sends no second save", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  store.failNext = offline();
+  await assert.rejects(controller.saveAnswers(), { code: "OFFLINE" });
+  assert.equal(controller.getState().retryable, true);
+  const release = holdSaves(store);
+  const retrying = controller.retryLast();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(store.actCalls, 1, "one SAVE_ANSWERS only");
+  release();
+  await Promise.all([retrying, moving]);
+  assert.equal(controller.getState().error, null, "no conflict banner");
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
+  controller.stop();
+});

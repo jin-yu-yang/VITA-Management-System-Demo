@@ -927,7 +927,9 @@ if (!config) {
       // into the same draft, and the save is still the controller's.
       if (form?.matches?.(ANSWER_FORMS))
         controller.editAnswers(Object.fromEntries(new FormData(form)));
-      await controller.saveAnswers();
+      // Null: the case it was pressed on is no longer open, so nothing was
+      // saved for it. A failure throws, and is shown by the caller.
+      if (!(await controller.saveAnswers())) return;
       clearFormDrafts(form);
       notify(t("toast.saved", {}, screenLang()));
       return;
@@ -965,7 +967,7 @@ if (!config) {
         focusV2Arrival();
         return;
       }
-      if (controller.getState().dirty) await controller.saveAnswers();
+      if (controller.getState().dirty && !(await controller.saveAnswers())) return;
     }
     if (type === "RESPOND_DOCUMENT" && state.openPanels.includes("upload-failure")) {
       // The simulated failure never reaches the server, so there is nothing to
@@ -1477,7 +1479,8 @@ if (!config) {
           sweepV2Form();
           dirty = controller.getState().dirty;
         }
-        if (dirty) await controller.saveAnswers();
+        // Not saved: no "Saved", and the page stays.
+        if (dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
         notify(t("toast.saved", {}, screenLang()));
         break;
