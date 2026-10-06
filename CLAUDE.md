@@ -37,9 +37,20 @@ This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schem
 | Trigger you observe | What to do |
 |---|---|
 | User starts a narrative design discussion / "let's brainstorm" | Use Superpowers brainstorming discipline conversationally. Keep all output in the conversation; do not create any artifact. When the 5 promotion criteria hold, suggest `/opsx:propose`. |
-| User invokes `/opsx:new` / `/opsx:ff` / `/opsx:propose` directly | Follow the schema's flow; artifact instructions inject at each step |
+| User invokes `/opsx:propose` directly | Follow the schema's flow; artifact instructions inject at each step |
 | User explicitly says bug fix / typo / config tweak / doc update | Direct PR — **do NOT** open a change (see skip rules below) |
-| User is mid-change | Advance with `/opsx:continue`, `/opsx:apply`, `/opsx:verify`, or `/opsx:archive` |
+| User is mid-change | Advance with `/opsx:apply` or `/opsx:archive`; produce `verify.md` and `retrospective.md` as described under "Commands installed" below |
+
+### Commands installed
+
+This project installs only OpenSpec's six core commands: `/opsx:propose`, `/opsx:explore`, `/opsx:apply`, `/opsx:update`, `/opsx:sync` and `/opsx:archive`.
+
+- `/opsx:new`, `/opsx:ff`, `/opsx:continue` and `/opsx:verify` aren't installed. Adding them needs `openspec config profile`, which changes each developer's global OpenSpec config, so don't run it (decision 2026-10-05).
+- The schema's `verify` and `retrospective` artifacts are still required. After `/opsx:apply` completes, produce each one from the CLI's own instructions and template:
+  - `openspec status --change "<name>" --json` shows what is ready;
+  - `openspec instructions <artifact> --change "<name>" --json` gives that artifact's rules and template.
+
+  Follow the verify artifact's PRECHECK and checks in full. It names the `openspec-verify-change` skill, which isn't installed here; do its checks directly instead.
 
 ### When NOT to use opsx (direct PR)
 
