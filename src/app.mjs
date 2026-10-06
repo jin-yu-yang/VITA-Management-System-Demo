@@ -40,7 +40,7 @@ import * as client from "./client-views.mjs";
 import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
-import { STORAGE_KEY, createLanguageRequests, isLang, viewLang } from "./language.mjs";
+import { STORAGE_KEY, createLanguageRequests, isLang, loadHantWithin, viewLang } from "./language.mjs";
 import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, sentence } from "./client-text.mjs";
 
@@ -86,7 +86,8 @@ function readLocalStorage() {
 // or when the 繁體 draft 13614-C is made. A retry after a failure asks for a
 // fresh URL (hant.mjs).
 const loadHant = createHantLoader((url) => import(url));
-// How long a saved 繁體 waits for its map before startup shows 简体.
+// How long a saved 繁體 waits for its map before startup shows 简体; the
+// 繁體 draft waits as long before it fails.
 const HANT_START_TIMEOUT_MS = 5000;
 
 if (!config) {
@@ -1103,8 +1104,9 @@ if (!config) {
         .map((n) => String(n).padStart(2, "0"))
         .join("-");
       // The 繁體 draft's lines need the map, whatever the screen language;
-      // loading it changes nothing on screen. A failure is draft.failed.
-      if (form === "zh-t" && !hantReady()) await loadHant();
+      // loading it changes nothing on screen. A failure, or a load still
+      // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
+      if (form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
       const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([

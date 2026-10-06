@@ -813,14 +813,17 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.match(readFileSync(new URL("../src/hant.mjs", import.meta.url), "utf8"), /failures === 0 \? "\.\/zh-hant\.mjs" : `\.\/zh-hant\.mjs\?r=\$\{failures\}`/);
   // One request helper for the switch, other tabs and startup: only the newest wish applies.
   assert.match(app, /const languageRequests = createLanguageRequests\(\{ hantReady, loadHant \}\);/);
-  // Outside the request helper, only the 繁體 draft awaits the map, and it
+  // Outside the request helper, only the 繁體 draft waits for the map, and it
   // changes no language: the draft's lines need it whatever the screen shows.
-  assert.deepEqual(app.match(/await loadHant\(\)/g), ["await loadHant()"], "one await of the map outside the request helper");
+  // It waits no longer than startup does (language.mjs loadHantWithin): a
+  // hung load fails the draft (draft.failed) rather than leaving the tab on
+  // "Preparing your draft…".
+  assert.doesNotMatch(app, /await loadHant\(\)/, "nothing awaits the map without a timeout");
   assert.match(
     app,
-    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t" && !hantReady\(\)\) await loadHant\(\);\s*const fields = draftFields\(/,
+    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = draftFields\(/,
   );
-  // Startup waits five seconds at most for a saved 繁體's map.
+  // Startup waits five seconds at most for a saved 繁體's map, and the draft as long.
   assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
   // Startup in 繁體: loaded before start through a request; 繁體 still wanted
   // without its map means 简体, undrawn, and the toast after the first render.

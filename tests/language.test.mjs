@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LANGS, STORAGE_KEY, defaultLanguage, readLanguage, writeLanguage, createLanguageRequests, sourceText, viewLang, localeOf, fill } from "../src/language.mjs";
+import { LANGS, STORAGE_KEY, defaultLanguage, readLanguage, writeLanguage, createLanguageRequests, loadHantWithin, sourceText, viewLang, localeOf, fill } from "../src/language.mjs";
 import { setHantMap, toHant, hantReady, createHantLoader } from "../src/hant.mjs";
 import { TEXT, SENTENCES, t, sentence } from "../src/client-text.mjs";
 
@@ -240,6 +240,36 @@ test("language requests: a startup load that outlasts its timeout fails, and a l
   const waiting = overtaken.want("zh-Hant", () => assert.fail("never applied"), { timeoutMs: 10 });
   assert.equal(await overtaken.want("en", () => {}), "applied");
   assert.equal(await waiting, "stale");
+});
+
+// The 繁體 draft (app.mjs viewDraft) waits for the map with startup's timeout:
+// a load still hanging then fails the draft instead of leaving its tab on
+// "Preparing your draft…".
+test("the draft's map load: a hung load fails after the timeout; a ready or quick map does not wait", async () => {
+  const hung = deferredLoads();
+  const started = Date.now();
+  await assert.rejects(loadHantWithin(hung, 10), /did not load in time/);
+  assert.ok(Date.now() - started < 1000, "it gave up at the timeout");
+  assert.equal(hung.pending.length, 1);
+  // The map may still land later and register; nothing waits for it.
+  hung.pending[0].resolve();
+  assert.equal(hung.hantReady(), true);
+
+  // Already loaded: no load at all.
+  let asked = 0;
+  await loadHantWithin({ hantReady: () => true, loadHant: async () => { asked += 1; } }, 10);
+  assert.equal(asked, 0);
+
+  // A load that lands in time is waited for; a failed load rejects as it did.
+  const quick = deferredLoads();
+  const waiting = loadHantWithin(quick, 1000);
+  quick.pending[0].resolve();
+  await waiting;
+  assert.equal(quick.hantReady(), true);
+  const failing = deferredLoads();
+  const refused = loadHantWithin(failing, 1000);
+  failing.pending[0].reject();
+  await assert.rejects(refused, /offline/);
 });
 
 test("the map's loader asks for a fresh URL after a failure, and keeps the path relative", async () => {
