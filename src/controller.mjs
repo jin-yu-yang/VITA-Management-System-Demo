@@ -368,6 +368,11 @@ export function createController({
   // save succeeds, the draft is then never "dirty only because of visits"
   // (spec 2026-10-04 §3.8), so a newer revision is not taken without a choice.
   let answersInDoubt = false;
+  // The revision the open version-2 case's last save made, from its receipt
+  // (`{ caseId, revision }`). A re-read that fails after the save leaves
+  // savedCase older, and the next pin must not be a revision the save moved
+  // past, or the next save meets a conflict with this person's own save.
+  let landedRevision = null;
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
   let pendingReset = null;
@@ -576,11 +581,25 @@ export function createController({
   }
 
   // The base revision moves forward to `record`. A retained save envelope
-  // still expects the old revision, so it could only be refused now.
+  // still expects the old revision, so it could only be refused now. What is
+  // left to save is measured again against the newer snapshot, as in
+  // `commitDraft`: nothing left (the visits, say, are already there) clears
+  // the pin and settles the chip. A save refused as a conflict is answered by
+  // the move, so its failure and its banner go too.
   function movePin(record) {
     state.editBaseRevision = Number(record.revision);
     state.conflict = null;
     forgetPendingSave();
+    const refused = state.saveState === "failed" && state.error?.code === "CONFLICT";
+    if (refused) state.error = null;
+    if (!sendableDiffers(state.draftAnswers, serverAnswersOf(record), 2) && !visitsPending()) {
+      state.dirty = false;
+      state.editBaseRevision = null;
+      if (state.saveState === "unsaved" || state.saveState === "failed")
+        state.saveState = settledState();
+    } else if (refused) {
+      state.saveState = "unsaved";
+    }
   }
 
   // A case opened with no saved place opens at its first unfinished sub-step
@@ -697,6 +716,7 @@ export function createController({
     state.saveState = "idle";
     stateBeforeEdit = "idle";
     answersInDoubt = false;
+    landedRevision = null;
     state.formStep = 0;
     state.formSubstep = null;
     state.visitedSubsteps = [];
@@ -1620,9 +1640,19 @@ export function createController({
   // goes Unsaved.
   function markDirty() {
     if (state.editBaseRevision === null && state.savedCase)
-      state.editBaseRevision = Number(state.savedCase.revision);
+      state.editBaseRevision = pinRevision();
     markUnsaved();
     state.dirty = true;
+  }
+
+  // The open version-2 case's revision as this window last knew it: the
+  // snapshot's, or the one its last save's receipt named when the re-read
+  // after that save failed.
+  function pinRevision() {
+    const revision = Number(state.savedCase.revision);
+    return landedRevision?.caseId === state.savedCase.id
+      ? Math.max(revision, landedRevision.revision)
+      : revision;
   }
 
   // Unsaved, remembering what it replaced when that was a settled state, or a
@@ -1760,12 +1790,16 @@ export function createController({
       // The draft as it is now, for a version-2 save: what was typed while the
       // save was out is not in what was sent.
       const typed = sentDrafts.has(action) ? state.draftAnswers : null;
-      if (save) {
+      // A save that lands after another case was opened says nothing about
+      // the open case: its edits, pin and chip are its own.
+      if (save && state.selectedCaseId === action.caseId) {
         state.dirty = false;
         state.editBaseRevision = null;
         state.conflict = null;
         state.saveState = "saved";
         answersInDoubt = false;
+        if (typed && Number.isFinite(Number(receipt?.revision)))
+          landedRevision = { caseId: action.caseId, revision: Number(receipt.revision) };
       }
       // The action is done. A re-read that fails afterwards is a stale view,
       // never a failed action, and must not put the envelope back in hand.
@@ -1815,10 +1849,22 @@ export function createController({
     const later = {};
     for (const [id, value] of Object.entries(typed))
       if (JSON.stringify(value) !== JSON.stringify(sent[id])) later[id] = value;
-    if (!Object.keys(later).length) return;
-    state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
-    pruneRevealed();
-    if (!state.dirty && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2))
+    const edited = Object.keys(later).length > 0;
+    if (edited) {
+      state.draftAnswers = withMemberIds(mergeIntoDraft(state.draftAnswers, later), state.draftAnswers);
+      pruneRevealed();
+    }
+    if (state.dirty) return;
+    // A visit recorded while the save was out is still to send, as in
+    // `commitDraft`. Not when the re-read failed: against a snapshot older
+    // than the save, every visit it sent would look unsent.
+    const behind =
+      landedRevision?.caseId === action.caseId &&
+      Number(state.savedCase.revision) < landedRevision.revision;
+    if (
+      (edited && sendableDiffers(state.draftAnswers, serverAnswersOf(state.savedCase), 2)) ||
+      (!behind && visitsPending())
+    )
       markDirty();
   }
 
@@ -1844,7 +1890,7 @@ export function createController({
       actionId: newActionId(),
       caseId: state.savedCase.id,
       expectedRevision:
-        state.editBaseRevision ?? Number(state.savedCase.revision),
+        state.editBaseRevision ?? (version === 2 ? pinRevision() : Number(state.savedCase.revision)),
       // A client answers for themselves. The office answering for a walk-in
       // client sends its own persona: the database accepts SAVE_ANSWERS from a
       // presenter only with an `admin` person on an owner-less draft, and

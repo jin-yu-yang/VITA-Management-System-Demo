@@ -4140,3 +4140,134 @@ test("the window state never holds the language", async () => {
   assert.deepEqual(localStorage.keys(), ["vitally.lang"]);
   controller.stop();
 });
+
+// Cleanup: the version-2 save path. A save that lands after another case was
+// opened, a re-read that fails after a save, a visit recorded while a save is
+// out, and the chip after a quiet re-pin.
+// ---------------------------------------------------------------------------
+
+test("a save that lands after another case was opened leaves that case's edits dirty", async () => {
+  const { controller, store } = await openV2({
+    answers: { tp_first_name: "Mei" },
+    others: [{ id: "case-w", reference: "VT-WWWW-BBBB", stage: "draft", revision: 1, intakeVersion: 2, answers: {} }],
+  });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.selectCase("case-w");
+  controller.editAnswers({ addr_city: "Camden" });
+  release();
+  await saving;
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the first case's save landed");
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-w");
+  assert.equal(state.draftAnswers.addr_city, "Camden", "the open case's typing is kept");
+  assert.equal(state.dirty, true);
+  assert.equal(state.editBaseRevision, 1);
+  assert.equal(state.saveState, "unsaved");
+  await controller.saveAnswers();
+  assert.equal(store.records.get("case-w").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a save whose re-read fails still pins the next edit to the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().savedCase.revision, 1, "the re-read failed");
+  controller.editAnswers({ addr_city: "Camden" });
+  assert.equal(controller.getState().editBaseRevision, 2);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(store.records.get("case-v2").answers.addr_city, "Camden");
+  assert.equal(controller.getState().saveState, "saved");
+  assert.equal(controller.getState().conflict, null);
+  controller.stop();
+});
+
+test("a save whose re-read fails, then a Save with nothing changed, expects the revision the save made", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const getCase = store.getCase;
+  store.getCase = async () => {
+    throw offline();
+  };
+  await controller.saveAnswers();
+  store.getCase = getCase;
+  assert.equal(controller.getState().dirty, false);
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
+
+test("a visit recorded while a save is out is still to send once the save lands", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  const release = holdSaves(store);
+  const saving = controller.saveAnswers();
+  await new Promise((resolve) => setImmediate(resolve));
+  const moving = controller.goToSubstep("before.service");
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  await Promise.allSettled([saving, moving]);
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the save landed");
+  assert.deepEqual(store.records.get("case-v2").intakeVisited, [], "the visit has not reached the server");
+  assert.deepEqual(controller.getState().visitedSubsteps, ["before.ready"]);
+  assert.equal(controller.getState().dirty, true, "the visit is still to send");
+  await controller.saveAnswers();
+  assert.deepEqual(store.writes.at(-1).payload.visited, ["before.ready"]);
+  assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
+  assert.equal(controller.getState().dirty, false);
+  controller.stop();
+});
+
+test("a re-pin that leaves nothing to send settles the chip", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  store.failNext = offline();
+  await controller.goToSubstep("before.service");
+  assert.equal(controller.getState().dirty, true);
+  assert.equal(controller.getState().saveState, "failed");
+  // The save in doubt had landed after all: the next read shows its visit.
+  await remoteChange(store, { intakeVisited: ["before.ready"] });
+  const state = controller.getState();
+  assert.equal(state.conflict, null);
+  assert.equal(state.dirty, false, "nothing differs from the server");
+  assert.equal(state.editBaseRevision, null);
+  assert.equal(state.saveState, "idle");
+  assert.equal(chip(controller), "Up to date");
+  controller.stop();
+});
+
+test("a save refused as a conflict that a quiet re-pin answers leaves no failure behind", async () => {
+  const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.editAnswers({ tp_first_name: "Ming" });
+  // A card mark in another tab whose change has not reached this window.
+  const record = store.records.get("case-v2");
+  store.records.set("case-v2", {
+    ...record,
+    revision: 2,
+    documentCards: [{ slotId: "w2.household", status: "later", groupOverride: null, changedAt: "2026-10-04T12:00:00Z" }],
+  });
+  await assert.rejects(controller.saveAnswers(), { code: "CONFLICT" });
+  const state = controller.getState();
+  assert.equal(state.conflict, null, "nothing to choose between");
+  assert.equal(state.editBaseRevision, 2);
+  assert.equal(state.dirty, true);
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.error, null);
+  assert.equal(chip(controller), "Unsaved changes");
+  await controller.saveAnswers();
+  assert.equal(store.writes.at(-1).expectedRevision, 2);
+  assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming");
+  assert.equal(controller.getState().saveState, "saved");
+  controller.stop();
+});
