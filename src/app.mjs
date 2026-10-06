@@ -4,7 +4,7 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { formValuesWithLists } from "./form-values.mjs";
-import { makeSampleAnswers, fillBlankAnswers } from "./sample-data.mjs";
+import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
   countText,
@@ -773,24 +773,7 @@ if (!config) {
       // A regenerate is the new example plus a clear of every other answer
       // already in the draft (the wording choice kept); a fill touches blank
       // answers only.
-      const cleared = Object.fromEntries(
-        Object.keys(draft)
-          // The senior switch is the person's choice of wording, not an answer.
-          .filter(
-            (key) =>
-              key !== "form_version" &&
-              // The email is the person's own, as version 1 keeps the verified one.
-              key !== "email" &&
-              findQuestion(2, key) &&
-              !(key in generated),
-          )
-          .map((key) => [key, null]),
-      );
-      controller.editAnswers(
-        replaceEverything
-          ? { ...cleared, ...generated }
-          : fillBlankAnswers(draft, generated, 2),
-      );
+      controller.editAnswers(fictionalAnswers(draft, generated, { replaceEverything }));
       notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
       return;
     }
@@ -830,7 +813,7 @@ if (!config) {
         seed: sampleSeed,
         married: draft.marital_status === "married",
       });
-      controller.editAnswers(fillBlankAnswers(draft, sample, 2));
+      controller.editAnswers(fictionalAnswers(draft, sample));
       notify("Fictional details filled in. Nothing is saved yet.");
       return;
     }

@@ -5,7 +5,7 @@ import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
 import { newMemberId, renderQuestion, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
-import { fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
+import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
@@ -3277,6 +3277,68 @@ function householdControls(members) {
 // mark (`ssn.hh.<id>`) would move to whoever arrived there. No path in the app
 // produces an id-less member at a shifted index; this pins each one: the mark
 // on An's card stays on An or on nobody, never on another person.
+// The page's fictional details (app.mjs `fictional` and the office's
+// `fillAssistedIntake`): the seed starts again at 1 on every page load and the
+// sample's member id is fixed by the seed. After a remove and a reload, a fill
+// must not bring back a removed person's id, or the regenerated person takes
+// over that person's card marks.
+test("fictional details after a reload never reuse a removed member's id or inherit its card marks", async () => {
+  for (const replaceEverything of [false, true]) {
+    const store = v2Store({ answers: { tp_first_name: "Mei" } });
+    const sessionStorage = fakeSession();
+    const page = async () => {
+      const built = build({ store, sessionStorage });
+      await built.controller.start();
+      await built.controller.selectCase("case-v2");
+      return built.controller;
+    };
+    const fill = (controller) => {
+      const draft = controller.getState().draftAnswers;
+      const sample = makeSampleAnswers({ version: 2, seed: 1, married: draft.marital_status === "married" });
+      controller.editAnswers(fictionalAnswers(draft, sample, { replaceEverything }));
+    };
+    const laterOnHousehold = (controller) =>
+      cardsFor(controller.getState().draftAnswers, controller.getState().savedCase.documentCards).filter(
+        (card) => card.ruleId === "ssn" && card.owner.startsWith("hh.") && card.status === "later",
+      );
+
+    let controller = await page();
+    fill(controller);
+    await controller.saveAnswers();
+    const first = controller.getState().draftAnswers.hh[0].member_id;
+    await controller.setDocumentCard(`ssn.hh.${first}`, "later");
+    assert.equal(laterOnHousehold(controller).length, 1);
+    controller.removeMember(0);
+    await controller.saveAnswers();
+    assert.equal(controller.getState().draftAnswers.hh, null);
+    controller.stop();
+
+    // A reload: the page's seed starts again.
+    controller = await page();
+    fill(controller);
+    const again = controller.getState().draftAnswers.hh[0].member_id;
+    assert.ok(isMemberId(again));
+    assert.notEqual(again, first, `replaceEverything ${replaceEverything}: the removed person's id came back`);
+    assert.deepEqual(laterOnHousehold(controller), [], "the new person starts with no marks");
+    controller.stop();
+  }
+});
+
+// The fill gives generated members fresh ids; members already in the draft
+// keep theirs, and the sample's own ids stay fixed by the seed.
+test("fictional details give generated household members fresh ids and leave the draft's own alone", () => {
+  const sample = makeSampleAnswers({ version: 2, seed: 1 });
+  const fixed = sample.hh[0].member_id;
+  const fresh = ["000000000000000000000000000000f1", "000000000000000000000000000000f2"];
+  const newId = () => fresh.shift();
+  assert.equal(fictionalAnswers({}, sample, { newId }).hh[0].member_id, "000000000000000000000000000000f1");
+  assert.equal(fictionalAnswers({ tp_first_name: "Mei" }, sample, { replaceEverything: true, newId }).hh[0].member_id, "000000000000000000000000000000f2");
+  assert.equal(sample.hh[0].member_id, fixed, "the sample is never changed in place");
+  assert.equal(makeSampleAnswers({ version: 2, seed: 1 }).hh[0].member_id, fixed, "still fixed by the seed");
+  const own = [{ member_id: "000000000000000000000000000000a1", first_name: "An" }];
+  assert.equal(fictionalAnswers({ hh: own }, sample, { newId: () => assert.fail("no id for a kept household") }).hh, own);
+});
+
 test("a household member's card mark stays with that person on every path that changes the household", async () => {
   const A = "000000000000000000000000000000a1";
   const B = "000000000000000000000000000000b2";
