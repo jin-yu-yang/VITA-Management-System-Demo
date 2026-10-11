@@ -121,6 +121,7 @@ const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 const FINDINGS = "Internal only: recheck the simulated mileage total before approval.";
 const CORRECTION_NOTE = "Recorded the corrected simulated total in TaxSlayer.";
 const REVIEW_CONTACT_NOTE = "Told the fictional client the review is complete.";
+const EDITED_BEST_TIME_NOTE = "Text first; a fictional call after 6 pm is fine.";
 const OFFLINE_CITY = "Riverbend";
 const MINE_CITY = "Keepmine City";
 const OTHER_CITY = "Otherwindow City";
@@ -968,6 +969,58 @@ async function runPermutation(t, roles) {
         ["weekday_evening", "weekend"],
       );
       await shootWithoutSidebar(staff, "staff-answers-v2");
+
+      // The best time's Note is drawn with what is saved, so an edit to it
+      // (not yet saved) is kept over what a redraw from elsewhere draws.
+      const savedNote = async () =>
+        (await one(fixture, "select best_contact_note from public.case_contacts where case_id=$1", [classCase.id]))
+          .best_contact_note;
+      const firstNote = await savedNote();
+      assert.ok(firstNote, "the class case has no saved Note to edit");
+      const noteBox = staff.locator("#field-contact-bestContactNote");
+      await clickAction(staff, "toggle-edit-contact");
+      await staff.locator("#contact-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(await noteBox.inputValue(), firstNote);
+      await noteBox.fill(EDITED_BEST_TIME_NOTE);
+      await rebuiltBy(
+        staff,
+        () => fixture.database.sql("update public.cases set revision=revision where id=$1", [classCase.id]),
+        "a no-change update on the class case",
+      );
+      assert.equal(
+        await noteBox.inputValue(),
+        EDITED_BEST_TIME_NOTE,
+        "a redraw from elsewhere put the saved Note back over the unsaved edit",
+      );
+      await staff
+        .locator('#contact-form button[data-case-action="UPDATE_CONTACT"]')
+        .click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the contact card to show the edited Note",
+        (wanted) =>
+          [...document.querySelectorAll("#case-panel-intake .contact-card .detail-row")].some(
+            (row) =>
+              row.querySelector("span")?.textContent.trim() === "Note" &&
+              row.querySelector("strong")?.textContent.trim() === wanted,
+          ),
+        EDITED_BEST_TIME_NOTE,
+        ARRIVAL_MS,
+      );
+      assert.equal(await savedNote(), EDITED_BEST_TIME_NOTE);
+      // Cancel puts the whole form away, typed text included: opened again,
+      // it shows what is saved.
+      await clickAction(staff, "toggle-edit-contact");
+      await staff.locator("#contact-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      await noteBox.fill("A fictional note nobody saves.");
+      await waitForQuiet(staff);
+      await staff.locator('#contact-form [data-action="toggle-edit-contact"]').click({ timeout: CLICK_MS });
+      await staff.locator("#contact-form").waitFor({ state: "detached", timeout: RENDER_MS });
+      await clickAction(staff, "toggle-edit-contact");
+      await staff.locator("#contact-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(await noteBox.inputValue(), EDITED_BEST_TIME_NOTE, "Cancel kept the unsaved Note");
+      await clickAction(staff, "toggle-edit-contact");
+      await staff.locator("#contact-form").waitFor({ state: "detached", timeout: RENDER_MS });
 
       await actForm(
         staff,

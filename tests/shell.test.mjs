@@ -890,15 +890,35 @@ test("app.mjs treats a Save that saved nothing as not saved", () => {
 
 test("an unsent tick in a staff form is kept across a redraw, and goes when its form is put away", () => {
   const app = appSource();
-  // Recorded on input as { checked } (form-values.mjs), except a box drawn
-  // from state; put back by restoreDraft after every render.
-  assert.match(app, /if \(!isCheckable\(field\)\) formDrafts\.set\(field\.id, field\.value\);/);
+  // Recorded on input (form-values.mjs: typed text, `{ value }` over a saved
+  // value, `{ checked }`), except a box drawn from state; a field back to what
+  // it was drawn with drops its draft. Put back by restoreDraft after every
+  // render.
+  assert.match(app, /if \(!isCheckable\(field\)\) keepDraft\(field\.id, textDraft\(field\)\);/);
   assert.match(
     app,
-    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\) && !field\.closest\(ANSWER_FORMS\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) formDrafts\.set\(id, draft\);/,
+    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\) && !field\.closest\(ANSWER_FORMS\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) keepDraft\(id, draft\);/,
   );
+  assert.match(app, /function keepDraft\(id, draft\) \{\s+if \(draft === null\) formDrafts\.delete\(id\);\s+else formDrafts\.set\(id, draft\);\s+\}/);
   assert.match(app, /for \(const \[id, value\] of formDrafts\)\s+restoreDraft\(root\.querySelector\(`#\$\{CSS\.escape\(id\)\}`\), value\);/);
-  // Cancel on the best time, and any dialog closing, drop their ticks.
-  assert.match(app, /case "toggle-edit-contact":\s+\/\/[^\n]*\n\s+clearFormTicks\(root\.querySelector\("#contact-form"\)\);/);
+  // Cancel on the best time drops the whole form's drafts, typed Note
+  // included; any dialog closing drops its ticks.
+  assert.match(app, /case "toggle-edit-contact":\s+\/\/[^\n]*\n\s+clearFormDrafts\(root\.querySelector\("#contact-form"\)\);/);
   assert.match(app, /for \(const form of root\.querySelectorAll\("\.modal form"\)\) clearFormTicks\(form\);\s+controller\.closeDialog\(\);/);
+});
+
+test("unsent staff-form entries belong to the one signed in and the persona chosen", () => {
+  const app = appSource();
+  // Like the draft link (showDraftLink → draftOffers.follow), checked on every
+  // render: a sign-out from another tab or an expired session counts too.
+  const restore = app.slice(app.indexOf("function restoreFormDrafts() {"), app.indexOf("function findField("));
+  assert.match(
+    restore,
+    /const userId = controller\.getState\(\)\.principal\?\.userId \?\? null;\s+if \(userId !== draftsOwner\) formDrafts\.clear\(\);\s+draftsOwner = userId;\s+for \(const \[id, value\] of formDrafts\)/,
+  );
+  assert.match(app, /let draftsOwner = null;/);
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.ok(renderBody.indexOf("restoreFormDrafts();") > renderBody.indexOf("root.innerHTML = views.page("), "every render checks");
+  // Choosing another persona is another person at the same keyboard.
+  assert.match(app, /case "select-person":\s+\/\/[^\n]*\n\s+formDrafts\.clear\(\);\s+controller\.selectPerson\(target\.dataset\.personId\);/);
 });

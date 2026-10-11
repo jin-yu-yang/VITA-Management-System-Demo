@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft } from "./form-values.mjs";
+import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
 import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
@@ -160,10 +160,15 @@ if (!config) {
   // at any moment — a realtime change, a persona click, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. It is
   // dropped the moment the text is sent or the person moves to another case, so
-  // nothing can reappear where it does not belong. A tick not yet sent is kept
-  // the same way, as `{ checked }` (form-values.mjs), and is also dropped when
-  // its form is put away unsent (Cancel, or its dialog closing).
+  // nothing can reappear where it does not belong. An edit to a saved value is
+  // kept as `{ value }` and a tick not yet sent as `{ checked }`
+  // (form-values.mjs). Cancel on the best time drops its whole form, and a
+  // dialog closing drops its ticks. It all belongs to the one signed in and
+  // the persona chosen: anyone else, or nobody, starts with none.
   const formDrafts = new Map();
+  // Whose unsent entries formDrafts holds, checked on every render
+  // (restoreFormDrafts), like the draft link's maker.
+  let draftsOwner = null;
   // The link offered when the browser blocks the draft's tab. It lives here,
   // not in the page: every render draws it again (showDraftLink) until it is
   // opened, a new press replaces it, its URL is revoked a minute on, or its
@@ -368,19 +373,32 @@ if (!config) {
     for (const field of form.querySelectorAll("[id]")) formDrafts.delete(field.id);
   }
 
-  // A form put away unsent takes its ticks with it: opened again, it shows
-  // what is saved. (Its typed text is kept, as it always was.)
+  // A dialog's form put away unsent takes its ticks with it: opened again, it
+  // shows what is saved. (Its typed text is kept, as it always was.)
   function clearFormTicks(form) {
     if (!form) return;
     for (const field of form.querySelectorAll("input[type=checkbox][id], input[type=radio][id]"))
       formDrafts.delete(field.id);
   }
 
+  // One input event's draft for a field, or null: the field is back to what
+  // it was drawn with, and keeps none.
+  function keepDraft(id, draft) {
+    if (draft === null) formDrafts.delete(id);
+    else formDrafts.set(id, draft);
+  }
+
   // Staff form fields are not rendered from controller state — they are blank
-  // boxes for text that only exists until it is sent, and boxes ticked from
-  // what is saved — so what was typed is put back by hand after a rebuild, only
-  // into a field that is still empty, and an unsent tick (or untick) as it was.
+  // boxes for text that only exists until it is sent, and boxes drawn from
+  // what is saved — so what was typed is put back by hand after a rebuild:
+  // into a blank box only while it is still empty, and an edit to a saved
+  // value, or an unsent tick (or untick), as it was. Somebody else signed in,
+  // or nobody, gets none of it: a sign-out from another tab or an expired
+  // session counts too, as it does for the draft link.
   function restoreFormDrafts() {
+    const userId = controller.getState().principal?.userId ?? null;
+    if (userId !== draftsOwner) formDrafts.clear();
+    draftsOwner = userId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
   }
@@ -1383,8 +1401,8 @@ if (!config) {
         }
         break;
       case "toggle-edit-contact":
-        // Cancel: the best time opens again as saved.
-        clearFormTicks(root.querySelector("#contact-form"));
+        // Cancel: the best time opens again as saved, its Note included.
+        clearFormDrafts(root.querySelector("#contact-form"));
         controller.togglePanel("edit-contact");
         root
           .querySelector('[data-action="toggle-edit-contact"]')
@@ -1531,6 +1549,8 @@ if (!config) {
         break;
       }
       case "select-person":
+        // Another persona is another person at the same keyboard.
+        formDrafts.clear();
         controller.selectPerson(target.dataset.personId);
         break;
       case "clear-lookup":
@@ -1645,12 +1665,12 @@ if (!config) {
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
       // of any record until the action that carries it is sent.
-      if (!isCheckable(field)) formDrafts.set(field.id, field.value);
+      if (!isCheckable(field)) keepDraft(field.id, textDraft(field));
       // A tick likewise — except a box drawn from state (a toggle with its own
       // action, the "I have checked" box, an answer form's), which a redraw
       // already draws as it is.
       else if (!field.matches("[data-action], #field-confirmed") && !field.closest(ANSWER_FORMS))
-        for (const [id, draft] of checkDrafts(field)) formDrafts.set(id, draft);
+        for (const [id, draft] of checkDrafts(field)) keepDraft(id, draft);
     } else if (field.name === "lookup") controller.setLookup(field.value);
     else if (field.name === "boardSearch") controller.setBoardSearchDraft(field.value);
     // Kept in state so a re-render re-renders them rather than blanking them.
