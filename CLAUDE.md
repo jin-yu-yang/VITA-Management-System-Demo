@@ -36,6 +36,15 @@ This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schem
 
 The schema's instructions, the Superpowers skills and this file all describe the workflow. If they disagree, follow this file.
 
+### 0. Check the tools first
+
+Before you start a change or implement anything, check that the workflow's tools are in place:
+- **OpenSpec:** `openspec --version` runs, and the six `/opsx` commands (section 4) are in your available skills.
+- **Superpowers:** these skills are in your available skills: `superpowers:brainstorming`, `superpowers:writing-plans`, `superpowers:using-git-worktrees`, `superpowers:subagent-driven-development` and `superpowers:finishing-a-development-branch`.
+- **The schema:** `openspec/config.yaml` says `schema: superpowers-bridge`, and `openspec schema which superpowers-bridge` resolves it from the project (`openspec/schemas/superpowers-bridge/`).
+
+If any of these is missing, do not start implementing. Tell the user what is missing and suggest how to install it: the [OpenSpec](https://github.com/Fission-AI/OpenSpec) README for OpenSpec and its commands, the [Superpowers](https://github.com/obra/superpowers) README for the plugin, and the [`superpowers-bridge` README](https://github.com/JiangWay/openspec-schemas/tree/main/superpowers-bridge) for the schema. Do not install them yourself, and do not change the schema setting. Wait until the user has installed them.
+
 ### 1. Decide: change or direct PR
 
 Open a change for:
