@@ -409,13 +409,16 @@ export async function buildDraftPdf({
 // than none, so its offer ends then too and `onExpire` lets the page redraw
 // the link's place. The draft holds the answers of whoever made it, unsaved
 // edits included, so the offer is that user's alone: `follow` ends it (and
-// revokes its URL at once) as soon as anyone else, or nobody, is signed in.
+// revokes its URL at once) as soon as anyone else, or nobody, is signed in;
+// the URL's timer then finds it already revoked and leaves it.
 export function createDraftOffer({ revoke, onExpire = () => {}, setTimer = setTimeout, lifetimeMs = 60_000 }) {
   let offer = null;
+  const unrevoked = new Set();
   return {
     keep(url) {
+      unrevoked.add(url);
       setTimer(() => {
-        revoke(url);
+        if (unrevoked.delete(url)) revoke(url);
         if (offer?.url !== url) return;
         offer = null;
         onExpire();
@@ -432,6 +435,7 @@ export function createDraftOffer({ revoke, onExpire = () => {}, setTimer = setTi
     // Who is signed in now (null: nobody).
     follow(userId) {
       if (!offer || offer.userId === userId) return;
+      unrevoked.delete(offer.url);
       revoke(offer.url);
       offer = null;
     },

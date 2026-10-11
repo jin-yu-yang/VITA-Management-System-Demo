@@ -360,8 +360,10 @@ export function createController({
   // While the flag is held: a promise that settles when it is dropped, so a
   // Save pressed meanwhile can wait its turn (`takeFlag`, `dropFlag`).
   let flagFree = null;
-  // The version-2 save out now (`{ caseId, promise }`), so a Save pressed
-  // meanwhile can learn how it ended.
+  // The version-2 save out now (`{ opening, promise, shown }`), so a Save
+  // pressed meanwhile can learn how it ended. `shown`: its failure is already
+  // on its way to the person, through the press that sent it or through a
+  // Save that waited for it, so it is said once.
   let saveOut = null;
   // Which new office draft is open: moves each time one starts. A Save draft
   // started for one draft adopts nothing once that draft is gone.
@@ -369,15 +371,36 @@ export function createController({
   // A version-2 save's envelope -> the draft it was built from, so what was
   // typed while it was out survives the re-read once it lands.
   const sentDrafts = new WeakMap();
+  // Which opening of a case this window is on: moves each time the open case
+  // changes (one opened, left, or another opened; `clearSelection`), never
+  // when the same opening reads its case again (a refresh, `loadSelected`, a
+  // realtime catch-up, a board control's `selectCase` of the open case). A
+  // case opened again after another case (or none) was opened is a new
+  // opening, whose draft is built from the server as it was then; going to a
+  // list and back keeps the same opening, since its draft was not rebuilt.
+  let opening = 0;
+  // A case action's envelope -> the opening it was sent from. Every "is this
+  // still the draft the save was for?" compares openings, never case ids;
+  // the opening stays out here because the envelope is the RPC's contract
+  // and carries nothing more.
+  const sentFrom = new WeakMap();
+  const sameOpening = (action) => sentFrom.get(action) === opening;
   // A save carrying answer changes failed with an unknown outcome, so the
   // server may hold answers the draft doesn't (an undo after it, say). Until a
   // save succeeds, the draft is then never "dirty only because of visits"
   // (spec 2026-10-04 §3.8), so a newer revision is not taken without a choice.
   let answersInDoubt = false;
   // The revision the open version-2 case's last save made, from its receipt
-  // (`{ caseId, revision }`). A re-read that fails after the save leaves
+  // (`{ opening, revision }`). A re-read that fails after the save leaves
   // savedCase older, and the next pin must not be a revision the save moved
-  // past, or the next save meets a conflict with this person's own save.
+  // past, or the next save meets a conflict with this person's own save. It
+  // belongs to the opening the save was sent from, whose draft holds what was
+  // sent: a later opening's draft was built from its own read, and pinning
+  // that to the save's revision would let its next save put older answers
+  // back over the saved ones without a conflict. What keeps it from a later
+  // opening is that it is only set when the save landed on the same opening
+  // and is cleared where the opening moves (`clearSelection`); the opening
+  // kept with it is a second check, not the first.
   let landedRevision = null;
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
@@ -713,6 +736,7 @@ export function createController({
   }
 
   function clearSelection() {
+    opening += 1;
     state.selectedCaseId = null;
     state.savedCase = null;
     state.draftAnswers = {};
@@ -1393,7 +1417,8 @@ export function createController({
   //   * `{ sent: false, reason: "answers" }`: Send only. Saved, but something
   //     is missing or invalid: nothing was submitted and the page marks it.
   //   * `{ sent: false, reason: "left" }`: the office left the draft, or
-  //     opened another case, while it was out. Nothing more was done.
+  //     opened another case (or this one again), while it was out. Nothing
+  //     more was done.
   //   * thrown: a failure (offline, refused, a conflict), with its error
   //     already on screen. Nothing more was done.
   async function saveOfficeDraft({ send = false } = {}) {
@@ -1411,10 +1436,10 @@ export function createController({
         const adopted = await adoptOfficeCase();
         if (adopted !== true) return { sent: false, reason: adopted };
       }
-      const caseId = state.selectedCaseId;
+      const from = opening;
       if (state.dirty) await saveNow();
       if (!send) return { sent: false };
-      if (state.selectedCaseId !== caseId || state.screen !== "office-add-case")
+      if (opening !== from || state.screen !== "office-add-case")
         return { sent: false, reason: "left" };
       return await sendOfficeDraft();
     } finally {
@@ -1661,7 +1686,7 @@ export function createController({
   // after that save failed.
   function pinRevision() {
     const revision = Number(state.savedCase.revision);
-    return landedRevision?.caseId === state.savedCase.id
+    return landedRevision?.opening === opening
       ? Math.max(revision, landedRevision.revision)
       : revision;
   }
@@ -1715,17 +1740,18 @@ export function createController({
     }
     persistSession();
     if (state.dirty) {
-      const caseId = state.selectedCaseId;
+      const from = opening;
       takeFlag();
       try {
-        await saveNow();
+        await saveNow({ quiet: true });
       } catch {
         // Already on screen: the save state is "failed" and the error is set.
       } finally {
         dropFlag();
       }
-      // Another case was opened during the save: this move belongs to the old one.
-      if (state.selectedCaseId !== caseId) return;
+      // Another case was opened during the save, or this one left and opened
+      // again: this move belongs to the old opening.
+      if (opening !== from) return;
     }
     state.formSubstep = resolveSubstep(id, state.draftAnswers, cardsNow());
     if (!keepReturn) state.returnToSummary = false;
@@ -1789,6 +1815,7 @@ export function createController({
   }
 
   async function dispatch(action, { save = false, omit = null } = {}) {
+    sentFrom.set(action, opening);
     state.busy = true;
     state.error = null;
     if (save) state.saveState = "saving";
@@ -1801,16 +1828,18 @@ export function createController({
       // The draft as it is now, for a version-2 save: what was typed while the
       // save was out is not in what was sent.
       const typed = sentDrafts.has(action) ? state.draftAnswers : null;
-      // A save that lands after another case was opened says nothing about
-      // the open case: its edits, pin and chip are its own.
-      if (save && state.selectedCaseId === action.caseId) {
+      // A save that lands after another case was opened, or after its case
+      // was left and opened again, says nothing about the open draft: its
+      // edits, pin and chip are its own, and its re-read below is a newer
+      // revision like anybody else's.
+      if (save && sameOpening(action)) {
         state.dirty = false;
         state.editBaseRevision = null;
         state.conflict = null;
         state.saveState = "saved";
         answersInDoubt = false;
         if (typed && Number.isFinite(Number(receipt?.revision)))
-          landedRevision = { caseId: action.caseId, revision: Number(receipt.revision) };
+          landedRevision = { opening, revision: Number(receipt.revision) };
       }
       // The action is done. A re-read that fails afterwards is a stale view,
       // never a failed action, and must not put the envelope back in hand.
@@ -1821,9 +1850,10 @@ export function createController({
       return receipt;
     } catch (error) {
       state.busy = false;
-      // A save that fails after another case was opened is not the open
-      // case's failure: its chip, its banner and its retry stay as they are.
-      if (save && state.selectedCaseId !== action.caseId) {
+      // A save that fails after another case was opened (or its case opened
+      // again) is not the open draft's failure: its chip, its banner and its
+      // retry stay as they are.
+      if (save && !sameOpening(action)) {
         if (error?.code === "OFFLINE") state.connection = "offline";
         show();
         throw error;
@@ -1863,7 +1893,7 @@ export function createController({
   // server; anything else keeps the rebuild (`keepLocalOnly`).
   function keepLaterEdits(action, typed) {
     const sent = sentDrafts.get(action);
-    if (state.savedCase?.id !== action.caseId) return;
+    if (!sameOpening(action)) return;
     const later = {};
     for (const [id, value] of Object.entries(typed))
       if (JSON.stringify(value) !== JSON.stringify(sent[id])) later[id] = value;
@@ -1894,9 +1924,13 @@ export function createController({
     flagFree = null;
   }
 
-  // A version-2 save, known as the one out until it settles.
-  async function trackSave(caseId, promise) {
-    const out = { caseId, promise };
+  // A version-2 save, known as the one out until it settles. `shown`: the
+  // press that sent it shows its failure itself.
+  async function trackSave(promise, shown) {
+    // The opening read here is the one the save was sent from: the caller
+    // built `promise` first, and that call reaches `dispatch`'s
+    // `sentFrom.set` synchronously, before this body runs.
+    const out = { opening, promise, shown };
     saveOut = out;
     try {
       return await promise;
@@ -1908,14 +1942,16 @@ export function createController({
   // A save asked for on its own (Save, Save & exit, Submit's save first). It
   // saves or fails visibly. Version 2 holds the one-save-at-a-time flag, so
   // no second save goes out at the same expected revision. Pressed while
-  // another save is out, it waits for that save: when that was this case's
-  // save and it failed, so does this; otherwise what is still unsaved is
-  // saved after it. Resolves to the receipt, or null when the case it was
-  // pressed on is no longer open (nothing was saved for it). Version 1 as
-  // today.
+  // another save is out, it waits for that save: when that was this
+  // opening's save and it failed, so does this, unless that failure has been
+  // shown already (by the press that sent it, or an earlier Save waiting
+  // for it), which resolves to null instead; otherwise what is still unsaved
+  // is saved after it. Resolves to the receipt, or null when nothing was
+  // saved for this press: the opening it was pressed on is gone, or the
+  // failure it waited for is already on screen. Version 1 as today.
   async function saveAnswers() {
     if (caseVersion() !== 2) return await saveNow();
-    const caseId = state.selectedCaseId;
+    const from = opening;
     let waited = null;
     let receipt = null;
     while (substepSaveInFlight) {
@@ -1924,13 +1960,17 @@ export function createController({
         waited = out;
         try {
           const done = await out.promise;
-          if (out.caseId === caseId) receipt = done;
+          if (out.opening === from) receipt = done;
         } catch (error) {
-          if (out.caseId === caseId && state.selectedCaseId === caseId) throw error;
+          if (out.opening === from && opening === from) {
+            if (out.shown) return null;
+            out.shown = true;
+            throw error;
+          }
         }
       } else await flagFree.promise;
     }
-    if (state.selectedCaseId !== caseId) return null;
+    if (opening !== from) return null;
     // The save it waited for took everything: nothing is left to send.
     if (receipt && !state.dirty) return receipt;
     takeFlag();
@@ -1941,7 +1981,10 @@ export function createController({
     }
   }
 
-  async function saveNow() {
+  // `quiet`: the press that asked shows no failure of its own (a sub-step
+  // change, a card mark's pre-save); the banner says it, and so does the
+  // first Save that waited for it.
+  async function saveNow({ quiet = false } = {}) {
     if (!state.savedCase)
       throw controllerError("NOT_FOUND", "Open an application first.");
     if (state.conflict) {
@@ -1972,7 +2015,7 @@ export function createController({
     };
     if (version !== 2) return await dispatch(action, { save: true });
     sentDrafts.set(action, state.draftAnswers);
-    return await trackSave(action.caseId, sendVersionTwo(action));
+    return await trackSave(sendVersionTwo(action), !quiet);
   }
 
   // A version-2 save's envelope sent, with its one retry without a field.
@@ -1985,8 +2028,9 @@ export function createController({
       // second refusal takes the usual failure path. Today's server names no
       // field, so this waits for a server that does.
       const field = refusedField(error, action);
-      // Another case was opened meanwhile: the old one's save is not retried.
-      if (!field || state.selectedCaseId !== action.caseId) throw error;
+      // Another case was opened meanwhile (or this one opened again): the old
+      // opening's save is not retried.
+      if (!field || !sameOpening(action)) throw error;
       const { [field]: _left, ...rest } = action.payload.answers;
       const retry = {
         ...action,
@@ -2006,7 +2050,7 @@ export function createController({
     } catch (error) {
       if (
         UNKNOWN_OUTCOME.includes(error?.code) &&
-        state.selectedCaseId === action.caseId &&
+        sameOpening(action) &&
         sendableDiffers(action.payload.answers, serverAnswersOf(state.savedCase), 2)
       )
         answersInDoubt = true;
@@ -2122,14 +2166,15 @@ export function createController({
     takeFlag();
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
-        const caseId = state.selectedCaseId;
+        const from = opening;
         try {
-          await saveNow();
+          await saveNow({ quiet: true });
         } catch {
           return null;
         }
-        // Another case was opened during the save: this mark was for the old one.
-        if (state.selectedCaseId !== caseId) return null;
+        // Another case was opened during the save, or this one left and
+        // opened again: this mark was for the old opening.
+        if (opening !== from) return null;
       }
       return await runAction(type, payload);
     } finally {
@@ -2318,7 +2363,7 @@ export function createController({
     if (substepSaveInFlight) return null;
     takeFlag();
     try {
-      return await trackSave(action.caseId, dispatch(action, { save, omit }));
+      return await trackSave(dispatch(action, { save, omit }), true);
     } finally {
       dropFlag();
     }

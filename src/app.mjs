@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft } from "./form-values.mjs";
+import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
 import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
@@ -158,12 +158,20 @@ if (!config) {
   let lastPlace = null;
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
-  // and rebuilding the page must not empty a box somebody is writing in. It is
-  // dropped the moment the text is sent or the person moves to another case, so
-  // nothing can reappear where it does not belong. A tick not yet sent is kept
-  // the same way, as `{ checked }` (form-values.mjs), and is also dropped when
-  // its form is put away unsent (Cancel, or its dialog closing).
+  // and rebuilding the page must not empty a box somebody is writing in. What
+  // was typed for an action is dropped the moment it is sent. An edit to a
+  // saved value is kept as `{ value }` and a tick not yet sent as `{ checked }`
+  // (form-values.mjs). Cancel on the best time drops its whole form, and a
+  // dialog closing drops its ticks. It all belongs to the one signed in, the
+  // persona chosen and the case it was typed on: anyone else, or nobody, or
+  // another case opened (by any path), starts with none, so nothing can
+  // reappear where it does not belong.
   const formDrafts = new Map();
+  // Whose unsent entries formDrafts holds, and the case they were typed on
+  // (the last case open; null before any), both checked on every render
+  // (restoreFormDrafts), like the draft link's maker.
+  let draftsOwner = null;
+  let draftsCase = null;
   // The link offered when the browser blocks the draft's tab. It lives here,
   // not in the page: every render draws it again (showDraftLink) until it is
   // opened, a new press replaces it, its URL is revoked a minute on, or its
@@ -368,19 +376,40 @@ if (!config) {
     for (const field of form.querySelectorAll("[id]")) formDrafts.delete(field.id);
   }
 
-  // A form put away unsent takes its ticks with it: opened again, it shows
-  // what is saved. (Its typed text is kept, as it always was.)
+  // A dialog's form put away unsent takes its ticks with it: opened again, it
+  // shows what is saved. (Its typed text is kept, as it always was.)
   function clearFormTicks(form) {
     if (!form) return;
     for (const field of form.querySelectorAll("input[type=checkbox][id], input[type=radio][id]"))
       formDrafts.delete(field.id);
   }
 
+  // One input event's draft for a field, or null: the field is back to what
+  // it was drawn with, and keeps none.
+  function keepDraft(id, draft) {
+    if (draft === null) formDrafts.delete(id);
+    else formDrafts.set(id, draft);
+  }
+
   // Staff form fields are not rendered from controller state — they are blank
-  // boxes for text that only exists until it is sent, and boxes ticked from
-  // what is saved — so what was typed is put back by hand after a rebuild, only
-  // into a field that is still empty, and an unsent tick (or untick) as it was.
+  // boxes for text that only exists until it is sent, and boxes drawn from
+  // what is saved — so what was typed is put back by hand after a rebuild:
+  // into a blank box only while it is still empty, and an edit to a saved
+  // value, or an unsent tick (or untick), as it was. Somebody else signed in,
+  // or nobody, gets none of it: a sign-out from another tab or an expired
+  // session counts too, as it does for the draft link. Nor does another case,
+  // however it was opened: the open case can go (deleted elsewhere) and a
+  // board control's claim select the next without passing `open-case`. A page
+  // with no case open changes nothing, so the board's own forms keep theirs
+  // and a list and back to the same case keeps the case's.
   function restoreFormDrafts() {
+    const userId = signedInUserId();
+    if (userId !== draftsOwner) formDrafts.clear();
+    draftsOwner = userId;
+    const state = controller.getState();
+    const caseId = state.savedCase?.id ?? state.selectedCaseId ?? null;
+    if (caseId !== null && draftsCase !== null && caseId !== draftsCase) formDrafts.clear();
+    if (caseId !== null) draftsCase = caseId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
   }
@@ -455,7 +484,18 @@ if (!config) {
     resend.disabled = false;
   }
 
-  function notify(text) {
+  // The user id signed in right now, or null for nobody: the one notion of
+  // "who" that unsent entries, the draft link and a press's message share.
+  function signedInUserId() {
+    return controller.getState().principal?.userId ?? null;
+  }
+
+  // `by` is the user id signed in when a press started (a press takes it before
+  // its first await). Its result message, success or error, is for that person
+  // only: if somebody else is signed in by now, or nobody, it is not shown.
+  // Messages that are not the result of a press leave `by` out.
+  function notify(text, by) {
+    if (by !== undefined && by !== signedInUserId()) return;
     window.clearTimeout(toastTimer);
     const toast = root.querySelector("#toast");
     if (!toast) return;
@@ -871,7 +911,7 @@ if (!config) {
     );
   }
 
-  async function reconcile(useMine) {
+  async function reconcile(useMine, by) {
     const state = controller.getState();
     await controller.reconcileAnswers({
       answers: useMine ? state.draftAnswers : (state.savedCase?.answers ?? {}),
@@ -880,7 +920,7 @@ if (!config) {
       // which the server keeps outside `answers`.
       fromServer: !useMine,
     });
-    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()));
+    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()), by);
     // On Add a case the choice's panel goes once made, and its button with it:
     // the keyboard goes to Save draft, the next thing to press.
     if (controller.getState().screen === "office-add-case" && !root.contains(document.activeElement))
@@ -917,7 +957,7 @@ if (!config) {
   // Actions whose form holds a checkbox group (contact best time, materials).
   const LIST_FORMS = Object.freeze(["UPDATE_CONTACT", "RECORD_MATERIALS"]);
 
-  async function runCaseAction(target, form = null) {
+  async function runCaseAction(target, form = null, by) {
     const type = target.dataset.caseAction;
     // The DOM says a canonical name or it says nothing at all.
     if (!CASE_ACTIONS.includes(type)) return;
@@ -935,7 +975,7 @@ if (!config) {
       // saved for it. A failure throws, and is shown by the caller.
       if (!(await controller.saveAnswers())) return;
       clearFormDrafts(form);
-      notify(t("toast.saved", {}, screenLang()));
+      notify(t("toast.saved", {}, screenLang()), by);
       return;
     }
     if (type === "SUBMIT" && !state.openPanels.includes("confirmed")) {
@@ -967,7 +1007,7 @@ if (!config) {
         // Submit stays off: the alerts list says what to fix, and the
         // keyboard goes to its heading.
         await controller.goToSubstep("review.check");
-        notify(t("toast.needs_change", {}, screenLang()));
+        notify(t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;
       }
@@ -1019,17 +1059,17 @@ if (!config) {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
       if (controller.getState().principal?.access === "presenter") {
-        notify("The application is with the office. Record the intake checks next.");
+        notify("The application is with the office. Record the intake checks next.", by);
         return;
       }
       controller.navigate("progress");
-      notify(t("toast.sent", {}, screenLang()));
+      notify(t("toast.sent", {}, screenLang()), by);
       return;
     }
     if (type === "RESPOND_DOCUMENT") {
       if (controller.getState().openPanels.includes("upload-failed"))
         controller.togglePanel("upload-failed");
-      notify(t("toast.document_sent", {}, screenLang()));
+      notify(t("toast.document_sent", {}, screenLang()), by);
       return;
     }
     // A claim opens the case that was just taken on.
@@ -1038,7 +1078,7 @@ if (!config) {
       controller.getState().principal?.access === "presenter"
     )
       controller.navigate("staff-case");
-    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type]);
+    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type], by);
   }
 
   // ---- assistance actions -----------------------------------------------
@@ -1050,7 +1090,7 @@ if (!config) {
     RESOLVE: "The request is recorded as resolved. The client's case is unchanged.",
   });
 
-  async function runAssistanceAction(target, form = null) {
+  async function runAssistanceAction(target, form = null, by) {
     const type = target.dataset.assistanceAction;
     if (!ASSISTANCE_ACTIONS.includes(type)) return;
     const values = form ? Object.fromEntries(new FormData(form)) : {};
@@ -1069,7 +1109,7 @@ if (!config) {
     clearFormDrafts(form);
     if (sent && type === "RESOLVE" && controller.getState().dialog === "resolve-help")
       closeDialog("#office-queue-title");
-    if (sent) notify(ASSISTANCE_NOTICES[type]);
+    if (sent) notify(ASSISTANCE_NOTICES[type], by);
   }
 
   // ---- navigation actions -----------------------------------------------
@@ -1117,7 +1157,7 @@ if (!config) {
   // else signed in, or nobody, ends it first, whatever the screen.
   function showDraftLink() {
     const state = controller.getState();
-    const userId = state.principal?.userId ?? null;
+    const userId = signedInUserId();
     draftOffers.follow(userId);
     const ready = root.querySelector("#draft-ready");
     if (!ready) return;
@@ -1131,7 +1171,7 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
-  async function viewDraft(form) {
+  async function viewDraft(form, by) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
@@ -1141,7 +1181,7 @@ if (!config) {
     try {
       const state = controller.getState();
       const caseId = state.savedCase?.id ?? null;
-      const userId = state.principal?.userId ?? null;
+      const userId = signedInUserId();
       const reference = state.savedCase?.reference ?? "";
       const now = new Date();
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
@@ -1174,7 +1214,7 @@ if (!config) {
       showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
-      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()));
+      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()), by);
     }
   }
 
@@ -1214,7 +1254,7 @@ if (!config) {
     return true;
   }
 
-  async function runNavigation(action, target) {
+  async function runNavigation(action, target, by) {
     const state = controller.getState();
     if (action.startsWith("edit-")) {
       controller.setFormStep(Number(action.slice(5)));
@@ -1284,7 +1324,7 @@ if (!config) {
         const after = controller.getState();
         const landed =
           !reason && Boolean(after.savedCase) && !after.dirty && ["saved", "idle"].includes(after.saveState);
-        if (landed) notify("The draft is saved. Nobody was emailed.");
+        if (landed) notify("The draft is saved. Nobody was emailed.", by);
         // The button was off while the save ran, which dropped the keyboard;
         // it goes back to it, unless the office has moved on to a field.
         if (!root.contains(document.activeElement))
@@ -1294,12 +1334,12 @@ if (!config) {
       case "send-office-draft": {
         sweepV2Form();
         const { sent, reason } = await controller.saveOfficeDraft({ send: true });
-        if (sent) notify("The application is with the office.");
+        if (sent) notify("The application is with the office.", by);
         else if (reason === "answers") {
-          notify("The draft is saved. Some answers still need attention before it can be sent.");
+          notify("The draft is saved. Some answers still need attention before it can be sent.", by);
           root.querySelector("#add-case-count")?.focus();
         } else if (reason === "unconfirmed") {
-          notify("Confirm that you have checked these answers with the client first.");
+          notify("Confirm that you have checked these answers with the client first.", by);
           root.querySelector("#field-confirmed")?.focus();
         }
         break;
@@ -1350,7 +1390,7 @@ if (!config) {
         await controller.resetFixtures();
         formDrafts.clear();
         closeDialog();
-        notify("The sample cases were rebuilt. Nothing else was touched.");
+        notify("The sample cases were rebuilt. Nothing else was touched.", by);
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
@@ -1383,8 +1423,8 @@ if (!config) {
         }
         break;
       case "toggle-edit-contact":
-        // Cancel: the best time opens again as saved.
-        clearFormTicks(root.querySelector("#contact-form"));
+        // Cancel: the best time opens again as saved, its Note included.
+        clearFormDrafts(root.querySelector("#contact-form"));
         controller.togglePanel("edit-contact");
         root
           .querySelector('[data-action="toggle-edit-contact"]')
@@ -1397,9 +1437,10 @@ if (!config) {
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
-        // Nor after a sign-out while it was out: the sign-in screen has no case.
+        // Nor to anyone but the person who pressed (`notify`'s `by`): not on
+        // the sign-in screen after a sign-out, not to the next user.
         const started = await controller.createCase();
-        if (started && controller.getState().principal) notify(t("toast.started", {}, screenLang()));
+        if (started) notify(t("toast.started", {}, screenLang()), by);
         break;
       }
       case "continue-intake":
@@ -1475,7 +1516,7 @@ if (!config) {
         window.print();
         break;
       case "view-draft":
-        await viewDraft(target.dataset.form ?? "en");
+        await viewDraft(target.dataset.form ?? "en", by);
         break;
       case "toggle-senior":
         controller.editAnswers({
@@ -1503,7 +1544,7 @@ if (!config) {
         // Not saved: no "Saved", and the page stays.
         if (dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
-        notify(t("toast.saved", {}, screenLang()));
+        notify(t("toast.saved", {}, screenLang()), by);
         break;
       }
       case "fill-fictional":
@@ -1517,10 +1558,10 @@ if (!config) {
         closeDialog();
         break;
       case "reconcile-mine":
-        await reconcile(true);
+        await reconcile(true, by);
         break;
       case "reconcile-server":
-        await reconcile(false);
+        await reconcile(false, by);
         break;
       case "toggle-upload-failure": {
         controller.togglePanel("upload-failure");
@@ -1531,6 +1572,9 @@ if (!config) {
         break;
       }
       case "select-person":
+        // Another persona is another person at the same keyboard; the one
+        // already chosen is nobody new, and what was typed stays.
+        if (target.dataset.personId !== controller.getState().selectedPersonId) formDrafts.clear();
         controller.selectPerson(target.dataset.personId);
         break;
       case "clear-lookup":
@@ -1540,10 +1584,10 @@ if (!config) {
       case "copy-reference":
         try {
           await navigator.clipboard.writeText(state.savedCase?.reference ?? "");
-          notify(t("toast.id_copied", {}, screenLang()));
+          notify(t("toast.id_copied", {}, screenLang()), by);
         } catch {
           openDialog("print");
-          notify(t("toast.id_select", {}, screenLang()));
+          notify(t("toast.id_select", {}, screenLang()), by);
         }
         break;
       case "print-reference":
@@ -1566,7 +1610,7 @@ if (!config) {
         // the controller answers null and says so on screen. "Sent again."
         // would be a claim that something left this window.
         const sent = await controller.retryLast();
-        if (sent) notify(t("toast.sent_again", {}, screenLang()));
+        if (sent) notify(t("toast.sent_again", {}, screenLang()), by);
         break;
       }
       case "retry-connection":
@@ -1590,7 +1634,7 @@ if (!config) {
         sweepV2Form();
         // A press made while 繁體 is still loading wins over it.
         const outcome = await languageRequests.want(lang, (wanted) => controller.setLanguage(wanted));
-        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()));
+        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()), by);
         break;
       }
       default:
@@ -1599,6 +1643,8 @@ if (!config) {
   }
 
   root.addEventListener("click", async (event) => {
+    // Who pressed, before anything is awaited (see `notify`).
+    const by = signedInUserId();
     const caseTarget = event.target.closest("[data-case-action]");
     const assistTarget = event.target.closest("[data-assistance-action]");
     // A submit button inside a form is handled by the submit event, where the
@@ -1608,13 +1654,13 @@ if (!config) {
       caseTarget ?? assistTarget ?? event.target.closest("[data-action]");
     if (!target) return;
     try {
-      if (caseTarget) await runCaseAction(caseTarget);
-      else if (assistTarget) await runAssistanceAction(assistTarget);
-      else await runNavigation(target.dataset.action, target);
+      if (caseTarget) await runCaseAction(caseTarget, null, by);
+      else if (assistTarget) await runAssistanceAction(assistTarget, null, by);
+      else await runNavigation(target.dataset.action, target, by);
     } catch (error) {
       // The controller has already recorded the failure and re-rendered; this
       // only makes sure a refused action is announced rather than silent.
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
     }
   });
 
@@ -1645,12 +1691,12 @@ if (!config) {
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
       // of any record until the action that carries it is sent.
-      if (!isCheckable(field)) formDrafts.set(field.id, field.value);
+      if (!isCheckable(field)) keepDraft(field.id, textDraft(field));
       // A tick likewise — except a box drawn from state (a toggle with its own
       // action, the "I have checked" box, an answer form's), which a redraw
       // already draws as it is.
       else if (!field.matches("[data-action], #field-confirmed") && !field.closest(ANSWER_FORMS))
-        for (const [id, draft] of checkDrafts(field)) formDrafts.set(id, draft);
+        for (const [id, draft] of checkDrafts(field)) keepDraft(id, draft);
     } else if (field.name === "lookup") controller.setLookup(field.value);
     else if (field.name === "boardSearch") controller.setBoardSearchDraft(field.value);
     // Kept in state so a re-render re-renders them rather than blanking them.
@@ -1690,6 +1736,8 @@ if (!config) {
 
   root.addEventListener("submit", async (event) => {
     event.preventDefault();
+    // Who pressed, before anything is awaited (see `notify`).
+    const by = signedInUserId();
     const form = event.target;
     // Add a case has no submit: its bar's controls are buttons. Enter in a
     // lone text box would otherwise reach `reportValidity`.
@@ -1705,7 +1753,7 @@ if (!config) {
           await moveV2(() => controller.backToSummary());
         else await moveV2(() => controller.moveSubstep(1));
       } catch (error) {
-        notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+        notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
       }
       return;
     }
@@ -1723,9 +1771,9 @@ if (!config) {
         'button[type="submit"][data-assistance-action]',
       );
       if (caseControl) {
-        await runCaseAction(caseControl, form);
+        await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
-        await runAssistanceAction(assistControl, form);
+        await runAssistanceAction(assistControl, form, by);
       } else if (form.id === "assisted-intake-form") {
         // Creating a case is not a case action — there is no case yet — so it
         // is the form's own submit, exactly like the client's "Start a new
@@ -1736,7 +1784,7 @@ if (!config) {
         // Opening the new case empties the board's own panels, so the form is
         // already put away by the time this returns.
         formDrafts.clear();
-        notify("An assisted application is ready. Nobody was emailed.");
+        notify("An assisted application is ready. Nobody was emailed.", by);
       } else if (form.id === "checkpoint-form") {
         // The choice and its confirmation are the same submit: the dialog says
         // what a checkpoint does, and this button is the person agreeing to it.
@@ -1746,7 +1794,7 @@ if (!config) {
         });
         formDrafts.clear();
         closeDialog();
-        notify("The sample case was moved to that point in the story.");
+        notify("The sample case was moved to that point in the story.", by);
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
@@ -1763,7 +1811,7 @@ if (!config) {
         controller.setFormStep(Math.min(3, state.formStep + 1));
       }
     } catch (error) {
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
     }
   });
 
