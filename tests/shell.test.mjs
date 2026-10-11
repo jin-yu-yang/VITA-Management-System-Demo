@@ -346,7 +346,7 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(show, /draftLink\(document, offer, t\("draft\.link", \{\}, screenLang\(\)\)\)/);
   // The offer is its maker's: any other principal (or none) ends it before
   // anything is drawn, and only that user's offer is ever drawn.
-  assert.match(show, /const userId = state\.principal\?\.userId \?\? null;\s*draftOffers\.follow\(userId\);\s*const ready = root\.querySelector\("#draft-ready"\);/);
+  assert.match(show, /const userId = signedInUserId\(\);\s*draftOffers\.follow\(userId\);\s*const ready = root\.querySelector\("#draft-ready"\);/);
   assert.match(show, /draftOffers\.current\(state\.savedCase\?\.id \?\? null, userId\)/);
   assert.match(draft, /draftOffers\.offer\(\{ url, fileName: fields\.fileName, caseId, userId \}\)/);
   assert.match(show, /addEventListener\("click", \(\) => draftOffers\.drop\(\)\)/, "an opened link is not drawn again");
@@ -355,8 +355,10 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
   assert.ok(renderBody.indexOf("showDraftLink();") > renderBody.indexOf("root.innerHTML = views.page("), "every render draws the link again");
   assert.ok(renderBody.indexOf("showDraftLink();") < renderBody.indexOf("restoreField("), "before the focus restore");
-  // A create that lands after sign-out announces nothing on the sign-in screen.
-  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started && controller\.getState\(\)\.principal\) notify\(t\("toast\.started", \{\}, screenLang\(\)\)\);/);
+  // A create that lands after sign-out, or after somebody else signed in,
+  // announces nothing (the rule is pinned with the other press messages).
+  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started\) notify\(t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
+  assert.doesNotMatch(app, /if \(started && controller\.getState\(\)\.principal\)/);
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
   assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
@@ -675,9 +677,9 @@ test("app.mjs wires the version-2 Add a case", () => {
   const save = handler("save-office-draft");
   assert.match(save, /const \{ reason \} = await controller\.saveOfficeDraft\(\);/);
   assert.match(save, /const landed =\s+!reason && Boolean\(after\.savedCase\) && !after\.dirty && \["saved", "idle"\]\.includes\(after\.saveState\);/);
-  assert.match(save, /if \(landed\) notify\("The draft is saved\. Nobody was emailed\."\);/);
+  assert.match(save, /if \(landed\) notify\("The draft is saved\. Nobody was emailed\.", by\);/);
   // Fix round 1 (I1): a reconcile on Add a case keeps the keyboard on the page.
-  assert.match(app, /async function reconcile\(useMine\)[\s\S]*?if \(controller\.getState\(\)\.screen === "office-add-case" && !root\.contains\(document\.activeElement\)\)/);
+  assert.match(app, /async function reconcile\(useMine, by\)[\s\S]*?if \(controller\.getState\(\)\.screen === "office-add-case" && !root\.contains\(document\.activeElement\)\)/);
   assert.match(app, /"The application is with the office\."/);
   assert.match(app, /"The draft is saved\. Some answers still need attention before it can be sent\."/);
   assert.match(app, /"Confirm that you have checked these answers with the client first\."/);
@@ -839,7 +841,7 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.doesNotMatch(app, /await loadHant\(\)/, "nothing awaits the map without a timeout");
   assert.match(
     app,
-    /async function viewDraft\(form\) \{[\s\S]{0,1200}if \(form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = draftFields\(/,
+    /async function viewDraft\(form, by\) \{[\s\S]{0,1200}if \(form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = draftFields\(/,
   );
   // Startup waits five seconds at most for a saved 繁體's map, and the draft as long.
   assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
@@ -853,7 +855,7 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   // The switch: sweep, then a request (a failure keeps the language).
   assert.match(
     app,
-    /case "set-language": \{[\s\S]{0,200}sweepV2Form\(\);[\s\S]{0,200}const outcome = await languageRequests\.want\(lang, \(wanted\) => controller\.setLanguage\(wanted\)\);\s*if \(outcome === "failed"\) notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\)\);\s*break;/,
+    /case "set-language": \{[\s\S]{0,200}sweepV2Form\(\);[\s\S]{0,200}const outcome = await languageRequests\.want\(lang, \(wanted\) => controller\.setLanguage\(wanted\)\);\s*if \(outcome === "failed"\) notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\), by\);\s*break;/,
   );
   // Other tabs follow through a request, without writing it back, and draw nothing before start.
   assert.match(
@@ -914,11 +916,83 @@ test("unsent staff-form entries belong to the one signed in and the persona chos
   const restore = app.slice(app.indexOf("function restoreFormDrafts() {"), app.indexOf("function findField("));
   assert.match(
     restore,
-    /const userId = controller\.getState\(\)\.principal\?\.userId \?\? null;\s+if \(userId !== draftsOwner\) formDrafts\.clear\(\);\s+draftsOwner = userId;\s+for \(const \[id, value\] of formDrafts\)/,
+    /const userId = signedInUserId\(\);\s+if \(userId !== draftsOwner\) formDrafts\.clear\(\);\s+draftsOwner = userId;\s+for \(const \[id, value\] of formDrafts\)/,
   );
   assert.match(app, /let draftsOwner = null;/);
   const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
   assert.ok(renderBody.indexOf("restoreFormDrafts();") > renderBody.indexOf("root.innerHTML = views.page("), "every render checks");
-  // Choosing another persona is another person at the same keyboard.
-  assert.match(app, /case "select-person":\s+\/\/[^\n]*\n\s+formDrafts\.clear\(\);\s+controller\.selectPerson\(target\.dataset\.personId\);/);
+});
+
+// Choosing another persona is another person at the same keyboard; pressing
+// the one already chosen (its button is still live, aria-pressed) is nobody
+// new, so what was typed stays.
+test("choosing the persona already chosen keeps the unsent staff-form entries", () => {
+  const app = appSource();
+  assert.match(
+    app,
+    /case "select-person":\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(target\.dataset\.personId !== controller\.getState\(\)\.selectedPersonId\) formDrafts\.clear\(\);\s+controller\.selectPerson\(target\.dataset\.personId\);/,
+  );
+});
+
+// Cleanup (messages): a press awaits the controller and then says how it went.
+// The person who pressed is the only one it is for: if another user is signed
+// in by then, or nobody, it is not shown. Every press (click and submit) takes
+// the signed-in user id first; each message after an await names it.
+test("a press's result message is shown only while the person who pressed is signed in", () => {
+  const app = appSource();
+  assert.match(app, /function signedInUserId\(\) \{\s+return controller\.getState\(\)\.principal\?\.userId \?\? null;\s+\}/);
+  assert.equal([...app.matchAll(/controller\.getState\(\)\.principal\?\.userId/g)].length, 1, "one notion of the signed-in user");
+  // The one place the rule lives: notify, given who the press was made by.
+  const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function notify(") + 500);
+  assert.match(notifyFn, /function notify\(text, by\) \{\s+if \(by !== undefined && by !== signedInUserId\(\)\) return;/);
+  // Taken at the start of the click and submit handlers (the change handler
+  // awaits nothing and says nothing).
+  const click = app.slice(app.indexOf('root.addEventListener("click"'), app.indexOf('root.addEventListener("input"'));
+  const submit = app.slice(app.indexOf('root.addEventListener("submit"'), app.indexOf('window.addEventListener("afterprint"'));
+  const change = app.slice(app.indexOf('root.addEventListener("change"'), app.indexOf('root.addEventListener("submit"'));
+  assert.match(click, /root\.addEventListener\("click", async \(event\) => \{\s+\/\/[^\n]*\n\s+const by = signedInUserId\(\);/);
+  assert.match(submit, /root\.addEventListener\("submit", async \(event\) => \{\s+event\.preventDefault\(\);\s+\/\/[^\n]*\n\s+const by = signedInUserId\(\);/);
+  assert.doesNotMatch(change, /notify\(|await /);
+  // The three catches.
+  assert.match(click, /\} catch \(error\) \{\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*notify\(sentence\(error\?\.message \?\? "Something went wrong\.", screenLang\(\)\), by\);/);
+  assert.equal([...submit.matchAll(/notify\(sentence\(error\?\.message \?\? "Something went wrong\.", screenLang\(\)\), by\);/g)].length, 2);
+  // The press functions take it from the handler that called them.
+  assert.match(click, /await runCaseAction\(caseTarget, null, by\)/);
+  assert.match(click, /await runAssistanceAction\(assistTarget, null, by\)/);
+  assert.match(click, /await runNavigation\(target\.dataset\.action, target, by\)/);
+  assert.match(submit, /await runCaseAction\(caseControl, form, by\)/);
+  assert.match(submit, /await runAssistanceAction\(assistControl, form, by\)/);
+  assert.match(app, /async function runCaseAction\(target, form = null, by\)/);
+  assert.match(app, /async function runAssistanceAction\(target, form = null, by\)/);
+  assert.match(app, /async function runNavigation\(action, target, by\)/);
+  assert.match(app, /async function reconcile\(useMine, by\)/);
+  assert.match(app, /async function viewDraft\(form, by\)/);
+  assert.match(app, /await reconcile\(true, by\)/);
+  assert.match(app, /await reconcile\(false, by\)/);
+  assert.match(app, /await viewDraft\(target\.dataset\.form \?\? "en", by\)/);
+  // Every message in them names the presser, but two that come before any
+  // await (nobody can have changed): Submit's "confirm first" and Resolve's
+  // "say what you helped with".
+  const press = [
+    app.slice(app.indexOf("async function reconcile("), app.indexOf("// ---- workflow actions")),
+    app.slice(app.indexOf("async function runCaseAction("), app.indexOf("// ---- navigation actions")),
+    app.slice(app.indexOf("async function viewDraft("), app.indexOf("// ---- leaving Add a case")),
+    app.slice(app.indexOf("async function runNavigation("), app.indexOf('root.addEventListener("input"')),
+    submit,
+  ];
+  const BEFORE_ANY_AWAIT = [
+    't("toast.confirm_first", {}, screenLang())',
+    '"Say what you helped with before resolving this request."',
+  ];
+  let said = 0;
+  for (const call of press.flatMap(notifyArguments)) {
+    if (BEFORE_ANY_AWAIT.includes(call)) continue;
+    said += 1;
+    assert.match(call, /,\s*by$/, `a message after an await names who pressed: ${call}`);
+  }
+  assert.ok(said >= 25, `found the press messages (${said})`);
+  // The two that were reported: the assisted-intake receipt, and the client's
+  // "started" (which used to ask only that somebody was signed in).
+  assert.match(app, /notify\("An assisted application is ready\. Nobody was emailed\.", by\);/);
+  assert.match(app, /if \(started\) notify\(t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
 });

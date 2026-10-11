@@ -396,7 +396,7 @@ if (!config) {
   // or nobody, gets none of it: a sign-out from another tab or an expired
   // session counts too, as it does for the draft link.
   function restoreFormDrafts() {
-    const userId = controller.getState().principal?.userId ?? null;
+    const userId = signedInUserId();
     if (userId !== draftsOwner) formDrafts.clear();
     draftsOwner = userId;
     for (const [id, value] of formDrafts)
@@ -473,7 +473,18 @@ if (!config) {
     resend.disabled = false;
   }
 
-  function notify(text) {
+  // The user id signed in right now, or null for nobody: the one notion of
+  // "who" that unsent entries, the draft link and a press's message share.
+  function signedInUserId() {
+    return controller.getState().principal?.userId ?? null;
+  }
+
+  // `by` is the user id signed in when a press started (a press takes it before
+  // its first await). Its result message, success or error, is for that person
+  // only: if somebody else is signed in by now, or nobody, it is not shown.
+  // Messages that are not the result of a press leave `by` out.
+  function notify(text, by) {
+    if (by !== undefined && by !== signedInUserId()) return;
     window.clearTimeout(toastTimer);
     const toast = root.querySelector("#toast");
     if (!toast) return;
@@ -889,7 +900,7 @@ if (!config) {
     );
   }
 
-  async function reconcile(useMine) {
+  async function reconcile(useMine, by) {
     const state = controller.getState();
     await controller.reconcileAnswers({
       answers: useMine ? state.draftAnswers : (state.savedCase?.answers ?? {}),
@@ -898,7 +909,7 @@ if (!config) {
       // which the server keeps outside `answers`.
       fromServer: !useMine,
     });
-    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()));
+    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()), by);
     // On Add a case the choice's panel goes once made, and its button with it:
     // the keyboard goes to Save draft, the next thing to press.
     if (controller.getState().screen === "office-add-case" && !root.contains(document.activeElement))
@@ -935,7 +946,7 @@ if (!config) {
   // Actions whose form holds a checkbox group (contact best time, materials).
   const LIST_FORMS = Object.freeze(["UPDATE_CONTACT", "RECORD_MATERIALS"]);
 
-  async function runCaseAction(target, form = null) {
+  async function runCaseAction(target, form = null, by) {
     const type = target.dataset.caseAction;
     // The DOM says a canonical name or it says nothing at all.
     if (!CASE_ACTIONS.includes(type)) return;
@@ -953,7 +964,7 @@ if (!config) {
       // saved for it. A failure throws, and is shown by the caller.
       if (!(await controller.saveAnswers())) return;
       clearFormDrafts(form);
-      notify(t("toast.saved", {}, screenLang()));
+      notify(t("toast.saved", {}, screenLang()), by);
       return;
     }
     if (type === "SUBMIT" && !state.openPanels.includes("confirmed")) {
@@ -985,7 +996,7 @@ if (!config) {
         // Submit stays off: the alerts list says what to fix, and the
         // keyboard goes to its heading.
         await controller.goToSubstep("review.check");
-        notify(t("toast.needs_change", {}, screenLang()));
+        notify(t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;
       }
@@ -1037,17 +1048,17 @@ if (!config) {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
       if (controller.getState().principal?.access === "presenter") {
-        notify("The application is with the office. Record the intake checks next.");
+        notify("The application is with the office. Record the intake checks next.", by);
         return;
       }
       controller.navigate("progress");
-      notify(t("toast.sent", {}, screenLang()));
+      notify(t("toast.sent", {}, screenLang()), by);
       return;
     }
     if (type === "RESPOND_DOCUMENT") {
       if (controller.getState().openPanels.includes("upload-failed"))
         controller.togglePanel("upload-failed");
-      notify(t("toast.document_sent", {}, screenLang()));
+      notify(t("toast.document_sent", {}, screenLang()), by);
       return;
     }
     // A claim opens the case that was just taken on.
@@ -1056,7 +1067,7 @@ if (!config) {
       controller.getState().principal?.access === "presenter"
     )
       controller.navigate("staff-case");
-    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type]);
+    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type], by);
   }
 
   // ---- assistance actions -----------------------------------------------
@@ -1068,7 +1079,7 @@ if (!config) {
     RESOLVE: "The request is recorded as resolved. The client's case is unchanged.",
   });
 
-  async function runAssistanceAction(target, form = null) {
+  async function runAssistanceAction(target, form = null, by) {
     const type = target.dataset.assistanceAction;
     if (!ASSISTANCE_ACTIONS.includes(type)) return;
     const values = form ? Object.fromEntries(new FormData(form)) : {};
@@ -1087,7 +1098,7 @@ if (!config) {
     clearFormDrafts(form);
     if (sent && type === "RESOLVE" && controller.getState().dialog === "resolve-help")
       closeDialog("#office-queue-title");
-    if (sent) notify(ASSISTANCE_NOTICES[type]);
+    if (sent) notify(ASSISTANCE_NOTICES[type], by);
   }
 
   // ---- navigation actions -----------------------------------------------
@@ -1135,7 +1146,7 @@ if (!config) {
   // else signed in, or nobody, ends it first, whatever the screen.
   function showDraftLink() {
     const state = controller.getState();
-    const userId = state.principal?.userId ?? null;
+    const userId = signedInUserId();
     draftOffers.follow(userId);
     const ready = root.querySelector("#draft-ready");
     if (!ready) return;
@@ -1149,7 +1160,7 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
-  async function viewDraft(form) {
+  async function viewDraft(form, by) {
     if (!Object.hasOwn(FORM_FILES, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
@@ -1159,7 +1170,7 @@ if (!config) {
     try {
       const state = controller.getState();
       const caseId = state.savedCase?.id ?? null;
-      const userId = state.principal?.userId ?? null;
+      const userId = signedInUserId();
       const reference = state.savedCase?.reference ?? "";
       const now = new Date();
       const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
@@ -1192,7 +1203,7 @@ if (!config) {
       showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
-      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()));
+      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()), by);
     }
   }
 
@@ -1232,7 +1243,7 @@ if (!config) {
     return true;
   }
 
-  async function runNavigation(action, target) {
+  async function runNavigation(action, target, by) {
     const state = controller.getState();
     if (action.startsWith("edit-")) {
       controller.setFormStep(Number(action.slice(5)));
@@ -1302,7 +1313,7 @@ if (!config) {
         const after = controller.getState();
         const landed =
           !reason && Boolean(after.savedCase) && !after.dirty && ["saved", "idle"].includes(after.saveState);
-        if (landed) notify("The draft is saved. Nobody was emailed.");
+        if (landed) notify("The draft is saved. Nobody was emailed.", by);
         // The button was off while the save ran, which dropped the keyboard;
         // it goes back to it, unless the office has moved on to a field.
         if (!root.contains(document.activeElement))
@@ -1312,12 +1323,12 @@ if (!config) {
       case "send-office-draft": {
         sweepV2Form();
         const { sent, reason } = await controller.saveOfficeDraft({ send: true });
-        if (sent) notify("The application is with the office.");
+        if (sent) notify("The application is with the office.", by);
         else if (reason === "answers") {
-          notify("The draft is saved. Some answers still need attention before it can be sent.");
+          notify("The draft is saved. Some answers still need attention before it can be sent.", by);
           root.querySelector("#add-case-count")?.focus();
         } else if (reason === "unconfirmed") {
-          notify("Confirm that you have checked these answers with the client first.");
+          notify("Confirm that you have checked these answers with the client first.", by);
           root.querySelector("#field-confirmed")?.focus();
         }
         break;
@@ -1368,7 +1379,7 @@ if (!config) {
         await controller.resetFixtures();
         formDrafts.clear();
         closeDialog();
-        notify("The sample cases were rebuilt. Nothing else was touched.");
+        notify("The sample cases were rebuilt. Nothing else was touched.", by);
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
@@ -1415,9 +1426,10 @@ if (!config) {
       case "start-application": {
         // `createCase` answers null when one is already in flight; nothing was
         // created, so nothing is announced (acceptance 11: no false success).
-        // Nor after a sign-out while it was out: the sign-in screen has no case.
+        // Nor to anyone but the person who pressed (`notify`'s `by`): not on
+        // the sign-in screen after a sign-out, not to the next user.
         const started = await controller.createCase();
-        if (started && controller.getState().principal) notify(t("toast.started", {}, screenLang()));
+        if (started) notify(t("toast.started", {}, screenLang()), by);
         break;
       }
       case "continue-intake":
@@ -1493,7 +1505,7 @@ if (!config) {
         window.print();
         break;
       case "view-draft":
-        await viewDraft(target.dataset.form ?? "en");
+        await viewDraft(target.dataset.form ?? "en", by);
         break;
       case "toggle-senior":
         controller.editAnswers({
@@ -1521,7 +1533,7 @@ if (!config) {
         // Not saved: no "Saved", and the page stays.
         if (dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
-        notify(t("toast.saved", {}, screenLang()));
+        notify(t("toast.saved", {}, screenLang()), by);
         break;
       }
       case "fill-fictional":
@@ -1535,10 +1547,10 @@ if (!config) {
         closeDialog();
         break;
       case "reconcile-mine":
-        await reconcile(true);
+        await reconcile(true, by);
         break;
       case "reconcile-server":
-        await reconcile(false);
+        await reconcile(false, by);
         break;
       case "toggle-upload-failure": {
         controller.togglePanel("upload-failure");
@@ -1549,8 +1561,9 @@ if (!config) {
         break;
       }
       case "select-person":
-        // Another persona is another person at the same keyboard.
-        formDrafts.clear();
+        // Another persona is another person at the same keyboard; the one
+        // already chosen is nobody new, and what was typed stays.
+        if (target.dataset.personId !== controller.getState().selectedPersonId) formDrafts.clear();
         controller.selectPerson(target.dataset.personId);
         break;
       case "clear-lookup":
@@ -1560,10 +1573,10 @@ if (!config) {
       case "copy-reference":
         try {
           await navigator.clipboard.writeText(state.savedCase?.reference ?? "");
-          notify(t("toast.id_copied", {}, screenLang()));
+          notify(t("toast.id_copied", {}, screenLang()), by);
         } catch {
           openDialog("print");
-          notify(t("toast.id_select", {}, screenLang()));
+          notify(t("toast.id_select", {}, screenLang()), by);
         }
         break;
       case "print-reference":
@@ -1586,7 +1599,7 @@ if (!config) {
         // the controller answers null and says so on screen. "Sent again."
         // would be a claim that something left this window.
         const sent = await controller.retryLast();
-        if (sent) notify(t("toast.sent_again", {}, screenLang()));
+        if (sent) notify(t("toast.sent_again", {}, screenLang()), by);
         break;
       }
       case "retry-connection":
@@ -1610,7 +1623,7 @@ if (!config) {
         sweepV2Form();
         // A press made while 繁體 is still loading wins over it.
         const outcome = await languageRequests.want(lang, (wanted) => controller.setLanguage(wanted));
-        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()));
+        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()), by);
         break;
       }
       default:
@@ -1619,6 +1632,8 @@ if (!config) {
   }
 
   root.addEventListener("click", async (event) => {
+    // Who pressed, before anything is awaited (see `notify`).
+    const by = signedInUserId();
     const caseTarget = event.target.closest("[data-case-action]");
     const assistTarget = event.target.closest("[data-assistance-action]");
     // A submit button inside a form is handled by the submit event, where the
@@ -1628,13 +1643,13 @@ if (!config) {
       caseTarget ?? assistTarget ?? event.target.closest("[data-action]");
     if (!target) return;
     try {
-      if (caseTarget) await runCaseAction(caseTarget);
-      else if (assistTarget) await runAssistanceAction(assistTarget);
-      else await runNavigation(target.dataset.action, target);
+      if (caseTarget) await runCaseAction(caseTarget, null, by);
+      else if (assistTarget) await runAssistanceAction(assistTarget, null, by);
+      else await runNavigation(target.dataset.action, target, by);
     } catch (error) {
       // The controller has already recorded the failure and re-rendered; this
       // only makes sure a refused action is announced rather than silent.
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
     }
   });
 
@@ -1710,6 +1725,8 @@ if (!config) {
 
   root.addEventListener("submit", async (event) => {
     event.preventDefault();
+    // Who pressed, before anything is awaited (see `notify`).
+    const by = signedInUserId();
     const form = event.target;
     // Add a case has no submit: its bar's controls are buttons. Enter in a
     // lone text box would otherwise reach `reportValidity`.
@@ -1725,7 +1742,7 @@ if (!config) {
           await moveV2(() => controller.backToSummary());
         else await moveV2(() => controller.moveSubstep(1));
       } catch (error) {
-        notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+        notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
       }
       return;
     }
@@ -1743,9 +1760,9 @@ if (!config) {
         'button[type="submit"][data-assistance-action]',
       );
       if (caseControl) {
-        await runCaseAction(caseControl, form);
+        await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
-        await runAssistanceAction(assistControl, form);
+        await runAssistanceAction(assistControl, form, by);
       } else if (form.id === "assisted-intake-form") {
         // Creating a case is not a case action — there is no case yet — so it
         // is the form's own submit, exactly like the client's "Start a new
@@ -1756,7 +1773,7 @@ if (!config) {
         // Opening the new case empties the board's own panels, so the form is
         // already put away by the time this returns.
         formDrafts.clear();
-        notify("An assisted application is ready. Nobody was emailed.");
+        notify("An assisted application is ready. Nobody was emailed.", by);
       } else if (form.id === "checkpoint-form") {
         // The choice and its confirmation are the same submit: the dialog says
         // what a checkpoint does, and this button is the person agreeing to it.
@@ -1766,7 +1783,7 @@ if (!config) {
         });
         formDrafts.clear();
         closeDialog();
-        notify("The sample case was moved to that point in the story.");
+        notify("The sample case was moved to that point in the story.", by);
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
@@ -1783,7 +1800,7 @@ if (!config) {
         controller.setFormStep(Math.min(3, state.formStep + 1));
       }
     } catch (error) {
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()));
+      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
     }
   });
 

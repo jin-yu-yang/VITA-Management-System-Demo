@@ -41,8 +41,10 @@ export const isCheckable = (field) => field?.type === "checkbox" || field?.type 
 
 /**
  * The draft one input event on a text box (or select) records, or null for
- * none. A select has no defaultValue, and none is drawn with a saved value,
- * so it is a blank box.
+ * none. A select has no defaultValue, and on this path (staff forms' unsent
+ * entries) none is drawn with a saved value, so it is a blank box. An answer
+ * form's selects are drawn with saved answers, but they go through
+ * ANSWER_FORMS and never reach here.
  */
 export function textDraft(field) {
   const drawn = field.defaultValue ?? "";
