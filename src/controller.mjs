@@ -375,8 +375,9 @@ export function createController({
   // changes (one opened, left, or another opened; `clearSelection`), never
   // when the same opening reads its case again (a refresh, `loadSelected`, a
   // realtime catch-up, a board control's `selectCase` of the open case). A
-  // case left and opened again is a new opening, whose draft is built from
-  // the server as it was then.
+  // case opened again after another case (or none) was opened is a new
+  // opening, whose draft is built from the server as it was then; going to a
+  // list and back keeps the same opening, since its draft was not rebuilt.
   let opening = 0;
   // A case action's envelope -> the opening it was sent from. Every "is this
   // still the draft the save was for?" compares openings, never case ids;

@@ -916,11 +916,25 @@ test("unsent staff-form entries belong to the one signed in and the persona chos
   const restore = app.slice(app.indexOf("function restoreFormDrafts() {"), app.indexOf("function findField("));
   assert.match(
     restore,
-    /const userId = signedInUserId\(\);\s+if \(userId !== draftsOwner\) formDrafts\.clear\(\);\s+draftsOwner = userId;\s+for \(const \[id, value\] of formDrafts\)/,
+    /const userId = signedInUserId\(\);\s+if \(userId !== draftsOwner\) formDrafts\.clear\(\);\s+draftsOwner = userId;/,
   );
   assert.match(app, /let draftsOwner = null;/);
   const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
   assert.ok(renderBody.indexOf("restoreFormDrafts();") > renderBody.indexOf("root.innerHTML = views.page("), "every render checks");
+});
+
+// A case can be left by paths that never pass `open-case` (the open case
+// deleted elsewhere, then a board control's claim selects another), so the
+// render checks which case the drafts belong to, beside whose they are. No
+// case open keeps them: the board's own forms, and a list and back.
+test("unsent staff-form entries belong to the case they were typed on", () => {
+  const app = appSource();
+  const restore = app.slice(app.indexOf("function restoreFormDrafts() {"), app.indexOf("function findField("));
+  assert.match(
+    restore,
+    /draftsOwner = userId;\s+const state = controller\.getState\(\);\s+const caseId = state\.savedCase\?\.id \?\? state\.selectedCaseId \?\? null;\s+if \(caseId !== null && draftsCase !== null && caseId !== draftsCase\) formDrafts\.clear\(\);\s+if \(caseId !== null\) draftsCase = caseId;\s+for \(const \[id, value\] of formDrafts\)/,
+  );
+  assert.match(app, /let draftsCase = null;/);
 });
 
 // Choosing another persona is another person at the same keyboard; pressing

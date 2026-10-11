@@ -158,17 +158,20 @@ if (!config) {
   let lastPlace = null;
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
-  // and rebuilding the page must not empty a box somebody is writing in. It is
-  // dropped the moment the text is sent or the person moves to another case, so
-  // nothing can reappear where it does not belong. An edit to a saved value is
-  // kept as `{ value }` and a tick not yet sent as `{ checked }`
+  // and rebuilding the page must not empty a box somebody is writing in. What
+  // was typed for an action is dropped the moment it is sent. An edit to a
+  // saved value is kept as `{ value }` and a tick not yet sent as `{ checked }`
   // (form-values.mjs). Cancel on the best time drops its whole form, and a
-  // dialog closing drops its ticks. It all belongs to the one signed in and
-  // the persona chosen: anyone else, or nobody, starts with none.
+  // dialog closing drops its ticks. It all belongs to the one signed in, the
+  // persona chosen and the case it was typed on: anyone else, or nobody, or
+  // another case opened (by any path), starts with none, so nothing can
+  // reappear where it does not belong.
   const formDrafts = new Map();
-  // Whose unsent entries formDrafts holds, checked on every render
+  // Whose unsent entries formDrafts holds, and the case they were typed on
+  // (the last case open; null before any), both checked on every render
   // (restoreFormDrafts), like the draft link's maker.
   let draftsOwner = null;
+  let draftsCase = null;
   // The link offered when the browser blocks the draft's tab. It lives here,
   // not in the page: every render draws it again (showDraftLink) until it is
   // opened, a new press replaces it, its URL is revoked a minute on, or its
@@ -394,11 +397,19 @@ if (!config) {
   // into a blank box only while it is still empty, and an edit to a saved
   // value, or an unsent tick (or untick), as it was. Somebody else signed in,
   // or nobody, gets none of it: a sign-out from another tab or an expired
-  // session counts too, as it does for the draft link.
+  // session counts too, as it does for the draft link. Nor does another case,
+  // however it was opened: the open case can go (deleted elsewhere) and a
+  // board control's claim select the next without passing `open-case`. A page
+  // with no case open changes nothing, so the board's own forms keep theirs
+  // and a list and back to the same case keeps the case's.
   function restoreFormDrafts() {
     const userId = signedInUserId();
     if (userId !== draftsOwner) formDrafts.clear();
     draftsOwner = userId;
+    const state = controller.getState();
+    const caseId = state.savedCase?.id ?? state.selectedCaseId ?? null;
+    if (caseId !== null && draftsCase !== null && caseId !== draftsCase) formDrafts.clear();
+    if (caseId !== null) draftsCase = caseId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
   }
