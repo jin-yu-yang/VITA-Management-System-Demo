@@ -3384,8 +3384,10 @@ test("a household member's card mark stays with that person on every path that c
   assert.deepEqual(marked(controller), []);
   controller.stop();
 
-  // Fictional details: "fill" keeps the household, "replace everything" puts
-  // in the example's own member with the example's own id.
+  // Fictional details, as the controller sees them: filling the blanks keeps
+  // the household and its marks; replacing everything puts in the example's
+  // member, a different person with no marks. (The page's fresh ids for
+  // generated members are pinned in the fictionalAnswers test above.)
   ({ controller } = await open());
   const generated = makeSampleAnswers({ version: 2, seed: 1 });
   controller.editAnswers(fillBlankAnswers(controller.getState().draftAnswers, generated, 2));

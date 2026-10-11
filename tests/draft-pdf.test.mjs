@@ -581,6 +581,7 @@ test("the blocked-tab draft link belongs to who made it: a sign-out or another u
   assert.equal(offers.current("case-1", "user-1"), null, "and not back after signing in again");
   timers[0]();
   assert.equal(expired, 0, "its later expiry has nothing left to end");
+  assert.deepEqual(revoked, ["blob:mine"], "and its URL is not revoked a second time");
 
   offers.keep("blob:theirs");
   offers.offer({ url: "blob:theirs", fileName: "b.pdf", caseId: "case-1", userId: "user-1" });
@@ -588,6 +589,8 @@ test("the blocked-tab draft link belongs to who made it: a sign-out or another u
   assert.equal(revoked.at(-1), "blob:theirs");
   assert.equal(offers.current("case-1", "user-2"), null);
   assert.equal(offers.current("case-1", "user-1"), null);
+  timers[1]();
+  assert.deepEqual(revoked, ["blob:mine", "blob:theirs"], "that URL is not revoked a second time either");
 });
 
 // A keyboard user on the link keeps it across a redraw: the render's focus

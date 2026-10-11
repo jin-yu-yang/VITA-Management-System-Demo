@@ -396,7 +396,10 @@ export function createController({
   // belongs to the opening the save was sent from, whose draft holds what was
   // sent: a later opening's draft was built from its own read, and pinning
   // that to the save's revision would let its next save put older answers
-  // back over the saved ones without a conflict.
+  // back over the saved ones without a conflict. What keeps it from a later
+  // opening is that it is only set when the save landed on the same opening
+  // and is cleared where the opening moves (`clearSelection`); the opening
+  // kept with it is a second check, not the first.
   let landedRevision = null;
   // The presenter's two requests, kept as the objects that were sent so a
   // retry is the same request rather than a second one.
@@ -1923,6 +1926,9 @@ export function createController({
   // A version-2 save, known as the one out until it settles. `shown`: the
   // press that sent it shows its failure itself.
   async function trackSave(promise, shown) {
+    // The opening read here is the one the save was sent from: the caller
+    // built `promise` first, and that call reaches `dispatch`'s
+    // `sentFrom.set` synchronously, before this body runs.
     const out = { opening, promise, shown };
     saveOut = out;
     try {

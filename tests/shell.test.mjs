@@ -941,7 +941,7 @@ test("choosing the persona already chosen keeps the unsent staff-form entries", 
 test("a press's result message is shown only while the person who pressed is signed in", () => {
   const app = appSource();
   assert.match(app, /function signedInUserId\(\) \{\s+return controller\.getState\(\)\.principal\?\.userId \?\? null;\s+\}/);
-  assert.equal([...app.matchAll(/controller\.getState\(\)\.principal\?\.userId/g)].length, 1, "one notion of the signed-in user");
+  assert.equal([...app.matchAll(/principal\?\.userId/g)].length, 1, "one notion of the signed-in user");
   // The one place the rule lives: notify, given who the press was made by.
   const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function notify(") + 500);
   assert.match(notifyFn, /function notify\(text, by\) \{\s+if \(by !== undefined && by !== signedInUserId\(\)\) return;/);
@@ -984,6 +984,30 @@ test("a press's result message is shown only while the person who pressed is sig
     't("toast.confirm_first", {}, screenLang())',
     '"Say what you helped with before resolving this request."',
   ];
+  // "Before any await" is checked, not assumed: a later await put ahead of
+  // either message on its way would let another user sign in first. The one
+  // await ahead of Submit's message in runCaseAction is Save's branch, which
+  // returns before the Submit check is reached.
+  const awaitsBefore = (name, message) => {
+    const fn = app.slice(app.indexOf(`async function ${name}(`));
+    const at = fn.indexOf(`notify(${message})`);
+    assert.ok(at >= 0, `${name} says ${message}`);
+    let before = fn.slice(0, at);
+    const save = before.indexOf('if (type === "SAVE_ANSWERS") {');
+    if (save >= 0) {
+      let depth = 0;
+      let end = before.indexOf("{", save);
+      for (; end < before.length; end += 1) {
+        if (before[end] === "{") depth += 1;
+        else if (before[end] === "}" && --depth === 0) break;
+      }
+      assert.match(before.slice(save, end), /return;\s*$/, "Save's branch returns");
+      before = before.slice(0, save) + before.slice(end + 1);
+    }
+    return before.match(/\bawait\b/g)?.length ?? 0;
+  };
+  assert.equal(awaitsBefore("runCaseAction", BEFORE_ANY_AWAIT[0]), 0, "Submit's confirm-first is shown before any await");
+  assert.equal(awaitsBefore("runAssistanceAction", BEFORE_ANY_AWAIT[1]), 0, "Resolve's say-what-you-did is shown before any await");
   let said = 0;
   for (const call of press.flatMap(notifyArguments)) {
     if (BEFORE_ANY_AWAIT.includes(call)) continue;
