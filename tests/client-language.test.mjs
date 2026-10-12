@@ -161,7 +161,7 @@ const STATES = {
     authError: { code: "AUTH_INVALID_CODE", message: "That code is invalid or has expired. Request a new code." },
   }),
   "sign-in: the email step with a validation error": visitor({
-    authError: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+    authError: { code: "OFFLINE", message: "Network error. Please try again later." },
   }),
   "sign-in: the code step, resend ready": visitor({ authStep: "code", authEmail: EMAIL, authMessage: NEUTRAL_SEND_MESSAGE }),
   "applications: one draft and one received": baseState({
@@ -200,7 +200,7 @@ const STATES = {
   "the unreachable screen": baseState({
     principal: null,
     session: "unknown",
-    error: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+    error: { code: "OFFLINE", message: "Network error. Please try again later." },
   }),
   "the no-access screen": baseState({
     principal: null,

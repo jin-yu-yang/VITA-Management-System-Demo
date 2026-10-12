@@ -17,7 +17,7 @@ export function peekZone(element) {
 
 export function toggleLabel({ pinned, peeking }) {
   if (pinned) return "Hide the sidebar";
-  return peeking ? "Keep the sidebar open" : "Show the sidebar";
+  return peeking ? "Pin the sidebar open" : "Show the sidebar";
 }
 
 export function createSidebarPeek({ setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) {

@@ -963,7 +963,7 @@ function checklistRow(card, { variant, markable, movable, off }) {
         ? button("Move to Needed", "move-card", "secondary", `data-slot="${slot}" data-group="needed"${off}`)
         : button("Move to Maybe needed", "move-card", "secondary", `data-slot="${slot}" data-group="maybe"${off}`)
       : "";
-  return `<article class="doc-row" id="${id}" data-slot="${slot}" tabindex="-1"><div class="doc-row-head"><strong class="doc-label">${esc(card.label?.en)}</strong><span class="doc-group ${group.className}">${icon(group.icon)} ${esc(group.word)}</span></div><p class="doc-owner">${esc(card.ownerLine?.en)}</p>${why}${statusLine}${when(marks || move, `<div class="doc-marks">${marks}${move}</div>`)}</article>`;
+  return `<article class="doc-row" id="${id}" data-slot="${slot}" tabindex="-1"><div class="doc-row-head"><strong class="doc-label">${esc(card.label?.en)}</strong><span class="doc-group ${group.className}">${icon(group.icon)} ${esc(group.word)}</span></div><p class="doc-owner">${esc(card.ownerLine?.office ?? card.ownerLine?.en)}</p>${why}${statusLine}${when(marks || move, `<div class="doc-marks">${marks}${move}</div>`)}</article>`;
 }
 
 /**
@@ -1321,8 +1321,8 @@ export const EVENT_SENTENCES = Object.freeze({
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",
   RECORD_MATERIALS: "recorded the materials received",
-  SET_DOCUMENT_CARD: "marked a document card",
-  SET_DOCUMENT_GROUP: "moved a document card between groups",
+  SET_DOCUMENT_CARD: "updated a document's status",
+  SET_DOCUMENT_GROUP: "changed whether a document is needed",
 });
 
 export function historySentence(entry) {

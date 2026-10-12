@@ -10,6 +10,7 @@ import {
 import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
+import HANT_MAP from "../src/zh-hant.mjs";
 import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
   CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontsFor,
@@ -390,11 +391,12 @@ test("Chinese comments with no spaces wrap by characters and continue on page 7"
   const notes = "我的表还没收到".repeat(500); // 3,500 characters, no spaces
   const { doc } = await build({ ...BASE, additional_notes: notes }, { form: "zh-s", fontFiles: files });
   assert.equal(doc.getPageCount(), 7);
-  assert.equal(drawnLines(doc.getPage(4)).at(-1), "(continued on page 7)");
-  assert.equal(drawnLines(doc.getPage(6))[0], "Additional comments (continued)");
-  // 29 ruled lines of runs on page 5 before the marker, the rest on page 7.
+  // The PDF's own lines are Chinese on a 简体 form, drawn in the embedded font.
+  assert.equal(drawnText(doc.getPage(4)).at(-1).text, "（续见第 7 页）");
+  assert.equal(drawnText(doc.getPage(6))[0].text, "补充说明（续）");
+  // 29 ruled lines of runs on page 5 before the marker, and the marker is a run too.
   const glyphRuns = (page) => [...pageContent(page).matchAll(/<(00[0-9A-Fa-f]*)>\s*Tj/g)].length;
-  assert.equal(glyphRuns(doc.getPage(4)), 29);
+  assert.equal(glyphRuns(doc.getPage(4)), 30);
   assert.ok(glyphRuns(doc.getPage(6)) > 0);
 });
 
@@ -421,8 +423,8 @@ test("a 简体 form with six household members and long notes overflows in Chine
   const box = drawnText(doc.getPage(4));
   const seventh = drawnText(doc.getPage(6));
   // The box's 30th ruled line says where the rest went; page 7 has its title.
-  assert.deepEqual(box.at(-1), { y: 560 - 29 * 18, text: "(continued on page 7)" });
-  assert.equal(seventh[0].text, "Additional comments (continued)");
+  assert.deepEqual(box.at(-1), { y: 560 - 29 * 18, text: "（续见第 7 页）" });
+  assert.equal(seventh[0].text, "补充说明（续）");
   // Nothing cut off, in order: what the two pages print is the comments, wrapped.
   const printed = [...box.slice(0, -1), ...seventh.slice(1)].map((line) => line.text).join("");
   assert.equal(printed.replace(/\s+/g, ""), fields.comments.replace(/\s+/g, ""));
@@ -431,6 +433,38 @@ test("a 简体 form with six household members and long notes overflows in Chine
   const rest = seventh.map((line) => line.text).join("\n");
   assert.match(rest, /成员 5：伊 林 · 子女 · 2014年5月14日出生 · 居住 12 个月 · 未婚 · 美国公民：是/);
   assert.match(rest, /成员 6：飞 林 · 子女 · 2015年6月15日出生 · /);
+});
+
+// Section 1, decision 2 of the wording review (#48): the continued page's
+// heading, the box's last line and the notice follow the form's language.
+test("the Chinese continued heading fits the page on both Chinese forms", async () => {
+  const doc = await PDFDocument.load(await formBytes("zh-s"));
+  const page = doc.getPage(4);
+  const box = doc.getForm().getTextField(draftFieldNames("zh-s").find((name) => /AdditionalNotesComments/.test(name)))
+    .acroField.getWidgets()[0].getRectangle();
+  const room = page.getWidth() - 2 * box.x;
+  for (const form of ["zh-s", "zh-t"]) {
+    const title = form === "zh-s" ? "补充说明（续）" : HANT_MAP["补充说明（续）"];
+    assert.ok(title, form);
+    const fonts = (await fontFilesFor(form)).map((bytes) => fontkit.create(bytes));
+    let width = 0;
+    for (const ch of title) {
+      const font = fonts.find((f) => f.hasGlyphForCodePoint(ch.codePointAt(0)));
+      assert.ok(font, `${form}: no font has ${ch}`);
+      width += (font.layout(ch).advanceWidth / font.unitsPerEm) * 14;
+    }
+    assert.ok(width > 0 && width <= room, `${form}: ${width} pt in ${room} pt`);
+  }
+});
+
+test("a Chinese form with only Latin comments keeps the font rule and English lines when they continue", async () => {
+  const fields = draftFields({ ...BASE, additional_notes: "Receipt number 1234 is in the blue folder. ".repeat(160) }, { ...OPTIONS, form: "zh-s" });
+  assert.equal(fieldsNeedFont(fields), false, "no font is fetched for Latin text");
+  const bytes = await buildDraftPdf({ PDFLib, fontkit, formBytes: await formBytes("zh-s"), fontFiles: [], fields, stamp: fields.stamp });
+  const doc = await PDFDocument.load(bytes);
+  assert.equal(doc.getPageCount(), 7);
+  assert.equal(drawnLines(doc.getPage(4)).at(-1), "(continued on page 7)");
+  assert.equal(drawnLines(doc.getPage(6))[0], "Additional comments (continued)");
 });
 
 test("a character neither font has prints as ? and Additional Comments says so", async () => {

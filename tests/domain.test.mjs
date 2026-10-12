@@ -103,9 +103,10 @@ test("every server stage has plain status copy and no workflow decision", () => 
     describeStage("corrections_required").clientMessage,
     /No action is needed from you right now/,
   );
+  // Approval says signing and filing come next; it does not claim they happened.
   assert.match(
     describeStage("review_approved").clientMessage,
-    /Signing and filing are later milestones and are not done yet/,
+    /A volunteer will contact you soon to sign and file\./,
   );
   // Pure: the same input answers the same way, and an edited result never
   // changes the next answer.

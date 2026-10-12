@@ -1336,7 +1336,7 @@ test("a version-2 answers panel groups the answers by step and sub-step", () => 
   assert.match(html, /<h4>Mailing address<\/h4>/);
   assert.match(html, /Date of birth<\/span><strong>Apr 12, 1961<\/strong>/);
   // A household member, one row each.
-  assert.match(html, /Sam Rivera · Son \/ Daughter · born Aug 30, 2012 · 12 months/);
+  assert.match(html, /Sam Rivera · Son \/ Daughter · born Aug 30, 2012 · lived with you 12 months/);
   assert.equal((html.match(/People in your household/g) ?? []).length, 1);
   assert.doesNotMatch(html, /data-case-action|<input|<textarea/);
 });
@@ -1616,7 +1616,7 @@ test("a marked card shows its status and the three marks", () => {
   const row = rowOf(checklist(checklistCase()), "w2.household");
   assert.match(row, /id="doc-w2-household" data-slot="w2\.household" tabindex="-1"/);
   assert.match(row, /<strong class="doc-label">[^<]*W-2/);
-  assert.match(row, /For you/);
+  assert.match(row, /<p class="doc-owner">Client<\/p>/);
   assert.match(row, /<p class="doc-status is-later" id="doc-w2-household-status" tabindex="-1">[^]*Later<\/p>/);
   assert.match(row, /data-action="mark-card" data-slot="w2\.household" data-status="later"[^>]*>Later</);
   assert.match(row, /data-status="none"[^>]*>Don(?:'|&#39;)t have</);
@@ -1657,6 +1657,18 @@ test("the reason line names the question that asked for the card", () => {
   const html = checklist(checklistCase());
   assert.match(rowOf(html, "w2.household"), /Asked by: Wages from a part-time or full-time job/);
   assert.match(rowOf(html, `ssn.hh.${HH2}`), /Asked by: /);
+});
+
+// Wording review (#48), section 3: the checklist's owner lines are the office's
+// (as on Add a case), never the client's "For you"; a member's name stays as typed.
+test("the owner lines speak to the office; a household member keeps their name", () => {
+  const html = checklist(checklistCase());
+  assert.match(rowOf(html, "w2.household"), /<p class="doc-owner">Client<\/p>/);
+  assert.match(rowOf(html, "bank.household"), /<p class="doc-owner">Household<\/p>/);
+  assert.match(rowOf(html, `ssn.hh.${HH1}`), /<p class="doc-owner">Sam [^<]*<\/p>/);
+  assert.doesNotMatch(html, /<p class="doc-owner">(You|Your spouse|For you|For you and your spouse|For your household)<\/p>/);
+  const married = checklist(checklistCase({ answers: { ...checklistCase().answers, marital_status: "married" } }));
+  assert.match(rowOf(married, "w2.household"), /<p class="doc-owner">Client and spouse<\/p>/);
 });
 
 test("Alex sees marks and moves only on a case he prepares; Morgan only as its reviewer", () => {

@@ -146,7 +146,7 @@ SUPABASE_PUBLISHABLE_KEY=your-publishable-key</code></pre><p>Then restart the se
 // offers another attempt. Focus and `online` events retry on their own too.
 export function unreachableScreen(state) {
   const lang = viewLang(state);
-  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">${esc(t("unreachable.overline", {}, lang))}</span><h1>${esc(t("unreachable.title", {}, lang))}</h1><p>${esc(sentence(state.error?.message ?? "The demo cannot reach the server. Check the connection.", lang))}</p></div><div class="panel"><p>${esc(t("unreachable.body", {}, lang))}</p>${button(`${icon("refresh")} ${esc(t("frame.try_again", {}, lang))}`, "retry-connection", "primary full")}<p class="field-note">${esc(t("unreachable.note", {}, lang))}</p></div></main>`;
+  return `<main id="main" class="narrow" tabindex="-1"><div class="center-icon">${icon("clock")}</div><div class="page-intro centered"><span class="overline">${esc(t("unreachable.overline", {}, lang))}</span><h1>${esc(t("unreachable.title", {}, lang))}</h1><p>${esc(sentence(state.error?.message ?? "Network error. Please try again later.", lang))}</p></div><div class="panel"><p>${esc(t("unreachable.body", {}, lang))}</p>${button(`${icon("refresh")} ${esc(t("frame.try_again", {}, lang))}`, "retry-connection", "primary full")}<p class="field-note">${esc(t("unreachable.note", {}, lang))}</p></div></main>`;
 }
 
 // Signed in, but this account has no active membership in a workspace.

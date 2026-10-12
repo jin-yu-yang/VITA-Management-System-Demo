@@ -122,7 +122,7 @@ const STAGE_DESCRIPTIONS = Object.freeze({
   review_approved: {
     label: "Review complete",
     clientMessage:
-      "Independent review is complete. A volunteer will contact you about next steps. Signing and filing are later milestones and are not done yet.",
+      "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.",
   },
   closed: {
     label: "Closed",

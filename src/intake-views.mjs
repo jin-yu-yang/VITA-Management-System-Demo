@@ -295,7 +295,8 @@ const CARD_WORDS = Object.freeze({
 // upload buttons but no marks and no status (ruling R1). `off` is
 // `offWhileBusy`: the marks and the why link wait for an action in flight.
 // `office` puts the card in the office's words (Add a case), which are always
-// English; otherwise `lang` is the client's language (spec 2026-10-05 §3).
+// English: a hint or owner line with an `office` version shows that one;
+// otherwise `lang` is the client's language (spec 2026-10-05 §3).
 // Card text reaches the screen through sourceText.
 export function docCard(card, { links = true, off = "", office = false, lang = "en" } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
@@ -303,6 +304,7 @@ export function docCard(card, { links = true, off = "", office = false, lang = "
   const language = office ? "en" : lang;
   const say = (key) => t(key, {}, language);
   const text = (pair) => cardText(pair, language);
+  const shown = (pair) => (office && pair?.office ? pair.office : text(pair));
   const words = office ? CARD_WORDS.office : Object.fromEntries(Object.entries(CARD_WORDS.client).map(([k, key]) => [k, say(key)]));
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
   const whyText = text(card.why);
@@ -314,7 +316,7 @@ export function docCard(card, { links = true, off = "", office = false, lang = "
     : whyText
       ? `<p class="doc-why">${target ? `<button type="button" class="inline" data-action="go-substep" data-substep="${esc(target)}"${off}>${esc(whyText)}</button>` : esc(whyText)}</p>`
       : "";
-  const hintText = card.hint?.en ? text(card.hint) : "";
+  const hintText = card.hint?.en ? shown(card.hint) : "";
   const hint = hintText ? `<p class="doc-hint">${esc(hintText)}</p>` : "";
   const noteId = `${id}-note`;
   const upload = `<div class="doc-upload"><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("camera")} ${esc(say("doc.take_photo"))}</button><button type="button" class="btn secondary" disabled aria-describedby="${noteId}">${icon("upload")} ${esc(say("doc.choose_file"))}</button></div><p class="doc-note" id="${noteId}">${esc(words.note)}</p>`;
@@ -322,7 +324,7 @@ export function docCard(card, { links = true, off = "", office = false, lang = "
   const marks = optional
     ? ""
     : `<div class="doc-marks">${markButton(card.slotId, "later", words.later, off)}${markButton(card.slotId, "none", words.none, off)}${when(card.status !== "not_done", markButton(card.slotId, "not_done", say("doc.mark_not_done"), off))}</div><p class="doc-status is-${esc(card.status)}" id="${id}-status" tabindex="-1">${icon(status.icon)}<span class="sr-only">${esc(say("doc.status"))}</span>${esc(statusWord(card, language))}</p>`;
-  return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(text(card.label))}</h3><p class="doc-owner">${esc(text(card.ownerLine))}</p>${why}${hint}${upload}${marks}</article>`;
+  return `<article class="doc-card" id="${id}" data-slot="${esc(card.slotId)}" tabindex="-1"><h3>${esc(text(card.label))}</h3><p class="doc-owner">${esc(shown(card.ownerLine))}</p>${why}${hint}${upload}${marks}</article>`;
 }
 
 // Same-day: a printable checklist, Needed first and then Maybe needed, with no

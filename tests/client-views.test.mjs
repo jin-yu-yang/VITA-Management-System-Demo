@@ -166,10 +166,10 @@ test("an offline visitor reads the last view behind a connection notice", () => 
     baseState({
       principal: null,
       authStep: "code",
-      authError: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+      authError: { code: "OFFLINE", message: "Network error. Please try again later." },
     }),
   );
-  assert.match(offline, /cannot reach the server/i);
+  assert.match(offline, /Network error\. Please try again later\./);
 });
 
 test("a dialog can always take the keyboard, whatever its body holds", () => {
@@ -197,7 +197,7 @@ test("an unreachable server gets its own screen, not the sign-in form", () => {
       connection: "offline",
       error: {
         code: "OFFLINE",
-        message: "The demo cannot reach the server. Check the connection.",
+        message: "Network error. Please try again later.",
       },
     }),
   );
@@ -397,7 +397,7 @@ test("the save state is named in words and a failed save keeps a retry", () => {
       saveState: "failed",
       dirty: true,
       retryable: true,
-      error: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+      error: { code: "OFFLINE", message: "Network error. Please try again later." },
     }),
   );
   assert.match(failed, /not saved/i);
@@ -1283,7 +1283,7 @@ test("the version-2 conflict screen compares sendable values and labels rows by 
   );
   assert.match(rows[0][1], /Weekday evenings, Weekends/);
   assert.match(rows[0][2], /Weekday mornings/);
-  assert.match(rows[1][1], /Lin Chen · Son \/ Daughter · born Mar 14, 2015 · 12 months[\s\S]*An Chen/);
+  assert.match(rows[1][1], /Lin Chen · Son \/ Daughter · born Mar 14, 2015 · lived with you 12 months[\s\S]*An Chen/);
   assert.doesNotMatch(rows[1][2], /An Chen/);
   assert.match(html, /data-action="reconcile-mine"/);
   assert.match(html, /data-action="reconcile-server"/);
@@ -1324,6 +1324,31 @@ test("docCard without office is unchanged; with office it speaks to the office",
   const photo = cards.find((card) => card.slotId === "photo_id.tp");
   assert.equal(photo.ask ?? null, null);
   assert.doesNotMatch(docCard(photo, { links: false, office: true }), /doc-why/);
+});
+
+// Section 1, decision 3 of the wording review (#48): on Add a case, a hint or
+// owner line with an office version shows that one; the client's card keeps
+// its own words.
+test("on Add a case, hints and owner lines speak to the office", () => {
+  const cards = cardsFor(
+    { marital_status: "married", inc_wages: "yes", inc_wages_job_count: "2", refund_method: "direct_deposit" },
+    [],
+  );
+  const card = (slot) => cards.find((c) => c.slotId === slot);
+  const office = (slot) => docCard(card(slot), { links: false, office: true });
+  const client = (slot) => docCard(card(slot), { links: false });
+  assert.match(office("w2.household"), /<p class="doc-owner">Client and spouse<\/p>/);
+  assert.match(office("w2.household"), /<p class="doc-hint">Client said 2 jobs\. Expect 2 W-2s\.<\/p>/);
+  assert.match(office("photo_id.sp"), /<p class="doc-owner">Spouse<\/p>/);
+  assert.match(office("photo_id.sp"), /<p class="doc-hint">Needed if filing jointly<\/p>/);
+  assert.match(office("bank.household"), /<p class="doc-owner">Household<\/p>/);
+  assert.match(office("bank.household"), /<p class="doc-hint">The account must be in the client&#39;s or spouse&#39;s name\.<\/p>/);
+  assert.match(client("w2.household"), /<p class="doc-owner">For you and your spouse<\/p>/);
+  assert.match(client("w2.household"), /<p class="doc-hint">You said 2 jobs\. Upload 2 W-2s\.<\/p>/);
+  assert.match(client("bank.household"), /<p class="doc-hint">The account must be in your name \(or your spouse&#39;s\)\.<\/p>/);
+  // A person card's hint has its office version too.
+  const visa = cardsFor({ on_visa: ["me"] }, []).find((c) => c.slotId === "visa.tp");
+  assert.match(docCard(visa, { links: false, office: true }), /<p class="doc-hint">Helps check residency status\.<\/p>/);
 });
 
 // Part 4d Task 6: the progress page's cards and request in the client's language.

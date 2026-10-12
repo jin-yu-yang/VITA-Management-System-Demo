@@ -439,8 +439,8 @@ test("times and days follow the language; English is the default", async () => {
 test("badges and client-number labels follow the language", () => {
   assert.match(stageBadge("reviewing", "zh-Hans"), /<i><\/i>\p{Script=Han}/u);
   assert.equal(stageBadge("reviewing", "en"), stageBadge("reviewing"));
-  assert.equal(clientNumberLabel({ clientNumber: null, stage: "draft" }, "zh-Hans"), "尚无编号");
+  assert.equal(clientNumberLabel({ clientNumber: null, stage: "draft" }, "zh-Hans"), "尚无客户编号");
   assert.equal(clientNumberLabel({ clientNumber: null, stage: "closed" }, "zh-Hans"), "从未发送");
   assert.equal(clientNumberLabel({ clientNumber: 93, stage: "received" }, "zh-Hans"), "#093");
-  assert.equal(clientNumberTag({ clientNumber: null, stage: "draft" }, "zh-Hans"), '<span class="client-number none">尚无编号</span>');
+  assert.equal(clientNumberTag({ clientNumber: null, stage: "draft" }, "zh-Hans"), '<span class="client-number none">尚无客户编号</span>');
 });

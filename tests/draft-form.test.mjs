@@ -282,8 +282,8 @@ test("household rows 1–4 on the form, members 5–6 in Additional Comments", (
   assert.equal(
     blocks.at(-1),
     [
-      "Person 5: Eva Lin · Grandchild · born 09/10/2019 · 12 months · single · citizen: yes · resident: yes · student: no · disabled: no · IP PIN: no",
-      "Person 6: Fei Lin · None · born 11/12/1999 · 3 months · married · citizen: no · resident: not sure · student: no · disabled: no · IP PIN: yes",
+      "Person 5: Eva Lin · Grandchild · born 09/10/2019 · lived with you 12 months · single · citizen: yes · U.S./Canada/Mexico resident: yes · student: no · totally and permanently disabled: no · IP PIN: no",
+      "Person 6: Fei Lin · None · born 11/12/1999 · lived with you 3 months · married · citizen: no · U.S./Canada/Mexico resident: not sure · student: no · totally and permanently disabled: no · IP PIN: yes",
     ].join("\n"),
   );
   assert.match(comments, /Person 3 Issued an IP PIN\?, Person 4 U\.S\. citizen\?, Person 6 In 2025, was this person a resident/);
@@ -409,6 +409,35 @@ const withHant = (fn) => {
   }
 };
 
+test("the PDF's own lines come in the form's language, with {page} left for the builder", () => {
+  assert.deepEqual(draft(MARRIED).words, {
+    continuedTitle: "Additional comments (continued)",
+    continuedOn: "(continued on page {page})",
+    notice: "Some characters could not be printed. The online answers have them in full.",
+  });
+  assert.deepEqual(draft(MARRIED, { ...OPTIONS, form: "zh-s" }).words, {
+    continuedTitle: "补充说明（续）",
+    continuedOn: "（续见第 {page} 页）",
+    notice: "部分字符无法打印。网上填写的回答中有完整内容。",
+  });
+  const traditional = withHant(() => draft(MARRIED, { ...OPTIONS, form: "zh-t" }).words);
+  assert.equal(traditional.continuedTitle, HANT_MAP["补充说明（续）"]);
+  assert.equal(traditional.continuedOn, HANT_MAP["（续见第 {page} 页）"]);
+  assert.match(traditional.continuedOn, /\{page\}/);
+});
+
+test("the relationship box follows the form's language; the English form keeps English", () => {
+  const row = (fields, k) => fields.text[F(`page1[0].namesOf[0].Row${k}[0].relationshipToYou[0]`)];
+  const en = draft({ ...MARRIED, hh: SIX });
+  assert.equal(row(en, 1), "Son / Daughter");
+  const simplified = draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-s" });
+  assert.equal(row(simplified, 1), "子女");
+  assert.equal(row(simplified, 2), "继子女");
+  const traditional = withHant(() => draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-t" }));
+  assert.equal(row(traditional, 1), HANT_MAP["子女"]);
+  assert.equal(row(traditional, 2), HANT_MAP["继子女"]);
+});
+
 test("the 简体 form: Not sure in Chinese with the catalogue's wording, joined with 、", () => {
   const { comments } = draft(MARRIED, { ...OPTIONS, form: "zh-s" });
   const notSure = [
@@ -475,8 +504,8 @@ test("the 繁體 form with the map loaded: no generated character is left in Sim
 
 test("Chinese member lines: option labels, dates and words in the form's language", () => {
   const zhLines = [
-    "成员 5：Eva Lin · 孙子女/外孙子女 · 2019年9月10日出生 · 居住 12 个月 · 未婚 · 美国公民：是 · 美加墨居民：是 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：否",
-    "成员 6：Fei Lin · 无亲属关系 · 1999年11月12日出生 · 居住 3 个月 · 已婚 · 美国公民：否 · 美加墨居民：不确定 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：是",
+    "成员 5：Eva Lin · 孙子女/外孙子女 · 2019年9月10日出生 · 居住 12 个月 · 未婚 · 美国公民：是 · 美加墨居民：是 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码（IP PIN）：否",
+    "成员 6：Fei Lin · 无亲属关系 · 1999年11月12日出生 · 居住 3 个月 · 已婚 · 美国公民：否 · 美加墨居民：不确定 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码（IP PIN）：是",
   ];
   const simplified = draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-s" });
   assert.equal(simplified.comments.split("\n\n").at(-1), zhLines.join("\n"));
@@ -486,10 +515,10 @@ test("Chinese member lines: option labels, dates and words in the form's languag
   const traditional = withHant(() => draft({ ...MARRIED, hh: one }, { ...OPTIONS, form: "zh-t" }));
   assert.equal(
     traditional.comments.split("\n\n").at(-1),
-    "成員 5：Eva Lin · 孫子女/外孫子女 · 2019年9月10日出生 · 居住 1 個月 · 未婚 · 美國公民：是 · 美加墨居民：是 · 全日制學生：否 · 完全且永久性殘疾：否 · 身份保護碼：否",
+    "成員 5：Eva Lin · 孫子女/外孫子女 · 2019年9月10日出生 · 居住 1 個月 · 未婚 · 美國公民：是 · 美加墨居民：是 · 全日制學生：否 · 完全且永久性殘疾：否 · 身份保護碼（IP PIN）：否",
   );
   // The English form keeps "1 month".
-  assert.match(draft({ ...MARRIED, hh: one }).comments, /Person 5: Eva Lin · Grandchild · born 09\/10\/2019 · 1 month · single · /);
+  assert.match(draft({ ...MARRIED, hh: one }).comments, /Person 5: Eva Lin · Grandchild · born 09\/10\/2019 · lived with you 1 month · single · /);
 });
 
 test("the English form's generated lines do not change with the Traditional map loaded", () => {

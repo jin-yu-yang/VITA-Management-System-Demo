@@ -2680,13 +2680,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Reported on Form **1099-B**. Document: the 1099-B and your full brokerage statement (and a 1099-S if the sale was real estate). You will upload it in the Documents step.",
+                    "en": "Reported on Form **1099-B**. Document: the 1099-B and your full brokerage statement (and a 1099-S if the sale was real estate). You will upload them in the Documents step.",
                     "zh": "对应 **1099-B** 表。文件：1099-B 及完整券商对账单（如卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "You usually get a **1099-B** form. Document: the 1099-B and your full broker statement (and a 1099-S if you sold real estate). You will upload it in the Documents step.",
+                    "en": "You usually get a **1099-B** form. Document: the 1099-B and your full broker statement (and a 1099-S if you sold real estate). You will upload them in the Documents step.",
                     "zh": "一般会收到 **1099-B** 表。文件：1099-B 及完整的证券公司对账单（如果卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -2793,13 +2793,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step.",
+                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload them in the Documents step.",
                     "zh": "租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step.",
+                    "en": "Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload them in the Documents step.",
                     "zh": "租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -2866,13 +2866,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step.",
+                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload them in the Documents step.",
                     "zh": "出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step.",
+                    "en": "Rent records and any 1099-MISC or 1099-K. You will upload them in the Documents step.",
                     "zh": "出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3334,13 +3334,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step.",
+                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload them in the Documents step.",
                     "zh": "房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step.",
+                    "en": "Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload them in the Documents step.",
                     "zh": "房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3374,13 +3374,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step.",
+                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload them in the Documents step.",
                     "zh": "医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step.",
+                    "en": "Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload them in the Documents step.",
                     "zh": "医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3414,13 +3414,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Donation receipts or thank-you letters. You will upload it in the Documents step.",
+                    "en": "Donation receipts or thank-you letters. You will upload them in the Documents step.",
                     "zh": "捐款收据或感谢信。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Donation receipts or thank-you letters. You will upload it in the Documents step.",
+                    "en": "Donation receipts or thank-you letters. You will upload them in the Documents step.",
                     "zh": "捐款收据或感谢信。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3679,13 +3679,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step.",
+                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload them in the Documents step.",
                     "zh": "每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step.",
+                    "en": "Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload them in the Documents step.",
                     "zh": "每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3719,13 +3719,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step.",
+                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload them in the Documents step.",
                     "zh": "1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step.",
+                    "en": "1099-S and the closing statements for the sale and for the original purchase. You will upload them in the Documents step.",
                     "zh": "1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3759,7 +3759,7 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "1099-SA and 5498-SA. You will upload it in the Documents step.",
+                    "en": "1099-SA and 5498-SA. You will upload them in the Documents step.",
                     "zh": "1099-SA 和 5498-SA。您将在「上传文件」步骤上传。"
                   }
                 ],
@@ -3769,7 +3769,7 @@ export default {
                     "zh": "这是一种专门用来付医疗费的账户。"
                   },
                   {
-                    "en": "1099-SA and 5498-SA. You will upload it in the Documents step.",
+                    "en": "1099-SA and 5498-SA. You will upload them in the Documents step.",
                     "zh": "1099-SA 和 5498-SA。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3803,13 +3803,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Every Form **1095-A** you received. Medicaid and Medicare do not count. You will upload it in the Documents step.",
+                    "en": "Every Form **1095-A** you received. Medicaid and Medicare do not count. You will upload them in the Documents step.",
                     "zh": "收到的所有 **1095-A** 表。Medicaid 和 Medicare 不属于此类。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Every **1095-A** form you got. Medicaid and Medicare do NOT count. You will upload it in the Documents step.",
+                    "en": "Every **1095-A** form you got. Medicaid and Medicare do NOT count. You will upload them in the Documents step.",
                     "zh": "收到的所有 **1095-A** 表。白卡（Medicaid）和红蓝卡（Medicare）不算。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3843,13 +3843,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step.",
+                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload them in the Documents step.",
                     "zh": "每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step.",
+                    "en": "Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload them in the Documents step.",
                     "zh": "每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -3985,13 +3985,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "FEMA or insurance papers, and records of the loss. You will upload it in the Documents step.",
+                    "en": "FEMA or insurance papers, and records of the loss. You will upload them in the Documents step.",
                     "zh": "FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "FEMA or insurance papers, and records of the loss. You will upload it in the Documents step.",
+                    "en": "FEMA or insurance papers, and records of the loss. You will upload them in the Documents step.",
                     "zh": "FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -4065,13 +4065,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Each IRS letter or bill. You will upload it in the Documents step.",
+                    "en": "Each IRS letter or bill. You will upload them in the Documents step.",
                     "zh": "每一封国税局信件或账单。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Each IRS letter or bill. You will upload it in the Documents step.",
+                    "en": "Each IRS letter or bill. You will upload them in the Documents step.",
                     "zh": "每一封国税局信件或账单。您将在「上传文件」步骤上传。"
                   }
                 ]
@@ -4105,13 +4105,13 @@ export default {
               "tips": {
                 "general": [
                   {
-                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step.",
+                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload them in the Documents step.",
                     "zh": "付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。"
                   }
                 ],
                 "senior": [
                   {
-                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step.",
+                    "en": "Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload them in the Documents step.",
                     "zh": "付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。"
                   }
                 ]

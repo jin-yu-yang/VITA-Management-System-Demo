@@ -1476,7 +1476,7 @@ async function runPermutation(t, roles) {
       await waitForBadge(client, "Review complete");
       await waitForText(
         client,
-        "A volunteer will contact you about next steps.",
+        "A volunteer will contact you soon to sign and file.",
         RENDER_MS,
       );
       await waitForText(client, "A volunteer spoke with you about the next service step.");
@@ -2031,7 +2031,7 @@ async function runPermutation(t, roles) {
       };
       const PINNED = { peek: false, hidden: false, expanded: "true", label: "Hide the sidebar" };
       const COLLAPSED = { peek: false, hidden: true, expanded: "false", label: "Show the sidebar" };
-      const PEEKING = { peek: true, hidden: false, expanded: "true", label: "Keep the sidebar open" };
+      const PEEKING = { peek: true, hidden: false, expanded: "true", label: "Pin the sidebar open" };
       const centreOf = async (locator, what) => {
         const box = await locator.boundingBox();
         assert.ok(box, `${what} has no box to point at`);
