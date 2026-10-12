@@ -99,11 +99,11 @@ None. Two sub-steps were adapted, as CLAUDE.md directs:
 
 ## 6. Promote candidates → long-term learning
 
-- [ ] 🟡 **Check the test stack's applied migrations before planning a migration change** → **Promote to memory** (type: feedback; extends [[local-test-stack]])
+- [x] 🟡 **Check the test stack's applied migrations before planning a migration change** → **Promote to memory** (type: feedback; extends [[local-test-stack]])
   > **Why**: this change's brainstorm, design and plan all assumed 021 and 022 were applied on `vitally-task2`. Only 001–019 were, which left ten contradicted statements in verify.md.
   > **How to apply**: during `/opsx:explore` or brainstorm for any change that adds a migration, run a read-only `select name from vitally_private.schema_migrations order by name` on the test stack and state the actual applied set in the brainstorm.
 
-- [ ] 🟡 **In a worktree session, have subagents run git as separate simple commands and confirm commits** → **Promote to memory** (type: feedback)
+- [x] 🟡 **In a worktree session, have subagents run git as separate simple commands and confirm commits** → **Promote to memory** (type: feedback)
   > **Why**: the Task 2 implementer's combined `git add && git commit` was refused by the worktree guard, but it reported the commit anyway.
   > **How to apply**: every implementer dispatch in a worktree says "stage, then commit, as separate commands; report `git rev-parse --short HEAD` and `git status --short`". The controller checks `git log` before building a review package.
 
