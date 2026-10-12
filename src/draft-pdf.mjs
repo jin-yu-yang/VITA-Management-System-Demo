@@ -145,8 +145,13 @@ export function printable(text, font) {
 // three pinned forms: rules every 18 pt from y = 558 down to y = 36. Each line
 // of comments sits 2 pt above its rule.
 const RULED = { firstBaseline: 560, pitch: 18 };
-const NOTICE = "Some characters could not be printed. The online answers have them in full.";
-const CONTINUED_TITLE = "Additional comments (continued)";
+// The PDF's own lines when `fields.words` has none (draft-form.mjs gives them in the form's language).
+const ENGLISH_WORDS = Object.freeze({
+  continuedTitle: "Additional comments (continued)",
+  continuedOn: "(continued on page {page})",
+  notice: "Some characters could not be printed. The online answers have them in full.",
+});
+const CONTINUED_TITLE_SIZE = 14;
 const STAMP_SIZE = 9;
 const DARK_RED = [0.55, 0, 0];
 
@@ -336,9 +341,16 @@ export async function buildDraftPdf({
   // after the form. Nothing is cut off. The text is drawn on the page rather
   // than set as the field's value, because a field's appearance can neither
   // mix fonts nor follow the ruling.
+  // The PDF's own lines in the form's language. Without the downloaded fonts
+  // (comments and answers all Latin, so none was fetched) a Chinese line
+  // can't be drawn, and the English one is used instead.
+  const words = Object.fromEntries(Object.entries(ENGLISH_WORDS).map(([key, english]) => {
+    const own = fields?.words?.[key] ?? english;
+    return [key, needsEmbeddedFont(own) && fonts.length === 0 ? english : own];
+  }));
   let comments = cleanComments(fields?.comments);
   if (needsEmbeddedFont(comments) && printable(comments, fonts) !== comments.normalize("NFC")) lost = true;
-  if (lost) comments = [comments, NOTICE].filter(Boolean).join("\n\n");
+  if (lost) comments = [comments, words.notice].filter(Boolean).join("\n\n");
   if (comments !== "") {
     const field = form.getTextField(COMMENTS_FIELD);
     const widget = field.acroField.getWidgets()[0];
@@ -358,7 +370,9 @@ export async function buildDraftPdf({
     let overflow = [];
     if (lines.length > capacity) {
       const next = doc.getPageCount() + 1;
-      inBox = [...lines.slice(0, capacity - 1), { text: `(continued on page ${next})`, runs: false }];
+      const marker = words.continuedOn.replace("{page}", String(next));
+      const runs = needsEmbeddedFont(marker);
+      inBox = [...lines.slice(0, capacity - 1), { text: runs ? printable(marker, fonts) : marker, runs }];
       overflow = lines.slice(capacity - 1);
     }
     const page5 = pageOf(COMMENTS_FIELD);
@@ -369,7 +383,9 @@ export async function buildDraftPdf({
     const pitch = size * 1.5;
     while (overflow.length) {
       const page = doc.addPage([width, height]);
-      page.drawText(CONTINUED_TITLE, { x, y: height - 40, size: 14, font: helvetica, color });
+      const title = words.continuedTitle;
+      const runs = needsEmbeddedFont(title);
+      drawLine(page, { text: runs ? printable(title, fonts) : title, runs }, x, height - 40, CONTINUED_TITLE_SIZE);
       for (let y = height - 40 - 14 - pitch; overflow.length && y >= 30; y -= pitch)
         drawLine(page, overflow.shift(), x, y, size);
     }

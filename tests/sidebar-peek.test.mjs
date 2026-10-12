@@ -181,5 +181,5 @@ test("peekZone names the toggle, the sidebar, or nothing", () => {
 test("toggleLabel follows what is visible", () => {
   assert.equal(toggleLabel({ pinned: true, peeking: false }), "Hide the sidebar");
   assert.equal(toggleLabel({ pinned: false, peeking: false }), "Show the sidebar");
-  assert.equal(toggleLabel({ pinned: false, peeking: true }), "Keep the sidebar open");
+  assert.equal(toggleLabel({ pinned: false, peeking: true }), "Pin the sidebar open");
 });

@@ -17,7 +17,7 @@
   - `none` (No one / 都没有), which clears the other two when selected
 - **Every Yes/No question** has an extra option: `not_sure` (I'm not sure / 我不确定). The volunteer will confirm it in person.
 - **Show if** = the question appears only when the condition is met.
-- **Upload**: The Tip names the document and says "You will upload it in the Documents step / 您将在「上传文件」步骤上传". All uploads happen in one place.
+- **Upload**: The Tip names the document and says "You will upload it in the Documents step" ("them" when it lists more than one document) / "您将在「上传文件」步骤上传". All uploads happen in one place.
 - Fields on the paper form marked "To be completed by certified volunteer" **do not appear on the public-facing form** (see the appendix).
 
 ---
@@ -392,7 +392,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q9.9** You sold stocks, bonds, or real estate (land or buildings) / 卖了股票、债券或房地产（房子、土地）
 `inc_sale_assets` · Yes / No / Not sure · Required
-> Tip: You usually get a **1099-B** form. Document: the 1099-B and your full broker statement (and a 1099-S if you sold real estate). You will upload it in the Documents step. / 一般会收到 **1099-B** 表。文件：1099-B 及完整的证券公司对账单（如果卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。
+> Tip: You usually get a **1099-B** form. Document: the 1099-B and your full broker statement (and a 1099-S if you sold real estate). You will upload them in the Documents step. / 一般会收到 **1099-B** 表。文件：1099-B 及完整的证券公司对账单（如果卖的是房地产，还有 1099-S）。您将在「上传文件」步骤上传。
 
 **Q9.9a** Did last year's tax return show a loss from selling these? / 去年的报税表上，有没有这类买卖亏钱的记录？
 `inc_sale_assets_prior_loss` · Yes / No / Not sure · Required
@@ -404,7 +404,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q9.11** You rented out your house or a room in your house / 把您的房子或房间租给别人
 `inc_rental_home` · Yes / No / Not sure · Required
-> Tip: Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload it in the Documents step. / 租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
+> Tip: Rent records (income and costs), and any 1099-MISC or 1099-K for rent. You will upload them in the Documents step. / 租金收支记录，以及租金相关的 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
 
 **Q9.11a** Did you also live in that home, AND rent it out for less than 15 days in 2025? / 这个房子您自己也住，而且 2025 年一共租出去不到 15 天吗？
 `inc_rental_home_under15` · Yes / No / Not sure · Required
@@ -412,7 +412,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q9.12** You rented out your things (like a car) / 把您的东西租给别人（比如汽车、工具）
 `inc_rental_property` · Yes / No / Not sure · Required
-> Tip: Rent records and any 1099-MISC or 1099-K. You will upload it in the Documents step. / 出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
+> Tip: Rent records and any 1099-MISC or 1099-K. You will upload them in the Documents step. / 出租记录及 1099-MISC 或 1099-K。您将在「上传文件」步骤上传。
 
 **Q9.13** Gambling or lottery winnings / 赌博赢的钱或彩票中奖
 `inc_gambling` · Yes / No / Not sure · Required
@@ -448,15 +448,15 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q10.2** Taxes you paid: state, local, property (real estate), sales tax, etc. / 您交过的税：州税、地方税、房产税、消费税等
 `exp_taxes` · Yes / No / Not sure · Required
-> Tip: Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload it in the Documents step. / 房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。
+> Tip: Property tax bill or receipt; receipts for large purchases with sales tax (for example, a car). You will upload them in the Documents step. / 房产税单或收据；大额消费的销售税收据（如买车）。您将在「上传文件」步骤上传。
 
 **Q10.3** Medical, dental, or medicine costs / 看病、看牙或买药的钱
 `exp_medical` · Yes / No / Not sure · Required
-> Tip: Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload it in the Documents step. / 医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。
+> Tip: Medical, dental, and prescription receipts, or a yearly summary from the pharmacy or insurer. You will upload them in the Documents step. / 医疗、牙科、处方药收据，或药房/保险公司的年度汇总。您将在「上传文件」步骤上传。
 
 **Q10.4** Gifts to church or charity / 捐给教会或慈善机构的钱或东西
 `exp_charity` · Yes / No / Not sure · Required
-> Tip: Donation receipts or thank-you letters. You will upload it in the Documents step. / 捐款收据或感谢信。您将在「上传文件」步骤上传。
+> Tip: Donation receipts or thank-you letters. You will upload them in the Documents step. / 捐款收据或感谢信。您将在「上传文件」步骤上传。
 
 ### Part B: Other Expenses / 第二部分：其他开销
 
@@ -488,24 +488,24 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q11.1** You or someone in your family took classes (college, trade school, job training, etc.) / 您或家人上过课（大学、职业学校、工作培训等）
 `evt_education` · Yes / No / Not sure · Required
-> Tip: Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload it in the Documents step. / 每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。
+> Tip: Form **1098-T** for each student, plus tuition, fee, and book receipts and any scholarship letter (and a 1099-Q if a 529 plan paid). You will upload them in the Documents step. / 每位学生的 **1098-T** 表，以及学费、杂费、书费收据和奖学金信（如由 529 计划支付，还有 1099-Q）。您将在「上传文件」步骤上传。
 
 **Q11.2** You sold a home / 您卖了房子
 `evt_sold_home` · Yes / No / Not sure · Required
-> Tip: 1099-S and the closing statements for the sale and for the original purchase. You will upload it in the Documents step. / 1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。
+> Tip: 1099-S and the closing statements for the sale and for the original purchase. You will upload them in the Documents step. / 1099-S，以及卖房和当初买房的交割文件。您将在「上传文件」步骤上传。
 
 **Q11.3** You had a Health Savings Account (HSA) / 您有健康储蓄账户（HSA）
 `evt_hsa` · Yes / No / Not sure · Required
 > Tip: A special bank account used only for medical costs. / 这是一种专门用来付医疗费的账户。
-> Tip: 1099-SA and 5498-SA. You will upload it in the Documents step. / 1099-SA 和 5498-SA。您将在「上传文件」步骤上传。
+> Tip: 1099-SA and 5498-SA. You will upload them in the Documents step. / 1099-SA 和 5498-SA。您将在「上传文件」步骤上传。
 
 **Q11.4** You bought health insurance from the Marketplace (HealthCare.gov or your state's site) / 2025 年，您有没有在政府医保网站上买医疗保险（HealthCare.gov 或州政府的网站，俗称"奥巴马保险"）？
 `evt_marketplace` · Yes / No / Not sure · Required
-> Tip: Every **1095-A** form you got. Medicaid and Medicare do NOT count. You will upload it in the Documents step. / 收到的所有 **1095-A** 表。白卡（Medicaid）和红蓝卡（Medicare）不算。您将在「上传文件」步骤上传。
+> Tip: Every **1095-A** form you got. Medicaid and Medicare do NOT count. You will upload them in the Documents step. / 收到的所有 **1095-A** 表。白卡（Medicaid）和红蓝卡（Medicare）不算。您将在「上传文件」步骤上传。
 
 **Q11.5** You bought and installed energy-saving items for your home (windows, furnace, insulation, etc.) / 您买了并安装了节能的家居设备（窗户、暖气炉、隔热材料等）
 `evt_energy` · Yes / No / Not sure · Required
-> Tip: Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload it in the Documents step. / 每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。
+> Tip: Receipts or invoices showing each item, its cost, the labor cost (if listed separately), and the install date; the Qualified Manufacturer ID (QMID) for each item; any rebate or subsidy letter; the home energy audit report, if you had one. You will upload them in the Documents step. / 每项设备的收据或发票（含金额、单列的安装人工费、安装日期）；每项设备的制造商识别号（QMID）；任何返利或补贴证明；如做过家庭能源审计，请上传审计报告。您将在「上传文件」步骤上传。
 
 **Q11.6** Other (for example: bought a new car) / 其他事情（比如买了新车）
 `evt_other` · Yes / No / Not sure · Required
@@ -521,7 +521,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q11.8** You lost property or money because of a disaster the government declared (flood, hurricane, fire, etc.) / 因为政府宣布的灾害（洪水、飓风、火灾等）损失了财产或钱
 `evt_disaster` · Yes / No / Not sure · Required
-> Tip: FEMA or insurance papers, and records of the loss. You will upload it in the Documents step. / FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。
+> Tip: FEMA or insurance papers, and records of the loss. You will upload them in the Documents step. / FEMA 或保险理赔文件，以及损失记录。您将在「上传文件」步骤上传。
 
 **Q11.9** In the past, did the IRS say no to a tax credit you asked for? (like Earned Income Credit, Child Tax Credit, or American Opportunity Credit) / 以前国税局有没有拒绝过您申请的税务补助？（比如低收入补助 EITC、儿童税务补助 CTC、大学学费补助 AOTC）
 `evt_credit_disallowed` · Yes / No / Not sure · Required
@@ -529,11 +529,11 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q11.10** Did you get any letter or bill from the IRS? / 您有没有收到过国税局的信或账单？
 `evt_irs_letter` · Yes / No / Not sure · Required
-> Tip: Each IRS letter or bill. You will upload it in the Documents step. / 每一封国税局信件或账单。您将在「上传文件」步骤上传。
+> Tip: Each IRS letter or bill. You will upload them in the Documents step. / 每一封国税局信件或账单。您将在「上传文件」步骤上传。
 
 **Q11.11** Did you pay tax early during the year (estimated tax), or put last year's refund toward 2025 taxes? / 2025 年，您有没有提前预交过税，或者把去年的退税留着抵 2025 年的税？
 `evt_estimated_payments` · Yes / No / Not sure · Required
-> Tip: Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload it in the Documents step. / 付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。
+> Tip: Payment records: IRS Direct Pay confirmations, IRS online account payment history, or cancelled checks. You will upload them in the Documents step. / 付款记录：国税局 Direct Pay 确认、网上账户付款记录或已兑现支票。您将在「上传文件」步骤上传。
 
 **Q11.12** Do you have last year's tax return? / 您有去年的报税表吗？
 `evt_brought_prior_return` · Yes / No · Required

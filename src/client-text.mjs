@@ -134,7 +134,7 @@ export const TEXT = Object.freeze({
   "member.add": { en: "Add a person", zh: "添加一位家庭成员" },
   // The version-2 form: a household member's read-only line (n picks one/other only)
   "member.born": { en: "born {date}", zh: "{date}出生" },
-  "member.months": { en: { one: "{count} month", other: "{count} months" }, zh: "居住 {count} 个月" },
+  "member.months": { en: { one: "lived with you {count} month", other: "lived with you {count} months" }, zh: "居住 {count} 个月" },
   // The version-2 form: the select's blank option and the separator between picked choices
   "form.select_option": { en: "Select an option", zh: "请选择" },
   "form.list_separator": { en: ", ", zh: "、" },
@@ -291,7 +291,7 @@ export const TEXT = Object.freeze({
   "intake.step_overline": { en: "STEP {n} OF {total} · {name}", zh: "第 {n} 步，共 {total} 步 · {name}" },
   "intake.within": { en: "{n} of {total}", zh: "{n} / {total}" },
   "intake.will_bring": { en: "You will get a list of what to bring.", zh: "您会收到一份需要携带的文件清单。" },
-  "intake.will_upload": { en: "You will upload them in the Documents step.", zh: "您稍后会在\"上传文件\"这一步上传。" },
+  "intake.will_upload": { en: "You will upload them in the Documents step.", zh: "您稍后会在「上传文件」这一步上传。" },
   "intake.continue": { en: "Continue", zh: "继续" },
   "intake.back": { en: "Back", zh: "返回" },
   "intake.back_to_summary": { en: "Back to summary", zh: "返回申请摘要" },
@@ -335,13 +335,18 @@ export const TEXT = Object.freeze({
   "draft.married": { en: "married", zh: "已婚" },
   "draft.single": { en: "single", zh: "未婚" },
   "draft.citizen": { en: "citizen", zh: "美国公民" },
-  "draft.resident": { en: "resident", zh: "美加墨居民" },
+  "draft.resident": { en: "U.S./Canada/Mexico resident", zh: "美加墨居民" },
   "draft.student": { en: "student", zh: "全日制学生" },
-  "draft.disabled": { en: "disabled", zh: "完全且永久性残疾" },
+  "draft.disabled": { en: "totally and permanently disabled", zh: "完全且永久性残疾" },
   "draft.ippin": { en: "IP PIN", zh: "身份保护码（IP PIN）" },
   "draft.yes": { en: "yes", zh: "是" },
   "draft.no": { en: "no", zh: "否" },
   "draft.not_sure_word": { en: "not sure", zh: "不确定" },
+  // The PDF's own lines (draft-pdf.mjs), in the form's language: the heading of a page the
+  // comments continue on, the box's last line when they do, and the notice for unprintable characters
+  "draft.continued_title": { en: "Additional comments (continued)", zh: "补充说明（续）" },
+  "draft.continued_on": { en: "(continued on page {page})", zh: "（续见第 {page} 页）" },
+  "draft.notice": { en: "Some characters could not be printed. The online answers have them in full.", zh: "部分字符无法打印。网上填写的回答中有完整内容。" },
   // Review & submit: the confirmation
   "submit.attention": { en: "Some answers need attention before you can submit.", zh: "有些回答需要处理后才能提交。" },
   "submit.see_alerts": { en: "See the alerts", zh: "查看问题" },

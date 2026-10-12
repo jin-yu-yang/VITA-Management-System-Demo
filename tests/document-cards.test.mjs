@@ -36,7 +36,7 @@ test("married adds the spouse's photo ID and SSN, with the file-together hint", 
   assert.deepEqual(cards.map((c) => c.slotId), ["photo_id.sp", "ssn.sp"]);
   for (const c of cards) {
     assert.equal(c.group, "needed");
-    assert.deepEqual(c.hint, { en: "Needed if you file together", zh: "如合并申报则需要" });
+    assert.deepEqual(c.hint, { en: "Needed if you file together", zh: "如合并申报则需要", office: "Needed if filing jointly" });
   }
   const tp = find(married, "ssn.tp");
   assert.notDeepEqual(tp.hint, cards[1].hint);
@@ -63,19 +63,19 @@ test("household members: Maybe-needed SSN cards in list order, only with a valid
 });
 
 test("owner lines for the client and the spouse", () => {
-  assert.deepEqual(find(single, "photo_id.tp").ownerLine, { en: "You", zh: "本人" });
+  assert.deepEqual(find(single, "photo_id.tp").ownerLine, { en: "You", zh: "本人", office: "Client" });
   assert.deepEqual(find({ ...single, tp_first_name: "Ana", tp_last_name: "Reyes" }, "photo_id.tp").ownerLine, { en: "Ana Reyes", zh: "Ana Reyes", literal: true });
   assert.deepEqual(find({ ...single, tp_first_name: "Ana" }, "photo_id.tp").ownerLine, { en: "Ana", zh: "Ana", literal: true });
-  assert.deepEqual(find({ marital_status: "married" }, "photo_id.sp").ownerLine, { en: "Your spouse", zh: "配偶" });
+  assert.deepEqual(find({ marital_status: "married" }, "photo_id.sp").ownerLine, { en: "Your spouse", zh: "配偶", office: "Spouse" });
   assert.deepEqual(find(married, "photo_id.sp").ownerLine, { en: "Mei Lin", zh: "Mei Lin", literal: true });
 });
 
 test("owner lines for shared and household cards", () => {
   const a = { inc_wages: "yes", exp_medical: "yes" };
-  assert.deepEqual(find({ ...single, ...a }, "w2.household").ownerLine, { en: "For you", zh: "本人" });
-  assert.deepEqual(find({ ...married, ...a }, "w2.household").ownerLine, { en: "For you and your spouse", zh: "您和配偶" });
-  assert.deepEqual(find({ ...single, ...a }, "medical.household").ownerLine, { en: "For your household", zh: "全家共用" });
-  assert.deepEqual(find({ ...married, ...a }, "medical.household").ownerLine, { en: "For your household", zh: "全家共用" });
+  assert.deepEqual(find({ ...single, ...a }, "w2.household").ownerLine, { en: "For you", zh: "本人", office: "Client" });
+  assert.deepEqual(find({ ...married, ...a }, "w2.household").ownerLine, { en: "For you and your spouse", zh: "您和配偶", office: "Client and spouse" });
+  assert.deepEqual(find({ ...single, ...a }, "medical.household").ownerLine, { en: "For your household", zh: "全家共用", office: "Household" });
+  assert.deepEqual(find({ ...married, ...a }, "medical.household").ownerLine, { en: "For your household", zh: "全家共用", office: "Household" });
 });
 
 test("wages: yes is Needed, not_sure is Maybe needed, no is none", () => {
@@ -91,8 +91,8 @@ test("wages: yes is Needed, not_sure is Maybe needed, no is none", () => {
 
 test("w2 hint comes from the job count", () => {
   const hint = (count) => find({ ...single, inc_wages: "yes", inc_wages_job_count: count }, "w2.household").hint;
-  assert.deepEqual(hint("2"), { en: "You said 2 jobs. Upload 2 W-2s.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 2 } } });
-  assert.deepEqual(hint("1"), { en: "You said 1 job. Upload 1 W-2.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 1 } } });
+  assert.deepEqual(hint("2"), { en: "You said 2 jobs. Upload 2 W-2s.", office: "Client said 2 jobs. Expect 2 W-2s.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 2 } } });
+  assert.deepEqual(hint("1"), { en: "You said 1 job. Upload 1 W-2.", office: "Client said 1 job. Expect 1 W-2.", zh: { template: "您说有 {n} 份工作，请上传 {n} 张 W-2。", params: { n: 1 } } });
   assert.equal(hint(""), null);
   assert.equal(hint(undefined), null);
   assert.equal(hint("0"), null);

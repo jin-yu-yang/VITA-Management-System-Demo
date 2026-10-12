@@ -367,10 +367,12 @@ function commentsFor(answers, members, lang) {
  * The boxes of one form for these answers.
  * `form` is "en", "zh-s" or "zh-t"; `reference` the Application ID; `today`
  * a "YYYY-MM-DD" string or a Date (the stamp's date). The generated lines of
- * Additional Comments are in the form's language (English, Simplified, or
- * Traditional through the map); the stamp and the table rows stay English.
- * Returns `{ text, checks, comments, consentPage }`, plus the `stamp` and the
- * `fileName` the builder and the page use.
+ * Additional Comments, the table's relationship box and the PDF's own lines
+ * (`words`) are in the form's language (English, Simplified, or Traditional
+ * through the map); the stamp and the file name stay English.
+ * Returns `{ text, checks, comments, consentPage, words }`, plus the `stamp`
+ * and the `fileName` the builder and the page use. `words.continuedOn` keeps
+ * its `{page}` for the builder, which knows the page.
  */
 export function draftFields(answers, { form = "en", reference = "", today } = {}) {
   const names = familyOf(form);
@@ -441,5 +443,11 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
   const stamp = ["DRAFT – prepared from online answers", day, oneLine(reference)].filter(Boolean).join(", ");
   const suffix = form === "en" ? "" : `-${form}`;
   const fileName = `13614-C-draft${reference ? `-${oneLine(reference)}` : ""}${suffix}.pdf`;
-  return { text, checks, comments, consentPage, stamp, fileName };
+  const lang = FORM_LANG[form];
+  const words = {
+    continuedTitle: t("draft.continued_title", {}, lang),
+    continuedOn: t("draft.continued_on", { page: "{page}" }, lang),
+    notice: t("draft.notice", {}, lang),
+  };
+  return { text, checks, comments, consentPage, words, stamp, fileName };
 }

@@ -14,10 +14,12 @@ export const SLOT_PATTERN = /^[a-z0-9_]+\.(tp|sp|household|hh\.[0-9a-f]{32})$/;
 // card can show sits in CARD_RULES, CARD_WHY or CARD_TEMPLATES, so
 // tools/hant-sources.mjs collects it for the Traditional map. A card field's
 // `en` is the finished English string; `zh` is a static string, or a template
-// filled with the client's data after conversion. Names are literal.
+// filled with the client's data after conversion. Names are literal. An
+// optional `office` is the office's English for Add a case, where the client's
+// own voice ("You said…", "For you") would be wrong.
 // ---------------------------------------------------------------------------
 
-const pair = (en, zh) => Object.freeze({ en, zh });
+const pair = (en, zh, office) => Object.freeze(office ? { en, zh, office } : { en, zh });
 const said = (en, zh) => pair(`You said ${en}`, `您说${zh}`);
 
 // Text built from the client's answers, and the static pairs the matchers and
@@ -30,14 +32,14 @@ export const CARD_TEMPLATES = Object.freeze({
   // A household member with no name on the owner line
   person: "成员 {n}",
   // Owner lines
-  you: pair("You", "本人"),
-  spouse: pair("Your spouse", "配偶"),
-  for_you_and_spouse: pair("For you and your spouse", "您和配偶"),
-  for_you: pair("For you", "本人"),
-  for_household: pair("For your household", "全家共用"),
+  you: pair("You", "本人", "Client"),
+  spouse: pair("Your spouse", "配偶", "Spouse"),
+  for_you_and_spouse: pair("For you and your spouse", "您和配偶", "Client and spouse"),
+  for_you: pair("For you", "本人", "Client"),
+  for_household: pair("For your household", "全家共用", "Household"),
   // Hints given by a matcher rather than the rule
-  spouse_hint: pair("Needed if you file together", "如合并申报则需要"),
-  prior_return_hint: pair("If you filed together last year, upload one return. If you filed separately, upload both.", "去年合并申报的，上传一份；分开申报的，两份都上传。"),
+  spouse_hint: pair("Needed if you file together", "如合并申报则需要", "Needed if filing jointly"),
+  prior_return_hint: pair("If you filed together last year, upload one return. If you filed separately, upload both.", "去年合并申报的，上传一份；分开申报的，两份都上传。", "If they filed jointly last year, one return. If separately, both."),
 });
 
 // Why lines, keyed <rule id>_<the answer it reports>. The said() lines read
@@ -82,7 +84,7 @@ export const CARD_WHY = Object.freeze({
   disaster_evt_disaster: said("you had a loss in a federally declared disaster area", "在联邦宣布的灾区遭受过损失"),
   credit_disallowed_evt_credit_disallowed: said("a tax credit was disallowed in a prior year", "以往年度有税收抵免被拒"),
   irs_letter_evt_irs_letter: said("you received a letter or bill from the IRS", "收到过国税局的信件或账单"),
-  estimated_payments_evt_estimated_payments: said("you made estimated tax payments", "缴纳过预估税，或将去年的退税用于抵缴税款"),
+  estimated_payments_evt_estimated_payments: said("you made estimated tax payments or applied last year's refund to this year's tax", "缴纳过预估税，或将去年的退税用于抵缴税款"),
   visa_on_visa: said("you were in the U.S. on a visa in 2025", " 2025 年持签证在美国"),
   bank_refund_method: said("you want your refund paid into a bank account", "希望退税存入银行账户"),
   bank_payment_method: said("you would pay a balance due from a bank account", "如需补税，将从银行账户扣款"),
@@ -140,6 +142,7 @@ const w2Hint = (a) => {
   return {
     hint: {
       en: `You said ${n} ${n === 1 ? "job" : "jobs"}. Upload ${n} ${n === 1 ? "W-2" : "W-2s"}.`,
+      office: `Client said ${n} ${n === 1 ? "job" : "jobs"}. Expect ${n} ${n === 1 ? "W-2" : "W-2s"}.`,
       zh: { template: CARD_TEMPLATES.w2_hint, params: { n } },
     },
   };
@@ -315,7 +318,7 @@ export const CARD_RULES = Object.freeze([
     id: "business_costs", type: "household", substep: "income", ask: "inc_self_employed",
     label: { en: "Business costs: mileage log, receipts or summaries (phone, tolls, parking, supplies)", zh: "经营支出：里程记录、收据或汇总（手机费、过路费、停车费、用品）" },
     why: CARD_WHY.business_costs_inc_self_employed,
-    hint: { en: "One summary page is fine", zh: "一页汇总即可" },
+    hint: { en: "A one-page summary of your costs is fine.", zh: "一页费用汇总即可。" },
     match: yesOrUnsure("inc_self_employed"),
   },
   {
@@ -454,7 +457,7 @@ export const CARD_RULES = Object.freeze([
     id: "visa", type: "person", substep: "events", ask: "on_visa",
     label: { en: "Visa and entry papers (for example, I-94, I-20, DS-2019)", zh: "签证及入境文件（如 I-94、I-20、DS-2019）" },
     why: CARD_WHY.visa_on_visa,
-    hint: { en: "Helps the volunteer check your residency status.", zh: "有助于志愿者核对您的居民身份。" },
+    hint: { en: "Helps the volunteer check your residency status.", zh: "有助于志愿者核对您的居民身份。", office: "Helps check residency status." },
     match: whoPerson("on_visa", "maybe"),
   },
   {
@@ -468,7 +471,7 @@ export const CARD_RULES = Object.freeze([
   {
     id: "bank", type: "household", substep: "events",
     label: { en: "A voided check or a bank letter with routing and account numbers", zh: "作废支票或写有路由号和账号的银行信" },
-    hint: { en: "The account must be in your name (or your spouse's).", zh: "账户必须是您（或配偶）名下的账户。" },
+    hint: { en: "The account must be in your name (or your spouse's).", zh: "账户必须是您（或配偶）名下的账户。", office: "The account must be in the client's or spouse's name." },
     match: (a) => [
       ...(a.refund_method === "direct_deposit" || a.refund_method === "split"
         ? [{ owner: HOUSEHOLD, group: "needed", ask: "refund_method", why: CARD_WHY.bank_refund_method }] : []),

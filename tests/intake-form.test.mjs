@@ -727,7 +727,7 @@ test("formatAnswer", () => {
   const relationship = label(sub("relationship").options.find((o) => o.value === "son_daughter"));
   assert.equal(
     formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
-    `Xiao Ming Wang · ${relationship} · born Mar 14, 2015 · 12 months`,
+    `Xiao Ming Wang · ${relationship} · born Mar 14, 2015 · lived with you 12 months`,
   );
   for (const empty of [null, undefined, "", "  ", []]) assert.equal(formatAnswer(q("tp_first_name"), empty), null);
   assert.equal(formatAnswer(q("us_citizen"), []), null);
@@ -835,7 +835,7 @@ test("formatAnswer in Chinese: dates, labels and the household line", () => {
     const relationship = sub("relationship").options.find((o) => o.value === "son_daughter").label.general.zh;
     const member = { member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" };
     assert.equal(formatAnswer(HH, [member], { lang: "zh-Hans" }), `Xiao Ming Wang · ${relationship} · 2015年3月14日出生 · 居住 12 个月`);
-    assert.equal(formatAnswer(HH, [{ ...member, months_lived: "1" }]), `Xiao Ming Wang · ${label(sub("relationship").options.find((o) => o.value === "son_daughter"))} · born Mar 14, 2015 · 1 month`);
+    assert.equal(formatAnswer(HH, [{ ...member, months_lived: "1" }]), `Xiao Ming Wang · ${label(sub("relationship").options.find((o) => o.value === "son_daughter"))} · born Mar 14, 2015 · lived with you 1 month`);
   });
 });
 
