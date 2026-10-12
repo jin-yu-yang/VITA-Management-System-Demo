@@ -10,22 +10,22 @@
 
 ## 2. Version 1 leaves the app
 
-- [ ] 2.1 Client:
+- [x] 2.1 Client:
   - remove the old form (`intakeScreen`/`intakeBody`), the `v1-english` wrapper and the `v1.english_only` text;
   - remove `domain.mjs`'s `INTAKE_ANSWER_KEYS`, `REQUIRED_ANSWER_KEYS`, `screening`, `missingAnswers` and `submissionBlocker`;
   - remove the client views' version branches.
-- [ ] 2.2 Office and staff: remove `renderAddCase` (the version-1 Add a case), `assistedAnswersPanel` (the old office draft on Overview), `answersPanelV1`, and the version branches in `office-views`, `admin-views`, `staff-views` and `views`.
-- [ ] 2.3 Controller, app and store:
+- [x] 2.2 Office and staff: remove `renderAddCase` (the version-1 Add a case), `assistedAnswersPanel` (the old office draft on Overview), `answersPanelV1`, and the version branches in `office-views`, `admin-views`, `staff-views` and `views`.
+- [x] 2.3 Controller, app and store:
   - remove every version branch, `pickAnswers`' version-1 path, and the "This workspace now takes version-1 applications…" notice (and its `SENTENCES` entry);
   - remove `formStep` (the version-1 form's step number) from the controller, the app and `window-state.mjs`;
   - drop the store's `?? 1` fallbacks on both `intake_version` and `default_intake_version`, keeping the `intakeVersion`/`defaultIntakeVersion` mapping;
   - also remove the version-1-only staff refusals, the `.v1-*` CSS rules and `contracts.mjs`'s `1 | 2` comment.
-- [ ] 2.4 `src/sample-data.mjs` becomes version-2 only (no `version` parameter, no version-1 templates), and the redundant `{ version: 2 }` arguments go. Then run `npm run build:hant` and commit `src/zh-hant.mjs`.
-- [ ] 2.5 Unit tests:
+- [x] 2.4 `src/sample-data.mjs` becomes version-2 only (no `version` parameter, no version-1 templates), and the redundant `{ version: 2 }` arguments go. Then run `npm run build:hant` and commit `src/zh-hant.mjs`.
+- [x] 2.5 Unit tests:
   - delete the tests of version-1 screens and logic, and move general ones to version 2, with the same classification list as 1.3;
   - pin that a saved version-1 `formStep` is not restored, and that a deleted case id is forgotten (design D8);
   - run the acceptance grep (design D5).
-- [ ] 2.6 Run `npm test` and `npm run build:hant -- --check`.
+- [x] 2.6 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 3. Migration 023 and its database tests
 
