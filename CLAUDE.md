@@ -39,7 +39,7 @@ The schema's instructions, the Superpowers skills and this file all describe the
 ### 0. Check the tools first
 
 Before you start a change or implement anything, check that the workflow's tools are in place:
-- **OpenSpec:** `openspec --version` runs, and the six `/opsx` commands (section 4) are in your available skills.
+- **OpenSpec:** `npx openspec --version` runs (the CLI is a pinned dev dependency, so `npm ci` installs it), and the six `/opsx` commands (section 4) are in your available skills.
 - **Superpowers:** these skills are in your available skills: `superpowers:brainstorming`, `superpowers:writing-plans`, `superpowers:using-git-worktrees`, `superpowers:subagent-driven-development` and `superpowers:finishing-a-development-branch`.
 - **The schema:** `openspec/config.yaml` says `schema: superpowers-bridge`, and `openspec schema which superpowers-bridge` resolves it from the project (`openspec/schemas/superpowers-bridge/`).
 
@@ -183,6 +183,7 @@ Working notes from apply are scratch:
   - **Client text in Chinese:** `npm run build:hant -- --check`.
   - **Server-only changes** (for example `server.mjs` or `tools/`): their unit tests, plus any suite whose behaviour they reach.
   - Say which checks you ran and why the others weren't needed.
+  - **CI** (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: `npm test`, `npm run build:hant -- --check`, a check that `npm run build:intake` leaves nothing to commit, and `npx openspec validate --all`. It does not yet run the database or browser suites, so run those yourself when the change touches them.
 - **Git:**
   - Teammates merge into `main`, so sync with `main` before pushing.
   - Leave the untracked `VITA-Management-System-Demo/` directory, `.claude/worktrees/` and `.stitch/captures` alone.
