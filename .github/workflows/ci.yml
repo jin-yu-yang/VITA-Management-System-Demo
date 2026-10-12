@@ -1,0 +1,57 @@
+# CI, layer 1: the checks that need no database, no browser and no network
+# beyond installing packages. The database suite (a local Supabase stack) and
+# the browser suites (Playwright) are later layers, each its own job here.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The OpenSpec CLI's telemetry and version check stay off in CI.
+      DO_NOT_TRACK: "1"
+      OPENSPEC_TELEMETRY: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.21.0
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: 繁體 map is up to date
+        run: npm run build:hant -- --check
+
+      # build:intake rewrites src/intake-catalogue-data.mjs and writes a new
+      # catalogue migration only when docs/intake-questions changed; on an
+      # up-to-date tree it leaves nothing to commit.
+      - name: Intake catalogue and its migration are up to date
+        run: |
+          npm run build:intake
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::npm run build:intake changed files: commit its output (and any new catalogue migration)."
+            exit 1
+          fi
+
+      - name: OpenSpec changes and specs are valid
+        run: npx openspec validate --all

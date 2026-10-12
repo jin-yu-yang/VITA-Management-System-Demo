@@ -429,6 +429,24 @@ token; the browser story's evidence output is explicitly redacted before it is p
 The browser story writes screenshots (720px side-by-side and 390px mobile) to the git-ignored
 `artifacts/browser/` directory; they are inspected as part of each task's review, not committed.
 
+### Continuous integration
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull request into `main`
+and every push to `main`, on Node 24.21.0 after `npm ci`. It runs four checks, none of which needs
+a database, a browser or a `.env` file:
+
+1. `npm test` (the unit suite above);
+2. `npm run build:hant -- --check` (the 繁體 map matches the 简体 source);
+3. `npm run build:intake`, then fails if that leaves anything to commit (the catalogue module or a
+   new catalogue migration is missing);
+4. `npx openspec validate --all` (every active OpenSpec change and canonical spec). The OpenSpec
+   CLI is a pinned dev dependency (`@fission-ai/openspec`, exactly 1.14.0), so the team and CI run
+   the same version; its telemetry is off in CI.
+
+The database suite and the two browser suites are not in CI yet: each needs its own job (a local
+Supabase stack, and Playwright's browsers). Until then, run them locally when a change touches
+what they cover.
+
 ### Known, intentional behaviors these tests pin (not defects)
 
 - **A stale-revision refusal at the client's document-response step is expected, not a bug.** If a
