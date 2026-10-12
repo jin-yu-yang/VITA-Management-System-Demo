@@ -475,8 +475,8 @@ test("the 繁體 form with the map loaded: no generated character is left in Sim
 
 test("Chinese member lines: option labels, dates and words in the form's language", () => {
   const zhLines = [
-    "成员 5：Eva Lin · 孙子女/外孙子女 · 2019年9月10日出生 · 居住 12 个月 · 未婚 · 美国公民：是 · 美加墨居民：是 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：否",
-    "成员 6：Fei Lin · 无亲属关系 · 1999年11月12日出生 · 居住 3 个月 · 已婚 · 美国公民：否 · 美加墨居民：不确定 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码：是",
+    "成员 5：Eva Lin · 孙子女/外孙子女 · 2019年9月10日出生 · 居住 12 个月 · 未婚 · 美国公民：是 · 美加墨居民：是 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码（IP PIN）：否",
+    "成员 6：Fei Lin · 无亲属关系 · 1999年11月12日出生 · 居住 3 个月 · 已婚 · 美国公民：否 · 美加墨居民：不确定 · 全日制学生：否 · 完全且永久性残疾：否 · 身份保护码（IP PIN）：是",
   ];
   const simplified = draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-s" });
   assert.equal(simplified.comments.split("\n\n").at(-1), zhLines.join("\n"));
@@ -486,7 +486,7 @@ test("Chinese member lines: option labels, dates and words in the form's languag
   const traditional = withHant(() => draft({ ...MARRIED, hh: one }, { ...OPTIONS, form: "zh-t" }));
   assert.equal(
     traditional.comments.split("\n\n").at(-1),
-    "成員 5：Eva Lin · 孫子女/外孫子女 · 2019年9月10日出生 · 居住 1 個月 · 未婚 · 美國公民：是 · 美加墨居民：是 · 全日制學生：否 · 完全且永久性殘疾：否 · 身份保護碼：否",
+    "成員 5：Eva Lin · 孫子女/外孫子女 · 2019年9月10日出生 · 居住 1 個月 · 未婚 · 美國公民：是 · 美加墨居民：是 · 全日制學生：否 · 完全且永久性殘疾：否 · 身份保護碼（IP PIN）：否",
   );
   // The English form keeps "1 month".
   assert.match(draft({ ...MARRIED, hh: one }).comments, /Person 5: Eva Lin · Grandchild · born 09\/10\/2019 · 1 month · single · /);

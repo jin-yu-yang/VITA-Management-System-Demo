@@ -863,8 +863,8 @@ test("the note in Chinese: Needs an answer and the answer checks' messages", () 
   const first = q("tp_first_name");
   assert.deepEqual(noteState(first, null, { showMissing: true, lang: "zh-Hans" }), { text: "需要回答", className: "is-missing" });
   assert.deepEqual(noteState(q("email"), "a@", { showInvalid: true, lang: "zh-Hans" }), { text: "请输入有效的电子邮箱。", className: "is-invalid" });
-  assert.deepEqual(noteState(first, "x".repeat(201), { showInvalid: true, lang: "zh-Hans" }), { text: "最多 200 个字", className: "is-invalid" });
-  assert.deepEqual(noteState(sub("months_lived"), "13", { showInvalid: true, lang: "zh-Hans" }), { text: "请输入 0 至 12 之间的数字", className: "is-invalid" });
+  assert.deepEqual(noteState(first, "x".repeat(201), { showInvalid: true, lang: "zh-Hans" }), { text: "最多 200 个字。", className: "is-invalid" });
+  assert.deepEqual(noteState(sub("months_lived"), "13", { showInvalid: true, lang: "zh-Hans" }), { text: "请输入 0 至 12 之间的数字。", className: "is-invalid" });
   assert.ok(client(first, null, { showMissing: true, lang: "zh-Hans" }).includes('class="q-note is-missing" aria-live="polite">需要回答</p>'));
   withHant(() => {
     assert.deepEqual(noteState(first, null, { showMissing: true, lang: "zh-Hant" }), { text: "需要回答", className: "is-missing" });
@@ -960,7 +960,7 @@ test("part statuses, household buttons and the select's blank option in Chinese"
   assert.ok(zh.includes(">成员 1</h3>"));
   assert.ok(zh.includes('aria-label="移除成员 1"'));
   assert.match(zh, /data-action="remove-member"[^>]*>移除<\/button>/);
-  assert.match(zh, /data-action="add-member"[^>]*>添加一位成员<\/button>/);
+  assert.match(zh, /data-action="add-member"[^>]*>添加一位家庭成员<\/button>/);
   const en = client(HH, [member]);
   assert.ok(en.includes(">Person 1</h3>") && en.includes('aria-label="Remove person 1"'));
   assert.match(en, /data-action="add-member"[^>]*>Add a person<\/button>/);
@@ -970,6 +970,6 @@ test("part statuses, household buttons and the select's blank option in Chinese"
   assert.ok(renderQuestion(relationship, null).includes('<option value="">Select an option</option>'));
   withHant(() => {
     assert.ok(renderQuestion(relationship, null, { lang: "zh-Hant" }).includes(`<option value="">${HANT_MAP["请选择"]}</option>`));
-    assert.match(client(HH, [member], { lang: "zh-Hant" }), new RegExp(`data-action="add-member"[^>]*>${HANT_MAP["添加一位成员"]}</button>`));
+    assert.match(client(HH, [member], { lang: "zh-Hant" }), new RegExp(`data-action="add-member"[^>]*>${HANT_MAP["添加一位家庭成员"]}</button>`));
   });
 });

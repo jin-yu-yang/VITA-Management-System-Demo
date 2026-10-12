@@ -43,9 +43,9 @@ export const CARD_TEMPLATES = Object.freeze({
 // Why lines, keyed <rule id>_<the answer it reports>. The said() lines read
 // "You said …" / "您说…".
 export const CARD_WHY = Object.freeze({
-  ippin_ippin: said("you were issued an IP PIN", "您持有国税局发放的身份保护码（IP PIN）"),
+  ippin_ippin: said("you were issued an IP PIN", "持有国税局发放的身份保护码（IP PIN）"),
   ippin_hh: said("this person has an IP PIN", "这位成员持有身份保护码（IP PIN）"),
-  prior_return_evt_brought_prior_return: said("you have last year's tax return", "您有去年的报税表"),
+  prior_return_evt_brought_prior_return: said("you have last year's tax return", "有去年的报税表"),
   tip_records_inc_tips: said("you had tips", "有小费收入"),
   "1099r_inc_retirement": said("you had retirement account, pension or annuity income", "有退休账户、养老金或年金收入"),
   disability_inc_disability: said("you had disability benefits", "有残障补助"),
@@ -72,7 +72,7 @@ export const CARD_WHY = Object.freeze({
   ira_contrib_exp_retirement_contrib: said("you contributed to a retirement account", "向退休账户供过款"),
   educator_exp_educator: said("you bought classroom supplies as an educator", "作为教育工作者自费购买过教学用品"),
   alimony_paid_exp_alimony_paid: said("you paid alimony", "支付过赡养费"),
-  education_evt_education: said("you or a family member took classes", "您或家人参加过课程"),
+  education_evt_education: said("you or a family member took classes", "自己或家人参加过课程"),
   home_sale_evt_sold_home: said("you sold a home", "出售过房屋"),
   hsa_evt_hsa: said("you had a Health Savings Account (HSA)", "持有健康储蓄账户（HSA）"),
   "1095a_evt_marketplace": said("you bought health insurance through the Marketplace", "通过医保交易市场购买了医疗保险"),
@@ -83,7 +83,7 @@ export const CARD_WHY = Object.freeze({
   credit_disallowed_evt_credit_disallowed: said("a tax credit was disallowed in a prior year", "以往年度有税收抵免被拒"),
   irs_letter_evt_irs_letter: said("you received a letter or bill from the IRS", "收到过国税局的信件或账单"),
   estimated_payments_evt_estimated_payments: said("you made estimated tax payments", "缴纳过预估税，或将去年的退税用于抵缴税款"),
-  visa_on_visa: said("you were in the U.S. on a visa in 2025", "2025 年持签证在美国"),
+  visa_on_visa: said("you were in the U.S. on a visa in 2025", " 2025 年持签证在美国"),
   bank_refund_method: said("you want your refund paid into a bank account", "希望退税存入银行账户"),
   bank_payment_method: said("you would pay a balance due from a bank account", "如需补税，将从银行账户扣款"),
   ssn_hh_listed: pair("You listed this person in your household", "您列出了这位家庭成员"),

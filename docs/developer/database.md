@@ -391,7 +391,7 @@ learning about records they may not see.
 | `VT006` | `INELIGIBLE` | This volunteer is not qualified for this step. |
 | `VT007` | `VALIDATION` | Please check the information and try again. |
 | `42501` | `FORBIDDEN` | |
-| none (network) | `OFFLINE` | The demo cannot reach the server. |
+| none (network) | `OFFLINE` | Network error. Please try again later. |
 | anything else | `SERVER_ERROR` | Something went wrong. |
 
 Always raise errors as `raise sqlstate 'VT00N' using message='NAME'`. Never raise untyped

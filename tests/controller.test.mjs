@@ -665,7 +665,7 @@ test("an unreachable server is never shown as a sign-in form, and retries by its
     getSession: async () => {
       if (!reachable)
         throw Object.assign(
-          new Error("The demo cannot reach the server. Check the connection."),
+          new Error("Network error. Please try again later."),
           { code: "OFFLINE" },
         );
       return { user: { id: "user-1" } };
@@ -841,13 +841,13 @@ test("a refusal nobody has dismissed survives an unrelated background re-read", 
   await controller.selectCase("case-a");
   controller.editAnswers({ firstName: "Mei" });
   store.failNext = Object.assign(
-    new Error("The demo cannot reach the server. Check the connection."),
+    new Error("Network error. Please try again later."),
     { code: "OFFLINE" },
   );
   await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
   const shown = controller.getState().error;
   assert.equal(shown.code, "OFFLINE");
-  assert.match(shown.message, /cannot reach the server/);
+  assert.match(shown.message, /Network error\. Please try again later\./);
 
   // Somebody else's window resets the sample cases. That says nothing about
   // this person's save, and must not answer for it.

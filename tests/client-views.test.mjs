@@ -166,10 +166,10 @@ test("an offline visitor reads the last view behind a connection notice", () => 
     baseState({
       principal: null,
       authStep: "code",
-      authError: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+      authError: { code: "OFFLINE", message: "Network error. Please try again later." },
     }),
   );
-  assert.match(offline, /cannot reach the server/i);
+  assert.match(offline, /Network error\. Please try again later\./);
 });
 
 test("a dialog can always take the keyboard, whatever its body holds", () => {
@@ -197,7 +197,7 @@ test("an unreachable server gets its own screen, not the sign-in form", () => {
       connection: "offline",
       error: {
         code: "OFFLINE",
-        message: "The demo cannot reach the server. Check the connection.",
+        message: "Network error. Please try again later.",
       },
     }),
   );
@@ -397,7 +397,7 @@ test("the save state is named in words and a failed save keeps a retry", () => {
       saveState: "failed",
       dirty: true,
       retryable: true,
-      error: { code: "OFFLINE", message: "The demo cannot reach the server. Check the connection." },
+      error: { code: "OFFLINE", message: "Network error. Please try again later." },
     }),
   );
   assert.match(failed, /not saved/i);
