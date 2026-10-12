@@ -447,6 +447,27 @@ The database suite and the two browser suites are not in CI yet: each needs its 
 Supabase stack, and Playwright's browsers). Until then, run them locally when a change touches
 what they cover.
 
+Before those checks, CI fails if any text file is committed with CRLF line endings.
+
+### Line endings (Windows)
+
+[`.gitattributes`](../.gitattributes) stores and checks out every text file with LF, whatever the
+clone's OS or `core.autocrlf` (#56); images, PDFs and fonts are binary and never converted. The
+tests compare generated files byte for byte and the migrator digests every migration file, so a
+CRLF checkout used to fail `tests/hant.test.mjs` and `build:hant -- --check` on Windows.
+
+A clone made before `.gitattributes` landed keeps its CRLF files until they are checked out
+again. To refresh one (this discards uncommitted changes, so commit or set them aside first):
+
+```bash
+git rm -rq --cached .
+git reset --hard
+```
+
+If such a clone ever ran `npm run db:migrate:test` from CRLF files, its test stack recorded CRLF
+digests, and the migrator now refuses with `MIGRATION_CHANGED`: recreate that stack from scratch
+(section 3).
+
 ### Known, intentional behaviors these tests pin (not defects)
 
 - **A stale-revision refusal at the client's document-response step is expected, not a bug.** If a

@@ -1,0 +1,18 @@
+# Every text file is stored and checked out with LF line endings, whatever
+# the clone's OS or core.autocrlf (#56): tests compare generated files byte for
+# byte (src/zh-hant.mjs, src/intake-catalogue-data.mjs), and the migrator
+# digests each migration file.
+* text=auto eol=lf
+
+# Binary files are never converted.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.docx binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary

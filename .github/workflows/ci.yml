@@ -35,6 +35,17 @@ jobs:
 
       - run: npm ci
 
+      # .gitattributes stores every text file with LF (#56). CI runs on Linux,
+      # so it would never see a CRLF checkout; it can see a CRLF file committed.
+      - name: No text file is committed with CRLF line endings
+        run: |
+          crlf="$(git ls-files --eol | awk '$1 == "i/crlf" { print $NF }')"
+          if [ -n "$crlf" ]; then
+            echo "$crlf"
+            echo "::error::These files are committed with CRLF line endings: run git add --renormalize . and commit."
+            exit 1
+          fi
+
       - name: Unit tests
         run: npm test
 
