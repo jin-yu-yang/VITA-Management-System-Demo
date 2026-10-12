@@ -53,7 +53,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           created.caseId,
           null,
           "SAVE_ANSWERS",
-          { answers: makeSampleAnswers({ version: 2 }) },
+          { answers: makeSampleAnswers() },
         );
         assert.deepEqual(saved, {
           actionId: saved.actionId,
@@ -74,7 +74,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(draft.answers.addr_city, "Pittsburgh");
         assert.equal(
           draft.answers.tp_first_name,
-          makeSampleAnswers({ version: 2 }).tp_first_name,
+          makeSampleAnswers().tp_first_name,
         );
         // A private draft produces internal history only.
         assert.deepEqual(await actions(f, "client_events", created.caseId), []);
@@ -91,7 +91,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(first.actor_user_id, f.applicantAUserId);
         assert.equal(first.actor_person_id, null);
         assert.deepEqual(first.detail, {
-          fields: Object.keys(makeSampleAnswers({ version: 2 })).sort(),
+          fields: Object.keys(makeSampleAnswers()).sort(),
         });
         const submitted = await f.act(
           f.applicantA,
@@ -535,14 +535,14 @@ test("case actions apply the shared check order against real Supabase", async (t
           await assert.rejects(
             () =>
               f.act(f.presenter, assisted.caseId, personId, "SAVE_ANSWERS", {
-                answers: makeSampleAnswers({ version: 2 }),
+                answers: makeSampleAnswers(),
               }),
             rejected("FORBIDDEN"),
           );
         await assert.rejects(
           () =>
             f.act(f.applicantA, assisted.caseId, null, "SAVE_ANSWERS", {
-              answers: makeSampleAnswers({ version: 2 }),
+              answers: makeSampleAnswers(),
             }),
           rejected("NOT_FOUND"),
         );
@@ -551,7 +551,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           assisted.caseId,
           f.sam,
           "SAVE_ANSWERS",
-          { answers: makeSampleAnswers({ version: 2 }) },
+          { answers: makeSampleAnswers() },
         );
         assert.equal(saved.revision, 2);
         await f.act(f.presenter, assisted.caseId, f.sam, "SUBMIT", {
@@ -703,7 +703,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           { tp_phone: null },
         ]) {
           await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-            answers: makeSampleAnswers({ version: 2 }),
+            answers: makeSampleAnswers(),
           });
           await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
             answers: patch,
@@ -717,7 +717,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         }
         // Positive control: complete, supported answers do submit.
         await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-          answers: makeSampleAnswers({ version: 2 }),
+          answers: makeSampleAnswers(),
         });
         await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
         assert.equal((await caseRow(f, caseId)).stage, "received");

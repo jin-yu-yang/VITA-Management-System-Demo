@@ -196,7 +196,7 @@ export const TEXT = Object.freeze({
   "ref.print": { en: "Print reference card", zh: "打印编号卡" },
   "ref.continue": { en: "Continue to application", zh: "继续填写申请" },
   "ref.footnote": { en: "Signing in with your email is still how you return. Your ID card holds no tax information.", zh: "您仍需用电子邮箱登录才能回到这里。编号卡不含任何报税信息。" },
-  // The save chip (client-views.mjs saveStatus): version 2; version 1 stays English
+  // The save chip (client-views.mjs saveStatus)
   "save.saving": { en: "Saving…", zh: "正在保存…" },
   "save.checking": { en: { one: "{n} answer needs checking", other: "{n} answers need checking" }, zh: "有 {n} 个回答需要检查" },
   "save.saved": { en: "Saved", zh: "已保存" },
@@ -212,8 +212,6 @@ export const TEXT = Object.freeze({
   "conflict.keep_mine": { en: "Keep my edits", zh: "保留我的修改" },
   "conflict.use_office": { en: "Use the office’s values", zh: "使用办公室的内容" },
   "conflict.note": { en: "Whichever you choose stays unsaved until you save it, and the office’s copy decides who wins if it changes again.", zh: "无论选择哪一边，在您保存之前都不会保存。如果办公室的版本在您保存前再次改变，您需要重新选择。" },
-  // The version-1 form: English only, under this note (spec §2)
-  "v1.english_only": { en: "This older application is available in English only.", zh: "这份较早的申请只有英文版本。" },
   // The progress page (client-views.mjs progressScreen)
   "progress.overline": { en: "YOUR APPLICATION", zh: "您的申请" },
   "progress.hello": { en: "Hello, {name}.", zh: "{name}，您好。" },
@@ -296,7 +294,7 @@ export const TEXT = Object.freeze({
   "intake.back": { en: "Back", zh: "返回" },
   "intake.back_to_summary": { en: "Back to summary", zh: "返回申请摘要" },
   "intake.submit": { en: "Submit application", zh: "提交申请" },
-  // The fictional-data tools above the version-2 form (client-views.mjs); version 1 stays English
+  // The fictional-data tools above the form (client-views.mjs)
   "fiction.only": { en: "Fictional data only", zh: "仅限虚构资料" },
   "fiction.fill": { en: "Fill fictional details", zh: "填入虚构资料" },
   "fiction.another": { en: "Generate another example", zh: "生成另一组示例" },
@@ -395,7 +393,6 @@ export const SENTENCES = Object.freeze({
   "Only a volunteer can start an assisted application.": "只有志愿者才能开始协助申请。",
   "Choose a volunteer persona to act as.": "请选择要扮演的志愿者身份。",
   "Open an application first.": "请先打开一份申请。",
-  "This workspace now takes version-1 applications. Start again from Add a case.": "此工作区现在使用第 1 版申请。请从添加案例页面重新开始。",
   "This application changed again. Check the newest values and choose once more.": "这份申请又有了变化。请查看最新内容后再选择一次。",
   "This step is not available.": "无法进行这一步。",
   "This request is no longer on screen.": "这项请求已不在页面上。",

@@ -367,7 +367,7 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   assert.match(app, /addEventListener\("afterprint"/);
   assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
-  for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/])
+  for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/, /formStep/, /setFormStep/, /"edit-"/])
     assert.doesNotMatch(app, gone);
 });
 
@@ -476,9 +476,7 @@ test("the senior switch shows on a version-2 intake draft only, pressed for the 
   assert.ok(at('class="language-switch"') < at('data-action="toggle-senior"'));
   assert.ok(at('data-action="toggle-senior"') < at('data-action="open-help"'));
   assert.ok(at('data-action="open-help"') < at('data-action="save-exit"'));
-  // Not on version 1, not after submission, not on other screens.
-  assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "draft" } }))), undefined);
-  assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "draft", intakeVersion: 1 } }))), undefined);
+  // Not after submission, not on other screens.
   assert.equal(toggle(clientHeader(v2({}, { savedCase: { stage: "received", intakeVersion: 2 } }))), undefined);
   assert.equal(toggle(clientHeader(v2({}, { screen: "progress" }))), undefined);
   assert.equal(toggle(clientHeader(v2({}, { screen: "applications" }))), undefined);
@@ -592,25 +590,18 @@ const addState = (over = {}) => ({
   ...over,
 });
 
-test("Add a case picks its page by the open case's version, else the workspace's", () => {
-  const v2 = staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, officeDraft: true }));
-  assert.match(v2, /<form id="add-case-v2-form"/);
-  assert.doesNotMatch(v2, /assisted-intake-form/);
-  assert.match(v2, /<h1>Add a case<\/h1>/);
+test("Add a case is the office draft's page, a new draft or a saved one, once the workspace has loaded", () => {
+  const fresh = staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, officeDraft: true }));
+  assert.match(fresh, /<form id="add-case-v2-form"/);
+  assert.doesNotMatch(fresh, /assisted-intake-form/);
+  assert.match(fresh, /<h1>Add a case<\/h1>/);
   assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 2 } })), /id="add-case-v2-form"/);
-  const v1 = staffScreen(addState({ workspace: { defaultIntakeVersion: 1 } }));
-  assert.match(v1, /<form id="assisted-intake-form"/);
-  assert.doesNotMatch(v1, /add-case-v2-form/);
   const loading = staffScreen(addState({ workspace: null }));
   assert.match(loading, /<p class="muted" role="status">Loading…<\/p>/);
   assert.doesNotMatch(loading, /<form id="(assisted-intake-form|add-case-v2-form)"/);
-  // The two mismatches: the open case decides.
+  // A saved office draft opens on the page.
   const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 1, answers: {}, documentCards: [], materials: [], internalHistory: [] };
-  assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 1 }, savedCase: draftV2, selectedCaseId: "c2" })), /Application ID: VT-TWO2-0002[\s\S]*id="add-case-v2-form"/);
-  const caseV1 = { ...draftV2, id: "c1", reference: "VT-ONE1-0001", intakeVersion: 1 };
-  const old = staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, savedCase: caseV1, selectedCaseId: "c1" }));
-  assert.match(old, /<form id="assisted-intake-form"/);
-  assert.doesNotMatch(old, /add-case-v2-form/);
+  assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 2 }, savedCase: draftV2, selectedCaseId: "c2" })), /Application ID: VT-TWO2-0002[\s\S]*id="add-case-v2-form"/);
 });
 
 test("Add a case passes a conflict to its page, which offers the choice", () => {
@@ -737,11 +728,9 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
 // Toasts on staff-only paths stay English (spec 2026-10-05 §2: staff screens
 // are always English). Each is listed with the path that raises it.
 const STAFF_ONLY_TOASTS = Object.freeze([
-  // fillAssistedIntake: the office's fill on Add a case and the assisted forms
+  // fillAssistedIntake: the office's fill on Add a case
   "Fictional details filled in. Nothing is saved yet.",
   "There is no assisted intake form on screen.",
-  "Fictional details filled in. Nothing is created or sent yet.",
-  "Every box already has an answer. Nothing was replaced.",
   // runCaseAction SUBMIT, presenter branch only
   "The application is with the office. Record the intake checks next.",
   // runAssistanceAction RESOLVE: the office's help-request drawer
@@ -753,8 +742,7 @@ const STAFF_ONLY_TOASTS = Object.freeze([
   "Confirm that you have checked these answers with the client first.",
   // confirm-reset-fixtures: the presenter panel
   "The sample cases were rebuilt. Nothing else was touched.",
-  // assisted-intake-form and checkpoint-form: the office board and presenter panel
-  "An assisted application is ready. Nobody was emailed.",
+  // checkpoint-form: the presenter panel
   "The sample case was moved to that point in the story.",
 ]);
 
@@ -884,10 +872,10 @@ test("app.mjs treats a Save that saved nothing as not saved", () => {
   const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
   const save = app.slice(app.indexOf('if (type === "SAVE_ANSWERS") {'), app.indexOf('if (type === "SUBMIT" && !state.openPanels'));
   assert.match(save, /if \(!\(await controller\.saveAnswers\(\)\)\) return;\s+clearFormDrafts\(form\);\s+notify\(t\("toast\.saved"/);
-  const submit = app.slice(app.indexOf('if (type === "SUBMIT" && isV2Case(state)) {'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
+  const submit = app.slice(app.indexOf('if (type === "SUBMIT" && state.savedCase) {'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
   assert.match(submit, /if \(controller\.getState\(\)\.dirty && !\(await controller\.saveAnswers\(\)\)\) return;/);
   const exit = app.slice(app.indexOf('case "save-exit": {'), app.indexOf('case "fill-fictional":'));
-  assert.match(exit, /if \(dirty && !\(await controller\.saveAnswers\(\)\)\) break;\s+controller\.navigate\("applications"\);/);
+  assert.match(exit, /if \(controller\.getState\(\)\.dirty && !\(await controller\.saveAnswers\(\)\)\) break;\s+controller\.navigate\("applications"\);/);
 });
 
 test("an unsent tick in a staff form is kept across a redraw, and goes when its form is put away", () => {
@@ -899,7 +887,7 @@ test("an unsent tick in a staff form is kept across a redraw, and goes when its 
   assert.match(app, /if \(!isCheckable\(field\)\) keepDraft\(field\.id, textDraft\(field\)\);/);
   assert.match(
     app,
-    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\) && !field\.closest\(ANSWER_FORMS\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) keepDraft\(id, draft\);/,
+    /else if \(!field\.matches\("\[data-action\], #field-confirmed"\)\)\s+for \(const \[id, draft\] of checkDrafts\(field\)\) keepDraft\(id, draft\);/,
   );
   assert.match(app, /function keepDraft\(id, draft\) \{\s+if \(draft === null\) formDrafts\.delete\(id\);\s+else formDrafts\.set\(id, draft\);\s+\}/);
   assert.match(app, /for \(const \[id, value\] of formDrafts\)\s+restoreDraft\(root\.querySelector\(`#\$\{CSS\.escape\(id\)\}`\), value\);/);
@@ -1028,9 +1016,8 @@ test("a press's result message is shown only while the person who pressed is sig
     said += 1;
     assert.match(call, /,\s*by$/, `a message after an await names who pressed: ${call}`);
   }
-  assert.ok(said >= 25, `found the press messages (${said})`);
-  // The two that were reported: the assisted-intake receipt, and the client's
-  // "started" (which used to ask only that somebody was signed in).
-  assert.match(app, /notify\("An assisted application is ready\. Nobody was emailed\.", by\);/);
+  assert.ok(said >= 24, `found the press messages (${said})`);
+  // The one that was reported and is still here: the client's "started"
+  // (which used to ask only that somebody was signed in).
   assert.match(app, /if \(started\) notify\(t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
 });

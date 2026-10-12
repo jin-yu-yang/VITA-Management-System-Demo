@@ -183,7 +183,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   // saved straight after, as the client's own form does.
   f.draftCase = async (
     actor,
-    { mode = "client", personId = null, answers = makeSampleAnswers({ version: 2 }) } = {},
+    { mode = "client", personId = null, answers = makeSampleAnswers() } = {},
   ) => {
     const created = await f.createCase(actor, randomUUID(), { mode, personId, answers: {} });
     await f.act(actor, created.caseId, personId, "SAVE_ANSWERS", { answers });
@@ -415,7 +415,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     ).rows;
     if (current?.stage === "draft" && Object.keys(current?.answers ?? {}).length === 0)
       await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers({ version: 2 }),
+        answers: makeSampleAnswers(),
       });
     await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {

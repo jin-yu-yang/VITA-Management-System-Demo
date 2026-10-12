@@ -4,7 +4,7 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
-import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers } from "./sample-data.mjs";
+import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
 import {
   countText,
@@ -37,7 +37,6 @@ import {
 } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
-import * as admin from "./admin-views.mjs";
 import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
 import { STORAGE_KEY, createLanguageRequests, isLang, loadHantWithin, viewLang } from "./language.mjs";
@@ -151,10 +150,9 @@ if (!config) {
   let holdTimer = null;
   // In-place DOM updates waiting for the press to end (afterPress).
   let heldUpdates = [];
-  // Where the last render drew: screen, case and sub-step (version 1: form
-  // step). A version-2 render at the same place keeps focus, caret and scroll;
-  // one at a new place (a new sub-step, or entering or leaving the form)
-  // starts at the top.
+  // Where the last render drew: screen, case and sub-step. A version-2 render
+  // at the same place keeps focus, caret and scroll; one at a new place (a new
+  // sub-step, or entering or leaving the form) starts at the top.
   let lastPlace = null;
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
@@ -234,15 +232,14 @@ if (!config) {
     }
     heldRender = null; // a real render: any held request is now satisfied (spec §2.4 rule 1)
     const state = controller.getState();
-    // A version-2 case's place is its sub-step (resolved as the page resolves
-    // it), so scroll and focus restore compare sub-steps; version 1 keeps
-    // its step index. Add a case is one place: an accordion toggle, a
-    // realtime redraw and the first save (which adopts a case) keep focus,
-    // caret and scroll.
+    // A case's place is its sub-step (resolved as the page resolves it), so
+    // scroll and focus restore compare sub-steps. Add a case is one place: an
+    // accordion toggle, a realtime redraw and the first save (which adopts a
+    // case) keep focus, caret and scroll.
     const place =
       state.screen === "office-add-case"
         ? state.screen
-        : `${state.screen}|${state.selectedCaseId}|${controller.currentSubstep() ?? state.formStep}`;
+        : `${state.screen}|${state.selectedCaseId}|${controller.currentSubstep()}`;
     const wasV2 = v2OnPage();
     // A full rebuild replaces the fields, so remember where the keyboard was.
     // `describeFocus` decides what can be read; nothing it does may throw here,
@@ -514,38 +511,6 @@ if (!config) {
     if (chip) chip.outerHTML = client.saveStatus(controller.getState());
   }
 
-  // The office's copy of the same rule. Its screen has no save chip; what it has
-  // is a notice that says the edits are not saved and a send button that must
-  // not act on them, so those two are patched instead. Both are recomputed from
-  // state on the next real render, and an unsaved edit can only ever *add* the
-  // lock, so patching it here can never release one the renderer applied.
-  function refreshOfficeDraft() {
-    if (!controller.getState().dirty) return;
-    const unsaved = root.querySelector('[data-role="assisted-unsaved"]');
-    if (unsaved) unsaved.hidden = false;
-    const send = root.querySelector('[data-role="assisted-submit"]');
-    if (send) send.disabled = true;
-  }
-
-  // Which form on screen is an intake-answer form: the client's own, and the
-  // office's copy of it. Both are rendered from `state.draftAnswers`, so both
-  // must write back to it — a box that renders from state and does not update
-  // it silently reverts what was typed on the next render.
-  const ANSWER_FORMS = `#intake-form, #${admin.ASSISTED_ANSWERS_FORM_ID}`;
-
-  // One quiet edit, used by both: the field already shows the character, and
-  // rebuilding the page under the cursor is the defect this avoids.
-  function editAnswerField(field) {
-    quiet = true;
-    try {
-      controller.editAnswers({ [field.name]: field.value });
-    } finally {
-      quiet = false;
-    }
-    refreshSaveChip();
-    refreshOfficeDraft();
-  }
-
   // ---- the version-2 forms (spec §2.4, §2.5) ----------------------------
   //
   // Their controls carry `data-control` and `data-q` (the question, "hh" for a
@@ -554,7 +519,6 @@ if (!config) {
   // form is spelled out: `${V2_FORMS} [data-control]…` would match the client
   // form element itself through its first part.
   const V2_CONTROLS = "#intake-v2-form [data-control][data-q], #add-case-v2-form [data-control][data-q]";
-  const isV2Case = (state) => Number(state.savedCase?.intakeVersion) === 2;
   // A sub-step or slot id in an element id: "about.you" → "about-you".
   const dashed = (id) => String(id ?? "").replace(/\./g, "-");
 
@@ -820,95 +784,40 @@ if (!config) {
   }
 
   function fictional(replaceEverything) {
-    const state = controller.getState();
     sampleSeed += 1;
-    if (isV2Case(state)) {
-      // What is in the boxes first, so a fill sees every answer as typed.
-      sweepV2Form();
-      const draft = controller.getState().draftAnswers ?? {};
-      const generated = makeSampleAnswers({
-        version: 2,
-        seed: sampleSeed,
-        married: draft.marital_status === "married",
-      });
-      // A regenerate is the new example plus a clear of every other answer
-      // already in the draft (the wording choice kept); a fill touches blank
-      // answers only.
-      controller.editAnswers(fictionalAnswers(draft, generated, { replaceEverything }));
-      notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
-      return;
-    }
+    // What is in the boxes first, so a fill sees every answer as typed.
+    sweepV2Form();
+    const draft = controller.getState().draftAnswers ?? {};
     const generated = makeSampleAnswers({
       seed: sampleSeed,
-      scenario: "ordinary",
+      married: draft.marital_status === "married",
     });
-    // Blank fields only, unless the person deliberately asked for a whole new
-    // example. Neither touches the verified email, the reference or the stage.
-    controller.editAnswers(
-      replaceEverything
-        ? generated
-        : fillBlankAnswers(state.draftAnswers, generated),
-    );
+    // A regenerate is the new example plus a clear of every other answer
+    // already in the draft (the wording choice kept); a fill touches blank
+    // answers only.
+    controller.editAnswers(fictionalAnswers(draft, generated, { replaceEverything }));
     notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
   }
 
   // The office's own "fill fictional details", the same generator the client's
   // form uses. It never submits a form, never creates a case and never sends a
-  // message to anybody.
-  //
-  // Two forms wear this button, and they hold their text in two different
-  // places. On a case there is a draft, so the fill goes through the controller
-  // like the client's own helper does and the render puts it on screen; on the
-  // board there is no case yet, so it fills the boxes and the wiring layer's
-  // draft map. Writing to the boxes in the first case would fill them behind
-  // the draft's back and the next render would throw the answers away.
+  // message to anybody. Add a case is the one form that wears this button: what
+  // is in the boxes first, then its blank answers, through the draft like the
+  // client's own.
   function fillAssistedIntake() {
     sampleSeed += 1;
-    if (root.querySelector("#add-case-v2-form")) {
-      // The version-2 page: what is in the boxes first, then its blank answers
-      // from the version-2 generator, through the draft like the client's own.
-      sweepV2Form();
-      const draft = controller.getState().draftAnswers ?? {};
-      const sample = makeSampleAnswers({
-        version: 2,
-        seed: sampleSeed,
-        married: draft.marital_status === "married",
-      });
-      controller.editAnswers(fictionalAnswers(draft, sample));
-      notify("Fictional details filled in. Nothing is saved yet.");
+    if (!root.querySelector("#add-case-v2-form")) {
+      notify("There is no assisted intake form on screen.");
       return;
     }
-    const generated = makeSampleAnswers({
+    sweepV2Form();
+    const draft = controller.getState().draftAnswers ?? {};
+    const sample = makeSampleAnswers({
       seed: sampleSeed,
-      scenario: "ordinary",
+      married: draft.marital_status === "married",
     });
-    if (root.querySelector(`#${admin.ASSISTED_ANSWERS_FORM_ID}`)) {
-      controller.editAnswers(
-        fillBlankAnswers(controller.getState().draftAnswers, generated),
-      );
-      notify("Fictional details filled in. Nothing is saved yet.");
-      return;
-    }
-    let boxes = 0;
-    let filled = 0;
-    for (const [name, value] of Object.entries(generated)) {
-      const field = root.querySelector(`#field-assisted-${name}`);
-      if (!field) continue;
-      boxes += 1;
-      // Blank boxes only, exactly like the client's own helper: what a
-      // volunteer typed for a real person in front of them is never replaced.
-      if (field.value) continue;
-      field.value = value ?? "";
-      formDrafts.set(field.id, field.value);
-      filled += 1;
-    }
-    notify(
-      !boxes
-        ? "There is no assisted intake form on screen."
-        : filled
-          ? "Fictional details filled in. Nothing is created or sent yet."
-          : "Every box already has an answer. Nothing was replaced.",
-    );
+    controller.editAnswers(fictionalAnswers(draft, sample));
+    notify("Fictional details filled in. Nothing is saved yet.");
   }
 
   async function reconcile(useMine, by) {
@@ -964,13 +873,7 @@ if (!config) {
     const state = controller.getState();
     if (type === "SAVE_ANSWERS") {
       // The controller owns the draft and the revision the edits started from,
-      // so this one is never built from a form's payload. An answer form's
-      // boxes are already in the draft — every keystroke puts them there — and
-      // this last sweep is for a value that reached the box without an input
-      // event at all, such as a browser autofill. `editAnswers` whitelists it
-      // into the same draft, and the save is still the controller's.
-      if (form?.matches?.(ANSWER_FORMS))
-        controller.editAnswers(Object.fromEntries(new FormData(form)));
+      // so this one is never built from a form's payload.
       // Null: the case it was pressed on is no longer open, so nothing was
       // saved for it. A failure throws, and is shown by the caller.
       if (!(await controller.saveAnswers())) return;
@@ -982,7 +885,7 @@ if (!config) {
       notify(t("toast.confirm_first", {}, screenLang()));
       return;
     }
-    if (type === "SUBMIT" && isV2Case(state)) {
+    if (type === "SUBMIT" && state.savedCase) {
       // Anything still in the boxes is saved before the submit, which sends
       // the saved case's revision: otherwise it would be dropped, and the
       // refresh would raise a conflict on a submitted case.
@@ -1256,11 +1159,6 @@ if (!config) {
 
   async function runNavigation(action, target, by) {
     const state = controller.getState();
-    if (action.startsWith("edit-")) {
-      controller.setFormStep(Number(action.slice(5)));
-      controller.navigate("intake");
-      return;
-    }
     switch (action) {
       case "open-applications":
         controller.navigate("applications");
@@ -1447,9 +1345,8 @@ if (!config) {
         controller.navigate("intake");
         break;
       case "back-step":
-        // Version 2 saves on every sub-step change; version 1's Back never did.
-        if (isV2Case(state)) await moveV2(() => controller.moveSubstep(-1));
-        else controller.setFormStep(Math.max(0, state.formStep - 1));
+        // Back saves, as every sub-step change does.
+        await moveV2(() => controller.moveSubstep(-1));
         break;
       // A rail link, an alert, a card's why line, "Upload now" (which names
       // the card to land on in `data-focus`).
@@ -1536,13 +1433,9 @@ if (!config) {
         controller.removeMember(Number(target.dataset.member));
         break;
       case "save-exit": {
-        let dirty = state.dirty;
-        if (isV2Case(state)) {
-          sweepV2Form();
-          dirty = controller.getState().dirty;
-        }
+        sweepV2Form();
         // Not saved: no "Saved", and the page stays.
-        if (dirty && !(await controller.saveAnswers())) break;
+        if (controller.getState().dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
         notify(t("toast.saved", {}, screenLang()), by);
         break;
@@ -1684,18 +1577,14 @@ if (!config) {
       if (ref.scope === "office") paintAddCase();
       else paintV2Rail();
       paintV2Count(ref);
-    } else if (field.closest(ANSWER_FORMS) && field.name && field.type !== "checkbox") {
-      // An answer form first: the office's copy is also a `.staff-form`, and its
-      // boxes belong to the draft rather than to the wiring layer's own map.
-      editAnswerField(field);
     } else if (field.closest(".staff-form") && field.id) {
       // Held in the wiring layer, not in the controller: this text is not part
       // of any record until the action that carries it is sent.
       if (!isCheckable(field)) keepDraft(field.id, textDraft(field));
       // A tick likewise — except a box drawn from state (a toggle with its own
-      // action, the "I have checked" box, an answer form's), which a redraw
-      // already draws as it is.
-      else if (!field.matches("[data-action], #field-confirmed") && !field.closest(ANSWER_FORMS))
+      // action, the "I have checked" box), which a redraw already draws as it
+      // is.
+      else if (!field.matches("[data-action], #field-confirmed"))
         for (const [id, draft] of checkDrafts(field)) keepDraft(id, draft);
     } else if (field.name === "lookup") controller.setLookup(field.value);
     else if (field.name === "boardSearch") controller.setBoardSearchDraft(field.value);
@@ -1717,21 +1606,7 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
-    if (field.matches?.(V2_CONTROLS)) {
-      changeV2Field(field);
-      return;
-    }
-    if (!field.closest(ANSWER_FORMS) || !field.name) return;
-    if (field.type === "radio" || field.tagName === "SELECT") {
-      // These change what the rest of the step says, so the page is rebuilt and
-      // the control the person used keeps the focus.
-      editAnswerField(field);
-      render();
-      const again = [...root.querySelectorAll(`[name="${field.name}"]`)].find(
-        (element) => element.value === field.value || element.tagName === "SELECT",
-      );
-      again?.focus();
-    }
+    if (field.matches?.(V2_CONTROLS)) changeV2Field(field);
   });
 
   root.addEventListener("submit", async (event) => {
@@ -1774,17 +1649,6 @@ if (!config) {
         await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
         await runAssistanceAction(assistControl, form, by);
-      } else if (form.id === "assisted-intake-form") {
-        // Creating a case is not a case action — there is no case yet — so it
-        // is the form's own submit, exactly like the client's "Start a new
-        // application" is its own control.
-        await controller.createAssistedCase({
-          answers: Object.fromEntries(values),
-        });
-        // Opening the new case empties the board's own panels, so the form is
-        // already put away by the time this returns.
-        formDrafts.clear();
-        notify("An assisted application is ready. Nobody was emailed.", by);
       } else if (form.id === "checkpoint-form") {
         // The choice and its confirmation are the same submit: the dialog says
         // what a checkpoint does, and this button is the person agreeing to it.
@@ -1805,10 +1669,6 @@ if (!config) {
       } else if (form.id === "lookup-form") {
         controller.setLookup(String(values.get("lookup") ?? ""));
         render();
-      } else if (form.id === "intake-form") {
-        const state = controller.getState();
-        if (state.dirty) await controller.saveAnswers();
-        controller.setFormStep(Math.min(3, state.formStep + 1));
       }
     } catch (error) {
       notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);

@@ -222,7 +222,7 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
     });
 
     await t.test("a client case round-trips on version 2", async () => {
-      const full = makeSampleAnswers({ version: 2, seed: 0 });
+      const full = makeSampleAnswers({ seed: 0 });
       const keys = Object.keys(full);
       const half = (from, to) => Object.fromEntries(keys.slice(from, to).map((key) => [key, full[key]]));
       const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
@@ -250,7 +250,7 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
         2,
       );
       await f.act(f.presenter, caseId, f.sam, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers({ version: 2, seed: 0 }),
+        answers: makeSampleAnswers({ seed: 0 }),
       });
       await f.act(f.presenter, caseId, f.sam, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];

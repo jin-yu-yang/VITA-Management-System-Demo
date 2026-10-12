@@ -1,5 +1,4 @@
-// Reads the generated intake catalogue (version 2). Version 1 is not in the
-// catalogue; its code lives elsewhere and is untouched.
+// Reads the generated intake catalogue (version 2).
 import CATALOGUE_DATA from "./intake-catalogue-data.mjs";
 import { sourceText } from "./language.mjs";
 
@@ -26,7 +25,7 @@ export const findQuestion = (version, id) =>
 export const substepsFor = (version) =>
   stepsFor(version).flatMap((step) => step.substeps.map((substep) => ({ ...substep, step })));
 
-/** The sub-step with this id, or null. Version 2 only: version 1 has no sub-steps. */
+/** The sub-step with this id, or null. */
 export const findSubstep = (id) => substepsFor(2).find((s) => s.id === id) ?? null;
 
 /** The id of the sub-step holding this top-level question, or null. */
@@ -233,14 +232,14 @@ export function missingToSubmit(version, answers = {}, contact = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Service and language labels. Version 2 stores codes, version 1 stores labels.
+// Service and language labels. Answers store codes.
 // ---------------------------------------------------------------------------
 
 const labelTable = (id) => new Map((findQuestion(2, id)?.options ?? []).map((o) => [o.value, o]));
 const SERVICE_LABELS = labelTable("service");
 const LANGUAGE_LABELS = labelTable("language");
 
-// A stored label (version 1) or an unknown code comes back as it is.
+// A label (a saved board filter's, say) or an unknown code comes back as it is.
 const labelOf = (table, value, lang) => {
   if (typeof value !== "string" || !table.has(value)) return value;
   const option = table.get(value);

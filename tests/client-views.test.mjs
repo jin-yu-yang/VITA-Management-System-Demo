@@ -52,7 +52,6 @@ const baseState = (overrides = {}) => ({
   screen: "applications",
   selectedCaseId: null,
   selectedPersonId: null,
-  formStep: 0,
   openPanels: [],
   lookup: "",
   dialog: null,
@@ -278,17 +277,25 @@ test("applicant text is escaped everywhere it is rendered", () => {
     savedCase: caseRecord({
       stage: "received",
       reference: nasty,
-      answers: { firstName: nasty, service: "Drop-off" },
+      intakeVersion: 2,
+      answers: { tp_first_name: nasty, service: "drop_off" },
       history: [
         { id: "e1", action: "SUBMIT", message: nasty, createdAt: "2026-01-02T15:04:05Z" },
       ],
     }),
-    draftAnswers: { firstName: nasty },
+    draftAnswers: { tp_first_name: nasty },
   });
   for (const html of [
     progressScreen(state),
     referenceScreen(state),
-    intakeScreen({ ...state, screen: "intake", formStep: 2 }),
+    intakeScreen({
+      ...state,
+      screen: "intake",
+      savedCase: { ...state.savedCase, stage: "draft" },
+      formSubstep: "about.you",
+      revealed: [],
+      visitedSubsteps: [],
+    }),
     applicationsScreen({ ...state, cases: [state.savedCase], lookup: nasty }),
   ]) {
     assert.ok(!html.includes("<script>"), "raw markup never reaches the page");
@@ -342,46 +349,6 @@ test("the reference card can be copied and printed and starts the form", () => {
   assert.ok(!/data-case-action/.test(html));
 });
 
-test("intake keeps residence and mailing separate, explains screening and offers fictional details", () => {
-  const state = baseState({
-    screen: "intake",
-    formStep: 1,
-    savedCase: caseRecord(),
-    draftAnswers: {
-      residenceCity: "Philadelphia",
-      residenceState: "PA",
-      rideshare: "yes",
-      other: "yes",
-      stocks: "no",
-    },
-  });
-  const screening = intakeScreen(state);
-  assert.ok(screening.includes("City of residence"));
-  assert.ok(screening.includes("State of residence"));
-  assert.ok(!screening.includes("Mailing address"));
-  assert.match(screening, /current service scope|service limitation/i);
-  assert.match(screening, /data-action="fill-fictional"/);
-  assert.match(screening, /data-action="regenerate-fictional"/);
-
-  const details = intakeScreen({ ...state, formStep: 2 });
-  assert.ok(details.includes("Mailing address"));
-  assert.ok(!details.includes("City of residence"));
-
-  const check = intakeScreen({ ...state, formStep: 3, draftAnswers: { ...state.draftAnswers, other: "no" } });
-  assert.match(check, /data-case-action="SUBMIT"/);
-});
-
-test("the intake rail marks the current step and gives the office contact", () => {
-  const state = { ...baseState(), screen: "intake", savedCase: { id: "c1", reference: "VT-AAAA-AAAA", stage: "draft", answers: {}, revision: 1 }, draftAnswers: {}, formStep: 1 };
-  const html = intakeScreen(state);
-  assert.match(html, /<li class="active" aria-current="step">/);
-  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
-  assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
-  // Save & exit lives in the top bar now; the form keeps Back and Continue.
-  assert.doesNotMatch(html, /data-action="save-exit"/);
-  assert.match(html, /STEP 2 OF 4/);
-});
-
 test("sign-in and progress point to the office by phone and email", () => {
   assert.match(accessScreen({ ...baseState(), authStep: "email" }), /class="office-contact"/);
   const progress = progressScreen({ ...baseState(), screen: "progress", savedCase: { id: "c1", reference: "VT-AAAA-AAAA", stage: "received", answers: { firstName: "Mei" }, requests: [], documents: [], history: [] } });
@@ -407,8 +374,8 @@ test("the save state is named in words and a failed save keeps a retry", () => {
 test("the conflict form offers both choices and neither is automatic", () => {
   const html = conflictForm(
     baseState({
-      savedCase: caseRecord({ revision: 4, answers: { firstName: "Server" } }),
-      draftAnswers: { firstName: "Mine" },
+      savedCase: caseRecord({ intakeVersion: 2, revision: 4, answers: { tp_first_name: "Server" } }),
+      draftAnswers: { tp_first_name: "Mine" },
       dirty: true,
       editBaseRevision: 2,
       conflict: { code: "REMOTE_CHANGED", baseRevision: 2, serverRevision: 4 },
@@ -671,11 +638,6 @@ test("a version-2 chip counts the revealed invalid answers of visible questions"
   assert.match(text(saveStatus(v2({ ...shown, saveState: "saving" }))), /Saving/);
   assert.match(text(saveStatus(v2({ ...shown, saveState: "failed", dirty: true }))), /Not saved/);
   assert.equal(text(saveStatus(v2({ ...shown, saveState: "unsaved", dirty: true }))), "Unsaved changes");
-  // Version 1 never shows it, whatever the state holds.
-  assert.equal(
-    text(saveStatus(baseState({ saveState: "saved", savedCase: { id: "c1", answers: {} }, draftAnswers: { email: "a@" }, revealed: ["email"] }))),
-    "Saved",
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -690,7 +652,7 @@ const v2State = (overrides = {}) =>
     screen: "intake",
     selectedCaseId: "case-v2",
     savedCase: v2Case(),
-    draftAnswers: makeSampleAnswers({ version: 2 }),
+    draftAnswers: makeSampleAnswers(),
     formSubstep: "before.ready",
     visitedSubsteps: [],
     revealed: [],
@@ -702,7 +664,7 @@ const without = (answers, ...ids) =>
 const plain = (html) => html.replace(/<[^>]+>/g, "").trim();
 const escText = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;");
 const reEsc = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const sample = () => makeSampleAnswers({ version: 2 });
+const sample = () => makeSampleAnswers();
 const TODAY = new Date(2026, 9, 4, 12);
 const chrome = { saveStatus, conflictForm, fictionalTools: "", today: TODAY };
 const form = (overrides) => intakeFormV2(v2State(overrides), chrome);
@@ -734,27 +696,19 @@ const submitOf = (html) => {
 };
 const MEMBER = "000000000000000000000000000003e9"; // the sample's first household member
 
-test("intakeScreen dispatches on intakeVersion: version 1 keeps its four steps", () => {
-  for (const savedCase of [caseRecord(), caseRecord({ intakeVersion: 1 })]) {
-    const html = intakeScreen(baseState({ screen: "intake", savedCase, formStep: 0 }));
-    assert.match(html, /<form id="intake-form">/);
-    assert.match(html, /STEP 1 OF 4/);
-    assert.doesNotMatch(html, /intake-v2-form/);
-    assert.doesNotMatch(html, /rail-step-/);
-  }
-  const v2 = intakeScreen(v2State());
-  assert.doesNotMatch(v2, /id="intake-form"/);
-  assert.doesNotMatch(v2, /OF 4/);
-});
-
 test("a version-2 draft gets the sub-step page: form, overline, title and count", () => {
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
   assert.match(html, /<form id="intake-v2-form" novalidate data-substep="about\.address">/);
   assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 5<\/p>/);
   // The office card stays under the rail, and the chrome comes from client-views.
-  assert.match(html, /class="sidebar-help"/);
+  assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
   assert.match(html, /Fill fictional details/);
+  assert.match(html, /data-action="fill-fictional"/);
+  assert.match(html, /data-action="regenerate-fictional"/);
   assert.match(html, /<span class="save-chip/);
+  // Save & exit lives in the top bar; the form keeps Back and Continue.
+  assert.doesNotMatch(html, /data-action="save-exit"/);
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
   // Before you start has no number; an ampersand in a title is escaped.
   assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 3<\/p>/);
   assert.match(
@@ -836,7 +790,7 @@ test("the progress bar counts visible sub-steps", () => {
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
   assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="5"[^>]*></progress><p>Part 5 of ${count}</p>`));
   // A married client has one more part.
-  const married = makeSampleAnswers({ version: 2, married: true });
+  const married = makeSampleAnswers({ married: true });
   const more = visibleSubsteps(married, cardsFor(married, [])).length;
   assert.equal(more, count + 1);
   assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="5"`));
@@ -896,7 +850,7 @@ test("with the senior wording chosen, questions use it", () => {
 });
 
 test("show-if: the spouse questions render only for a married client", () => {
-  const married = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: makeSampleAnswers({ version: 2, married: true }) }));
+  const married = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: makeSampleAnswers({ married: true }) }));
   assert.match(married, /<form id="intake-v2-form" novalidate data-substep="about\.spouse">/);
   assert.match(married, /data-q="sp_first_name"/);
   const single = intakeScreen(v2State({ formSubstep: "about.spouse" }));
@@ -1232,13 +1186,11 @@ test("the progress page lists open documents for version 2, with their marks", (
   assert.match(sameDay, /<h2 id="open-documents-title">Bring these to your visit<\/h2>/);
   assert.match(sameDay, /<ul class="bring-list">/);
   assert.doesNotMatch(sameDay, /mark-card/);
-  // Version 1 has none.
-  assert.doesNotMatch(progressScreen(baseState({ screen: "progress", savedCase: caseRecord({ stage: "received" }) })), /open-documents/);
 });
 
 test("the version-2 chip: revealed invalid answers need checking, in every quiet save state", () => {
   const chip = (overrides) => plain(saveStatus(v2State(overrides)));
-  const sample = makeSampleAnswers({ version: 2 });
+  const sample = makeSampleAnswers();
   const one = { draftAnswers: { ...sample, email: "a@" }, revealed: ["email"] };
   assert.equal(chip({ ...one, saveState: "saved" }), "1 answer needs checking");
   assert.equal(chip({ ...one, saveState: "idle" }), "1 answer needs checking");
@@ -1248,14 +1200,10 @@ test("the version-2 chip: revealed invalid answers need checking, in every quiet
   );
   assert.equal(chip({ saveState: "saved", draftAnswers: { ...sample, email: "a@" }, revealed: [] }), "Saved");
   assert.equal(chip({ ...one, saveState: "unsaved", dirty: true }), "Unsaved changes");
-  // Version 1 reads exactly as today.
-  const v1 = (saveState) => plain(saveStatus(baseState({ saveState, savedCase: caseRecord(), ...one })));
-  assert.equal(v1("saved"), "Saved");
-  assert.equal(v1("idle"), "Up to date");
 });
 
 test("the version-2 conflict screen compares sendable values and labels rows by wording", () => {
-  const sample = makeSampleAnswers({ version: 2 });
+  const sample = makeSampleAnswers();
   const member = sample.hh[0];
   const html = conflictForm(
     v2State({
@@ -1289,21 +1237,18 @@ test("the version-2 conflict screen compares sendable values and labels rows by 
   assert.match(html, /data-action="reconcile-server"/);
 });
 
-test("the progress page labels service and language codes, for both versions", () => {
+test("the progress page labels service and language codes", () => {
   const progress = (savedCase) => progressScreen(baseState({ screen: "progress", savedCase }));
   const v2 = progress(v2Case({ stage: "received", answers: { service: "drop_off", language: "english", tp_first_name: "Mei" } }));
   assert.match(v2, /<span>Service<\/span><strong>Drop-off<\/strong>/);
   assert.match(v2, /<span>Language<\/span><strong>English<\/strong>/);
   assert.match(v2, /Hello, Mei\./);
-  const v1 = progress(caseRecord({ stage: "received", answers: { service: "Drop-off", language: "Mandarin" } }));
-  assert.match(v1, /<span>Service<\/span><strong>Drop-off<\/strong>/);
-  assert.match(v1, /<span>Language<\/span><strong>Mandarin<\/strong>/);
 });
 
 // Part 4c (Task 4): the card is exported for Add a case. Without `office` it is
 // 4b2's markup byte for byte; with it, the marks and notes speak to the office.
 test("docCard without office is unchanged; with office it speaks to the office", () => {
-  const cards = cardsFor(makeSampleAnswers({ version: 2 }), []);
+  const cards = cardsFor(makeSampleAnswers(), []);
   const w2 = cards.find((card) => card.slotId === "w2.household");
   assert.equal(
     docCard(w2, { links: false }),
@@ -1353,7 +1298,7 @@ test("on Add a case, hints and owner lines speak to the office", () => {
 
 // Part 4d Task 6: the progress page's cards and request in the client's language.
 test("docCard speaks the client's language; the office's card stays English whatever lang says", () => {
-  const cards = cardsFor(makeSampleAnswers({ version: 2 }), []);
+  const cards = cardsFor(makeSampleAnswers(), []);
   const w2 = cards.find((card) => card.slotId === "w2.household");
   const zh = docCard({ ...w2, status: "later" }, { links: false, lang: "zh-Hans" });
   assert.match(zh, /<h3>每份工作的 W-2<\/h3>/);

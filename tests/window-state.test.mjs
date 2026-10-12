@@ -32,7 +32,6 @@ test("choices are stored per user and restored as they were", () => {
     screen: "staff-case",
     selectedCaseId: "case-a",
     selectedPersonId: "alex",
-    formStep: 2,
     openPanels: ["confirmed"],
     pendingCreateActionId: "action-1",
     boardFilters: { status: "available", assignment: "mine" },
@@ -43,7 +42,6 @@ test("choices are stored per user and restored as they were", () => {
     screen: "staff-case",
     selectedCaseId: "case-a",
     selectedPersonId: "alex",
-    formStep: 2,
     openPanels: ["confirmed"],
     pendingCreateActionId: "action-1",
     boardFilters: { status: "available", assignment: "mine" },
@@ -197,6 +195,18 @@ test("the version-2 sub-step is kept when it has a sub-step id's shape", () => {
     window.write("user-1", { screen: "intake", formSubstep });
     assert.deepEqual(window.read("user-1"), { screen: "intake" }, JSON.stringify(formSubstep));
   }
+});
+
+// Design D8: version 1's place in the form was `formStep`, a step number. A
+// record an older version wrote still holds it; `write` itself drops it now,
+// so the stale record goes straight into storage and `read` must ignore it.
+test("a version-1 step number saved by an older version is not restored", () => {
+  const stale = JSON.stringify({ screen: "intake", formStep: 2, formSubstep: "about.you" });
+  const sessionStorage = fakeSession({ [windowStateKey("user-1")]: stale });
+  const window = createWindowState({ sessionStorage });
+  assert.deepEqual(window.read("user-1"), { screen: "intake", formSubstep: "about.you" });
+  window.write("user-1", { screen: "intake", formStep: 2, formSubstep: "about.you" });
+  assert.deepEqual(JSON.parse(sessionStorage.raw(windowStateKey("user-1"))), { screen: "intake", formSubstep: "about.you" });
 });
 
 test("the revealed answers of one case round-trip", () => {

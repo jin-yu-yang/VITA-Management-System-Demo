@@ -1,14 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 import {
-  ADD_CASE_SECTIONS,
   followupQueue,
   logCallDrawerBody,
   officeFilters,
   resolveHelpDrawerBody,
   queueCounts,
-  renderAddCase,
   renderAddCaseV2,
   renderFollowups,
   waitingDays,
@@ -196,10 +193,9 @@ test("the language chips keep the shared filter key and narrow the rows", () => 
   assert.doesNotMatch(html, /VT-CANT/);
 });
 
-test("version-2 language codes and version-1 labels read and filter as one", () => {
+test("language codes read and filter by their labels", () => {
   const cases = [
     kase({ id: "a", reference: "VT-V2", answers: { language: "cantonese", service: "drop_off" } }),
-    kase({ id: "b", reference: "VT-V1", answers: { language: "Cantonese", service: "Drop-off" } }),
     kase({ id: "c", reference: "VT-MAND", answers: { language: "mandarin" } }),
   ];
   const all = page(cases, [], sam, {});
@@ -208,7 +204,6 @@ test("version-2 language codes and version-1 labels read and filter as one", () 
   assert.match(all, /data-filter="language" data-value="Mandarin"/);
   const html = page(cases, [], sam, { language: "Cantonese" });
   assert.match(html, /VT-V2/);
-  assert.match(html, /VT-V1/);
   assert.doesNotMatch(html, /VT-MAND/);
 });
 
@@ -423,45 +418,6 @@ test("the help drawer states a refusal once in every branch", () => {
   }
 });
 
-test("the add-a-case sections hold every intake answer exactly once, in order", () => {
-  assert.deepEqual(
-    ADD_CASE_SECTIONS.flatMap(([, , keys]) => keys),
-    [...INTAKE_ANSWER_KEYS],
-  );
-});
-
-test("Add a case is one form with every intake field", () => {
-  const html = renderAddCase({ person: sam });
-  assert.match(html, /<form id="assisted-intake-form" class="staff-form add-case-form">/);
-  for (const key of INTAKE_ANSWER_KEYS)
-    assert.match(html, new RegExp(`id="field-assisted-${key}"`), key);
-  const legends = [...html.matchAll(/<fieldset class="panel add-case-section"><legend>.*?<\/span> (.*?)<\/legend>/g)].map((m) => m[1]);
-  assert.deepEqual(legends, ["Visit", "2025 situation", "Client details", "Paperwork"]);
-  assert.match(html, /data-action="fill-assisted-intake"/);
-  assert.equal((html.match(/type="submit"/g) ?? []).length, 1);
-  assert.match(html, /type="submit"[^>]*>[^]*?Create case<\/button>/);
-  assert.match(html, /<button[^>]*data-action="open-board"[^>]*>/);
-  assert.match(html.match(/<button[^>]*data-action="open-board"[^>]*>/)[0], /type="button"/);
-  assert.match(html, /Creating it saves a draft the office owns\. Nobody is emailed or invited\./);
-  assert.match(html, /Mailing city/);
-});
-
-test("Add a case refuses a persona without the right, and asks for a persona", () => {
-  const volunteer = { id: "p-al", name: "Alex", capabilities: ["prepare"] };
-  const refused = renderAddCase({ person: volunteer });
-  assert.match(refused, /staff-reason/);
-  assert.doesNotMatch(refused, /<form/);
-  const none = renderAddCase({ person: null });
-  assert.match(none, /Choose a volunteer persona to act as\./);
-  assert.doesNotMatch(none, /<form/);
-});
-
-test("Add a case's side card names who creates it", () => {
-  const html = renderAddCase({ person: sam });
-  assert.match(html, /Application ID<\/span><strong>Assigned when the case is created/);
-  assert.match(html, /Created by<\/span><strong>Sam</);
-});
-
 test("a queue row and the Log a call drawer show the client number", () => {
   const html = page([kase({ id: "n", reference: "VT-NUM", clientNumber: 93, season: 2025 })]);
   assert.match(rowOf(html, "n"), /<span class="client-number">#093<\/span><button class="board-reference"/);
@@ -478,7 +434,7 @@ test("a queue row and the Log a call drawer show the client number", () => {
 // Part 4c, Task 4: the version-2 Add a case page.
 // ---------------------------------------------------------------------------
 
-const V2_SAMPLE = () => makeSampleAnswers({ version: 2 });
+const V2_SAMPLE = () => makeSampleAnswers();
 const withoutIds = (answers, ...ids) =>
   Object.fromEntries(Object.entries(answers).filter(([id]) => !ids.includes(id)));
 const ALL_PARTS = () =>
@@ -568,7 +524,7 @@ test("the visible question sub-steps are accordions, and only the open ones hold
   expected.splice(expected.indexOf("notes.anything"), 0, "documents");
   assert.deepEqual(parts, expected);
   assert.doesNotMatch(single, /Your spouse/);
-  const married = addV2({ draftAnswers: makeSampleAnswers({ version: 2, married: true }) });
+  const married = addV2({ draftAnswers: makeSampleAnswers({ married: true }) });
   assert.match(married, /data-substep="about\.spouse"/);
   assert.match(married, /Your spouse/);
   // Open: its questions; closed: none.

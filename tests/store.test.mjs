@@ -504,6 +504,7 @@ test("the workspace read carries the fixture generation", async () => {
           default_followup_person_id: "person-sam",
           fixture_generation: "7",
           current_season: 2025,
+          default_intake_version: 2,
         },
       ],
     },
@@ -513,7 +514,7 @@ test("the workspace read carries the fixture generation", async () => {
     fixtureGeneration: 7,
     defaultFollowupPersonId: "person-sam",
     currentSeason: 2025,
-    defaultIntakeVersion: 1,
+    defaultIntakeVersion: 2,
   });
   await assert.rejects(
     () => createStore(fakeClient({ rows: { workspaces: [] } })).getWorkspace(),
@@ -521,17 +522,15 @@ test("the workspace read carries the fixture generation", async () => {
   );
 });
 
-test("the workspace read carries its default intake version, 1 when absent", async () => {
-  // Add a case follows the workspace's version (spec 2026-09-30 §4.2): a row
-  // from before the column, or a null, reads as version 1.
+test("the workspace read carries its default intake version as a number", async () => {
+  // The version a new application starts at (spec 2026-09-30 §4.2). The
+  // column is always 2 (migration 023), so there is no fallback.
   const row = { id: "workspace-1", default_followup_person_id: null, fixture_generation: 1 };
   const read = async (extra) =>
     (await createStore(fakeClient({ access: "presenter", rows: { workspaces: [{ ...row, ...extra }] } })).getWorkspace())
       .defaultIntakeVersion;
   assert.equal(await read({ default_intake_version: 2 }), 2);
   assert.equal(await read({ default_intake_version: "2" }), 2);
-  assert.equal(await read({ default_intake_version: null }), 1);
-  assert.equal(await read({}), 1);
 });
 
 test("a workspace row without a season column reads as any season", async () => {
@@ -1044,11 +1043,10 @@ test("mapCase carries the season and the client number, null until submitted", (
   assert.equal(draft.clientNumber, null);
 });
 
-test("mapCase carries the intake version, 1 when the column is absent", () => {
+test("mapCase carries the intake version as a number", () => {
+  // Always 2 (migration 023), so there is no fallback.
   assert.equal(mapCase(CASE_ROW).intakeVersion, 2);
-  assert.equal(mapCase({ ...CASE_ROW, intake_version: "1" }).intakeVersion, 1);
-  const { intake_version: _version, ...older } = CASE_ROW;
-  assert.equal(mapCase(older).intakeVersion, 1);
+  assert.equal(mapCase({ ...CASE_ROW, intake_version: "2" }).intakeVersion, 2);
 });
 
 test("mapCase carries the visited sub-steps, [] when the column is absent", () => {

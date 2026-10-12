@@ -27,7 +27,6 @@ import {
   stageBadge,
   formatTime,
   relativeDay,
-  ANSWER_LABELS,
   formatClientNumber,
   clientNumberLabel,
   clientNumberTag,
@@ -320,18 +319,14 @@ export function staffEligibility(caseRecord, person) {
   // Contact details and materials follow the database's works_on_case: office
   // staff on any case, a volunteer only as its preparer or reviewer.
   const seesContact = canSeeContact(record, person);
-  const editContact = () => {
-    if (Number(record.intakeVersion) !== 2) return refused("A version-1 case has no contact card.");
-    return seesContact ? allowed : refused(CONTACT_NOT_SHOWN);
-  };
+  const editContact = () => (seesContact ? allowed : refused(CONTACT_NOT_SHOWN));
   const recordMaterials = () => (seesContact ? allowed : refused(MATERIALS_NOT_RECORDED));
 
   // Document marks and moves (migration 018): the same people who see contact
-  // details, on an open version-2 case. One rule under the two action names.
+  // details, on an open case. One rule under the two action names.
   const documentWork = () => {
     if (!seesContact) return refused(CARDS_NOT_MARKED);
     if (stage === "closed") return refused("This case is closed.");
-    if (Number(record.intakeVersion) !== 2) return refused("A version-1 case has no document checklist.");
     return allowed;
   };
 
@@ -407,9 +402,8 @@ export function boardFilters(filters) {
   return chosen;
 }
 
-// Version 2 stores codes ("drop_off") and version 1 stores labels ("Drop-off");
-// both are compared, shown and grouped by their label. A saved filter value is
-// already a label and still matches.
+// Answers store codes ("drop_off"); they are compared, shown and grouped by
+// their label, so a saved filter value, already a label, still matches.
 const inLanguageAndService = (record, chosen) =>
   (chosen.language === "all" || languageLabel(record?.answers?.language ?? "") === languageLabel(chosen.language)) &&
   (chosen.service === "all" || serviceLabel(record?.answers?.service ?? "") === serviceLabel(chosen.service));
@@ -718,22 +712,9 @@ export function caseDetails(record) {
   )}${detailRow("Updated", record.updatedAt ? formatTime(record.updatedAt) : "No updates yet")}</section>`;
 }
 
-// Version 1 keeps today's panel exactly; version 2 reads by step and sub-step.
+// The answers, read by step and sub-step.
 export function answersPanel(record, { person } = {}) {
-  return Number(record?.intakeVersion) === 2
-    ? answersPanelV2(record, { showContact: canSeeContact(record, person) })
-    : answersPanelV1(record);
-}
-
-export function answersPanelV1(record) {
-  const answers = record.answers ?? {};
-  const rows = Object.keys(ANSWER_LABELS)
-    .filter((key) => String(answers[key] ?? "").trim())
-    .map((key) => detailRow(ANSWER_LABELS[key], answers[key]))
-    .join("");
-  return `<section class="panel" aria-labelledby="answers-title"><div class="section-head"><h2 id="answers-title">What the client told us</h2></div>${
-    rows || '<p class="muted">No answers were saved on this case.</p>'
-  }<p class="field-note">These are the intake answers, exactly as saved. ${esc(TAXSLAYER_NOTE)}</p></section>`;
+  return answersPanelV2(record, { showContact: canSeeContact(record, person) });
 }
 
 const CONTACT_QUESTION_IDS = new Set(Object.keys(CONTACT_FIELDS));
@@ -914,12 +895,11 @@ const draftTools = () =>
 // What the Intake answers tab holds, shared with the office page. The draft
 // prints the client's phones, so its buttons follow the contact rule.
 export function intakeAnswersTab(record, rights, ui = {}, person = null) {
-  const version2 = Number(record?.intakeVersion) === 2;
-  return `${answersPanel(record, { person })}${when(version2 && canSeeContact(record, person), draftTools())}${when(version2, contactCard(record, rights, ui))}${materialsCard(record, rights, ui)}`;
+  return `${answersPanel(record, { person })}${when(canSeeContact(record, person), draftTools())}${contactCard(record, rights, ui)}${materialsCard(record, rights, ui)}`;
 }
 
 // ---------------------------------------------------------------------------
-// The document checklist (Documents tab, version 2)
+// The document checklist (Documents tab)
 // ---------------------------------------------------------------------------
 
 const dashedSlot = (slot) => String(slot).replace(/\./g, "-");
@@ -970,10 +950,8 @@ function checklistRow(card, { variant, markable, movable, off }) {
  * The client's document cards, as the office reads them: every card in full,
  * whatever the service, grouped by sub-step. `rights` is
  * `staffEligibility(record, person)`; a refusal is said once at the top.
- * Returns "" for a version-1 case.
  */
 export function documentChecklist(record, rights, ui = {}) {
-  if (Number(record?.intakeVersion) !== 2) return "";
   const answers = serverAnswersV2(record);
   const cards = cardsFor(answers, record.documentCards ?? []);
   const variant = variantOf(answers);

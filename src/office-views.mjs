@@ -25,7 +25,6 @@ import {
 } from "./ui.mjs";
 import {
   adminEligibility,
-  answerField,
   attemptList,
   followupForms,
   openFollowups,
@@ -335,46 +334,7 @@ export function resolveHelpDrawerBody({ item, person, ui = {} } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The Add a case page
-// ---------------------------------------------------------------------------
-
-// The intake questions in four groups. Flattened, the keys are exactly
-// `INTAKE_ANSWER_KEYS`, in order, so no answer is lost or asked twice. The
-// mailing city and state sit beside the residence, under their own labels.
-export const ADD_CASE_SECTIONS = Object.freeze([
-  ["visit", "Visit", ["service", "year", "language"]],
-  ["situation", "2025 situation", ["residenceCity", "residenceState", "city", "state", "rideshare", "other", "stocks"]],
-  ["client", "Client details", ["firstName", "lastName", "address", "zip", "household"]],
-  ["paperwork", "Paperwork", ["helper", "documents"]],
-]);
-
-const ADD_CASE_SENTENCE = "Creating it saves a draft the office owns. Nobody is emailed or invited.";
-
-/**
- * A walk-in client's answers, entered by the office. The form keeps the ids
- * the walk-in flow has always had (`#assisted-intake-form`,
- * `#field-assisted-<key>`) so a half-typed form survives a re-render.
- *
- * @param {{person: object|null, busy?: boolean}} ui
- */
-export function renderAddCase(ui) {
-  const { person, busy } = ui;
-  const disabled = busy ? "disabled" : "";
-  const pill = `<p class="fiction-pill">${icon("spark")} Fictional data only · ${button("Fill fictional details", "fill-assisted-intake", "text", disabled)}</p>`;
-  const rights = adminEligibility({}, person);
-  if (!rights.assistedIntake.allowed) return `${pill}${explain(rights.assistedIntake)}`;
-  const sections = ADD_CASE_SECTIONS.map(
-    ([, title, keys], index) =>
-      `<fieldset class="panel add-case-section"><legend><span class="section-num">${index + 1}</span> ${esc(title)}</legend><div class="form-grid">${keys
-        .map((key) => answerField(key, "", "assisted"))
-        .join("")}</div></fieldset>`,
-  ).join("");
-  const side = `<aside class="add-case-side"><section class="panel"><h2>Case info</h2>${detailRow("Application ID", "Assigned when the case is created")}${detailRow("Stage", "Draft until the office sends it")}${detailRow("Created by", person.name)}</section><section class="panel"><h2>What happens next</h2><p>${esc(ADD_CASE_SENTENCE)} You record the intake checks and send it from the case itself.</p></section></aside>`;
-  return `${pill}<form id="assisted-intake-form" class="staff-form add-case-form"><div class="add-case-layout"><div class="add-case-sections">${sections}</div>${side}</div><div class="add-case-bar">${button("Cancel", "open-board", "text")}<p class="field-note">${esc(ADD_CASE_SENTENCE)}</p><button type="submit" class="btn primary" ${disabled}>${icon("arrow")} Create case</button></div></form>`;
-}
-
-// ---------------------------------------------------------------------------
-// The version-2 Add a case page (spec 2026-09-30 §4.2, as revised by
+// The Add a case page (spec 2026-09-30 §4.2, as revised by
 // 2026-10-04 §10): each step a heading, one accordion per visible question
 // sub-step under it, and one Documents accordion. The page draws from the
 // controller's draft; `app.mjs` reads it back with the renderer's own readers.

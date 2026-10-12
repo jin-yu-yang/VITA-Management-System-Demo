@@ -3387,9 +3387,9 @@ textarea::placeholder {
 .office-contact .icon {
   color: var(--vt-primary);
 }
-/* Inline buttons are real actions on client screens (Resend code, Edit
-   visit/screening/details, Try again, Dismiss, Get help from the office), so
-   they meet the 44px client floor here. Staff screens keep the shared 30px
+/* Inline buttons are real actions on client screens (Resend code, Try
+   again, Dismiss, Get help from the office), so they meet the 44px client
+   floor here. Staff screens keep the shared 30px
    style. The banners come right after the client bar in page(). */
 .client-shell .btn.inline,
 .client-bar ~ .connection-notice .btn.inline,
@@ -3649,7 +3649,7 @@ textarea::placeholder {
 }
 
 /* ---- Add a case ---- */
-/* Only renderAddCase emits the pill, so the class is its own scope. */
+/* Only Add a case emits the pill, so the class is its own scope. */
 .fiction-pill {
   display: inline-flex;
   flex-wrap: wrap;
@@ -3968,8 +3968,7 @@ textarea::placeholder {
 
 /* Part 4b: intake v2 */
 /* The client's nine-step form (spec 2026-09-30 §3.2), styled from the step-2
-   and step-6 designs. Tokens only; nothing here reaches the version-1 form,
-   whose rail and cards use other class names. */
+   and step-6 designs. Tokens only. */
 
 /* ---- The top bar's Senior version switch ---- */
 .senior-switch {
@@ -4088,7 +4087,7 @@ textarea::placeholder {
   border-radius: 3px;
 }
 /* The office card sits right under the progress bar (spec §3.2), not at the
-   foot of a tall page as version 1's does. */
+   foot of a tall page. */
 .intake-v2 .intake-sidebar {
   justify-content: flex-start;
 }
@@ -5492,40 +5491,6 @@ html:lang(zh-Hant) {
 .language-switch .lang:focus-visible {
   position: relative;
   outline-offset: 1px;
-}
-
-/* A version-1 application in Chinese: a one-line note in the client's
-   language above the English body (spec §2). */
-.v1-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 24px;
-  padding: 11px 16px;
-  font-size: 14px;
-  background: var(--vt-primary-soft);
-  color: var(--vt-ink);
-  border-radius: var(--vt-radius-sm);
-}
-.v1-note .icon {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  color: var(--vt-primary);
-}
-/* The intake's wrapper: the note keeps to the workspace's width, with the
-   client bar's side gutters. */
-.v1-english {
-  padding-top: 20px;
-}
-.v1-english > .v1-note {
-  width: min(1180px, calc(100% - 56px));
-  margin: 0 auto;
-}
-@media (max-width: 800px) {
-  .v1-english > .v1-note {
-    width: calc(100% - 32px);
-  }
 }
 
 /* Whose words the office's request is, above its title and its message. */

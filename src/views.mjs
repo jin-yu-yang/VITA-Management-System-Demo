@@ -9,7 +9,6 @@ import {
 } from "./staff-views.mjs";
 import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
 import {
-  renderAddCase,
   renderAddCaseV2,
   renderFollowups,
   logCallDrawerBody,
@@ -59,9 +58,8 @@ function seniorSwitch(pressed, lang = "en") {
 export function clientHeader(state) {
   const lang = viewLang(state);
   const onDraft = state?.screen === "intake" && state?.savedCase?.stage === "draft";
-  const onV2Draft = onDraft && Number(state?.savedCase?.intakeVersion) === 2;
   return `<header class="client-bar"><button class="client-brand" data-action="open-applications" aria-label="${esc(t("frame.home", {}, lang))}"><img src="src/pcdc-logo.png" alt="PCDC" width="32" height="32"><span class="client-wordmark">ViTally<span class="brand-dot">.</span></span></button><div class="client-bar-actions">${languageSwitch(lang)}${when(
-    onV2Draft,
+    onDraft,
     seniorSwitch(state?.draftAnswers?.form_version === "senior", lang),
   )}${button(
     `${icon("help")} ${esc(t("frame.help", {}, lang))}`,
@@ -314,17 +312,12 @@ export function staffScreen(state) {
   });
 }
 
-// Add a case picks its page by the open case's version; with no case, by the
-// workspace's (2 while a new office draft is open). Before the workspace row
-// has loaded there is nothing to choose, so nothing is offered yet.
+// Add a case: the open office draft, or a new one. Before the workspace row
+// has loaded the new draft has not started yet, so nothing is offered yet.
 function addCasePage(state, person, people) {
   const saved = state.savedCase ?? null;
   if (!saved && !state.officeDraft && !state.workspace)
     return '<p class="muted" role="status">Loading…</p>';
-  const version2 = saved
-    ? Number(saved.intakeVersion) === 2
-    : Boolean(state.officeDraft) || Number(state.workspace?.defaultIntakeVersion) === 2;
-  if (!version2) return renderAddCase({ person, busy: state.busy });
   return renderAddCaseV2({
     person,
     busy: state.busy,

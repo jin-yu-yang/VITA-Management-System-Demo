@@ -29,7 +29,7 @@ const submittedCase = async (f, actor = f.applicantA) => {
     answers: {},
   });
   await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
-    answers: makeSampleAnswers({ version: 2 }),
+    answers: makeSampleAnswers(),
   });
   await f.act(actor, created.caseId, null, "SUBMIT", { confirmed: true });
   return created.caseId;
@@ -84,7 +84,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       });
       const before = await counter(f);
       await f.act(f.applicantA, created.caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers({ version: 2 }),
+        answers: makeSampleAnswers(),
       });
       await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
         confirmed: true,
@@ -138,7 +138,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
         answers: {},
       });
       await f.act(f.applicantA, complete.caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers({ version: 2 }),
+        answers: makeSampleAnswers(),
       });
       const stale = await f.applicantA.rpc(
         "vitally_apply_action",
@@ -187,7 +187,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
             answers: {},
           });
           await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
-            answers: makeSampleAnswers({ version: 2 }),
+            answers: makeSampleAnswers(),
           });
           drafts.push([actor, created.caseId]);
         }

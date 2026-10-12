@@ -86,9 +86,9 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //         revision, preparationVersion, answers, intakeVerified,
 //         preparerId, reviewerId, season, clientNumber, intakeVersion,
 //         intakeVisited, contact, documentCards, requests, documents, history }
-//   intakeVersion: 1 | 2. contact: the case_contacts row as
+//   intakeVersion: 2. contact: the case_contacts row as
 //   { phone, spousePhone, bestContactTime, bestContactNote }, or null when
-//   there is none (always null for version 1). A list entry carries only the
+//   there is none. A list entry carries only the
 //   scalars, intakeVersion and intakeVisited (sub-step ids, [] when none)
 //   included, and no contact. documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,

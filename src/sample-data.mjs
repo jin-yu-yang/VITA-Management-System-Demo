@@ -1,88 +1,8 @@
-import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 import { findQuestion, isAnswered } from "./intake-catalogue.mjs";
 import { newMemberId } from "./intake-form.mjs";
 
-const sharedAnswers = Object.freeze({
-  service: "Drop-off",
-  year: "2025",
-  language: "English",
-  residenceCity: "Philadelphia",
-  residenceState: "PA",
-  city: "Philadelphia",
-  state: "PA",
-  rideshare: "yes",
-  stocks: "no",
-  helper: "self",
-  documents: "ready",
-});
-
-const scenarioTemplates = Object.freeze({
-  ordinary: Object.freeze([
-    Object.freeze({
-      ...sharedAnswers,
-      other: "no",
-      firstName: "Mei",
-      lastName: "Chen",
-      address: "Sample address withheld",
-      zip: "19107",
-      household: "1",
-    }),
-    Object.freeze({
-      ...sharedAnswers,
-      other: "no",
-      firstName: "Jordan",
-      lastName: "Rivera",
-      address: "Fictional address withheld",
-      zip: "19123",
-      household: "2",
-    }),
-  ]),
-  exception: Object.freeze([
-    Object.freeze({
-      ...sharedAnswers,
-      other: "yes",
-      firstName: "Avery",
-      lastName: "Patel",
-      address: "Example address withheld",
-      zip: "19130",
-      household: "3",
-    }),
-  ]),
-});
-
-function templateFor(seed, scenario) {
-  const templates = scenarioTemplates[scenario];
-  if (!templates) throw new RangeError(`Unknown fictional scenario: ${scenario}`);
-  const numericSeed = Number.isFinite(Number(seed)) ? Math.trunc(Number(seed)) : 0;
-  return templates[((numericSeed % templates.length) + templates.length) % templates.length];
-}
-
-function isBlank(value) {
-  return value == null || (typeof value === "string" && value.trim() === "");
-}
-
-export function makeSampleAnswers({ seed = 0, scenario = "ordinary", version = 1, married = false } = {}) {
-  if (Number(version) === 2) return versionTwoAnswers(seed, married);
-  const template = templateFor(seed, scenario);
-  const result = {};
-  for (const key of INTAKE_ANSWER_KEYS) result[key] = template[key];
-  return result;
-}
-
-export function fillBlankAnswers(current = {}, generated = {}, version = 1) {
-  if (Number(version) === 2) return fillBlankVersionTwo(current ?? {}, generated ?? {});
-  const result = {};
-  for (const key of INTAKE_ANSWER_KEYS) {
-    if (!isBlank(current[key])) result[key] = current[key];
-    else if (!isBlank(generated[key])) result[key] = generated[key];
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Version 2 (spec 2026-09-30 §3.3). One fictional person, written out: a text
-// question has no "first valid value", so nothing here walks the catalogue.
-// ---------------------------------------------------------------------------
+// One fictional person (spec 2026-09-30 §3.3), written out: a text question
+// has no "first valid value", so nothing here walks the catalogue.
 
 const V2_PEOPLE = Object.freeze([
   Object.freeze({ first: "Mei", last: "Chen", dob: "1984-05-12", child: "Lin", childDob: "2015-03-14" }),
@@ -212,8 +132,16 @@ function versionTwoAnswers(seed, married) {
   };
 }
 
-// Blank is "not answered" (null, "", spaces, []), and only catalogue fields.
-function fillBlankVersionTwo(current, generated) {
+// One fictional client's answers, fixed by the seed; `married` adds a spouse.
+export function makeSampleAnswers({ seed = 0, married = false } = {}) {
+  return versionTwoAnswers(seed, married);
+}
+
+// The blank answers of `current` filled from `generated`. Blank is "not
+// answered" (null, "", spaces, []), and only catalogue fields.
+export function fillBlankAnswers(current = {}, generated = {}) {
+  current = current ?? {};
+  generated = generated ?? {};
   const result = {};
   for (const key of new Set([...Object.keys(current), ...Object.keys(generated)])) {
     if (!findQuestion(2, key)) continue;
@@ -224,8 +152,8 @@ function fillBlankVersionTwo(current, generated) {
 }
 
 /**
- * Version 2: the fictional details as a draft patch, from the draft as typed
- * and a `makeSampleAnswers({ version: 2 })` sample. A fill touches blank
+ * The fictional details as a draft patch, from the draft as typed and a
+ * `makeSampleAnswers()` sample. A fill touches blank
  * answers only. `replaceEverything` is the new example plus a clear of every
  * other answer already in the draft; the wording choice (`form_version`) and
  * the email stay.
@@ -242,14 +170,14 @@ export function fictionalAnswers(draft = {}, generated = {}, { replaceEverything
   const fresh = takesHousehold
     ? { ...generated, hh: generated.hh.map((member) => ({ ...member, member_id: newId() })) }
     : generated;
-  if (!replaceEverything) return fillBlankAnswers(current, fresh, 2);
+  if (!replaceEverything) return fillBlankAnswers(current, fresh);
   const cleared = Object.fromEntries(
     Object.keys(current)
       // The senior switch is the person's choice of wording, not an answer.
       .filter(
         (key) =>
           key !== "form_version" &&
-          // The email is the person's own, as version 1 keeps the verified one.
+          // The email is the person's own: the verified one stays.
           key !== "email" &&
           findQuestion(2, key) &&
           !(key in generated),

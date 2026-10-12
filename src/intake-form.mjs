@@ -671,7 +671,8 @@ const sameValue = (a, b) => (!isAnswered(a) && !isAnswered(b)) || deepEqual(a, b
 /**
  * Version 2: the save request's answers, every field's sendable value (null
  * clears included), without each top-level field whose sendable value fails
- * checkValue (hh withheld whole if any member fails). Version 1: the draft.
+ * checkValue (hh withheld whole if any member fails). Any other version: the
+ * draft as it is.
  */
 export function withholdInvalid(draft, version) {
   if (Number(version) !== 2) return draft;
@@ -688,7 +689,7 @@ export function withholdInvalid(draft, version) {
   return out;
 }
 
-/** The ids withholdInvalid leaves out ([] for version 1). */
+/** The ids withholdInvalid leaves out ([] for any other version). */
 export function withheldFields(draft, version) {
   if (Number(version) !== 2) return [];
   const sent = withholdInvalid(draft, version);
