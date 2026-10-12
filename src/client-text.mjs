@@ -242,7 +242,7 @@ export const TEXT = Object.freeze({
   "progress.sent": { en: "What you sent", zh: "您发送的文件" },
   "progress.sent_waiting": { en: "Waiting for a volunteer to check it", zh: "等待志愿者核对" },
   "progress.review": { en: "Review progress", zh: "审核进度" },
-  "progress.review_note": { en: "An independent reviewer always checks the work of the volunteer who prepared it. Notes between volunteers stay with the office.", zh: "独立审核员一定会检查准备报税表的志愿者所做的工作。志愿者之间的备注只留在办公室。" },
+  "progress.review_note": { en: "An independent reviewer always checks the work of the volunteer who prepared it. Notes between volunteers stay with the office.", zh: "审核志愿者一定会检查报税志愿者所做的工作。志愿者之间的备注只留在办公室。" },
   "progress.history": { en: "Application history", zh: "申请记录" },
   "progress.history_note": { en: "The latest, all in one place", zh: "最新动态，一目了然" },
   "progress.history_empty": { en: "Updates from the office appear here.", zh: "办公室的最新消息会显示在这里。" },
@@ -408,11 +408,11 @@ export const SENTENCES = Object.freeze({
   "A sample document was recorded by staff and is awaiting verification.": "工作人员已登记一份示例文件，正在等待核实。",
   "A volunteer verified your document. No further action is needed for this request.": "志愿者已核实您的文件。这项请求您无需再做任何事。",
   "Your application was closed by the office. This does not change any return filed elsewhere. Contact PCDC if you have questions.": "您的申请已由办公室关闭。这不影响在其他地方递交的任何报税表。如有疑问，请联系 PCDC。",
-  "Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.": "您的志愿者已记录：报税软件中的准备工作已完成。接下来由独立审核员检查。",
+  "Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.": "报税志愿者已记录：报税软件中的准备工作已完成。接下来由审核志愿者检查。",
   "An independent reviewer is checking your return.": "审核志愿者正在检查您的报税表。",
   "The reviewer asked your preparer to make corrections. No action is needed from you right now.": "审核志愿者已请报税志愿者进行更正。您目前无需做任何事。",
-  "Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.": "您的志愿者已在报税软件中完成所要求的更正。独立审核员会检查更新后的报税表。",
-  // History rows written before migration 020 keep the old sentence.
+  "Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.": "报税志愿者已在报税软件中完成所要求的更正。审核志愿者会检查更新后的报税表。",
+  // History rows written before migration 021 keep the old sentence.
   "Independent review is complete. A volunteer will contact you about next steps. Signing and filing are later milestones and are not done yet.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "A volunteer spoke with you about the next service step.": "志愿者已与您沟通下一步的服务。",
