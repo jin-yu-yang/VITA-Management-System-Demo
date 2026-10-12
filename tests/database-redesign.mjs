@@ -79,19 +79,10 @@ const cardRows = async (f, caseId) =>
       [caseId],
     )
   ).rows;
-const setDefault = (f, version) =>
-  f.sql("update public.workspaces set default_intake_version=$2 where id=$1", [
-    f.workspaceId,
-    version,
-  ]);
-async function v2Case(f, actor = f.applicantA, options = {}) {
-  await setDefault(f, 2);
-  try {
-    return await f.createCase(actor, crypto.randomUUID(), { answers: {}, ...options });
-  } finally {
-    await setDefault(f, 1);
-  }
-}
+// A case created empty, as every version-2 case is; the fixture's workspaces
+// keep the column default, 2.
+const v2Case = (f, actor = f.applicantA, options = {}) =>
+  f.createCase(actor, crypto.randomUUID(), { answers: {}, ...options });
 const visit = (f, caseId, visited, actor = f.applicantA) =>
   f.act(actor, caseId, null, "SAVE_ANSWERS", { answers: {}, visited });
 const card = (f, actor, caseId, personId, slotId, status) =>
@@ -158,13 +149,6 @@ test("visits and document cards on the server", async (t) => {
       assert.deepEqual((await caseRow(f, caseId)).intake_visited, []);
       // Exactly 64 is accepted.
       await visit(f, caseId, Array.from({ length: 64 }, () => "about.you"));
-    });
-
-    await t.test("visited on a version-1 case is refused", async () => {
-      const v1 = await f.createCase(f.applicantA, crypto.randomUUID());
-      assert.equal((await caseRow(f, v1.caseId)).intake_version, 1);
-      await assert.rejects(visit(f, v1.caseId, ["about.you"]), rejected("VALIDATION"));
-      await f.act(f.applicantA, v1.caseId, null, "SAVE_ANSWERS", { answers: { city: "Pittsburgh" } });
     });
 
     await t.test("a stored id the catalogue no longer has is dropped on the next visit save", async () => {
@@ -260,14 +244,6 @@ test("visits and document cards on the server", async (t) => {
       await card(f, f.applicantA, caseId, null, "photo_id.tp", "later");
       assert.deepEqual(await cardRows(f, caseId).then((rows) => rows.length), 1);
       assert.equal(Number((await caseRow(f, caseId)).revision), Number(revision) + 1);
-
-      const v1 = await f.createCase(f.applicantA, crypto.randomUUID());
-      await assert.rejects(card(f, f.applicantA, v1.caseId, null, "w2.household", "later"), rejected("VALIDATION"));
-      await assert.rejects(
-        group(f, f.presenter, v1.caseId, f.sam, "w2.household", "needed"),
-        (error) => ["VALIDATION", "NOT_FOUND"].includes(error.code),
-      );
-      assert.deepEqual(await cardRows(f, v1.caseId), []);
     });
 
     await t.test("staff may mark a card on an office draft and on a submitted case", async () => {

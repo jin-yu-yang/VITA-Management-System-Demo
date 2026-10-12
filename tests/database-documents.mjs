@@ -92,6 +92,7 @@ test("document requests, receipts and verification keep the preparer in charge",
         assert.deepEqual(
           staff.internalHistory.map((entry) => entry.action),
           [
+            "SAVE_ANSWERS",
             "SUBMIT",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
@@ -684,6 +685,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         assert.deepEqual(
           c.internalHistory.map((entry) => entry.action),
           [
+            "SAVE_ANSWERS",
             "SUBMIT",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",

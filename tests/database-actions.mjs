@@ -7,7 +7,6 @@ import {
 } from "./support/database-fixture.mjs";
 import { RPC_SIGNATURES } from "./support/rpc-signatures.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
-import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 // The denial Task 2 already asserts for anonymous table and function access.
 const ANONYMOUS_DENIAL = "42501";
@@ -31,12 +30,7 @@ const participantsOf = async (f, caseId) =>
       )
     ).rows[0].count,
   );
-async function draftCase(f, answers = makeSampleAnswers()) {
-  const created = await f.createCase(f.applicantA, crypto.randomUUID(), {
-    answers,
-  });
-  return created;
-}
+const draftCase = (f) => f.draftCase(f.applicantA);
 async function submittedCase(f) {
   const created = await draftCase(f);
   await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
@@ -59,7 +53,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           created.caseId,
           null,
           "SAVE_ANSWERS",
-          { answers: makeSampleAnswers() },
+          { answers: makeSampleAnswers({ version: 2 }) },
         );
         assert.deepEqual(saved, {
           actionId: saved.actionId,
@@ -72,13 +66,16 @@ test("case actions apply the shared check order against real Supabase", async (t
           created.caseId,
           null,
           "SAVE_ANSWERS",
-          { answers: { city: "Pittsburgh" } },
+          { answers: { addr_city: "Pittsburgh" } },
         );
         assert.equal(patched.revision, 3);
         const draft = await caseRow(f, created.caseId);
         assert.equal(draft.stage, "draft");
-        assert.equal(draft.answers.city, "Pittsburgh");
-        assert.equal(draft.answers.firstName, makeSampleAnswers().firstName);
+        assert.equal(draft.answers.addr_city, "Pittsburgh");
+        assert.equal(
+          draft.answers.tp_first_name,
+          makeSampleAnswers({ version: 2 }).tp_first_name,
+        );
         // A private draft produces internal history only.
         assert.deepEqual(await actions(f, "client_events", created.caseId), []);
         assert.deepEqual(await actions(f, "case_events", created.caseId), [
@@ -94,7 +91,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(first.actor_user_id, f.applicantAUserId);
         assert.equal(first.actor_person_id, null);
         assert.deepEqual(first.detail, {
-          fields: [...INTAKE_ANSWER_KEYS].sort(),
+          fields: Object.keys(makeSampleAnswers({ version: 2 })).sort(),
         });
         const submitted = await f.act(
           f.applicantA,
@@ -232,6 +229,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           [{ person_id: f.alex }],
         );
         assert.deepEqual(await actions(f, "case_events", caseId), [
+          "SAVE_ANSWERS",
           "SUBMIT",
           "VERIFY_INTAKE",
           "CLAIM_PREPARATION",
@@ -273,6 +271,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         }
         assert.equal(await participantsOf(f, caseId), 1);
         assert.deepEqual(await actions(f, "case_events", caseId), [
+          "SAVE_ANSWERS",
           "SUBMIT",
           "VERIFY_INTAKE",
           "CLAIM_PREPARATION",
@@ -288,7 +287,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
         const verify = applyArgs({
           caseId,
-          revision: 2,
+          revision: 3,
           personId: f.sam,
           type: "VERIFY_INTAKE",
           payload: { checks: f.intakeChecks },
@@ -352,9 +351,9 @@ test("case actions apply the shared check order against real Supabase", async (t
         const own = await draftCase(f);
         const save = applyArgs({
           caseId: own.caseId,
-          revision: 1,
+          revision: 2,
           type: "SAVE_ANSWERS",
-          payload: { answers: { city: "Pittsburgh" } },
+          payload: { answers: { addr_city: "Pittsburgh" } },
         });
         assert.equal(
           (await f.applicantA.rpc("vitally_apply_action", save)).error,
@@ -381,9 +380,9 @@ test("case actions apply the shared check order against real Supabase", async (t
         const created = await draftCase(f);
         const save = applyArgs({
           caseId: created.caseId,
-          revision: 1,
+          revision: 2,
           type: "SAVE_ANSWERS",
-          payload: { answers: { city: "Pittsburgh" } },
+          payload: { answers: { addr_city: "Pittsburgh" } },
         });
         const accepted = await f.applicantA.rpc("vitally_apply_action", save);
         assert.equal(accepted.error, null);
@@ -398,9 +397,9 @@ test("case actions apply the shared check order against real Supabase", async (t
           "vitally_apply_action",
           applyArgs({
             caseId: created.caseId,
-            revision: 2,
+            revision: 3,
             type: "SAVE_ANSWERS",
-            payload: { answers: { city: "Pittsburgh" } },
+            payload: { answers: { addr_city: "Pittsburgh" } },
           }),
         );
         assert.equal(fresh.error.code, "VT002");
@@ -414,7 +413,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         const spec = {
           revision: 1,
           type: "SAVE_ANSWERS",
-          payload: { answers: { city: "Pittsburgh" } },
+          payload: { answers: { addr_city: "Pittsburgh" } },
         };
         const attempts = [crypto.randomUUID(), crypto.randomUUID()];
         const other = await f.applicantB.rpc(
@@ -452,14 +451,14 @@ test("case actions apply the shared check order against real Supabase", async (t
         await assert.rejects(
           () =>
             f.act(f.applicantB, caseId, null, "SAVE_ANSWERS", {
-              answers: { city: "Pittsburgh" },
+              answers: { addr_city: "Pittsburgh" },
             }),
           rejected("NOT_FOUND"),
         );
         await assert.rejects(
           () =>
             f.act(f.applicantA, crypto.randomUUID(), null, "SAVE_ANSWERS", {
-              answers: { city: "Pittsburgh" },
+              answers: { addr_city: "Pittsburgh" },
             }),
           rejected("NOT_FOUND"),
         );
@@ -482,14 +481,14 @@ test("case actions apply the shared check order against real Supabase", async (t
           "vitally_apply_action",
           applyArgs({
             caseId: draft.caseId,
-            revision: 1,
+            revision: 2,
             personId: f.sam,
             type: "SAVE_ANSWERS",
-            payload: { answers: { city: "Pittsburgh" } },
+            payload: { answers: { addr_city: "Pittsburgh" } },
           }),
         );
         assert.equal(forged.error.code, "VT001");
-        assert.equal(await revisionOf(f, draft.caseId), 1);
+        assert.equal(await revisionOf(f, draft.caseId), 2);
         const received = await submittedCase(f);
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await assert.rejects(
@@ -536,14 +535,14 @@ test("case actions apply the shared check order against real Supabase", async (t
           await assert.rejects(
             () =>
               f.act(f.presenter, assisted.caseId, personId, "SAVE_ANSWERS", {
-                answers: makeSampleAnswers(),
+                answers: makeSampleAnswers({ version: 2 }),
               }),
             rejected("FORBIDDEN"),
           );
         await assert.rejects(
           () =>
             f.act(f.applicantA, assisted.caseId, null, "SAVE_ANSWERS", {
-              answers: makeSampleAnswers(),
+              answers: makeSampleAnswers({ version: 2 }),
             }),
           rejected("NOT_FOUND"),
         );
@@ -552,7 +551,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           assisted.caseId,
           f.sam,
           "SAVE_ANSWERS",
-          { answers: makeSampleAnswers() },
+          { answers: makeSampleAnswers({ version: 2 }) },
         );
         assert.equal(saved.revision, 2);
         await f.act(f.presenter, assisted.caseId, f.sam, "SUBMIT", {
@@ -576,7 +575,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         await assert.rejects(
           () =>
             f.act(f.presenter, owned, f.sam, "SAVE_ANSWERS", {
-              answers: { city: "Pittsburgh" },
+              answers: { addr_city: "Pittsburgh" },
             }),
           rejected("FORBIDDEN"),
         );
@@ -630,7 +629,7 @@ test("case actions apply the shared check order against real Supabase", async (t
             rejected("INVALID_TRANSITION"),
           );
         for (const [type, payload] of [
-          ["SAVE_ANSWERS", { answers: { city: "Pittsburgh" } }],
+          ["SAVE_ANSWERS", { answers: { addr_city: "Pittsburgh" } }],
           ["SUBMIT", { confirmed: true }],
         ])
           await assert.rejects(
@@ -647,7 +646,7 @@ test("case actions apply the shared check order against real Supabase", async (t
       },
     );
     await t.test(
-      "payload whitelists and server-side screening reject unsupported answers",
+      "payload whitelists and the server-side submit check reject unsupported answers",
       async () => {
         const draft = await f.createCase(f.applicantA, crypto.randomUUID(), {
           answers: {},
@@ -656,8 +655,8 @@ test("case actions apply the shared check order against real Supabase", async (t
         for (const payload of [
           { answers: { notAnAnswer: "x" } },
           { answers: { owner_user_id: f.applicantBUserId } },
-          { answers: { city: 42 } },
-          { answers: { city: "x".repeat(1001) } },
+          { answers: { addr_city: 42 } },
+          { answers: { addr_city: "x".repeat(201) } },
           { answers: {}, extra: true },
           { notAnswers: {} },
           {},
@@ -692,18 +691,19 @@ test("case actions apply the shared check order against real Supabase", async (t
             () => f.act(f.applicantA, caseId, null, "SUBMIT", payload),
             rejected("VALIDATION"),
           );
+        // Version 2 has no screening: SUBMIT refuses a required, visible field
+        // that is missing, whether it is cleared with null or an empty value,
+        // and a contact field counts from case_contacts.
         for (const patch of [
-          { other: "yes" },
-          { stocks: "yes" },
-          { rideshare: "unsure" },
-          { rideshare: "" },
-          { year: "2024" },
-          { residenceState: "Other" },
-          { helper: "volunteer" },
-          { firstName: "   " },
+          { tp_first_name: null },
+          { addr_city: "" },
+          { marital_status: null },
+          { service: null },
+          { hh: null },
+          { tp_phone: null },
         ]) {
           await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-            answers: makeSampleAnswers(),
+            answers: makeSampleAnswers({ version: 2 }),
           });
           await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
             answers: patch,
@@ -717,7 +717,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         }
         // Positive control: complete, supported answers do submit.
         await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-          answers: makeSampleAnswers(),
+          answers: makeSampleAnswers({ version: 2 }),
         });
         await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
         assert.equal((await caseRow(f, caseId)).stage, "received");
@@ -781,7 +781,7 @@ test("case actions apply the shared check order against real Supabase", async (t
               caseId,
               revision,
               type: "SAVE_ANSWERS",
-              payload: { answers: { city: "Pittsburgh" } },
+              payload: { answers: { addr_city: "Pittsburgh" } },
             },
             "VT004",
           ],
@@ -890,7 +890,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
           );
           const context = {
             draftCaseId: draft.caseId,
-            draftRevision: 1,
+            draftRevision: 2,
             assistanceItemId: seeded.itemId,
             assistanceRevision: 1,
             assistPersonId: f.sam,

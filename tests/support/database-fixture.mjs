@@ -122,15 +122,7 @@ export const assistanceArgs = ({
   p_type: type,
   p_note: note,
 });
-// `intakeVersion` is the version both of the fixture's workspaces are set to
-// while they are initialised, before anything seeds: 1 (the default), 2, or
-// `null` to leave the column default as the migrations left it.
-export async function createDatabaseFixture({
-  afterInitialize,
-  intakeVersion = 1,
-} = {}) {
-  if (intakeVersion !== null && intakeVersion !== 1 && intakeVersion !== 2)
-    throw new TypeError("intakeVersion must be 1, 2 or null.");
+export async function createDatabaseFixture({ afterInitialize } = {}) {
   const target = await assertTestTarget();
   const runManifest = await createRun(),
     run = ownedRun(runManifest);
@@ -185,6 +177,17 @@ export async function createDatabaseFixture({
     });
     if (error) throw databaseError(error);
     return data;
+  };
+  // A draft with answers. Version 2 refuses a create that carries answers (011's
+  // insert trigger, VT007), so the case is created empty and the answers are
+  // saved straight after, as the client's own form does.
+  f.draftCase = async (
+    actor,
+    { mode = "client", personId = null, answers = makeSampleAnswers({ version: 2 }) } = {},
+  ) => {
+    const created = await f.createCase(actor, randomUUID(), { mode, personId, answers: {} });
+    await f.act(actor, created.caseId, personId, "SAVE_ANSWERS", { answers });
+    return created;
   };
   f.intakeChecks = INTAKE_CHECKS;
   // A row the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
@@ -257,9 +260,7 @@ export async function createDatabaseFixture({
   };
   // An unclaimed case waiting for a preparer, built only through public actions.
   f.readyCase = async () => {
-    const created = await f.createCase(f.applicantA, randomUUID(), {
-      answers: makeSampleAnswers(),
-    });
+    const created = await f.draftCase(f.applicantA);
     await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
       confirmed: true,
     });
@@ -273,11 +274,7 @@ export async function createDatabaseFixture({
   // An assisted case with no client owner, prepared by Alex and waiting on one
   // open document request: the case the staff receipt action exists for.
   f.assistedCase = async () => {
-    const created = await f.createCase(f.presenter, randomUUID(), {
-      mode: "assisted",
-      personId: f.sam,
-      answers: makeSampleAnswers(),
-    });
+    const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
     await f.act(f.presenter, created.caseId, f.sam, "SUBMIT", {
       confirmed: true,
     });
@@ -339,9 +336,7 @@ export async function createDatabaseFixture({
   // items have no creating action in this scope, so the row is seeded through
   // the privileged connection; its case is built only through public actions.
   f.seedAssistance = async () => {
-    const created = await f.createCase(f.applicantA, randomUUID(), {
-      answers: makeSampleAnswers(),
-    });
+    const created = await f.draftCase(f.applicantA);
     await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
       confirmed: true,
     });
@@ -418,9 +413,9 @@ export async function createDatabaseFixture({
     const [current] = (
       await f.sql("select stage,answers from public.cases where id=$1", [caseId])
     ).rows;
-    if (current?.stage === "draft" && !current?.answers?.year)
+    if (current?.stage === "draft" && Object.keys(current?.answers ?? {}).length === 0)
       await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers(),
+        answers: makeSampleAnswers({ version: 2 }),
       });
     await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
@@ -630,11 +625,6 @@ export async function createDatabaseFixture({
               "insert into vitally_private.test_workspaces(workspace_id,run_id) values($1,$2)",
               [setup.workspaceId, runManifest.runId],
             );
-            if (intakeVersion !== null)
-              await connection.query(
-                "update public.workspaces set default_intake_version = $2 where id = $1",
-                [setup.workspaceId, intakeVersion],
-              );
             if (afterInitialize)
               await afterInitialize({
                 workspaceId: setup.workspaceId,

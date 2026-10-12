@@ -345,9 +345,9 @@ export async function loginTestUserById({ page, actor, fixture, otp }) {
   }
 }
 
-export async function createBrowserFixture({ intakeVersion = 1 } = {}) {
+export async function createBrowserFixture() {
   const target = await assertTestTarget();
-  const database = await createDatabaseFixture({ intakeVersion });
+  const database = await createDatabaseFixture();
   const browsers = [];
   let server = null;
   try {

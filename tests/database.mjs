@@ -224,7 +224,7 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
         await assert.rejects(
           () =>
             f.createCase(f.applicantA, actionId, {
-              answers: { firstName: "Changed" },
+              answers: { tp_first_name: "Changed" },
             }),
           rejected("VALIDATION"),
         );
@@ -273,7 +273,7 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
         await assert.rejects(
           () =>
             f.createCase(f.applicantA, crypto.randomUUID(), {
-              answers: { firstName: 42 },
+              answers: { tp_first_name: 42 },
             }),
           rejected("VALIDATION"),
         );

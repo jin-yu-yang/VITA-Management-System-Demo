@@ -29,7 +29,7 @@ const submittedCase = async (f, actor = f.applicantA) => {
     answers: {},
   });
   await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
-    answers: makeSampleAnswers(),
+    answers: makeSampleAnswers({ version: 2 }),
   });
   await f.act(actor, created.caseId, null, "SUBMIT", { confirmed: true });
   return created.caseId;
@@ -84,7 +84,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       });
       const before = await counter(f);
       await f.act(f.applicantA, created.caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers(),
+        answers: makeSampleAnswers({ version: 2 }),
       });
       await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
         confirmed: true,
@@ -100,17 +100,13 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
           [created.caseId],
         )
       ).rows;
-      assert.equal(event.detail.clientNumber, before + 1);
-      assert.equal(event.detail.screening, "continue");
+      // Version 2 has no screening, so the number is all the detail says.
+      assert.deepEqual(event.detail, { clientNumber: before + 1 });
     });
 
     await t.test("an assisted submit takes the next number", async () => {
       const previous = await submittedCase(f);
-      const created = await f.createCase(f.presenter, crypto.randomUUID(), {
-        mode: "assisted",
-        personId: f.sam,
-        answers: makeSampleAnswers(),
-      });
+      const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
       await f.act(f.presenter, created.caseId, f.sam, "SUBMIT", {
         confirmed: true,
       });
@@ -142,7 +138,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
         answers: {},
       });
       await f.act(f.applicantA, complete.caseId, null, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers(),
+        answers: makeSampleAnswers({ version: 2 }),
       });
       const stale = await f.applicantA.rpc(
         "vitally_apply_action",
@@ -161,11 +157,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
     await t.test(
       "closing an assisted draft without sending assigns nothing",
       async () => {
-        const created = await f.createCase(f.presenter, crypto.randomUUID(), {
-          mode: "assisted",
-          personId: f.sam,
-          answers: makeSampleAnswers(),
-        });
+        const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
         const before = await counter(f);
         await f.act(f.presenter, created.caseId, f.sam, "CLOSE_CASE", {
           reason: "The client decided to file elsewhere.",
@@ -195,7 +187,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
             answers: {},
           });
           await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
-            answers: makeSampleAnswers(),
+            answers: makeSampleAnswers({ version: 2 }),
           });
           drafts.push([actor, created.caseId]);
         }

@@ -159,6 +159,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         assert.deepEqual(
           c.internalHistory.map((entry) => entry.action),
           [
+            "SAVE_ANSWERS",
             "SUBMIT",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",

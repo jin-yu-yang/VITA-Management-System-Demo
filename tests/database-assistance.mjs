@@ -6,7 +6,6 @@ import {
   assistanceArgs,
   rejected,
 } from "./support/database-fixture.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
 const RESOLUTION_NOTE = "Helped complete fictional forms";
 const ESCALATION_REASON = "No response to the document request.";
 const CLOSURE_REASON = "The client asked us to stop and file elsewhere.";
@@ -561,7 +560,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
         assert.ok(reminded.lastRemindedAt > after.lastRemindedAt);
         assert.deepEqual(
           reminded.internalHistory.map((entry) => entry.action),
-          ["SUBMIT", "VERIFY_INTAKE", "REMIND", "REMIND"],
+          ["SAVE_ANSWERS", "SUBMIT", "VERIFY_INTAKE", "REMIND", "REMIND"],
         );
         assert.deepEqual(reminded.history, before.history);
       },
@@ -570,7 +569,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
       const caseId = await f.readyCase();
       const remind = applyArgs({
         caseId,
-        revision: 3,
+        revision: 4,
         personId: f.sam,
         type: "REMIND",
       });
@@ -580,10 +579,10 @@ test("reminders record a simulated nudge on available work", async (t) => {
       assert.equal(replay.error, null);
       assert.deepEqual(replay.data, first.data);
       const staff = await f.readStaffCase(caseId);
-      assert.equal(staff.revision, 4);
+      assert.equal(staff.revision, 5);
       assert.deepEqual(
         staff.internalHistory.map((entry) => entry.action),
-        ["SUBMIT", "VERIFY_INTAKE", "REMIND"],
+        ["SAVE_ANSWERS", "SUBMIT", "VERIFY_INTAKE", "REMIND"],
       );
     });
     await t.test("work nobody is waiting for takes no reminder", async () => {
@@ -594,48 +593,40 @@ test("reminders record a simulated nudge on available work", async (t) => {
       await refuseAction(
         f,
         f.presenter,
-        { ...remind, caseId: claimed, revision: 4 },
+        { ...remind, caseId: claimed, revision: 5 },
         "VT004",
       );
       // Intake that has not been verified is not on anyone's queue yet.
-      const created = await f.createCase(f.applicantA, crypto.randomUUID(), {
-        answers: makeSampleAnswers(),
-      });
+      const created = await f.draftCase(f.applicantA);
       await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
         confirmed: true,
       });
       await refuseAction(
         f,
         f.presenter,
-        { ...remind, caseId: created.caseId, revision: 2 },
+        { ...remind, caseId: created.caseId, revision: 3 },
         "VT004",
       );
       // An assisted draft has no queue either; a client draft is invisible.
-      const assisted = await f.createCase(f.presenter, crypto.randomUUID(), {
-        mode: "assisted",
-        personId: f.sam,
-        answers: makeSampleAnswers(),
-      });
+      const assisted = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
       await refuseAction(
         f,
         f.presenter,
-        { ...remind, caseId: assisted.caseId, revision: 1 },
+        { ...remind, caseId: assisted.caseId, revision: 2 },
         "VT004",
       );
-      const draft = await f.createCase(f.applicantA, crypto.randomUUID(), {
-        answers: makeSampleAnswers(),
-      });
+      const draft = await f.draftCase(f.applicantA);
       await refuseAction(
         f,
         f.presenter,
-        { ...remind, caseId: draft.caseId, revision: 1 },
+        { ...remind, caseId: draft.caseId, revision: 2 },
         "VT002",
       );
       assert.equal((await f.readStaffCase(claimed)).lastRemindedAt, null);
     });
     await t.test("only an admin presenter may remind", async () => {
       const caseId = await f.readyCase();
-      const remind = { caseId, revision: 3, type: "REMIND", payload: {} };
+      const remind = { caseId, revision: 4, type: "REMIND", payload: {} };
       for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
         await refuseAction(f, f.presenter, { ...remind, personId }, "VT001");
       // A presenter-only action stays out of the client's reach either way.
@@ -661,7 +652,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
         );
       const before = await f.readStaffCase(caseId);
       assert.equal(before.lastRemindedAt, null);
-      assert.equal(before.revision, 3);
+      assert.equal(before.revision, 4);
       await f.act(f.presenter, caseId, f.sam, "REMIND", {});
       assert.ok((await f.readStaffCase(caseId)).lastRemindedAt);
     });
@@ -714,7 +705,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
         assert.equal(after.preparerId, f.alex);
         assert.deepEqual(after.participants, [f.alex]);
         assert.equal(after.intakeVerified, true);
-        assert.equal(after.answers.firstName, before.answers.firstName);
+        assert.equal(after.answers.tp_first_name, before.answers.tp_first_name);
         const event = after.internalHistory.at(-1);
         assert.equal(event.action, "CLOSE_CASE");
         assert.deepEqual(event.detail, { reason: CLOSURE_REASON });
@@ -744,7 +735,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
             f.applicantA,
             {
               type: "SAVE_ANSWERS",
-              payload: { answers: { city: "Pittsburgh" } },
+              payload: { answers: { addr_city: "Pittsburgh" } },
             },
           ],
           [f.applicantA, { type: "SUBMIT", payload: { confirmed: true } }],
@@ -847,7 +838,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
         const caseId = await f.readyCase();
         const close = {
           caseId,
-          revision: 3,
+          revision: 4,
           personId: f.sam,
           type: "CLOSE_CASE",
         };
@@ -882,7 +873,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
       async () => {
         const caseId = await f.readyCase();
         const payload = { reason: CLOSURE_REASON, confirmed: true };
-        const close = { caseId, revision: 3, type: "CLOSE_CASE", payload };
+        const close = { caseId, revision: 4, type: "CLOSE_CASE", payload };
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await refuseAction(f, f.presenter, { ...close, personId }, "VT001");
         await refuseAction(f, f.applicantA, { ...close }, "VT001");
@@ -894,24 +885,16 @@ test("closure cancels pending work without erasing its history", async (t) => {
         );
         await refuseAction(f, f.applicantB, { ...close }, "VT002");
         // A client's own draft is the client's alone, so it is not closable.
-        const draft = await f.createCase(f.applicantA, crypto.randomUUID(), {
-          answers: makeSampleAnswers(),
-        });
+        const draft = await f.draftCase(f.applicantA);
         await refuseAction(
           f,
           f.presenter,
-          { ...close, caseId: draft.caseId, revision: 1, personId: f.sam },
+          { ...close, caseId: draft.caseId, revision: 2, personId: f.sam },
           "VT002",
         );
         // An assisted draft, a received case and preparation-ready work close.
-        const assisted = await f.createCase(f.presenter, crypto.randomUUID(), {
-          mode: "assisted",
-          personId: f.sam,
-          answers: makeSampleAnswers(),
-        });
-        const received = await f.createCase(f.applicantA, crypto.randomUUID(), {
-          answers: makeSampleAnswers(),
-        });
+        const assisted = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
+        const received = await f.draftCase(f.applicantA);
         await f.act(f.applicantA, received.caseId, null, "SUBMIT", {
           confirmed: true,
         });

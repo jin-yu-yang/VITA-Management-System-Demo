@@ -5,7 +5,6 @@ import {
   applyArgs,
   rejected,
 } from "./support/database-fixture.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import {
@@ -94,23 +93,10 @@ const caseRow = async (f, caseId) =>
 const contactRow = async (f, caseId) =>
   (await f.sql("select * from public.case_contacts where case_id=$1", [caseId]))
     .rows[0];
-const setDefault = (f, version) =>
-  f.sql("update public.workspaces set default_intake_version=$2 where id=$1", [
-    f.workspaceId,
-    version,
-  ]);
-// A case created while the workspace default is 2, then the default is back at 1.
-async function v2Case(f, actor = f.applicantA, options = {}) {
-  await setDefault(f, 2);
-  try {
-    return await f.createCase(actor, crypto.randomUUID(), {
-      answers: {},
-      ...options,
-    });
-  } finally {
-    await setDefault(f, 1);
-  }
-}
+// A case created empty, as every version-2 case is; the fixture's workspaces
+// keep the column default, 2.
+const v2Case = (f, actor = f.applicantA, options = {}) =>
+  f.createCase(actor, crypto.randomUUID(), { answers: {}, ...options });
 const save = (f, caseId, answers, actor = f.applicantA, personId = null) =>
   f.act(actor, caseId, personId, "SAVE_ANSWERS", { answers });
 
@@ -118,8 +104,6 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
   const f = await createDatabaseFixture();
   try {
     await t.test("a case takes its workspace's default version", async () => {
-      const v1 = await f.createCase(f.applicantA, crypto.randomUUID());
-      assert.equal((await caseRow(f, v1.caseId)).intake_version, 1);
       const v2 = await v2Case(f);
       assert.equal((await caseRow(f, v2.caseId)).intake_version, 2);
       assert.equal(
@@ -129,103 +113,41 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
             [f.workspaceId],
           )
         ).rows[0].default_intake_version,
-        1,
+        2,
       );
     });
 
     await t.test("a version-2 case starts empty", async () => {
-      await setDefault(f, 2);
-      try {
-        await assert.rejects(
-          f.createCase(f.applicantA, crypto.randomUUID(), {
-            answers: { firstName: "Mei" },
-          }),
-          rejected("VALIDATION"),
-        );
-        const empty = await f.createCase(f.applicantA, crypto.randomUUID(), {
-          answers: {},
-        });
-        assert.deepEqual((await caseRow(f, empty.caseId)).answers, {});
-      } finally {
-        await setDefault(f, 1);
-      }
+      await assert.rejects(
+        f.createCase(f.applicantA, crypto.randomUUID(), {
+          answers: { tp_first_name: "Mei" },
+        }),
+        rejected("VALIDATION"),
+      );
+      const empty = await f.createCase(f.applicantA, crypto.randomUUID(), {
+        answers: {},
+      });
+      assert.deepEqual((await caseRow(f, empty.caseId)).answers, {});
     });
 
     await t.test("a case's version never changes", async () => {
-      const v1 = await f.createCase(f.applicantA, crypto.randomUUID());
       const v2 = await v2Case(f);
-      await assert.rejects(
-        f.sql("update public.cases set intake_version=2 where id=$1", [v1.caseId]),
-        rejected("VALIDATION"),
-      );
       await assert.rejects(
         f.sql("update public.cases set intake_version=1 where id=$1", [v2.caseId]),
         rejected("VALIDATION"),
       );
     });
 
-    await t.test("a sample reset with the default at 1 seeds version-1 samples", async () => {
-      await f.seedFixtures();
-      const versions = (
-        await f.sql(
-          "select distinct intake_version from public.cases where workspace_id=$1 and fixture",
-          [f.workspaceId],
-        )
-      ).rows.map((row) => row.intake_version);
-      assert.deepEqual(versions, [1]);
-    });
-
-    await t.test("version 1 saves and submits exactly as before", async () => {
-      const created = await f.createCase(f.applicantA, crypto.randomUUID());
-      await save(f, created.caseId, makeSampleAnswers());
-      const submitted = await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
-        confirmed: true,
-      });
-      assert.equal(submitted.revision, 3);
-      const row = await caseRow(f, created.caseId);
-      assert.equal(row.stage, "received");
-      assert.deepEqual(row.answers, makeSampleAnswers());
-      assert.ok(row.client_number > 0);
-      assert.equal(await contactRow(f, created.caseId), undefined);
-      const [event] = (
-        await f.sql(
-          "select detail from public.case_events where case_id=$1 and action='SUBMIT'",
-          [created.caseId],
-        )
-      ).rows;
-      assert.equal(event.detail.screening, "continue");
-      // Version-2 keys are not version-1 keys.
-      await assert.rejects(
-        save(f, (await f.createCase(f.applicantA, crypto.randomUUID())).caseId, {
-          tp_first_name: "Mei",
-        }),
-        rejected("VALIDATION"),
-      );
-    });
-
-    await t.test("a bad payload answers VALIDATION before any stage check, in both versions", async () => {
-      // Version 1: a received case refuses a bad key as VALIDATION and a good
-      // one as INVALID_TRANSITION, so the answer check still runs first.
-      const v1 = await f.createCase(f.applicantA, crypto.randomUUID(), {
-        answers: makeSampleAnswers(),
-      });
-      await f.act(f.applicantA, v1.caseId, null, "SUBMIT", { confirmed: true });
-      await assert.rejects(
-        save(f, v1.caseId, { notAnAnswer: "x" }),
-        rejected("VALIDATION"),
-      );
-      await assert.rejects(
-        save(f, v1.caseId, { city: 42 }),
-        rejected("VALIDATION"),
-      );
-      await assert.rejects(
-        save(f, v1.caseId, { city: "Pittsburgh" }),
-        rejected("INVALID_TRANSITION"),
-      );
-      // Version 2 keeps the same order.
+    await t.test("a bad payload answers VALIDATION before any stage check", async () => {
+      // A received case refuses a bad key or value as VALIDATION and a good one
+      // as INVALID_TRANSITION, so the answer check still runs first.
       const v2 = await v2Case(f);
       await save(f, v2.caseId, completeAnswers());
       await f.act(f.applicantA, v2.caseId, null, "SUBMIT", { confirmed: true });
+      await assert.rejects(
+        save(f, v2.caseId, { notAnAnswer: "x" }),
+        rejected("VALIDATION"),
+      );
       await assert.rejects(
         save(f, v2.caseId, { tp_dob: "1980-02-30" }),
         rejected("VALIDATION"),
@@ -879,15 +801,6 @@ test("contact and materials actions", async (t) => {
       assert.equal((await contactRow(f, caseId)).best_contact_note.length, 200);
     });
 
-    await t.test("a version-1 case has no contacts row to update", async () => {
-      const created = await f.createCase(f.applicantA, crypto.randomUUID());
-      await assert.rejects(
-        update(created.caseId, { bestContactNote: "Hello" }),
-        rejected("VALIDATION"),
-      );
-      assert.equal(await contactRow(f, created.caseId), undefined);
-    });
-
     await t.test("staff record the materials received, and a second call replaces them", async () => {
       const caseId = await submittedV2();
       await record(caseId, ["w2", "photo_id"]);
@@ -927,15 +840,6 @@ test("contact and materials actions", async (t) => {
       const added = rows.find((row) => row.item === "1099int");
       assert.equal(added.recorded_by_person_id, f.alex);
       assert.ok(added.received_at > photoBefore.received_at);
-    });
-
-    await t.test("RECORD_MATERIALS works on a version-1 case too", async () => {
-      const caseId = await f.readyCase();
-      await record(caseId, ["1099nec", "prior_year_1040"]);
-      assert.deepEqual(
-        (await materialRows(caseId)).map((row) => row.item),
-        ["1099nec", "prior_year_1040"],
-      );
     });
 
     await t.test("only staff who may act record materials", async () => {
