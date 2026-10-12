@@ -22,7 +22,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is twenty-one plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is twenty-two plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -46,7 +46,8 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `017_documents_and_visits.sql` | `cases.intake_visited`; `case_document_cards`; `document_card_rules()`; the SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP actions; SAVE_ANSWERS takes an optional `visited` list |
 | `018_document_card_authority.sql` | Card authority: SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP for staff who work on the case (`works_on_case`: office staff on any case, a volunteer as its preparer or reviewer), no longer a capability |
 | `019_fixtures_v2.sql` | Samples follow the workspace's version: version-2 samples (answers, a `case_contacts` row, a household member with a fixed `member_id`) in a version-2 workspace; a checkpoint reload clears the sample's materials and card marks |
-| `021_review_approved_message.sql` | The review-approved history line says signing and filing come next; `act_approve_review` (006) and `fixture_history` (009) copied with only that sentence changed. 020 is left free for the version-2 switch-over |
+| `020_intake_v2_default.sql` | The switch-over: version 2 is the default intake version (column default and every workspace). Redefines no function, so it gives the same result before or after 021 and 022. Existing cases keep their version |
+| `021_review_approved_message.sql` | The review-approved history line says signing and filing come next; `act_approve_review` (006) and `fixture_history` (009) copied with only that sentence changed. |
 | `022_intake_catalogue_<hash8>.sql` | Generated: the wording review's catalogue text (upload tips that list several documents say "them") |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
@@ -444,8 +445,8 @@ Migration 009 seeds six sample cases, one per story point (`preparation_ready`,
   009's. In a version-2 workspace each is inserted empty (011's insert trigger allows nothing
   else), then gets its answers from `fixture_answers_v2` and a `case_contacts` row from
   `fixture_contact_v2` (phones `2155550101`–`06`, best time weekday evenings) before its scenario
-  is applied. Their household member carries a fixed `member_id`. No migration yet changes a
-  workspace's `default_intake_version`: the switch-over is held for the group's wording review.
+  is applied. Their household member carries a fixed `member_id`. Migration 020 sets every
+  workspace's `default_intake_version` to 2, so a reset seeds these version-2 samples unless a workspace is set back to 1.
 - **A checkpoint clears office work on the sample:** its `case_materials` and
   `case_document_cards` rows go with the rest of its workflow records; its `case_contacts` row stays.
 
