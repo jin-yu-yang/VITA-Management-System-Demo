@@ -26,11 +26,11 @@
 
 ## 3. Docs and project rules
 
-- [ ] 3.1 Update `docs/developer/database.md`, `docs/developer/architecture.md` and `docs/setup.md`:
+- [x] 3.1 Update `docs/developer/database.md`, `docs/developer/architecture.md` and `docs/setup.md`:
   - add the `020_intake_v2_default.sql` row;
   - the count becomes 22 migrations, and drop "020 is left free";
   - reword the "still 1 everywhere" and "No migration yet changes… held" lines to say 020 made version 2 the default;
   - rewrite setup.md's last-verified database clause with this change's count and date;
   - record the database suite's observed count.
-- [ ] 3.2 Update `README.md` and `docs/design/redesign-review.md`: version 2 is the default.
-- [ ] 3.3 Update CLAUDE.md's "Versions" rule. Version 2 is the default for new applications. Version 1 stays for existing cases until its own removal change. Drop the note about the wording review.
+- [x] 3.2 Update `README.md` and `docs/design/redesign-review.md`: version 2 is the default.
+- [x] 3.3 Update CLAUDE.md's "Versions" rule. Version 2 is the default for new applications. Version 1 stays for existing cases until its own removal change. Drop the note about the wording review.
