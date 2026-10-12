@@ -409,6 +409,18 @@ const withHant = (fn) => {
   }
 };
 
+test("the relationship box follows the form's language; the English form keeps English", () => {
+  const row = (fields, k) => fields.text[F(`page1[0].namesOf[0].Row${k}[0].relationshipToYou[0]`)];
+  const en = draft({ ...MARRIED, hh: SIX });
+  assert.equal(row(en, 1), "Son / Daughter");
+  const simplified = draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-s" });
+  assert.equal(row(simplified, 1), "子女");
+  assert.equal(row(simplified, 2), "继子女");
+  const traditional = withHant(() => draft({ ...MARRIED, hh: SIX }, { ...OPTIONS, form: "zh-t" }));
+  assert.equal(row(traditional, 1), HANT_MAP["子女"]);
+  assert.equal(row(traditional, 2), HANT_MAP["继子女"]);
+});
+
 test("the 简体 form: Not sure in Chinese with the catalogue's wording, joined with 、", () => {
   const { comments } = draft(MARRIED, { ...OPTIONS, form: "zh-s" });
   const notSure = [

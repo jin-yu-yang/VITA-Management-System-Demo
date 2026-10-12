@@ -1476,7 +1476,7 @@ async function runPermutation(t, roles) {
       await waitForBadge(client, "Review complete");
       await waitForText(
         client,
-        "A volunteer will contact you about next steps.",
+        "A volunteer will contact you soon to sign and file.",
         RENDER_MS,
       );
       await waitForText(client, "A volunteer spoke with you about the next service step.");

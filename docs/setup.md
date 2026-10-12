@@ -307,7 +307,7 @@ check failed. Check, in this order:
 
 ## 4. Migrations
 
-Nineteen migrations, applied in order. Re-running the migrator on an already-migrated stack is safe,
+Twenty migrations, applied in order (number 020 is left free for the version-2 switch-over). Re-running the migrator on an already-migrated stack is safe,
 but not because the files themselves are re-runnable — `001` and `002` create their tables with a
 plain `create table`, which fails the second time. What makes it safe is the ledger
 `tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
@@ -335,6 +335,7 @@ already applied, so **the migrations are run only through the migrator, never by
 | `017_documents_and_visits.sql` | `cases.intake_visited` (the sub-steps a client has opened, sent with SAVE_ANSWERS); `case_document_cards` (one row per document card the client or staff marked; client-visible on own cases, staff after submit; inserts and updates published to Realtime; no person column); the SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP actions |
 | `018_document_card_authority.sql` | Card authority: staff mark and move a case's document cards when they work on it (office staff on any case, a volunteer as its preparer or reviewer), the same rule as contact details and materials; never on a client's unsent draft |
 | `019_fixtures_v2.sql` | The sample cases follow the workspace's version: in a version-2 workspace they are version-2 cases with answers, a `case_contacts` row and a household member with a fixed `member_id`. A checkpoint reload clears the sample's materials and card marks. No workspace's default version changes |
+| `021_review_approved_message.sql` | The client's history line when a review is approved says signing and filing come next ("A volunteer will contact you soon to sign and file."): `act_approve_review` and `fixture_history` copied from 006 and 009 with only that sentence changed. Number 020 is left free for the version-2 switch-over |
 
 Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one. The build writes one only when the catalogue's hash differs from the

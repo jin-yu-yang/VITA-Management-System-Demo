@@ -298,7 +298,6 @@ const labelIn = (question, value, lang) => {
   const label = (question?.options ?? []).find((option) => option.value === value)?.label?.general;
   return label ? sourceText({ en: label.en, zh: label.zh }, lang) : String(value);
 };
-const englishLabel = (question, value) => labelIn(question, value, "en");
 const generalWording = (question, lang) => wording(question, { variant: "general", lang });
 const YES_NO_WORD = { yes: "draft.yes", no: "draft.no", not_sure: "draft.not_sure_word" };
 // The English lines keep the form's own MM/DD/YYYY; Chinese lines read 1961年4月12日.
@@ -427,7 +426,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
     const k = i + 1;
     put(rowBox(k, "nameFirstLast"), [member.first_name, member.last_name].filter(isAnswered).map(oneLine).join(" "));
     if (isAnswered(member.dob)) put(rowBox(k, "dateOfBirth"), usDate(member.dob));
-    if (isAnswered(member.relationship)) put(rowBox(k, "relationshipToYou"), englishLabel(hhField("relationship"), member.relationship));
+    if (isAnswered(member.relationship)) put(rowBox(k, "relationshipToYou"), labelIn(hhField("relationship"), member.relationship, FORM_LANG[form]));
     if (isAnswered(member.months_lived)) put(rowBox(k, "monthsLivedHome"), oneLine(member.months_lived));
     if (member.married === "single" || member.married === "married")
       put(rowBox(k, "singleMarried"), member.married === "married" ? "M" : "S");
