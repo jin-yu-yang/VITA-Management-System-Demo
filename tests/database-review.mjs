@@ -229,7 +229,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         );
         assert.match(
           messageOf(c, "APPROVE_REVIEW"),
-          /Signing and filing are later milestones/,
+          /A volunteer will contact you soon to sign and file\./,
         );
       },
     );
