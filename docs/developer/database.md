@@ -22,7 +22,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is twenty-one plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is twenty-two plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -46,7 +46,8 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `017_documents_and_visits.sql` | `cases.intake_visited`; `case_document_cards`; `document_card_rules()`; the SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP actions; SAVE_ANSWERS takes an optional `visited` list |
 | `018_document_card_authority.sql` | Card authority: SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP for staff who work on the case (`works_on_case`: office staff on any case, a volunteer as its preparer or reviewer), no longer a capability |
 | `019_fixtures_v2.sql` | Samples follow the workspace's version: version-2 samples (answers, a `case_contacts` row, a household member with a fixed `member_id`) in a version-2 workspace; a checkpoint reload clears the sample's materials and card marks |
-| `021_review_approved_message.sql` | The review-approved history line says signing and filing come next; `act_approve_review` (006) and `fixture_history` (009) copied with only that sentence changed. 020 is left free for the version-2 switch-over |
+| `020_intake_v2_default.sql` | The switch-over: version 2 is the default intake version (column default and every workspace). Redefines no function, so it gives the same result before or after 021 and 022. Existing cases keep their version |
+| `021_review_approved_message.sql` | The review-approved history line says signing and filing come next; `act_approve_review` (006) and `fixture_history` (009) copied with only that sentence changed |
 | `022_intake_catalogue_<hash8>.sql` | Generated: the wording review's catalogue text (upload tips that list several documents say "them") |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
@@ -150,7 +151,7 @@ erDiagram
 
 | Table | Purpose | Notable columns and rules |
 | --- | --- | --- |
-| `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it) |
+| `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it; default 2 since 020) |
 | `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
 | `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
 | `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: version 1's 17 string keys, or version 2's catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends) |
@@ -444,8 +445,8 @@ Migration 009 seeds six sample cases, one per story point (`preparation_ready`,
   009's. In a version-2 workspace each is inserted empty (011's insert trigger allows nothing
   else), then gets its answers from `fixture_answers_v2` and a `case_contacts` row from
   `fixture_contact_v2` (phones `2155550101`–`06`, best time weekday evenings) before its scenario
-  is applied. Their household member carries a fixed `member_id`. No migration yet changes a
-  workspace's `default_intake_version`: the switch-over is held for the group's wording review.
+  is applied. Their household member carries a fixed `member_id`. Migration 020 sets every
+  workspace's `default_intake_version` to 2, so a reset seeds these version-2 samples unless a workspace is set back to 1.
 - **A checkpoint clears office work on the sample:** its `case_materials` and
   `case_document_cards` rows go with the rest of its workflow records; its `case_contacts` row stays.
 
@@ -556,7 +557,7 @@ removed in its own part after the switch-over. Its keys live in four places that
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 233 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 238 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.

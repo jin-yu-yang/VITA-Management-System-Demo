@@ -170,7 +170,7 @@ Working notes from apply are scratch:
 - **Local test stack:**
   - It runs from its own work directory (`$VITALLY_STACK`; see [docs/setup.md](docs/setup.md)).
   - Never run `supabase start` from the repo root.
-- **Versions:** version 1 of the intake stays as it is until its own removal part. Version 2 is not yet every workspace's default: the switch-over migration waits on the group's wording review.
+- **Versions:** version 2 of the intake is every workspace's default (migration 020). Version 1 stays as it is, for the cases created on it, until its own removal change.
 - **Client text:**
   - Screen text lives in `src/client-text.mjs` (English and 简体), and catalogue text in the catalogue.
   - 繁體 is generated: after any 简体 change, run `npm run build:hant` and commit `src/zh-hant.mjs`.

@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { createDatabaseFixture } from "./support/database-fixture.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 
-// Part 4c, Task 5 (spec 2026-09-30 §5, the sample part): the fixture's
-// `intakeVersion` option, samples that follow their workspace's version,
-// version-2 samples, and a checkpoint reload that clears a sample's materials
-// and card marks. Nothing here changes a column default: the switch-over is
-// migration 020, held.
+// The fixture's `intakeVersion` option, samples that follow their
+// workspace's version, version-2 samples, a checkpoint reload that clears a
+// sample's materials and card marks (part 4c, Task 5), and the switch-over
+// that makes version 2 the default (migration 020, OpenSpec change
+// make-intake-v2-default, spec client-intake).
 
 const KEYS = [
   "preparation_ready",
@@ -56,17 +56,27 @@ const missingOf = async (f, row) =>
     ])
   ).rows[0].missing;
 
+const columnDefault = async (f) =>
+  String(
+    (
+      await f.sql(
+        "select column_default from information_schema.columns where table_schema='public' and table_name='workspaces' and column_name='default_intake_version'",
+      )
+    ).rows[0].column_default,
+  ).trim();
+
+const versionOfCase = async (f, caseId) =>
+  Number((await f.sql("select intake_version from public.cases where id=$1", [caseId])).rows[0].intake_version);
+
+const setWorkspaceVersion = (f, version) =>
+  f.sql("update public.workspaces set default_intake_version=$2 where id=$1", [f.workspaceId, version]);
+
 test("the fixture's intakeVersion option and the column default", async (t) => {
-  await t.test("the column default is still 1 (no switch-over here)", async () => {
+  await t.test("the column default is 2, and a workspace that keeps it is version 2", async () => {
     const f = await createDatabaseFixture({ intakeVersion: null });
     try {
-      const column = (
-        await f.sql(
-          "select column_default from information_schema.columns where table_schema='public' and table_name='workspaces' and column_name='default_intake_version'",
-        )
-      ).rows[0];
-      assert.equal(String(column.column_default).trim(), "1");
-      assert.deepEqual(await versionsOf(f), [1, 1]);
+      assert.equal(await columnDefault(f), "2");
+      assert.deepEqual(await versionsOf(f), [2, 2]);
     } finally {
       await f.close();
     }
@@ -93,6 +103,64 @@ test("the fixture's intakeVersion option and the column default", async (t) => {
   await t.test("anything but 1, 2 or null throws", async () => {
     for (const bad of [0, 3, "2", 1.5, true])
       await assert.rejects(createDatabaseFixture({ intakeVersion: bad }), /intakeVersion/);
+  });
+});
+
+test("the switch-over (020): new applications are version 2, existing ones keep theirs", async (t) => {
+  await t.test("a client's new application is version 2", async () => {
+    const f = await createDatabaseFixture({ intakeVersion: null });
+    try {
+      const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
+      assert.equal(await versionOfCase(f, caseId), 2);
+    } finally {
+      await f.close();
+    }
+  });
+
+  await t.test("the office's new assisted application is version 2", async () => {
+    const f = await createDatabaseFixture({ intakeVersion: null });
+    try {
+      const { caseId } = await f.createCase(f.presenter, crypto.randomUUID(), {
+        mode: "assisted",
+        personId: f.sam,
+        answers: {},
+      });
+      assert.equal(await versionOfCase(f, caseId), 2);
+    } finally {
+      await f.close();
+    }
+  });
+
+  await t.test("a version-1 application keeps version 1 after the switch and after an update", async () => {
+    const f = await createDatabaseFixture({ intakeVersion: null });
+    try {
+      await setWorkspaceVersion(f, 1);
+      const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
+      assert.equal(await versionOfCase(f, caseId), 1);
+      await setWorkspaceVersion(f, 2);
+      assert.equal(await versionOfCase(f, caseId), 1, "after the workspace is version 2");
+      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: makeSampleAnswers() });
+      assert.equal(await versionOfCase(f, caseId), 1, "after an update");
+    } finally {
+      await f.close();
+    }
+  });
+
+  await t.test("a reset seeds version-2 samples; set back to 1, the next reset seeds version 1", async () => {
+    const f = await createDatabaseFixture({ intakeVersion: null });
+    try {
+      await f.seedFixtures();
+      let rows = await samples(f);
+      assert.equal(rows.length, 6);
+      for (const row of rows) assert.equal(row.intake_version, 2, row.fixture_key);
+      await setWorkspaceVersion(f, 1);
+      await f.seedFixtures();
+      rows = await samples(f);
+      assert.equal(rows.length, 6);
+      for (const row of rows) assert.equal(row.intake_version, 1, row.fixture_key);
+    } finally {
+      await f.close();
+    }
   });
 });
 

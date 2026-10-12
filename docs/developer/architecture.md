@@ -105,9 +105,7 @@ A case's intake answers follow one of two versions, fixed when the case is creat
   so the browser and the database check answers against the same rules. A test compares the two
   sides' checks, and another fails if the database is behind the committed catalogue.
 
-New cases take the workspace's `default_intake_version`. On `main` it is still 1 everywhere, so
-version 2 is built and tested (parts 4a and 4b) but not reachable yet. Part 4c adds the staff views
-and the version-2 Add a case, then switches the default to 2. Version-1 cases keep working, and
+New cases take the workspace's `default_intake_version`. Since migration 020 the default is 2 everywhere, so new client applications, the office's Add a case and sample resets are version 2. Version-1 cases keep working, and
 version 1 is removed in its own part once none is open. The design is in
 [the intake catalogue spec](../superpowers/specs/2026-09-29-intake-catalogue-design.md) and
 [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md).
