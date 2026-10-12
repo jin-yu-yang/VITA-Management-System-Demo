@@ -237,8 +237,8 @@ Reviewed and accepted for the demo, and worth knowing about:
 - **An email with a space inside** is invalid in the browser but accepted by the server's check.
   The browser withholds it, so the server never receives one; the two checks are otherwise the
   same, and a database test compares them.
-- **The sample reset needs a version-1 workspace** until part 4c's switch-over, because the
-  samples are seeded with version-1 answers ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
+- **Samples follow the workspace's version** (019); since 020 a reset seeds version-2 samples
+  unless the workspace is set back to 1 ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 
