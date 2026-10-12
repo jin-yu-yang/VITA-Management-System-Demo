@@ -1,0 +1,85 @@
+## Why
+
+Version 2 of the client intake has been every workspace's default since migration 020, and no real version-1 application exists anywhere: there's no hosted project, and the November PCDC delivery is a new deployment. Version 1 still costs a second form, a second Add a case, a second answers panel, a version branch in most save paths, version-1 database paths and samples, and a test suite that mostly runs on version-1 data. Removing it now leaves one intake to maintain, review and deliver, and shrinks #58's demo-framing work.
+
+## What Changes
+
+**Accepted intake versions**
+- From: workspaces and applications accept version 1 or 2, and a workspace set back to 1 creates version-1 applications and seeds version-1 samples. That is the switch-over's rollback.
+- To: version 2 is the only accepted version. Both `CHECK` constraints allow only 2, and the columns stay so a future version 3 is a new value.
+- Reason: version 1 has no remaining users, and keeping it doubles every intake path.
+- Impact: **breaking for version-1 data.** Migration `023_remove_intake_v1.sql` refuses to run while any version-1 application exists outside a test workspace (other than a sample). It deletes version-1 samples and test-workspace version-1 cases, and narrows the constraints.
+
+**The client, the office and staff screens**
+- From: the old four-step client form with its screening, and its English-only note in Chinese; the old Add a case; the old office draft on a case's Overview; the version-1 answers panel; and version branches in the controller, app and views.
+- To: only the version-2 form, Add a case and answers panel. The app no longer branches on the version, though the store still reads `intakeVersion` and `defaultIntakeVersion`.
+- Impact: non-breaking for version-2 users.
+
+**The database**
+- These are redefined from their latest definitions without their version-1 paths:
+  - `vitally_create_case` keeps its `p_answers` parameter, accepts only `{}`, and drops the version-1 key list;
+  - 011's insert trigger;
+  - `check_related`;
+  - `act_save_answers`;
+  - `act_submit`;
+  - `act_update_contact`;
+  - `seed_fixtures`;
+  - `fixture_history`, whose seeded submit history no longer carries version 1's `"screening":"continue"` detail.
+- `intake_answer_keys()` and `fixture_answers()` are dropped.
+- The guard and the cleanup are built from testable predicates (design D2).
+
+**Tests and fixtures**
+- The fixtures create version-2 workspaces only (the `intakeVersion` option goes), and their helpers create empty, then save answers, then submit.
+- `makeSampleAnswers` becomes version-2 only.
+- Every deleted test is classed as version-1 only, or general and re-covered on version 2. The story's version-1 phase is removed.
+
+**Docs**
+- The counts, the migration list, the architecture notes, the roadmap, and CLAUDE.md's "Versions" rule.
+
+**#58 rows this change deletes** (the strings belonged to version-1 screens only):
+- the version-1 intake note ("This prototype covers selected intake questions…");
+- "This prototype accepts tax year 2025 only.";
+- "Fill fictional details" and "Fictional details filled in. Nothing is created or sent yet." on a case the office entered.
+
+Strings version 2 also uses stay for #58.
+
+## Capabilities
+
+### New Capabilities
+- None.
+
+### Modified Capabilities
+- `client-intake`:
+  - **MODIFIED**: "New applications use intake version 2" now says version 2 is the only accepted version, with a scenario saying a workspace can't be set to 1.
+  - **REMOVED**: "An application keeps the version it was created with", whose scenarios need version-1 applications. **ADDED** in its place: "An application's intake version never changes".
+  - **REMOVED**: "A workspace's version decides its sample cases", with its rollback. **ADDED** in its place: "Sample cases are version 2".
+
+  OpenSpec 1.14.0 won't let a MODIFIED block drop a scenario, so the brainstorm's MODIFIED and RENAMED plan for the last two is expressed as REMOVED plus ADDED, with the same meaning.
+
+## Impact
+
+- **Database:** a new migration, `supabase/migrations/023_remove_intake_v1.sql`. It contains the guard, the cleanup (with a `fixture_generation` bump), a step that sets any workspace still at 1 to 2, the redefinitions, the drops and the narrowed `CHECK`s. Nothing is re-seeded; samples come back as version 2 on the next reset.
+- **Developer stacks:** the guard stops 023 on a stack holding non-sample version-1 applications outside test workspaces, for example a local rehearsal workspace. Clear them first; `docs/setup.md` documents how. On this machine, the rehearsal workspace is deleted at apply, with the user's confirmation.
+- **Code:**
+  - `src/domain.mjs` (version-1 keys and screening);
+  - `src/client-views.mjs`, `src/office-views.mjs`, `src/admin-views.mjs`, `src/staff-views.mjs`, `src/controller.mjs`, `src/app.mjs`, `src/views.mjs` and `src/sample-data.mjs`;
+  - `src/client-text.mjs`, with `src/zh-hant.mjs` regenerated by `npm run build:hant`.
+- **Tests:**
+  - `tests/support/database-fixture.mjs`, `tests/support/browser-fixture.mjs` and `tests/support/rpc-signatures.mjs`;
+  - the version-1 parts of about 20 test files;
+  - `tests/browser.mjs`'s version-1 phase;
+  - new database tests for the predicates.
+- **Docs:** README.md, `docs/setup.md`, `docs/developer/{architecture,database,frontend,production-roadmap}.md`, `docs/design/*` where they describe version 1 as current, and CLAUDE.md.
+- **Checks:**
+  - `npm test`;
+  - `npm run db:migrate:test`, then `npm run test:database`;
+  - `npm run test:auth-browser`;
+  - `npm run test:browser`;
+  - `npm run build:hant -- --check`.
+
+  CI also runs its own checks on the PR.
+- **Out of scope:**
+  - anything shared with version 2 (#58);
+  - version-2 scope screening;
+  - the conflict-box rule;
+  - dropping the version columns.
