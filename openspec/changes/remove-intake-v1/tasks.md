@@ -1,12 +1,12 @@
 ## 1. Tests and fixtures move to version 2 (the database is still at 022)
 
-- [ ] 1.1 `tests/support/database-fixture.mjs` and `tests/support/browser-fixture.mjs`:
+- [x] 1.1 `tests/support/database-fixture.mjs` and `tests/support/browser-fixture.mjs`:
   - drop the `intakeVersion` option, so every fixture workspace is version 2;
   - make `readyCase`, `assistedCase` and every other helper create empty, then `SAVE_ANSWERS` with version-2 answers, then `SUBMIT`;
   - add a helper that replaces direct `createCase(…, { answers })` calls.
-- [ ] 1.2 The tests build version-2 data with `makeSampleAnswers({ version: 2 })` (`src/sample-data.mjs` is unchanged until Task 2, because the app's version-1 fill still uses it). `tests/support/rpc-signatures.mjs` creates with `{}`.
-- [ ] 1.3 Move every database test that used version-1 data for a general flow onto version 2 (client numbers, assistance, realtime, actions, store, review, intake). Delete the tests *of* version 1. List each deleted or rewritten test as **version-1 only** or **general → replacement test**.
-- [ ] 1.4 Run `npm test` and `npm run test:database` on the stack at 022. Both pass.
+- [x] 1.2 The tests build version-2 data with `makeSampleAnswers({ version: 2 })` (`src/sample-data.mjs` is unchanged until Task 2, because the app's version-1 fill still uses it). `tests/support/rpc-signatures.mjs` creates with `{}`.
+- [x] 1.3 Move every database test that used version-1 data for a general flow onto version 2 (client numbers, assistance, realtime, actions, store, review, intake). Delete the tests *of* version 1. List each deleted or rewritten test as **version-1 only** or **general → replacement test**.
+- [x] 1.4 Run `npm test` and `npm run test:database` on the stack at 022. Both pass.
 
 ## 2. Version 1 leaves the app
 
