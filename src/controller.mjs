@@ -1545,6 +1545,7 @@ export function createController({
   }
 
   function editAnswers(patch) {
+    if (!formOpen()) return;
     const clean = pickAnswers(patch);
     // Keys, not values: a patch of nulls is a real edit (it clears).
     if (!Object.keys(clean).length) return;

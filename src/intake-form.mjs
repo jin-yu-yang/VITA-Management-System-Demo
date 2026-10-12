@@ -669,13 +669,11 @@ function deepEqual(a, b) {
 const sameValue = (a, b) => (!isAnswered(a) && !isAnswered(b)) || deepEqual(a, b);
 
 /**
- * Version 2: the save request's answers, every field's sendable value (null
- * clears included), without each top-level field whose sendable value fails
- * checkValue (hh withheld whole if any member fails). Any other version: the
- * draft as it is.
+ * The save request's answers, every field's sendable value (null clears
+ * included), without each top-level field whose sendable value fails
+ * checkValue (hh withheld whole if any member fails).
  */
 export function withholdInvalid(draft, version) {
-  if (Number(version) !== 2) return draft;
   const out = {};
   for (const [id, value] of Object.entries(draft ?? {})) {
     const question = findQuestion(2, id);
@@ -689,9 +687,8 @@ export function withholdInvalid(draft, version) {
   return out;
 }
 
-/** The ids withholdInvalid leaves out ([] for any other version). */
+/** The ids withholdInvalid leaves out. */
 export function withheldFields(draft, version) {
-  if (Number(version) !== 2) return [];
   const sent = withholdInvalid(draft, version);
   return Object.keys(draft ?? {}).filter((id) => !Object.hasOwn(sent, id));
 }
@@ -709,7 +706,6 @@ export function sendableDiffers(draft, server, version) {
  */
 export function keepLocalOnly(previousDraft, server, version) {
   const next = { ...(server ?? {}) };
-  if (Number(version) !== 2) return next;
   const withheld = new Set(withheldFields(previousDraft, 2));
   for (const [id, value] of Object.entries(previousDraft ?? {})) {
     const question = findQuestion(2, id);

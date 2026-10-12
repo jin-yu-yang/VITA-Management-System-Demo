@@ -599,6 +599,29 @@ test("save state moves unsaved to saving to saved, and an edit whitelists its ke
   controller.stop();
 });
 
+test("an edit with no form open changes nothing", async () => {
+  // No case and no new office draft: there is no form the answers belong to,
+  // like the other entry points (revealInvalid, goToSubstep, removeMember).
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller, renders } = build({ store });
+  await controller.start();
+  const drawn = renders.count;
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const state = controller.getState();
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "idle");
+  assert.equal(renders.count, drawn, "nothing to redraw");
+  // Once a case is open, the same edit lands.
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
+  assert.equal(controller.getState().dirty, true);
+  controller.stop();
+});
+
 test("a failed save keeps the draft editable and retries the identical envelope", async () => {
   const store = fakeStore({
     cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],

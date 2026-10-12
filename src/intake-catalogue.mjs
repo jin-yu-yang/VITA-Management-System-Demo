@@ -5,7 +5,8 @@ import { sourceText } from "./language.mjs";
 export const CATALOGUE = CATALOGUE_DATA;
 export const MATERIALS_ITEMS = CATALOGUE_DATA.materials;
 
-export const stepsFor = (version) => (Number(version) === 2 ? CATALOGUE.steps : []);
+// `version` is kept for the callers' sake; every caller passes 2, the only one.
+export const stepsFor = (version) => CATALOGUE.steps;
 
 export const questionsFor = (version, step) => {
   const found = stepsFor(version).find((s) => s.n === (step?.n ?? step));
@@ -21,7 +22,7 @@ export const findQuestion = (version, id) =>
 // Sub-steps (spec 2026-10-04 §2): every step lists its sub-steps in order.
 // ---------------------------------------------------------------------------
 
-/** Every sub-step of the version, in order, each `{ ...substep, step }` (`step` is its step object). */
+/** Every sub-step, in order, each `{ ...substep, step }` (`step` is its step object). */
 export const substepsFor = (version) =>
   stepsFor(version).flatMap((step) => step.substeps.map((substep) => ({ ...substep, step })));
 
