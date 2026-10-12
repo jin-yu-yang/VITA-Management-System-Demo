@@ -459,8 +459,8 @@ const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again lat
 // ---------------------------------------------------------------------------
 
 async function runPermutation(t, roles) {
-  // The story's workspace is on version 2 from the start (the switch-over
-  // itself is held): its samples, its client forms and Add a case all follow.
+  // The story's workspace is set to version 2 explicitly (the test fixture
+  // defaults to 1): its samples, its client forms and Add a case all follow.
   const fixture = await createBrowserFixture({ intakeVersion: 2 });
   const evidence = {
     roles,
