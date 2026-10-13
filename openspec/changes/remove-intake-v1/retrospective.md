@@ -113,11 +113,11 @@ None. As CLAUDE.md directs:
 
 ## 6. Promote candidates → long-term learning
 
-- [ ] 🟡 **A migration plan checks the project's own database-rule tests** (the signature inventory: security definer, `search_path`, no client grants) for every new function → **Promote to memory** (type: feedback)
+- [x] 🟡 **A migration plan checks the project's own database-rule tests** (the signature inventory: security definer, `search_path`, no client grants) for every new function → **Promote to memory** (type: feedback)
   > **Why**: 023's two predicates broke `tests/database-actions.mjs:843`. It was found only after applying, and fixed in place.
   > **How to apply**: when a plan creates a `vitally_private` function, write it as `security definer set search_path=''` and revoke from public, anon, authenticated and service_role, and name that test in the plan's checks.
 
-- [ ] 🟡 **Review a migration before applying it whenever applying is final** → **Promote to memory** (type: feedback)
+- [x] 🟡 **Review a migration before applying it whenever applying is final** → **Promote to memory** (type: feedback)
   > **Why**: the pre-apply review of 023 found a deferred-FK failure that would have frozen an unappliable file on teammates' stacks.
   > **How to apply**: in SDD, a task that writes a migration stops before `db:migrate:test`. The controller gets a review of the uncommitted file (diffing each copied function against its source), then asks the user before applying.
 
