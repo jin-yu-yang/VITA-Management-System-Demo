@@ -90,19 +90,22 @@ fields:
 | `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
-| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | Version 2: the sub-step on screen; the sub-steps left at least once (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
-| `screen`, `selectedCaseId`, `selectedPersonId`, `formStep`, `openPanels`, `boardFilters`, `caseTab`, `sidebarOpen` | Window-local navigation, remembered per window |
+| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
+| `screen`, `selectedCaseId`, `selectedPersonId`, `openPanels`, `boardFilters`, `caseTab`, `sidebarOpen` | Window-local navigation, remembered per window |
 | `boardSearchDraft` | The work board's half-typed search, kept so a redraw doesn't blank it |
 | `busy`, `error`, `retryable`, `notice`, `dialog` | What the page should show right now |
 
 Its public API is the list at the end of the file: `start`, `stop`, `getState`, `refresh`,
 sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSignIn`, `signOut`,
-`cooldownRemaining`), cases (`selectCase`, `createCase`, `createAssistedCase`, `editAnswers`,
-`saveAnswers`, `reconcileAnswers`, `runAction`, `retryLast`), the version-2 form (`goToStep`,
-`revealInvalid`, `removeMember`), assistance (`runAssistanceAction`), presenter tools
-(`selectPerson`, `resetFixtures`, `loadCheckpoint`), and navigation (`navigate`, `setFormStep`,
-`togglePanel`, `setBoardFilter`, `clearBoardFilters`, `setBoardSearchDraft`, `toggleSidebar`,
-`setCaseTab`, `setLookup`, `openDialog`, `closeDialog`, `dismissError`).
+`cooldownRemaining`), cases (`selectCase`, `createCase`, `editAnswers`, `saveAnswers`,
+`reconcileAnswers`, `runAction`, `retryLast`), the intake form (`currentSubstep`, `goToSubstep`,
+`moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `revealInvalid`,
+`removeMember`), document cards (`setDocumentCard`, `setDocumentGroup`), the office's Add a case
+(`openAddCase`, `toggleAddSubstep`, `saveOfficeDraft`), assistance (`runAssistanceAction`),
+presenter tools (`selectPerson`, `resetFixtures`, `loadCheckpoint`), language (`setLanguage`,
+`adoptLanguage`), and navigation (`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
+`setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
+`dismissError`).
 
 Three rules the controller keeps:
 

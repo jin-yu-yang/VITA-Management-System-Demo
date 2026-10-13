@@ -396,7 +396,7 @@ test("progress names the stage, shows client history and answers a document requ
       stage: "preparing",
       revision: 6,
       intakeVerified: true,
-      answers: { firstName: "Mei", service: "Drop-off", language: "English" },
+      answers: { tp_first_name: "Mei", service: "drop_off", language: "english" },
       requests: [
         {
           id: "req-1",

@@ -8,7 +8,10 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 // is the only intake version. The guard and the cleanup run once, inside the
 // migration, so their rule is tested here through its two pure predicates.
 
-const rejects = (promise, code) => assert.rejects(promise, (error) => error.code === code);
+// The SQLSTATE: application codes (VT007) arrive mapped to a domain code
+// (VALIDATION) with the database's own error as the cause.
+const rejects = (promise, code) =>
+  assert.rejects(promise, (error) => (error.cause?.code ?? error.code) === code);
 
 test("the guard's and the cleanup's rule, as plain values", async (t) => {
   const f = await createDatabaseFixture();
@@ -72,13 +75,18 @@ test("version 2 is the only accepted version", async (t) => {
         assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
     });
     await t.test("a create that carries answers is refused", async () => {
-      await assert.rejects(f.createCase(f.applicantA, randomUUID(), { answers: { tp_first: "Mei" } }));
+      await rejects(f.createCase(f.applicantA, randomUUID(), { answers: { tp_first: "Mei" } }), "VT007");
     });
     await t.test("an application's version never changes", async () => {
       const { caseId } = await f.draftCase(f.applicantA);
       await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: makeSampleAnswers({ seed: 1 }) });
       assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
-      await assert.rejects(f.sql("update public.cases set intake_version=1 where id=$1", [caseId]));
+      // 011's cases_intake_version_fixed refuses the change before the CHECK is reached.
+      await rejects(f.sql("update public.cases set intake_version=1 where id=$1", [caseId]), "VT007");
+      assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
+    });
+    await t.test("every workspace is version 2", async () => {
+      assert.equal(Number((await f.sql("select count(*) n from public.workspaces where default_intake_version <> 2")).rows[0].n), 0);
     });
     await t.test("the version-1-only functions are gone", async () => {
       for (const name of ["intake_answer_keys", "fixture_answers"])

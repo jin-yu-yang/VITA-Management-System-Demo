@@ -3885,21 +3885,17 @@ test("a Send with an invalid answer saves, reveals it and sends nothing", async 
   controller.stop();
 });
 
-test("Add a case opens a saved office draft on the page, whatever the workspace's version", async () => {
-  for (const version of [2, 1]) {
-    const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
-    store.workspace = { ...store.workspace, defaultIntakeVersion: version };
-    await controller.refresh();
-    await controller.openAddCase({ caseId: "case-v2" });
-    const state = controller.getState();
-    assert.equal(state.selectedCaseId, "case-v2", `version ${version}`);
-    assert.equal(state.savedCase.id, "case-v2");
-    assert.equal(state.officeDraft, false);
-    assert.equal(state.screen, "office-add-case");
-    assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
-    assert.equal(state.draftAnswers.tp_first_name, "Mei");
-    controller.stop();
-  }
+test("Add a case opens a saved office draft on the page", async () => {
+  const { controller } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase({ caseId: "case-v2" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-v2");
+  assert.equal(state.savedCase.id, "case-v2");
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.screen, "office-add-case");
+  assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  controller.stop();
 });
 
 test("Add a case's parts open and close independently", async () => {

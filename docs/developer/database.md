@@ -556,7 +556,7 @@ and a case is created with no answers (`vitally_create_case` refuses any other `
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 247 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 248 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.
@@ -575,7 +575,7 @@ What the suite covers, by file:
 | `database-intake.mjs` | Intake versions, the catalogue load, version-2 saves and submits, contact details, materials, and the browser-against-database comparison of every check |
 | `database-redesign.mjs` | Visits, `case_document_cards` and the two card actions (017), and who may mark and move cards (018) |
 | `database-intake-default.mjs` | The column default, new applications on version 2, version-2 samples, and a checkpoint that clears materials and card marks (019) |
-| `database-intake-v1-removed.mjs` | Migration 023: the guard's predicates and count, both `CHECK`s refusing 1, an application's fixed version, a create that carries answers refused, the dropped functions, and a reset's six version-2 samples |
+| `database-intake-v1-removed.mjs` | Migration 023: the guard's predicates and count, every workspace on 2, both `CHECK`s refusing 1, an application's fixed version, a create that carries answers refused, the dropped functions, and a reset's six version-2 samples |
 | `database-realtime.mjs` | Realtime privacy between clients and for staff tables |
 | `database-store.mjs` | The browser's data adapter against the real database |
 
