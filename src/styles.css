@@ -760,23 +760,6 @@ textarea::placeholder {
 .form-actions .btn.text {
   font-size: 13px;
 }
-.question {
-  border: 1px solid var(--vt-line);
-  border-radius: var(--vt-radius);
-  margin: 0 0 24px;
-  padding: 20px 22px 22px;
-  background: var(--vt-surface);
-}
-.question legend {
-  float: left;
-  width: 100%;
-  font-size: 16px;
-  line-height: 1.6;
-  font-weight: 550;
-  margin: 0 0 12px;
-  padding: 0;
-  color: var(--vt-intake-ink);
-}
 .notice {
   display: flex;
   gap: 13px;
@@ -1794,9 +1777,6 @@ textarea::placeholder {
   .field > span {
     font-size: 13px;
   }
-  .question legend {
-    font-size: 15px;
-  }
   .form-actions > .btn {
     font-size: 12px;
     padding: 11px 15px;
@@ -2054,8 +2034,7 @@ textarea::placeholder {
 }
 
 /* Readability and compact-device refinements. */
-.form-workspace .field > span,
-.question legend {
+.form-workspace .field > span {
   font-size: 16px;
 }
 .form-workspace input:not([type="radio"]):not([type="checkbox"]),
@@ -2104,8 +2083,7 @@ textarea::placeholder {
   .hero-copy br {
     display: initial;
   }
-  .form-workspace .field > span,
-  .question legend {
+  .form-workspace .field > span {
     font-size: 15px;
   }
 }

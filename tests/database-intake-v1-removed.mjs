@@ -63,6 +63,7 @@ test("version 2 is the only accepted version", async (t) => {
     await t.test("a workspace defaults to 2 and can't be set to 1", async () => {
       assert.equal(Number((await f.sql("select default_intake_version v from public.workspaces where id=$1", [f.workspaceId])).rows[0].v), 2);
       await rejects(f.sql("update public.workspaces set default_intake_version=1 where id=$1", [f.workspaceId]), "23514");
+      assert.equal(Number((await f.sql("select default_intake_version v from public.workspaces where id=$1", [f.workspaceId])).rows[0].v), 2);
     });
     await t.test("a client's and the office's new applications are version 2", async () => {
       const own = await f.createCase(f.applicantA, randomUUID(), { answers: {} });
@@ -96,6 +97,7 @@ test("version 2 is the only accepted version", async (t) => {
         "select detail from public.case_events where workspace_id=$1 and action='SUBMIT' and case_id = any($2::uuid[])",
         [f.workspaceId, rows.map((r) => r.id)],
       );
+      assert.equal(events.length, 6);
       for (const event of events) assert.equal(event.detail?.screening, undefined);
     });
   } finally {
