@@ -29,7 +29,7 @@
 
 ## 3. Migration 023 and its database tests
 
-- [ ] 3.1 Database tests first:
+- [x] 3.1 Database tests first:
   - the truth tables of `version_one_blocks` and `version_one_disposable`;
   - `version_one_blockers()` is 0;
   - both `CHECK`s refuse 1, and neither version column defaults to 1;
@@ -39,7 +39,7 @@
   - `intake_answer_keys` and `fixture_answers` no longer exist.
 
   See them fail against the stack at 022.
-- [ ] 3.2 Write `supabase/migrations/023_remove_intake_v1.sql`:
+- [x] 3.2 Write `supabase/migrations/023_remove_intake_v1.sql`:
   - the predicates and the count;
   - the guard;
   - the cleanup, with its `fixture_generation` bump;
@@ -47,13 +47,13 @@
   - the D4 redefinitions, each copied from its latest source with only version-1 lines removed;
   - the drops;
   - the narrowed `CHECK`s, and `cases.intake_version`'s column default set from 1 to 2.
-- [ ] 3.3 With the user's confirmation at that moment:
+- [x] 3.3 With the user's confirmation at that moment:
   - delete the local rehearsal workspace (the one workspace with no `test_workspaces` row);
   - preview the guard as plain SQL (it must be 0);
   - record the counts before;
   - run `npm run db:migrate:test`;
   - record the counts after.
-- [ ] 3.4 Run `npm run test:database` and `npm test`.
+- [x] 3.4 Run `npm run test:database` and `npm test`.
 
 ## 4. The story, the docs and the final runs
 
