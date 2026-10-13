@@ -818,7 +818,7 @@ test("the presenter entry points are the only way in", async (t) => {
       for (const name of [
         "seed_fixtures",
         "apply_fixture_scenario",
-        "fixture_answers",
+        "fixture_answers_v2",
         "new_reference",
       ]) {
         const answered = await f.presenter.rpc(name, {});
@@ -837,7 +837,7 @@ test("the presenter entry points are the only way in", async (t) => {
               "new_reference",
               "fixture_keys",
               "checkpoint_scenario",
-              "fixture_answers",
+              "fixture_answers_v2",
               "fixture_history",
               "apply_fixture_scenario",
               "seed_fixtures",

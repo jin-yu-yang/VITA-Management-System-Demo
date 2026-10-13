@@ -187,6 +187,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   ) => {
     const created = await f.createCase(actor, randomUUID(), { mode, personId, answers: {} });
     await f.act(actor, created.caseId, personId, "SAVE_ANSWERS", { answers });
+    // The receipt is the create's (revision 1); the case is one ahead, at 2.
     return created;
   };
   f.intakeChecks = INTAKE_CHECKS;

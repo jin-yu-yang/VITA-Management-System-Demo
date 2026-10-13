@@ -443,6 +443,9 @@ test("case actions apply the shared check order against real Supabase", async (t
           "vitally_apply_action",
           applyArgs({
             ...spec,
+            // f.draftCase's SAVE_ANSWERS puts the draft at revision 2, so the
+            // probe is current and tests visibility, not staleness.
+            revision: 2,
             caseId: draft.caseId,
             personId: f.sam,
           }),
