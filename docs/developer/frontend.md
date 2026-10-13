@@ -112,9 +112,8 @@ Three rules the controller keeps:
 2. **An unknown outcome keeps its envelope.** On `OFFLINE` or `SERVER_ERROR` the exact envelope is
    kept, and "Try again" (`retryLast`) resends it unchanged so the database replays its receipt
    instead of acting twice.
-3. **Answers are whitelisted once,** by the case's version (`pickAnswers`): version 1 keeps its
-   17 `INTAKE_ANSWER_KEYS` as strings; version 2 keeps the catalogue's top-level ids with their
-   structured values (a `null` means "clear this field on the next save").
+3. **Answers are whitelisted once** (`pickAnswers`): only the catalogue's top-level ids are kept,
+   with their structured values (a `null` means "clear this field on the next save").
 
 ## Screens
 
@@ -123,7 +122,7 @@ Three rules the controller keeps:
 | Who | Screens |
 | --- | --- |
 | Signed out | Email and code form ([`client-views.mjs`](../../src/client-views.mjs) `accessScreen`); "cannot reach the server" and "no access" screens ([`views.mjs`](../../src/views.mjs)) |
-| Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the four-step form for a version-1 case, the sub-step form for a version-2 case, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
+| Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the sub-step form, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
 | Presenter, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
 | Presenter, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
@@ -230,8 +229,7 @@ held, because the boxes may then show an older value than the draft.
 ## Staff views and Add a case (version 2)
 
 Part 4c's staff side. Every rule comes from the shared modules (`intake-catalogue.mjs`,
-`intake-form.mjs`, `document-cards.mjs`); nothing here re-implements one. Version-1 cases render
-exactly as before, apart from the materials card.
+`intake-form.mjs`, `document-cards.mjs`); nothing here re-implements one.
 
 **The case page's Intake answers tab** (`intakeAnswersTab` in `staff-views.mjs`, shared by the
 volunteer and office pages):
@@ -245,7 +243,7 @@ volunteer and office pages):
   claimed." and the contact questions are left out of the answers. Staff edit the best time and
   the note ("Edit best time", UPDATE_CONTACT), never a phone.
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
-  anyone who passes `canSeeContact`, read-only for everyone else. On version-1 cases too.
+  anyone who passes `canSeeContact`, read-only for everyone else.
 - **The draft 13614-C** buttons (4b2's `view-draft` wiring), only for people who pass
   `canSeeContact`, because the draft prints the phones.
 
@@ -258,9 +256,7 @@ card `cardsFor` gives, grouped like the client's Documents step, in the office's
 cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_GROUP, shown as
 "Needed (moved up by the office)"). The optional "other" card has no marks.
 
-**Add a case** picks its page by the open case's version, and by
-`workspace.defaultIntakeVersion` only for a new draft. Version 1 keeps today's page and its
-one-call `createAssistedCase`. Version 2 is `renderAddCaseV2` in `office-views.mjs`:
+**Add a case** is `renderAddCaseV2` in `office-views.mjs`:
 
 - One accordion per visible question sub-step under its step's heading, plus one Documents
   accordion with the office's cards. `review` sub-steps are not on the page; its bottom bar
@@ -435,9 +431,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (917) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (899) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (59) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2; one phase sets it to 1 for the old form, and one works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in
@@ -472,11 +468,8 @@ the checks all follow the catalogue with no screen change.
 **How a question type looks or reads** is `renderQuestion` and `valuesFromControls` in
 `intake-form.mjs`, with a unit test in `tests/intake-form.test.mjs` for render-then-read round
 trips. **The layout** (rail tree, sub-step header, questions, Documents, Review & submit) is `intakeFormV2`
-in `intake-views.mjs`, which `intakeScreen` in `client-views.mjs` dispatches to for a version-2 case. Keep the redraw rules above: a new control that changes
+in `intake-views.mjs`, which `intakeScreen` in `client-views.mjs` shows for a draft. Keep the redraw rules above: a new control that changes
 which questions are visible must be a choice, or be added to the `drivesVisibility` check.
-
-**Version 1** (the four-step form in `client-views.mjs`, with its keys in `domain.mjs`) is frozen
-until it is removed; don't extend it.
 
 ### Add a screen
 

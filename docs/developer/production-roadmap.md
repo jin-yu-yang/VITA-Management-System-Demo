@@ -53,18 +53,15 @@ and carries over unchanged.
 ## 2. Client accounts and intake
 
 **Today.** Only rostered addresses can sign in. A client creates an application after signing in
-and fills the intake form. Two versions exist side by side (see
-[Architecture: two intake versions](architecture.md#two-intake-versions)):
-
-- **Version 1**, what every workspace uses on `main`: four steps, 17 fictional-data fields. The
-  database re-checks the answers and a screening rule on submit; out-of-scope answers block
-  submission and leave a draft.
-- **Version 2**, built in parts 4a, 4b and 4b2 and switched on by part 4c: the group's drafted
-  questions in steps 0–9 with sub-steps (101 questions, standard and senior wording), with contact details and a
-  materials checklist. The database checks every value against the same catalogue and refuses a
-  submit with a required answer missing. It has **no scope screening**: by the group's decision
-  (2026-09-30) an out-of-scope version-2 application submits normally, and the office handles
-  scope at its intake checks, until scope rules are written in version-2 terms.
+and fills the intake form, version 2, the only intake version since migration 023 (see
+[Architecture: the intake version](architecture.md#the-intake-version)). It was built in parts 4a,
+4b and 4b2 and switched on by part 4c: the group's drafted questions in steps 0–9 with sub-steps
+(101 questions, standard and senior wording), with contact details and a materials checklist. The
+database checks every value against the same catalogue and refuses a submit with a required answer
+missing. It has **no scope screening**: by the group's decision (2026-09-30) an out-of-scope
+application submits normally, and the office handles scope at its intake checks, until scope rules
+are written in version-2 terms. The original four-step version 1, with its screening rule, was
+removed by migration 023.
 
 **Needed.**
 
@@ -78,8 +75,6 @@ and fills the intake form. Two versions exist side by side (see
   personal data for the taxpayer, spouse and every household member: names, dates of birth, phone,
   email, address, and typed signatures. See [§8](#8-security-and-privacy) before collecting any of
   it for a real client.
-- **Remove version 1** once no version-1 case is open (its own part, after Chinese): the old form,
-  its keys in `domain.mjs` and migrations 001/003/009, and the samples' version-1 seeding.
 - **Scope screening for version 2**, if the site wants the form to stop out-of-scope clients
   rather than the office.
 - **Out-of-scope clients.** Spec §13 asks what happens to records of clients who turn out to be
@@ -136,7 +131,7 @@ Remove these, or restrict them to non-production environments, before real use:
 | --- | --- |
 | Presenter access and the persona picker | `memberships.access = 'presenter'`, `presenter-views.mjs`, `selectedPersonId` |
 | Sample cases, reset and checkpoints | Migration 009 functions, `vitally_reset_fixtures`, `vitally_load_checkpoint`, `cases.fixture`, `cases.fixture_key`, `origin = 'fixture'`, `workspaces.fixture_generation`, `vitally_private.fixture_client_bindings`, `assistance_items.fixture` |
-| Fictional form filling | `sample-data.mjs` (both versions), the "Fill fictional details" buttons and pill |
+| Fictional form filling | `sample-data.mjs`, the "Fill fictional details" buttons and pill |
 | Simulated document and upload failure | The fixed file name; the "simulate upload failure" checkbox |
 | Tick-box intake checks | `VERIFY_INTAKE`'s four `true` attestations |
 | Simulated reminders | `REMIND` records a time and sends nothing |
@@ -162,7 +157,7 @@ screens stay English. For production:
   English. Existing rows need a migration or a fallback.
 - Intake answers that are shown back to staff need consistent stored values (codes) with
   translated labels. Version 2 already stores codes (`drop_off`, `mandarin`) and shows labels
-  (`serviceLabel`, `languageLabel`, `formatAnswer`); version 1 stores English labels.
+  (`serviceLabel`, `languageLabel`, `formatAnswer`).
 
 **Accessibility.** The demo uses labels, focus management, `role="status"` and `role="alert"`,
 and keyboard-safe live updates. A production release needs a proper audit against WCAG 2.1 AA with
@@ -237,8 +232,8 @@ Reviewed and accepted for the demo, and worth knowing about:
 - **An email with a space inside** is invalid in the browser but accepted by the server's check.
   The browser withholds it, so the server never receives one; the two checks are otherwise the
   same, and a database test compares them.
-- **Samples follow the workspace's version** (019); since 020 a reset seeds version-2 samples
-  unless the workspace is set back to 1 ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
+- **A workspace whose version-1 samples migration 023 deleted has no samples** until a presenter
+  presses **Reset sample cases**, which seeds six version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 
