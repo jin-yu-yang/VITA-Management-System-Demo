@@ -4,14 +4,11 @@ import {
   button,
   caseButton,
   caseSubmit,
-  input,
   textarea,
   select,
   fieldId,
   formatTime,
-  ANSWER_LABELS,
 } from "./ui.mjs";
-import { INTAKE_ANSWER_KEYS, submissionBlocker } from "./domain.mjs";
 import {
   CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
@@ -28,7 +25,6 @@ import {
   caseTabs,
   caseDetails,
   intakeAnswersTab,
-  materialsCard,
   documentsPanel,
   documentChecklist,
   historyPanel,
@@ -301,55 +297,6 @@ export const remindedNote = (record) =>
     )}${when(record?.lastRemindedByName, ` by ${esc(record?.lastRemindedByName)}`)}.</p>`,
   );
 
-// The intake questions, as one flat staff form. The labels are the client's own
-// (`ANSWER_LABELS`) and the order is `INTAKE_ANSWER_KEYS`, so the office and the
-// client can never name the same question differently. Every control is a text
-// box or a select — never a radio — so "Fill fictional details" can fill them
-// all the same way, and so a half-typed form survives a re-render by id.
-export const ASSISTED_OPTIONS = Object.freeze({
-  service: ["Same-day", "Drop-off", "Online"],
-  year: ["2025"],
-  language: ["English", "Cantonese", "Mandarin"],
-  residenceState: ["PA", "NJ", "DE", "Other"],
-  state: ["PA", "NJ", "DE"],
-  rideshare: [
-    ["yes", "Yes"],
-    ["no", "No"],
-    ["unsure", "Not sure"],
-  ],
-  other: [
-    ["yes", "Yes"],
-    ["no", "No"],
-    ["unsure", "Not sure"],
-  ],
-  stocks: [
-    ["yes", "Yes"],
-    ["no", "No"],
-    ["unsure", "Not sure"],
-  ],
-  helper: [
-    ["self", "The taxpayer answered these questions"],
-    ["helper", "Someone answered on their behalf"],
-  ],
-  documents: [
-    ["ready", "Ready"],
-    ["some", "Some are missing"],
-    ["unsure", "Needs help checking"],
-  ],
-});
-
-export const answerField = (key, value, scope) =>
-  Object.hasOwn(ASSISTED_OPTIONS, key)
-    ? select(
-        ANSWER_LABELS[key],
-        key,
-        value ?? "",
-        ASSISTED_OPTIONS[key],
-        "",
-        scope,
-      )
-    : input(ANSWER_LABELS[key], key, value ?? "", "text", 'maxlength="200"', scope);
-
 // ---------------------------------------------------------------------------
 // The office view of one case
 // ---------------------------------------------------------------------------
@@ -388,85 +335,7 @@ function intakeChecksPanel(record, rights, ui) {
   }"><i></i>${record.intakeVerified ? "Recorded" : "Not recorded yet"}</span></div><p class="field-note">These are demo attestations for a course prototype. Ticking them records flags in ViTally; it is not an interview, an identity check, a document check or a consent signature, and it asserts that none of those happened.</p>${body}</section>`;
 }
 
-// Why the office cannot send this application yet, in the words of the answer
-// that stands in the way. The server re-checks the *saved* answers, so that is
-// what this reads — unsaved edits are named separately, because saving them is
-// the step that would change the answer.
-const SUBMISSION_BLOCKERS = Object.freeze({
-  incomplete: "Some answers are still missing. Fill them in and save first.",
-  year: "This prototype accepts tax year 2025 only.",
-  residenceState:
-    "A state outside PA, NJ and DE needs the office to check first; it cannot be sent from here.",
-  helper:
-    "An application answered on somebody else's behalf is handled by the office, not sent from here.",
-  unsupported:
-    "These answers are outside PCDC's current service scope, so this cannot be sent. That is a service limitation, not a judgement about anyone's taxes.",
-  assistance:
-    "Some screening answers still need checking with the client before this is sent.",
-});
-
-// The office's copy of the client intake form. Its boxes are rendered from the
-// controller's **draft**, not from the saved case, exactly like the client's own
-// `#intake-form` — which is why it carries an id: the wiring layer routes an
-// edit in a form with that id into `controller.editAnswers`, so a re-render
-// puts back what is on screen rather than what was last saved, and `dirty`, the
-// unsaved notice and the SUBMIT lock all describe the same thing.
-//
-// The unsaved notice and the send button carry stable `data-role` hooks and the
-// notice is always present (hidden when there is nothing to say), so a typed
-// character can reveal the one and lock the other in place — rebuilding the page
-// under the cursor is the defect that pattern exists to avoid (`paintCountdown`
-// in `app.mjs` does the same for the resend countdown). Both are recomputed from
-// state on the next real render, so the patch can only ever add the lock.
-export const ASSISTED_ANSWERS_FORM_ID = "assisted-answers-form";
-
-function assistedAnswersPanel(record, rights, ui) {
-  const answers = ui.draftAnswers ?? record.answers ?? {};
-  const blocker = submissionBlocker(record.answers ?? {});
-  const busy = ui.busy ? "disabled" : "";
-  const confirmed = (ui.openPanels ?? []).includes("confirmed");
-  if (!rights.assistedIntake.allowed)
-    return `<section class="panel" aria-labelledby="assisted-case-title"><div class="section-head"><h2 id="assisted-case-title">The answers the office entered</h2></div>${explain(
-      rights.assistedIntake,
-    )}</section>`;
-  return `<section class="panel" aria-labelledby="assisted-case-title"><div class="section-head"><h2 id="assisted-case-title">The answers the office entered</h2></div><p class="field-note">This draft belongs to the office. ${esc(
-    OFFICE_NOTE,
-  )}</p><form id="${ASSISTED_ANSWERS_FORM_ID}" class="staff-form">${button(
-    `${icon("spark")} Fill fictional details`,
-    "fill-assisted-intake",
-    "secondary",
-    busy,
-  )}<div class="form-grid">${INTAKE_ANSWER_KEYS.map((key) =>
-    answerField(key, answers[key], "assisted"),
-  ).join("")}</div>${caseSubmit(
-    `${icon("check")} Save these answers`,
-    "SAVE_ANSWERS",
-    "secondary",
-    busy,
-  )}</form><label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${
-    confirmed ? "checked" : ""
-  }><span>I have checked these answers with the client</span></label><p class="field-note">This confirms the answers on screen. It is not a signature on a tax or consent form.</p>${
-    blocker
-      ? `<p class="staff-reason" role="note">${icon("lock")} ${esc(
-          named(SUBMISSION_BLOCKERS, blocker, "This cannot be sent yet."),
-        )}</p>`
-      : ""
-  }<p class="staff-reason" role="note" data-role="assisted-unsaved" ${when(
-    !ui.dirty,
-    "hidden",
-  )}>${icon(
-    "clock",
-  )} These edits are not saved yet. The office checks the saved answers, so save before sending.</p>${caseButton(
-    `${icon("arrow")} Send this application to the office`,
-    "SUBMIT",
-    "primary",
-    `data-role="assisted-submit" ${
-      blocker || ui.dirty || !confirmed || ui.busy ? "disabled" : ""
-    }`,
-  )}</section>`;
-}
-
-// A version-2 office draft is entered on the Add a case page, not here.
+// An office draft is entered on the Add a case page, not here.
 function continueInAddCase(record, rights) {
   const head = '<div class="section-head"><h2 id="assisted-case-title">The answers the office entered</h2></div>';
   return `<section class="panel" aria-labelledby="assisted-case-title">${head}${
@@ -709,7 +578,6 @@ export function renderAdminCase(caseRecord, ui = {}) {
   // persona is refused there, in the preparer screen's own words.
   const staffRights = staffEligibility(record, person);
   const draftForOffice = record.stage === "draft" && assisted(record);
-  const version2 = Number(record.intakeVersion) === 2;
   const origin = `<section class="panel" aria-labelledby="origin-title"><div class="section-head"><h2 id="origin-title">How this case reached the office</h2></div>${originRows(
     record,
   )}<p class="field-note">${esc(OFFICE_NOTE)}</p></section>`;
@@ -721,11 +589,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
       [
         origin,
         intakeChecksPanel(record, rights, view),
-        draftForOffice
-          ? version2
-            ? continueInAddCase(record, rights)
-            : assistedAnswersPanel(record, rights, view)
-          : "",
+        draftForOffice ? continueInAddCase(record, rights) : "",
         receiptPanel(record, person, view),
         officeActionsPanel(record, rights, view),
         caseDetails(record),
@@ -734,16 +598,9 @@ export function renderAdminCase(caseRecord, ui = {}) {
     [
       "intake",
       "Intake answers",
-      // A version-1 office draft is filled in on Overview and gains only the
-      // materials card, below the note; a version-2 one is entered in Add a
-      // case, so its tab reads like any version-2 case's.
-      draftForOffice && !version2
-        ? `<p class="muted">The office is filling in this walk-in client’s answers on Overview.</p>${materialsCard(
-            record,
-            staffRights,
-            view,
-          )}`
-        : intakeAnswersTab(record, staffRights, view, person),
+      // An office draft is entered in Add a case, so its tab reads like any
+      // case's.
+      intakeAnswersTab(record, staffRights, view, person),
     ],
     [
       "documents",

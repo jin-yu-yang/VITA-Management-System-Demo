@@ -87,14 +87,14 @@ export const mapCase = (row) => ({
   // (migration 008). Both mappers get them, because both start here.
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  // 1 or 2 (migration 011); a database from before it has only version 1.
-  intakeVersion: Number(row.intake_version ?? 1),
+  // Always 2 (migration 023).
+  intakeVersion: Number(row.intake_version),
   // The sub-steps the client has opened (migration 017); [] before it.
   intakeVisited: Array.isArray(row.intake_visited) ? [...row.intake_visited] : [],
 });
 
-// The case's contact details (migration 011), or null when it has no row —
-// every version-1 case, and a version-2 case nobody has saved a contact for.
+// The case's contact details (migration 011), or null when it has no row: a
+// case nobody has saved a contact for.
 export const mapContact = (row) =>
   row
     ? {
@@ -339,9 +339,9 @@ export function createStore(client) {
         fixtureGeneration: Number(row.fixture_generation),
         defaultFollowupPersonId: row.default_followup_person_id,
         currentSeason: row.current_season == null ? null : Number(row.current_season),
-        // The version Add a case starts a new application at (spec 2026-09-30
-        // §4.2). A row from before the column reads as version 1.
-        defaultIntakeVersion: Number(row.default_intake_version ?? 1),
+        // The version a new application starts at (spec 2026-09-30 §4.2):
+        // always 2 (migration 023).
+        defaultIntakeVersion: Number(row.default_intake_version),
       };
     },
 

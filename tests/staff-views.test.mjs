@@ -22,7 +22,6 @@ import {
   EVENT_SENTENCES,
   historyPanel,
   answersPanel,
-  answersPanelV1,
   contactCard,
   materialsCard,
   documentChecklist,
@@ -274,14 +273,13 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
   });
 });
 
-test("version-2 codes and version-1 labels display and filter as one", () => {
+test("answer codes display and filter by their labels", () => {
   const v2 = boardCase({ id: "v2", reference: "VT-V2", answers: { service: "drop_off", language: "cantonese" } });
-  const v1 = boardCase({ id: "v1", reference: "VT-V1", answers: { service: "Drop-off", language: "Cantonese" } });
   const other = boardCase({ id: "v3", reference: "VT-V3", answers: { service: "online", language: "english" } });
-  const both = [v2, v1, other];
+  const both = [v2, other];
   const ids = (filters) => filterCases(both, { status: "available", ...filters }, ALEX).map((c) => c.id).sort();
-  assert.deepEqual(ids({ service: "Drop-off" }), ["v1", "v2"]);
-  assert.deepEqual(ids({ language: "Cantonese" }), ["v1", "v2"]);
+  assert.deepEqual(ids({ service: "Drop-off" }), ["v2"]);
+  assert.deepEqual(ids({ language: "Cantonese" }), ["v2"]);
   assert.deepEqual(ids({ service: "Online" }), ["v3"]);
   const html = renderStaffBoard(both, PEOPLE, { person: ALEX, filters: { status: "available" } });
   assert.ok(!html.includes("drop_off") && !html.includes("cantonese"));
@@ -289,7 +287,6 @@ test("version-2 codes and version-1 labels display and filter as one", () => {
   assert.equal([...html.matchAll(/data-filter="language" data-value="Cantonese"/g)].length, 1);
   const shown = renderStaffBoard(both, PEOPLE, { person: ALEX, filters: { status: "available", service: "Drop-off" } });
   assert.match(shown, /VT-V2/);
-  assert.match(shown, /VT-V1/);
   assert.doesNotMatch(shown, /VT-V3/);
 });
 
@@ -304,12 +301,12 @@ test("the board names the workflow and no taxpayer", () => {
     [
       boardCase({
         answers: {
-          service: "Drop-off",
-          language: "English",
-          firstName: "Mei",
-          lastName: "Chen",
-          address: "123 Arch Street",
-          zip: "19107",
+          service: "drop_off",
+          language: "english",
+          tp_first_name: "Mei",
+          tp_last_name: "Chen",
+          addr_street: "123 Arch Street",
+          addr_zip: "19107",
         },
       }),
     ],
@@ -1300,13 +1297,13 @@ test("the contact and materials actions read as sentences", () => {
 
 // ---------------------------------------------------------------------------
 // Part 4c, Task 1: the version-2 answers by step and sub-step, "Not sure", the
-// contact card and the materials card (materials on version 1 too).
+// contact card and the materials card.
 // ---------------------------------------------------------------------------
 
 // A version-2 case the way the store returns it: the four contact fields live
 // in `contact`, never in `answers`.
 function v2Case({ seed = 1, married = false, answers = {}, ...overrides } = {}) {
-  const sample = { ...makeSampleAnswers({ version: 2, seed, married }), ...answers };
+  const sample = { ...makeSampleAnswers({ seed, married }), ...answers };
   const contact = {};
   for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
     contact[key] = sample[id] ?? null;
@@ -1486,25 +1483,6 @@ test("materialsCard and contactCard are exported with the (record, rights, ui) s
   assert.match(materialsCard(record, rights, { busy: true }), /RECORD_MATERIALS"[^>]*disabled/);
 });
 
-test("a version-1 case keeps today's answers panel, then gains the materials card", () => {
-  const fixtures = [
-    staffCase(),
-    staffCase({ answers: { service: "Online", language: "English", firstName: "Jo" } }),
-    staffCase({ answers: {}, intakeVersion: 1 }),
-  ];
-  for (const record of fixtures) {
-    assert.equal(answersPanel(record), answersPanelV1(record));
-    assert.equal(answersPanel(record, { person: SAM }), answersPanelV1(record));
-    const html = renderStaffCase(record, ALEX);
-    assert.doesNotMatch(html, /contact-card/);
-    assert.doesNotMatch(html, /Wording used/);
-    const tab = html.match(/<div role="tabpanel" id="case-panel-intake"[^>]*>([\s\S]*?)<\/div><div role="tabpanel" id="case-panel-documents"/)[1];
-    assert.ok(tab.startsWith(answersPanelV1(record)), "today's panel comes first, unchanged");
-    assert.equal((tab.match(/class="panel materials-card"/g) ?? []).length, 1);
-    assert.equal(tab, `${answersPanelV1(record)}${materialsCard(record, staffEligibility(record, ALEX), {})}`);
-  }
-});
-
 test("a version-2 case's intake tab is the answers, the contact card, then the materials card", () => {
   const html = renderStaffCase(v2Case({ preparerId: "alex", participants: ["alex"] }), ALEX);
   const tab = html.match(/<div role="tabpanel" id="case-panel-intake"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-documents"/)[1];
@@ -1533,12 +1511,6 @@ test("staffEligibility: editing the best time and recording materials follow wor
   // Office staff, on any case.
   assert.equal(staffEligibility(unclaimed, SAM).editContact.allowed, true);
   assert.equal(staffEligibility(unclaimed, SAM).recordMaterials.allowed, true);
-  // A version-1 case has no contact card, but takes materials.
-  const v1 = staffCase({ preparerId: "alex" });
-  assert.deepEqual(staffEligibility(v1, ALEX).editContact, { allowed: false, reason: "A version-1 case has no contact card." });
-  assert.deepEqual(staffEligibility(v1, SAM).editContact, { allowed: false, reason: "A version-1 case has no contact card." });
-  assert.equal(staffEligibility(v1, ALEX).recordMaterials.allowed, true);
-  assert.equal(staffEligibility(staffCase({ preparerId: null }), ALEX).recordMaterials.allowed, false);
 });
 
 test("decorateStaffCase names who recorded each material", () => {
@@ -1698,14 +1670,6 @@ test("a closed case offers no marks or moves, and says why", () => {
   assert.match(html, /doc-row/);
 });
 
-test("a version-1 case has no checklist", () => {
-  const record = staffCase({ intakeVersion: 1 });
-  assert.equal(documentChecklist(record, staffEligibility(record, SAM), {}), "");
-  const none = staffEligibility(record, SAM);
-  assert.equal(none.markDocumentCard.allowed, false);
-  assert.equal(none.markDocumentCard.reason, "A version-1 case has no document checklist.");
-});
-
 test("document marks and moves follow one rule under two names", () => {
   const sam = staffEligibility(checklistCase(), SAM);
   assert.deepEqual(sam.markDocumentCard, { allowed: true, reason: "" });
@@ -1748,8 +1712,6 @@ test("the Documents tab starts with the checklist, above the requests", () => {
   const tab = html.match(/id="case-panel-documents"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-followup"/)[1];
   assert.ok(tab.startsWith('<section class="panel doc-checklist"'));
   assert.ok(tab.indexOf("doc-checklist") < tab.indexOf('id="documents-title"'));
-  const v1 = renderStaffCase(staffCase(), SAM);
-  assert.doesNotMatch(v1, /doc-checklist/);
 });
 
 test("the draft 13614-C buttons show to staff who work on a version-2 case", () => {
@@ -1773,5 +1735,4 @@ test("the draft 13614-C buttons show to staff who work on a version-2 case", () 
   assert.ok(has(tools(checklistCase({ preparerId: "alex" }), ALEX)));
   assert.equal(has(tools(checklistCase({ preparerId: "someone-else" }), ALEX)), false);
   assert.doesNotMatch(tools(checklistCase({ preparerId: "someone-else" }), ALEX), /view-draft|draft-ready/);
-  assert.doesNotMatch(tools(staffCase({ intakeVersion: 1 }), SAM), /view-draft|draft-ready/);
 });

@@ -148,10 +148,10 @@ test("no matching case is an empty state", () => {
   assert.doesNotMatch(html, /<tr class="pool-row"/);
 });
 
-test("version-2 codes and version-1 labels read and filter as one", () => {
+test("answer codes display and filter by their labels", () => {
   const cases = [
     rec("X", "received", { answers: { language: "cantonese", service: "drop_off" } }),
-    rec("Y", "received", { answers: { language: "Cantonese", service: "Drop-off" } }),
+    rec("Y", "received", { answers: { language: "cantonese", service: "drop_off" } }),
     rec("Z", "received", { answers: { language: "english", service: "online" } }),
   ];
   const html = render({}, cases);

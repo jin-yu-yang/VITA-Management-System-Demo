@@ -3,11 +3,10 @@ import assert from "node:assert/strict";
 import { createDatabaseFixture } from "./support/database-fixture.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 
-// The fixture's `intakeVersion` option, samples that follow their
-// workspace's version, version-2 samples, a checkpoint reload that clears a
-// sample's materials and card marks (part 4c, Task 5), and the switch-over
-// that makes version 2 the default (migration 020, OpenSpec change
-// make-intake-v2-default, spec client-intake).
+// The column default the fixture's workspaces keep, version-2 samples, a
+// checkpoint reload that clears a sample's materials and card marks (part 4c,
+// Task 5), and the switch-over that makes version 2 the default (migration
+// 020, OpenSpec change make-intake-v2-default, spec client-intake).
 
 const KEYS = [
   "preparation_ready",
@@ -68,12 +67,9 @@ const columnDefault = async (f) =>
 const versionOfCase = async (f, caseId) =>
   Number((await f.sql("select intake_version from public.cases where id=$1", [caseId])).rows[0].intake_version);
 
-const setWorkspaceVersion = (f, version) =>
-  f.sql("update public.workspaces set default_intake_version=$2 where id=$1", [f.workspaceId, version]);
-
-test("the fixture's intakeVersion option and the column default", async (t) => {
+test("the column default", async (t) => {
   await t.test("the column default is 2, and a workspace that keeps it is version 2", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: null });
+    const f = await createDatabaseFixture();
     try {
       assert.equal(await columnDefault(f), "2");
       assert.deepEqual(await versionsOf(f), [2, 2]);
@@ -81,34 +77,11 @@ test("the fixture's intakeVersion option and the column default", async (t) => {
       await f.close();
     }
   });
-
-  await t.test("the default gives version 1 to both workspaces", async () => {
-    const f = await createDatabaseFixture();
-    try {
-      assert.deepEqual(await versionsOf(f), [1, 1]);
-    } finally {
-      await f.close();
-    }
-  });
-
-  await t.test("intakeVersion 2 gives version 2 to both workspaces", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: 2 });
-    try {
-      assert.deepEqual(await versionsOf(f), [2, 2]);
-    } finally {
-      await f.close();
-    }
-  });
-
-  await t.test("anything but 1, 2 or null throws", async () => {
-    for (const bad of [0, 3, "2", 1.5, true])
-      await assert.rejects(createDatabaseFixture({ intakeVersion: bad }), /intakeVersion/);
-  });
 });
 
-test("the switch-over (020): new applications are version 2, existing ones keep theirs", async (t) => {
+test("the switch-over (020): new applications are version 2", async (t) => {
   await t.test("a client's new application is version 2", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: null });
+    const f = await createDatabaseFixture();
     try {
       const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
       assert.equal(await versionOfCase(f, caseId), 2);
@@ -118,7 +91,7 @@ test("the switch-over (020): new applications are version 2, existing ones keep 
   });
 
   await t.test("the office's new assisted application is version 2", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: null });
+    const f = await createDatabaseFixture();
     try {
       const { caseId } = await f.createCase(f.presenter, crypto.randomUUID(), {
         mode: "assisted",
@@ -131,33 +104,13 @@ test("the switch-over (020): new applications are version 2, existing ones keep 
     }
   });
 
-  await t.test("a version-1 application keeps version 1 after the switch and after an update", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: null });
-    try {
-      await setWorkspaceVersion(f, 1);
-      const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
-      assert.equal(await versionOfCase(f, caseId), 1);
-      await setWorkspaceVersion(f, 2);
-      assert.equal(await versionOfCase(f, caseId), 1, "after the workspace is version 2");
-      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: makeSampleAnswers() });
-      assert.equal(await versionOfCase(f, caseId), 1, "after an update");
-    } finally {
-      await f.close();
-    }
-  });
-
-  await t.test("a reset seeds version-2 samples; set back to 1, the next reset seeds version 1", async () => {
-    const f = await createDatabaseFixture({ intakeVersion: null });
+  await t.test("a reset seeds version-2 samples", async () => {
+    const f = await createDatabaseFixture();
     try {
       await f.seedFixtures();
-      let rows = await samples(f);
+      const rows = await samples(f);
       assert.equal(rows.length, 6);
       for (const row of rows) assert.equal(row.intake_version, 2, row.fixture_key);
-      await setWorkspaceVersion(f, 1);
-      await f.seedFixtures();
-      rows = await samples(f);
-      assert.equal(rows.length, 6);
-      for (const row of rows) assert.equal(row.intake_version, 1, row.fixture_key);
     } finally {
       await f.close();
     }
@@ -165,7 +118,7 @@ test("the switch-over (020): new applications are version 2, existing ones keep 
 });
 
 test("version-2 samples, the checkpoint, and version-2 round trips", async (t) => {
-  const f = await createDatabaseFixture({ intakeVersion: 2 });
+  const f = await createDatabaseFixture();
   try {
     await t.test("the new private functions are not executable by clients", async () => {
       for (const signature of [
@@ -269,7 +222,7 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
     });
 
     await t.test("a client case round-trips on version 2", async () => {
-      const full = makeSampleAnswers({ version: 2, seed: 0 });
+      const full = makeSampleAnswers({ seed: 0 });
       const keys = Object.keys(full);
       const half = (from, to) => Object.fromEntries(keys.slice(from, to).map((key) => [key, full[key]]));
       const { caseId } = await f.createCase(f.applicantA, crypto.randomUUID(), { answers: {} });
@@ -297,35 +250,13 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
         2,
       );
       await f.act(f.presenter, caseId, f.sam, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers({ version: 2, seed: 0 }),
+        answers: makeSampleAnswers({ seed: 0 }),
       });
       await f.act(f.presenter, caseId, f.sam, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];
       assert.equal(row.stage, "received");
       assert.ok(Number.isInteger(Number(row.client_number)) && Number(row.client_number) > 0);
     });
-  } finally {
-    await f.close();
-  }
-});
-
-test("samples on a version-1 workspace are exactly today's six", async () => {
-  const f = await createDatabaseFixture();
-  try {
-    await f.seedFixtures();
-    const rows = await samples(f);
-    assert.equal(rows.length, 6);
-    assert.deepEqual(
-      rows.map((row) => row.answers.firstName),
-      NAMES,
-    );
-    for (const row of rows) {
-      assert.equal(row.intake_version, 1);
-      assert.equal(
-        (await f.sql("select count(*) as n from public.case_contacts where case_id=$1", [row.id])).rows[0].n,
-        "0",
-      );
-    }
   } finally {
     await f.close();
   }

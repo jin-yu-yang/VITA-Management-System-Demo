@@ -673,7 +673,7 @@ test("mergeIntoDraft keeps absent keys, sets null and never mutates", () => {
 // Sending
 // ---------------------------------------------------------------------------
 
-test("withholdInvalid removes only invalid fields, trimmed; version 1 unchanged", () => {
+test("withholdInvalid removes only invalid fields, trimmed", () => {
   const draft = { email: "a@", tp_first_name: "Mei", tp_middle_name: null, addr_zip: "12345" };
   const copy = structuredClone(draft);
   assert.deepEqual(withholdInvalid(draft, 2), { tp_first_name: "Mei", tp_middle_name: null, addr_zip: "12345" });
@@ -685,9 +685,6 @@ test("withholdInvalid removes only invalid fields, trimmed; version 1 unchanged"
   assert.equal("hh" in sent, false);
   assert.equal(sent.has_household_members, "yes");
   assert.deepEqual(withheldFields(household, 2), ["hh"]);
-  const v1 = { firstName: "Mei", email: "a@" };
-  assert.equal(withholdInvalid(v1, 1), v1);
-  assert.deepEqual(withheldFields(v1, 1), []);
 });
 
 test("sendableDiffers: only what a save would change", () => {

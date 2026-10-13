@@ -4,21 +4,13 @@ import {
   button,
   caseButton,
   input,
-  select,
-  radio,
   stageBadge,
   formatTime,
   fieldId,
   officeContact,
   formatClientNumber,
-  ANSWER_LABELS as answerLabels,
 } from "./ui.mjs";
-import {
-  describeStage,
-  screening,
-  missingAnswers,
-  submissionBlocker,
-} from "./domain.mjs";
+import { describeStage } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
 import {
   stepsFor,
@@ -54,13 +46,6 @@ import { t, sentence, historyLine } from "./client-text.mjs";
 // Without a language everything is the English it always was.
 
 const when = (condition, html) => (condition ? html : "");
-
-const steps = [
-  "Your visit",
-  "Your situation",
-  "Your details",
-  "Check your answers",
-];
 
 const row = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`;
@@ -184,19 +169,19 @@ function shownErrors(state) {
   return invalidAnswers(null, state.draftAnswers ?? {}).filter((id) => revealed.has(id)).length;
 }
 
-// The chip and the conflict panel follow the client's language on a
-// version-2 form; a version-1 form is English throughout (spec §2), and the
-// office's Add a case is a staff screen.
-const formLang = (state) => (isVersionTwo(state?.savedCase) ? viewLang(state) : "en");
+// The chip and the conflict panel follow the client's language on a form
+// with a case; the office's Add a case before its first save is a staff
+// screen, in English.
+const formLang = (state) => (state?.savedCase ? viewLang(state) : "en");
 
 export function saveStatus(state) {
   const lang = formLang(state);
   const say = (key) => esc(t(key, {}, lang));
   if (state.saveState === "saving")
     return `<span class="save-chip saving" role="status">${icon("refresh")} ${say("save.saving")}</span>`;
-  // Version 2 only, after Saving, Failed and Unsaved and before Saved.
+  // On a case, after Saving, Failed and Unsaved and before Saved.
   if (
-    Number(state.savedCase?.intakeVersion) === 2 &&
+    state.savedCase &&
     state.saveState !== "failed" &&
     state.saveState !== "unsaved" &&
     !state.dirty
@@ -217,30 +202,12 @@ export function saveStatus(state) {
 // A deliberate choice between two sets of answers. It shows only what actually
 // differs, and neither button saves: reconciliation picks a new edit base, and
 // the save that follows still goes through the database revision check.
+//
+// Every catalogue field, the four contact fields included, compared by what a
+// save would send (spec §3.3). Unanswered is one state, so a null in the draft
+// and a missing key on the server are the same answer.
 export function conflictForm(state) {
   if (!state.conflict) return "";
-  if (isVersionTwo(state.savedCase)) return conflictFormV2(state);
-  const server = state.savedCase?.answers ?? {};
-  const mine = state.draftAnswers ?? {};
-  const keys = [...new Set([...Object.keys(answerLabels)])].filter(
-    (key) => String(mine[key] ?? "") !== String(server[key] ?? ""),
-  );
-  return conflictPanel(
-    state,
-    "en",
-    keys
-      .map(
-        (key) =>
-          `<tr><th scope="row">${esc(answerLabels[key])}</th><td>${esc(mine[key] || "—")}</td><td>${esc(server[key] || "—")}</td></tr>`,
-      )
-      .join(""),
-  );
-}
-
-// Version 2: every catalogue field, the four contact fields included, compared
-// by what a save would send (spec §3.3). Unanswered is one state, so a null in
-// the draft and a missing key on the server are the same answer.
-function conflictFormV2(state) {
   const server = serverAnswersV2(state.savedCase);
   const mine = state.draftAnswers ?? {};
   const variant = variantOf(mine);
@@ -263,10 +230,9 @@ function conflictPanel(state, lang, rows) {
 }
 
 // ---------------------------------------------------------------------------
-// Version 2 helpers
+// Catalogue helpers
 // ---------------------------------------------------------------------------
 
-const isVersionTwo = (record) => Number(record?.intakeVersion) === 2;
 const STEPS_V2 = stepsFor(2);
 const allQuestionsV2 = () => STEPS_V2.flatMap((step) => questionsFor(2, step));
 
@@ -286,126 +252,18 @@ function sameAnswer(a, b) {
 // Intake
 // ---------------------------------------------------------------------------
 
-// The fictional-data tools: English on version 1, the client's language on version 2.
+// The fictional-data tools above the form, in the client's language.
 const fictionTools = (lang = "en") => {
   const say = (key) => esc(t(key, {}, lang));
   return `<div class="fiction-tools"><span class="demo-fiction">${say("fiction.only")}</span>${button(`${icon("spark")} ${say("fiction.fill")}`, "fill-fictional", "demo")}${button(`${icon("refresh")} ${say("fiction.another")}`, "regenerate-fictional", "demo subtle")}</div>`;
 };
-const fictionalTools = fictionTools();
 
-function intakeBody(state) {
-  const a = state.draftAnswers ?? {};
-  const result = screening(a);
-  if (state.formStep === 0)
-    return `<div class="service-options">${[
-      ["Same-day", "Meet with our volunteers at the site.", "home"],
-      ["Drop-off", "Leave your documents. We’ll follow up.", "folder"],
-      ["Online", "Work with us remotely.", "user"],
-    ]
-      .map(
-        ([val, desc, ico]) =>
-          `<label class="service-card ${a.service === val ? "selected" : ""}"><input type="radio" name="service" value="${val}" ${a.service === val ? "checked" : ""} required><span class="service-icon">${icon(ico)}</span><span><strong>${val}</strong><small>${desc}</small></span><i></i></label>`,
-      )
-      .join(
-        "",
-      )}</div><div class="form-grid">${select("Tax year", "year", a.year, ["2025"], "required")}${select("Preferred service language", "language", a.language, ["English", "Cantonese", "Mandarin"], "required")}</div><div class="info-note">${icon("help")}<p>This prototype covers selected intake questions for tax year 2025. A volunteer completes the full intake process with you.</p></div>`;
-  if (state.formStep === 1)
-    return `<div class="form-grid">${input("City of residence", "residenceCity", a.residenceCity, "text", "required")}${select("State of residence", "residenceState", a.residenceState, ["PA", "NJ", "DE", "Other"], "required")}</div><p class="field-note">Where you live can differ from where your mail goes. The next step asks for your mailing address.</p>${radio("Did you earn income from driving for Uber or Lyft in 2025?", "rideshare", a.rideshare)}${radio("Apart from Uber/Lyft driving, did you earn income from another business, freelance work, or self-employment in 2025?", "other", a.other)}<p class="field-note">Wages earned as an employee are not self-employment income.</p>${radio("Did you have more than 10 stock transactions in 2025?", "stocks", a.stocks)}${
-      result === "unsupported"
-        ? `<div class="notice amber" role="status">${icon("help")}<div><h3>Outside PCDC’s current service scope</h3><p>${a.other === "yes" ? "PCDC cannot prepare returns with other business or self-employment income under its current service policy. This also applies if you have Uber/Lyft income." : "More than 10 stock transactions exceeds PCDC’s current service limit."}</p><p>This is a PCDC service limitation, not a judgement about your taxes. Contact the office for guidance; your draft stays saved.</p>${button("Contact the office", "open-help", "secondary")}</div></div>`
-        : result === "assistance" || a.residenceState === "Other"
-          ? `<div class="notice amber" role="status">${icon("help")}<div><h3>Let’s check with a volunteer</h3><p>Our office can help clarify your situation before you continue. Your answers stay saved.</p>${button("Contact the office", "open-help", "secondary")}</div></div>`
-          : ""
-    }`;
-  if (state.formStep === 2)
-    return `<div class="form-grid">${input("First name", "firstName", a.firstName, "text", 'required autocomplete="given-name"')}${input("Last name", "lastName", a.lastName, "text", 'required autocomplete="family-name"')}</div>${input("Mailing address", "address", a.address, "text", 'required autocomplete="street-address"')}<div class="form-grid triple">${input("Mailing city", "city", a.city, "text", "required")}${select("Mailing state", "state", a.state, ["PA", "NJ", "DE"], "required")}${input("ZIP code", "zip", a.zip, "text", 'required inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?"')}</div><p class="field-note">This is where the office would send mail. It does not have to match your city of residence.</p><div class="form-grid">${input("People in your household", "household", a.household, "number", 'required min="1" max="30"')}${select(
-      "Who is completing this form?",
-      "helper",
-      a.helper,
-      [
-        ["self", "I am the taxpayer"],
-        ["helper", "Someone is helping me"],
-      ],
-      "required",
-    )}</div>${when(a.helper === "helper", `<div class="info-note">${icon("help")}<p>Contact the office for assisted applications. Helping enter answers does not grant access or signing authority.</p></div>`)}${select(
-      "Are your income documents ready?",
-      "documents",
-      a.documents,
-      [
-        ["ready", "Yes, I have them ready"],
-        ["some", "Some are still missing"],
-        ["unsure", "I need help checking"],
-      ],
-      "required",
-    )}<p class="field-note">This records what you have ready. A volunteer checks which documents are needed and verifies them.</p>`;
-  const missing = missingAnswers(a);
-  return `<div class="review-block"><div class="section-head"><h3>Your visit</h3>${button("Edit visit", "edit-0", "inline")}</div>${row("Service", a.service)}${row("Tax year", a.year)}${row("Preferred language", a.language)}</div><div class="review-block"><div class="section-head"><h3>Your situation</h3>${button("Edit screening", "edit-1", "inline")}</div>${row("City of residence", `${a.residenceCity || ""}${a.residenceState ? `, ${a.residenceState}` : ""}`)}${row("Uber / Lyft income", a.rideshare === "yes" ? "Yes" : a.rideshare === "no" ? "No" : "")}${row("Other self-employment", a.other === "yes" ? "Yes" : a.other === "no" ? "No" : "")}${row("More than 10 stock transactions", a.stocks === "yes" ? "Yes" : a.stocks === "no" ? "No" : "")}</div><div class="review-block"><div class="section-head"><h3>Your details</h3>${button("Edit details", "edit-2", "inline")}</div>${row("Name", `${a.firstName || ""} ${a.lastName || ""}`.trim())}${row("Mailing address", [a.address, a.city, `${a.state || ""} ${a.zip || ""}`.trim()].filter(Boolean).join(", "))}${row("Household size", a.household)}${row("Documents", a.documents === "ready" ? "Reported ready" : a.documents === "some" ? "Some missing" : a.documents === "unsure" ? "Needs help checking" : "")}</div>${when(missing.length, `<div class="notice amber" role="status">${icon("help")}<div><h3>Still to fill in</h3><p>${esc(missing.map((key) => answerLabels[key] ?? key).join(", "))}</p></div></div>`)}<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${state.openPanels.includes("confirmed") ? "checked" : ""}><span>I have checked my answers</span></label><p class="field-note">This confirms your answers. It is not a signature on a tax or consent form; a volunteer follows up about required forms.</p>`;
-}
-
-// A version-1 application is English only (spec 2026-10-05 §2). In Chinese its
-// body carries lang="en" under a one-line note in the client's language; the
-// frame around it (top bar, banners, footer) is translated as anywhere else.
-// English is the page exactly as before, with no note and no wrapper.
-function englishOnly(state, mainClass, inner) {
-  const lang = viewLang(state);
-  if (lang === "en") return `<main id="main" class="${mainClass}" tabindex="-1">${inner}</main>`;
-  const note = `<p class="v1-note">${icon("help")} ${esc(t("v1.english_only", {}, lang))}</p>`;
-  // The workspace is a grid of the rail and the form, so the grid moves onto
-  // the English wrapper and the note sits above it.
-  return mainClass === "workspace"
-    ? `<main id="main" class="v1-english" tabindex="-1">${note}<div class="workspace" lang="en">${inner}</div></main>`
-    : `<main id="main" class="${mainClass}" tabindex="-1">${note}<div lang="en">${inner}</div></main>`;
-}
-
+// The sub-step form lives in intake-views.mjs (spec 2026-10-04 §2–§6); this
+// file passes it the chrome it shares with the office's Add a case.
 export function intakeScreen(state) {
   const record = state.savedCase;
   if (!record) return applicationsScreen(state);
-  if (isVersionTwo(record)) return intakeScreenV2(state);
-  if (record.stage !== "draft")
-    return englishOnly(state, "narrow", `<div class="page-intro"><span class="overline">${esc(record.reference)}</span><h1>Your answers are with the office</h1><p>${esc(describeStage(record.stage).clientMessage)}</p></div><div class="panel">${Object.keys(answerLabels)
-      .filter((key) => record.answers?.[key])
-      .map((key) => row(answerLabels[key], record.answers[key]))
-      .join("")}</div><p class="field-note">A volunteer makes corrections after submission, so these answers are read-only here.</p>${button(`See your progress ${icon("arrow")}`, "open-progress", "primary full")}`);
-  const a = state.draftAnswers ?? {};
-  const result = screening(a);
-  const blocked =
-    (state.formStep === 1 &&
-      (result === "unsupported" ||
-        result === "assistance" ||
-        a.residenceState === "Other")) ||
-    (state.formStep === 2 && a.helper === "helper");
-  const cannotSubmit = submissionBlocker(a) !== null;
-  return englishOnly(state, "workspace", `<aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">YOUR APPLICATION</span><h2>A few steps.<br>We’re here to help.</h2><ol class="step-list">${steps
-    .map(
-      (label, index) =>
-        `<li class="${index === state.formStep ? "active" : index < state.formStep ? "complete" : ""}"${index === state.formStep ? ' aria-current="step"' : ""}><span>${index < state.formStep ? icon("check") : String(index + 1).padStart(2, "0")}</span><div>${label}${index === state.formStep ? "<small>YOU ARE HERE</small>" : ""}</div></li>`,
-    )
-    .join("")}</ol></div><div class="sidebar-help">${icon("help")}<h3>Prefer to talk it through?</h3><p>Our volunteers can help at the PCDC office, or by phone.</p>${officeContact()}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(record.reference)}</span>${saveStatus(state)}</div>${conflictForm(state)}<div class="page-intro"><span class="overline">STEP ${state.formStep + 1} OF 4</span><h1>${esc(steps[state.formStep] ?? steps[0])}</h1><p>${
-    [
-      "How would you like to work with our volunteers?",
-      "A few questions help us understand how we can help.",
-      "Tell us a little about yourself and what you have ready.",
-      "Take a moment to make sure everything looks right.",
-    ][state.formStep] ?? ""
-  }</p></div>${fictionalTools}<form id="intake-form">${intakeBody(state)}${when(state.error, `<p class="error" role="alert">${esc(state.error?.message)}</p>`)}<div class="form-actions"><div>${when(state.formStep, button(`${icon("back")} Back`, "back-step", "text"))}</div>${
-    state.formStep === 3
-      ? caseButton(
-          `Submit application ${icon("arrow")}`,
-          "SUBMIT",
-          "primary",
-          cannotSubmit || state.conflict || state.busy ? "disabled" : "",
-        )
-      : `<button type="submit" class="btn primary" ${blocked || state.conflict || state.busy ? "disabled" : ""}>Continue ${icon("arrow")}</button>`
-  }</div></form></section>`);
-}
-
-// ---------------------------------------------------------------------------
-// Intake, version 2: the sub-step form lives in intake-views.mjs (spec
-// 2026-10-04 §2–§6); this file passes it the chrome it shares with version 1.
-// ---------------------------------------------------------------------------
-
-function intakeScreenV2(state) {
-  return state.savedCase.stage === "draft"
+  return record.stage === "draft"
     ? intakeFormV2(state, { saveStatus, conflictForm, fictionalTools: fictionTools(viewLang(state)) })
     : submittedV2(state);
 }
@@ -475,8 +333,8 @@ export function progressScreen(state) {
   );
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
-  const firstName = isVersionTwo(record) ? answers.tp_first_name : answers.firstName;
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang)}</div>${progressTrack(record.stage, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${isVersionTwo(record) ? progressDocumentsV2(state, lang) : ""}${
+  const firstName = answers.tp_first_name;
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang)}</div>${progressTrack(record.stage, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${progressDocumentsV2(state, lang)}${
     open.length
       ? open.map((request) => documentRequest(request, state, lang)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>${say("progress.all_set")}</h3><p>${say("progress.all_set_body")}</p></div></div>`

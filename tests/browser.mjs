@@ -136,9 +136,7 @@ const MONEY_WORDS = Object.freeze(["$", "refund", "routing", "deposit", "direct 
 // What counts as the keyboard being somewhere a person can use it.
 const CONTROLS = Object.freeze(["BUTTON", "INPUT", "TEXTAREA", "SELECT", "A"]);
 
-// The screening answer that takes an application outside what PCDC prepares,
-// and the sentence the form answers it with (`src/client-views.mjs`).
-const OUT_OF_SCOPE_NOTICE = "Outside PCDC’s current service scope";
+// The city a draft is saved with before Save & exit, to see it come back.
 const RETURN_CITY = "Comebackton";
 
 // ---------------------------------------------------------------------------
@@ -261,48 +259,12 @@ async function clickContinue(page) {
     .click({ timeout: CLICK_MS });
 }
 
-/**
- * Wait until the intake form is on this step (1-based). The step names are no
- * signal: the sidebar lists all four on every step, so "Your details" is on
- * screen before the Continue that leads there has saved anything. The marker
- * above the heading moves only after `saveAnswers` has resolved.
- */
-async function waitForStep(page, step) {
-  await waitFor(
-    page,
-    `intake step ${step} of 4`,
-    (wanted) =>
-      (document.querySelector(".page-intro .overline")?.textContent ?? "").includes(
-        wanted,
-      ),
-    `STEP ${step} OF 4`,
-    ARRIVAL_MS,
-  );
-}
-
 /** Start one fictional application and read back the generated reference. */
 async function startApplication(page) {
   await clickAction(page, "start-application");
   const card = page.locator(".reference-card strong");
   await card.waitFor({ state: "visible", timeout: ARRIVAL_MS });
   return (await card.innerText()).trim();
-}
-
-/**
- * Fill every blank in one click and walk the four version-1 intake steps.
- * `beforeFill` runs on step 1 while it is still blank, and `atStep` on each
- * step the walk arrives at, so a check can sit where its question is.
- */
-async function fillIntakeToReview(page, { beforeFill, atStep } = {}) {
-  await clickAction(page, "continue-intake");
-  await waitForText(page, "Your visit", RENDER_MS);
-  if (beforeFill) await beforeFill();
-  await clickAction(page, "fill-fictional");
-  for (let step = 2; step <= 4; step += 1) {
-    await clickContinue(page);
-    await waitForStep(page, step);
-    if (atStep) await atStep(step);
-  }
 }
 
 /**
@@ -459,9 +421,9 @@ const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again lat
 // ---------------------------------------------------------------------------
 
 async function runPermutation(t, roles) {
-  // The story's workspace is set to version 2 explicitly (the test fixture
-  // defaults to 1): its samples, its client forms and Add a case all follow.
-  const fixture = await createBrowserFixture({ intakeVersion: 2 });
+  // The story's workspace is version 2, the column default: its samples, its
+  // client forms and Add a case all follow.
+  const fixture = await createBrowserFixture();
   const evidence = {
     roles,
     timings: {},
@@ -750,8 +712,7 @@ async function runPermutation(t, roles) {
         const before = await readClientPlace(client, applicantA.userId);
         assert.equal(before.stored.screen, "progress");
         assert.equal(before.stored.selectedCaseId, classCase.id);
-        // Version 2 remembers the sub-step the Submit was pressed on; the
-        // version-1 step number is checked in the version-1 phase.
+        // The window remembers the sub-step the Submit was pressed on.
         assert.equal(before.stored.formSubstep, "review.submit");
         assert.ok(
           before.stored.openPanels.includes("confirmed"),
@@ -1826,9 +1787,6 @@ async function runPermutation(t, roles) {
       await draftWin.context.close();
     });
 
-    // The version-1 checks that stood here (a blank required answer stops
-    // step 1; an out-of-scope answer stops the form) are version-1 rules and
-    // live in the version-1 phase below.
     await phase("a draft saved with Save & exit comes back after signing in again", async () => {
       await clickAction(client, "open-applications");
       const reference = await startApplication(client);
@@ -2727,170 +2685,8 @@ async function runPermutation(t, roles) {
       await waitForText(client, classReference, ARRIVAL_MS);
     });
 
-    // Version 1 outlives the switch-over: a draft started on it finishes in
-    // the old four-step form, and the office's version-1 Add a case still
-    // creates a case in one call. This phase sets the story's workspace to 1
-    // for its length and always sets it back to 2. It holds the version-1
-    // checks the rest of the story no longer reaches.
-    await phase("a version-1 draft still finishes in the old form", async () => {
-      const { workspaceId } = fixture.database;
-      try {
-        await fixture.database.sql(
-          "update public.workspaces set default_intake_version=1 where id=$1",
-          [workspaceId],
-        );
-        await clickAction(client, "open-applications");
-        const reference = await startApplication(client);
-        const own = await caseByReference(fixture, reference);
-        const untouched = Number(own.revision);
-        assert.equal(
-          Number(
-            (await one(fixture, "select intake_version from public.cases where id=$1", [own.id]))
-              .intake_version,
-          ),
-          1,
-        );
-        await fillIntakeToReview(client, {
-          // A required answer nobody has given stops the step, and the field
-          // that stopped it says so for itself.
-          beforeFill: async () => {
-            await clickContinue(client);
-            const blocked = await client.evaluate(() => {
-              const form = document.querySelector("#intake-form");
-              const invalid = [...form.elements].find(
-                (element) => element.willValidate && !element.checkValidity(),
-              );
-              return {
-                formValid: form.checkValidity(),
-                step: document.querySelector(".page-intro .overline")?.textContent ?? null,
-                field: invalid?.name ?? null,
-                message: invalid?.validationMessage ?? null,
-              };
-            });
-            assert.equal(blocked.formValid, false);
-            assert.equal(blocked.step, "STEP 1 OF 4", "a blank required answer did not stop the step");
-            assert.equal(blocked.field, "service", "a different field was the one that blocked");
-            assert.ok(blocked.message, "the field that blocked the step explains nothing");
-            assert.equal(
-              Number((await caseById(fixture, own.id)).revision),
-              untouched,
-              "a form that refused to submit still sent something",
-            );
-            evidence.regressions.requiredField = {
-              field: blocked.field,
-              stoppedAt: blocked.step,
-            };
-          },
-          // Screening: an answer outside what PCDC prepares stops the
-          // application where it stands, and says it is a service limit.
-          atStep: async (step) => {
-            if (step !== 2) return;
-            await waitForText(client, "City of residence", ARRIVAL_MS);
-            await waitForQuiet(client);
-            await client
-              .locator('input[name="other"][value="yes"]')
-              .click({ timeout: CLICK_MS });
-            await waitForText(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
-            const stopped = await client.evaluate(() => ({
-              continueDisabled: [
-                ...document.querySelectorAll("#intake-form button[type='submit']"),
-              ].every((button) => button.disabled),
-              submits: document.querySelectorAll('[data-case-action="SUBMIT"]').length,
-            }));
-            assert.equal(stopped.continueDisabled, true, "an unsupported answer still continues");
-            assert.equal(stopped.submits, 0, "an unsupported answer can still be submitted");
-            await waitForText(
-              client,
-              "This is a PCDC service limitation, not a judgement about your taxes.",
-              RENDER_MS,
-            );
-            evidence.regressions.screening =
-              "the out-of-scope notice appeared, Continue was disabled and nothing could be submitted";
-            await waitForQuiet(client);
-            await client
-              .locator('input[name="other"][value="no"]')
-              .click({ timeout: CLICK_MS });
-            await waitForTextGone(client, OUT_OF_SCOPE_NOTICE, RENDER_MS);
-          },
-        });
-        await waitForText(client, "Check your answers", RENDER_MS);
-        await shoot(client, "intake-check-your-answers");
-        await tickBox(client, "field-confirmed");
-        await act(client, "SUBMIT", { badge: "Received" }, { caseId: own.id });
-        // The version-1 window record: the step, and the ticked box.
-        const place = await readClientPlace(client, applicantA.userId);
-        assert.equal(place.stored.screen, "progress");
-        assert.equal(place.stored.selectedCaseId, own.id);
-        assert.equal(place.stored.formStep, 3);
-        assert.deepEqual(place.stored.openPanels, ["confirmed"]);
-        assert.equal((await caseById(fixture, own.id)).stage, "received");
-
-        // The office's version-1 Add a case: one call creates the case.
-        await choosePersona(staff, sam);
-        await openBoard(staff, OFFICE_BOARD_HEADING);
-        await clickAction(staff, "open-add-case");
-        await staff
-          .locator("#assisted-intake-form")
-          .waitFor({ state: "visible", timeout: RENDER_MS });
-        await clickAction(staff, "fill-assisted-intake");
-        await waitFor(
-          staff,
-          "the assisted intake form to be filled in",
-          () => Boolean(document.querySelector("#field-assisted-firstName")?.value),
-          undefined,
-          RENDER_MS,
-        );
-        // Creating a case is the form's own submit, not a case action — there
-        // is no case yet — so what proves a repeat is safe is that no case
-        // appeared.
-        const before = await workspaceCaseCount(fixture);
-        record(
-          "CREATE_ASSISTED",
-          await pressUntilEffect(staff, {
-            press: async () => {
-              await waitForQuiet(staff);
-              await staff
-                .locator('#assisted-intake-form button[type="submit"]')
-                .click({ timeout: CLICK_MS });
-            },
-            ready: HAS_TEXT,
-            arg: "The answers the office entered",
-            what: "the assisted application's own case workspace",
-            safeToRepeat: async () => (await workspaceCaseCount(fixture)) === before,
-          }),
-        );
-        const assistedReference = (await staff.locator("#case-title").innerText()).trim();
-        const assisted = await caseByReference(fixture, assistedReference);
-        assert.equal(assisted.owner_user_id, null, "an assisted case has a client account");
-        assert.equal(
-          Number(
-            (await one(fixture, "select intake_version from public.cases where id=$1", [assisted.id]))
-              .intake_version,
-          ),
-          1,
-        );
-        await tickBox(staff, "field-confirmed");
-        await act(
-          staff,
-          "SUBMIT",
-          { badge: "Received" },
-          { caseId: assisted.id, attributes: '[data-role="assisted-submit"]' },
-        );
-        evidence.regressions.versionOne = {
-          client: "blocked blank, screened, walked four steps and submitted",
-          office: "created in one call and submitted",
-        };
-      } finally {
-        await fixture.database.sql(
-          "update public.workspaces set default_intake_version=2 where id=$1",
-          [workspaceId],
-        );
-      }
-    });
-
-    // After the reset, which compares case sets. The story's workspace is on
-    // version 2, so this phase needs no switch of its own. The case it makes
-    // is never opened on a staff screen.
+    // After the reset, which compares case sets. The case it makes is never
+    // opened on a staff screen.
     //
     // Typing rule: text goes in with `fill`, or `focus` then the keyboard.
     // Nothing clicks into a field, because that click is itself a press, and it

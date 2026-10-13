@@ -11,13 +11,11 @@ import HANT_MAP from "../src/zh-hant.mjs";
 
 const q = (id) => findQuestion(2, id);
 
-test("steps: ten for version 2, none for version 1", () => {
+test("steps: ten for version 2", () => {
   assert.equal(stepsFor(2).length, 10);
   assert.deepEqual(stepsFor(2).map((s) => s.id), ["before", "about", "household", "income", "expenses", "refund", "optional", "documents", "notes", "review"]);
   assert.deepEqual(stepsFor(2).map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.deepEqual(stepsFor(1), []);
   assert.ok(questionsFor(2, 1).some((x) => x.id === "service"));
-  assert.deepEqual(questionsFor(1, 1), []);
   assert.ok(MATERIALS_ITEMS.length > 0 && CATALOGUE.version === 2);
 });
 
@@ -106,10 +104,9 @@ test("missingToSubmit", () => {
   assert.ok(hh.includes("hh[0].dob"));
   assert.ok(!hh.includes("hh[0].first_name"));
   assert.ok(missingToSubmit(2, { has_household_members: "yes" }).includes("hh"));
-  assert.deepEqual(missingToSubmit(1, {}), []);
 });
 
-test("service and language labels cover both versions", () => {
+test("service and language labels: a code is labelled, anything else comes back as it is", () => {
   assert.equal(serviceLabel("drop_off"), "Drop-off");
   assert.equal(serviceLabel("same_day"), "Same-day");
   assert.equal(serviceLabel("Drop-off"), "Drop-off");
@@ -231,7 +228,6 @@ test("substepsFor lists the sub-steps in order, each with its step", () => {
   assert.deepEqual(subs.map((s) => s.id), SUBSTEP_IDS);
   assert.deepEqual(substepsFor(2).filter((s) => s.step.id === "documents").map((s) => s.id)[0], "documents.bring");
   for (const sub of subs) assert.ok(stepsFor(2).includes(sub.step) && sub.step.substeps.some((x) => x.id === sub.id));
-  assert.deepEqual(substepsFor(1), []);
   assert.equal(findSubstep("income.other").step.id, "income");
   assert.equal(findSubstep("income.other").kind, "questions");
   assert.equal(findSubstep("nope.nope"), null);

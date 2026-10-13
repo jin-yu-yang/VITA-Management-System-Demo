@@ -3,7 +3,6 @@ import {
   CHECKPOINTS,
   ASSISTANCE_ACTIONS,
 } from "./contracts.mjs";
-import { INTAKE_ANSWER_KEYS } from "./domain.mjs";
 import {
   CONTACT_FIELDS,
   checkValue,
@@ -45,7 +44,7 @@ import { isLang, readLanguage, writeLanguage } from "./language.mjs";
 //   * **An unknown outcome keeps its envelope.** A timed-out action is retried
 //     as the identical object — same action id, payload, persona and expected
 //     revision — so the server replays its receipt instead of acting twice.
-//   * **Window state is per window and per user.** Selection, screen, form step,
+//   * **Window state is per window and per user.** Selection, screen, sub-step,
 //     open panels, the persona and the board's filters live in session storage
 //     under the authenticated user's id, so two windows disagree freely and two
 //     accounts never share a view. That storage is a collaborator of its own
@@ -94,29 +93,20 @@ function controllerError(code, message, cause) {
 }
 
 // The intake whitelist is the only thing that reaches `answers`. Anything else
-// — an owner id, a stage, a forged reference — is dropped here, once. Version 1
-// keeps its 17 keys as strings, dropping null; version 2 keeps the catalogue's
-// top-level field ids with their structured values, null included (a null is
-// "clear this field on the next save", spec 2026-09-30 §3.3).
-function pickAnswers(source, version = 1) {
+// — an owner id, a stage, a forged reference — is dropped here, once. It keeps
+// the catalogue's top-level field ids with their structured values, null
+// included (a null is "clear this field on the next save", spec 2026-09-30
+// §3.3).
+function pickAnswers(source) {
   const result = {};
   if (!source || typeof source !== "object") return result;
-  if (Number(version) === 2) {
-    for (const [key, value] of Object.entries(source))
-      if (value !== undefined && findQuestion(2, key)) result[key] = value;
-    return result;
-  }
-  for (const key of INTAKE_ANSWER_KEYS) {
-    const value = source[key];
-    if (value === undefined || value === null) continue;
-    result[key] = String(value);
-  }
+  for (const [key, value] of Object.entries(source))
+    if (value !== undefined && findQuestion(2, key)) result[key] = value;
   return result;
 }
 
-// ---- version 2 helpers (spec 2026-09-30 §2.5, §3.3–§3.4; 2026-10-04 §3) ---
+// ---- intake helpers (spec 2026-09-30 §2.5, §3.3–§3.4; 2026-10-04 §3) ----
 
-const isVersionTwo = (record) => Number(record?.intakeVersion) === 2;
 const V2_QUESTIONS = Object.freeze(
   stepsFor(2).flatMap((step) => step.sections.flatMap((section) => section.questions)),
 );
@@ -140,7 +130,7 @@ const isPlainObject = (value) =>
 // four fields. A null contact (no contact saved yet), or a null inside it,
 // counts as empty.
 function serverAnswersOf(record) {
-  const result = pickAnswers(record?.answers, 2);
+  const result = pickAnswers(record?.answers);
   for (const [id, key] of Object.entries(CONTACT_FIELDS)) {
     const value = record?.contact?.[key];
     if (value !== undefined && value !== null) result[id] = value;
@@ -288,23 +278,23 @@ export function createController({
     dirty: false,
     conflict: null,
     saveState: "idle",
-    // Version 2 only. The ids whose error this window has shown (spec §2.5):
+    // The ids whose error this window has shown (spec §2.5):
     // an id enters on `change` or when its step is left, and leaves once its
     // value is valid or empty. Stored as a list, because it is window state.
     revealed: [],
-    // Version 2 only. Where the form is: a sub-step id, or null until a case
+    // Where the form is: a sub-step id, or null until a case
     // is open (then the first unfinished sub-step, spec 2026-10-04 §3.1). The
     // page shows `currentSubstep()`, which resolves a hidden or unknown one.
     formSubstep: null,
-    // Version 2 only. The sub-steps left on the selected case: the server's
+    // The sub-steps left on the selected case: the server's
     // `intakeVisited`, merged on every refresh, plus this window's visits not
     // yet saved (§3.7). Only ids the catalogue knows are ever sent.
     visitedSubsteps: [],
-    // Version 2 only. A sub-step opened from the summary's Change link: its
+    // A sub-step opened from the summary's Change link: its
     // primary button returns to the summary (§5.2).
     returnToSummary: false,
-    // The version-2 Add a case (spec 2026-10-04 §10). `officeDraft`: a new
-    // version-2 draft with no case yet; its first save creates the case.
+    // Add a case (spec 2026-10-04 §10). `officeDraft`: a new office draft
+    // with no case yet; its first save creates the case.
     // `officeDraftCaseId`: that create's case, held only while the case is
     // still to be read and adopted. `officeSaving`: a Save draft or Send is
     // in flight. `openAddSubsteps`: the page's open parts (sub-step ids, or
@@ -320,7 +310,6 @@ export function createController({
     screen: "access",
     selectedCaseId: null,
     selectedPersonId: null,
-    formStep: 0,
     openPanels: [],
     lookup: "",
     dialog: null,
@@ -445,7 +434,6 @@ export function createController({
       screen: state.screen,
       selectedCaseId: state.selectedCaseId,
       selectedPersonId: state.selectedPersonId,
-      formStep: state.formStep,
       openPanels: state.openPanels,
       pendingCreateActionId: state.pendingCreateActionId,
       boardFilters: state.boardFilters,
@@ -468,7 +456,6 @@ export function createController({
     if (screens().includes(saved.screen)) state.screen = saved.screen;
     if (saved.selectedCaseId) state.selectedCaseId = saved.selectedCaseId;
     if (saved.selectedPersonId) state.selectedPersonId = saved.selectedPersonId;
-    if (saved.formStep !== undefined) state.formStep = saved.formStep;
     if (saved.openPanels) state.openPanels = saved.openPanels;
     if (saved.pendingCreateActionId)
       state.pendingCreateActionId = saved.pendingCreateActionId;
@@ -514,7 +501,7 @@ export function createController({
   // A snapshot from the server replaces what we knew only when it is newer, so
   // a slow earlier response cannot undo a later one. A newer revision arriving
   // mid-edit updates savedCase and raises the conflict; it never rebases the
-  // draft. Version 2 first settles the revisions that leave nothing to choose
+  // draft. It first settles the revisions that leave nothing to choose
   // between (spec 2026-10-04 §3.8), and merges the server's visits (§3.7).
   function applyCase(next) {
     if (!next) return;
@@ -528,13 +515,11 @@ export function createController({
     // The draft being replaced, when it is this case's: its local-only
     // differences (an invalid value, or spaces only) survive the rebuild.
     const previousDraft = current?.id === next.id ? state.draftAnswers : {};
-    if (isVersionTwo(next)) {
-      if (current?.id === next.id && settleNewerRevision(current, next, previousDraft)) {
-        openAtFirstUnfinished();
-        return;
-      }
-      mergeVisits(current?.id === next.id ? state.visitedSubsteps : [], next);
+    if (current?.id === next.id && settleNewerRevision(current, next, previousDraft)) {
+      openAtFirstUnfinished();
+      return;
     }
+    mergeVisits(current?.id === next.id ? state.visitedSubsteps : [], next);
     state.savedCase = next;
     if (state.dirty && state.editBaseRevision !== null) {
       state.conflict =
@@ -548,9 +533,7 @@ export function createController({
       openAtFirstUnfinished();
       return;
     }
-    state.draftAnswers = isVersionTwo(next)
-      ? rebuildDraft(previousDraft, next)
-      : pickAnswers(next.answers, next.intakeVersion);
+    state.draftAnswers = rebuildDraft(previousDraft, next);
     pruneRevealed();
     state.conflict = null;
     openAtFirstUnfinished();
@@ -634,7 +617,7 @@ export function createController({
   // A case opened with no saved place opens at its first unfinished sub-step
   // (spec 2026-10-04 §3.1); a new case therefore opens at before.ready.
   function openAtFirstUnfinished() {
-    if (state.formSubstep !== null || !isVersionTwo(state.savedCase)) return;
+    if (state.formSubstep !== null || !state.savedCase) return;
     state.formSubstep = firstUnfinishedSubstep(
       state.draftAnswers,
       cardsNow(),
@@ -747,7 +730,6 @@ export function createController({
     stateBeforeEdit = "idle";
     answersInDoubt = false;
     landedRevision = null;
-    state.formStep = 0;
     state.formSubstep = null;
     state.visitedSubsteps = [];
     state.returnToSummary = false;
@@ -1106,12 +1088,6 @@ export function createController({
     show(true);
   }
 
-  function setFormStep(step) {
-    state.formStep = Math.max(0, Math.trunc(Number(step) || 0));
-    persistSession();
-    show();
-  }
-
   function togglePanel(name) {
     state.openPanels = state.openPanels.includes(name)
       ? state.openPanels.filter((entry) => entry !== name)
@@ -1321,52 +1297,28 @@ export function createController({
     });
   }
 
-  // The office types a walk-in client's answers in itself. The case it creates
-  // has no client account at all — the database's `cases_origin_owner` rule
-  // makes an assisted case owner-less — so nobody is emailed, invited or given
-  // a way in, and the office owns the draft until it submits it.
-  async function createAssistedCase({ answers } = {}) {
-    if (!presenter())
-      throw controllerError(
-        "FORBIDDEN",
-        "Only a volunteer can start an assisted application.",
-      );
-    if (!state.selectedPersonId)
-      throw controllerError("VALIDATION", "Choose a volunteer persona to act as.");
-    // `selectCase` already puts a presenter on the case workspace, which is
-    // where the office records the intake checks and sends the application.
-    return await startCase({
-      mode: "assisted",
-      personId: state.selectedPersonId,
-      answers: pickAnswers(answers),
-    });
-  }
-
-  // ---- the version-2 Add a case (spec 2026-10-04 §10) ---------------------
+  // ---- Add a case (spec 2026-10-04 §10) ------------------------------------
   //
-  // The office takes in a walk-in client on a version-2 draft that has no case
+  // The office takes in a walk-in client on a draft that has no case
   // yet (`officeDraft`). Its first Save draft or Send creates an empty case,
   // adopts it in place (the page and what was typed stay), then saves; Send
   // then submits. A failure after the create keeps the case selected, so the
   // next press saves to it: one draft never makes a second case.
 
-  // Add a case. With `caseId`, an office draft already saved opens on the page
-  // whatever the workspace's version: the open case's version picks the page.
-  // Without, the workspace's version decides: 2 starts a new office draft, 1
-  // is today's page. Before the workspace row has loaded, the draft starts
-  // when it arrives (`enterOfficeDraftIfNeeded`).
+  // Add a case. With `caseId`, an office draft already saved opens on the
+  // page. Without, a new office draft starts. Before the workspace row has
+  // loaded, the draft starts when it arrives (`enterOfficeDraftIfNeeded`).
   async function openAddCase({ caseId = null } = {}) {
     requirePresenter("Only a volunteer can start an assisted application.");
     if (caseId) {
       await selectCase(caseId, { navigate: false });
       state.officeDraft = false;
       state.openAddSubsteps = ["before.ready"];
-    } else if (state.workspace && Number(state.workspace.defaultIntakeVersion) === 2) {
+    } else if (state.workspace) {
       startOfficeDraft();
     } else {
-      // No workspace yet (the draft starts when it arrives), or version 1:
-      // today's page never reads the selection, and a kept one would be shown
-      // as a new walk-in's.
+      // No workspace yet (the draft starts when it arrives): a kept selection
+      // would be shown as a new walk-in's.
       clearSelection();
       state.officeDraftCaseId = null;
     }
@@ -1382,13 +1334,12 @@ export function createController({
     state.addCaseShowMissing = false;
   }
 
-  // On every workspace read: Add a case with no case and no draft, on a
-  // version-2 workspace, starts its draft (a reload, or a press before the
-  // row arrived). Never while a draft is open: a workspace change must not
-  // wipe what the office is typing.
+  // On every workspace read: Add a case with no case and no draft starts its
+  // draft (a reload, or a press before the row arrived). Never while a draft
+  // is open: a workspace change must not wipe what the office is typing.
   function enterOfficeDraftIfNeeded() {
     if (state.screen !== "office-add-case" || state.selectedCaseId || state.officeDraft) return;
-    if (Number(state.workspace?.defaultIntakeVersion) !== 2) return;
+    if (!state.workspace) return;
     startOfficeDraft();
     persistSession();
   }
@@ -1482,16 +1433,6 @@ export function createController({
       throw error;
     }
     if (!stillHere()) return "left";
-    if (!isVersionTwo(record)) {
-      // The workspace was set back to version 1 under this draft.
-      const error = controllerError(
-        "VALIDATION",
-        "This workspace now takes version-1 applications. Start again from Add a case.",
-      );
-      noteFailure(error);
-      show();
-      throw error;
-    }
     // No await from here: nothing can land between the selection and the
     // draft, and nothing on the page resets.
     state.selectedCaseId = record.id;
@@ -1544,11 +1485,10 @@ export function createController({
   // further edit would commit the older text at its older expected revision
   // and then be refreshed over, losing the newer typing without any error.
   //
-  // It is compared with what the draft would send now: for version 2 that is
-  // `withholdInvalid(draft)`, so a withheld field or a change of spaces only
-  // leaves it current, and the visited set it would carry. For version 1 that
-  // is the draft itself. A retry that left a refused field out (`omit`) is
-  // compared without that field.
+  // It is compared with what the draft would send now: `withholdInvalid(draft)`,
+  // so a withheld field or a change of spaces only leaves it current, and the
+  // visited set it would carry. A retry that left a refused field out (`omit`)
+  // is compared without that field.
   const staleSave = () => {
     if (!pendingAction?.save) return false;
     const sending = savePayload();
@@ -1560,8 +1500,8 @@ export function createController({
     );
   };
 
-  // A new office draft is version 2 before it has a case.
-  const caseVersion = () => (state.officeDraft || isVersionTwo(state.savedCase) ? 2 : 1);
+  // A form is open: a case, or a new office draft before it has one.
+  const formOpen = () => state.officeDraft || Boolean(state.savedCase);
 
   // A client answers for themselves; a presenter acts as a persona.
   const actingAsClient = () => state.principal?.access === "applicant";
@@ -1578,17 +1518,16 @@ export function createController({
   // submitted case is never dirty because of a visit.
   function visitsPending() {
     const record = state.savedCase;
-    if (!isVersionTwo(record) || record.stage !== "draft" || !actingAsClient()) return false;
+    if (!record || record.stage !== "draft" || !actingAsClient()) return false;
     const stored = new Set(record.intakeVisited ?? []);
     return knownVisited().some((id) => !stored.has(id));
   }
 
-  // What a save would send now: `{ answers }`, and for the client's
-  // version-2 draft the visited set when there is one.
+  // What a save would send now: `{ answers }`, and for the client's own
+  // draft the visited set when there is one.
   function savePayload() {
-    const version = caseVersion();
-    const payload = { answers: { ...withholdInvalid(state.draftAnswers, version) } };
-    if (version === 2 && actingAsClient()) {
+    const payload = { answers: { ...withholdInvalid(state.draftAnswers, 2) } };
+    if (actingAsClient()) {
       const visited = knownVisited();
       if (visited.length) payload.visited = visited;
     }
@@ -1606,31 +1545,14 @@ export function createController({
   }
 
   function editAnswers(patch) {
-    if (caseVersion() === 2) {
-      const clean = pickAnswers(patch, 2);
-      // Keys, not values: a patch of nulls is a real edit (it clears).
-      if (!Object.keys(clean).length) return;
-      let draft = mergeIntoDraft(state.draftAnswers, clean);
-      if (Object.hasOwn(clean, "marital_status") && clean.marital_status !== "married")
-        draft = clearSpouse(draft);
-      commitDraft(draft);
-      return;
-    }
-    const clean = pickAnswers(patch, state.savedCase?.intakeVersion);
+    if (!formOpen()) return;
+    const clean = pickAnswers(patch);
+    // Keys, not values: a patch of nulls is a real edit (it clears).
     if (!Object.keys(clean).length) return;
-    // The base revision is pinned on the first edit and kept until the edits
-    // are saved or reconciled, so a later remote change is measured against
-    // what this person was actually looking at.
-    if (state.editBaseRevision === null && state.savedCase)
-      state.editBaseRevision = Number(state.savedCase.revision);
-    state.draftAnswers = { ...state.draftAnswers, ...clean };
-    state.dirty = true;
-    state.saveState = "unsaved";
-    state.error = null;
-    // The next save builds a fresh envelope from the new draft; the old one is
-    // dropped here so no banner can still offer to re-send it.
-    forgetPendingSave();
-    show();
+    let draft = mergeIntoDraft(state.draftAnswers, clean);
+    if (Object.hasOwn(clean, "marital_status") && clean.marital_status !== "married")
+      draft = clearSpouse(draft);
+    commitDraft(draft);
   }
 
   // A version-2 draft change (spec §2.5). `dirty` means a save would change
@@ -1702,7 +1624,7 @@ export function createController({
   // An id whose error has been shown (on `change`). Only an invalid value is
   // added; the page updates the note itself, so nothing is redrawn here.
   function revealInvalid(id) {
-    if (caseVersion() !== 2 || typeof id !== "string") return;
+    if (!formOpen() || typeof id !== "string") return;
     if (state.revealed.includes(id) || !holdsInvalid(id, state.draftAnswers)) return;
     state.revealed = [...state.revealed, id];
     persistSession();
@@ -1710,9 +1632,9 @@ export function createController({
 
   // Where the version-2 form is now: the saved place resolved against the
   // draft (a hidden sub-step goes to the next visible one, an unknown id to
-  // the first, spec 2026-10-04 §3.1). Null for a version-1 case or no case.
+  // the first, spec 2026-10-04 §3.1). Null with no case.
   function currentSubstep() {
-    if (!isVersionTwo(state.savedCase)) return null;
+    if (!state.savedCase) return null;
     return resolveSubstep(state.formSubstep, state.draftAnswers, cardsNow());
   }
 
@@ -1723,7 +1645,7 @@ export function createController({
   // banner say so, and the draft is still here. Any move clears the return to
   // the summary unless `keepReturn`.
   async function goToSubstep(id, { keepReturn = false } = {}) {
-    if (caseVersion() !== 2) return;
+    if (!formOpen()) return;
     // One change at a time: a second press during the first one's save would
     // send the same expected revision and meet a false conflict.
     if (substepSaveInFlight) return;
@@ -1762,7 +1684,7 @@ export function createController({
   // Continue (+1) and Back (-1): the adjacent visible sub-step. Nothing at
   // either end, not even a visit.
   async function moveSubstep(delta) {
-    if (caseVersion() !== 2) return;
+    if (!formOpen()) return;
     const target = adjacentSubstep(state.formSubstep, state.draftAnswers, cardsNow(), delta);
     if (!target) return;
     await goToSubstep(target);
@@ -1771,7 +1693,7 @@ export function createController({
   // The summary's Change link: the sub-step opens with a return set, so its
   // primary button reads "Back to summary" (spec 2026-10-04 §5.2).
   async function openForChange(id) {
-    if (caseVersion() !== 2 || substepSaveInFlight) return;
+    if (!formOpen() || substepSaveInFlight) return;
     state.returnToSummary = true;
     await goToSubstep(id, { keepReturn: true });
   }
@@ -1799,7 +1721,7 @@ export function createController({
   // The household card's Remove: the member leaves the draft, its revealed ids
   // go, and the ids of the members after it move down by one.
   function removeMember(index, group = "hh") {
-    if (caseVersion() !== 2) return;
+    if (!formOpen()) return;
     const members = state.draftAnswers[group];
     const at = Number(index);
     if (!Array.isArray(members) || !Number.isInteger(at) || at < 0 || at >= members.length) return;
@@ -1940,7 +1862,7 @@ export function createController({
   }
 
   // A save asked for on its own (Save, Save & exit, Submit's save first). It
-  // saves or fails visibly. Version 2 holds the one-save-at-a-time flag, so
+  // saves or fails visibly. It holds the one-save-at-a-time flag, so
   // no second save goes out at the same expected revision. Pressed while
   // another save is out, it waits for that save: when that was this
   // opening's save and it failed, so does this, unless that failure has been
@@ -1948,9 +1870,10 @@ export function createController({
   // for it), which resolves to null instead; otherwise what is still unsaved
   // is saved after it. Resolves to the receipt, or null when nothing was
   // saved for this press: the opening it was pressed on is gone, or the
-  // failure it waited for is already on screen. Version 1 as today.
+  // failure it waited for is already on screen. With no form open it fails
+  // as saveNow does.
   async function saveAnswers() {
-    if (caseVersion() !== 2) return await saveNow();
+    if (!formOpen()) return await saveNow();
     const from = opening;
     let waited = null;
     let receipt = null;
@@ -1995,25 +1918,22 @@ export function createController({
       show();
       throw controllerError("CONFLICT", EDIT_CONFLICT_MESSAGE);
     }
-    const version = caseVersion();
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
-      expectedRevision:
-        state.editBaseRevision ?? (version === 2 ? pinRevision() : Number(state.savedCase.revision)),
+      expectedRevision: state.editBaseRevision ?? pinRevision(),
       // A client answers for themselves. The office answering for a walk-in
       // client sends its own persona: the database accepts SAVE_ANSWERS from a
       // presenter only with an `admin` person on an owner-less draft, and
       // refuses a presenter who sends no person at all.
       personId: actingPersonId(),
       type: "SAVE_ANSWERS",
-      // Version 2 never sends an invalid value (spec §2.5): every field's
+      // A save never sends an invalid value (spec §2.5): every field's
       // trimmed value, null clears included, minus the ones that fail their
       // check. The draft itself keeps exactly what was typed. The client's
       // own draft also sends its visited sub-steps (spec 2026-10-04 §3.7).
       payload: savePayload(),
     };
-    if (version !== 2) return await dispatch(action, { save: true });
     sentDrafts.set(action, state.draftAnswers);
     return await trackSave(sendVersionTwo(action), !quiet);
   }
@@ -2069,7 +1989,7 @@ export function createController({
   // A deliberate choice between two sets of answers, and nothing more: it takes
   // a fresh look at the server, refuses if the case moved again, and leaves the
   // result unsaved so the save still goes through the database revision check.
-  // `fromServer` (version 2): take the office's side from the fresh record,
+  // `fromServer`: take the office's side from the fresh record,
   // its answers plus the contact record's four fields, not from `answers`.
   async function reconcileAnswers({ answers, expectedServerRevision, fromServer = false }) {
     if (!state.selectedCaseId)
@@ -2084,27 +2004,10 @@ export function createController({
         "This application changed again. Check the newest values and choose once more.",
       );
     }
-    if (isVersionTwo(latest)) {
-      reconcileVersionTwo(
-        fromServer ? serverAnswersOf(latest) : pickAnswers(answers, 2),
-        latest,
-      );
-      return;
-    }
-    state.draftAnswers = pickAnswers(answers, latest.intakeVersion);
-    pruneRevealed();
-    state.editBaseRevision = Number(latest.revision);
-    state.dirty = true;
-    state.conflict = null;
-    markUnsaved();
-    state.error = null;
-    // The chosen answers are a new draft, so any retained save envelope is as
-    // stale here as it is after a keystroke.
-    forgetPendingSave();
-    show();
+    reconcileVersionTwo(fromServer ? serverAnswersOf(latest) : pickAnswers(answers), latest);
   }
 
-  // Version 2: the chosen answers are dirty only when a save would change the
+  // The chosen answers are dirty only when a save would change the
   // server (spec 2026-10-04 §9.3). Choosing what the server already has
   // leaves nothing to save: no pin, and the chip goes back to its settled
   // state. The fresh read settles any save in doubt either way.
@@ -2358,8 +2261,8 @@ export function createController({
       return null;
     }
     const { action, save, omit } = pendingAction;
-    if (!save || caseVersion() !== 2) return await dispatch(action, { save, omit });
-    // A version-2 save: one at a time, like any other.
+    if (!save || !formOpen()) return await dispatch(action, { save, omit });
+    // A save: one at a time, like any other.
     if (substepSaveInFlight) return null;
     takeFlag();
     try {
@@ -2402,7 +2305,6 @@ export function createController({
     cooldownRemaining,
     selectCase,
     createCase,
-    createAssistedCase,
     openAddCase,
     toggleAddSubstep,
     saveOfficeDraft,
@@ -2433,7 +2335,6 @@ export function createController({
     setDocumentGroup,
     retryLast,
     navigate,
-    setFormStep,
     togglePanel,
     setLookup,
     openDialog,

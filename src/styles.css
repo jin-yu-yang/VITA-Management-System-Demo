@@ -645,68 +645,6 @@ textarea::placeholder {
   margin-bottom: 35px;
   letter-spacing: -0.5px;
 }
-.step-list {
-  padding: 0;
-  list-style: none;
-  margin: 0;
-}
-.step-list li {
-  display: flex;
-  gap: 13px;
-  align-items: center;
-  color: var(--vt-intake-hint);
-  min-height: 74px;
-  position: relative;
-  font-size: 14px;
-}
-.step-list li:after {
-  content: "";
-  position: absolute;
-  width: 1px;
-  height: 25px;
-  background: var(--vt-line);
-  left: 16px;
-  bottom: -12px;
-}
-.step-list li:last-child:after {
-  display: none;
-}
-.step-list li > span {
-  height: 34px;
-  width: 34px;
-  border: 1px solid var(--vt-line);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
-  flex-shrink: 0;
-  background: var(--vt-surface);
-}
-.step-list li.active {
-  color: var(--vt-intake-ink);
-  font-weight: 600;
-}
-.step-list li.active > span {
-  background: var(--vt-primary);
-  color: #fff;
-  border-color: var(--vt-primary);
-}
-.step-list li.complete > span {
-  color: #fff;
-  background: var(--vt-progress);
-  border-color: var(--vt-progress);
-}
-.step-list .icon {
-  height: 15px;
-  width: 15px;
-}
-.step-list small {
-  display: block;
-  color: var(--vt-intake-hint);
-  letter-spacing: 1px;
-  font-size: 8px;
-  margin-top: 5px;
-}
 .sidebar-help {
   padding-top: 25px;
   border-top: 1px solid var(--vt-line);
@@ -760,74 +698,6 @@ textarea::placeholder {
 }
 .form-workspace .page-intro p {
   font-size: 16px;
-}
-.service-options {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 27px;
-}
-.service-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: var(--vt-surface);
-  border: 1px solid var(--vt-line);
-  border-radius: var(--vt-radius-sm);
-  padding: 20px;
-  cursor: pointer;
-  position: relative;
-}
-.service-card input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-}
-.service-card:has(input:focus-visible) {
-  outline: 2px solid var(--vt-primary);
-  outline-offset: 3px;
-}
-.service-card.selected {
-  border-color: var(--vt-primary);
-  background: var(--vt-primary-soft);
-}
-.service-icon {
-  color: var(--vt-primary);
-  background: var(--vt-primary-soft);
-  height: 39px;
-  width: 39px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--vt-radius-sm);
-}
-.service-card strong {
-  display: block;
-  font-size: 16px;
-}
-.service-card small {
-  display: block;
-  color: var(--vt-intake-hint);
-  font-size: 12px;
-  margin-top: 3px;
-}
-.service-card i {
-  height: 17px;
-  width: 17px;
-  margin-left: auto;
-  border-radius: 50%;
-  border: 1px solid var(--vt-line);
-}
-.service-card.selected i {
-  border: 5px solid var(--vt-primary);
-  background: var(--vt-surface);
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
-}
-.form-grid.triple {
-  grid-template-columns: 1.4fr 0.7fr 1fr;
 }
 .info-note {
   display: flex;
@@ -890,52 +760,6 @@ textarea::placeholder {
 .form-actions .btn.text {
   font-size: 13px;
 }
-.question {
-  border: 1px solid var(--vt-line);
-  border-radius: var(--vt-radius);
-  margin: 0 0 24px;
-  padding: 20px 22px 22px;
-  background: var(--vt-surface);
-}
-.question legend {
-  float: left;
-  width: 100%;
-  font-size: 16px;
-  line-height: 1.6;
-  font-weight: 550;
-  margin: 0 0 12px;
-  padding: 0;
-  color: var(--vt-intake-ink);
-}
-.question > .radio-row {
-  clear: both;
-}
-.radio-row {
-  display: flex;
-  gap: 10px;
-}
-.radio-card {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: #fff;
-  border: 1px solid var(--vt-primary-line);
-  border-radius: 7px;
-  padding: 10px 17px;
-  font-size: 14px;
-  cursor: pointer;
-  min-height: var(--vt-tap);
-}
-.radio-card.selected {
-  border-color: var(--vt-primary);
-  background: var(--vt-primary-soft);
-}
-.radio-card input {
-  accent-color: var(--vt-primary);
-  height: 15px;
-  width: 15px;
-  margin: 0;
-}
 .notice {
   display: flex;
   gap: 13px;
@@ -970,15 +794,6 @@ textarea::placeholder {
 }
 .client-shell .notice.amber p {
   color: var(--vt-stage-amend);
-}
-.review-block {
-  padding: 6px 0 22px;
-  margin-bottom: 23px;
-  border-bottom: 1px solid var(--vt-line);
-}
-.review-block h3 {
-  font-size: 16px;
-  margin-bottom: 0;
 }
 .section-head {
   display: flex;
@@ -1946,31 +1761,6 @@ textarea::placeholder {
   .intake-sidebar .sidebar-help {
     display: none;
   }
-  .step-list {
-    display: flex;
-    justify-content: space-between;
-    gap: 5px;
-  }
-  .step-list li {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 8px;
-    align-items: center;
-    min-height: 55px;
-    font-size: 9px;
-    text-align: center;
-  }
-  .step-list li:after {
-    display: none;
-  }
-  .step-list small {
-    display: none;
-  }
-  .step-list li > span {
-    width: 28px;
-    height: 28px;
-  }
   .form-workspace {
     padding: 22px 25px 30px;
     max-width: none;
@@ -1986,15 +1776,6 @@ textarea::placeholder {
   }
   .field > span {
     font-size: 13px;
-  }
-  .form-grid {
-    gap: 12px;
-  }
-  .question legend {
-    font-size: 15px;
-  }
-  .radio-card {
-    padding: 10px 14px;
   }
   .form-actions > .btn {
     font-size: 12px;
@@ -2137,19 +1918,6 @@ textarea::placeholder {
   .right-column {
     grid-template-columns: 1fr;
   }
-  .form-grid.triple {
-    grid-template-columns: 1fr 1fr;
-  }
-  .form-grid.triple .field:first-child {
-    grid-column: 1/-1;
-  }
-  .radio-row {
-    gap: 8px;
-  }
-  .radio-card {
-    padding: 10px 12px;
-    font-size: 12px;
-  }
   .reference-card > strong {
     font-size: 20px;
     letter-spacing: 2px;
@@ -2193,20 +1961,6 @@ textarea::placeholder {
   .site-footer {
     font-size: 8px;
   }
-  .service-card {
-    padding: 16px 13px;
-    gap: 11px;
-  }
-  .service-card small {
-    font-size: 10px;
-  }
-  .service-card strong {
-    font-size: 14px;
-  }
-  .service-icon {
-    width: 32px;
-    height: 36px;
-  }
   .demo-actions .btn {
     font-size: 8px;
     gap: 5px;
@@ -2230,9 +1984,6 @@ textarea::placeholder {
   }
   .demo-fiction {
     font-size: 8px;
-  }
-  .service-card i {
-    flex-shrink: 0;
   }
   .detail-row {
     font-size: 11px;
@@ -2283,8 +2034,7 @@ textarea::placeholder {
 }
 
 /* Readability and compact-device refinements. */
-.form-workspace .field > span,
-.question legend {
+.form-workspace .field > span {
   font-size: 16px;
 }
 .form-workspace input:not([type="radio"]):not([type="checkbox"]),
@@ -2333,8 +2083,7 @@ textarea::placeholder {
   .hero-copy br {
     display: initial;
   }
-  .form-workspace .field > span,
-  .question legend {
+  .form-workspace .field > span {
     font-size: 15px;
   }
 }
@@ -2790,19 +2539,8 @@ textarea::placeholder {
   padding: 0;
   font-size: inherit;
 }
-/* The assisted intake form is the one long staff form, so its boxes get the
-   same two-column grid the client's own steps use. */
-.staff-form .form-grid {
-  gap: 12px 18px;
-  margin-bottom: 14px;
-}
 .staff-form .btn.secondary {
   margin-bottom: 12px;
-}
-@media (max-width: 760px) {
-  .staff-form .form-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* The redesigned staff frame (appShell in views.mjs): a fixed-width sidebar
@@ -3387,9 +3125,9 @@ textarea::placeholder {
 .office-contact .icon {
   color: var(--vt-primary);
 }
-/* Inline buttons are real actions on client screens (Resend code, Edit
-   visit/screening/details, Try again, Dismiss, Get help from the office), so
-   they meet the 44px client floor here. Staff screens keep the shared 30px
+/* Inline buttons are real actions on client screens (Resend code, Try
+   again, Dismiss, Get help from the office), so they meet the 44px client
+   floor here. Staff screens keep the shared 30px
    style. The banners come right after the client bar in page(). */
 .client-shell .btn.inline,
 .client-bar ~ .connection-notice .btn.inline,
@@ -3649,7 +3387,7 @@ textarea::placeholder {
 }
 
 /* ---- Add a case ---- */
-/* Only renderAddCase emits the pill, so the class is its own scope. */
+/* Only Add a case emits the pill, so the class is its own scope. */
 .fiction-pill {
   display: inline-flex;
   flex-wrap: wrap;
@@ -3675,137 +3413,6 @@ textarea::placeholder {
   font-size: 13px;
   color: var(--vt-primary-hover);
   text-decoration: underline;
-}
-.add-case-form.staff-form {
-  border-top: 0;
-  padding-top: 0;
-  margin-top: 0;
-}
-.add-case-form .add-case-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 24px;
-  align-items: start;
-}
-.add-case-form .add-case-section {
-  min-width: 0;
-  margin: 0 0 20px;
-  padding: 20px 22px;
-  border-color: var(--vt-line);
-  border-radius: var(--vt-radius);
-}
-/* The legend sits inside the card, not across its border. */
-.add-case-form .add-case-section legend {
-  float: left;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0;
-  margin: 0 0 18px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--vt-ink);
-}
-.add-case-form .add-case-section legend + * {
-  clear: both;
-}
-.add-case-form .section-num {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--vt-primary);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  flex: none;
-}
-.add-case-form .add-case-section .form-grid {
-  gap: 16px 18px;
-  margin-bottom: 0;
-}
-.add-case-form .add-case-section .field {
-  margin-bottom: 0;
-}
-.add-case-form .field > span {
-  color: var(--vt-ink);
-}
-.add-case-form .field-note,
-.add-case-form .detail-row > span {
-  color: var(--vt-muted);
-}
-.add-case-form .add-case-side {
-  position: sticky;
-  top: 24px;
-  display: grid;
-  gap: 16px;
-}
-.add-case-form .add-case-side .panel {
-  padding: 18px 20px;
-  border-color: var(--vt-line);
-  border-radius: var(--vt-radius);
-}
-.add-case-form .add-case-side h2 {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--vt-muted);
-  margin-bottom: 8px;
-}
-.add-case-form .add-case-side p {
-  font-size: 14px;
-  color: var(--vt-ink);
-  margin: 0;
-}
-.add-case-form .add-case-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
-  margin-top: 4px;
-  padding: 14px 22px;
-  background: var(--vt-surface);
-  border-top: 1px solid var(--vt-line);
-  box-shadow: 0 -6px 20px rgb(42 39 69 / 0.06);
-}
-/* The bar sits under the sections column only, clear of the side cards. */
-@media (min-width: 1025px) {
-  .add-case-form .add-case-bar {
-    margin-right: calc(300px + 24px);
-  }
-}
-.add-case-form .add-case-bar .field-note {
-  flex: 1 1 240px;
-  margin: 0;
-  text-align: right;
-}
-.add-case-form .add-case-bar .btn.primary {
-  margin: 0;
-}
-@media (max-width: 1024px) {
-  .add-case-form .add-case-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .add-case-form .add-case-side {
-    position: static;
-  }
-}
-@media (max-width: 760px) {
-  .add-case-form .add-case-section {
-    padding: 18px 16px;
-  }
-  .add-case-form .add-case-bar {
-    padding: 12px 16px;
-  }
-  .add-case-form .add-case-bar .field-note {
-    text-align: left;
-  }
 }
 
 /* ---- The case pool ---- */
@@ -3968,8 +3575,7 @@ textarea::placeholder {
 
 /* Part 4b: intake v2 */
 /* The client's nine-step form (spec 2026-09-30 §3.2), styled from the step-2
-   and step-6 designs. Tokens only; nothing here reaches the version-1 form,
-   whose rail and cards use other class names. */
+   and step-6 designs. Tokens only. */
 
 /* ---- The top bar's Senior version switch ---- */
 .senior-switch {
@@ -4088,7 +3694,7 @@ textarea::placeholder {
   border-radius: 3px;
 }
 /* The office card sits right under the progress bar (spec §3.2), not at the
-   foot of a tall page as version 1's does. */
+   foot of a tall page. */
 .intake-v2 .intake-sidebar {
   justify-content: flex-start;
 }
@@ -5217,7 +4823,7 @@ textarea::placeholder {
   }
 }
 /* The version-2 Add a case: step headings, one accordion per part, the
-   side column and the bottom bar. Today's page keeps its .add-case-form rules. */
+   side column and the bottom bar. */
 .breadcrumb ol {
   display: flex;
   flex-wrap: wrap;
@@ -5492,40 +5098,6 @@ html:lang(zh-Hant) {
 .language-switch .lang:focus-visible {
   position: relative;
   outline-offset: 1px;
-}
-
-/* A version-1 application in Chinese: a one-line note in the client's
-   language above the English body (spec §2). */
-.v1-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 24px;
-  padding: 11px 16px;
-  font-size: 14px;
-  background: var(--vt-primary-soft);
-  color: var(--vt-ink);
-  border-radius: var(--vt-radius-sm);
-}
-.v1-note .icon {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  color: var(--vt-primary);
-}
-/* The intake's wrapper: the note keeps to the workspace's width, with the
-   client bar's side gutters. */
-.v1-english {
-  padding-top: 20px;
-}
-.v1-english > .v1-note {
-  width: min(1180px, calc(100% - 56px));
-  margin: 0 auto;
-}
-@media (max-width: 800px) {
-  .v1-english > .v1-note {
-    width: calc(100% - 32px);
-  }
 }
 
 /* Whose words the office's request is, above its title and its message. */

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
 import { createStore, SUBSCRIBED_TABLES } from "../src/supabase-store.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
 
 // The staff sections an applicant's Case must not even carry as keys.
 const STAFF_SECTIONS = ["participants", "followups", "reviews", "internalHistory"];
@@ -62,9 +61,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
 
     // A private draft of applicant A, and one case carried far enough to have
     // a request, a document and client-visible progress.
-    const draft = await f.createCase(f.applicantA, crypto.randomUUID(), {
-      answers: makeSampleAnswers(),
-    });
+    const draft = await f.draftCase(f.applicantA);
     const caseId = await f.readyCase();
     await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
     await f.act(
@@ -77,9 +74,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
     await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
       filename: f.sampleFilename,
     });
-    const other = await f.createCase(f.applicantB, crypto.randomUUID(), {
-      answers: makeSampleAnswers(),
-    });
+    const other = await f.draftCase(f.applicantB);
     await f.act(f.applicantB, other.caseId, null, "SUBMIT", { confirmed: true });
 
     await t.test("the principal is the caller's own membership", async () => {
@@ -230,7 +225,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         expectedRevision: before.revision,
         personId: null,
         type: "SAVE_ANSWERS",
-        payload: { answers: { city: "Philadelphia" } },
+        payload: { answers: { addr_city: "Philadelphia" } },
       });
       const after = await applicant.getCase(draft.caseId);
       assert.equal(after.createdAt, before.createdAt, "creation time never moves");
@@ -248,7 +243,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
             expectedRevision: before.revision,
             personId: null,
             type: "SAVE_ANSWERS",
-            payload: { answers: { city: "Camden" } },
+            payload: { answers: { addr_city: "Camden" } },
           }),
         rejected("CONFLICT"),
       );
@@ -266,7 +261,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         actionId: crypto.randomUUID(),
         mode: "client",
         personId: null,
-        answers: makeSampleAnswers(),
+        answers: {},
       });
       assert.deepEqual(Object.keys(receipt).toSorted(), [
         "actionId",
@@ -286,7 +281,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         expectedRevision: before.revision,
         personId: null,
         type: "SAVE_ANSWERS",
-        payload: { answers: { city: "Philadelphia" } },
+        payload: { answers: { addr_city: "Philadelphia" } },
       });
       assert.equal(receipt.caseId, draft.caseId);
       assert.equal(receipt.revision, before.revision + 1);
@@ -298,7 +293,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
             expectedRevision: before.revision,
             personId: null,
             type: "SAVE_ANSWERS",
-            payload: { answers: { city: "Camden" } },
+            payload: { answers: { addr_city: "Camden" } },
           }),
         rejected("CONFLICT"),
       );
@@ -314,7 +309,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
             expectedRevision: current.revision,
             personId: f.sam,
             type: "SAVE_ANSWERS",
-            payload: { answers: { city: "Philadelphia" } },
+            payload: { answers: { addr_city: "Philadelphia" } },
           }),
         rejected("FORBIDDEN"),
       );
@@ -445,7 +440,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         // the `cases` row and so must reach their own subscription.
         const save = () =>
           f.act(f.applicantA, draft.caseId, null, "SAVE_ANSWERS", {
-            answers: { city: "Philadelphia" },
+            answers: { addr_city: "Philadelphia" },
           });
         // Realtime stops a tenant's Postgres Changes streaming once nothing is
         // subscribed, and drops the tenant entirely once nobody is connected.

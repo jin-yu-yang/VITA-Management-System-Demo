@@ -383,7 +383,7 @@ const ALL_YES = (() => {
   return a;
 })();
 const SAMPLE_SETS = [
-  ...Array.from({ length: 21 }, (_, seed) => [false, true].map((married) => makeSampleAnswers({ version: 2, seed, married }))).flat(),
+  ...Array.from({ length: 21 }, (_, seed) => [false, true].map((married) => makeSampleAnswers({ seed, married }))).flat(),
   ALL_YES,
 ];
 

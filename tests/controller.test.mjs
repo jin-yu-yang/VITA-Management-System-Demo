@@ -53,7 +53,7 @@ function fakeStore({
     id: "w1",
     fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
-    defaultIntakeVersion: 1,
+    defaultIntakeVersion: 2,
   },
 } = {}) {
   const records = new Map(cases.map((entry) => [entry.id, entry]));
@@ -269,7 +269,7 @@ test("remote refresh preserves unsaved answers", async () => {
     id: "case-a",
     revision: 1,
     stage: "draft",
-    answers: { firstName: "Old" },
+    answers: { tp_first_name: "Old" },
   };
   const writes = [];
   const store = {
@@ -299,12 +299,12 @@ test("remote refresh preserves unsaved answers", async () => {
   });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Unsaved" });
-  current = { ...current, revision: 2, answers: { firstName: "Server edit" } };
+  controller.editAnswers({ tp_first_name: "Unsaved" });
+  current = { ...current, revision: 2, answers: { tp_first_name: "Server edit" } };
   await controller.refresh();
-  assert.equal(controller.getState().draftAnswers.firstName, "Unsaved");
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Unsaved");
   assert.equal(controller.getState().savedCase.revision, 2);
-  assert.equal(controller.getState().savedCase.answers.firstName, "Server edit");
+  assert.equal(controller.getState().savedCase.answers.tp_first_name, "Server edit");
   assert.equal(controller.getState().editBaseRevision, 1);
   assert.deepEqual(controller.getState().conflict, {
     code: "REMOTE_CHANGED",
@@ -315,13 +315,13 @@ test("remote refresh preserves unsaved answers", async () => {
   assert.equal(writes.length, 0);
   await assert.rejects(
     controller.reconcileAnswers({
-      answers: { firstName: "Chosen" },
+      answers: { tp_first_name: "Chosen" },
       expectedServerRevision: 1,
     }),
     (error) => error.code === "CONFLICT",
   );
   await controller.reconcileAnswers({
-    answers: { firstName: "Chosen" },
+    answers: { tp_first_name: "Chosen" },
     expectedServerRevision: 2,
   });
   assert.equal(controller.getState().conflict, null);
@@ -330,7 +330,7 @@ test("remote refresh preserves unsaved answers", async () => {
   assert.equal(writes.length, 1);
   assert.equal(writes[0].type, "SAVE_ANSWERS");
   assert.equal(writes[0].expectedRevision, 2);
-  assert.equal(writes[0].payload.answers.firstName, "Chosen");
+  assert.equal(writes[0].payload.answers.tp_first_name, "Chosen");
   controller.stop();
 });
 
@@ -339,7 +339,7 @@ test("remote refresh preserves unsaved answers", async () => {
 // than one row per action, so a re-read can answer after the choice — and one
 // that left before the other window saved answers with the older revision.
 test("re-reads that land after a reconcile never replace the chosen answers", async () => {
-  let current = { id: "case-a", revision: 1, stage: "draft", answers: { residenceCity: "Base" } };
+  let current = { id: "case-a", revision: 1, stage: "draft", answers: { addr_city: "Base" } };
   const held = [];
   let hold = false;
   const writes = [];
@@ -365,13 +365,13 @@ test("re-reads that land after a reconcile never replace the chosen answers", as
   });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ residenceCity: "Keepmine City" });
+  controller.editAnswers({ addr_city: "Keepmine City" });
 
   // A re-read that leaves before the other window saves, and answers late.
   hold = true;
   const stale = controller.refresh();
   hold = false;
-  current = { ...current, revision: 2, answers: { residenceCity: "Otherwindow City" } };
+  current = { ...current, revision: 2, answers: { addr_city: "Otherwindow City" } };
   await controller.refresh();
   assert.equal(controller.getState().conflict?.serverRevision, 2);
   // One more that sees the other window's save and is still in flight.
@@ -387,14 +387,14 @@ test("re-reads that land after a reconcile never replace the chosen answers", as
   await Promise.all([stale, late]);
 
   const state = controller.getState();
-  assert.equal(state.draftAnswers.residenceCity, "Keepmine City");
+  assert.equal(state.draftAnswers.addr_city, "Keepmine City");
   assert.equal(state.conflict, null);
   assert.equal(state.dirty, true);
   assert.equal(state.editBaseRevision, 2);
   await controller.saveAnswers();
   assert.equal(writes.length, 1);
   assert.equal(writes[0].expectedRevision, 2);
-  assert.equal(writes[0].payload.answers.residenceCity, "Keepmine City");
+  assert.equal(writes[0].payload.answers.addr_city, "Keepmine City");
   controller.stop();
 });
 
@@ -449,7 +449,7 @@ test("a presenter start loads people and the staff landing", async () => {
 
 test("an out-of-order response never replaces a newer known revision", async () => {
   const store = fakeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 4, answers: { firstName: "New" } }],
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 4, answers: { tp_first_name: "New" } }],
   });
   const { controller } = build({ store });
   await controller.start();
@@ -461,11 +461,11 @@ test("an out-of-order response never replaces a newer known revision", async () 
     reference: "VT-AAAA-BBBB",
     stage: "draft",
     revision: 2,
-    answers: { firstName: "Stale" },
+    answers: { tp_first_name: "Stale" },
   });
   await controller.refresh();
   assert.equal(controller.getState().savedCase.revision, 4);
-  assert.equal(controller.getState().savedCase.answers.firstName, "New");
+  assert.equal(controller.getState().savedCase.answers.tp_first_name, "New");
   assert.equal(controller.getState().conflict, null);
   controller.stop();
 });
@@ -578,7 +578,7 @@ test("save state moves unsaved to saving to saved, and an edit whitelists its ke
   await controller.start();
   await controller.selectCase("case-a");
   assert.equal(controller.getState().saveState, "idle");
-  controller.editAnswers({ firstName: "Mei", ownerUserId: "forged", stage: "closed" });
+  controller.editAnswers({ tp_first_name: "Mei", ownerUserId: "forged", stage: "closed" });
   assert.equal(controller.getState().saveState, "unsaved");
   assert.equal(controller.getState().dirty, true);
   assert.equal(controller.getState().editBaseRevision, 1);
@@ -592,10 +592,33 @@ test("save state moves unsaved to saving to saved, and an edit whitelists its ke
   assert.deepEqual(seen, ["saving", "saved"]);
   assert.equal(controller.getState().dirty, false);
   assert.equal(controller.getState().editBaseRevision, null);
-  assert.equal(store.writes[0].payload.answers.firstName, "Mei");
+  assert.equal(store.writes[0].payload.answers.tp_first_name, "Mei");
   assert.equal(Object.hasOwn(store.writes[0].payload.answers, "ownerUserId"), false);
   assert.equal(store.writes[0].personId, null);
   assert.equal(controller.getState().savedCase.revision, 2);
+  controller.stop();
+});
+
+test("an edit with no form open changes nothing", async () => {
+  // No case and no new office draft: there is no form the answers belong to,
+  // like the other entry points (revealInvalid, goToSubstep, removeMember).
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller, renders } = build({ store });
+  await controller.start();
+  const drawn = renders.count;
+  controller.editAnswers({ tp_first_name: "Mei" });
+  const state = controller.getState();
+  assert.deepEqual(state.draftAnswers, {});
+  assert.equal(state.dirty, false);
+  assert.equal(state.saveState, "idle");
+  assert.equal(renders.count, drawn, "nothing to redraw");
+  // Once a case is open, the same edit lands.
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
+  assert.equal(controller.getState().dirty, true);
   controller.stop();
 });
 
@@ -606,12 +629,12 @@ test("a failed save keeps the draft editable and retries the identical envelope"
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei" });
+  controller.editAnswers({ tp_first_name: "Mei" });
   store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
   await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
   assert.equal(controller.getState().saveState, "failed");
   assert.equal(controller.getState().dirty, true);
-  assert.equal(controller.getState().draftAnswers.firstName, "Mei");
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
   assert.equal(controller.getState().retryable, true);
   await controller.retryLast();
   assert.equal(store.writes.length, 2);
@@ -631,12 +654,12 @@ test("a retained envelope never outlives the answers it was built from", async (
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "First try" });
+  controller.editAnswers({ tp_first_name: "First try" });
   store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
   await assert.rejects(controller.saveAnswers(), (error) => error.code === "OFFLINE");
   assert.equal(controller.getState().retryable, true);
   // The person keeps typing while the save is still unsent.
-  controller.editAnswers({ firstName: "Newer answer" });
+  controller.editAnswers({ tp_first_name: "Newer answer" });
   assert.equal(
     controller.getState().retryable,
     false,
@@ -644,14 +667,14 @@ test("a retained envelope never outlives the answers it was built from", async (
   );
   assert.equal(await controller.retryLast(), null);
   assert.equal(store.writes.length, 1, "the stale envelope is never re-sent");
-  assert.equal(controller.getState().draftAnswers.firstName, "Newer answer");
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Newer answer");
   assert.equal(controller.getState().dirty, true);
   // Saving now sends the newer answers under a fresh envelope.
   await controller.saveAnswers();
   assert.equal(store.writes.length, 2);
   assert.notEqual(store.writes[1].actionId, store.writes[0].actionId);
-  assert.equal(store.writes[1].payload.answers.firstName, "Newer answer");
-  assert.equal(controller.getState().savedCase.answers.firstName, "Newer answer");
+  assert.equal(store.writes[1].payload.answers.tp_first_name, "Newer answer");
+  assert.equal(controller.getState().savedCase.answers.tp_first_name, "Newer answer");
   controller.stop();
 });
 
@@ -794,7 +817,7 @@ test("an action that succeeded is never reported as failed by a later read", asy
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei" });
+  controller.editAnswers({ tp_first_name: "Mei" });
   // The write lands, then the connection drops before the re-read.
   const realList = store.listCases;
   store.listCases = async () => {
@@ -824,11 +847,9 @@ test("panels opened on one application do not follow to another", async () => {
   await controller.start();
   await controller.selectCase("case-a");
   controller.togglePanel("confirmed");
-  controller.setFormStep(3);
   assert.deepEqual(controller.getState().openPanels, ["confirmed"]);
   await controller.selectCase("case-b");
   assert.deepEqual(controller.getState().openPanels, []);
-  assert.equal(controller.getState().formStep, 0);
   controller.stop();
 });
 
@@ -839,7 +860,7 @@ test("a refusal nobody has dismissed survives an unrelated background re-read", 
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei" });
+  controller.editAnswers({ tp_first_name: "Mei" });
   store.failNext = Object.assign(
     new Error("Network error. Please try again later."),
     { code: "OFFLINE" },
@@ -860,7 +881,7 @@ test("a refusal nobody has dismissed survives an unrelated background re-read", 
   assert.deepEqual(controller.getState().error, shown);
 
   // Their own next action is what clears it.
-  controller.editAnswers({ lastName: "Chen" });
+  controller.editAnswers({ tp_last_name: "Chen" });
   assert.equal(controller.getState().error, null);
   controller.stop();
 });
@@ -895,7 +916,7 @@ test("each way a person can answer a refusal clears it", async () => {
   acted.controller.stop();
 
   const saved = await fresh();
-  saved.controller.editAnswers({ firstName: "Mei" });
+  saved.controller.editAnswers({ tp_first_name: "Mei" });
   await saved.controller.saveAnswers();
   assert.equal(saved.controller.getState().error, null, "a save");
   saved.controller.stop();
@@ -1190,7 +1211,7 @@ test("window state is keyed by the authenticated user", async () => {
   const one = build({ store: storeOne, sessionStorage: shared });
   await one.controller.start();
   await one.controller.selectCase("case-a");
-  one.controller.setFormStep(2);
+  await one.controller.goToSubstep("about.you");
   one.controller.stop();
 
   const storeTwo = fakeStore({
@@ -1200,14 +1221,14 @@ test("window state is keyed by the authenticated user", async () => {
   const two = build({ store: storeTwo, sessionStorage: shared });
   await two.controller.start();
   assert.equal(two.controller.getState().selectedCaseId, null);
-  assert.equal(two.controller.getState().formStep, 0);
+  assert.equal(two.controller.getState().formSubstep, null);
   two.controller.stop();
 
   // The first user's window state is still their own.
   const again = build({ store: storeOne, sessionStorage: shared });
   await again.controller.start();
   assert.equal(again.controller.getState().selectedCaseId, "case-a");
-  assert.equal(again.controller.getState().formStep, 2);
+  assert.equal(again.controller.getState().formSubstep, "about.you");
   assert.equal(again.controller.getState().savedCase.id, "case-a");
   again.controller.stop();
   assert.deepEqual(shared.keys().sort(), [
@@ -1225,7 +1246,7 @@ test("signing out clears cached records, drafts and the user's window state", as
   const { controller, sessionStorage } = build({ store, auth });
   await controller.start();
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei" });
+  controller.editAnswers({ tp_first_name: "Mei" });
   assert.ok(sessionStorage.raw("vitally:client:v1:user-1"));
   await controller.signOut();
   assert.equal(signedOut, 1);
@@ -1440,72 +1461,16 @@ const officeStore = (extra = {}) =>
     ...extra,
   });
 
-test("an assisted application is created once, as the chosen office persona", async () => {
-  const store = officeStore();
-  let next = 0;
-  const { controller, sessionStorage } = build({
-    store,
-    newActionId: () => `action-${(next += 1)}`,
-  });
-  await controller.start();
-  controller.selectPerson("sam");
-  const answers = { firstName: "Mei", language: "Mandarin" };
-  // A transport failure keeps the pending action id, exactly like a client's.
-  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
-  await assert.rejects(
-    controller.createAssistedCase({ answers }),
-    (error) => error.code === "OFFLINE",
-  );
-  assert.equal(store.writes[0].actionId, "action-1");
-  assert.ok(
-    sessionStorage.raw("vitally:client:v1:p1").includes("action-1"),
-    "the pending action id survives in window state",
-  );
-  // The retry is the same request, and a second click while one is in flight
-  // sends nothing at all.
-  const first = controller.createAssistedCase({ answers });
-  const second = controller.createAssistedCase({ answers });
-  await Promise.all([first, second]);
-  assert.equal(store.writes.length, 2, "a second click while pending is a no-op");
-  assert.deepEqual(store.writes[1], {
-    actionId: "action-1",
-    mode: "assisted",
-    personId: "sam",
-    answers: { firstName: "Mei", language: "Mandarin" },
-  });
-  // The new case is open, on the staff workspace, and the id is spent.
-  const state = controller.getState();
-  assert.equal(state.selectedCaseId, state.savedCase.id);
-  assert.equal(state.screen, "staff-case");
-  assert.ok(!sessionStorage.raw("vitally:client:v1:p1").includes("action-1"));
-  // Only intake answers travel: nothing else can be smuggled into a new case.
-  await controller.createAssistedCase({
-    answers: { firstName: "Jordan", ownerUserId: "someone", stage: "closed" },
-  });
-  assert.deepEqual(store.writes[2].answers, { firstName: "Jordan" });
-  assert.equal(store.writes[2].actionId, "action-2");
-  controller.stop();
-});
-
-test("an assisted application needs a presenter with a chosen persona", async () => {
-  const office = officeStore();
-  const { controller } = build({ store: office });
-  await controller.start();
-  await assert.rejects(
-    controller.createAssistedCase({ answers: {} }),
-    (error) => error.code === "VALIDATION",
-  );
-  assert.equal(office.writes.length, 0, "nothing is sent without a persona");
-  controller.stop();
-
+test("only a presenter can open Add a case", async () => {
   const client = fakeStore();
   const asClient = build({ store: client });
   await asClient.controller.start();
   await assert.rejects(
-    asClient.controller.createAssistedCase({ answers: {} }),
+    asClient.controller.openAddCase(),
     (error) => error.code === "FORBIDDEN",
   );
   assert.equal(client.writes.length, 0);
+  assert.notEqual(asClient.controller.getState().screen, "office-add-case");
   asClient.controller.stop();
 });
 
@@ -1693,14 +1658,14 @@ test("the office answers for a walk-in client as its own persona", async () => {
   await controller.start();
   controller.selectPerson("sam");
   await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei" });
+  controller.editAnswers({ tp_first_name: "Mei" });
   await controller.saveAnswers();
   // The database refuses SAVE_ANSWERS from a presenter who sends no person at
   // all, and accepts it only from an `admin` one on an owner-less draft.
   assert.equal(store.writes[0].type, "SAVE_ANSWERS");
   assert.equal(store.writes[0].personId, "sam");
   assert.equal(store.writes[0].expectedRevision, 2);
-  assert.deepEqual(store.writes[0].payload, { answers: { firstName: "Mei" } });
+  assert.deepEqual(store.writes[0].payload, { answers: { tp_first_name: "Mei" } });
   // A client still answers for themselves, with no persona at all.
   const asClient = build({
     store: fakeStore({
@@ -1711,9 +1676,9 @@ test("the office answers for a walk-in client as its own persona", async () => {
   });
   await asClient.controller.start();
   await asClient.controller.selectCase("case-a");
-  asClient.controller.editAnswers({ firstName: "Mei" });
+  asClient.controller.editAnswers({ tp_first_name: "Mei" });
   await asClient.controller.saveAnswers();
-  assert.equal(asClient.controller.getState().savedCase.answers.firstName, "Mei");
+  assert.equal(asClient.controller.getState().savedCase.answers.tp_first_name, "Mei");
   controller.stop();
   asClient.controller.stop();
 });
@@ -1748,7 +1713,7 @@ test("a presenter start reads the workspace the fixture generation lives on", as
     id: "w1",
     fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
-    defaultIntakeVersion: 1,
+    defaultIntakeVersion: 2,
   });
   controller.stop();
 
@@ -2115,6 +2080,26 @@ test("a case that is gone only moves a window that was showing it", async () => 
   controller.stop();
 });
 
+test("a saved case id that no longer exists is forgotten when the window opens", async () => {
+  // A window's saved selection outlives its case: the cleanup deleted it, or
+  // a reset replaced it. The read answers NOT_FOUND, and nothing is selected.
+  const sessionStorage = fakeSession({
+    "vitally:client:v1:user-1": JSON.stringify({ screen: "intake", selectedCaseId: "case-gone", formSubstep: "about.you" }),
+  });
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store, sessionStorage });
+  await controller.start();
+  assert.ok(store.calls.includes("getCase:case-gone"), "the saved id was read");
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, null);
+  assert.equal(state.savedCase, null);
+  assert.equal(state.screen, "applications");
+  assert.equal(state.error, null, "a gone case is not a failure to report");
+  controller.stop();
+});
+
 test("the office screens are a presenter's, and a client falls back home", async () => {
   const shared = fakeSession();
   const presenter = build({ store: presenterStore(), sessionStorage: shared });
@@ -2447,22 +2432,6 @@ test("using the office's values on a version-2 case keeps the four contact field
     best_contact_note: "After six",
   });
   assert.equal(controller.getState().conflict, null);
-  controller.stop();
-});
-
-test("fromServer changes nothing on a version-1 case: the given answers are used", async () => {
-  const store = fakeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { firstName: "Server" } }],
-  });
-  const { controller } = build({ store });
-  await controller.start();
-  await controller.selectCase("case-a");
-  await controller.reconcileAnswers({
-    answers: { firstName: "Chosen" },
-    expectedServerRevision: 1,
-    fromServer: true,
-  });
-  assert.equal(controller.getState().draftAnswers.firstName, "Chosen");
   controller.stop();
 });
 
@@ -2803,30 +2772,6 @@ test("a refusal that names a field is retried once without it", async () => {
   await assert.rejects(unnamed.controller.saveAnswers(), (error) => error.code === "VALIDATION");
   assert.equal(unnamed.store.writes.length, 1);
   unnamed.controller.stop();
-});
-
-test("a version-1 case keeps today's whole-draft save, any-edit dirty and no revealed list", async () => {
-  const store = fakeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { firstName: "Mei" } }],
-  });
-  const { controller } = build({ store });
-  await controller.start();
-  await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Mei", zip: "191", household: 2, stocks: null, tp_first_name: "x" });
-  assert.deepEqual(controller.getState().draftAnswers, { firstName: "Mei", zip: "191", household: "2" });
-  assert.equal(controller.getState().dirty, true, "any edit is dirty, even the same value");
-  assert.equal(controller.getState().saveState, "unsaved");
-  controller.editAnswers({ firstName: null });
-  assert.equal(controller.getState().draftAnswers.firstName, "Mei", "null is dropped as today");
-  controller.revealInvalid("zip");
-  await controller.goToSubstep("about.you");
-  assert.equal(store.writes.length, 0, "a version-1 case has no sub-steps");
-  assert.equal(controller.currentSubstep(), null);
-  await controller.saveAnswers();
-  assert.deepEqual(controller.getState().revealed, []);
-  assert.deepEqual(store.writes[0].payload.answers, { firstName: "Mei", zip: "191", household: "2" });
-  assert.equal(chip(controller), "Saved");
-  controller.stop();
 });
 
 // ---------------------------------------------------------------------------
@@ -3294,7 +3239,7 @@ test("fictional details after a reload never reuse a removed member's id or inhe
     };
     const fill = (controller) => {
       const draft = controller.getState().draftAnswers;
-      const sample = makeSampleAnswers({ version: 2, seed: 1, married: draft.marital_status === "married" });
+      const sample = makeSampleAnswers({ seed: 1, married: draft.marital_status === "married" });
       controller.editAnswers(fictionalAnswers(draft, sample, { replaceEverything }));
     };
     const laterOnHousehold = (controller) =>
@@ -3327,14 +3272,14 @@ test("fictional details after a reload never reuse a removed member's id or inhe
 // The fill gives generated members fresh ids; members already in the draft
 // keep theirs, and the sample's own ids stay fixed by the seed.
 test("fictional details give generated household members fresh ids and leave the draft's own alone", () => {
-  const sample = makeSampleAnswers({ version: 2, seed: 1 });
+  const sample = makeSampleAnswers({ seed: 1 });
   const fixed = sample.hh[0].member_id;
   const fresh = ["000000000000000000000000000000f1", "000000000000000000000000000000f2"];
   const newId = () => fresh.shift();
   assert.equal(fictionalAnswers({}, sample, { newId }).hh[0].member_id, "000000000000000000000000000000f1");
   assert.equal(fictionalAnswers({ tp_first_name: "Mei" }, sample, { replaceEverything: true, newId }).hh[0].member_id, "000000000000000000000000000000f2");
   assert.equal(sample.hh[0].member_id, fixed, "the sample is never changed in place");
-  assert.equal(makeSampleAnswers({ version: 2, seed: 1 }).hh[0].member_id, fixed, "still fixed by the seed");
+  assert.equal(makeSampleAnswers({ seed: 1 }).hh[0].member_id, fixed, "still fixed by the seed");
   const own = [{ member_id: "000000000000000000000000000000a1", first_name: "An" }];
   assert.equal(fictionalAnswers({ hh: own }, sample, { newId: () => assert.fail("no id for a kept household") }).hh, own);
 });
@@ -3389,8 +3334,8 @@ test("a household member's card mark stays with that person on every path that c
   // member, a different person with no marks. (The page's fresh ids for
   // generated members are pinned in the fictionalAnswers test above.)
   ({ controller } = await open());
-  const generated = makeSampleAnswers({ version: 2, seed: 1 });
-  controller.editAnswers(fillBlankAnswers(controller.getState().draftAnswers, generated, 2));
+  const generated = makeSampleAnswers({ seed: 1 });
+  controller.editAnswers(fillBlankAnswers(controller.getState().draftAnswers, generated));
   assert.deepEqual(ids(controller), [A, B]);
   controller.editAnswers({ ...generated });
   assert.deepEqual(ids(controller), [generated.hh[0].member_id]);
@@ -3793,24 +3738,6 @@ test("one save at a time: a second press, or a card mark, during a Save draft do
   controller.stop();
 });
 
-test("a workspace set back to version 1 under a new draft refuses, keeping the answers", async () => {
-  const { controller, store } = await startOffice();
-  await controller.openAddCase();
-  controller.editAnswers({ tp_first_name: "Mei" });
-  store.workspace = { ...store.workspace, defaultIntakeVersion: 1 };
-  await assert.rejects(controller.saveOfficeDraft(), {
-    code: "VALIDATION",
-    message: "This workspace now takes version-1 applications. Start again from Add a case.",
-  });
-  assert.equal(writesOf(store, "SAVE_ANSWERS").length, 0);
-  const state = controller.getState();
-  assert.equal(state.draftAnswers.tp_first_name, "Mei");
-  assert.equal(state.savedCase, null);
-  assert.equal(state.error.code, "VALIDATION");
-  assert.equal(state.officeSaving, false);
-  controller.stop();
-});
-
 test("a new office draft never outlives the page, and starts again on a reload or when the workspace arrives", async () => {
   // Leaving resets it.
   const left = await startOffice();
@@ -3875,7 +3802,7 @@ test("a new office draft never outlives the page, and starts again on a reload o
 test("a refused Send saves the draft, shows what is missing and opens its part", async () => {
   const { controller, store } = await startOffice();
   await controller.openAddCase();
-  const { addr_city: _city, ...answers } = makeSampleAnswers({ version: 2 });
+  const { addr_city: _city, ...answers } = makeSampleAnswers();
   controller.editAnswers(answers);
   controller.togglePanel("confirmed");
   assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: false, reason: "answers" });
@@ -3913,7 +3840,7 @@ test("a refused Send saves the draft, shows what is missing and opens its part",
 test("Send needs the confirmation; ticked, a complete new draft is created, saved and sent", async () => {
   const unticked = await startOffice();
   await unticked.controller.openAddCase();
-  unticked.controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  unticked.controller.editAnswers(makeSampleAnswers());
   assert.deepEqual(await unticked.controller.saveOfficeDraft({ send: true }), {
     sent: false,
     reason: "unconfirmed",
@@ -3924,7 +3851,7 @@ test("Send needs the confirmation; ticked, a complete new draft is created, save
 
   const { controller, store } = await startOffice();
   await controller.openAddCase();
-  controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  controller.editAnswers(makeSampleAnswers());
   controller.togglePanel("confirmed");
   assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: true });
   assert.deepEqual(
@@ -3945,7 +3872,7 @@ test("Send needs the confirmation; ticked, a complete new draft is created, save
 test("a Send with an invalid answer saves, reveals it and sends nothing", async () => {
   const { controller, store } = await startOffice();
   await controller.openAddCase();
-  controller.editAnswers({ ...makeSampleAnswers({ version: 2 }), email: "not-an-email" });
+  controller.editAnswers({ ...makeSampleAnswers(), email: "not-an-email" });
   controller.togglePanel("confirmed");
   assert.deepEqual(await controller.saveOfficeDraft({ send: true }), { sent: false, reason: "answers" });
   assert.equal(writesOf(store, "SAVE_ANSWERS").length, 1);
@@ -3958,21 +3885,17 @@ test("a Send with an invalid answer saves, reveals it and sends nothing", async 
   controller.stop();
 });
 
-test("Add a case opens a saved office draft on the page, whatever the workspace's version", async () => {
-  for (const version of [2, 1]) {
-    const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
-    store.workspace = { ...store.workspace, defaultIntakeVersion: version };
-    await controller.refresh();
-    await controller.openAddCase({ caseId: "case-v2" });
-    const state = controller.getState();
-    assert.equal(state.selectedCaseId, "case-v2", `version ${version}`);
-    assert.equal(state.savedCase.id, "case-v2");
-    assert.equal(state.officeDraft, false);
-    assert.equal(state.screen, "office-add-case");
-    assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
-    assert.equal(state.draftAnswers.tp_first_name, "Mei");
-    controller.stop();
-  }
+test("Add a case opens a saved office draft on the page", async () => {
+  const { controller } = await startOffice({ answers: { tp_first_name: "Mei" } });
+  await controller.openAddCase({ caseId: "case-v2" });
+  const state = controller.getState();
+  assert.equal(state.selectedCaseId, "case-v2");
+  assert.equal(state.savedCase.id, "case-v2");
+  assert.equal(state.officeDraft, false);
+  assert.equal(state.screen, "office-add-case");
+  assert.deepEqual(state.openAddSubsteps, ["before.ready"]);
+  assert.equal(state.draftAnswers.tp_first_name, "Mei");
+  controller.stop();
 });
 
 test("Add a case's parts open and close independently", async () => {
@@ -3983,30 +3906,6 @@ test("Add a case's parts open and close independently", async () => {
   assert.deepEqual(controller.getState().openAddSubsteps, ["before.ready", "about.you", "documents"]);
   controller.toggleAddSubstep("before.ready");
   assert.deepEqual(controller.getState().openAddSubsteps, ["about.you", "documents"]);
-  controller.stop();
-});
-
-test("a version-1 workspace keeps today's Add a case page and one-call creation", async () => {
-  const store = officeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 2, ownerUserId: null, answers: {} }],
-  });
-  const { controller } = build({ store });
-  await controller.start();
-  controller.selectPerson("sam");
-  await controller.selectCase("case-a", { navigate: false });
-  await controller.openAddCase();
-  let state = controller.getState();
-  assert.equal(state.screen, "office-add-case");
-  assert.equal(state.officeDraft, false);
-  assert.equal(state.selectedCaseId, null, "today's page never reads the selection");
-  assert.equal(state.savedCase, null);
-  assert.deepEqual(store.writes, []);
-  await controller.createAssistedCase({ answers: { firstName: "Mei" } });
-  assert.deepEqual(store.writes[0].answers, { firstName: "Mei" });
-  assert.equal(store.writes[0].mode, "assisted");
-  state = controller.getState();
-  assert.equal(state.screen, "staff-case");
-  assert.equal(state.selectedCaseId, state.savedCase.id);
   controller.stop();
 });
 
@@ -4104,7 +4003,7 @@ test("a create that lands after sign-out, or after a fresh draft started, adopts
 test("a Send whose save outlives its case sends nothing", async () => {
   const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
   await controller.openAddCase();
-  controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  controller.editAnswers(makeSampleAnswers());
   controller.togglePanel("confirmed");
   const release = holdSaves(store);
   const sending = controller.saveOfficeDraft({ send: true });
@@ -4118,35 +4017,19 @@ test("a Send whose save outlives its case sends nothing", async () => {
   controller.stop();
 });
 
-test("Add a case on a version-1 workspace drops a version-2 selection and a refused draft", async () => {
-  const { controller, store } = await startOffice({ answers: { tp_first_name: "Mei" } });
-  store.workspace = { ...store.workspace, defaultIntakeVersion: 1 };
-  await store.handlers.onChange({ table: "workspaces" });
+test("Add a case drops an open case's selection and starts a new office draft", async () => {
+  const { controller } = await startOffice({ answers: { tp_first_name: "Mei" } });
   await controller.selectCase("case-v2");
+  assert.equal(controller.getState().selectedCaseId, "case-v2");
   await controller.openAddCase();
-  let state = controller.getState();
+  const state = controller.getState();
   assert.equal(state.screen, "office-add-case");
   assert.equal(state.selectedCaseId, null);
   assert.equal(state.savedCase, null);
-  assert.equal(state.officeDraft, false);
-  controller.stop();
-
-  // Refused because the workspace went back to version 1, then Add a case again.
-  const refused = await startOffice();
-  await refused.controller.openAddCase();
-  refused.controller.editAnswers({ tp_first_name: "Lin" });
-  refused.store.workspace = { ...refused.store.workspace, defaultIntakeVersion: 1 };
-  await assert.rejects(refused.controller.saveOfficeDraft(), { code: "VALIDATION" });
-  assert.equal(refused.controller.getState().officeDraftCaseId, "case-2");
-  await refused.store.handlers.onChange({ table: "workspaces" });
-  await refused.controller.openAddCase();
-  state = refused.controller.getState();
-  assert.equal(state.officeDraft, false);
-  assert.equal(state.officeDraftCaseId, null);
+  assert.equal(state.officeDraft, true);
   assert.deepEqual(state.draftAnswers, {});
   assert.equal(state.dirty, false);
-  assert.equal(state.screen, "office-add-case");
-  refused.controller.stop();
+  controller.stop();
 });
 
 test("on a new office draft, typing while the first save is out is kept and still to send", async () => {
@@ -4766,34 +4649,6 @@ test("typing in the reopened case while the earlier opening's save is out is kep
   controller.stop();
 });
 
-test("a version-1 save that lands after its case was left and opened again keeps the reopened typing", async () => {
-  const store = fakeStore({
-    cases: [
-      { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { firstName: "Mei" } },
-      { id: "case-b", reference: "VT-BBBB-BBBB", stage: "draft", revision: 1, answers: {} },
-    ],
-  });
-  const { controller } = build({ store });
-  await controller.start();
-  await controller.selectCase("case-a");
-  controller.editAnswers({ firstName: "Ming" });
-  const release = holdSaves(store);
-  const saving = controller.saveAnswers();
-  await tick();
-  await controller.selectCase("case-b");
-  await controller.selectCase("case-a");
-  controller.editAnswers({ zip: "19104" });
-  release();
-  await saving;
-  const state = controller.getState();
-  assert.equal(store.records.get("case-a").answers.firstName, "Ming", "the save landed");
-  assert.equal(state.draftAnswers.zip, "19104", "the reopened typing is kept");
-  assert.equal(state.dirty, true);
-  assert.equal(state.saveState, "unsaved");
-  assert.equal(state.conflict?.serverRevision, 2);
-  controller.stop();
-});
-
 test("a plain save, and a re-read of the open case while it is out, behave as before", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
   controller.editAnswers({ tp_first_name: "Ming" });
@@ -4925,7 +4780,7 @@ test("a card mark whose pre-save outlives its opening is not sent to the case op
 test("a Send whose save outlives its opening sends nothing from the draft opened again", async () => {
   const sending = await startOffice({ answers: { tp_first_name: "Mei" } });
   await sending.controller.openAddCase();
-  sending.controller.editAnswers(makeSampleAnswers({ version: 2 }));
+  sending.controller.editAnswers(makeSampleAnswers());
   sending.controller.togglePanel("confirmed");
   const release = holdSaves(sending.store);
   const send = sending.controller.saveOfficeDraft({ send: true });

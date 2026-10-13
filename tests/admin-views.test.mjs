@@ -4,9 +4,8 @@ import {
   renderAdminCase,
   closeCaseDialogBody,
   adminEligibility,
-  ASSISTED_ANSWERS_FORM_ID,
 } from "../src/admin-views.mjs";
-import { decorateStaffCase, answersPanelV1 } from "../src/staff-views.mjs";
+import { decorateStaffCase } from "../src/staff-views.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
@@ -466,103 +465,6 @@ test("the close dialog asks for a reason and an explicit confirmation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Assisted intake, on the case
-// ---------------------------------------------------------------------------
-
-test("an office draft is editable and submitted from the case, a client's is not", () => {
-  const draft = officeCase({
-    stage: "draft",
-    intakeVerified: false,
-    answers: {},
-    requests: [],
-  });
-  const html = renderAdminCase(draft, { person: SAM });
-  assert.match(html, /<span>How it started<\/span><strong>Assisted \(staff-entered\)/);
-  assert.match(html, /<span>Client account<\/span><strong>No client account/);
-  assert.match(html, /data-case-action="SAVE_ANSWERS"/);
-  assert.match(html, /data-case-action="SUBMIT"/);
-  // The id the input and change listeners look for: without it a typed answer
-  // reaches no draft and the next render throws it away (`app.mjs`,
-  // `ANSWER_FORMS`). The panel and the wiring layer share the one constant.
-  assert.equal(ASSISTED_ANSWERS_FORM_ID, "assisted-answers-form");
-  assert.match(html, /<form id="assisted-answers-form" class="staff-form">/);
-  // Nothing can be sent before the saved answers are complete and checked.
-  assert.match(html, /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/);
-  assert.match(html, /Some answers are still missing\. Fill them in and save first\./);
-  assert.match(html, /It is not a signature on a tax or consent form\./);
-  // Nothing to say yet, but the notice is already there for the wiring layer
-  // to reveal without rebuilding the page under the cursor.
-  assert.match(html, /data-role="assisted-unsaved" hidden>/);
-  // Every box renders from the draft, so what was typed survives a re-render —
-  // and the draft wins over the saved answer it differs from.
-  const typing = renderAdminCase(
-    officeCase({
-      stage: "draft",
-      intakeVerified: false,
-      answers: { firstName: "Mei", language: "English" },
-      requests: [],
-    }),
-    {
-      person: SAM,
-      dirty: true,
-      draftAnswers: { firstName: "Mei-Ling", language: "Cantonese" },
-    },
-  );
-  assert.match(typing, /id="field-assisted-firstName"[^>]*value="Mei-Ling"/);
-  assert.doesNotMatch(typing, /id="field-assisted-firstName"[^>]*value="Mei"/);
-  assert.match(
-    typing,
-    /<option value="Cantonese" selected>/,
-    "a select renders the draft's choice too",
-  );
-  // Unsaved edits are named as their own reason and lock the send button,
-  // because saving them is the step that changes the answer the office checks.
-  assert.match(typing, /data-role="assisted-unsaved" >/);
-  assert.doesNotMatch(typing, /data-role="assisted-unsaved" hidden>/);
-  assert.match(typing, /These edits are not saved yet\./);
-  assert.match(typing, /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/);
-  // A refusal outside the service scope says what it is, and what it is not.
-  const outside = renderAdminCase(
-    officeCase({
-      stage: "draft",
-      intakeVerified: false,
-      answers: {
-        service: "Drop-off",
-        year: "2025",
-        language: "English",
-        residenceCity: "Philadelphia",
-        residenceState: "PA",
-        firstName: "Mei",
-        lastName: "Chen",
-        address: "Sample address withheld",
-        city: "Philadelphia",
-        state: "PA",
-        zip: "19107",
-        household: "1",
-        helper: "self",
-        documents: "ready",
-        rideshare: "no",
-        other: "yes",
-        stocks: "no",
-      },
-    }),
-    { person: SAM },
-  );
-  assert.match(outside, /outside PCDC&#39;s current service scope/);
-  assert.match(outside, /not a judgement about anyone&#39;s taxes/);
-  assert.match(
-    outside,
-    /data-case-action="SUBMIT" data-role="assisted-submit" disabled>/,
-  );
-
-  // A client's own case is never edited here: the summary is read-only.
-  const owned = renderAdminCase(officeCase({ ownerUserId: "owner-1" }), { person: SAM });
-  assert.doesNotMatch(owned, /data-case-action="SAVE_ANSWERS"/);
-  assert.match(owned, /<span>How it started<\/span><strong>The client&#39;s own application/);
-  assert.match(owned, /What the client told us/);
-});
-
-// ---------------------------------------------------------------------------
 // Refusals, escaping, and what nobody may do
 // ---------------------------------------------------------------------------
 
@@ -827,7 +729,7 @@ const intakeTab = (html) =>
   )[1];
 
 test("a submitted version-2 case shows the answers, the contact card and the materials card on the office page", () => {
-  const sample = makeSampleAnswers({ version: 2, seed: 2 });
+  const sample = makeSampleAnswers({ seed: 2 });
   const answers = Object.fromEntries(
     Object.entries(sample).filter(([id]) => !Object.hasOwn(CONTACT_FIELDS, id)),
   );
@@ -853,28 +755,12 @@ test("a submitted version-2 case shows the answers, the contact card and the mat
   assert.match(open, /id="contact-form"/);
 });
 
-test("a submitted version-1 case shows today's panel plus the materials card, and no contact card", () => {
-  const record = officeCase({ stage: "received" });
-  const tab = intakeTab(renderAdminCase(record, { person: SAM }));
-  assert.ok(tab.startsWith(answersPanelV1(record)));
-  assert.doesNotMatch(tab, /contact-card|Wording used/);
-  assert.equal((tab.match(/class="panel materials-card"/g) ?? []).length, 1);
-  assert.match(tab, /data-case-action="RECORD_MATERIALS"/);
-});
-
-test("a version-1 office draft keeps its note, with the materials card below it", () => {
-  const record = officeCase({ stage: "draft", ownerUserId: null });
-  const tab = intakeTab(renderAdminCase(record, { person: SAM }));
-  assert.match(tab, /The office is filling in this walk-in client’s answers on Overview\./);
-  assert.ok(tab.indexOf("filling in") < tab.indexOf('class="panel materials-card"'));
-});
-
 // ---------------------------------------------------------------------------
 // Part 4c, Task 2: the document checklist on the office page.
 // ---------------------------------------------------------------------------
 
 test("the office page's Documents tab starts with the checklist for a submitted version-2 case", () => {
-  const sample = makeSampleAnswers({ version: 2, seed: 2 });
+  const sample = makeSampleAnswers({ seed: 2 });
   const answers = Object.fromEntries(
     Object.entries(sample).filter(([id]) => !Object.hasOwn(CONTACT_FIELDS, id)),
   );
@@ -896,16 +782,13 @@ test("the office page's Documents tab starts with the checklist for a submitted 
   // Alex does not prepare this one: the office page offers him no marks.
   const forAlex = renderAdminCase({ ...record, preparerId: "someone-else" }, { person: ALEX });
   assert.doesNotMatch(forAlex, /data-action="mark-card"/);
-  // A version-1 case keeps its Documents tab as it was.
-  const v1 = renderAdminCase(officeCase({ stage: "received" }), { person: SAM });
-  assert.doesNotMatch(v1, /doc-checklist/);
 });
 
 // ---------------------------------------------------------------------------
-// Part 4c, Task 4: a version-2 office draft continues in Add a case.
+// Part 4c, Task 4: an office draft continues in Add a case.
 // ---------------------------------------------------------------------------
 
-test("a version-2 office draft continues in Add a case; a version-1 one keeps its panel", () => {
+test("an office draft continues in Add a case, and a client's own case is read-only", () => {
   const record = officeCase({
     stage: "draft",
     intakeVerified: false,
@@ -917,6 +800,8 @@ test("a version-2 office draft continues in Add a case; a version-1 one keeps it
   });
   const html = renderAdminCase(record, { person: SAM });
   const overview = html.match(/id="case-panel-overview"[^>]*>([\s\S]*?)<div role="tabpanel" id="case-panel-intake"/)[1];
+  assert.match(overview, /<span>How it started<\/span><strong>Assisted \(staff-entered\)/);
+  assert.match(overview, /<span>Client account<\/span><strong>No client account/);
   assert.match(overview, /This walk-in client&#39;s answers are entered in Add a case\./);
   assert.match(overview, /<button type="button" class="btn primary" data-action="continue-add-case" data-case-id="case-a"[^>]*>[\s\S]*?Continue in Add a case<\/button>/);
   assert.doesNotMatch(html, /assisted-answers-form/);
@@ -931,8 +816,10 @@ test("a version-2 office draft continues in Add a case; a version-1 one keeps it
   const forAlex = renderAdminCase(record, { person: ALEX });
   assert.doesNotMatch(forAlex, /data-action="continue-add-case"/);
 
-  // Version 1: today's panel, exactly.
-  const v1 = renderAdminCase(officeCase({ stage: "draft", intakeVerified: false, answers: {} }), { person: SAM });
-  assert.match(v1, /<form id="assisted-answers-form" class="staff-form">/);
-  assert.doesNotMatch(v1, /continue-add-case/);
+  // A client's own case is never edited here: the summary is read-only.
+  const owned = renderAdminCase(officeCase({ ownerUserId: "owner-1", intakeVersion: 2 }), { person: SAM });
+  assert.doesNotMatch(owned, /data-case-action="SAVE_ANSWERS"/);
+  assert.doesNotMatch(owned, /continue-add-case/);
+  assert.match(owned, /<span>How it started<\/span><strong>The client&#39;s own application/);
+  assert.match(owned, /What the client told us/);
 });

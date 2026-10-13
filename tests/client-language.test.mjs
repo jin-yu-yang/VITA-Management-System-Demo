@@ -84,7 +84,6 @@ const baseState = (overrides = {}) => ({
   busy: false,
   screen: "applications",
   selectedCaseId: null,
-  formStep: 0,
   openPanels: [],
   lookup: "",
   dialog: null,
@@ -92,7 +91,7 @@ const baseState = (overrides = {}) => ({
 });
 
 const v2Answers = () => {
-  const answers = makeSampleAnswers({ version: 2 });
+  const answers = makeSampleAnswers();
   return {
     ...answers,
     tp_first_name: "美",
@@ -278,32 +277,6 @@ test("the progress page shows the office's words as typed, with Chinese labels a
 });
 
 // ---------------------------------------------------------------------------
-// The version-1 intake: English body, translated frame, a one-line note
-// ---------------------------------------------------------------------------
-
-test("a version-1 draft's form stays English inside lang=\"en\", under a Chinese note", () => {
-  const record = { id: "v1", reference: REFERENCE, stage: "draft", revision: 1, answers: {}, requests: [], documents: [], history: [] };
-  const state = baseState({ screen: "intake", savedCase: record, lang: "zh-Hans" });
-  const html = client.intakeScreen(state);
-  assert.ok(html.includes("这份较早的申请只有英文版本。"));
-  const body = /<div[^>]*lang="en"[^>]*>([\s\S]*)<\/div><\/main>$/.exec(html);
-  assert.ok(body, "the form body is wrapped in lang=\"en\"");
-  assert.match(body[1], /Your visit/);
-  assert.match(body[1], /Fictional data only/);
-  assert.doesNotMatch(body[1], /这份较早/);
-  // English has no note and no wrapper.
-  const english = client.intakeScreen({ ...state, lang: "en" });
-  assert.doesNotMatch(english, /lang="en"/);
-  assert.equal(english, client.intakeScreen({ ...state, lang: undefined }));
-  // Submitted: the read-only answers are English too.
-  const sent = client.intakeScreen({ ...state, savedCase: { ...record, stage: "received" } });
-  assert.match(sent, /<div lang="en">[\s\S]*Your answers are with the office/);
-  assert.ok(sent.includes("这份较早的申请只有英文版本。"));
-  // The frame around it is translated.
-  assert.match(views.page(state, html), /跳到主要内容/);
-});
-
-// ---------------------------------------------------------------------------
 // The save chip and the conflict panel (version 2)
 // ---------------------------------------------------------------------------
 
@@ -330,9 +303,9 @@ test("the version-2 save chip and conflict panel speak the client's language", (
   );
   assert.deepEqual(latinLeaks(textOf(conflict), DATA), []);
   assert.match(conflict, /文/);
-  // Version 1 and the office keep English.
-  const v1 = baseState({ screen: "intake", lang: "zh-Hans", saveState: "saved", savedCase: { id: "v1", stage: "draft", answers: {} } });
-  assert.match(client.saveStatus(v1), /Saved/);
+  // The office's Add a case, before its first save, keeps English.
+  const office = baseState({ screen: "office-add-case", lang: "zh-Hans", saveState: "saved", savedCase: null });
+  assert.match(client.saveStatus(office), /Saved/);
 });
 
 // ---------------------------------------------------------------------------
@@ -408,7 +381,7 @@ test("every errors.mjs, controller, auth and notice sentence is a SENTENCES key"
   // controller.mjs: literal controllerError and requirePresenter sentences, *_NOTICE and the client conflict messages
   const controller = source("controller.mjs");
   const errorsThrown = [...controller.matchAll(/controllerError\(\s*"[A-Z_]+"\s*,\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
-  assert.ok(errorsThrown.length >= 15);
+  assert.ok(errorsThrown.length >= 12);
   errorsThrown.forEach((s) => wanted.add(s));
   [...controller.matchAll(/requirePresenter\(\s*("(?:[^"\\]|\\.)*")/g)].forEach((m) => wanted.add(literal(m[1])));
   // The fallbacks a sign-in error falls back on when it carries no message
@@ -461,7 +434,7 @@ test("the client's own case actions refuse in sentences the table knows", () => 
 // The married sample, its free text (names, job titles, the contact note and
 // the street) in characters that are the same in both scripts.
 const intakeAnswers = (overrides = {}) => {
-  const answers = makeSampleAnswers({ version: 2, seed: 1, married: true });
+  const answers = makeSampleAnswers({ seed: 1, married: true });
   return {
     ...answers,
     tp_first_name: "美",

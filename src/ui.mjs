@@ -95,8 +95,8 @@ export const input = (
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><input id="${fieldId(name, scope)}" name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 export const textarea = (label, name, value = "", extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><textarea id="${fieldId(name, scope)}" name="${name}" ${extra}>${esc(value)}</textarea></label>`;
-// Stays English: only the version-1 form (English) and staff screens use it.
-// The version-2 form's select is intake-form.mjs's, through t("form.select_option").
+// Stays English: only staff screens use it. The client form's select is
+// intake-form.mjs's, through t("form.select_option").
 export const select = (label, name, value, options, extra = "", scope = "") =>
   `<label class="field" for="${fieldId(name, scope)}"><span>${esc(label)}</span><select id="${fieldId(name, scope)}" name="${name}" ${extra}><option value="">Select an option</option>${options
     .map((o) => {
@@ -104,28 +104,6 @@ export const select = (label, name, value, options, extra = "", scope = "") =>
       return `<option value="${esc(val)}" ${value === val ? "selected" : ""}>${esc(txt)}</option>`;
     })
     .join("")}</select></label>`;
-// One vocabulary for the intake answers, shared by the client's own screens and
-// by the staff summary of the same answers, so the two can never name the same
-// question differently.
-export const ANSWER_LABELS = Object.freeze({
-  service: "Service",
-  year: "Tax year",
-  language: "Preferred language",
-  residenceCity: "City of residence",
-  residenceState: "State of residence",
-  city: "Mailing city",
-  state: "Mailing state",
-  zip: "ZIP code",
-  address: "Mailing address",
-  rideshare: "Uber / Lyft income",
-  other: "Other self-employment",
-  stocks: "More than 10 stock transactions",
-  firstName: "First name",
-  lastName: "Last name",
-  household: "People in your household",
-  helper: "Who is completing this form",
-  documents: "Income documents",
-});
 
 // One time format for every screen, in the language's locale (English by
 // default). An unusable value renders as nothing at all rather than "Invalid Date".
@@ -187,18 +165,6 @@ export const OFFICE_CONTACT = Object.freeze({
 
 export const officeContact = () =>
   `<div class="office-contact"><a href="tel:${OFFICE_CONTACT.tel}">${icon("phone")} ${OFFICE_CONTACT.phone}</a><a href="mailto:${OFFICE_CONTACT.email}">${icon("mail")} ${OFFICE_CONTACT.email.replace("@", "@<wbr>")}</a></div>`;
-
-export const radio = (
-  label,
-  name,
-  value,
-  options = [
-    ["yes", "Yes"],
-    ["no", "No"],
-    ["unsure", "Not sure"],
-  ],
-) =>
-  `<fieldset class="question"><legend>${esc(label)}</legend><div class="radio-row">${options.map(([val, text]) => `<label class="radio-card ${value === val ? "selected" : ""}"><input type="radio" name="${name}" value="${val}" ${value === val ? "checked" : ""} required><span>${esc(text)}</span></label>`).join("")}</div></fieldset>`;
 
 // Colour is never the only signal: every badge carries its own words, and the
 // words come from the one stage table in domain.mjs. The colour is the stage's

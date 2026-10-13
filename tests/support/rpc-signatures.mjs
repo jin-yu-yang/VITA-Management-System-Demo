@@ -1,5 +1,3 @@
-import { makeSampleAnswers } from "../../src/sample-data.mjs";
-
 // Every public application entry point installed so far, with a valid argument
 // shape, the exact receipt it answers with, and the member allowed to call it.
 // The database suite asserts this list matches exactly what the database
@@ -16,7 +14,7 @@ export const RPC_SIGNATURES = Object.freeze([
       p_action_id: crypto.randomUUID(),
       p_mode: "client",
       p_person_id: null,
-      p_answers: makeSampleAnswers(),
+      p_answers: {},
     }),
   }),
   Object.freeze({
@@ -32,7 +30,7 @@ export const RPC_SIGNATURES = Object.freeze([
       p_expected_revision: context.draftRevision,
       p_person_id: null,
       p_type: "SAVE_ANSWERS",
-      p_payload: { answers: { city: "Pittsburgh" } },
+      p_payload: { answers: { addr_city: "Pittsburgh" } },
     }),
   }),
   Object.freeze({

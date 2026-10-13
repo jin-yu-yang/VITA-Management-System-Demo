@@ -5,7 +5,14 @@ import {
   applyArgs,
 } from "./support/database-fixture.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
-import { INTAKE_ANSWER_KEYS } from "../src/domain.mjs";
+import CATALOGUE from "../src/intake-catalogue-data.mjs";
+// Every top-level question id of the version-2 catalogue.
+const QUESTION_IDS = new Set(
+  CATALOGUE.steps.flatMap((step) =>
+    step.sections.flatMap((section) => section.questions.map((question) => question.id)),
+  ),
+);
+const CONTACT_KEYS = ["tp_phone", "sp_phone", "best_contact_time", "best_contact_note"];
 
 // The five checkpoint names the browser may ask for, and the scenario each one
 // produces. `corrections_required` is both a scenario key and a checkpoint
@@ -323,23 +330,19 @@ test("the seeded workspace tells one coherent story", async (t) => {
         assert.match(row.reference, REFERENCE_PATTERN);
         references.add(row.reference);
         assert.equal(row.created_by_person_id, null);
-        // All seventeen whitelisted answers, from a screening that continues.
-        assert.deepEqual(
-          Object.keys(row.answers).sort(),
-          [...INTAKE_ANSWER_KEYS].sort(),
-          `${row.fixture_key} answers`,
-        );
-        for (const value of Object.values(row.answers))
-          assert.equal(typeof value, "string");
-        assert.equal(row.answers.year, "2025");
-        assert.equal(row.answers.helper, "self");
-        assert.equal(row.answers.other, "no");
-        assert.equal(row.answers.stocks, "no");
-        assert.notEqual(row.answers.residenceState, "Other");
-        // Fictional names and withheld addresses: no address, no email, and no
-        // identifier of a real person is written anywhere.
-        assert.match(row.answers.address, /withheld$/);
-        for (const value of Object.values(row.answers)) assert.ok(!value.includes("@"));
+        // Version-2 answers: every key is a catalogue question, and the contact
+        // fields live in case_contacts, never in the answers.
+        assert.equal(Number(row.intake_version), 2, `${row.fixture_key} version`);
+        const keys = Object.keys(row.answers);
+        assert.ok(keys.length > 0, `${row.fixture_key} answers`);
+        for (const key of keys)
+          assert.ok(QUESTION_IDS.has(key), `${row.fixture_key}.${key} is a question`);
+        for (const key of CONTACT_KEYS)
+          assert.ok(!(key in row.answers), `${row.fixture_key} keeps no ${key}`);
+        // Fictional names and example addresses: no email, and no identifier
+        // of a real person is written anywhere.
+        assert.match(row.answers.addr_street, /Example Street$/);
+        assert.ok(!JSON.stringify(row.answers).includes("@"));
         assert.ok(row.created_at, `${row.fixture_key} created_at`);
         assert.ok(row.updated_at, `${row.fixture_key} updated_at`);
       }
@@ -362,7 +365,8 @@ test("the seeded workspace tells one coherent story", async (t) => {
       const [caseRow] = (
         await f.sql("select answers from public.cases where id=$1", [item.caseId])
       ).rows;
-      assert.equal(item.language, caseRow.answers.language);
+      // The item names the language for staff; the answers keep its option value.
+      assert.equal(item.language.toLowerCase(), caseRow.answers.language);
     });
 
     await t.test("the presenter and the bound client each read what they may", async () => {
@@ -814,7 +818,7 @@ test("the presenter entry points are the only way in", async (t) => {
       for (const name of [
         "seed_fixtures",
         "apply_fixture_scenario",
-        "fixture_answers",
+        "fixture_answers_v2",
         "new_reference",
       ]) {
         const answered = await f.presenter.rpc(name, {});
@@ -833,7 +837,7 @@ test("the presenter entry points are the only way in", async (t) => {
               "new_reference",
               "fixture_keys",
               "checkpoint_scenario",
-              "fixture_answers",
+              "fixture_answers_v2",
               "fixture_history",
               "apply_fixture_scenario",
               "seed_fixtures",

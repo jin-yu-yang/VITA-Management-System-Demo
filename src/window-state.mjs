@@ -25,7 +25,6 @@ export const windowStateKey = (userId) => `${WINDOW_STATE_PREFIX}${userId}`;
 export { ACCESS_KEY };
 
 const asString = (value) => (typeof value === "string" ? value : undefined);
-const asStep = (value) => (Number.isInteger(value) ? value : undefined);
 const asNames = (value) =>
   Array.isArray(value)
     ? value.filter((entry) => typeof entry === "string")
@@ -41,7 +40,7 @@ const asFilters = (value) =>
       )
     : undefined;
 const asBoolean = (value) => (typeof value === "boolean" ? value : undefined);
-// The version-2 form's place: a sub-step id's shape only ("about.you"). Whether
+// The form's place: a sub-step id's shape only ("about.you"). Whether
 // the catalogue has it is the controller's to decide; it sends an id it
 // doesn't know to the first sub-step (spec 2026-10-04 §3.1).
 const SUBSTEP_ID = /^[a-z]+\.[a-z_]+$/;
@@ -66,7 +65,6 @@ const FIELDS = Object.freeze({
   screen: asString,
   selectedCaseId: asString,
   selectedPersonId: asString,
-  formStep: asStep,
   formSubstep: asSubstep,
   openPanels: asNames,
   pendingCreateActionId: asString,

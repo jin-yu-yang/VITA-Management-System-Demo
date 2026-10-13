@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDatabaseFixture } from "./support/database-fixture.mjs";
 import { createStore } from "../src/supabase-store.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
 
 // What a client may watch, and what it must never receive.
 //
@@ -178,9 +177,7 @@ const assertHealthy = (...watches) => {
 // ---------------------------------------------------------------------------
 
 async function preparedCase(f, client) {
-  const created = await f.createCase(client, crypto.randomUUID(), {
-    answers: makeSampleAnswers(),
-  });
+  const created = await f.draftCase(client);
   await f.act(client, created.caseId, null, "SUBMIT", { confirmed: true });
   await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
@@ -234,24 +231,24 @@ const MATRIX = Object.freeze([
     table: "cases",
     event: "INSERT",
     identity: (row) => row.id,
-    markerOf: (row) => row.answers?.city,
+    // A version-2 case is created empty, so its unique reference is the mark.
+    markerOf: (row) => row.reference,
     commit: async (f, owner) => {
-      const text = marker();
       const created = await f.createCase(owner.client, crypto.randomUUID(), {
-        answers: { ...makeSampleAnswers(), city: text },
+        answers: {},
       });
-      return { id: created.caseId, marker: text };
+      return { id: created.caseId, marker: created.reference };
     },
   },
   {
     table: "cases",
     event: "UPDATE",
     identity: (row) => row.id,
-    markerOf: (row) => row.answers?.city,
+    markerOf: (row) => row.answers?.addr_city,
     commit: async (f, owner) => {
       const text = marker();
       const receipt = await f.act(owner.client, owner.draftId, null, "SAVE_ANSWERS", {
-        answers: { city: text },
+        answers: { addr_city: text },
       });
       return { id: owner.draftId, marker: text, revision: receipt.revision };
     },
@@ -486,9 +483,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
       ["A", f.applicantA, f.applicantAUserId],
       ["B", f.applicantB, f.applicantBUserId],
     ]) {
-      const draft = await f.createCase(client, crypto.randomUUID(), {
-        answers: makeSampleAnswers(),
-      });
+      const draft = await f.draftCase(client);
       owners[name] = {
         name,
         client,
@@ -502,7 +497,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
     // One repeatable change with a revision on it, so each attempt is its own.
     const saveFor = async (owner) => {
       const receipt = await f.act(owner.client, owner.draftId, null, "SAVE_ANSWERS", {
-        answers: { city: marker() },
+        answers: { addr_city: marker() },
       });
       return { id: receipt.caseId, revision: receipt.revision };
     };
@@ -717,9 +712,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         assert.equal(marked.seen.caseId, marked.seen.id);
         // A fresh case of B's makes the fence its own id, so it cannot be
         // satisfied by an event that arrived before A's change.
-        const fence = await f.createCase(owners.B.client, crypto.randomUUID(), {
-          answers: makeSampleAnswers(),
-        });
+        const fence = await f.draftCase(owners.B.client);
         await awaitChange(
           "B",
           (change) => change.id === fence.caseId,

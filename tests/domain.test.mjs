@@ -1,16 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  screening,
-  describeStage,
-  missingAnswers,
-  submissionBlocker,
-  INTAKE_ANSWER_KEYS,
-  REQUIRED_ANSWER_KEYS,
-  phaseTab,
-  BOARD_TABS,
-} from "../src/domain.mjs";
-import { makeSampleAnswers } from "../src/sample-data.mjs";
+import { describeStage, phaseTab, BOARD_TABS } from "../src/domain.mjs";
 import {
   CASE_ACTIONS,
   ERROR_CODES,
@@ -26,45 +16,6 @@ import {
 // `tests/database-*.mjs` (see the Task 6 report for the assertion-by-assertion
 // map). What remains here is what the browser still decides for itself: what it
 // may show, what it may send, and what it may say about a stage.
-
-const complete = makeSampleAnswers({ seed: 0, scenario: "ordinary" });
-
-test("rideshare does not override other unsupported self-employment", () => {
-  assert.equal(screening({ ...complete, other: "yes" }), "unsupported");
-  assert.equal(
-    screening({ ...complete, rideshare: "no", other: "yes" }),
-    "unsupported",
-  );
-  assert.equal(screening(complete), "continue");
-  assert.equal(screening({ ...complete, stocks: "yes" }), "unsupported");
-  assert.equal(screening({ ...complete, other: "unsure" }), "assistance");
-  assert.equal(screening({ ...complete, stocks: "" }), "incomplete");
-});
-
-test("local readiness names what is missing without deciding the submission", () => {
-  assert.equal(submissionBlocker(complete), null);
-  assert.deepEqual(missingAnswers(complete), []);
-  // Required answers are a subset of what the browser may ever send.
-  for (const key of REQUIRED_ANSWER_KEYS)
-    assert.ok(INTAKE_ANSWER_KEYS.includes(key), key);
-  assert.deepEqual(missingAnswers({ ...complete, firstName: "   " }), [
-    "firstName",
-  ]);
-  assert.equal(submissionBlocker({ ...complete, zip: "" }), "incomplete");
-  // The same refusals the server's SUBMIT branch makes, in the same order.
-  assert.equal(submissionBlocker({ ...complete, year: "2024" }), "year");
-  assert.equal(
-    submissionBlocker({ ...complete, residenceState: "Other" }),
-    "residenceState",
-  );
-  assert.equal(submissionBlocker({ ...complete, helper: "helper" }), "helper");
-  assert.equal(submissionBlocker({ ...complete, other: "yes" }), "unsupported");
-  assert.equal(
-    submissionBlocker({ ...complete, stocks: "unsure" }),
-    "assistance",
-  );
-  assert.equal(submissionBlocker({}), "incomplete");
-});
 
 test("every server stage has plain status copy and no workflow decision", () => {
   const described = STAGES.map((stage) => describeStage(stage));
