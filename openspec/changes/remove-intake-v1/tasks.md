@@ -57,14 +57,14 @@
 
 ## 4. The story, the docs and the final runs
 
-- [ ] 4.1 `tests/browser.mjs`: remove the version-1 phase ("a version-1 draft still finishes in the old form") and the other version-1 comments and assertions.
-- [ ] 4.2 Docs:
+- [x] 4.1 `tests/browser.mjs`: remove the version-1 phase ("a version-1 draft still finishes in the old form") and the other version-1 comments and assertions.
+- [x] 4.2 Docs:
   - `docs/setup.md` (023's row, 23 migrations, clearing a stack the guard stops, the counts);
   - `docs/developer/{README,architecture,database,frontend,production-roadmap}.md`;
   - `README.md`;
   - `docs/design/*` lines that describe version 1 as current;
   - CLAUDE.md's "Versions" rule.
-- [ ] 4.3 Final runs:
+- [x] 4.3 Final runs:
   - `npm test`;
   - `npm run test:database`;
   - `npm run test:auth-browser`;
