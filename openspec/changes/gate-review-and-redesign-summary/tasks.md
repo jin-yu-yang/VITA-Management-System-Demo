@@ -78,14 +78,14 @@
 
 ## 4. The story (plan Task 4)
 
-- [ ] 4.1 Add `continueToSubmit(page)` in `tests/support/story-pages.mjs`. Use it in `fillIntakeV2ToSubmit` and in the Chinese phase.
-- [ ] 4.2 The walk:
+- [x] 4.1 Add `continueToSubmit(page)` in `tests/support/story-pages.mjs`. Use it in `fillIntakeV2ToSubmit` and in the Chinese phase.
+- [x] 4.2 The walk:
   - it stops at `review.check`: Continue is disabled, the line shows, the review step lists only 9.1, and the part count is checked;
   - it leaves through the city alert;
   - the rail at `before.service` has no 9.3;
   - the visits assertion.
-- [ ] 4.3 The SUBMIT-guard section: with two alerts, there is no 9.2 or 9.3 on the rail, and Continue is disabled. `forceSubmit` moves to the Submit block.
-- [ ] 4.4 The review block:
+- [x] 4.3 The SUBMIT-guard section: with two alerts, there is no 9.2 or 9.3 on the rail, and Continue is disabled. `forceSubmit` moves to the Submit block.
+- [x] 4.4 The review block:
   - Continue 9.1 → 9.2 → 9.3, with the earned visit saved;
   - the unticked-box refusal and the Submit checks;
   - the summary's order and intro;
@@ -95,17 +95,17 @@
   - the fold is kept through a Change;
   - a Change that clears the city, then "Back to summary", lands on 9.1 with 9.2 and 9.3 hidden;
   - the fix brings them back.
-- [ ] 4.5 The controller runs `npm run test:browser`, and it passes.
+- [x] 4.5 The controller runs `npm run test:browser`, and it passes.
 
 ## 5. Docs and the full check (plan Task 5)
 
-- [ ] 5.1 In `docs/developer/frontend.md`:
+- [x] 5.1 In `docs/developer/frontend.md`:
   - the review gate bullet;
   - `setSummaryShut` in the API list;
   - the `visitedSubsteps` row.
 
   Update the unit counts in `docs/developer/README.md`, `docs/developer/frontend.md` and `docs/setup.md`.
-- [ ] 5.2 Final checks:
+- [x] 5.2 Final checks:
   - `npm test`;
   - `npm run build:hant -- --check`;
   - `npm run build:intake` leaves nothing to commit;
