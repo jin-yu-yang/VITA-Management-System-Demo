@@ -358,6 +358,39 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       assert.equal((await caseRow(f, caseId)).stage, "received");
     });
 
+    await t.test("Form 15080: consent needs the signatures, whoever fills the application", async () => {
+      const signedSingle = completeAnswers({ gcf_consent: "yes" });
+      assert.equal(signedSingle.gcf_tp_signature, "Sample");
+      const { gcf_tp_signature: _tp, ...noPrimary } = signedSingle;
+      const signedMarried = completeAnswers({ marital_status: "married", gcf_consent: "yes" });
+      assert.equal(signedMarried.gcf_sp_signature, "Sample");
+      const { gcf_sp_signature: _sp, ...noSpouse } = signedMarried;
+      const declined = completeAnswers({ gcf_consent: "no" });
+      assert.equal("gcf_tp_signature" in declined, false);
+
+      const submitted = async (answers, actor = f.applicantA, personId = null, options = {}) => {
+        const { caseId } = await v2Case(f, actor, options);
+        await save(f, caseId, answers, actor, personId);
+        await f.act(actor, caseId, personId, "SUBMIT", { confirmed: true });
+        return caseId;
+      };
+      await assert.rejects(submitted(noPrimary), rejected("VALIDATION"));
+      await assert.rejects(submitted(noSpouse), rejected("VALIDATION"));
+      for (const answers of [signedSingle, signedMarried, declined])
+        assert.equal((await caseRow(f, await submitted(answers))).stage, "received");
+
+      // An office-filled application meets the same rule (act_submit runs intake_missing for both).
+      const byOffice = (answers) => submitted(answers, f.presenter, f.sam, { mode: "assisted", personId: f.sam });
+      await assert.rejects(byOffice(noPrimary), rejected("VALIDATION"));
+      assert.equal((await caseRow(f, await byOffice(signedSingle))).stage, "received");
+    });
+
+    await t.test("a household member's middle name is saved", async () => {
+      const { caseId } = await v2Case(f);
+      await save(f, caseId, { has_household_members: "yes", hh: [member({ middle_name: "Mei" })] });
+      assert.equal((await caseRow(f, caseId)).answers.hh[0].middle_name, "Mei");
+    });
+
     await t.test("contacts are visible to the owner, and to staff past a private draft", async () => {
       const readContacts = async (client, caseId) => {
         const { data, error } = await client
@@ -540,6 +573,10 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         [(({ tp_phone: _p, ...rest }) => rest)(completeAnswers()), { tp_phone: "2155550100" }],
         [(({ tp_phone: _p, ...rest }) => rest)(completeAnswers()), {}],
         [{ gcf_consent: "yes", marital_status: "married", gcf_sp_signature: "Mei" }, {}],
+        [{ gcf_consent: "yes" }, {}],
+        [{ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }, {}],
+        [completeAnswers({ gcf_consent: "no" }), {}],
+        [completeAnswers({ has_household_members: "yes", hh: [(({ middle_name: _m, ...rest }) => rest)(member())] }), {}],
       ];
       for (const [answers, contact] of sets) {
         const server = (

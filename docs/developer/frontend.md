@@ -208,6 +208,8 @@ dropped).
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
   `case_contacts`. Missing answers are computed from the draft alone.
+- A required question counts only while it is shown: the Form 15080 signatures are required once
+  the client consents, and the spouse's only when married.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:
@@ -434,7 +436,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (899) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (904) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 

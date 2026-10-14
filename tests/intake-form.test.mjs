@@ -465,6 +465,20 @@ test("substepStatus: the review sub-steps", () => {
   assert.deepEqual(substepStatus("review.submit", ctx(everything, { visited: ["review.submit"] })), { key: "none", text: "" });
 });
 
+test("substepStatus: refund.consent isn't Done while a required signature is missing", () => {
+  const status = (answers) =>
+    substepStatus("refund.consent", { answers, visited: ["refund.consent"], cards: cardsFor(answers) }).key;
+  assert.equal(status({ gcf_consent: "yes" }), "needs");
+  assert.equal(status({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }), "needs");
+  assert.equal(
+    status({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin", gcf_sp_signature: "Wei Lin" }),
+    "done",
+  );
+  assert.equal(status({ gcf_consent: "yes", marital_status: "never_married", gcf_tp_signature: "Mei Lin" }), "done");
+  assert.equal(status({ gcf_consent: "no" }), "done");
+  assert.equal(status({}), "done");
+});
+
 test("stepRollup: needs, then docs, then done only when all are done", () => {
   const visited = ["about.you", "about.address", "about.marital", "about.situation", "about.irs"];
   const answers = { ...STEP2 };
@@ -725,6 +739,10 @@ test("formatAnswer", () => {
   assert.equal(
     formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
     `Xiao Ming Wang · ${relationship} · born Mar 14, 2015 · lived with you 12 months`,
+  );
+  assert.equal(
+    formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", middle_name: "Q", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
+    `Xiao Ming Q Wang · ${relationship} · born Mar 14, 2015 · lived with you 12 months`,
   );
   for (const empty of [null, undefined, "", "  ", []]) assert.equal(formatAnswer(q("tp_first_name"), empty), null);
   assert.equal(formatAnswer(q("us_citizen"), []), null);

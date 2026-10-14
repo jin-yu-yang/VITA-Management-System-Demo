@@ -22,7 +22,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is twenty-three plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is twenty-four plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -50,6 +50,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `021_review_approved_message.sql` | The review-approved history line says signing and filing come next; `act_approve_review` (006) and `fixture_history` (009) copied with only that sentence changed |
 | `022_intake_catalogue_<hash8>.sql` | Generated: the wording review's catalogue text (upload tips that list several documents say "them") |
 | `023_remove_intake_v1.sql` | Version 2 is the only intake version. The rule as two pure predicates (`version_one_blocks`, `version_one_disposable`) and a count (`version_one_blockers`); a guard that refuses while a version-1 case exists that is neither a sample nor in a test workspace; the cleanup of the rest (children cascade, `fixture_generation` moves); every workspace set to 2; the functions below redefined without their version-1 paths; `intake_answer_keys` and `fixture_answers` dropped; both version `CHECK`s narrowed to 2 |
+| `024_intake_catalogue_59560589.sql` | Generated: the household middle name (`hh.middle_name`), and `gcf_tp_signature`/`gcf_sp_signature` required to submit when shown |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -556,7 +557,7 @@ and a case is created with no answers (`vitally_create_case` refuses any other `
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 248 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 250 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.

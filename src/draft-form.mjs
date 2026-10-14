@@ -8,7 +8,7 @@
 // nesting of "income from renting out your house", so each form gets its own
 // names for those. Every name below is written without the `form1[0].` prefix
 // that `draftFields` adds.
-import { CATALOGUE, findQuestion, isAnswered, isVisible, visibleAnswers, wording } from "./intake-catalogue.mjs";
+import { CATALOGUE, findQuestion, isAnswered, isVisible, memberNameParts, visibleAnswers, wording } from "./intake-catalogue.mjs";
 import { formatAnswer, formatDate } from "./intake-form.mjs";
 import { sourceText } from "./language.mjs";
 import { t } from "./client-text.mjs";
@@ -309,7 +309,7 @@ const lineDate = (value, lang) => (lang === "en" ? usDate(value) : oneLine(forma
  * name is as typed.
  */
 function memberLine(member, n, lang) {
-  const name = [member.first_name, member.last_name].filter(isAnswered).map(oneLine).join(" ");
+  const name = memberNameParts(member).map(oneLine).join(" ");
   const parts = [name];
   if (isAnswered(member.relationship)) parts.push(labelIn(hhField("relationship"), member.relationship, lang));
   if (isAnswered(member.dob)) parts.push(t("member.born", { date: lineDate(member.dob, lang) }, lang));
@@ -426,7 +426,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
   const members = Array.isArray(visible.hh) ? visible.hh.filter((m) => m && typeof m === "object") : [];
   members.slice(0, ROWS).forEach((member, i) => {
     const k = i + 1;
-    put(rowBox(k, "nameFirstLast"), [member.first_name, member.last_name].filter(isAnswered).map(oneLine).join(" "));
+    put(rowBox(k, "nameFirstLast"), memberNameParts(member).map(oneLine).join(" "));
     if (isAnswered(member.dob)) put(rowBox(k, "dateOfBirth"), usDate(member.dob));
     if (isAnswered(member.relationship)) put(rowBox(k, "relationshipToYou"), labelIn(hhField("relationship"), member.relationship, FORM_LANG[form]));
     if (isAnswered(member.months_lived)) put(rowBox(k, "monthsLivedHome"), oneLine(member.months_lived));

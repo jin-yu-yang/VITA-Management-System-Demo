@@ -1851,6 +1851,35 @@ export default {
                   }
                 },
                 {
+                  "id": "middle_name",
+                  "type": "text",
+                  "required": false,
+                  "tips": {
+                    "general": [
+                      {
+                        "en": "Leave blank if this person doesn't have one.",
+                        "zh": "如没有可留空。"
+                      }
+                    ],
+                    "senior": [
+                      {
+                        "en": "If this person doesn't have a middle name, leave this empty.",
+                        "zh": "有就写，没有就空着。"
+                      }
+                    ]
+                  },
+                  "wording": {
+                    "general": {
+                      "en": "Middle name",
+                      "zh": "中间名"
+                    },
+                    "senior": {
+                      "en": "Middle name",
+                      "zh": "这个人的中间名"
+                    }
+                  }
+                },
+                {
                   "id": "last_name",
                   "type": "text",
                   "required": true,
@@ -4560,7 +4589,7 @@ export default {
             {
               "id": "gcf_tp_signature",
               "type": "signature",
-              "required": false,
+              "required": true,
               "showIf": [
                 {
                   "field": "gcf_consent",
@@ -4604,7 +4633,7 @@ export default {
             {
               "id": "gcf_sp_signature",
               "type": "signature",
-              "required": false,
+              "required": true,
               "showIf": [
                 {
                   "field": "gcf_consent",
@@ -4617,6 +4646,20 @@ export default {
                   "value": "married"
                 }
               ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Both of you need to sign. If your spouse can't sign, choose **I do not consent** above.",
+                    "zh": "需要您和配偶都签名。如配偶无法签名，请在上方选择**不同意**。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "You both need to sign. If your spouse can't sign, choose **No, I do not agree** above.",
+                    "zh": "您和您爱人都要签名。如果您爱人没办法签名，请在上面选**不同意**。"
+                  }
+                ]
+              },
               "wording": {
                 "general": {
                   "en": "Secondary taxpayer (spouse) signature (type full name)",

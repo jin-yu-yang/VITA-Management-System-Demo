@@ -4,12 +4,22 @@ import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
+  memberNameParts,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
 
 const q = (id) => findQuestion(2, id);
+
+test("memberNameParts: first, middle, last, skipping empty parts", () => {
+  assert.deepEqual(memberNameParts({ first_name: "Ana", middle_name: "Mei", last_name: "Lin" }), ["Ana", "Mei", "Lin"]);
+  assert.deepEqual(memberNameParts({ first_name: "Ana", last_name: "Lin" }), ["Ana", "Lin"]);
+  assert.deepEqual(memberNameParts({ first_name: "Ana", middle_name: "  ", last_name: "Lin" }), ["Ana", "Lin"]);
+  assert.deepEqual(memberNameParts({ middle_name: "Mei" }), ["Mei"]);
+  assert.deepEqual(memberNameParts({}), []);
+  assert.deepEqual(memberNameParts(null), []);
+});
 
 test("steps: ten for version 2", () => {
   assert.equal(stepsFor(2).length, 10);
@@ -104,6 +114,18 @@ test("missingToSubmit", () => {
   assert.ok(hh.includes("hh[0].dob"));
   assert.ok(!hh.includes("hh[0].first_name"));
   assert.ok(missingToSubmit(2, { has_household_members: "yes" }).includes("hh"));
+});
+
+test("missingToSubmit: the Form 15080 signatures are required when shown", () => {
+  const section14 = (answers) => missingToSubmit(2, answers).filter((id) => id.startsWith("gcf_")).sort();
+  assert.deepEqual(section14({ gcf_consent: "yes" }), ["gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", gcf_tp_signature: "  " }), ["gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married" }), ["gcf_sp_signature", "gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }), ["gcf_sp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin", gcf_sp_signature: "Wei Lin" }), []);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "never_married", gcf_tp_signature: "Mei Lin" }), []);
+  assert.deepEqual(section14({ gcf_consent: "no" }), []);
+  assert.deepEqual(section14({}), []);
 });
 
 test("service and language labels: a code is labelled, anything else comes back as it is", () => {

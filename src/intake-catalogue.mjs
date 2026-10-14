@@ -58,6 +58,10 @@ export const isAnswered = (value) =>
         : true;
 const filled = isAnswered;
 
+/** A household member's name parts, first, middle and last, skipping unanswered ones. */
+export const memberNameParts = (member) =>
+  [member?.first_name, member?.middle_name, member?.last_name].filter(isAnswered);
+
 const holds = (condition, answers) => {
   const value = answers?.[condition.field];
   if (condition.op === "filled") return filled(value);

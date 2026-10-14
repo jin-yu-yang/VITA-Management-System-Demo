@@ -3560,6 +3560,32 @@ async function runPermutation(t, roles) {
         );
         assert.notEqual(await rail("about.spouse"), null, "a married client's rail has no spouse");
 
+        // A household member's middle name sits between first and last name
+        // (change require-15080-signatures-and-household-middle-name).
+        await jump("household.members");
+        await waitFor(
+          page,
+          "the first member's middle-name box",
+          () => Boolean(document.querySelector('[data-q="hh"][data-member="0"][data-sub="middle_name"]')),
+          undefined,
+          RENDER_MS,
+        );
+        assert.deepEqual(
+          await page.evaluate(() =>
+            [...document.querySelectorAll('[data-q="hh"][data-member="0"][data-sub]')]
+              .map((el) => el.dataset.sub)
+              .filter((sub) => sub !== "member_id")
+              .slice(0, 3),
+          ),
+          ["first_name", "middle_name", "last_name"],
+        );
+        await page.locator('[data-q="hh"][data-member="0"][data-sub="middle_name"]').fill("Q");
+        await page.keyboard.press("Tab");
+        // A version-2 draft is saved by the move to another sub-step, not by
+        // leaving a box, so the server is read after the move.
+        await jump("notes.anything");
+        assert.equal(JSON.parse(await answer("hh"))[0].middle_name, "Q");
+
         await jump("refund.consent");
         const consentWording = (wanted) =>
           waitFor(
@@ -3593,7 +3619,13 @@ async function runPermutation(t, roles) {
           RENDER_MS,
         );
         await waitForQuiet(page);
+        // Consenting with only the primary signature leaves the sub-step
+        // Needs answers: a married client's spouse signs too.
         await box("gcf_tp_signature").fill("Mei Lin");
+        await page.keyboard.press("Tab");
+        await jump("notes.anything");
+        assert.deepEqual(await rail("refund.consent"), { className: "rail-status is-needs", text: "Needs answers" });
+        await jump("refund.consent");
         await box("gcf_sp_signature").fill("Wei Lin");
         assert.equal(
           await page.locator('[data-q="gcf_sp_date"]').count(),
@@ -3611,6 +3643,7 @@ async function runPermutation(t, roles) {
         await jump("notes.anything");
         assert.equal(await answer("gcf_consent"), "yes");
         assert.equal(await answer("gcf_sp_signature"), "Wei Lin");
+        assert.deepEqual(await rail("refund.consent"), { className: "rail-status is-done", text: "Done" });
 
         // ---- Visits follow the client (spec 2026-10-04 §3.7) -------------
         // A fresh sign-in in its own context has no window record: the rail
