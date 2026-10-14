@@ -34,14 +34,14 @@
 
 ## 2. 9.1's disabled Continue, and 9.3 without its alert notice (design D4, D5; plan Task 2)
 
-- [ ] 2.1 View tests first, in `tests/client-views.test.mjs`:
+- [x] 2.1 View tests first, in `tests/client-views.test.mjs`:
   - Continue is disabled with `#continue-blocked`, for a missing answer and for an invalid one;
   - it is enabled with only open documents;
   - no line on other parts;
   - the Chinese line;
   - the rail and "Part n of N" follow the gate;
   - 9.3 has no alert notice.
-- [ ] 2.2 Implement:
+- [x] 2.2 Implement:
   - `actions` draws the disabled Continue and its line;
   - `submitBody(view)` drops the notice;
   - `review.continue_blocked` is added, and `submit.attention` and `submit.see_alerts` are removed;
