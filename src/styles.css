@@ -760,6 +760,13 @@ textarea::placeholder {
 .form-actions .btn.text {
   font-size: 13px;
 }
+/* 9.1's line beside its disabled Continue (gate-review-and-redesign-summary). */
+.form-blocked {
+  margin: 0 0 0 auto;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+  text-align: right;
+}
 .notice {
   display: flex;
   gap: 13px;
@@ -1784,6 +1791,9 @@ textarea::placeholder {
   .form-actions .btn.text {
     padding: 9px;
     font-size: 11px;
+  }
+  .form-blocked {
+    font-size: 12px;
   }
   .dashboard {
     padding: 30px 22px;

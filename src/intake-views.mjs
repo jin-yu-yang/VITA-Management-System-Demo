@@ -254,7 +254,10 @@ function actions(view, alerts) {
   } else if (state.returnToSummary) {
     primary = `<button type="button" class="btn primary" data-action="back-to-summary"${off ? " disabled" : ""}>${say("intake.back_to_summary")}</button>`;
   } else {
-    primary = `<button type="submit" class="btn primary"${off ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
+    // 9.1's Continue waits for the alerts, and the line says why
+    // (openspec change gate-review-and-redesign-summary, design D4).
+    const blocked = current === "review.check" && alerts.length > 0;
+    primary = `${when(blocked, `<p id="continue-blocked" class="form-blocked">${say("review.continue_blocked")}</p>`)}<button type="submit" class="btn primary"${blocked ? ' aria-describedby="continue-blocked"' : ""}${off || blocked ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
   }
   return `<div class="form-actions"><div>${when(visible[0] !== current, button(`${icon("back")} ${say("intake.back")}`, "back-step", "text", view.off.trim()))}</div>${primary}</div>`;
 }
@@ -533,13 +536,10 @@ function summaryBody(view, today) {
   return printed + tools;
 }
 
-function submitBody(view, alerts) {
+function submitBody(view) {
   const say = (key) => esc(t(key, {}, view.lang));
   const confirmed = view.openPanels.includes("confirmed");
-  return `${when(
-    alerts.length,
-    `<div class="notice amber" role="status">${icon("help")}<div><p>${say("submit.attention")}</p><button type="button" class="inline" data-action="go-substep" data-substep="review.check"${view.off}>${say("submit.see_alerts")}</button></div></div>`,
-  )}<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>${say("submit.confirm")}</span></label><p class="field-note">${say("submit.note")}</p>`;
+  return `<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>${say("submit.confirm")}</span></label><p class="field-note">${say("submit.note")}</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,7 +564,7 @@ export function intakeFormV2(state, chrome = {}) {
         : view.current === "review.summary"
           ? summaryBody(view, today)
           : view.current === "review.submit"
-            ? submitBody(view, alerts)
+            ? submitBody(view)
             : questionsBody(view);
   const reference = view.record?.reference;
   const say = (key) => esc(t(key, {}, view.lang));

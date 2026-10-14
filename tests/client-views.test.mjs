@@ -1086,6 +1086,46 @@ test("review.check: same-day gets no document warnings, and alerts come from the
   assert.match(html, /class="alert-item is-missing" data-action="go-substep" data-substep="about\.you"/);
 });
 
+test("review.check: Continue waits for the alerts, and a line next to it says why", () => {
+  const blocked = form({ formSubstep: "review.check", draftAnswers: without(sample(), "addr_city") });
+  assert.match(
+    blocked,
+    /<p id="continue-blocked" class="form-blocked">Fix the items above to continue\.<\/p><button type="submit" class="btn primary" aria-describedby="continue-blocked" disabled>Continue/,
+  );
+  const invalid = form({ formSubstep: "review.check", draftAnswers: { ...sample(), email: "a@" } });
+  assert.match(invalid, /aria-describedby="continue-blocked" disabled>/);
+  // Open documents never block: the sample's Needed cards are Not done.
+  assert.ok(cardsFor(sample(), []).some((card) => card.group === "needed" && card.status === "not_done"));
+  const open = form({ formSubstep: "review.check" });
+  assert.match(open, /<button type="submit" class="btn primary">Continue/);
+  assert.doesNotMatch(open, /continue-blocked/);
+  // Other parts never draw the line, even with an alert.
+  assert.doesNotMatch(form({ formSubstep: "about.you", draftAnswers: without(sample(), "addr_city") }), /continue-blocked/);
+  // In Chinese.
+  assert.match(
+    form({ formSubstep: "review.check", draftAnswers: without(sample(), "addr_city"), lang: "zh-Hans" }),
+    /<p id="continue-blocked" class="form-blocked">请先修正上面的问题，然后继续。<\/p>/,
+  );
+});
+
+test("the rail and the count follow the review gate", () => {
+  const reviewRail = (html) =>
+    [...html.matchAll(/class="rail-sublink" data-action="go-substep" data-substep="(review\.[a-z]+)"/g)].map((match) => match[1]);
+  const count = (html) => Number(/<p>Part \d+ of (\d+)<\/p>/.exec(html)[1]);
+  const clean = intakeScreen(v2State({ formSubstep: "review.check" }));
+  assert.deepEqual(reviewRail(clean), ["review.check", "review.summary"]);
+  const earned = intakeScreen(v2State({ formSubstep: "review.check", visitedSubsteps: ["review.submit"] }));
+  assert.deepEqual(reviewRail(earned), ["review.check", "review.summary", "review.submit"]);
+  assert.equal(count(earned), count(clean) + 1);
+  // An alert after 9.3 was earned: both hide, and the page is 9.1.
+  const alert = intakeScreen(
+    v2State({ formSubstep: "review.submit", visitedSubsteps: ["review.submit"], draftAnswers: without(sample(), "addr_city") }),
+  );
+  assert.deepEqual(reviewRail(alert), ["review.check"]);
+  assert.match(alert, /id="intake-v2-form"[^>]*data-substep="review\.check"/);
+  assert.equal(count(alert), count(clean) - 1);
+});
+
 test("review.summary: everything the printout shows sits in one block, with Change links and the cards", () => {
   const html = form({ formSubstep: "review.summary", savedCase: v2Case({ documentCards: [{ slotId: "w2.household", status: "later" }] }) });
   const start = html.indexOf('<div class="summary-print">');
@@ -1120,6 +1160,8 @@ test("review.summary: everything the printout shows sits in one block, with Chan
 test("review.submit: Submit waits for no alerts and the confirmation", () => {
   const clean = { formSubstep: "review.submit", visitedSubsteps: ["review.submit"] };
   const html = intakeScreen(v2State(clean));
+  // 9.3 is never drawn with an alert, so it has no alert notice.
+  assert.doesNotMatch(html, /See the alerts/);
   assert.match(html, /<input type="checkbox" id="field-confirmed" name="confirmed"\s*>/);
   assert.match(html, /I have checked my answers/);
   assert.match(submitOf(html), /disabled/);

@@ -309,7 +309,8 @@ export const TEXT = Object.freeze({
   "review.upload_now": { en: "Upload now", zh: "现在上传" },
   "review.more_maybe": { en: { one: "{n} more document may be needed", other: "{n} more documents may be needed" }, zh: "还有 {n} 份文件可能需要提供" },
   "review.empty": { en: "We found no alerts or warnings in your application.", zh: "您的申请没有需要处理的问题或提醒。" },
-  "alert.missing": { en: "Needs an answer", zh: "需要回答" },
+  "review.continue_blocked": { en: "Fix the items above to continue.", zh: "请先修正上面的问题，然后继续。" },
+  "alert.missing":{ en: "Needs an answer", zh: "需要回答" },
   "alert.invalid": { en: "Needs a change", zh: "需要修改" },
   "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },
   // Review & submit: the summary, its Change links and printed date, and the draft 13614-C buttons
@@ -346,8 +347,6 @@ export const TEXT = Object.freeze({
   "draft.continued_on": { en: "(continued on page {page})", zh: "（续见第 {page} 页）" },
   "draft.notice": { en: "Some characters could not be printed. The online answers have them in full.", zh: "部分字符无法打印。网上填写的回答中有完整内容。" },
   // Review & submit: the confirmation
-  "submit.attention": { en: "Some answers need attention before you can submit.", zh: "有些回答需要处理后才能提交。" },
-  "submit.see_alerts": { en: "See the alerts", zh: "查看问题" },
   "submit.confirm": { en: "I have checked my answers", zh: "我已核对过我的回答" },
   "submit.note": { en: "This confirms your answers. It is not a signature on a tax form.", zh: "这只是确认您的回答，并不是在报税表上签名。" },
   // The submitted page (intake-views.mjs submittedV2)
