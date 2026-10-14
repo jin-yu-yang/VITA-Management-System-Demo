@@ -102,7 +102,7 @@ tools/
   build.mjs                Rebuilds src/vendor/supabase.mjs.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 919.
+  *.test.mjs               Unit tests (no network): 923.
   database*.mjs            Database tests against the local stack: 250.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
   browser.mjs              The full demonstration story, two browsers, both directions: 57.
