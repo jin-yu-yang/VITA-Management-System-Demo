@@ -213,12 +213,12 @@ export function conflictForm(state) {
   const variant = variantOf(mine);
   const lang = formLang(state);
   const shown = (question, value) =>
-    esc(formatAnswer(question, value, { variant, lang }) ?? "—").replace(/\n/g, "<br>");
+    esc(formatAnswer(question, value, { variant, lang, answers: mine }) ?? "—").replace(/\n/g, "<br>");
   const rows = allQuestionsV2()
     .filter((question) => !sameAnswer(sendable(question, mine[question.id]), sendable(question, server[question.id])))
     .map(
       (question) =>
-        `<tr><th scope="row">${esc(wording(question, { variant, lang }))}</th><td>${shown(question, mine[question.id])}</td><td>${shown(question, server[question.id])}</td></tr>`,
+        `<tr><th scope="row">${esc(wording(question, { variant, lang, answers: mine }))}</th><td>${shown(question, mine[question.id])}</td><td>${shown(question, server[question.id])}</td></tr>`,
     )
     .join("");
   return conflictPanel(state, lang, rows);

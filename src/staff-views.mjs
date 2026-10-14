@@ -800,7 +800,7 @@ function answerRows(question, value, options) {
 export function answersPanelV2(record, { showContact = false } = {}) {
   const answers = serverAnswersV2(record);
   const variant = variantOf(answers);
-  const options = { variant, lang: "en" };
+  const options = { variant, lang: "en", answers };
   const substeps = substepsFor(2).filter((substep) => substep.kind === "questions");
   let notSure = 0;
   const steps = stepsFor(2)
@@ -958,12 +958,12 @@ function groupMark(card) {
   return { word: "Maybe needed", icon: "help", className: "is-maybe" };
 }
 
-function checklistRow(card, { variant, markable, movable, off }) {
+function checklistRow(card, { variant, markable, movable, off, answers }) {
   const id = `doc-${esc(dashedSlot(card.slotId))}`;
   const slot = esc(card.slotId);
   const group = groupMark(card);
   const optional = card.group === "optional";
-  const asked = card.ask ? wording(findQuestion(2, card.ask), { variant }) : "";
+  const asked = card.ask ? wording(findQuestion(2, card.ask), { variant, answers }) : "";
   const why = asked ? `<p class="doc-why">Asked by: ${esc(asked)}</p>` : "";
   const status = CARD_STATUS[card.status] ?? CARD_STATUS.not_done;
   const statusLine = optional
@@ -1007,7 +1007,7 @@ export function documentChecklist(record, rights, ui = {}) {
     const mine = cards.filter((card) => card.substep === name);
     if (!mine.length) return "";
     const title = findSubstep(`documents.${name}`)?.title?.general?.en ?? name;
-    return `<h3>${esc(title)}</h3><div class="doc-rows">${mine.map((card) => checklistRow(card, { variant, markable, movable, off })).join("")}</div>`;
+    return `<h3>${esc(title)}</h3><div class="doc-rows">${mine.map((card) => checklistRow(card, { variant, markable, movable, off, answers })).join("")}</div>`;
   }).join("");
   return `<section class="panel doc-checklist" aria-labelledby="doc-checklist-title"><div class="section-head"><h2 id="doc-checklist-title">Document checklist</h2></div><p class="field-note">From the client's answers. Same-day clients bring these to the visit.</p>${reasons
     .map((reason) => explain({ reason }))

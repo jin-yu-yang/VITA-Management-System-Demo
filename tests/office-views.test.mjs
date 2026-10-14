@@ -561,9 +561,16 @@ test("a closed part shows a one-line summary of its answers", () => {
   assert.match(subOf(empty, "about.you"), /<p class="add-sub-summary">Nothing entered yet<\/p>/);
 });
 
+test("the office's form uses the walk-in client's marital status for the wording", () => {
+  const html = (answers) => addV2({ draftAnswers: { ...answers, inc_wages: "yes" }, openAddSubsteps: ["income.wages"] });
+  assert.match(subOf(html(makeSampleAnswers()), "income.wages"), /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);
+  assert.match(subOf(html(makeSampleAnswers()), "income.wages"), /How many jobs did you have in 2025\?/);
+  assert.match(subOf(html(makeSampleAnswers({ married: true })), "income.wages"), /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
+});
+
 test("an open part shows its lead line, and no section intro", () => {
   const html = addV2({ draftAnswers: V2_SAMPLE(), openAddSubsteps: ["before.ready", "income.wages", "household.members", "refund.consent", "optional.questions"] });
-  assert.match(subOf(html, "income.wages"), /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
+  assert.match(subOf(html, "income.wages"), /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);
   for (const intro of ["Please have these ready", "everyone who lived with you", "This consent is optional", "These questions are"])
     assert.doesNotMatch(html, new RegExp(intro), intro);
   assert.doesNotMatch(html, /class="q-intro/);

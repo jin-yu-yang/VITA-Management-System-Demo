@@ -3178,13 +3178,31 @@ async function runPermutation(t, roles) {
                 lead: document.querySelector("#intake-v2-form .q-lead")?.textContent.trim() ?? null,
                 intros: document.querySelectorAll("#intake-v2-form .q-intro").length,
               })),
-              { lead: "Did you or your spouse receive any of these in 2025?", intros: 0 },
+              { lead: "Did you receive any of these in 2025?", intros: 0 },
+            );
+            // The label can carry a range note after the wording, so compare its start.
+            assert.ok(
+              (await page.evaluate(() => document.querySelector('[data-q="inc_wages_job_count"] .q-label')?.textContent.trim() ?? "")).startsWith(
+                "How many jobs did you have in 2025?",
+              ),
+              "Q9.1a reads the not-married wording",
             );
             assert.deepEqual(await header(), {
               overline: "STEP 3 OF 9 · INCOME",
               title: "Wages and tips",
               count: "1 of 6",
             });
+          }
+
+          if (id === "about.situation") {
+            // Never married: Q5.3 asks the client directly, with Yes/No radio buttons.
+            const citizen = await page.evaluate(() => ({
+              legend: document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "",
+              radios: document.querySelectorAll('[data-q="us_citizen"] input[type="radio"]').length,
+              boxes: document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length,
+            }));
+            assert.ok(citizen.legend.startsWith("Are you a U.S. citizen?"), citizen.legend);
+            assert.deepEqual([citizen.radios, citizen.boxes], [2, 0]);
           }
 
           if (id === "review.check") {
@@ -3630,6 +3648,37 @@ async function runPermutation(t, roles) {
           RENDER_MS,
         );
         assert.notEqual(await rail("about.spouse"), null, "a married client's rail has no spouse");
+
+        // Married now: the wages lead and Q9.1a name the spouse again.
+        await jump("income.wages");
+        await waitFor(
+          page,
+          "the married wages lead",
+          () => document.querySelector("#intake-v2-form .q-lead")?.textContent.trim() === "Did you or your spouse receive any of these in 2025?",
+          undefined,
+          RENDER_MS,
+        );
+        assert.ok(
+          (await page.evaluate(() => document.querySelector('[data-q="inc_wages_job_count"] .q-label')?.textContent.trim() ?? "")).startsWith(
+            "How many jobs did you and your spouse have in 2025?",
+          ),
+          "a married client's Q9.1a names the spouse",
+        );
+
+        // Married: Q5.3 is the "who" question again, with three check boxes.
+        await jump("about.situation");
+        await waitFor(
+          page,
+          "the married Q5.3 check boxes",
+          () => document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length === 3,
+          undefined,
+          RENDER_MS,
+        );
+        assert.ok(
+          (await page.evaluate(() => document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "")).startsWith(
+            "Who is a U.S. citizen?",
+          ),
+        );
 
         // A household member's middle name sits between first and last name
         // (change require-15080-signatures-and-household-middle-name).

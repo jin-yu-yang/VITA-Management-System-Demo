@@ -1323,6 +1323,14 @@ const v2Panel = (record, person = SAM) => answersPanel(record, { person });
 const D5_SENTENCE =
   "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed.";
 
+test("the staff answers panel shows the wording the client saw", () => {
+  const single = v2Panel(v2Case({ answers: { marital_status: "divorced", opt_veteran: "no" } }));
+  assert.match(single, /Are you a veteran of the U\.S\. Armed Forces\?/);
+  assert.doesNotMatch(single, /Are you or your spouse a veteran/);
+  const married = v2Panel(v2Case({ married: true, answers: { opt_veteran: "no" } }));
+  assert.match(married, /Are you or your spouse a veteran of the U\.S\. Armed Forces\?/);
+});
+
 // ---------------------------------------------------------------------------
 // The masked phone (D5, DESIGN.md §8): one helper, two states.
 // ---------------------------------------------------------------------------
@@ -1799,4 +1807,12 @@ test("the draft 13614-C buttons show to staff who work on a version-2 case", () 
   assert.ok(has(tools(checklistCase({ preparerId: "alex" }), ALEX)));
   assert.equal(has(tools(checklistCase({ preparerId: "someone-else" }), ALEX)), false);
   assert.doesNotMatch(tools(checklistCase({ preparerId: "someone-else" }), ALEX), /view-draft|draft-ready/);
+});
+
+test("staff see an unmarried client's who answers as Yes/No, with the wording the client saw", () => {
+  const panel = v2Panel(v2Case({ answers: { on_visa: ["none"] } }));
+  assert.match(panel, /<span>Were you in the U\.S\. on a visa in 2025\?<\/span><strong>No<\/strong>/);
+  assert.doesNotMatch(panel, /Who was in the U\.S\. on a visa/);
+  const docs = checklist(v2Case({ answers: { on_visa: ["me"] } }));
+  assert.match(docs, /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
 });

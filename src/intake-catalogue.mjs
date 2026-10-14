@@ -42,8 +42,15 @@ export const isMemberId = (value) => typeof value === "string" && /^[0-9a-f]{32}
 
 // The catalogue is never indexed with the screen language: its { en, zh } pair
 // goes through sourceText, which serves zh to both Chinese languages.
-export const wording = (question, { variant = "general", lang = "en" } = {}) => {
-  const w = question?.wording;
+// The text a screen shows for one application (design D4): the not-married
+// version when `answers` say the client isn't married and the item has one,
+// else the usual text. Without `answers` (no application), the usual text.
+const forClient = (usual, unmarried, answers) => (answers && unmarried && !spouseShown(answers) ? unmarried : usual);
+const inVariant = (text, variant, lang) =>
+  sourceText({ en: text?.[variant]?.en ?? text?.general?.en ?? "", zh: text?.[variant]?.zh ?? text?.general?.zh }, lang);
+
+export const wording = (question, { variant = "general", lang = "en", answers } = {}) => {
+  const w = forClient(question?.wording, question?.wordingUnmarried, answers);
   return sourceText({ en: w?.[variant]?.en ?? w?.general?.en, zh: w?.[variant]?.zh ?? w?.general?.zh }, lang);
 };
 
@@ -73,6 +80,17 @@ const holds = (condition, answers) => {
 
 export const isVisible = (question, answers) =>
   (question?.showIf ?? []).every((condition) => holds(condition, answers ?? {}));
+
+/** Married, by the rule that offers "My spouse" (who.spouseShowIf); unanswered is not married. */
+export const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
+
+/** A sub-step's lead line for one application, in `lang`; "" without a lead. */
+export const leadOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
+  substep?.lead ? inVariant(forClient(substep.lead, substep.leadUnmarried, answers), variant, lang) : "";
+
+/** A section's intro for one application, in `lang`; "" without an intro. */
+export const introOf = (section, { variant = "general", lang = "en", answers } = {}) =>
+  section?.intro ? inVariant(forClient(section.intro, section.introUnmarried, answers), variant, lang) : "";
 
 /** A copy of `answers` without the keys of hidden top-level questions. Other keys stay. */
 export function visibleAnswers(version, answers = {}) {

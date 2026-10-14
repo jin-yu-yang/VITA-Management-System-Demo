@@ -57,22 +57,38 @@ const FIXED_OPTIONS = {
 // ids in catalogue order; a documents sub-step names its card group; a review
 // sub-step is fixed. Step titles are `{ en, zh }`; sub-step titles and leads
 // are `{ general: { en, zh }, senior: { en, zh } }`, the same text in both for
-// now (the group adjusts the senior wording later). The Chinese titles are new
-// wording for the group to review.
+// now (the group adjusts the senior wording later), except the leads below. The
+// Chinese titles are new wording for the group to review.
 const both = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
-const questions = (id, title, ids, lead) => ({
+// A lead line's married text (standard and senior) and its not-married text
+// (design D6): the senior Chinese names the spouse 您爱人, as senior wording
+// does everywhere else; the not-married text is the same in both versions.
+const leads = (en, zh, seniorZh, singleEn, singleZh) => ({
+  lead: { general: { en, zh }, senior: { en, zh: seniorZh } },
+  leadUnmarried: both(singleEn, singleZh),
+});
+const questions = (id, title, ids, leadLines) => ({
   id,
   kind: "questions",
   title: both(...title),
-  ...(lead ? { lead: both(...lead) } : {}),
+  ...(leadLines ?? {}),
   questions: ids.split(/\s+/).filter(Boolean),
 });
 const documents = (id, title, cards) => ({ id, kind: "documents", title: both(...title), questions: [], cards });
 const review = (id, title) => ({ id, kind: "review", title: both(...title), questions: [] });
 
-const RECEIVED = ["Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？"];
-const PAID = ["Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？"];
-const HAPPENED = ["Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？"];
+const RECEIVED = leads(
+  "Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？", "2025 年，您或您爱人是否有以下收入？",
+  "Did you receive any of these in 2025?", "2025 年，您是否有以下收入？",
+);
+const PAID = leads(
+  "Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？", "2025 年，您或您爱人是否支付过以下费用？",
+  "Did you pay for any of these in 2025?", "2025 年，您是否支付过以下费用？",
+);
+const HAPPENED = leads(
+  "Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？", "2025 年，您或您爱人是否发生过以下事项？",
+  "Did any of these happen to you in 2025?", "2025 年，您是否发生过以下事项？",
+);
 
 export const STEPS = [
   {
@@ -517,6 +533,13 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
     }
 
     if (mode === "intro") {
+      if (line === "**Intro text (not married):**") {
+        if (block?.key === "introUnmarried" || section.introUnmarried)
+          fail(lineNo, "a second 'Intro text (not married)' block");
+        closeBlock();
+        block = { key: "introUnmarried", block: textBlock() };
+        continue;
+      }
       if (/^\*\*(Page text|Intro text)[^*]*:\*\*$/.test(line)) continue;
       if (/^(- `|`|\*\*Show if\*\*|> Tip)/.test(line)) fail(lineNo, "an attribute line before any question");
       block.block.add(line);
@@ -536,6 +559,15 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
           fail(lineNo, `duplicate option '${om[1]}'`);
         question.options.push({ value: om[1], label });
       }
+      continue;
+    }
+    m = line.match(/^> Not married: (.+)$/);
+    if (m) {
+      if (group && group.fields.includes(question)) fail(lineNo, "a group field takes no 'Not married' line");
+      if (question.wordingUnmarried) fail(lineNo, "a second 'Not married' line");
+      const single = splitWording(m[1]);
+      if (!single) fail(lineNo, "a 'Not married' line must be 'English / 中文'");
+      question.wordingUnmarried = single;
       continue;
     }
     m = line.match(/^> Tip(?: \(show if (.+?)\))?: (.+)$/);
@@ -603,6 +635,7 @@ const skeleton = (q) => ({
   options: q.options?.map((o) => o.value),
   showIf: q.showIf,
   heading: Boolean(q.heading),
+  unmarried: Boolean(q.wordingUnmarried),
   fields: q.fields?.map(skeleton),
 });
 
@@ -620,6 +653,7 @@ function mergeQuestion(g, s) {
   if (g.tips.length || s.tips.length) out.tips = variants(g.tips, s.tips);
   if (g.fields) out.fields = g.fields.map((f, i) => mergeQuestion(f, s.fields[i]));
   out.wording = variants(g.wording, s.wording);
+  if (g.wordingUnmarried) out.wordingUnmarried = variants(g.wordingUnmarried, s.wordingUnmarried);
   return out;
 }
 
@@ -676,15 +710,29 @@ export function buildCatalogue(standardText, seniorText, { steps = STEPS } = {})
           `the drafts differ at '${a?.id ?? b?.id}' (Section ${g.n}): ${left} / ${right}`,
         );
     }
-    for (const key of ["intro", "footer"])
+    for (const key of ["intro", "introUnmarried", "footer"])
       if (Boolean(g[key]) !== Boolean(s[key]))
         throw new Error(`the drafts differ in Section ${g.n}'s ${key}`);
     const out = { n: g.n, title: variants(g.title, s.title) };
     if (g.intro) out.intro = variants(g.intro, s.intro);
+    if (g.introUnmarried) out.introUnmarried = variants(g.introUnmarried, s.introUnmarried);
     out.questions = g.questions.map((q, i) => mergeQuestion(q, s.questions[i]));
     if (g.footer) out.footer = variants(g.footer, s.footer);
     byN.set(g.n, out);
   });
+
+  // A not-married text replaces wording that names a spouse; anything else is a
+  // slip in the drafts (design D2).
+  const SPOUSE = /spouse|配偶|爱人/i;
+  const namesSpouse = (text) =>
+    ["general", "senior"].some((v) => SPOUSE.test(text?.[v]?.en ?? "") || SPOUSE.test(text?.[v]?.zh ?? ""));
+  for (const section of byN.values()) {
+    if (section.introUnmarried && !namesSpouse(section.intro))
+      throw new Error(`Section ${section.n}'s intro names no spouse, so it takes no 'not married' intro`);
+    for (const q of section.questions)
+      if (q.wordingUnmarried && !namesSpouse(q.wording))
+        throw new Error(`'${q.id}' names no spouse, so it takes no 'Not married' line`);
+  }
 
   const mapped = steps.flatMap((step) => step.sections);
   for (const n of byN.keys())

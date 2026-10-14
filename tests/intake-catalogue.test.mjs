@@ -4,7 +4,7 @@ import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
-  memberNameParts,
+  memberNameParts, spouseShown, leadOf, introOf,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
@@ -351,4 +351,38 @@ test("service and language labels in the screen language; English and unknown va
   } finally {
     setHantMap(null);
   }
+});
+
+test("spouseShown: married only; anything else, or unanswered, is not married", () => {
+  assert.equal(spouseShown({ marital_status: "married" }), true);
+  for (const status of ["never_married", "divorced", "separated", "widowed"])
+    assert.equal(spouseShown({ marital_status: status }), false, status);
+  assert.equal(spouseShown({}), false);
+  assert.equal(spouseShown(null), false);
+});
+
+test("wording, leadOf and introOf pick the not-married text from the application's answers", () => {
+  const single = { marital_status: "never_married" };
+  const married = { marital_status: "married" };
+  const jobs = q("inc_wages_job_count");
+  assert.equal(wording(jobs, { answers: single }), "How many jobs did you have in 2025?");
+  assert.equal(wording(jobs, { answers: married }), "How many jobs did you and your spouse have in 2025?");
+  assert.equal(wording(jobs, { answers: {} }), "How many jobs did you have in 2025?");
+  assert.equal(wording(jobs), "How many jobs did you and your spouse have in 2025?", "no application: today's text");
+  assert.equal(wording(jobs, { variant: "senior", lang: "zh-Hans", answers: single }), "2025 年，您一共做了几份工作？");
+  assert.equal(wording(q("opt_veteran"), { variant: "senior", answers: single }), "Are you a U.S. military veteran?");
+  // A question without not-married text reads the same for everyone.
+  assert.equal(wording(q("tp_first_name"), { answers: single }), wording(q("tp_first_name"), { answers: married }));
+
+  const wages = findSubstep("income.wages");
+  assert.equal(leadOf(wages, { answers: single }), "Did you receive any of these in 2025?");
+  assert.equal(leadOf(wages, { answers: married }), "Did you or your spouse receive any of these in 2025?");
+  assert.equal(leadOf(wages), "Did you or your spouse receive any of these in 2025?");
+  assert.equal(leadOf(wages, { variant: "senior", lang: "zh-Hans", answers: married }), "2025 年，您或您爱人是否有以下收入？");
+  assert.equal(leadOf(findSubstep("about.you"), { answers: single }), "");
+
+  const section6 = CATALOGUE.steps.flatMap((s) => s.sections).find((x) => x.n === 6);
+  assert.match(introOf(section6, { answers: married }), /\(except your spouse\)/);
+  assert.doesNotMatch(introOf(section6, { answers: single }), /spouse/);
+  assert.equal(introOf(CATALOGUE.steps.flatMap((s) => s.sections).find((x) => x.n === 1), { answers: single }), "");
 });

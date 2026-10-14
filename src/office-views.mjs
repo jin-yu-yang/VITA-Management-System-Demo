@@ -3,6 +3,7 @@ import {
   stepsFor,
   substepsFor,
   findSubstep,
+  leadOf,
   substepQuestions,
   isVisible,
   missingToSubmit,
@@ -401,7 +402,7 @@ function accordion(id, title, { open, needs, summary = "", body = "" }) {
 function partSummary(id, answers, variant) {
   const text = substepQuestions(id)
     .filter((question) => isVisible(question, answers))
-    .map((question) => formatAnswer(question, answers[question.id], { variant, lang: "en" }))
+    .map((question) => formatAnswer(question, answers[question.id], { variant, lang: "en", answers }))
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map((value) => String(value).replace(/\s*\n\s*/g, ", "))
     .join(" · ");
@@ -418,7 +419,7 @@ function partBody(id, view) {
     if (question.heading || !groups.length) groups.push({ heading: question.heading ?? null, questions: [] });
     groups.at(-1).questions.push(question);
   }
-  const lead = inVariant(findSubstep(id)?.lead, variant);
+  const lead = leadOf(findSubstep(id), { variant, lang: "en", answers });
   return `${lead ? `<p class="q-lead">${esc(lead)}</p>` : ""}${groups
     .map((group) => ({ ...group, questions: group.questions.filter((question) => isVisible(question, answers)) }))
     .filter((group) => group.questions.length)
@@ -452,7 +453,7 @@ function documentsBody(view) {
     if (!mine.length) return "";
     const title = findSubstep(`documents.${name}`)?.title?.general?.en ?? name;
     return `<h4 class="add-docs-title">${esc(title)}</h4><div class="doc-list">${mine
-      .map((card) => docCard(card, { links: false, off, office: true }))
+      .map((card) => docCard(card, { links: false, off, office: true, answers: view.answers }))
       .join("")}</div>`;
   }).join("");
   return `${when(!view.savedCase, '<p class="field-note">Save the draft first to mark documents.</p>')}${groups}`;

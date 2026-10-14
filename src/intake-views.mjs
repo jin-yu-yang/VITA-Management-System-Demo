@@ -31,6 +31,8 @@ import {
   substepQuestions,
   findQuestion,
   wording,
+  leadOf,
+  introOf,
   isVisible,
   missingToSubmit,
 } from "./intake-catalogue.mjs";
@@ -225,12 +227,12 @@ function questionsBody(view) {
     substep.id === "before.ready"
       ? `<p class="q-intro-extra">${esc(t(isSameDay(answers) ? "intake.will_bring" : "intake.will_upload", {}, lang))}</p>`
       : "";
-  const lead = localized(substep.lead, variant, lang);
+  const lead = leadOf(substep, { variant, lang, answers });
   let intro = "";
   if (lead) intro = `<p class="q-lead">${esc(lead)}</p>`;
   else {
     const section = SECTION_OF.get(questions[0]?.id);
-    const text = section && FIRST_SUBSTEP_OF.get(section) === substep.id ? localized(section.intro, variant, lang) : "";
+    const text = section && FIRST_SUBSTEP_OF.get(section) === substep.id ? introOf(section, { variant, lang, answers }) : "";
     if (text) intro = `<div class="q-intro">${renderRichText(text)}${extra}</div>`;
   }
   if (extra && !intro.includes(extra)) intro += extra;
@@ -298,7 +300,7 @@ const CARD_WORDS = Object.freeze({
 // English: a hint or owner line with an `office` version shows that one;
 // otherwise `lang` is the client's language (spec 2026-10-05 §3).
 // Card text reaches the screen through sourceText.
-export function docCard(card, { links = true, off = "", office = false, lang = "en" } = {}) {
+export function docCard(card, { links = true, off = "", office = false, lang = "en", answers } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
   const optional = card.group === "optional";
   const language = office ? "en" : lang;
@@ -308,7 +310,7 @@ export function docCard(card, { links = true, off = "", office = false, lang = "
   const words = office ? CARD_WORDS.office : Object.fromEntries(Object.entries(CARD_WORDS.client).map(([k, key]) => [k, say(key)]));
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
   const whyText = text(card.why);
-  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en" }) : "";
+  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en", answers }) : "";
   const why = office
     ? asked
       ? `<p class="doc-why">Asked by: ${esc(asked)}</p>`
@@ -360,8 +362,8 @@ function documentsBody(view) {
 
 // The words an alert lists an id under: its question's wording, or for a
 // household sub-field "Person <n+1>: <sub-question wording>".
-function itemLabel(id, variant, lang = "en") {
-  const options = { variant, lang };
+function itemLabel(id, variant, lang = "en", answers) {
+  const options = { variant, lang, answers };
   const member = /^([^[]+)\[(\d+)\]\.(.+)$/.exec(id);
   if (member) {
     const field = (findQuestion(2, member[1])?.fields ?? []).find((f) => f.id === member[3]);
@@ -418,7 +420,7 @@ function checkBody(view, alerts) {
           `<div class="alerts-step"><h4>${esc(stepLabel(step, lang))}</h4><ul>${items
             .map(
               (item) =>
-                `<li><button type="button" class="alert-item is-${item.kind}" data-action="go-substep" data-substep="${esc(item.substep)}"${view.off}><span class="alert-q">${esc(itemLabel(item.id, view.variant, lang))}</span><span class="alert-flag">${say(item.flag)}</span>${icon("chevron")}</button></li>`,
+                `<li><button type="button" class="alert-item is-${item.kind}" data-action="go-substep" data-substep="${esc(item.substep)}"${view.off}><span class="alert-q">${esc(itemLabel(item.id, view.variant, lang, view.answers))}</span><span class="alert-flag">${say(item.flag)}</span>${icon("chevron")}</button></li>`,
             )
             .join("")}</ul></div>`,
       )
@@ -450,7 +452,7 @@ const row = (label, value) =>
 // `offWhileBusy` for the Change links.
 function answerSteps(answers, variant, { change, off = "", lang = "en" }) {
   const visible = new Set(visibleSubsteps(answers, []));
-  const options = { variant, lang };
+  const options = { variant, lang, answers };
   const [stepClass, subClass] = change ? ["summary-step", "summary-sub"] : ["answer-step", "answer-sub"];
   return STEPS.map((step) => {
     const subs = SUBSTEPS.filter((substep) => substep.step.id === step.id && substep.kind === "questions" && visible.has(substep.id))

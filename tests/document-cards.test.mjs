@@ -151,7 +151,25 @@ test("bank: direct deposit or split is Needed, a bank payment alone is Maybe, bo
   assert.equal(both.length, 1);
   assert.equal(both[0].group, "needed");
   assert.equal(both[0].baseGroup, "needed");
-  assert.equal(both[0].hint.en, "The account must be in your name (or your spouse's).");
+  assert.equal(both[0].hint.en, "The account must be in your name.");
+});
+
+test("bank: the hint names the spouse only when married, for the client and the office", () => {
+  const hint = (a) => cardsFor({ ...a, refund_method: "direct_deposit" }).find((c) => c.ruleId === "bank").hint;
+  assert.deepEqual(hint(single), {
+    en: "The account must be in your name.",
+    zh: "账户必须是您名下的账户。",
+    office: "The account must be in the client's name.",
+  });
+  assert.deepEqual(hint({}), hint(single), "an unanswered marital status is not married");
+  assert.deepEqual(hint(married), {
+    en: "The account must be in your name (or your spouse's).",
+    zh: "账户必须是您（或配偶）名下的账户。",
+    office: "The account must be in the client's or spouse's name.",
+  });
+  // A bank payment alone (a Maybe card) follows the same rule.
+  const maybe = cardsFor({ ...single, payment_method: "bank_account" }).find((c) => c.ruleId === "bank");
+  assert.equal(maybe.hint.en, "The account must be in your name.");
 });
 
 test("Who questions: IP PIN, visa and digital assets", () => {

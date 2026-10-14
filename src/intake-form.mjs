@@ -6,7 +6,7 @@
 // wrappers over valuesFromControls, which holds every reading rule.
 import { esc, button } from "./ui.mjs";
 import {
-  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
+  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered, spouseShown,
   checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions, memberNameParts,
 } from "./intake-catalogue.mjs";
 import { sourceText, localeOf, isLang } from "./language.mjs";
@@ -52,8 +52,6 @@ const optionLabel = (option, { variant = "general", lang = "en" } = {}) => {
   return sourceText({ en: l?.[variant]?.en ?? l?.general?.en ?? option?.value ?? "", zh: l?.[variant]?.zh ?? l?.general?.zh }, lang);
 };
 
-const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
-
 // Every option a question can hold: its own, or fixedOptions for yesno (its own
 // values, labelled from the fixed list) and who.
 function allOptions(question) {
@@ -65,14 +63,26 @@ function allOptions(question) {
   return question.options ?? [];
 }
 
-// The options rendered now: who's "My spouse" only while married.
+// For a client who isn't married, a "who" question asks about the client alone
+// (design D8): "me" reads as Yes and "none" as No, with the yes/no labels, as
+// radio buttons. The saved answer is still ["me"] or ["none"].
+const ALONE = { me: "yes", none: "no" };
+const askedAlone = (question, answers) => question?.type === "who" && !spouseShown(answers);
+const asAloneOption = (option) => {
+  const yesno = CATALOGUE.fixedOptions.yesno.options.find((fixed) => fixed.value === ALONE[option.value]);
+  return yesno ? { value: option.value, label: yesno.label } : option;
+};
+
+// The options rendered now: who's "My spouse" only while married; Yes/No when asked alone.
 const shownOptions = (question, answers) =>
-  question.type === "who" && !spouseShown(answers)
-    ? allOptions(question).filter((option) => option.value !== "spouse")
+  askedAlone(question, answers)
+    ? allOptions(question).filter((option) => option.value !== "spouse").map(asAloneOption)
     : allOptions(question);
 
 const labelOf = (question, value, options) => {
-  const option = question ? allOptions(question).find((o) => o.value === value) : undefined;
+  let option = question ? allOptions(question).find((o) => o.value === value) : undefined;
+  // Only with the application's answers: catalogue-level labels stay Me / No one.
+  if (option && options?.answers && askedAlone(question, options.answers)) option = asAloneOption(option);
   return option ? optionLabel(option, options) : String(value);
 };
 
@@ -357,7 +367,7 @@ function renderField(question, value, ctx) {
   const describedBy = [tips.length ? tipsId : null, noteId, type === "longtext" ? countId : null].filter(Boolean).join(" ");
   const control = `${data} data-control aria-describedby="${describedBy}"`;
   const text = typeof value === "string" ? value : "";
-  const title = esc(wording(question, { variant, lang }));
+  const title = esc(wording(question, { variant, lang, answers }));
   const wrap = wrapQ ? ` data-q="${esc(wrapQ)}"` : "";
   const cls = `q q-${esc(type)}`;
   const tipsHtml = tips.length
@@ -424,6 +434,15 @@ function renderField(question, value, ctx) {
     case "multi":
     case "who": {
       const picked = Array.isArray(value) ? value : [];
+      if (askedAlone(question, answers))
+        return group(
+          `<div class="q-options q-segmented">${options
+            .map((option) => {
+              const id = `${base}-${esc(option.value)}`;
+              return `<label for="${id}" class="q-option"><input id="${id}" ${control} type="radio" name="${base}" value="${esc(option.value)}"${picked.includes(option.value) ? " checked" : ""}><span>${esc(optionLabel(option, { variant, lang }))}</span></label>`;
+            })
+            .join("")}</div>`,
+        );
       return group(
         `<div class="q-options q-chips">${options
           .map((option) => {
@@ -484,7 +503,7 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
     members.length < MEMBER_LIMIT ? button(esc(t("member.add", {}, lang)), "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
   const tipsId = `${base}-tips`;
   const describedBy = [tips.length ? tipsId : null, noteId].filter(Boolean).join(" ");
-  return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
+  return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang, answers }))}</legend>${
     tips.length ? `<div class="q-tips" id="${tipsId}">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>` : ""
   }<div class="hh-cards">${cards}</div>${add}<p id="${noteId}" class="q-note${note.className ? ` ${note.className}` : ""}" aria-live="polite">${esc(note.text)}</p></fieldset>`;
 }
@@ -577,6 +596,8 @@ export function valuesFromControls(descriptors, { changed, keepEmptyMembers = fa
   for (const [id, list] of byQuestion) {
     const household = list.some((d) => d.member !== undefined && d.member !== null && d.member !== "");
     out[id] = household ? readMembers(list, keepEmptyMembers) : readOne(list, changed?.q === id ? changed : undefined);
+    // An unmarried client's "who" question is a pair of radio buttons; its answer is still a list.
+    if (typeof out[id] === "string" && findQuestion(2, id)?.type === "who") out[id] = [out[id]];
   }
   return out;
 }
@@ -749,11 +770,11 @@ function memberLine(question, member, options) {
 }
 
 /** The read-only text of an answer, or null when unanswered. */
-export function formatAnswer(question, value, { variant = "general", lang = "en" } = {}) {
+export function formatAnswer(question, value, { variant = "general", lang = "en", answers } = {}) {
   if (!question) return null;
   const sent = sendable(question, value);
   if (!isAnswered(sent)) return null;
-  const options = { variant, lang };
+  const options = { variant, lang, answers };
   switch (question.type) {
     case "date":
       return typeof sent === "string" ? formatDate(sent, lang) : String(sent);

@@ -206,33 +206,41 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q5.2** Can anyone else (such as a parent or adult child) claim you or your spouse as a dependent on their tax return? / 是否有其他人（如父母或成年子女）可以在其报税表上将您或配偶列为受抚养人？
 `claimed_by_other` · Yes / No / Not sure · Required
+> Not married: Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return? / 是否有其他人（如父母或成年子女）可以在其报税表上将您列为受抚养人？
 > Tip: Common for students still supported by their parents. / 常见于仍由父母供养的学生。
 
 **Q5.3** Who is a U.S. citizen? / 以下谁是美国公民？
 `us_citizen` · Who (multi-select) · Required
+> Not married: Are you a U.S. citizen? / 您是美国公民吗？
 
 **Q5.4** Who was in the U.S. on a visa in 2025? / 2025 年，以下谁持签证在美国？
 `on_visa` · Who (multi-select) · Required
+> Not married: Were you in the U.S. on a visa in 2025? / 2025 年，您是否持签证在美国？
 > Tip: For example, a student or work visa. A green card is **not** a visa. / 例如学生签证、工作签证。**绿卡不属于签证。**
 
 **Q5.5** Who was a full-time student in 2025? / 2025 年，以下谁是全日制学生？
 `fulltime_student` · Who (multi-select) · Required
+> Not married: Were you a full-time student in 2025? / 2025 年，您是否为全日制学生？
 > Tip: Enrolled full-time, as defined by the school, for at least 5 months of the year. / 指全年至少有 5 个月被学校认定为全日制在读。
 
 **Q5.6** Who is legally blind? / 以下谁属于法定失明？
 `legally_blind` · Who (multi-select) · Required
+> Not married: Are you legally blind? / 您是否属于法定失明？
 > Tip: Certified by a doctor; vision cannot be adequately corrected with glasses. / 需有医生证明，戴眼镜也无法充分矫正视力。
 
 **Q5.7** Who is totally and permanently disabled? / 以下谁属于完全且永久性残疾？
 `disabled` · Who (multi-select) · Required
+> Not married: Are you totally and permanently disabled? / 您是否属于完全且永久性残疾？
 > Tip: Certified by a doctor as unable to work due to a condition expected to last at least 1 year or be permanent. / 需有医生证明，因健康原因无法工作，且预计持续至少 1 年或永久。
 
 **Q5.8** Who was issued an Identity Protection PIN (IP PIN)? / 以下谁持有国税局（IRS）发放的身份保护码（IP PIN）？
 `ippin` · Who (multi-select) · Required
+> Not married: Were you issued an Identity Protection PIN (IP PIN)? / 您是否持有国税局（IRS）发放的身份保护码（IP PIN）？
 > Tip: A 6-digit number from the IRS, issued after identity theft or through voluntary sign-up. A new one is issued every year. If you have one, bring this year's letter (CP01A) or a screenshot from your IRS online account. You will upload it in the Documents step. / 国税局发放的 6 位数字，通常在身份被盗用后发放，也可自行申请，**每年更换**。如有，请准备今年的通知信（CP01A）或国税局网上账户截图。您将在「上传文件」步骤上传。
 
 **Q5.9** Who owned or held any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025? / 2025 年，以下谁拥有或持有数字资产（如比特币、以太坊等加密货币）？
 `digital_assets` · Who (multi-select) · Required
+> Not married: Did you own or hold any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025? / 2025 年，您是否拥有或持有数字资产（如比特币、以太坊等加密货币）？
 
 ---
 
@@ -241,6 +249,10 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Intro text:**
 > List **everyone who lived with you in 2025** (except your spouse), and **anyone you financially supported** who did not live with you.
 > 请列出 2025 年与您同住的所有人（配偶除外），以及未与您同住但由您提供经济支持的人。
+
+**Intro text (not married):**
+> List **everyone who lived with you in 2025**, and **anyone you financially supported** who did not live with you.
+> 请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。
 
 **Q6.0** Did anyone live with you or receive financial support from you in 2025? / 2025 年，是否有人与您同住或由您提供经济支持？
 `has_household_members` · Yes / No · Required
@@ -358,6 +370,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.1a** How many jobs did you and your spouse have in 2025? / 2025 年您和配偶共有几份工作？
 `inc_wages_job_count` · Number · Optional
+> Not married: How many jobs did you have in 2025? / 2025 年您共有几份工作？
 **Show if** `inc_wages = yes`
 > Tip: Usually one W-2 per job. / 通常一份工作对应一张 W-2。
 
@@ -568,6 +581,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q12.4** Are you or your spouse a veteran of the U.S. Armed Forces? / 您或配偶是否为美国退伍军人？
 `opt_veteran` · Single choice · Optional
+> Not married: Are you a veteran of the U.S. Armed Forces? / 您是否为美国退伍军人？
 - `yes` Yes / 是
 - `no` No / 否
 - `prefer_not_to_answer` Prefer not to answer / 不愿回答

@@ -210,6 +210,14 @@ dropped).
   `case_contacts`. Missing answers are computed from the draft alone.
 - A required question counts only while it is shown: the Form 15080 signatures are required once
   the client consents, and the spouse's only when married.
+- Some text depends on marital status: a question's `wordingUnmarried`, a sub-step's
+  `leadUnmarried` and a section's `introUnmarried` replace the usual text when
+  `spouseShown(answers)` is false (the rule that offers "My spouse"). `wording()`, `leadOf()` and
+  `introOf()` take the application's `answers`; without them they return the usual text.
+- For a client who isn't married, a "who" question (Me / My spouse / No one) renders as Yes/No
+  radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is
+  still a list (`["me"]`/`["none"]`). `valuesFromControls` wraps the radio's value; `formatAnswer`
+  labels it Yes/No only when given the application's `answers`.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:
@@ -436,7 +444,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (904) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (923) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
