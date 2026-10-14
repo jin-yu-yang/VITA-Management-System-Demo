@@ -195,6 +195,67 @@ const allQuestions = (catalogue) =>
 
 const both = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
 
+// The fixture's Q1.1 names a spouse so it may take a "Not married" line.
+const SPOUSE_NAME = ["**Q1.1** Name / 名字", "**Q1.1** Your or your spouse's name / 您或配偶的名字"];
+const withSpouseName = (text) => text.replace(...SPOUSE_NAME);
+const addAfter = (text, anchor, line) => text.replace(anchor, `${anchor}\n${line}`);
+
+test("a 'Not married' line becomes wordingUnmarried, in both drafts", () => {
+  const standard = addAfter(withSpouseName(STANDARD), "`name` · Text · Required", "> Not married: Your name / 您的名字");
+  const senior = addAfter(withSpouseName(SENIOR), "`name` · Text · Required", "> Not married: Write your name / 写您的名字");
+  const name = build(standard, senior).steps.flatMap((s) => s.sections.flatMap((x) => x.questions)).find((q) => q.id === "name");
+  assert.deepEqual(name.wordingUnmarried, {
+    general: { en: "Your name", zh: "您的名字" },
+    senior: { en: "Write your name", zh: "写您的名字" },
+  });
+  assert.equal(build().steps.flatMap((s) => s.sections.flatMap((x) => x.questions)).find((q) => q.id === "name").wordingUnmarried, undefined);
+});
+
+test("'Not married' lines are refused when they don't fit", () => {
+  const line = "> Not married: Your name / 您的名字";
+  // In one draft only.
+  assert.throws(
+    () => build(addAfter(withSpouseName(STANDARD), "`name` · Text · Required", line), withSpouseName(SENIOR)),
+    /drafts differ at 'name'/,
+  );
+  // On a question that names no spouse.
+  assert.throws(
+    () => build(addAfter(STANDARD, "`name` · Text · Required", line), addAfter(SENIOR, "`name` · Text · Required", line)),
+    /'name' names no spouse/,
+  );
+  // On a group field.
+  assert.throws(
+    () => parseDraft(addAfter(STANDARD, "`kids[i].name` · Text · Required", line)),
+    /a group field takes no 'Not married' line/,
+  );
+  // Twice.
+  assert.throws(
+    () => parseDraft(addAfter(addAfter(withSpouseName(STANDARD), "`name` · Text · Required", line), "`name` · Text · Required", line)),
+    /a second 'Not married' line/,
+  );
+});
+
+test("an 'Intro text (not married)' block becomes introUnmarried", () => {
+  // The senior fixture renames Section 1 ("About you / 关于您"), so each draft keeps its own heading.
+  const STANDARD_1 = "## Section 1: Details / 详情\n";
+  const SENIOR_1 = "## Section 1: About you / 关于您\n";
+  const intro = (heading, married, single) =>
+    `${heading}\n**Intro text:**\n> ${married}\n> 您和配偶。\n\n**Intro text (not married):**\n> ${single}\n> 您。\n`;
+  const standard = STANDARD.replace(STANDARD_1, intro(STANDARD_1, "You and your spouse.", "You."));
+  const senior = SENIOR.replace(SENIOR_1, intro(SENIOR_1, "You and your spouse, please.", "You, please."));
+  assert.notEqual(standard, STANDARD);
+  assert.notEqual(senior, SENIOR);
+  const section = build(standard, senior).steps.flatMap((s) => s.sections).find((x) => x.n === 1);
+  assert.deepEqual(section.intro.general, { en: "You and your spouse.", zh: "您和配偶。" });
+  assert.deepEqual(section.introUnmarried, {
+    general: { en: "You.", zh: "您。" },
+    senior: { en: "You, please.", zh: "您。" },
+  });
+  // In one draft only.
+  const seniorWithoutSingle = SENIOR.replace(SENIOR_1, `${SENIOR_1}\n**Intro text:**\n> You and your spouse, please.\n> 您和配偶。\n`);
+  assert.throws(() => build(standard, seniorWithoutSingle), /Section 1's introUnmarried/);
+});
+
 test("buildCatalogue turns the fixture drafts into the catalogue", () => {
   const catalogue = build();
   assert.equal(catalogue.version, 2);
@@ -537,11 +598,49 @@ test("the real sub-steps carry their kind, cards and lead lines", () => {
     ],
   );
   const lead = (id) => subs.find((x) => x.id === id).lead;
-  assert.deepEqual(lead("income.rental"), titled("Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？"));
-  assert.deepEqual(lead("expenses.other"), titled("Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？"));
-  assert.deepEqual(lead("expenses.events"), titled("Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？"));
+  const married = (en, zh, seniorZh) => ({ general: { en, zh }, senior: { en, zh: seniorZh } });
+  assert.deepEqual(lead("income.rental"), married("Did you or your spouse receive any of these in 2025?", "2025 年，您或配偶是否有以下收入？", "2025 年，您或您爱人是否有以下收入？"));
+  assert.deepEqual(lead("expenses.other"), married("Did you or your spouse pay for any of these in 2025?", "2025 年，您或配偶是否支付过以下费用？", "2025 年，您或您爱人是否支付过以下费用？"));
+  assert.deepEqual(lead("expenses.events"), married("Did any of these happen to you or your spouse in 2025?", "2025 年，您或配偶是否发生过以下事项？", "2025 年，您或您爱人是否发生过以下事项？"));
   assert.equal(lead("about.you"), undefined);
   assert.equal(subs.filter((x) => x.lead).length, 9);
+});
+
+test("the real catalogue's unmarried wording, leads and intro", () => {
+  const questions = allQuestions(COMMITTED);
+  const unmarried = (id) => findQuestion(COMMITTED, id).wordingUnmarried;
+  assert.deepEqual(questions.filter((q) => q.wordingUnmarried).map((q) => q.id).sort(), ["claimed_by_other", "inc_wages_job_count", "opt_veteran"]);
+  assert.deepEqual(unmarried("claimed_by_other"), {
+    general: { en: "Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return?", zh: "是否有其他人（如父母或成年子女）可以在其报税表上将您列为受抚养人？" },
+    senior: { en: "Can someone else (like a parent or grown child) list you as a dependent on their tax return?", zh: "有没有别人（比如您的父母或成年子女）报税时，会把您写进他们的税表里，算作由他们养活的人？" },
+  });
+  assert.deepEqual(unmarried("inc_wages_job_count"), {
+    general: { en: "How many jobs did you have in 2025?", zh: "2025 年您共有几份工作？" },
+    senior: { en: "How many jobs did you have in 2025?", zh: "2025 年，您一共做了几份工作？" },
+  });
+  assert.deepEqual(unmarried("opt_veteran"), {
+    general: { en: "Are you a veteran of the U.S. Armed Forces?", zh: "您是否为美国退伍军人？" },
+    senior: { en: "Are you a U.S. military veteran?", zh: "您是美国退伍军人吗？" },
+  });
+
+  const subs = COMMITTED.steps.flatMap((s) => s.substeps);
+  const both = (en, zh) => ({ general: { en, zh }, senior: { en, zh } });
+  const RECEIVED = both("Did you receive any of these in 2025?", "2025 年，您是否有以下收入？");
+  const PAID = both("Did you pay for any of these in 2025?", "2025 年，您是否支付过以下费用？");
+  const HAPPENED = both("Did any of these happen to you in 2025?", "2025 年，您是否发生过以下事项？");
+  const expected = {
+    "income.wages": RECEIVED, "income.retirement": RECEIVED, "income.investments": RECEIVED,
+    "income.rental": RECEIVED, "income.business": RECEIVED, "income.other": RECEIVED,
+    "expenses.deductible": PAID, "expenses.other": PAID, "expenses.events": HAPPENED,
+  };
+  assert.deepEqual(Object.fromEntries(subs.filter((s) => s.leadUnmarried).map((s) => [s.id, s.leadUnmarried])), expected);
+
+  const section6 = COMMITTED.steps.flatMap((s) => s.sections).find((x) => x.n === 6);
+  assert.equal(section6.introUnmarried.general.en, "List **everyone who lived with you in 2025**, and **anyone you financially supported** who did not live with you.");
+  assert.equal(section6.introUnmarried.general.zh, "请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。");
+  assert.equal(section6.introUnmarried.senior.en, section6.intro.senior.en.replace(" (not your spouse)", ""));
+  assert.equal(section6.introUnmarried.senior.zh, section6.intro.senior.zh.replace("（您爱人除外）", ""));
+  assert.equal(COMMITTED.steps.flatMap((s) => s.sections).filter((x) => x.introUnmarried).length, 1);
 });
 
 test("the real drafts: every Tip that mentions uploading points to the Documents step", () => {

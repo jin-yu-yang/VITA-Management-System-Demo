@@ -1262,6 +1262,16 @@ export default {
                   "en": "Can someone else (like a parent or grown child) list you or your spouse as a dependent on their tax return?",
                   "zh": "有没有别人（比如您的父母或成年子女）报税时，会把您或您爱人写进他们的税表里，算作由他们养活的人？"
                 }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return?",
+                  "zh": "是否有其他人（如父母或成年子女）可以在其报税表上将您列为受抚养人？"
+                },
+                "senior": {
+                  "en": "Can someone else (like a parent or grown child) list you as a dependent on their tax return?",
+                  "zh": "有没有别人（比如您的父母或成年子女）报税时，会把您写进他们的税表里，算作由他们养活的人？"
+                }
               }
             },
             {
@@ -1782,6 +1792,16 @@ export default {
             "senior": {
               "en": "Tell us about **everyone who lived with you in 2025** (not your spouse).\nAlso tell us about **anyone you gave money to for living costs**, even if they did not live with you.\nFor example: your children, your parents, other family members.",
               "zh": "请告诉我们 2025 年和您住在一起的所有人（您爱人除外），以及虽然不住在一起、但您出钱养的人。\n比如：您的孩子、父母、其他家人。"
+            }
+          },
+          "introUnmarried": {
+            "general": {
+              "en": "List **everyone who lived with you in 2025**, and **anyone you financially supported** who did not live with you.",
+              "zh": "请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。"
+            },
+            "senior": {
+              "en": "Tell us about **everyone who lived with you in 2025**.\nAlso tell us about **anyone you gave money to for living costs**, even if they did not live with you.\nFor example: your children, your parents, other family members.",
+              "zh": "请告诉我们 2025 年和您住在一起的所有人，以及虽然不住在一起、但您出钱养的人。\n比如：您的孩子、父母、其他家人。"
             }
           },
           "questions": [
@@ -2404,6 +2424,16 @@ export default {
                 "senior": {
                   "en": "How many jobs did you and your spouse have in 2025?",
                   "zh": "2025 年，您和您爱人一共做了几份工作？"
+                }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "How many jobs did you have in 2025?",
+                  "zh": "2025 年您共有几份工作？"
+                },
+                "senior": {
+                  "en": "How many jobs did you have in 2025?",
+                  "zh": "2025 年，您一共做了几份工作？"
                 }
               }
             },
@@ -3116,7 +3146,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -3145,7 +3185,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -3176,7 +3226,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -3205,7 +3265,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -3234,7 +3304,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -3262,7 +3342,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse receive any of these in 2025?",
-              "zh": "2025 年，您或配偶是否有以下收入？"
+              "zh": "2025 年，您或您爱人是否有以下收入？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
+            },
+            "senior": {
+              "en": "Did you receive any of these in 2025?",
+              "zh": "2025 年，您是否有以下收入？"
             }
           },
           "questions": [
@@ -4203,7 +4293,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse pay for any of these in 2025?",
-              "zh": "2025 年，您或配偶是否支付过以下费用？"
+              "zh": "2025 年，您或您爱人是否支付过以下费用？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you pay for any of these in 2025?",
+              "zh": "2025 年，您是否支付过以下费用？"
+            },
+            "senior": {
+              "en": "Did you pay for any of these in 2025?",
+              "zh": "2025 年，您是否支付过以下费用？"
             }
           },
           "questions": [
@@ -4233,7 +4333,17 @@ export default {
             },
             "senior": {
               "en": "Did you or your spouse pay for any of these in 2025?",
-              "zh": "2025 年，您或配偶是否支付过以下费用？"
+              "zh": "2025 年，您或您爱人是否支付过以下费用？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did you pay for any of these in 2025?",
+              "zh": "2025 年，您是否支付过以下费用？"
+            },
+            "senior": {
+              "en": "Did you pay for any of these in 2025?",
+              "zh": "2025 年，您是否支付过以下费用？"
             }
           },
           "questions": [
@@ -4264,7 +4374,17 @@ export default {
             },
             "senior": {
               "en": "Did any of these happen to you or your spouse in 2025?",
-              "zh": "2025 年，您或配偶是否发生过以下事项？"
+              "zh": "2025 年，您或您爱人是否发生过以下事项？"
+            }
+          },
+          "leadUnmarried": {
+            "general": {
+              "en": "Did any of these happen to you in 2025?",
+              "zh": "2025 年，您是否发生过以下事项？"
+            },
+            "senior": {
+              "en": "Did any of these happen to you in 2025?",
+              "zh": "2025 年，您是否发生过以下事项？"
             }
           },
           "questions": [
@@ -5062,6 +5182,16 @@ export default {
                 "senior": {
                   "en": "Are you or your spouse a U.S. military veteran?",
                   "zh": "您或您爱人是美国退伍军人吗？"
+                }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Are you a veteran of the U.S. Armed Forces?",
+                  "zh": "您是否为美国退伍军人？"
+                },
+                "senior": {
+                  "en": "Are you a U.S. military veteran?",
+                  "zh": "您是美国退伍军人吗？"
                 }
               }
             },

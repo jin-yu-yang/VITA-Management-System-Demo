@@ -206,6 +206,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q5.2** Can anyone else (such as a parent or adult child) claim you or your spouse as a dependent on their tax return? / 是否有其他人（如父母或成年子女）可以在其报税表上将您或配偶列为受抚养人？
 `claimed_by_other` · Yes / No / Not sure · Required
+> Not married: Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return? / 是否有其他人（如父母或成年子女）可以在其报税表上将您列为受抚养人？
 > Tip: Common for students still supported by their parents. / 常见于仍由父母供养的学生。
 
 **Q5.3** Who is a U.S. citizen? / 以下谁是美国公民？
@@ -241,6 +242,10 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Intro text:**
 > List **everyone who lived with you in 2025** (except your spouse), and **anyone you financially supported** who did not live with you.
 > 请列出 2025 年与您同住的所有人（配偶除外），以及未与您同住但由您提供经济支持的人。
+
+**Intro text (not married):**
+> List **everyone who lived with you in 2025**, and **anyone you financially supported** who did not live with you.
+> 请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。
 
 **Q6.0** Did anyone live with you or receive financial support from you in 2025? / 2025 年，是否有人与您同住或由您提供经济支持？
 `has_household_members` · Yes / No · Required
@@ -358,6 +363,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q9.1a** How many jobs did you and your spouse have in 2025? / 2025 年您和配偶共有几份工作？
 `inc_wages_job_count` · Number · Optional
+> Not married: How many jobs did you have in 2025? / 2025 年您共有几份工作？
 **Show if** `inc_wages = yes`
 > Tip: Usually one W-2 per job. / 通常一份工作对应一张 W-2。
 
@@ -568,6 +574,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q12.4** Are you or your spouse a veteran of the U.S. Armed Forces? / 您或配偶是否为美国退伍军人？
 `opt_veteran` · Single choice · Optional
+> Not married: Are you a veteran of the U.S. Armed Forces? / 您是否为美国退伍军人？
 - `yes` Yes / 是
 - `no` No / 否
 - `prefer_not_to_answer` Prefer not to answer / 不愿回答
