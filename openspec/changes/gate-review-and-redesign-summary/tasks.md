@@ -1,6 +1,6 @@
 ## 1. The gate (design D1–D3; plan Task 1)
 
-- [ ] 1.1 Unit tests first, in `tests/intake-form.test.mjs`:
+- [x] 1.1 Unit tests first, in `tests/intake-form.test.mjs`:
   - `reviewAlerts` lists missing ids, then invalid ids;
   - the gate:
     - `review.check` is always visible;
@@ -10,12 +10,12 @@
   - `stepRollup` and `firstUnfinishedSubstep` take the visits.
 
   Update the tests that expected all three review ids with `{}` answers. See them fail.
-- [ ] 1.2 In `src/intake-form.mjs`:
+- [x] 1.2 In `src/intake-form.mjs`:
   - export `reviewAlerts`;
   - `substepVisible` reads the gate;
   - `visibleSubsteps`, `resolveSubstep` and `adjacentSubstep` take an optional trailing `visited`;
   - `substepStatus`, `stepRollup` and `firstUnfinishedSubstep` use them.
-- [ ] 1.3 Controller tests first, in `tests/controller.test.mjs`. Only Continue on 9.2 earns 9.3: not a rail jump, not a Change link. Also check that:
+- [x] 1.3 Controller tests first, in `tests/controller.test.mjs`. Only Continue on 9.2 earns 9.3: not a rail jump, not a Change link. Also check that:
   - the visit is saved;
   - an alert sends 9.2 and 9.3 to 9.1;
   - a blocked Continue sends nothing;
@@ -23,14 +23,14 @@
   - the fix brings both back.
 
   Update the two tests that reached 9.2 or 9.3 with alerts.
-- [ ] 1.4 In `src/controller.mjs`:
+- [x] 1.4 In `src/controller.mjs`:
   - `currentSubstep`, `goToSubstep` and `moveSubstep` pass `state.visitedSubsteps`;
   - `moveSubstep(+1)` from `review.summary` earns `review.submit` first.
-- [ ] 1.5 Move the SUBMIT guard's decision into `controller.guardSubmit()` (design D5):
+- [x] 1.5 Move the SUBMIT guard's decision into `controller.guardSubmit()` (design D5):
   - a controller test: a clean draft passes, and on a stale, ticked 9.3 an invalid email and a missing city make it reveal the email, go to `review.check`, submit nothing and send no invalid email;
   - `app.mjs` calls it, then shows the toast and moves the keyboard, and drops its own `invalidAnswers` and `missingToSubmit`;
   - `tests/shell.test.mjs` pins that wiring.
-- [ ] 1.6 In `src/intake-views.mjs`, `formView` passes the visits, and `alertsOf` builds on `reviewAlerts`. Fix the client-views and client-language tests that reached a gated page by seeding the earned visit or a complete draft. `npm test` passes.
+- [x] 1.6 In `src/intake-views.mjs`, `formView` passes the visits, and `alertsOf` builds on `reviewAlerts`. Fix the client-views and client-language tests that reached a gated page by seeding the earned visit or a complete draft. `npm test` passes.
 
 ## 2. 9.1's disabled Continue, and 9.3 without its alert notice (design D4, D5; plan Task 2)
 
