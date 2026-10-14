@@ -3123,6 +3123,17 @@ async function runPermutation(t, roles) {
             });
           }
 
+          if (id === "about.situation") {
+            // Never married: Q5.3 asks the client directly, with Yes/No radio buttons.
+            const citizen = await page.evaluate(() => ({
+              legend: document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "",
+              radios: document.querySelectorAll('[data-q="us_citizen"] input[type="radio"]').length,
+              boxes: document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length,
+            }));
+            assert.ok(citizen.legend.startsWith("Are you a U.S. citizen?"), citizen.legend);
+            assert.deepEqual([citizen.radios, citizen.boxes], [2, 0]);
+          }
+
           if (id === "review.check") {
             // Arriving by Continue puts the keyboard on the alerts heading.
             await waitForQuiet(page);
@@ -3581,6 +3592,21 @@ async function runPermutation(t, roles) {
             "How many jobs did you and your spouse have in 2025?",
           ),
           "a married client's Q9.1a names the spouse",
+        );
+
+        // Married: Q5.3 is the "who" question again, with three check boxes.
+        await jump("about.situation");
+        await waitFor(
+          page,
+          "the married Q5.3 check boxes",
+          () => document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length === 3,
+          undefined,
+          RENDER_MS,
+        );
+        assert.ok(
+          (await page.evaluate(() => document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "")).startsWith(
+            "Who is a U.S. citizen?",
+          ),
         );
 
         // A household member's middle name sits between first and last name
