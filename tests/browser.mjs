@@ -870,6 +870,11 @@ async function runPermutation(t, roles) {
       await mask.click({ timeout: CLICK_MS });
       await pointerAway();
       assert.deepEqual(await fullShown(), { full: true, dots: false }, "a click did not keep the number shown");
+      assert.notEqual(
+        await staff.evaluate(() => getComputedStyle(document.querySelector("#contact-phone")).outlineStyle),
+        "none",
+        "a number held open by a click shows no focus outline",
+      );
       await staff.keyboard.press("Tab");
       await pointerAway();
       assert.deepEqual(await fullShown(), { full: false, dots: true }, "the number stayed after the click's focus left");

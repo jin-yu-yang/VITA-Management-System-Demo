@@ -4685,6 +4685,12 @@ textarea::placeholder {
 .phone-mask:not(.is-locked):focus-within .phone-dots {
   display: none;
 }
+/* A click focuses the mask and holds the number open (DESIGN.md §8): a light
+   outline shows why it stays; keyboard focus gets the full ring below. */
+.phone-mask[tabindex]:focus {
+  outline: 2px solid var(--vt-primary-line);
+  outline-offset: 2px;
+}
 .phone-mask[tabindex]:focus-visible {
   outline: 3px solid var(--vt-primary);
   outline-offset: 2px;
