@@ -312,6 +312,7 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   for (const action of [
     "go-substep", "toggle-rail-step", "toggle-panel", "back-step", "change-substep",
     "back-to-summary", "mark-card", "print-summary", "view-draft",
+    "summary-expand-all", "summary-collapse-all",
   ]) {
     assert.ok(emitted.has(action), `the screens emit ${action}`);
     assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
@@ -366,9 +367,20 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   assert.match(app, /addEventListener\("afterprint"/);
-  assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
   for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/, /formStep/, /setFormStep/, /"edit-"/])
     assert.doesNotMatch(app, gone);
+  // The Submit guard's decision is the controller's (guardSubmit, design D5):
+  // app.mjs shows the toast and moves the keyboard, and checks nothing itself.
+  const guard = app.slice(app.indexOf('if (type === "SUBMIT" && state.savedCase)'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
+  assert.ok(guard.length > 0, "the SUBMIT block");
+  assert.match(guard, /sweepV2Form\(\);[\s\S]*if \(!\(await controller\.guardSubmit\(\)\)\) \{[\s\S]*toast\.needs_change[\s\S]*focusV2Arrival\(\);[\s\S]*return;/);
+  assert.doesNotMatch(guard, /invalidAnswers|missingToSubmit/);
+  // A summary section is a panel; nothing else new is (design D7).
+  const V2_PANELS = Function(`return ${/const V2_PANELS = (\/[^\n]+\/);/.exec(app)[1]}`)();
+  for (const name of ["rail-all", "maybe:documents.identity", "summary-shut:about", "summary-shut:documents"])
+    assert.ok(V2_PANELS.test(name), name);
+  for (const name of ["summary-shut:", "summary-shut:about.you", "confirmed", "rail-open:about"])
+    assert.equal(V2_PANELS.test(name), false, name);
 });
 
 // Part 4c (Task 2): the staff checklist emits mark-card, move-card and
@@ -559,6 +571,9 @@ test("the part 4b2 block follows 4b's: icon-and-word marks, the phone bar and th
   assert.match(print[1], /body\.print-summary \*\s*\{\s*visibility:\s*hidden;\s*\}/);
   assert.match(print[1], /body\.print-summary \.summary-print,\s*body\.print-summary \.summary-print \*\s*\{\s*visibility:\s*visible;\s*\}/);
   assert.match(print[1], /body\.print-summary \.summary-tools\s*\{\s*display:\s*none;\s*\}/);
+  // Every section prints, collapsed or not; the toggles print as headings.
+  assert.match(print[1], /\.summary-print \.summary-body\[hidden\]\s*\{\s*display:\s*block;\s*\}/);
+  assert.match(print[1], /\.summary-toggle \.icon\s*\{\s*display:\s*none;\s*\}/);
 });
 
 // ---------------------------------------------------------------------------

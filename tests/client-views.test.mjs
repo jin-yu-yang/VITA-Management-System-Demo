@@ -22,7 +22,7 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { stepsFor, findQuestion, findSubstep, wording } from "../src/intake-catalogue.mjs";
 import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src/intake-form.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
-import { intakeFormV2, docCard } from "../src/intake-views.mjs";
+import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
@@ -890,7 +890,7 @@ test("Back, Continue and Back to summary", () => {
   const middle = intakeScreen(v2State({ formSubstep: "about.you" }));
   assert.match(middle, /data-action="back-step"/);
   assert.match(middle, /<button type="submit" class="btn primary"[^>]*>Continue/);
-  const submit = intakeScreen(v2State({ formSubstep: "review.submit" }));
+  const submit = intakeScreen(v2State({ formSubstep: "review.submit", visitedSubsteps: ["review.submit"] }));
   assert.match(submit, /data-action="back-step"/);
   assert.doesNotMatch(submit, /type="submit"/);
   // A Change link's return: the primary button goes back to the summary instead.
@@ -964,7 +964,7 @@ test("while an action is in flight, the form's navigation and the card marks are
     { formSubstep: "documents.identity", openPanels: ["maybe:documents.identity"] },
     { formSubstep: "review.check", draftAnswers },
     { formSubstep: "review.summary", savedCase: later },
-    { formSubstep: "review.submit", draftAnswers },
+    { formSubstep: "review.submit", visitedSubsteps: ["review.submit"] },
   ];
   const seen = new Set();
   for (const page of pages) {
@@ -1086,17 +1086,86 @@ test("review.check: same-day gets no document warnings, and alerts come from the
   assert.match(html, /class="alert-item is-missing" data-action="go-substep" data-substep="about\.you"/);
 });
 
-test("review.summary: everything the printout shows sits in one block, with Change links and the cards", () => {
-  const html = form({ formSubstep: "review.summary", savedCase: v2Case({ documentCards: [{ slotId: "w2.household", status: "later" }] }) });
-  const start = html.indexOf('<div class="summary-print">');
-  const tools = html.indexOf('<div class="summary-tools">');
-  assert.ok(start >= 0 && tools > start, "the tools come after the printed block");
-  const printed = html.slice(start, tools);
+test("review.check: Continue waits for the alerts, and a line next to it says why", () => {
+  const blocked = form({ formSubstep: "review.check", draftAnswers: without(sample(), "addr_city") });
+  assert.match(
+    blocked,
+    /<p id="continue-blocked" class="form-blocked">Fix the items above to continue\.<\/p><button type="submit" class="btn primary" aria-describedby="continue-blocked" disabled>Continue/,
+  );
+  const invalid = form({ formSubstep: "review.check", draftAnswers: { ...sample(), email: "a@" } });
+  assert.match(invalid, /aria-describedby="continue-blocked" disabled>/);
+  // Open documents never block: the sample's Needed cards are Not done.
+  assert.ok(cardsFor(sample(), []).some((card) => card.group === "needed" && card.status === "not_done"));
+  const open = form({ formSubstep: "review.check" });
+  assert.match(open, /<button type="submit" class="btn primary">Continue/);
+  assert.doesNotMatch(open, /continue-blocked/);
+  // Other parts never draw the line, even with an alert.
+  assert.doesNotMatch(form({ formSubstep: "about.you", draftAnswers: without(sample(), "addr_city") }), /continue-blocked/);
+  // In Chinese.
+  assert.match(
+    form({ formSubstep: "review.check", draftAnswers: without(sample(), "addr_city"), lang: "zh-Hans" }),
+    /<p id="continue-blocked" class="form-blocked">请先修正上面的问题，然后继续。<\/p>/,
+  );
+});
+
+test("the rail and the count follow the review gate", () => {
+  const reviewRail = (html) =>
+    [...html.matchAll(/class="rail-sublink" data-action="go-substep" data-substep="(review\.[a-z]+)"/g)].map((match) => match[1]);
+  const count = (html) => Number(/<p>Part \d+ of (\d+)<\/p>/.exec(html)[1]);
+  const clean = intakeScreen(v2State({ formSubstep: "review.check" }));
+  assert.deepEqual(reviewRail(clean), ["review.check", "review.summary"]);
+  const earned = intakeScreen(v2State({ formSubstep: "review.check", visitedSubsteps: ["review.submit"] }));
+  assert.deepEqual(reviewRail(earned), ["review.check", "review.summary", "review.submit"]);
+  assert.equal(count(earned), count(clean) + 1);
+  // An alert after 9.3 was earned: both hide, and the page is 9.1.
+  const alert = intakeScreen(
+    v2State({ formSubstep: "review.submit", visitedSubsteps: ["review.submit"], draftAnswers: without(sample(), "addr_city") }),
+  );
+  assert.deepEqual(reviewRail(alert), ["review.check"]);
+  assert.match(alert, /id="intake-v2-form"[^>]*data-substep="review\.check"/);
+  assert.equal(count(alert), count(clean) - 1);
+  // The review step's mark stays blank until submission, even with 9.1 and 9.2 Done.
+  const visitedBoth = intakeScreen(v2State({ formSubstep: "review.summary", visitedSubsteps: ["review.check", "review.summary"] }));
+  assert.match(visitedBoth, /<span id="rail-step-review-status" class="rail-status is-none">/);
+});
+
+const summaryPage = (overrides = {}) =>
+  form({ formSubstep: "review.summary", savedCase: v2Case({ documentCards: [{ slotId: "w2.household", status: "later" }] }), ...overrides });
+
+test("review.summary: the intro, then the tools, then Expand and Collapse all, then the printed block", () => {
+  const html = summaryPage();
+  const [intro, tools, fold, start, end] = [
+    '<div class="summary-intro">', '<div class="summary-tools">', '<div class="summary-fold">', '<div class="summary-print">', '<div class="form-actions">',
+  ].map((needle) => html.indexOf(needle));
+  assert.ok(intro >= 0 && intro < tools && tools < fold && fold < start && start < end, "the order");
+  assert.equal(
+    html.slice(intro, tools),
+    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 13614-C made from your answers.</p></div>',
+  );
+  assert.equal(
+    html.slice(fold, start),
+    '<div class="summary-fold"><button type="button" id="summary-expand-all" class="btn text" data-action="summary-expand-all">Expand all</button><button type="button" id="summary-collapse-all" class="btn text" data-action="summary-collapse-all">Collapse all</button></div>',
+  );
+  // The tools, before the printed block.
+  const toolbox = html.slice(tools, fold);
+  assert.match(toolbox, /data-action="print-summary"[^>]*>[\s\S]*?Print<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="en"[^>]*>[\s\S]*?View Draft 13614-C<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="zh-s"[^>]*>简体中文版<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-form="zh-t"[^>]*>繁體中文版<\/button>/);
+  assert.match(toolbox, /<p id="draft-ready" class="draft-ready" aria-live="polite"><\/p>/);
+  const printed = html.slice(start, end);
   assert.match(printed, /VT-GJPY-JAY9/);
   assert.match(printed, /October 4, 2026/);
-  // Steps and sub-steps, each sub-step with its Change link.
-  assert.match(printed, /<section class="summary-step"><h2>About you<\/h2>/);
+  // Each step's heading is its toggle; every section starts expanded.
+  assert.ok(
+    printed.includes(
+      `<section class="summary-step"><h2 class="summary-step-head"><button type="button" id="summary-toggle-about" class="summary-toggle" data-action="toggle-panel" data-panel="summary-shut:about" aria-expanded="true" aria-controls="summary-body-about" aria-label="Show or hide About you">${icon("expand")}<span>About you</span></button></h2><div id="summary-body-about" class="summary-body">`,
+    ),
+  );
+  assert.doesNotMatch(printed, /aria-expanded="false"|class="summary-body" hidden/);
+  // Sub-steps, each with its Change link.
   assert.match(printed, /<div class="summary-sub"><div class="summary-sub-head"><h3>Mailing address<\/h3><button type="button" class="inline" data-action="change-substep" data-substep="about\.address">Change<\/button><\/div>/);
+  assert.match(printed, /<section class="summary-step summary-documents"><h2 class="summary-step-head"><button[^>]*data-panel="summary-shut:documents"/);
   assert.match(printed, /<span>[^<]*<\/span><strong>Philadelphia<\/strong>/);
   assert.ok(printed.includes(`<strong>${escText(formatAnswer(findQuestion(2, "marital_status"), "never_married"))}</strong>`));
   assert.doesNotMatch(printed, /data-substep="about\.spouse"/);
@@ -1105,31 +1174,58 @@ test("review.summary: everything the printout shows sits in one block, with Chan
   assert.match(printed, /W-2 from each job[\s\S]*?<strong>Later<\/strong>/);
   assert.match(printed, /Photo ID[\s\S]*?<strong>Not done<\/strong>/);
   assert.doesNotMatch(printed, /Other documents/);
-  // The tools, outside the printed block.
-  const toolbox = html.slice(tools);
-  assert.match(toolbox, /data-action="print-summary"[^>]*>[\s\S]*?Print<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="en"[^>]*>[\s\S]*?View Draft 13614-C<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-s"[^>]*>简体中文版<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-t"[^>]*>繁體中文版<\/button>/);
-  assert.match(toolbox, /<p id="draft-ready" class="draft-ready" aria-live="polite"><\/p>/);
   // Same-day: the bring list instead of the cards.
   const sameDay = form({ formSubstep: "review.summary", draftAnswers: { ...sample(), service: "same_day" } });
-  assert.match(sameDay.slice(sameDay.indexOf("summary-print"), sameDay.indexOf("summary-tools")), /<ul class="bring-list">/);
+  assert.match(sameDay.slice(sameDay.indexOf("summary-print"), sameDay.indexOf("form-actions")), /<ul class="bring-list">/);
+});
+
+test("review.summary: a section folds from its heading, and Expand or Collapse all sets them all", () => {
+  const shut = summaryPage({ openPanels: ["summary-shut:about", "summary-shut:documents"] });
+  assert.match(shut, /data-panel="summary-shut:about" aria-expanded="false" aria-controls="summary-body-about"/);
+  assert.match(shut, /<div id="summary-body-about" class="summary-body" hidden>/);
+  assert.match(shut, /<div id="summary-body-household" class="summary-body">/);
+  assert.match(shut, /data-panel="summary-shut:documents" aria-expanded="false"/);
+  // Same-day: the bring list is the documents section.
+  const sameDay = form({
+    formSubstep: "review.summary",
+    draftAnswers: { ...sample(), service: "same_day" },
+    openPanels: ["summary-shut:documents"],
+  });
+  assert.match(sameDay, /<div id="summary-body-documents" class="summary-body" hidden><ul class="bring-list">/);
+  // Busy: folding sends nothing, so it stays live.
+  for (const tag of summaryPage({ busy: true }).match(/<button[^>]*(?:summary-toggle|summary-expand-all|summary-collapse-all)[^>]*>/g))
+    assert.doesNotMatch(tag, /\sdisabled/, tag);
+  // The submitted page's answers don't fold.
+  assert.doesNotMatch(
+    submittedV2(v2State({ savedCase: v2Case({ stage: "received", answers: sample() }) })),
+    /summary-toggle|summary-fold/,
+  );
+});
+
+test("review.summary in Chinese: the intro names its controls, and the buttons read 全部展开 and 全部收起", () => {
+  const html = summaryPage({ lang: "zh-Hans" });
+  assert.ok(html.includes("<p>提交之前，请确认所有适用于您的问题都已回答。如需修改，请点击相应部分旁边的“修改”，或在步骤列表中选择该部分。</p>"));
+  assert.match(html, /data-action="summary-expand-all">全部展开<\/button>/);
+  assert.match(html, /data-action="summary-collapse-all">全部收起<\/button>/);
+  assert.match(html, /data-panel="summary-shut:about" aria-expanded="true" aria-controls="summary-body-about" aria-label="显示或隐藏[^"]+"/);
 });
 
 test("review.submit: Submit waits for no alerts and the confirmation", () => {
-  const clean = { formSubstep: "review.submit" };
+  const clean = { formSubstep: "review.submit", visitedSubsteps: ["review.submit"] };
   const html = intakeScreen(v2State(clean));
+  // 9.3 is never drawn with an alert, so it has no alert notice.
+  assert.doesNotMatch(html, /See the alerts/);
   assert.match(html, /<input type="checkbox" id="field-confirmed" name="confirmed"\s*>/);
   assert.match(html, /I have checked my answers/);
   assert.match(submitOf(html), /disabled/);
   assert.doesNotMatch(submitOf(intakeScreen(v2State({ ...clean, openPanels: ["confirmed"] }))), /disabled/);
-  // Any alert keeps it disabled, ticked or not, and says where to look.
-  const missing = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: without(sample(), "tp_first_name") }));
-  assert.match(submitOf(missing), /disabled/);
-  assert.match(missing, /data-action="go-substep" data-substep="review\.check"/);
-  const invalid = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: { ...sample(), email: "a@" } }));
-  assert.match(submitOf(invalid), /disabled/);
+  // With an alert there is no Submit page: 9.3 resolves to 9.1, whose
+  // Continue waits (the gate). Submit's own rule stays for a stale page.
+  for (const draftAnswers of [without(sample(), "tp_first_name"), { ...sample(), email: "a@" }]) {
+    const html = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers }));
+    assert.match(html, /id="intake-v2-form"[^>]*data-substep="review\.check"/);
+    assert.doesNotMatch(html, /data-case-action="SUBMIT"/);
+  }
   // Document warnings never block.
   assert.ok(cardsFor(sample(), []).some((card) => card.group === "needed" && card.status === "not_done"));
   // A conflict or a save in flight does.

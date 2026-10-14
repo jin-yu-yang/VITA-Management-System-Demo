@@ -9,7 +9,7 @@ import {
   renderQuestion, valuesFromControls, mergeIntoDraft, drivesVisibility, visibleIds,
   needsRedraw, noteState, invalidAnswers, sendable, withholdInvalid, withheldFields,
   sendableDiffers, keepLocalOnly, countText, renderRichText, formatAnswer,
-  visibleSubsteps, resolveSubstep, adjacentSubstep, substepStatus, stepRollup,
+  visibleSubsteps, resolveSubstep, adjacentSubstep, reviewAlerts, substepStatus, stepRollup,
   firstUnfinishedSubstep, newMemberId, datePartsFor, formatDate, rangeText, invalidText,
 } from "../src/intake-form.mjs";
 import { setHantMap } from "../src/hant.mjs";
@@ -348,12 +348,12 @@ function fillAll() {
 }
 const ctx = (answers, extra = {}) => ({ answers, visited: [], revealed: new Set(), cards: cardsFor(answers), ...extra });
 
-test("visibleSubsteps: questions by visibility, documents by service and cards, review always", () => {
+test("visibleSubsteps: questions by visibility, documents by service and cards, review by the gate", () => {
   const none = visibleSubsteps({}, NO_CARDS);
   const all = ids(substepsFor(2));
   assert.deepEqual(none, all.filter((id) => none.includes(id)), "catalogue order");
   assert.ok(!none.includes("about.spouse") && !none.includes("documents.bring"));
-  assert.deepEqual(none.slice(-3), ["review.check", "review.summary", "review.submit"]);
+  assert.deepEqual(none.slice(-1), ["review.check"], "with alerts, the review step is 9.1 alone");
   assert.ok(none.includes("before.ready") && none.includes("documents.identity") && none.includes("documents.other"));
   // The other four documents sub-steps need a card of their own.
   assert.ok(!none.includes("documents.income") && !none.includes("documents.expenses") && !none.includes("documents.events"));
@@ -383,9 +383,8 @@ test("resolveSubstep: visible stays; hidden goes to the next visible, else the l
   // sub-step after it, which skips the rest of the documents step.
   const sameDay = { service: "same_day" };
   assert.equal(resolveSubstep("documents.identity", sameDay, cardsFor(sameDay)), "notes.anything");
-  // With nothing visible after it, the last visible one: hide the whole tail by hiding the last
-  // questions sub-step's followers (the review ones are always visible, so it is review.submit).
-  assert.equal(resolveSubstep("review.submit", {}, NO_CARDS), "review.submit");
+  // With nothing visible after it, the last visible one: with alerts, a hidden review.submit lands on review.check.
+  assert.equal(resolveSubstep("review.submit", {}, NO_CARDS), "review.check");
 });
 
 test("adjacentSubstep: the visible neighbour of the resolved place, null at either end", () => {
@@ -398,6 +397,45 @@ test("adjacentSubstep: the visible neighbour of the resolved place, null at eith
   assert.equal(adjacentSubstep("about.spouse", { marital_status: "married" }, NO_CARDS, -1), "about.marital");
   assert.equal(adjacentSubstep("about.spouse", { marital_status: "never_married" }, NO_CARDS, 1), "about.irs");
   assert.equal(adjacentSubstep("nowhere.at_all", {}, NO_CARDS, 1), visibleSubsteps({}, NO_CARDS)[1]);
+});
+
+test("reviewAlerts: the missing answers, then the invalid ones, from the draft alone", () => {
+  const everything = fillAll();
+  assert.deepEqual(reviewAlerts(everything), []);
+  const { addr_city, ...noCity } = everything;
+  assert.deepEqual(reviewAlerts({ ...noCity, email: "a@" }), [
+    { id: "addr_city", kind: "missing" },
+    { id: "email", kind: "invalid" },
+  ]);
+  assert.deepEqual(reviewAlerts(null), reviewAlerts({}));
+});
+
+test("the review gate: 9.1 always, 9.2 with no alerts, 9.3 once Continue on 9.2 has earned it", () => {
+  const everything = fillAll();
+  const cards = cardsFor(everything);
+  const review = (answers, visited) =>
+    visibleSubsteps(answers, cardsFor(answers), visited).filter((id) => id.startsWith("review."));
+  assert.deepEqual(review(everything), ["review.check", "review.summary"]);
+  assert.deepEqual(review(everything, ["review.summary"]), ["review.check", "review.summary"], "a visit to 9.2 earns nothing");
+  assert.deepEqual(review(everything, ["review.submit"]), ["review.check", "review.summary", "review.submit"]);
+  assert.deepEqual(review(everything, new Set(["review.submit"])), ["review.check", "review.summary", "review.submit"]);
+  // Open documents never block: every Needed card here is still Not done.
+  assert.ok(cards.some((card) => card.group === "needed" && card.status === "not_done"));
+  // Any alert hides both, earned or not.
+  const { addr_city, ...noCity } = everything;
+  assert.deepEqual(review(noCity, ["review.submit"]), ["review.check"]);
+  assert.deepEqual(review({ ...everything, email: "a@" }, ["review.submit"]), ["review.check"]);
+  // A hidden 9.2 or 9.3 lands on 9.1; an unearned 9.3 on 9.2.
+  assert.equal(resolveSubstep("review.submit", noCity, cardsFor(noCity), ["review.submit"]), "review.check");
+  assert.equal(resolveSubstep("review.summary", noCity, cardsFor(noCity), ["review.submit"]), "review.check");
+  assert.equal(resolveSubstep("review.submit", everything, cards), "review.summary");
+  assert.equal(resolveSubstep("review.submit", everything, cards, ["review.submit"]), "review.submit");
+  // Continue from 9.1 goes nowhere while an alert exists; from 9.2 only once earned.
+  assert.equal(adjacentSubstep("review.check", noCity, cardsFor(noCity), 1), null);
+  assert.equal(adjacentSubstep("review.check", everything, cards, 1), "review.summary");
+  assert.equal(adjacentSubstep("review.summary", everything, cards, 1), null);
+  assert.equal(adjacentSubstep("review.summary", everything, cards, 1, ["review.submit"]), "review.submit");
+  assert.equal(adjacentSubstep("review.submit", everything, cards, -1, ["review.submit"]), "review.summary");
 });
 
 test("substepStatus: blank until visited; Done needs a visit; Needs answers; a revealed invalid answer counts unvisited", () => {
@@ -501,6 +539,11 @@ test("stepRollup: needs, then docs, then done only when all are done", () => {
   const never = { ...STEP2, marital_status: "never_married" };
   assert.equal(visibleSubsteps(never, cardsFor(never)).includes("about.spouse"), false);
   assert.equal(stepRollup("nowhere", ctx({})).key, "none");
+  // The review step is never Done (its Submit page stays blank until submission),
+  // whether or not the gate has shown 9.3.
+  const everything = fillAll();
+  assert.equal(stepRollup("review", ctx(everything, { visited: ["review.check", "review.summary"] })).key, "none");
+  assert.equal(stepRollup("review", ctx(everything, { visited: ["review.check", "review.summary", "review.submit"] })).key, "none");
 });
 
 test("firstUnfinishedSubstep: resume at the first visible sub-step that isn't Done", () => {
@@ -517,6 +560,11 @@ test("firstUnfinishedSubstep: resume at the first visible sub-step that isn't Do
   const laterAll = cardsFor(everything, cardsFor(everything).map((card) => ({ slotId: card.slotId, status: "later" })));
   assert.equal(firstUnfinishedSubstep(everything, laterAll, all, new Set()), "review.check");
   assert.equal(firstUnfinishedSubstep(everything, laterAll, all.filter((id) => !id.startsWith("review.")), new Set()), "review.check");
+  // 9.1 visited and clean: the summary is next.
+  assert.equal(
+    firstUnfinishedSubstep(everything, laterAll, [...all.filter((id) => !id.startsWith("review.")), "review.check"], new Set()),
+    "review.summary",
+  );
   // Visited review.check and summary leave review.submit, which is never Done: still review.check.
   assert.equal(firstUnfinishedSubstep(everything, laterAll, all, new Set(["email"])), "review.check");
 });

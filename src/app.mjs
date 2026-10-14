@@ -5,11 +5,10 @@ import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
 import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
-  invalidAnswers,
   needsRedraw,
   newMemberId,
   noteState,
@@ -751,9 +750,10 @@ if (!config) {
   }
 
   // The panels a generic `toggle-panel` control may open: the phone's "All
-  // steps" and a documents sub-step's Maybe needed group. Rail steps have
-  // their own action (`setRailExpanded`), and nothing else is a panel here.
-  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+)$/;
+  // steps", a documents sub-step's Maybe needed group, and a summary section
+  // (`summary-shut:<step id>`, collapsed while present). Rail steps have their
+  // own action (`setRailExpanded`), and nothing else is a panel here.
+  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+|summary-shut:[a-z]+)$/;
 
   // `opener` is passed when the control was described before an await (the
   // Log a call button, captured before its case is loaded); otherwise it is
@@ -890,26 +890,12 @@ if (!config) {
       // the saved case's revision: otherwise it would be dropped, and the
       // refresh would raise a conflict on a submitted case.
       sweepV2Form();
-      // Submit's disabled state is drawn at render, and typing never
-      // redraws, so the gate is checked again from the draft (spec §2.5:
-      // nothing invalid is ever submitted). Failing it reveals every invalid
-      // answer and goes to review.check, whose alerts list them.
-      const draft = controller.getState().draftAnswers ?? {};
-      const invalid = invalidAnswers(null, draft);
-      if (
-        invalid.length ||
-        missingToSubmit(2, draft).length ||
-        !controller.getState().openPanels.includes("confirmed")
-      ) {
-        quiet = true;
-        try {
-          for (const id of invalid) controller.revealInvalid(id);
-        } finally {
-          quiet = false;
-        }
-        // Submit stays off: the alerts list says what to fix, and the
-        // keyboard goes to its heading.
-        await controller.goToSubstep("review.check");
+      // Submit's disabled state is drawn at render, and a press can land on a
+      // page drawn before the draft changed, so the controller checks the
+      // draft again (guardSubmit). Refused, it has revealed every invalid
+      // answer and gone to review.check: the toast says why, and the keyboard
+      // goes to the alerts heading.
+      if (!(await controller.guardSubmit())) {
         notify(t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;
@@ -1379,6 +1365,20 @@ if (!config) {
         root
           .querySelector(`[data-action="toggle-panel"][data-panel="${CSS.escape(name)}"]`)
           ?.focus();
+        break;
+      }
+      case "summary-expand-all":
+      case "summary-collapse-all": {
+        // Every section at once (design D7): Collapse all names the sections
+        // on the page, Expand all none. The pressed button keeps the keyboard.
+        const shut =
+          action === "summary-collapse-all"
+            ? [...root.querySelectorAll('.summary-toggle[data-panel^="summary-shut:"]')].map((toggle) =>
+                toggle.dataset.panel.slice("summary-shut:".length),
+              )
+            : [];
+        controller.setSummaryShut(shut);
+        document.getElementById(target.id)?.focus();
         break;
       }
       case "mark-card": {

@@ -22,6 +22,7 @@ import {
   mergeIntoDraft,
   newMemberId,
   resolveSubstep,
+  reviewAlerts,
   sendable,
   sendableDiffers,
   withholdInvalid,
@@ -1630,12 +1631,27 @@ export function createController({
     persistSession();
   }
 
+  // The Submit guard (spec 2026-09-30 §2.5: nothing missing or invalid is
+  // ever submitted). Submit's disabled state is drawn at render, and a press
+  // can land on a page drawn before the draft changed (a refresh held back
+  // while the pointer was down), so the press checks the draft again, with
+  // the review gate's own list (reviewAlerts). With an alert it reveals every
+  // invalid answer and goes to review.check, whose list says what to fix, and
+  // returns false: don't submit.
+  async function guardSubmit() {
+    const draft = state.draftAnswers ?? {};
+    if (reviewAlerts(draft).length === 0) return true;
+    for (const id of invalidAnswers(null, draft)) revealInvalid(id);
+    await goToSubstep("review.check");
+    return false;
+  }
+
   // Where the version-2 form is now: the saved place resolved against the
   // draft (a hidden sub-step goes to the next visible one, an unknown id to
   // the first, spec 2026-10-04 §3.1). Null with no case.
   function currentSubstep() {
     if (!state.savedCase) return null;
-    return resolveSubstep(state.formSubstep, state.draftAnswers, cardsNow());
+    return resolveSubstep(state.formSubstep, state.draftAnswers, cardsNow(), state.visitedSubsteps);
   }
 
   // The form's sub-step change (Continue, Back, a rail jump, a link). The
@@ -1675,17 +1691,26 @@ export function createController({
       // again: this move belongs to the old opening.
       if (opening !== from) return;
     }
-    state.formSubstep = resolveSubstep(id, state.draftAnswers, cardsNow());
+    state.formSubstep = resolveSubstep(id, state.draftAnswers, cardsNow(), state.visitedSubsteps);
     if (!keepReturn) state.returnToSummary = false;
     persistSession();
     show();
   }
 
   // Continue (+1) and Back (-1): the adjacent visible sub-step. Nothing at
-  // either end, not even a visit.
+  // either end, not even a visit. Continue on the summary is what earns the
+  // Submit page (openspec change gate-review-and-redesign-summary, design D3):
+  // its visit is added first, so the move finds 9.3 and the save sends it. The
+  // move starts from where the form is shown (the resolved place), which is not
+  // always the stored one: a stored review.submit without its visit shows 9.2.
   async function moveSubstep(delta) {
-    if (!formOpen()) return;
-    const target = adjacentSubstep(state.formSubstep, state.draftAnswers, cardsNow(), delta);
+    if (!formOpen() || substepSaveInFlight) return;
+    const from = currentSubstep();
+    if (delta > 0 && from === "review.summary" && !state.visitedSubsteps.includes("review.submit")) {
+      state.visitedSubsteps = orderVisited([...state.visitedSubsteps, "review.submit"]);
+      if (!state.dirty && visitsPending()) markDirty();
+    }
+    const target = adjacentSubstep(from, state.draftAnswers, cardsNow(), delta, state.visitedSubsteps);
     if (!target) return;
     await goToSubstep(target);
   }
@@ -1713,6 +1738,18 @@ export function createController({
     state.openPanels = [
       ...state.openPanels.filter((name) => name !== open && name !== shut),
       expanded ? open : shut,
+    ];
+    persistSession();
+    show();
+  }
+
+  // The summary's Expand all and Collapse all, in one change to `openPanels`:
+  // a section is collapsed while `summary-shut:<step id>` is there, so this
+  // replaces every such name with one per id in `stepIds` (none expands all).
+  function setSummaryShut(stepIds) {
+    state.openPanels = [
+      ...state.openPanels.filter((name) => !name.startsWith("summary-shut:")),
+      ...stepIds.map((id) => `summary-shut:${id}`),
     ];
     persistSession();
     show();
@@ -2321,12 +2358,14 @@ export function createController({
     setCaseTab,
     editAnswers,
     revealInvalid,
+    guardSubmit,
     currentSubstep,
     goToSubstep,
     moveSubstep,
     openForChange,
     backToSummary,
     setRailExpanded,
+    setSummaryShut,
     removeMember,
     saveAnswers,
     reconcileAnswers,

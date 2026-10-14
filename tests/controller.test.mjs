@@ -4,7 +4,7 @@ import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
-import { newMemberId, renderQuestion, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
+import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
 
@@ -3052,8 +3052,40 @@ test("a rail step collapses and expands in one change each", async () => {
   controller.stop();
 });
 
+test("Expand all and Collapse all set every summary section in one change", async () => {
+  const { controller, renders } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.togglePanel("rail-open:about");
+  controller.togglePanel("summary-shut:about");
+  let before = renders.count;
+  controller.setSummaryShut(["about", "income", "documents"]);
+  assert.equal(renders.count, before + 1);
+  assert.deepEqual(controller.getState().openPanels, [
+    "rail-open:about", "summary-shut:about", "summary-shut:income", "summary-shut:documents",
+  ]);
+  before = renders.count;
+  controller.setSummaryShut([]);
+  assert.equal(renders.count, before + 1);
+  assert.deepEqual(controller.getState().openPanels, ["rail-open:about"]);
+  controller.stop();
+});
+
+// A complete, valid draft: the sample's answers, with its contact fields in the
+// case's contact record, where the server keeps them.
+function completeV2() {
+  const { tp_phone, sp_phone, best_contact_time, best_contact_note, ...answers } = makeSampleAnswers();
+  return {
+    answers,
+    contact: {
+      phone: tp_phone ?? null,
+      spousePhone: sp_phone ?? null,
+      bestContactTime: best_contact_time ?? null,
+      bestContactNote: best_contact_note ?? null,
+    },
+  };
+}
+
 test("Change sets a return to the summary; Back to summary or a rail jump clears it", async () => {
-  const { controller } = await openV2({ answers: { tp_first_name: "Mei" } });
+  const { controller } = await openV2(completeV2());
   await controller.openForChange("about.address");
   assert.equal(controller.getState().formSubstep, "about.address");
   assert.equal(controller.getState().returnToSummary, true);
@@ -3080,11 +3112,96 @@ test("moveSubstep goes to the next or previous visible sub-step and does nothing
   await controller.goToSubstep("about.marital");
   await controller.moveSubstep(1);
   assert.equal(controller.getState().formSubstep, "about.situation", "the hidden spouse sub-step is skipped");
+  // With alerts the form ends at 9.1: Continue there goes nowhere and sends nothing.
   await controller.goToSubstep("review.submit");
+  assert.equal(controller.getState().formSubstep, "review.check");
   const writes = store.writes.length;
   await controller.moveSubstep(1);
-  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.equal(controller.getState().formSubstep, "review.check");
   assert.equal(store.writes.length, writes);
+  controller.stop();
+});
+
+test("the review gate: only Continue on 9.2 earns 9.3, and an alert sends 9.2 and 9.3 back to 9.1", async () => {
+  const { controller, store } = await openV2(completeV2());
+  assert.deepEqual(reviewAlerts(controller.getState().draftAnswers), []);
+  await controller.goToSubstep("review.submit");
+  assert.equal(controller.getState().formSubstep, "review.summary", "9.3 before Continue on 9.2");
+  // Leaving 9.2 by a rail jump or a Change link earns nothing.
+  await controller.goToSubstep("about.you");
+  await controller.goToSubstep("review.summary");
+  await controller.openForChange("about.address");
+  await controller.backToSummary();
+  assert.equal(controller.getState().formSubstep, "review.summary");
+  assert.equal(controller.getState().visitedSubsteps.includes("review.submit"), false);
+  // Continue does, and the move's save sends the visit.
+  await controller.moveSubstep(1);
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.ok(controller.getState().visitedSubsteps.includes("review.submit"));
+  assert.ok(store.records.get("case-v2").intakeVisited.includes("review.submit"), "the earned visit was not saved");
+  // An alert: 9.3 resolves to 9.1, and Continue there does nothing.
+  controller.editAnswers({ addr_city: null });
+  assert.equal(controller.currentSubstep(), "review.check");
+  const writes = store.writes.length;
+  await controller.moveSubstep(1);
+  assert.equal(controller.currentSubstep(), "review.check");
+  assert.equal(store.writes.length, writes, "a blocked Continue sent something");
+  // "Back to summary" lands on 9.1 too.
+  await controller.backToSummary();
+  assert.equal(controller.currentSubstep(), "review.check");
+  // The fix brings both back: 9.3 without another Continue.
+  controller.editAnswers({ addr_city: "Philadelphia" });
+  await controller.goToSubstep("review.submit");
+  assert.equal(controller.currentSubstep(), "review.submit");
+  controller.stop();
+});
+
+test("Continue moves from where the form is shown: a stored review.submit with no visit shows 9.2, and Continue earns 9.3", async () => {
+  // The first window earns 9.3, which leaves review.submit in its window state.
+  const shared = fakeSession();
+  const first = await openV2({ ...completeV2(), sessionStorage: shared });
+  await first.controller.goToSubstep("review.summary");
+  await first.controller.moveSubstep(1);
+  assert.equal(first.controller.getState().formSubstep, "review.submit");
+  first.controller.stop();
+  // A reload whose record lacks the visit (the Continue's save never landed):
+  // the window state still says review.submit.
+  const { controller, store } = await openV2({ ...completeV2(), sessionStorage: shared });
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.equal(controller.getState().visitedSubsteps.includes("review.submit"), false);
+  assert.equal(controller.currentSubstep(), "review.summary");
+  await controller.moveSubstep(1);
+  assert.equal(controller.currentSubstep(), "review.submit");
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.ok(controller.getState().visitedSubsteps.includes("review.submit"));
+  assert.ok(store.records.get("case-v2").intakeVisited.includes("review.submit"), "the earned visit was not saved");
+  controller.stop();
+});
+
+test("guardSubmit: a Submit pressed on a stale page with an alert reveals it and goes to 9.1, sending nothing", async () => {
+  const { controller, store } = await openV2(completeV2());
+  await controller.goToSubstep("review.summary");
+  await controller.moveSubstep(1);
+  controller.togglePanel("confirmed");
+  assert.equal(controller.currentSubstep(), "review.submit");
+  // A clean draft passes, and the guard moves nothing.
+  assert.equal(await controller.guardSubmit(), true);
+  assert.equal(controller.currentSubstep(), "review.submit");
+  // A missing answer alone is refused too: the guard checks the review alerts, not only invalid answers.
+  controller.editAnswers({ addr_city: null });
+  assert.equal(await controller.guardSubmit(), false);
+  assert.equal(controller.getState().formSubstep, "review.check");
+  controller.editAnswers({ addr_city: "Philadelphia" });
+  await controller.goToSubstep("review.submit");
+  assert.equal(controller.currentSubstep(), "review.submit");
+  // The draft changes under a page already drawn: an invalid email and no city.
+  controller.editAnswers({ email: "a@", addr_city: null });
+  assert.equal(await controller.guardSubmit(), false);
+  assert.equal(controller.getState().formSubstep, "review.check");
+  assert.ok(controller.getState().revealed.includes("email"), "the invalid email was not revealed");
+  const record = store.records.get("case-v2");
+  assert.equal(record.stage, "draft", "the guard submitted");
+  assert.notEqual(record.answers.email, "a@", "an invalid email reached the server");
   controller.stop();
 });
 
