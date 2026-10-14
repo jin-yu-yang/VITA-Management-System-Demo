@@ -797,6 +797,24 @@ async function runPermutation(t, roles) {
       assert.equal(answersRead.wording, "Wording used: Standard");
       assert.ok(answersRead.contact.includes(CONTACT_NOT_SHOWN), "the D5 sentence is missing");
       assert.doesNotMatch(await appText(), SAMPLE_PHONE, "a phone reached a volunteer who has not claimed the case");
+      const locked = await staff.evaluate(() =>
+        [...document.querySelectorAll("#case-panel-intake .phone-mask")].map((mask) => ({
+          locked: mask.classList.contains("is-locked"),
+          title: mask.getAttribute("title"),
+          focusable: mask.hasAttribute("tabindex"),
+          where: mask.closest(".contact-card") ? "card" : mask.closest(".answers-v2") ? "answers" : "other",
+        })),
+      );
+      assert.ok(locked.some((mask) => mask.where === "card"), "no masked phone in the contact card");
+      assert.ok(locked.some((mask) => mask.where === "answers"), "no masked phone in the answers");
+      for (const mask of locked) {
+        assert.ok(mask.locked, "an unlocked mask before the claim");
+        assert.equal(mask.title, "Claim this case to see the full number");
+        assert.equal(mask.focusable, false);
+      }
+      const markup = await staff.evaluate(() => document.querySelector("#app")?.innerHTML ?? "");
+      assert.doesNotMatch(markup, SAMPLE_PHONE, "a phone reached the markup of a volunteer who has not claimed the case");
+      assert.doesNotMatch(markup, /2155550\d\d\d/, "a stored phone reached the markup");
       assert.equal(
         await staff.locator('[data-action="view-draft"]').count(),
         0,
@@ -829,6 +847,32 @@ async function runPermutation(t, roles) {
       );
       assert.match(await contactRow("Phone"), SAMPLE_PHONE);
       assert.equal(await contactRow("Best time to reach"), "Weekday evenings");
+      // The masked phone (D5, DESIGN.md §8): hidden until hover or focus, kept
+      // while focused after a click, hidden again when focus leaves.
+      const mask = staff.locator("#contact-phone");
+      const fullShown = () =>
+        staff.evaluate(() => {
+          const full = document.querySelector("#contact-phone .phone-full");
+          const dots = document.querySelector("#contact-phone .phone-dots");
+          return { full: (full?.getBoundingClientRect().width ?? 0) > 4, dots: (dots?.getBoundingClientRect().width ?? 0) > 4 };
+        });
+      const pointerAway = () => staff.mouse.move(1, 1);
+      await pointerAway();
+      assert.deepEqual(await fullShown(), { full: false, dots: true }, "the number shows before anyone asks");
+      await mask.hover({ timeout: CLICK_MS });
+      assert.deepEqual(await fullShown(), { full: true, dots: false }, "hover did not reveal the number");
+      await pointerAway();
+      assert.deepEqual(await fullShown(), { full: false, dots: true }, "the number stayed after the pointer left");
+      await mask.focus();
+      assert.deepEqual(await fullShown(), { full: true, dots: false }, "keyboard focus did not reveal the number");
+      await staff.keyboard.press("Tab");
+      assert.deepEqual(await fullShown(), { full: false, dots: true }, "the number stayed after focus left");
+      await mask.click({ timeout: CLICK_MS });
+      await pointerAway();
+      assert.deepEqual(await fullShown(), { full: true, dots: false }, "a click did not keep the number shown");
+      await staff.keyboard.press("Tab");
+      await pointerAway();
+      assert.deepEqual(await fullShown(), { full: false, dots: true }, "the number stayed after the click's focus left");
       assert.deepEqual(
         await staff.evaluate(() =>
           [...document.querySelectorAll('#case-panel-intake [data-action="view-draft"]')].map(
@@ -982,6 +1026,28 @@ async function runPermutation(t, roles) {
       assert.equal(await noteBox.inputValue(), EDITED_BEST_TIME_NOTE, "Cancel kept the unsaved Note");
       await clickAction(staff, "toggle-edit-contact");
       await staff.locator("#contact-form").waitFor({ state: "detached", timeout: RENDER_MS });
+
+      // A realtime update while the number is revealed by focus keeps it
+      // revealed: the redraw puts focus back on the mask by its id.
+      const REDRAW_NOTE = "Fictional note: written to check a redraw.";
+      const setNote = (note) =>
+        one(fixture, "update public.case_contacts set best_contact_note=$2 where case_id=$1 returning case_id", [
+          classCase.id,
+          note,
+        ]);
+      await pointerAway();
+      await staff.locator("#contact-phone").focus();
+      await setNote(REDRAW_NOTE);
+      await waitForText(staff, REDRAW_NOTE);
+      assert.equal(
+        await staff.evaluate(() => document.activeElement?.id ?? null),
+        "contact-phone",
+        "the realtime redraw took focus off the mask",
+      );
+      assert.deepEqual(await fullShown(), { full: true, dots: false }, "the realtime redraw hid the revealed number");
+      await setNote(EDITED_BEST_TIME_NOTE);
+      await waitForText(staff, EDITED_BEST_TIME_NOTE);
+      await staff.keyboard.press("Tab");
 
       await actForm(
         staff,
