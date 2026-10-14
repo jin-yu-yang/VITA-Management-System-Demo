@@ -745,7 +745,9 @@ test("a submitted version-2 case shows the answers, the contact card and the mat
   assert.ok(at("Wording used: Standard") >= 0);
   assert.ok(at("Wording used") < at('class="panel contact-card"'));
   assert.ok(at('class="panel contact-card"') < at('class="panel materials-card"'));
-  assert.match(tab, /\(215\) 555-01\d\d/);
+  assert.match(tab, /<span class="phone-mask" id="contact-phone" tabindex="0">/);
+  assert.match(tab, /<span class="phone-full">\(215\) 555-01\d\d<\/span>/);
+  assert.doesNotMatch(tab.replace(/<svg[\s\S]*?<\/svg>/g, ""), /="[^"]*555-01/, "no attribute carries the number");
   assert.match(tab, /Weekends/);
   assert.match(tab, /data-action="toggle-edit-contact"/);
   assert.match(tab, /Recorded by Sam ·/);

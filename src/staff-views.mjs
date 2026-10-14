@@ -747,6 +747,9 @@ export function answersPanel(record, { person } = {}) {
 }
 
 const CONTACT_QUESTION_IDS = new Set(Object.keys(CONTACT_FIELDS));
+// The phones show masked to anyone (D5); best time and the note only to
+// viewers who may see contact details.
+const PHONE_QUESTION_IDS = new Set(["tp_phone", "sp_phone"]);
 const NOT_SURE = "not_sure";
 const withoutQuestionMark = (text) => text.replace(/\s*\?\s*$/, "");
 const answerRow = (label, value, className = "", flag = "") =>
@@ -807,8 +810,12 @@ export function answersPanelV2(record, { showContact = false } = {}) {
         .map((substep) => {
           const rows = substepQuestions(substep.id)
             .filter((question) => isVisible(question, answers))
-            .filter((question) => showContact || !CONTACT_QUESTION_IDS.has(question.id))
+            .filter((question) => showContact || PHONE_QUESTION_IDS.has(question.id) || !CONTACT_QUESTION_IDS.has(question.id))
             .flatMap((question) => {
+              if (PHONE_QUESTION_IDS.has(question.id) && formatAnswer(question, answers[question.id]) !== null)
+                return [
+                  htmlRow(wording(question, options), phoneMask(answers[question.id], showContact, `answers-${question.id}`)),
+                ];
               const read = answerRows(question, answers[question.id], options);
               notSure += read.notSure;
               if (read.unanswered)
@@ -843,9 +850,14 @@ const tickBox = ({ id, name, value, label, checked, disabled, note = "" }) =>
  */
 export function contactCard(record, rights, ui = {}) {
   const head = '<div class="section-head"><h2 id="contact-title">Contact details</h2></div>';
-  if (!rights?.seesContact)
-    return `<section class="panel contact-card" aria-labelledby="contact-title">${head}<p class="muted">${esc(CONTACT_NOT_SHOWN)}</p></section>`;
   const contact = record?.contact ?? {};
+  const seen = Boolean(rights?.seesContact);
+  const phones = `${htmlRow("Phone", phoneMask(contact.phone, seen, "contact-phone"))}${htmlRow(
+    "Spouse phone",
+    phoneMask(contact.spousePhone, seen, "contact-spouse-phone"),
+  )}`;
+  if (!seen)
+    return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${phones}<p class="muted">${esc(CONTACT_NOT_SHOWN)}</p></section>`;
   const shown = (id, value) => formatAnswer(findQuestion(2, id), value) ?? "Not given";
   const open = (ui.openPanels ?? []).includes("edit-contact");
   const canEdit = Boolean(rights.editContact?.allowed);
@@ -873,10 +885,7 @@ export function contactCard(record, rights, ui = {}) {
     "secondary",
     'aria-expanded="true"',
   )}</form>`;
-  return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${detailRow(
-    "Phone",
-    shown("tp_phone", contact.phone),
-  )}${detailRow("Spouse phone", shown("sp_phone", contact.spousePhone))}${detailRow(
+  return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${phones}${detailRow(
     "Best time to reach",
     shown("best_contact_time", contact.bestContactTime),
   )}${detailRow("Note", shown("best_contact_note", contact.bestContactNote))}${when(
