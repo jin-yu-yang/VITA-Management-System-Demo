@@ -90,7 +90,7 @@ fields:
 | `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
-| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
+| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once, plus `review.submit` once Continue on 9.2 has earned it (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
 | `screen`, `selectedCaseId`, `selectedPersonId`, `openPanels`, `boardFilters`, `caseTab`, `sidebarOpen` | Window-local navigation, remembered per window |
 | `boardSearchDraft` | The work board's half-typed search, kept so a redraw doesn't blank it |
 | `busy`, `error`, `retryable`, `notice`, `dialog` | What the page should show right now |
@@ -99,10 +99,10 @@ Its public API is the list at the end of the file: `start`, `stop`, `getState`, 
 sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSignIn`, `signOut`,
 `cooldownRemaining`), cases (`selectCase`, `createCase`, `editAnswers`, `saveAnswers`,
 `reconcileAnswers`, `runAction`, `retryLast`), the intake form (`currentSubstep`, `goToSubstep`,
-`moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `revealInvalid`,
-`removeMember`), document cards (`setDocumentCard`, `setDocumentGroup`), the office's Add a case
-(`openAddCase`, `toggleAddSubstep`, `saveOfficeDraft`), assistance (`runAssistanceAction`),
-presenter tools (`selectPerson`, `resetFixtures`, `loadCheckpoint`), language (`setLanguage`,
+`moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `setSummaryShut`,
+`revealInvalid`, `guardSubmit`, `removeMember`), document cards (`setDocumentCard`,
+`setDocumentGroup`), the office's Add a case (`openAddCase`, `toggleAddSubstep`,
+`saveOfficeDraft`), assistance (`runAssistanceAction`), presenter tools (`selectPerson`, `resetFixtures`, `loadCheckpoint`), language (`setLanguage`,
 `adoptLanguage`), and navigation (`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
 `dismissError`).
@@ -205,6 +205,12 @@ dropped).
   the person leaves a sub-step. Typing never reveals; it only clears. Missing answers show "Needs an
   answer" once a sub-step has been visited (`visitedSubsteps`). The Saved chip counts shown errors only;
   Review's alerts and the Submit gate count every visible invalid answer.
+- **The review gate** (openspec change `gate-review-and-redesign-summary`):
+  - `reviewAlerts(answers)` is every missing and invalid answer. 9.1 lists them, and while there is one, 9.1's Continue is disabled.
+  - 9.2 is visible only with no alerts. 9.3 is visible only with no alerts and once `review.submit` is among the visits, which only Continue on 9.2 adds (`moveSubstep`).
+  - `visibleSubsteps`, `resolveSubstep` and `adjacentSubstep` take the visits, so a gated place resolves to 9.1.
+  - The summary's sections fold through `openPanels` names `summary-shut:<step id>` (`setSummaryShut` for Expand and Collapse all), and print open.
+  - Submit's guard is `guardSubmit()`: a press on a page drawn before an alert came back reveals the invalid answers and goes to 9.1, and nothing is submitted.
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
   `case_contacts`. Missing answers are computed from the draft alone.
@@ -444,7 +450,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (923) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (934) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
