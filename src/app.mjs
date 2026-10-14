@@ -750,9 +750,10 @@ if (!config) {
   }
 
   // The panels a generic `toggle-panel` control may open: the phone's "All
-  // steps" and a documents sub-step's Maybe needed group. Rail steps have
-  // their own action (`setRailExpanded`), and nothing else is a panel here.
-  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+)$/;
+  // steps", a documents sub-step's Maybe needed group, and a summary section
+  // (`summary-shut:<step id>`, collapsed while present). Rail steps have their
+  // own action (`setRailExpanded`), and nothing else is a panel here.
+  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+|summary-shut:[a-z]+)$/;
 
   // `opener` is passed when the control was described before an await (the
   // Log a call button, captured before its case is loaded); otherwise it is
@@ -1364,6 +1365,20 @@ if (!config) {
         root
           .querySelector(`[data-action="toggle-panel"][data-panel="${CSS.escape(name)}"]`)
           ?.focus();
+        break;
+      }
+      case "summary-expand-all":
+      case "summary-collapse-all": {
+        // Every section at once (design D7): Collapse all names the sections
+        // on the page, Expand all none. The pressed button keeps the keyboard.
+        const shut =
+          action === "summary-collapse-all"
+            ? [...root.querySelectorAll('.summary-toggle[data-panel^="summary-shut:"]')].map((toggle) =>
+                toggle.dataset.panel.slice("summary-shut:".length),
+              )
+            : [];
+        controller.setSummaryShut(shut);
+        document.getElementById(target.id)?.focus();
         break;
       }
       case "mark-card": {

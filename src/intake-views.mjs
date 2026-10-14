@@ -449,11 +449,21 @@ function checkBody(view, alerts) {
 const row = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value).replace(/\n/g, "<br>")}</strong></div>`;
 
+// One summary section (design D7): the step's heading is its toggle, and its
+// body is hidden while `summary-shut:<step id>` is in openPanels. The toggle's
+// id lets any redraw put the keyboard back on it (ui.mjs restores by id first). Print shows
+// every body (styles.css), so folding changes only the screen.
+function summarySection(stepId, title, inner, { panels = [], lang = "en", extraClass = "" } = {}) {
+  const shut = panels.includes(`summary-shut:${stepId}`);
+  const id = esc(stepId);
+  return `<section class="summary-step${extraClass}"><h2 class="summary-step-head"><button type="button" id="summary-toggle-${id}" class="summary-toggle" data-action="toggle-panel" data-panel="summary-shut:${id}" aria-expanded="${!shut}" aria-controls="summary-body-${id}" aria-label="${esc(t("summary.toggle", { section: title }, lang))}">${icon("expand")}<span>${esc(title)}</span></button></h2><div id="summary-body-${id}" class="summary-body"${shut ? " hidden" : ""}>${inner}</div></section>`;
+}
+
 // Every visible answer, grouped by step and sub-step, through formatAnswer.
 // With `change`, each sub-step is listed with its Change link even when
 // nothing in it is answered yet; without, only what has answers. `off` is
 // `offWhileBusy` for the Change links.
-function answerSteps(answers, variant, { change, off = "", lang = "en" }) {
+function answerSteps(answers, variant, { change, off = "", lang = "en", panels = [] }) {
   const visible = new Set(visibleSubsteps(answers, []));
   const options = { variant, lang, answers };
   const [stepClass, subClass] = change ? ["summary-step", "summary-sub"] : ["answer-step", "answer-sub"];
@@ -471,7 +481,10 @@ function answerSteps(answers, variant, { change, off = "", lang = "en" }) {
         return `<div class="${subClass}"><div class="summary-sub-head"><h3>${title}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(substep.id)}"${off}>${esc(t("summary.change", {}, lang))}</button></div>${rows || `<p class="summary-none">${esc(t("summary.none", {}, lang))}</p>`}</div>`;
       })
       .join("");
-    return subs ? `<section class="${stepClass}"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>` : "";
+    if (!subs) return "";
+    return change
+      ? summarySection(step.id, stepTitle(step, lang), subs, { panels, lang })
+      : `<section class="${stepClass}"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>`;
   }).join("");
 }
 
@@ -480,7 +493,7 @@ function documentsSummary(view) {
   const { lang } = view;
   const step = STEPS.find((candidate) => candidate.id === "documents");
   if (isSameDay(view.answers))
-    return `<section class="summary-step summary-documents"><h2>${esc(t("doc.bring", {}, lang))}</h2>${bringList(view.cards, lang)}</section>`;
+    return summarySection("documents", t("doc.bring", {}, lang), bringList(view.cards, lang), { panels: view.openPanels, lang, extraClass: " summary-documents" });
   const subs = view.visible
     .filter(isDocuments)
     .map((id) => {
@@ -498,7 +511,7 @@ function documentsSummary(view) {
       return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant, lang))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>${esc(t("summary.change", {}, lang))}</button></div>${rows}</div>`;
     })
     .join("");
-  return subs ? `<section class="summary-step summary-documents"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>` : "";
+  return subs ? summarySection("documents", stepTitle(step, lang), subs, { panels: view.openPanels, lang, extraClass: " summary-documents" }) : "";
 }
 
 // Today's long date for the printout: "October 5, 2026", or 2026年10月5日 in Chinese.
@@ -529,11 +542,17 @@ function draftButtons(lang) {
   return `${button(`${icon("file")} ${esc(t("draft.view", {}, lang))}`, "view-draft", "secondary", `data-form="${first.form}"`)}<span class="draft-languages">${others.join('<span aria-hidden="true">·</span>')}</span>`;
 }
 
+// The summary page (gate-review-and-redesign-summary, design D6-D8): the
+// intro, then Print and the draft buttons, then Expand all and Collapse all,
+// then the printed block. Only `.summary-print` prints, every section open.
 function summaryBody(view, today) {
   const { lang } = view;
-  const printed = `<div class="summary-print"><div class="summary-meta">${row(t("id.application", {}, lang), view.record?.reference)}${row(t("summary.date", {}, lang), formatToday(today, lang))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off, lang })}${documentsSummary(view)}</div>`;
-  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(t("doc.print", {}, lang))}`, "print-summary", "secondary")}${draftButtons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
-  return printed + tools;
+  const say = (key, params) => t(key, params, lang);
+  const intro = `<div class="summary-intro">${renderRichText(say("summary.intro_all"))}${renderRichText(say("summary.intro_change", { change: say("summary.change") }))}${renderRichText(say("summary.intro_tools"))}</div>`;
+  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(say("doc.print"))}`, "print-summary", "secondary")}${draftButtons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+  const fold = `<div class="summary-fold"><button type="button" id="summary-expand-all" class="btn text" data-action="summary-expand-all">${esc(say("summary.expand_all"))}</button><button type="button" id="summary-collapse-all" class="btn text" data-action="summary-collapse-all">${esc(say("summary.collapse_all"))}</button></div>`;
+  const printed = `<div class="summary-print"><div class="summary-meta">${row(say("id.application"), view.record?.reference)}${row(say("summary.date"), formatToday(today, lang))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off, lang, panels: view.openPanels })}${documentsSummary(view)}</div>`;
+  return intro + tools + fold + printed;
 }
 
 function submitBody(view) {

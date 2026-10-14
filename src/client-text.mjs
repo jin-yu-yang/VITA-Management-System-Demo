@@ -310,7 +310,7 @@ export const TEXT = Object.freeze({
   "review.more_maybe": { en: { one: "{n} more document may be needed", other: "{n} more documents may be needed" }, zh: "还有 {n} 份文件可能需要提供" },
   "review.empty": { en: "We found no alerts or warnings in your application.", zh: "您的申请没有需要处理的问题或提醒。" },
   "review.continue_blocked": { en: "Fix the items above to continue.", zh: "请先修正上面的问题，然后继续。" },
-  "alert.missing":{ en: "Needs an answer", zh: "需要回答" },
+  "alert.missing": { en: "Needs an answer", zh: "需要回答" },
   "alert.invalid": { en: "Needs a change", zh: "需要修改" },
   "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },
   // Review & submit: the summary, its Change links and printed date, and the draft 13614-C buttons
@@ -318,6 +318,13 @@ export const TEXT = Object.freeze({
   "summary.change": { en: "Change", zh: "修改" },
   "summary.none": { en: "Nothing answered yet.", zh: "尚未回答任何问题。" },
   "summary.date": { en: "Date", zh: "日期" },
+  // The summary page's intro (gate-review-and-redesign-summary, design D6): {change} is summary.change
+  "summary.intro_all": { en: "Here is a summary of everything you told us in your application.", zh: "以下是您在申请中填写的全部信息。" },
+  "summary.intro_change": { en: "Before you submit, make sure you have answered everything that applies to you. To change an answer, choose **{change}** next to that part, or choose that part in the list of steps.", zh: "提交之前，请确认所有适用于您的问题都已回答。如需修改，请点击相应部分旁边的“{change}”，或在步骤列表中选择该部分。" },
+  "summary.intro_tools": { en: "With the buttons below, you can print this summary, or view and download a draft Form 13614-C made from your answers.", zh: "您可以用下方的按钮打印这份汇总，或查看并下载根据您的回答生成的 13614-C 草稿。" },
+  "summary.expand_all": { en: "Expand all", zh: "全部展开" },
+  "summary.collapse_all": { en: "Collapse all", zh: "全部收起" },
+  "summary.toggle": { en: "Show or hide {section}", zh: "显示或隐藏{section}" },
   "draft.view": { en: "View Draft 13614-C", zh: "查看 13614-C 草稿" },
   "draft.form_en": { en: "English version", zh: "英文版" },
   "draft.form_zh_s": { en: "简体中文版", zh: "简体中文版" },

@@ -4544,6 +4544,46 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+/* The summary page (gate-review-and-redesign-summary): intro, tools, fold, sections. */
+.summary-intro p {
+  margin: 0 0 10px;
+  color: var(--vt-intake-ink);
+}
+.summary-intro + .summary-tools {
+  margin-top: 12px;
+}
+.summary-fold {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 12px 0 8px;
+}
+.summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--vt-tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.summary-toggle .icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  transition: transform 0.15s;
+}
+.summary-toggle[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
+}
+.summary-body[hidden] {
+  display: none;
+}
+
 /* ---- The progress page's open documents ---- */
 .open-documents {
   padding: 27px 30px;
@@ -4613,6 +4653,8 @@ textarea::placeholder {
   body.print-summary .summary-print { position: absolute; inset: 0 auto auto 0; width: 100%; }
   body.print-summary .summary-tools { display: none; }
   body.print-summary .summary-sub-head .inline { display: none; }
+  .summary-print .summary-body[hidden] { display: block; }
+  .summary-toggle .icon { display: none; }
   body.print-summary .summary-meta,
   body.print-summary .summary-step {
     border: 0;

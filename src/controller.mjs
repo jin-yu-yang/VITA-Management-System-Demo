@@ -1743,6 +1743,18 @@ export function createController({
     show();
   }
 
+  // The summary's Expand all and Collapse all, in one change to `openPanels`:
+  // a section is collapsed while `summary-shut:<step id>` is there, so this
+  // replaces every such name with one per id in `stepIds` (none expands all).
+  function setSummaryShut(stepIds) {
+    state.openPanels = [
+      ...state.openPanels.filter((name) => !name.startsWith("summary-shut:")),
+      ...stepIds.map((id) => `summary-shut:${id}`),
+    ];
+    persistSession();
+    show();
+  }
+
   // The household card's Remove: the member leaves the draft, its revealed ids
   // go, and the ids of the members after it move down by one.
   function removeMember(index, group = "hh") {
@@ -2353,6 +2365,7 @@ export function createController({
     openForChange,
     backToSummary,
     setRailExpanded,
+    setSummaryShut,
     removeMember,
     saveAnswers,
     reconcileAnswers,

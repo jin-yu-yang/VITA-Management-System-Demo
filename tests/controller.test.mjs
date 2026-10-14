@@ -3052,6 +3052,23 @@ test("a rail step collapses and expands in one change each", async () => {
   controller.stop();
 });
 
+test("Expand all and Collapse all set every summary section in one change", async () => {
+  const { controller, renders } = await openV2({ answers: { tp_first_name: "Mei" } });
+  controller.togglePanel("rail-open:about");
+  controller.togglePanel("summary-shut:about");
+  let before = renders.count;
+  controller.setSummaryShut(["about", "income", "documents"]);
+  assert.equal(renders.count, before + 1);
+  assert.deepEqual(controller.getState().openPanels, [
+    "rail-open:about", "summary-shut:about", "summary-shut:income", "summary-shut:documents",
+  ]);
+  before = renders.count;
+  controller.setSummaryShut([]);
+  assert.equal(renders.count, before + 1);
+  assert.deepEqual(controller.getState().openPanels, ["rail-open:about"]);
+  controller.stop();
+});
+
 // A complete, valid draft: the sample's answers, with its contact fields in the
 // case's contact record, where the server keeps them.
 function completeV2() {
