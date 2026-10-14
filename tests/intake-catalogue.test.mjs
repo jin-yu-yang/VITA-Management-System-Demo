@@ -106,6 +106,18 @@ test("missingToSubmit", () => {
   assert.ok(missingToSubmit(2, { has_household_members: "yes" }).includes("hh"));
 });
 
+test("missingToSubmit: the Form 15080 signatures are required when shown", () => {
+  const section14 = (answers) => missingToSubmit(2, answers).filter((id) => id.startsWith("gcf_")).sort();
+  assert.deepEqual(section14({ gcf_consent: "yes" }), ["gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", gcf_tp_signature: "  " }), ["gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married" }), ["gcf_sp_signature", "gcf_tp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }), ["gcf_sp_signature"]);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin", gcf_sp_signature: "Wei Lin" }), []);
+  assert.deepEqual(section14({ gcf_consent: "yes", marital_status: "never_married", gcf_tp_signature: "Mei Lin" }), []);
+  assert.deepEqual(section14({ gcf_consent: "no" }), []);
+  assert.deepEqual(section14({}), []);
+});
+
 test("service and language labels: a code is labelled, anything else comes back as it is", () => {
   assert.equal(serviceLabel("drop_off"), "Drop-off");
   assert.equal(serviceLabel("same_day"), "Same-day");

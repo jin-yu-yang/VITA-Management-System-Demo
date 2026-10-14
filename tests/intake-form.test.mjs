@@ -465,6 +465,20 @@ test("substepStatus: the review sub-steps", () => {
   assert.deepEqual(substepStatus("review.submit", ctx(everything, { visited: ["review.submit"] })), { key: "none", text: "" });
 });
 
+test("substepStatus: refund.consent isn't Done while a required signature is missing", () => {
+  const status = (answers) =>
+    substepStatus("refund.consent", { answers, visited: ["refund.consent"], cards: cardsFor(answers) }).key;
+  assert.equal(status({ gcf_consent: "yes" }), "needs");
+  assert.equal(status({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }), "needs");
+  assert.equal(
+    status({ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin", gcf_sp_signature: "Wei Lin" }),
+    "done",
+  );
+  assert.equal(status({ gcf_consent: "yes", marital_status: "never_married", gcf_tp_signature: "Mei Lin" }), "done");
+  assert.equal(status({ gcf_consent: "no" }), "done");
+  assert.equal(status({}), "done");
+});
+
 test("stepRollup: needs, then docs, then done only when all are done", () => {
   const visited = ["about.you", "about.address", "about.marital", "about.situation", "about.irs"];
   const answers = { ...STEP2 };

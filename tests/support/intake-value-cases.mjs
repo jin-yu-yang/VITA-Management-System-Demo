@@ -156,4 +156,8 @@ export const INTAKE_VALUE_CASES = [
   both("hh", Array.from({ length: 10 }, (_, i) => ({ member_id: memberId(i + 1) })), true),
   both("hh", Array.from({ length: 11 }, (_, i) => ({ member_id: memberId(i + 1) })), false),
   both("hh", "Bo", false),
+  both("hh", [member({ middle_name: "Mei" })], true),
+  both("hh", [member({ middle_name: "x".repeat(200) })], true),
+  both("hh", [member({ middle_name: "x".repeat(201) })], false),
+  both("hh", [member({ middle_name: 7 })], false),
 ];
