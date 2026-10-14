@@ -3139,6 +3139,28 @@ test("the review gate: only Continue on 9.2 earns 9.3, and an alert sends 9.2 an
   controller.stop();
 });
 
+test("Continue moves from where the form is shown: a stored review.submit with no visit shows 9.2, and Continue earns 9.3", async () => {
+  // The first window earns 9.3, which leaves review.submit in its window state.
+  const shared = fakeSession();
+  const first = await openV2({ ...completeV2(), sessionStorage: shared });
+  await first.controller.goToSubstep("review.summary");
+  await first.controller.moveSubstep(1);
+  assert.equal(first.controller.getState().formSubstep, "review.submit");
+  first.controller.stop();
+  // A reload whose record lacks the visit (the Continue's save never landed):
+  // the window state still says review.submit.
+  const { controller, store } = await openV2({ ...completeV2(), sessionStorage: shared });
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.equal(controller.getState().visitedSubsteps.includes("review.submit"), false);
+  assert.equal(controller.currentSubstep(), "review.summary");
+  await controller.moveSubstep(1);
+  assert.equal(controller.currentSubstep(), "review.submit");
+  assert.equal(controller.getState().formSubstep, "review.submit");
+  assert.ok(controller.getState().visitedSubsteps.includes("review.submit"));
+  assert.ok(store.records.get("case-v2").intakeVisited.includes("review.submit"), "the earned visit was not saved");
+  controller.stop();
+});
+
 test("guardSubmit: a Submit pressed on a stale page with an alert reveals it and goes to 9.1, sending nothing", async () => {
   const { controller, store } = await openV2(completeV2());
   await controller.goToSubstep("review.summary");

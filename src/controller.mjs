@@ -1700,14 +1700,17 @@ export function createController({
   // Continue (+1) and Back (-1): the adjacent visible sub-step. Nothing at
   // either end, not even a visit. Continue on the summary is what earns the
   // Submit page (openspec change gate-review-and-redesign-summary, design D3):
-  // its visit is added first, so the move finds 9.3 and the save sends it.
+  // its visit is added first, so the move finds 9.3 and the save sends it. The
+  // move starts from where the form is shown (the resolved place), which is not
+  // always the stored one: a stored review.submit without its visit shows 9.2.
   async function moveSubstep(delta) {
     if (!formOpen() || substepSaveInFlight) return;
-    if (delta > 0 && currentSubstep() === "review.summary" && !state.visitedSubsteps.includes("review.submit")) {
+    const from = currentSubstep();
+    if (delta > 0 && from === "review.summary" && !state.visitedSubsteps.includes("review.submit")) {
       state.visitedSubsteps = orderVisited([...state.visitedSubsteps, "review.submit"]);
       if (!state.dirty && visitsPending()) markDirty();
     }
-    const target = adjacentSubstep(state.formSubstep, state.draftAnswers, cardsNow(), delta, state.visitedSubsteps);
+    const target = adjacentSubstep(from, state.draftAnswers, cardsNow(), delta, state.visitedSubsteps);
     if (!target) return;
     await goToSubstep(target);
   }
