@@ -73,7 +73,7 @@
 
 ## 7. The "who" questions for an unmarried client (design D8)
 
-- [ ] 7.1 Tests first:
+- [x] 7.1 Tests first:
   - `tests/intake-build.test.mjs`: the list of questions with `wordingUnmarried` grows to the ten IDs, with the Q8 texts for `us_citizen`;
   - `tests/intake-form.test.mjs`:
     - a never-married client's Q5.3 renders two radio buttons, Yes/No (是/否 in Chinese), with the direct wording;
@@ -83,13 +83,13 @@
     - `formatAnswer(on_visa, ["none"], { answers: single })` is "No", and it stays "No one" without answers;
   - `tests/staff-views.test.mjs`: Q5.4's row and the visa card's "Asked by:" line read the direct wording, with "No" as the answer;
   - `tests/client-views.test.mjs`: the office's `docCard` "Asked by:" line for the visa card.
-- [ ] 7.2 Both drafts: `> Not married:` lines under Q5.3–Q5.9 (brainstorm Q8 table). Delete the old `supabase/migrations/025_intake_catalogue_5234cc6a.sql`, then run `npm run build:intake`, which writes a new 025, and `npm run build:hant`.
-- [ ] 7.3 `src/intake-form.mjs`:
+- [x] 7.2 Both drafts: `> Not married:` lines under Q5.3–Q5.9 (brainstorm Q8 table). Delete the old `supabase/migrations/025_intake_catalogue_5234cc6a.sql`, then run `npm run build:intake`, which writes a new 025, and `npm run build:hant`.
+- [x] 7.3 `src/intake-form.mjs`:
   - `asAloneOption`;
   - `shownOptions` and `labelOf` map `me`/`none` to the yes/no labels when not married;
   - the `who` case renders radio buttons when not married;
   - `valuesFromControls` wraps a `who` radio's value as a list.
-- [ ] 7.4 Pass the answers:
+- [x] 7.4 Pass the answers:
   - `office-views.mjs` part summary and `docCard(…, { answers: view.answers })`;
   - `intake-views.mjs` `docCard` "Asked by:";
   - `staff-views.mjs` `checklistRow(…, { answers })`.
@@ -98,8 +98,8 @@
 
 ## 8. The regenerated 025 and the story
 
-- [ ] 8.1 Me: review the new 025 and dry-run it. Then delete `025_intake_catalogue_5234cc6a.sql`'s row from `vitally_private.schema_migrations` on `vitally-task2`, which you approved as A1. Then run `npm run db:migrate:test` and `npm run test:database`.
-- [ ] 8.2 `tests/browser.mjs`:
+- [x] 8.1 Me: review the new 025 and dry-run it. Then delete `025_intake_catalogue_5234cc6a.sql`'s row from `vitally_private.schema_migrations` on `vitally-task2`, which you approved as A1. Then run `npm run db:migrate:test` and `npm run test:database`.
+- [x] 8.2 `tests/browser.mjs`:
   - the never-married walk at `about.situation`: Q5.3 reads "Are you a U.S. citizen?" with two radio buttons;
   - after the married fill: Q5.3 reads "Who is a U.S. citizen?" with three check boxes.
 
@@ -107,4 +107,4 @@
 
 ## 9. Docs for the regenerated 025
 
-- [ ] 9.1 Me: the full checks (as in 6.1). Then the docs: the 025 rows in `docs/setup.md` and `docs/developer/database.md` get the new file name, and their text adds the "who" questions. The counts are updated, and a sentence in `docs/developer/frontend.md` covers the Yes/No "who" questions.
+- [x] 9.1 Me: the full checks (as in 6.1). Then the docs: the 025 rows in `docs/setup.md` and `docs/developer/database.md` get the new file name, and their text adds the "who" questions. The counts are updated, and a sentence in `docs/developer/frontend.md` covers the Yes/No "who" questions.
