@@ -3581,7 +3581,9 @@ async function runPermutation(t, roles) {
         );
         await page.locator('[data-q="hh"][data-member="0"][data-sub="middle_name"]').fill("Q");
         await page.keyboard.press("Tab");
-        await waitForQuiet(page);
+        // A version-2 draft is saved by the move to another sub-step, not by
+        // leaving a box, so the server is read after the move.
+        await jump("notes.anything");
         assert.equal(JSON.parse(await answer("hh"))[0].middle_name, "Q");
 
         await jump("refund.consent");
