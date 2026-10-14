@@ -7,7 +7,7 @@
 import { esc, button } from "./ui.mjs";
 import {
   CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
-  checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions,
+  checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions, memberNameParts,
 } from "./intake-catalogue.mjs";
 import { sourceText, localeOf, isLang } from "./language.mjs";
 import { t, sentence } from "./client-text.mjs";
@@ -737,7 +737,7 @@ function formatPhone(value) {
 
 function memberLine(question, member, options) {
   const field = (id) => (question.fields ?? []).find((f) => f.id === id);
-  const name = [member.first_name, member.last_name].filter(isAnswered).join(" ");
+  const name = memberNameParts(member).join(" ");
   const parts = [name];
   if (isAnswered(member.relationship)) parts.push(labelOf(field("relationship"), member.relationship, options));
   const lang = options.lang;

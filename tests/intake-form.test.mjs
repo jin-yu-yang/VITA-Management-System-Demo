@@ -740,6 +740,10 @@ test("formatAnswer", () => {
     formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
     `Xiao Ming Wang · ${relationship} · born Mar 14, 2015 · lived with you 12 months`,
   );
+  assert.equal(
+    formatAnswer(HH, [{ member_id: "0123456789abcdef0123456789abcdef", first_name: "Xiao Ming", middle_name: "Q", last_name: "Wang", relationship: "son_daughter", dob: "2015-03-14", months_lived: "12" }]),
+    `Xiao Ming Q Wang · ${relationship} · born Mar 14, 2015 · lived with you 12 months`,
+  );
   for (const empty of [null, undefined, "", "  ", []]) assert.equal(formatAnswer(q("tp_first_name"), empty), null);
   assert.equal(formatAnswer(q("us_citizen"), []), null);
   assert.equal(formatAnswer(HH, [{}]), null);

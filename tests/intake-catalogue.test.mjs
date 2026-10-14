@@ -4,12 +4,22 @@ import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
+  memberNameParts,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
 
 const q = (id) => findQuestion(2, id);
+
+test("memberNameParts: first, middle, last, skipping empty parts", () => {
+  assert.deepEqual(memberNameParts({ first_name: "Ana", middle_name: "Mei", last_name: "Lin" }), ["Ana", "Mei", "Lin"]);
+  assert.deepEqual(memberNameParts({ first_name: "Ana", last_name: "Lin" }), ["Ana", "Lin"]);
+  assert.deepEqual(memberNameParts({ first_name: "Ana", middle_name: "  ", last_name: "Lin" }), ["Ana", "Lin"]);
+  assert.deepEqual(memberNameParts({ middle_name: "Mei" }), ["Mei"]);
+  assert.deepEqual(memberNameParts({}), []);
+  assert.deepEqual(memberNameParts(null), []);
+});
 
 test("steps: ten for version 2", () => {
   assert.equal(stepsFor(2).length, 10);

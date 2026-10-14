@@ -289,6 +289,16 @@ test("household rows 1–4 on the form, members 5–6 in Additional Comments", (
   assert.match(comments, /Person 3 Issued an IP PIN\?, Person 4 U\.S\. citizen\?, Person 6 In 2025, was this person a resident/);
 });
 
+test("a household member's middle name is on the 13614-C row and in the comment lines", () => {
+  const withMiddle = SIX.map((m, i) => (i === 0 ? { ...m, middle_name: "Mei" } : i === 4 ? { ...m, middle_name: "Q" } : m));
+  const { text, comments } = draft({ ...MARRIED, hh: withMiddle });
+  const name = (k) => text[F(`page1[0].namesOf[0].Row${k}[0].nameFirstLast[0]`)];
+  assert.equal(name(1), "Ana Mei Lin");
+  assert.equal(name(2), "Bo Lin", "no middle name: unchanged");
+  assert.match(comments, /Person 5: Eva Q Lin · Grandchild/);
+  assert.match(comments, /Person 6: Fei Lin · /);
+});
+
 test("hidden answers are ignored", () => {
   const hidden = {
     ...MARRIED,
