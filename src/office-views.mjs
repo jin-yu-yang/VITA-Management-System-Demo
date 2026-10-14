@@ -402,7 +402,7 @@ function accordion(id, title, { open, needs, summary = "", body = "" }) {
 function partSummary(id, answers, variant) {
   const text = substepQuestions(id)
     .filter((question) => isVisible(question, answers))
-    .map((question) => formatAnswer(question, answers[question.id], { variant, lang: "en" }))
+    .map((question) => formatAnswer(question, answers[question.id], { variant, lang: "en", answers }))
     .filter((value) => value !== null && value !== undefined && value !== "")
     .map((value) => String(value).replace(/\s*\n\s*/g, ", "))
     .join(" · ");
@@ -453,7 +453,7 @@ function documentsBody(view) {
     if (!mine.length) return "";
     const title = findSubstep(`documents.${name}`)?.title?.general?.en ?? name;
     return `<h4 class="add-docs-title">${esc(title)}</h4><div class="doc-list">${mine
-      .map((card) => docCard(card, { links: false, off, office: true }))
+      .map((card) => docCard(card, { links: false, off, office: true, answers: view.answers }))
       .join("")}</div>`;
   }).join("");
   return `${when(!view.savedCase, '<p class="field-note">Save the draft first to mark documents.</p>')}${groups}`;

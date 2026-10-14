@@ -1744,3 +1744,11 @@ test("the draft 13614-C buttons show to staff who work on a version-2 case", () 
   assert.equal(has(tools(checklistCase({ preparerId: "someone-else" }), ALEX)), false);
   assert.doesNotMatch(tools(checklistCase({ preparerId: "someone-else" }), ALEX), /view-draft|draft-ready/);
 });
+
+test("staff see an unmarried client's who answers as Yes/No, with the wording the client saw", () => {
+  const panel = v2Panel(v2Case({ answers: { on_visa: ["none"] } }));
+  assert.match(panel, /<span>Were you in the U\.S\. on a visa in 2025\?<\/span><strong>No<\/strong>/);
+  assert.doesNotMatch(panel, /Who was in the U\.S\. on a visa/);
+  const docs = checklist(v2Case({ answers: { on_visa: ["me"] } }));
+  assert.match(docs, /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
+});

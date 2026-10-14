@@ -609,7 +609,18 @@ test("the real sub-steps carry their kind, cards and lead lines", () => {
 test("the real catalogue's unmarried wording, leads and intro", () => {
   const questions = allQuestions(COMMITTED);
   const unmarried = (id) => findQuestion(COMMITTED, id).wordingUnmarried;
-  assert.deepEqual(questions.filter((q) => q.wordingUnmarried).map((q) => q.id).sort(), ["claimed_by_other", "inc_wages_job_count", "opt_veteran"]);
+  assert.deepEqual(questions.filter((q) => q.wordingUnmarried).map((q) => q.id).sort(), [
+    "claimed_by_other", "digital_assets", "disabled", "fulltime_student", "inc_wages_job_count",
+    "ippin", "legally_blind", "on_visa", "opt_veteran", "us_citizen",
+  ]);
+  assert.deepEqual(unmarried("us_citizen"), {
+    general: { en: "Are you a U.S. citizen?", zh: "您是美国公民吗？" },
+    senior: { en: "Are you a U.S. citizen?", zh: "您是美国公民吗？" },
+  });
+  assert.deepEqual(unmarried("ippin").senior, {
+    en: "Did you get an Identity Protection PIN (IP PIN) from the IRS?",
+    zh: "您收到过国税局（IRS）寄来的 6 位数字号码，叫\"身份保护码\"（IP PIN）吗？",
+  });
   assert.deepEqual(unmarried("claimed_by_other"), {
     general: { en: "Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return?", zh: "是否有其他人（如父母或成年子女）可以在其报税表上将您列为受抚养人？" },
     senior: { en: "Can someone else (like a parent or grown child) list you as a dependent on their tax return?", zh: "有没有别人（比如您的父母或成年子女）报税时，会把您写进他们的税表里，算作由他们养活的人？" },

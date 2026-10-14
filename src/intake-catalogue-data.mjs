@@ -1298,6 +1298,16 @@ export default {
                   "en": "Who is a U.S. citizen?",
                   "zh": "您和您爱人，谁是美国公民？"
                 }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Are you a U.S. citizen?",
+                  "zh": "您是美国公民吗？"
+                },
+                "senior": {
+                  "en": "Are you a U.S. citizen?",
+                  "zh": "您是美国公民吗？"
+                }
               }
             },
             {
@@ -1338,6 +1348,16 @@ export default {
                   "en": "Who was in the U.S. on a visa in 2025?",
                   "zh": "2025 年，您和您爱人，谁是拿签证待在美国的？"
                 }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Were you in the U.S. on a visa in 2025?",
+                  "zh": "2025 年，您是否持签证在美国？"
+                },
+                "senior": {
+                  "en": "Were you in the U.S. on a visa in 2025?",
+                  "zh": "2025 年，您是拿签证待在美国的吗？"
+                }
               }
             },
             {
@@ -1372,6 +1392,16 @@ export default {
                 "senior": {
                   "en": "Who was a full-time student in 2025?",
                   "zh": "2025 年，您和您爱人，谁至少有 5 个月是学校认定的全日制学生？"
+                }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Were you a full-time student in 2025?",
+                  "zh": "2025 年，您是否为全日制学生？"
+                },
+                "senior": {
+                  "en": "Were you a full-time student in 2025?",
+                  "zh": "2025 年，您有没有至少 5 个月是学校认定的全日制学生？"
                 }
               }
             },
@@ -1413,6 +1443,16 @@ export default {
                   "en": "Who is legally blind?",
                   "zh": "您和您爱人，谁有医生证明是法定失明？"
                 }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Are you legally blind?",
+                  "zh": "您是否属于法定失明？"
+                },
+                "senior": {
+                  "en": "Are you legally blind?",
+                  "zh": "您有医生证明是法定失明吗？"
+                }
               }
             },
             {
@@ -1452,6 +1492,16 @@ export default {
                 "senior": {
                   "en": "Who is totally and permanently disabled?",
                   "zh": "您和您爱人，谁是完全并且永久残疾？"
+                }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Are you totally and permanently disabled?",
+                  "zh": "您是否属于完全且永久性残疾？"
+                },
+                "senior": {
+                  "en": "Are you totally and permanently disabled?",
+                  "zh": "您是完全并且永久残疾吗？"
                 }
               }
             },
@@ -1493,6 +1543,16 @@ export default {
                   "en": "Who got an Identity Protection PIN (IP PIN) from the IRS?",
                   "zh": "您和您爱人，谁收到过国税局（IRS）寄来的 6 位数字号码，叫\"身份保护码\"（IP PIN）？"
                 }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Were you issued an Identity Protection PIN (IP PIN)?",
+                  "zh": "您是否持有国税局（IRS）发放的身份保护码（IP PIN）？"
+                },
+                "senior": {
+                  "en": "Did you get an Identity Protection PIN (IP PIN) from the IRS?",
+                  "zh": "您收到过国税局（IRS）寄来的 6 位数字号码，叫\"身份保护码\"（IP PIN）吗？"
+                }
               }
             },
             {
@@ -1518,6 +1578,16 @@ export default {
                 "senior": {
                   "en": "Who owned or held any digital money (like Bitcoin or other crypto) in 2025?",
                   "zh": "2025 年，您和您爱人，谁拥有过数字货币（比如比特币、以太坊、狗狗币）？"
+                }
+              },
+              "wordingUnmarried": {
+                "general": {
+                  "en": "Did you own or hold any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025?",
+                  "zh": "2025 年，您是否拥有或持有数字资产（如比特币、以太坊等加密货币）？"
+                },
+                "senior": {
+                  "en": "Did you own or hold any digital money (like Bitcoin or other crypto) in 2025?",
+                  "zh": "2025 年，您拥有过数字货币（比如比特币、以太坊、狗狗币）吗？"
                 }
               }
             }

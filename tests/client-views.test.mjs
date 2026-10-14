@@ -1367,3 +1367,12 @@ test("a document request labels the office's words in Chinese and shows them as 
   assert.match(en, /<h2>Mileage record<\/h2><p>Please send it\.<\/p>/);
   assert.match(en, /<p>A volunteer requested a document: Mileage record<\/p>/);
 });
+
+test("the office's document card asks the question the client saw", () => {
+  const answers = { ...makeSampleAnswers(), on_visa: ["me"] };
+  const visa = cardsFor(answers, []).find((card) => card.slotId === "visa.tp");
+  assert.match(docCard(visa, { links: false, office: true, answers }), /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
+  const married = { ...makeSampleAnswers({ married: true }), on_visa: ["me"] };
+  const theirs = cardsFor(married, []).find((card) => card.slotId === "visa.tp");
+  assert.match(docCard(theirs, { links: false, office: true, answers: married }), /Asked by: Who was in the U\.S\. on a visa in 2025\?/);
+});

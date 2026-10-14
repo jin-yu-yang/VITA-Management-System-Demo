@@ -213,7 +213,7 @@ export function conflictForm(state) {
   const variant = variantOf(mine);
   const lang = formLang(state);
   const shown = (question, value) =>
-    esc(formatAnswer(question, value, { variant, lang }) ?? "—").replace(/\n/g, "<br>");
+    esc(formatAnswer(question, value, { variant, lang, answers: mine }) ?? "—").replace(/\n/g, "<br>");
   const rows = allQuestionsV2()
     .filter((question) => !sameAnswer(sendable(question, mine[question.id]), sendable(question, server[question.id])))
     .map(

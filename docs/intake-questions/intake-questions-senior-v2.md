@@ -212,28 +212,35 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q5.3** Who is a U.S. citizen? / 您和您爱人，谁是美国公民？
 `us_citizen` · Who (multi-select) · Required
+> Not married: Are you a U.S. citizen? / 您是美国公民吗？
 
 **Q5.4** Who was in the U.S. on a visa in 2025? / 2025 年，您和您爱人，谁是拿签证待在美国的？
 `on_visa` · Who (multi-select) · Required
+> Not married: Were you in the U.S. on a visa in 2025? / 2025 年，您是拿签证待在美国的吗？
 > Tip: For example, a student visa or work visa. A green card is **NOT** a visa. / 比如学生签证、工作签证。**有绿卡不算签证，请不要选。**
 
 **Q5.5** Who was a full-time student in 2025? / 2025 年，您和您爱人，谁至少有 5 个月是学校认定的全日制学生？
 `fulltime_student` · Who (multi-select) · Required
+> Not married: Were you a full-time student in 2025? / 2025 年，您有没有至少 5 个月是学校认定的全日制学生？
 
 **Q5.6** Who is legally blind? / 您和您爱人，谁有医生证明是法定失明？
 `legally_blind` · Who (multi-select) · Required
+> Not married: Are you legally blind? / 您有医生证明是法定失明吗？
 > Tip: A doctor said you cannot see well even with glasses. / 意思是：医生证明戴眼镜也看不清楚。
 
 **Q5.7** Who is totally and permanently disabled? / 您和您爱人，谁是完全并且永久残疾？
 `disabled` · Who (multi-select) · Required
+> Not married: Are you totally and permanently disabled? / 您是完全并且永久残疾吗？
 > Tip: A doctor said you cannot work because of a health problem that will last at least 1 year or forever. / 意思是：医生证明因为身体问题不能工作，而且至少会持续一年或一辈子。
 
 **Q5.8** Who got an Identity Protection PIN (IP PIN) from the IRS? / 您和您爱人，谁收到过国税局（IRS）寄来的 6 位数字号码，叫"身份保护码"（IP PIN）？
 `ippin` · Who (multi-select) · Required
+> Not married: Did you get an Identity Protection PIN (IP PIN) from the IRS? / 您收到过国税局（IRS）寄来的 6 位数字号码，叫"身份保护码"（IP PIN）吗？
 > Tip: The IRS sends a new one each year, often after identity theft. You may also have signed up for it yourself. If you have one, bring this year's letter (CP01A) or a screenshot from your IRS online account. You will upload it in the Documents step. / 这个号码通常是身份被盗用后国税局寄来的，也可能是您自己申请的，**每年都会换一个新的**。如果有，请准备今年收到的那封信（CP01A）或国税局网上账户的截图。您将在「上传文件」步骤上传。
 
 **Q5.9** Who owned or held any digital money (like Bitcoin or other crypto) in 2025? / 2025 年，您和您爱人，谁拥有过数字货币（比如比特币、以太坊、狗狗币）？
 `digital_assets` · Who (multi-select) · Required
+> Not married: Did you own or hold any digital money (like Bitcoin or other crypto) in 2025? / 2025 年，您拥有过数字货币（比如比特币、以太坊、狗狗币）吗？
 
 ---
 

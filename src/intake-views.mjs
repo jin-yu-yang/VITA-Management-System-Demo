@@ -300,7 +300,7 @@ const CARD_WORDS = Object.freeze({
 // English: a hint or owner line with an `office` version shows that one;
 // otherwise `lang` is the client's language (spec 2026-10-05 §3).
 // Card text reaches the screen through sourceText.
-export function docCard(card, { links = true, off = "", office = false, lang = "en" } = {}) {
+export function docCard(card, { links = true, off = "", office = false, lang = "en", answers } = {}) {
   const id = `doc-${esc(dashed(card.slotId))}`;
   const optional = card.group === "optional";
   const language = office ? "en" : lang;
@@ -310,7 +310,7 @@ export function docCard(card, { links = true, off = "", office = false, lang = "
   const words = office ? CARD_WORDS.office : Object.fromEntries(Object.entries(CARD_WORDS.client).map(([k, key]) => [k, say(key)]));
   const target = links && card.ask ? substepOfQuestion(card.ask) : null;
   const whyText = text(card.why);
-  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en" }) : "";
+  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en", answers }) : "";
   const why = office
     ? asked
       ? `<p class="doc-why">Asked by: ${esc(asked)}</p>`

@@ -130,7 +130,8 @@ test("who shows My spouse only while married", () => {
   assert.ok(!client(who, null).includes(whoLabel("spouse")));
   assert.ok(!client(who, null, { answers: { marital_status: "never_married" } }).includes(whoLabel("spouse")));
   assert.ok(client(who, null, { answers: { marital_status: "married" } }).includes(whoLabel("spouse")));
-  assert.ok(client(who, null).includes(whoLabel("me")) && client(who, null).includes(whoLabel("none")));
+  const married = client(who, null, { answers: { marital_status: "married" } });
+  assert.ok(married.includes(whoLabel("me")) && married.includes(whoLabel("none")));
 });
 
 test("a ranged number inside a household card: its range as text, no min or max", () => {
@@ -987,4 +988,41 @@ test("part statuses, household buttons and the select's blank option in Chinese"
     assert.ok(renderQuestion(relationship, null, { lang: "zh-Hant" }).includes(`<option value="">${HANT_MAP["请选择"]}</option>`));
     assert.match(client(HH, [member], { lang: "zh-Hant" }), new RegExp(`data-action="add-member"[^>]*>${HANT_MAP["添加一位家庭成员"]}</button>`));
   });
+});
+
+test("an unmarried client's who question asks directly, as Yes/No radio buttons; the answer stays a list", () => {
+  const single = { marital_status: "never_married" };
+  const married = { marital_status: "married" };
+  const citizen = renderQuestion(q("us_citizen"), ["none"], { answers: single });
+  assert.match(citizen, /Are you a U\.S\. citizen\?/);
+  assert.equal((citizen.match(/type="radio"/g) ?? []).length, 2);
+  assert.doesNotMatch(citizen, /type="checkbox"/);
+  assert.match(citizen, /value="me"><span>Yes<\/span>/);
+  assert.match(citizen, /value="none" checked><span>No<\/span>/);
+  assert.match(renderQuestion(q("us_citizen"), null, { lang: "zh-Hans", answers: single }), /您是美国公民吗？[\s\S]*<span>是<\/span>[\s\S]*<span>否<\/span>/);
+
+  const asked = renderQuestion(q("us_citizen"), ["me"], { answers: married });
+  assert.match(asked, /Who is a U\.S\. citizen\?/);
+  assert.equal((asked.match(/type="checkbox"/g) ?? []).length, 3);
+  assert.match(asked, /My spouse/);
+
+  // Section 8's "who" questions: same options, their own wording.
+  const fund = renderQuestion(q("pecf"), null, { answers: single });
+  assert.equal((fund.match(/type="radio"/g) ?? []).length, 2);
+  assert.match(fund, /<span>Yes<\/span>[\s\S]*<span>No<\/span>/);
+
+  // A radio's single value is read back as a list.
+  const radios = (checked) => [
+    { q: "us_citizen", type: "radio", value: "me", checked: checked === "me" },
+    { q: "us_citizen", type: "radio", value: "none", checked: checked === "none" },
+  ];
+  assert.deepEqual(valuesFromControls(radios("me")), { us_citizen: ["me"] });
+  assert.deepEqual(valuesFromControls(radios("none")), { us_citizen: ["none"] });
+  assert.deepEqual(valuesFromControls(radios(null)), { us_citizen: null });
+
+  // Labels: Yes/No with an unmarried application, Me/No one without one or when married.
+  assert.equal(formatAnswer(q("on_visa"), ["none"], { answers: single }), "No");
+  assert.equal(formatAnswer(q("on_visa"), ["me"], { answers: single }), "Yes");
+  assert.equal(formatAnswer(q("on_visa"), ["none"]), "No one");
+  assert.equal(formatAnswer(q("on_visa"), ["me", "spouse"], { answers: married }), "Me, My spouse");
 });
