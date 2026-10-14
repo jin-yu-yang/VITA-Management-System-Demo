@@ -366,9 +366,14 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   assert.match(app, /addEventListener\("afterprint"/);
-  assert.match(app, /goToSubstep\("review\.check"\)/, "a refused Submit goes to the alerts");
   for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/, /formStep/, /setFormStep/, /"edit-"/])
     assert.doesNotMatch(app, gone);
+  // The Submit guard's decision is the controller's (guardSubmit, design D5):
+  // app.mjs shows the toast and moves the keyboard, and checks nothing itself.
+  const guard = app.slice(app.indexOf('if (type === "SUBMIT" && state.savedCase)'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
+  assert.ok(guard.length > 0, "the SUBMIT block");
+  assert.match(guard, /sweepV2Form\(\);[\s\S]*if \(!\(await controller\.guardSubmit\(\)\)\) \{[\s\S]*toast\.needs_change[\s\S]*focusV2Arrival\(\);[\s\S]*return;/);
+  assert.doesNotMatch(guard, /invalidAnswers|missingToSubmit/);
 });
 
 // Part 4c (Task 2): the staff checklist emits mark-card, move-card and

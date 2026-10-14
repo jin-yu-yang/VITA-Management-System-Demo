@@ -5,11 +5,10 @@ import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
 import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
-  invalidAnswers,
   needsRedraw,
   newMemberId,
   noteState,
@@ -890,26 +889,12 @@ if (!config) {
       // the saved case's revision: otherwise it would be dropped, and the
       // refresh would raise a conflict on a submitted case.
       sweepV2Form();
-      // Submit's disabled state is drawn at render, and typing never
-      // redraws, so the gate is checked again from the draft (spec §2.5:
-      // nothing invalid is ever submitted). Failing it reveals every invalid
-      // answer and goes to review.check, whose alerts list them.
-      const draft = controller.getState().draftAnswers ?? {};
-      const invalid = invalidAnswers(null, draft);
-      if (
-        invalid.length ||
-        missingToSubmit(2, draft).length ||
-        !controller.getState().openPanels.includes("confirmed")
-      ) {
-        quiet = true;
-        try {
-          for (const id of invalid) controller.revealInvalid(id);
-        } finally {
-          quiet = false;
-        }
-        // Submit stays off: the alerts list says what to fix, and the
-        // keyboard goes to its heading.
-        await controller.goToSubstep("review.check");
+      // Submit's disabled state is drawn at render, and a press can land on a
+      // page drawn before the draft changed, so the controller checks the
+      // draft again (guardSubmit). Refused, it has revealed every invalid
+      // answer and gone to review.check: the toast says why, and the keyboard
+      // goes to the alerts heading.
+      if (!(await controller.guardSubmit())) {
         notify(t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;

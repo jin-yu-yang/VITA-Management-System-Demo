@@ -16,7 +16,7 @@ import {
   renderQuestion,
   renderRichText,
   formatAnswer,
-  invalidAnswers,
+  reviewAlerts,
   visibleSubsteps,
   resolveSubstep,
   substepStatus,
@@ -34,7 +34,6 @@ import {
   leadOf,
   introOf,
   isVisible,
-  missingToSubmit,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
@@ -107,8 +106,8 @@ function formView(state) {
   const cards = cardsFor(answers, record?.documentCards ?? []);
   const visited = Array.isArray(state.visitedSubsteps) ? state.visitedSubsteps : [];
   const revealed = new Set(state.revealed ?? []);
-  const visible = visibleSubsteps(answers, cards);
-  const current = resolveSubstep(state.formSubstep, answers, cards) ?? visible[0];
+  const visible = visibleSubsteps(answers, cards, visited);
+  const current = resolveSubstep(state.formSubstep, answers, cards, visited) ?? visible[0];
   const substep = findSubstep(current);
   const inStep = visible.filter((id) => findSubstep(id).step.id === substep.step.id);
   const lang = viewLang(state);
@@ -384,13 +383,14 @@ const byOrder = (a, b) => {
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
 };
 
-// Alerts block Submit: every missing required answer and every invalid one,
-// from the draft alone (it holds the contact fields).
+// Alerts block 9.1's Continue and Submit: every missing required answer and
+// every invalid one, from the draft alone (reviewAlerts, design D2).
 function alertsOf(answers) {
-  return [
-    ...missingToSubmit(2, answers).map((id) => ({ id, kind: "missing", flag: "alert.missing" })),
-    ...invalidAnswers(null, answers).map((id) => ({ id, kind: "invalid", flag: "alert.invalid" })),
-  ].map((item) => ({ ...item, substep: substepOfQuestion(topId(item.id)) }));
+  return reviewAlerts(answers).map((item) => ({
+    ...item,
+    flag: item.kind === "missing" ? "alert.missing" : "alert.invalid",
+    substep: substepOfQuestion(topId(item.id)),
+  }));
 }
 
 // Warnings never block: Needed cards Not done or Later, and the open Maybe

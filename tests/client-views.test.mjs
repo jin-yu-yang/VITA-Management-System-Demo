@@ -890,7 +890,7 @@ test("Back, Continue and Back to summary", () => {
   const middle = intakeScreen(v2State({ formSubstep: "about.you" }));
   assert.match(middle, /data-action="back-step"/);
   assert.match(middle, /<button type="submit" class="btn primary"[^>]*>Continue/);
-  const submit = intakeScreen(v2State({ formSubstep: "review.submit" }));
+  const submit = intakeScreen(v2State({ formSubstep: "review.submit", visitedSubsteps: ["review.submit"] }));
   assert.match(submit, /data-action="back-step"/);
   assert.doesNotMatch(submit, /type="submit"/);
   // A Change link's return: the primary button goes back to the summary instead.
@@ -964,7 +964,7 @@ test("while an action is in flight, the form's navigation and the card marks are
     { formSubstep: "documents.identity", openPanels: ["maybe:documents.identity"] },
     { formSubstep: "review.check", draftAnswers },
     { formSubstep: "review.summary", savedCase: later },
-    { formSubstep: "review.submit", draftAnswers },
+    { formSubstep: "review.submit", visitedSubsteps: ["review.submit"] },
   ];
   const seen = new Set();
   for (const page of pages) {
@@ -1118,18 +1118,19 @@ test("review.summary: everything the printout shows sits in one block, with Chan
 });
 
 test("review.submit: Submit waits for no alerts and the confirmation", () => {
-  const clean = { formSubstep: "review.submit" };
+  const clean = { formSubstep: "review.submit", visitedSubsteps: ["review.submit"] };
   const html = intakeScreen(v2State(clean));
   assert.match(html, /<input type="checkbox" id="field-confirmed" name="confirmed"\s*>/);
   assert.match(html, /I have checked my answers/);
   assert.match(submitOf(html), /disabled/);
   assert.doesNotMatch(submitOf(intakeScreen(v2State({ ...clean, openPanels: ["confirmed"] }))), /disabled/);
-  // Any alert keeps it disabled, ticked or not, and says where to look.
-  const missing = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: without(sample(), "tp_first_name") }));
-  assert.match(submitOf(missing), /disabled/);
-  assert.match(missing, /data-action="go-substep" data-substep="review\.check"/);
-  const invalid = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers: { ...sample(), email: "a@" } }));
-  assert.match(submitOf(invalid), /disabled/);
+  // With an alert there is no Submit page: 9.3 resolves to 9.1, whose
+  // Continue waits (the gate). Submit's own rule stays for a stale page.
+  for (const draftAnswers of [without(sample(), "tp_first_name"), { ...sample(), email: "a@" }]) {
+    const html = intakeScreen(v2State({ ...clean, openPanels: ["confirmed"], draftAnswers }));
+    assert.match(html, /id="intake-v2-form"[^>]*data-substep="review\.check"/);
+    assert.doesNotMatch(html, /data-case-action="SUBMIT"/);
+  }
   // Document warnings never block.
   assert.ok(cardsFor(sample(), []).some((card) => card.group === "needed" && card.status === "not_done"));
   // A conflict or a save in flight does.
