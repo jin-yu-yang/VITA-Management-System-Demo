@@ -599,6 +599,35 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
 export const detailRow = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`;
 
+// A row whose value is already HTML (built from escaped parts), such as a
+// masked phone. `detailRow` keeps escaping its value.
+export const htmlRow = (label, html) =>
+  `<div class="detail-row"><span>${esc(label)}</span><strong>${html}</strong></div>`;
+
+// A client phone on a staff screen (D5, DESIGN.md §8): always masked first.
+// `allowed` is `canSeeContact`, the only rule. An allowed viewer reveals the
+// number on hover or focus (CSS only); it is a text node, never an attribute,
+// so screen readers read it. Anyone else gets the last four digits and a lock,
+// and the full number never reaches the page. `id` (allowed only) lets a
+// redraw put focus back, so a revealed number stays revealed. An empty phone
+// reads "Not given", the contact card's wording; the answers panel never
+// passes one here (its unanswered path says "Not answered").
+export const PHONE_LOCKED = "Claim this case to see the full number";
+const PHONE_QUESTION = findQuestion(2, "tp_phone");
+
+export function phoneMask(value, allowed, id = "") {
+  const full = formatAnswer(PHONE_QUESTION, value ?? "");
+  if (!full) return esc("Not given");
+  const digits = String(value).replace(/\D/g, "");
+  const last = digits.length >= 4 ? digits.slice(-4) : "";
+  const dots = `<span class="phone-dots" aria-hidden="true">(•••) •••-${last || "••••"}</span>`;
+  if (!allowed) {
+    const said = `${last ? `Ends in ${last}. ` : ""}${PHONE_LOCKED}.`;
+    return `<span class="phone-mask is-locked" title="${esc(PHONE_LOCKED)}">${dots}<span class="sr-only">${esc(said)}</span>${icon("lock")}</span>`;
+  }
+  return `<span class="phone-mask"${id ? ` id="${esc(id)}"` : ""} tabindex="0">${dots}<span class="phone-full">${esc(full)}</span>${icon("eye")}</span>`;
+}
+
 // A refused or interrupted action, said beside the work it belongs to rather
 // than only in the page-wide banner — with the same two controls, so nothing is
 // lost by announcing it here instead.
@@ -718,6 +747,9 @@ export function answersPanel(record, { person } = {}) {
 }
 
 const CONTACT_QUESTION_IDS = new Set(Object.keys(CONTACT_FIELDS));
+// The phones show masked to anyone (D5); best time and the note only to
+// viewers who may see contact details.
+const PHONE_QUESTION_IDS = new Set(["tp_phone", "sp_phone"]);
 const NOT_SURE = "not_sure";
 const withoutQuestionMark = (text) => text.replace(/\s*\?\s*$/, "");
 const answerRow = (label, value, className = "", flag = "") =>
@@ -778,8 +810,12 @@ export function answersPanelV2(record, { showContact = false } = {}) {
         .map((substep) => {
           const rows = substepQuestions(substep.id)
             .filter((question) => isVisible(question, answers))
-            .filter((question) => showContact || !CONTACT_QUESTION_IDS.has(question.id))
+            .filter((question) => showContact || PHONE_QUESTION_IDS.has(question.id) || !CONTACT_QUESTION_IDS.has(question.id))
             .flatMap((question) => {
+              if (PHONE_QUESTION_IDS.has(question.id) && formatAnswer(question, answers[question.id]) !== null)
+                return [
+                  htmlRow(wording(question, options), phoneMask(answers[question.id], showContact, `answers-${question.id}`)),
+                ];
               const read = answerRows(question, answers[question.id], options);
               notSure += read.notSure;
               if (read.unanswered)
@@ -814,9 +850,14 @@ const tickBox = ({ id, name, value, label, checked, disabled, note = "" }) =>
  */
 export function contactCard(record, rights, ui = {}) {
   const head = '<div class="section-head"><h2 id="contact-title">Contact details</h2></div>';
-  if (!rights?.seesContact)
-    return `<section class="panel contact-card" aria-labelledby="contact-title">${head}<p class="muted">${esc(CONTACT_NOT_SHOWN)}</p></section>`;
   const contact = record?.contact ?? {};
+  const seen = Boolean(rights?.seesContact);
+  const phones = `${htmlRow("Phone", phoneMask(contact.phone, seen, "contact-phone"))}${htmlRow(
+    "Spouse phone",
+    phoneMask(contact.spousePhone, seen, "contact-spouse-phone"),
+  )}`;
+  if (!seen)
+    return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${phones}<p class="muted">${esc(CONTACT_NOT_SHOWN)}</p></section>`;
   const shown = (id, value) => formatAnswer(findQuestion(2, id), value) ?? "Not given";
   const open = (ui.openPanels ?? []).includes("edit-contact");
   const canEdit = Boolean(rights.editContact?.allowed);
@@ -844,10 +885,7 @@ export function contactCard(record, rights, ui = {}) {
     "secondary",
     'aria-expanded="true"',
   )}</form>`;
-  return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${detailRow(
-    "Phone",
-    shown("tp_phone", contact.phone),
-  )}${detailRow("Spouse phone", shown("sp_phone", contact.spousePhone))}${detailRow(
+  return `<section class="panel contact-card" aria-labelledby="contact-title">${head}${phones}${detailRow(
     "Best time to reach",
     shown("best_contact_time", contact.bestContactTime),
   )}${detailRow("Note", shown("best_contact_note", contact.bestContactNote))}${when(

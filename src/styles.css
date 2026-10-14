@@ -4647,6 +4647,62 @@ textarea::placeholder {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A client phone (D5, DESIGN.md §8): masked first. An allowed viewer's
+   number is in the page but clipped like .sr-only (screen readers read it)
+   until hover or focus; focus stays after a click, so it can be copied. */
+.phone-mask {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+}
+.phone-mask .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--vt-phase-available);
+}
+.phone-mask .phone-full {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.phone-mask:not(.is-locked):hover .phone-full,
+.phone-mask:not(.is-locked):focus-within .phone-full {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+}
+.phone-mask:not(.is-locked):hover .phone-dots,
+.phone-mask:not(.is-locked):focus-within .phone-dots {
+  display: none;
+}
+/* A click focuses the mask and holds the number open (DESIGN.md §8): a light
+   outline shows why it stays; keyboard focus gets the full ring below. */
+.phone-mask[tabindex]:focus {
+  outline: 2px solid var(--vt-primary-line);
+  outline-offset: 2px;
+}
+.phone-mask[tabindex]:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.phone-mask.is-locked,
+.phone-mask.is-locked .icon {
+  color: var(--vt-muted);
+  font-weight: 400;
+}
+.phone-mask.is-locked {
+  cursor: help;
+}
 .answers-v2 .detail-row > strong {
   min-width: 0;
   overflow-wrap: anywhere;

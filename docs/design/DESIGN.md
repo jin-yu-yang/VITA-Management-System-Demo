@@ -355,8 +355,8 @@ Available `#a39bd8` · Waiting for preparation `#6a5acd` · Waiting on client `#
 The volunteer work board shows only three phases as tabs (Available, Waiting for preparation, Waiting for review), with a Mine / Everyone switch on the last two. The admin case pool shows every phase.
 
 ### Masked phone
-- Lists always show `(•••) •••-1234` in tabular numerals.
-- When the viewer may see the number (an admin, or a volunteer on their own case), a small lavender `visibility` icon follows; hover or keyboard focus swaps in the full number. There's no click-to-copy, so a shared screen never keeps a number on display.
+- Staff screens always show a client's phone as `(•••) •••-1234` in tabular numerals first. Today that is the case page's contact card and intake answers; no list shows a phone.
+- When the viewer may see the number (an admin, or a volunteer on their own case), a small lavender `visibility` icon follows; hover or keyboard focus swaps in the full number. A click keeps it shown only while the mask has focus, so it can be selected and copied; clicking elsewhere or pressing Tab hides it again. There's no copy button.
 - When the viewer may not see it (a volunteer on an unclaimed or someone else's case), the mask is muted with a `lock` icon and the tooltip "Claim this case to see the full number".
 
 ### Access
