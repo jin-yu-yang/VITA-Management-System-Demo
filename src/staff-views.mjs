@@ -599,6 +599,35 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
 export const detailRow = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`;
 
+// A row whose value is already HTML (built from escaped parts), such as a
+// masked phone. `detailRow` keeps escaping its value.
+export const htmlRow = (label, html) =>
+  `<div class="detail-row"><span>${esc(label)}</span><strong>${html}</strong></div>`;
+
+// A client phone on a staff screen (D5, DESIGN.md §8): always masked first.
+// `allowed` is `canSeeContact`, the only rule. An allowed viewer reveals the
+// number on hover or focus (CSS only); it is a text node, never an attribute,
+// so screen readers read it. Anyone else gets the last four digits and a lock,
+// and the full number never reaches the page. `id` (allowed only) lets a
+// redraw put focus back, so a revealed number stays revealed. An empty phone
+// reads "Not given", the contact card's wording; the answers panel never
+// passes one here (its unanswered path says "Not answered").
+export const PHONE_LOCKED = "Claim this case to see the full number";
+const PHONE_QUESTION = findQuestion(2, "tp_phone");
+
+export function phoneMask(value, allowed, id = "") {
+  const full = formatAnswer(PHONE_QUESTION, value ?? "");
+  if (!full) return esc("Not given");
+  const digits = String(value).replace(/\D/g, "");
+  const last = digits.length >= 4 ? digits.slice(-4) : "";
+  const dots = `<span class="phone-dots" aria-hidden="true">(•••) •••-${last || "••••"}</span>`;
+  if (!allowed) {
+    const said = `${last ? `Ends in ${last}. ` : ""}${PHONE_LOCKED}.`;
+    return `<span class="phone-mask is-locked" title="${esc(PHONE_LOCKED)}">${dots}<span class="sr-only">${esc(said)}</span>${icon("lock")}</span>`;
+  }
+  return `<span class="phone-mask"${id ? ` id="${esc(id)}"` : ""} tabindex="0">${dots}<span class="phone-full">${esc(full)}</span>${icon("eye")}</span>`;
+}
+
 // A refused or interrupted action, said beside the work it belongs to rather
 // than only in the page-wide banner — with the same two controls, so nothing is
 // lost by announcing it here instead.

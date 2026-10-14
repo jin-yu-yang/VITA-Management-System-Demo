@@ -25,6 +25,9 @@ import {
   contactCard,
   materialsCard,
   documentChecklist,
+  phoneMask,
+  htmlRow,
+  PHONE_LOCKED,
 } from "../src/staff-views.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
@@ -1319,6 +1322,50 @@ const without = (record, ...ids) => ({
 const v2Panel = (record, person = SAM) => answersPanel(record, { person });
 const D5_SENTENCE =
   "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed.";
+
+// ---------------------------------------------------------------------------
+// The masked phone (D5, DESIGN.md §8): one helper, two states.
+// ---------------------------------------------------------------------------
+
+// Every attribute value in the HTML, with the icons' path data left out
+// (an SVG path is full of digits).
+const attrs = (html) =>
+  [...html.replace(/<svg[\s\S]*?<\/svg>/g, "").matchAll(/\s[\w-]+="([^"]*)"/g)].map((m) => m[1]);
+
+test("phoneMask: an allowed viewer gets the mask, the eye and the number as text only", () => {
+  for (const stored of ["2155550123", "(215) 555-0123"]) {
+    const html = phoneMask(stored, true, "contact-phone");
+    assert.match(html, /^<span class="phone-mask" id="contact-phone" tabindex="0">/);
+    assert.match(html, /<span class="phone-dots" aria-hidden="true">\(•••\) •••-0123<\/span>/);
+    assert.match(html, /<span class="phone-full">\(215\) 555-0123<\/span>/);
+    assert.equal(html.match(/555-0123/g).length, 1, "the number appears once");
+    for (const value of attrs(html)) assert.doesNotMatch(value, /215|555/, `an attribute carries the number: ${value}`);
+    assert.match(html, /<svg class="icon /);
+    assert.doesNotMatch(html, /title=|aria-label=/);
+  }
+});
+
+test("phoneMask: a viewer who is not allowed gets the last four, a lock and no number anywhere", () => {
+  const html = phoneMask("2155550123", false, "contact-phone");
+  assert.doesNotMatch(html.replace(/<svg[\s\S]*?<\/svg>/g, ""), /215|555/);
+  assert.doesNotMatch(html, /tabindex|\sid=/);
+  assert.match(html, /^<span class="phone-mask is-locked" title="Claim this case to see the full number">/);
+  assert.match(html, /<span class="phone-dots" aria-hidden="true">\(•••\) •••-0123<\/span>/);
+  assert.match(html, /<span class="sr-only">Ends in 0123\. Claim this case to see the full number\.<\/span>/);
+  assert.equal(PHONE_LOCKED, "Claim this case to see the full number");
+});
+
+test("phoneMask: an empty phone reads Not given, and a short one shows bullets only", () => {
+  for (const allowed of [true, false])
+    for (const empty of ["", null, undefined]) assert.equal(phoneMask(empty, allowed), "Not given");
+  assert.match(phoneMask("123", false), /\(•••\) •••-••••/);
+  assert.doesNotMatch(phoneMask("123", false), /123/);
+});
+
+test("htmlRow is detailRow's markup without escaping the value", () => {
+  assert.equal(htmlRow("Phone", "<b>x</b>"), '<div class="detail-row"><span>Phone</span><strong><b>x</b></strong></div>');
+  assert.equal(htmlRow("A & B", "x"), '<div class="detail-row"><span>A &amp; B</span><strong>x</strong></div>');
+});
 
 test("a version-2 answers panel groups the answers by step and sub-step", () => {
   const html = v2Panel(v2Case({ answers: { tp_dob: "1961-04-12" } }));
