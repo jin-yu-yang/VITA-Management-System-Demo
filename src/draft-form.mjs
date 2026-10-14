@@ -8,7 +8,7 @@
 // nesting of "income from renting out your house", so each form gets its own
 // names for those. Every name below is written without the `form1[0].` prefix
 // that `draftFields` adds.
-import { CATALOGUE, findQuestion, isAnswered, isVisible, memberNameParts, visibleAnswers, wording } from "./intake-catalogue.mjs";
+import { CATALOGUE, findQuestion, isAnswered, memberNameParts, spouseShown, visibleAnswers, wording } from "./intake-catalogue.mjs";
 import { formatAnswer, formatDate } from "./intake-form.mjs";
 import { sourceText } from "./language.mjs";
 import { t } from "./client-text.mjs";
@@ -406,7 +406,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
 
   // The Spouse box only counts while there is a spouse: a choice left over
   // from before a change of marital status ticks nothing (spouseShowIf).
-  const hasSpouse = isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, visible);
+  const hasSpouse = spouseShown(visible);
   for (const [id, stem] of Object.entries(WHO)) {
     if (!answered(id) || !Array.isArray(visible[id])) continue;
     for (const choice of ["me", "spouse", "none"])

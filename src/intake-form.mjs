@@ -6,7 +6,7 @@
 // wrappers over valuesFromControls, which holds every reading rule.
 import { esc, button } from "./ui.mjs";
 import {
-  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered,
+  CATALOGUE, stepsFor, findQuestion, wording, isVisible, isAnswered, spouseShown,
   checkValue, missingToSubmit, substepsFor, findSubstep, substepQuestions, memberNameParts,
 } from "./intake-catalogue.mjs";
 import { sourceText, localeOf, isLang } from "./language.mjs";
@@ -51,8 +51,6 @@ const optionLabel = (option, { variant = "general", lang = "en" } = {}) => {
   const l = option?.label;
   return sourceText({ en: l?.[variant]?.en ?? l?.general?.en ?? option?.value ?? "", zh: l?.[variant]?.zh ?? l?.general?.zh }, lang);
 };
-
-const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
 
 // Every option a question can hold: its own, or fixedOptions for yesno (its own
 // values, labelled from the fixed list) and who.
