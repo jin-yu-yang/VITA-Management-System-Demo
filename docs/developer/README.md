@@ -95,7 +95,7 @@ src/
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
 supabase/
-  migrations/001-023       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-024       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
