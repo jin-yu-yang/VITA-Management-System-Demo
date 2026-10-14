@@ -567,6 +567,43 @@ test("the real catalogue gains hh.member_id, and gcf_sp_date waits for the spous
   assert.equal(income.sections[0].intro, undefined);
 });
 
+test("the real catalogue adds hh.middle_name and requires the 15080 signatures when shown", () => {
+  const hh = findQuestion(COMMITTED, "hh");
+  assert.deepEqual(hh.fields.slice(0, 4).map((f) => f.id), ["member_id", "first_name", "middle_name", "last_name"]);
+  const middle = hh.fields.find((f) => f.id === "middle_name");
+  assert.deepEqual([middle.type, middle.required, middle.showIf], ["text", false, undefined]);
+  assert.deepEqual(middle.wording, {
+    general: { en: "Middle name", zh: "中间名" },
+    senior: { en: "Middle name", zh: "这个人的中间名" },
+  });
+  assert.deepEqual(middle.tips, {
+    general: [{ en: "Leave blank if this person doesn't have one.", zh: "如没有可留空。" }],
+    senior: [{ en: "If this person doesn't have a middle name, leave this empty.", zh: "有就写，没有就空着。" }],
+  });
+
+  const tp = findQuestion(COMMITTED, "gcf_tp_signature");
+  assert.equal(tp.required, true);
+  assert.deepEqual(tp.showIf, [{ field: "gcf_consent", op: "eq", value: "yes" }]);
+  const sp = findQuestion(COMMITTED, "gcf_sp_signature");
+  assert.equal(sp.required, true);
+  assert.deepEqual(sp.showIf, [
+    { field: "gcf_consent", op: "eq", value: "yes" },
+    { field: "marital_status", op: "eq", value: "married" },
+  ]);
+  assert.deepEqual(sp.tips, {
+    general: [{
+      en: "Both of you need to sign. If your spouse can't sign, choose **I do not consent** above.",
+      zh: "需要您和配偶都签名。如配偶无法签名，请在上方选择**不同意**。",
+    }],
+    senior: [{
+      en: "You both need to sign. If your spouse can't sign, choose **No, I do not agree** above.",
+      zh: "您和您爱人都要签名。如果您爱人没办法签名，请在上面选**不同意**。",
+    }],
+  });
+  for (const id of ["gcf_consent", "gcf_tp_date", "gcf_sp_date"])
+    assert.equal(findQuestion(COMMITTED, id).required, false, id);
+});
+
 test("every real question states required, and the optional set is the agreed list", () => {
   const questions = allQuestions(COMMITTED);
   const flat = questions.flatMap((q) => [
@@ -592,9 +629,7 @@ test("every real question states required, and the optional set is the agreed li
       "opt_race_tp",
       "opt_race_sp",
       "gcf_consent",
-      "gcf_tp_signature",
       "gcf_tp_date",
-      "gcf_sp_signature",
       "gcf_sp_date",
       "inc_wages_job_count",
       "refund_method_other",
@@ -604,6 +639,7 @@ test("every real question states required, and the optional set is the agreed li
       "language_other",
       "form_version",
       "hh.member_id",
+      "hh.middle_name",
     ].sort(),
   );
   const section12 = COMMITTED.steps.flatMap((s) => s.sections).find((s) => s.n === 12);

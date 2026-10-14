@@ -261,6 +261,10 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 **Q6.1** First name / 这个人的名字（名）
 `hh[i].first_name` · Text · Required
 
+**Q6.1a** Middle name / 这个人的中间名
+`hh[i].middle_name` · Text · Optional
+> Tip: If this person doesn't have a middle name, leave this empty. / 有就写，没有就空着。
+
 **Q6.1b** Last name / 这个人的姓
 `hh[i].last_name` · Text · Required
 > Note for developers: Split into two boxes so people don't mix up first and last name. / 例：张三 → 名填 San，姓填 Zhang。
@@ -646,7 +650,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 > Tip: If you want the permission to last a shorter time, or share less information, choose **No**. / 如果您想让有效期更短，或者只共享一部分资料，请选**不同意**。
 
 **Q14.2** Type your full name to sign / 请输入您的全名作为签名
-`gcf_tp_signature` · Signature · Optional
+`gcf_tp_signature` · Signature · Required
 **Show if** `gcf_consent = yes`
 
 **Q14.3** Date / 日期
@@ -655,8 +659,9 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 > Note for developers: auto-fill today.
 
 **Q14.4** Spouse: type your full name to sign / 请您爱人输入全名作为签名
-`gcf_sp_signature` · Signature · Optional
+`gcf_sp_signature` · Signature · Required
 **Show if** `gcf_consent = yes` AND `marital_status = married`
+> Tip: You both need to sign. If your spouse can't sign, choose **No, I do not agree** above. / 您和您爱人都要签名。如果您爱人没办法签名，请在上面选**不同意**。
 
 **Q14.5** Spouse date / 您爱人签名的日期
 `gcf_sp_date` · Date · Optional

@@ -257,6 +257,10 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Q6.1** First name / 名
 `hh[i].first_name` · Text · Required
 
+**Q6.1a** Middle name / 中间名
+`hh[i].middle_name` · Text · Optional
+> Tip: Leave blank if this person doesn't have one. / 如没有可留空。
+
 **Q6.1b** Last name / 姓
 `hh[i].last_name` · Text · Required
 > Note for developers: Keep first and last name as separate fields to avoid order mix-ups.
@@ -640,7 +644,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 > Tip: If you wish to limit the duration or scope of the disclosure, choose **No**. / 如希望缩短有效期或限制披露范围，请选择**不同意**。
 
 **Q14.2** Primary taxpayer signature (type full name) / 主报税人签名（输入全名）
-`gcf_tp_signature` · Signature · Optional
+`gcf_tp_signature` · Signature · Required
 **Show if** `gcf_consent = yes`
 
 **Q14.3** Date / 日期
@@ -649,8 +653,9 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 > Note for developers: auto-fill today.
 
 **Q14.4** Secondary taxpayer (spouse) signature (type full name) / 配偶签名（输入全名）
-`gcf_sp_signature` · Signature · Optional
+`gcf_sp_signature` · Signature · Required
 **Show if** `gcf_consent = yes` AND `marital_status = married`
+> Tip: Both of you need to sign. If your spouse can't sign, choose **I do not consent** above. / 需要您和配偶都签名。如配偶无法签名，请在上方选择**不同意**。
 
 **Q14.5** Spouse signature date / 配偶签名日期
 `gcf_sp_date` · Date · Optional
