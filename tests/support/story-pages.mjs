@@ -687,6 +687,21 @@ export async function railJump(page, id) {
 }
 
 /**
+ * The way a client reaches the Submit page (openspec change
+ * gate-review-and-redesign-summary): 9.1 on the rail, then Continue on 9.1
+ * and on 9.2. The draft must have no alerts. Controls are found by selector,
+ * so it works in every language.
+ */
+export async function continueToSubmit(page) {
+  await railJump(page, "review.check");
+  for (const id of ["review.summary", "review.submit"]) {
+    await waitForQuiet(page);
+    await page.locator('#intake-v2-form button[type="submit"]').click({ timeout: CLICK_MS });
+    await waitForSubstep(page, id);
+  }
+}
+
+/**
  * Choose one radio answer on a version-2 form. A radio redraws the page around
  * itself, so its label is pressed and the rebuilt radio is read back, not
  * `check()`ed: the element Playwright pressed is gone by then.

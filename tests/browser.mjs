@@ -33,6 +33,7 @@ import {
   choosePersona,
   clickAction,
   clickCaseActionUntil,
+  continueToSubmit,
   fieldByLabel,
   findOnBoard,
   measureOverflow,
@@ -271,8 +272,9 @@ async function startApplication(page) {
  * The version-2 walk the story's own application takes: Fill fictional
  * details, then the rail. On the way it becomes married (a show-if: the
  * spouse's part joins the rail, and a second Fill answers it) and the wording
- * flips to Senior and back. It stops on review.submit with the box ticked;
- * the Submit is the caller's, and `atCheck` runs on an empty review.check.
+ * flips to Senior and back. It reaches review.submit by Continue on 9.1 and
+ * 9.2 (the gate), with the box ticked; the Submit is the caller's, and
+ * `atCheck` runs on an empty review.check.
  */
 async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
   await clickAction(page, "continue-intake");
@@ -331,7 +333,7 @@ async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
     `the filled example still has alerts: ${await page.locator(".alerts-block").innerText().catch(() => "")}`,
   );
   if (atCheck) await atCheck();
-  await railJump(page, "review.submit");
+  await continueToSubmit(page);
   await tickBox(page, "field-confirmed");
 }
 
@@ -369,7 +371,8 @@ const cardRow = (fixture, caseId, slotId) =>
 
 // Every sub-step the fictional example shows, in order: drop-off, never
 // married, one child, wages and a direct deposit. The walk presses Continue
-// once on each and must arrive at the next, so this is also the rail's list.
+// once on each up to review.check and must arrive at the next (the gate holds
+// the last two until the walk's gap is fixed); this is also the rail's list.
 const V2_WALK = Object.freeze([
   "before.ready",
   "before.service",
@@ -2765,8 +2768,9 @@ async function runPermutation(t, roles) {
     // is the one a check is about, and it is sent once, with no retry helper.
     //
     // Moving: Continue walks every visible sub-step exactly once, from
-    // before.ready to review.submit. Everywhere else the phase moves the way a
-    // person jumps around: a rail link (`go-substep`), an alert, a Change.
+    // before.ready to review.check (the gate holds 9.2 and 9.3 until the city
+    // is fixed). Everywhere else the phase moves the way a person jumps
+    // around: a rail link (`go-substep`), an alert, a Change.
     await phase("a client walks the version-2 intake, sub-step by sub-step", async () => {
       let v2Win = null;
       let againWin = null;
@@ -2871,8 +2875,6 @@ async function runPermutation(t, roles) {
         const railStep = (stepId) => readNode(`rail-step-${stepId}-status`);
         const chip = async () =>
           (await page.locator(".application-meta .save-chip").innerText()).trim();
-        const toast = () =>
-          page.evaluate(() => document.querySelector("#toast")?.textContent.trim() ?? null);
         const header = () =>
           page.evaluate(() => {
             const intro = document.querySelector(".form-workspace .page-intro");
@@ -2896,6 +2898,9 @@ async function runPermutation(t, roles) {
               shown: step ? step.querySelector(".rail-subs")?.hidden === false : null,
             };
           });
+        // The review step's rail entries, in order: the gate decides 9.2 and 9.3.
+        const reviewRail = () =>
+          page.evaluate(() => [...document.querySelectorAll("#rail-subs-review .rail-sublink")].map((link) => link.dataset.substep));
         // Every mark on the rail, collapsed steps included.
         const railMarks = () =>
           page.evaluate(() =>
@@ -2999,9 +3004,12 @@ async function runPermutation(t, roles) {
         await waitForSubstep(page, "before.ready");
 
         // ---- The walk: Continue on every visible sub-step, once ----------
-        for (let at = 0; at < V2_WALK.length; at += 1) {
-          const id = V2_WALK[at];
-          const next = V2_WALK[at + 1] ?? null;
+        // The gate: 9.2 and 9.3 need every alert fixed, and the walk keeps a gap
+        // (the city) for review.check, so Continue walks up to 9.1.
+        const WALKED = V2_WALK.slice(0, V2_WALK.indexOf("review.check") + 1);
+        for (let at = 0; at < WALKED.length; at += 1) {
+          const id = WALKED[at];
+          const next = WALKED[at + 1] ?? null;
           if (at > 0) await waitForSubstep(page, id);
           // The rail marks where the form is, and the current step is open.
           assert.deepEqual(
@@ -3046,12 +3054,13 @@ async function runPermutation(t, roles) {
               text: "Done",
             });
             assert.equal(await box("service-drop_off").isChecked(), true);
-            // The fill is saved: the rail now lists exactly the walk.
+            // The fill is saved: the rail now lists exactly the walk, less
+            // 9.3, which isn't earned yet.
             assert.deepEqual(
               await page.evaluate(() =>
                 [...document.querySelectorAll(".rail-sublink")].map((link) => link.dataset.substep),
               ),
-              [...V2_WALK],
+              V2_WALK.filter((id) => id !== "review.submit"),
               "the rail does not list the sub-steps this example shows",
             );
           }
@@ -3209,23 +3218,20 @@ async function runPermutation(t, roles) {
             // Arriving by Continue puts the keyboard on the alerts heading.
             await waitForQuiet(page);
             assert.equal(await focused(), "alerts-title");
-          }
-
-          if (id === "review.submit") {
-            assert.equal(await submitButton.isDisabled(), true, "Submit was on before the box was ticked");
-            await tickBox(page, "field-confirmed");
+            // The gate: the city is missing, so Continue waits, a line says
+            // why, and the review step lists 9.1 alone.
+            assert.equal(await continueButton.isDisabled(), true, "Continue was on with an alert");
+            assert.equal(await continueButton.getAttribute("aria-describedby"), "continue-blocked");
+            assert.equal(await page.locator("#continue-blocked").innerText(), "Fix the items above to continue.");
+            assert.deepEqual(await reviewRail(), ["review.check"]);
             assert.equal(
-              await submitButton.isDisabled(),
-              true,
-              "Submit was on with an answer still missing",
+              await page.locator(".rail-progress p").innerText(),
+              `Part ${WALKED.length} of ${WALKED.length}`,
             );
-            // "See the alerts" is a jump like any other: to the heading.
-            await goTo(
-              page.locator('#intake-v2-form [data-action="go-substep"][data-substep="review.check"]'),
-              "review.check",
-            );
-            await waitForQuiet(page);
-            assert.equal(await focused(), "alerts-title");
+            // The alert is the way on: it opens its sub-step, and leaving
+            // review.check saves its visit.
+            await goTo(page.locator('.alert-item[data-substep="about.address"]'), "about.address");
+            pressed = true;
           }
 
           if (next && !pressed) {
@@ -3237,8 +3243,8 @@ async function runPermutation(t, roles) {
           (
             await one(fixture, "select intake_visited from public.cases where id=$1", [own.id])
           ).intake_visited,
-          // review.submit too: "See the alerts" left it.
-          [...V2_WALK].sort(),
+          // review.check too: its alert left it.
+          [...WALKED].sort(),
           "the server's visits are not the walk",
         );
 
@@ -3387,49 +3393,16 @@ async function runPermutation(t, roles) {
         assert.equal(await answer("tp_job_title"), "Baker", "the rest of about.you was not saved");
         assert.equal(await answer("email"), "mei.lin@example.com", "an invalid email reached the server");
 
-        // The Submit guard (spec 2026-09-30 §2.5: nothing invalid is ever
-        // submitted). Submit's disabled state is drawn at render and typing
-        // never redraws, so a stale Submit can be on while the draft is not
-        // sendable: the press re-checks the draft itself. Here the button is
-        // turned on by hand, the one way to reach that state on purpose.
-        const forceSubmit = async () => {
-          await waitForQuiet(page);
-          await submitButton.evaluate((button) => {
-            button.disabled = false;
-          });
-          await submitButton.click({ timeout: CLICK_MS });
-        };
-        await jump("review.submit");
+        // The gate (design D1, D4): with an invalid email and no city, neither
+        // the summary nor Submit is on the rail, and 9.1's Continue waits.
+        // (9.3 can't be drawn with an alert. The SUBMIT guard's redirect, for
+        // a press on a page drawn before an alert came back, is the
+        // controller's guardSubmit and is unit-tested there; its unticked-box
+        // refusal is checked at Submit below.)
+        await jump("review.check");
+        assert.deepEqual(await reviewRail(), ["review.check"]);
+        assert.equal(await continueButton.isDisabled(), true, "Continue was on with two alerts");
         assert.equal(await chip(), "1 answer needs checking");
-        // The box unticked: nothing is sent, and the page says why.
-        await waitForQuiet(page);
-        await confirmBox.click({ timeout: CLICK_MS });
-        await confirmTicked(false);
-        await forceSubmit();
-        await waitFor(
-          page,
-          "the unconfirmed Submit to be refused",
-          () =>
-            document.querySelector("#toast")?.textContent.trim() ===
-            "Confirm that you have checked your answers first.",
-          undefined,
-          RENDER_MS,
-        );
-        assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
-        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
-        // Ticked, with an invalid email and a missing city in the draft: the
-        // guard reveals them and goes to review.check, keyboard on its heading.
-        await tickBox(page, "field-confirmed");
-        assert.equal(await submitButton.isDisabled(), true, "Submit was drawn on with alerts");
-        await forceSubmit();
-        await waitForSubstep(page, "review.check");
-        await waitForQuiet(page);
-        assert.deepEqual(
-          { focus: await focused(), toast: await toast() },
-          { focus: "alerts-title", toast: "Some answers still need a change before you can send." },
-        );
-        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid draft was submitted");
-        assert.equal(await answer("email"), "mei.lin@example.com", "the guard sent the invalid email");
 
         // review.check lists both, in sub-step order, under the step.
         await jump("review.check");
@@ -3598,9 +3571,43 @@ async function runPermutation(t, roles) {
         await jump("review.check");
         assert.deepEqual(await alertsList(), [], "an alert outlived its fix");
 
-        // Submit: on only with no alerts and the box ticked.
-        await jump("review.submit");
-        assert.equal(await confirmBox.isChecked(), true, "the confirmation was lost on the way");
+        // With nothing wrong, Continue on 9.1 opens the summary, and the rail
+        // lists it; Continue on 9.2 earns 9.3.
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary"]);
+        await goTo(continueButton, "review.summary");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary"], "9.3 before Continue on 9.2");
+        await goTo(continueButton, "review.submit");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary", "review.submit"]);
+        assert.ok(
+          (await one(fixture, "select intake_visited from public.cases where id=$1", [own.id])).intake_visited.includes("review.submit"),
+          "the earned 9.3 was not saved",
+        );
+
+        // Submit: on only with the box ticked. Its guard re-checks the draft
+        // itself: an unticked box is refused even when Submit is turned on by
+        // hand, the one way to reach that state on purpose.
+        const forceSubmit = async () => {
+          await waitForQuiet(page);
+          await submitButton.evaluate((button) => {
+            button.disabled = false;
+          });
+          await submitButton.click({ timeout: CLICK_MS });
+        };
+        assert.equal(await confirmBox.isChecked(), false);
+        assert.equal(await submitButton.isDisabled(), true, "Submit was on before the box was ticked");
+        await forceSubmit();
+        await waitFor(
+          page,
+          "the unconfirmed Submit to be refused",
+          () =>
+            document.querySelector("#toast")?.textContent.trim() ===
+            "Confirm that you have checked your answers first.",
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
+        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
+        await tickBox(page, "field-confirmed");
         assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
         await waitForQuiet(page);
         await confirmBox.click({ timeout: CLICK_MS });
@@ -3609,7 +3616,87 @@ async function runPermutation(t, roles) {
         await tickBox(page, "field-confirmed");
         assert.equal(await submitButton.isDisabled(), false);
 
-        // The summary's Change opens a sub-step with "Back to summary".
+        // ---- The summary page (design D6-D8) ------------------------------
+        await jump("review.summary");
+        const order = await page.evaluate(() =>
+          [...document.querySelectorAll("#intake-v2-form > div, #intake-v2-form > p")].map((node) => node.className || node.id),
+        );
+        assert.deepEqual(
+          order.filter((name) => ["summary-intro", "summary-tools", "summary-fold", "summary-print"].includes(name)),
+          ["summary-intro", "summary-tools", "summary-fold", "summary-print"],
+          "the summary page's order",
+        );
+        assert.equal(
+          await page.locator(".summary-intro p").first().innerText(),
+          "Here is a summary of everything you told us in your application.",
+        );
+        // One section folds from its heading, and the keyboard stays on it.
+        const aboutToggle = page.locator('.summary-toggle[data-panel="summary-shut:about"]');
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "About you to collapse",
+          () => document.getElementById("summary-body-about")?.hidden === true,
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(await aboutToggle.getAttribute("aria-expanded"), "false");
+        assert.equal(
+          await page.evaluate(() => document.activeElement?.dataset.panel ?? null),
+          "summary-shut:about",
+        );
+        // The Print button's printout shows it anyway. The press sets
+        // body.print-summary and opens the print dialog, which a story can't
+        // close, so the class is set by hand under print media instead.
+        await page.evaluate(() => document.body.classList.add("print-summary"));
+        await page.emulateMedia({ media: "print" });
+        assert.deepEqual(
+          await page.evaluate(() => {
+            const body = document.getElementById("summary-body-about");
+            return { display: getComputedStyle(body).display, shown: body.offsetHeight > 0 };
+          }),
+          { display: "block", shown: true },
+          "a collapsed section does not print",
+        );
+        await page.emulateMedia({ media: "screen" });
+        await page.evaluate(() => document.body.classList.remove("print-summary"));
+        // Collapse all and Expand all, each keeping the keyboard.
+        for (const [button, hidden] of [["summary-collapse-all", true], ["summary-expand-all", false]]) {
+          await waitForQuiet(page);
+          await page.locator(`#${button}`).click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            `every section to be ${hidden ? "collapsed" : "expanded"}`,
+            (wanted) => [...document.querySelectorAll(".summary-body")].every((body) => body.hidden === wanted),
+            hidden,
+            RENDER_MS,
+          );
+          assert.equal(await focused(), button, `${button} lost the keyboard`);
+        }
+        // The fold is kept while moving: collapse About you, Change, come back.
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(page, "About you to collapse again", () => document.getElementById("summary-body-about")?.hidden === true, undefined, RENDER_MS);
+        await goTo(page.locator('.summary-print [data-action="change-substep"][data-substep="income.wages"]'), "income.wages");
+        await goTo(page.locator('[data-action="back-to-summary"]'), "review.summary");
+        assert.equal(await page.evaluate(() => document.getElementById("summary-body-about")?.hidden), true, "the fold was lost");
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(page, "About you to expand", () => document.getElementById("summary-body-about")?.hidden === false, undefined, RENDER_MS);
+
+        // An alert brought back from a Change: "Back to summary" lands on 9.1,
+        // and 9.2 and 9.3 hide until it is fixed (brainstorm Q2-A).
+        await goTo(page.locator('.summary-print [data-action="change-substep"][data-substep="about.address"]'), "about.address");
+        await waitForQuiet(page);
+        await box("addr_city").fill("");
+        await goTo(page.locator('[data-action="back-to-summary"]'), "review.check");
+        assert.deepEqual(await reviewRail(), ["review.check"]);
+        await goTo(page.locator('.alert-item[data-substep="about.address"]'), "about.address");
+        await waitForQuiet(page);
+        await box("addr_city").fill("Philadelphia");
+        await jump("review.check");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary", "review.submit"], "the fix did not bring 9.2 and 9.3 back");
         await jump("review.summary");
         await goTo(
           page.locator('.summary-print [data-action="change-substep"][data-substep="about.address"]'),
@@ -4208,7 +4295,7 @@ async function runPermutation(t, roles) {
           "zh-s",
         );
 
-        await railJump(page, "review.submit");
+        await continueToSubmit(page);
         await tickBox(page, "field-confirmed");
         await waitForQuiet(page);
         await page.locator('#intake-v2-form [data-case-action="SUBMIT"]').click({ timeout: CLICK_MS });
