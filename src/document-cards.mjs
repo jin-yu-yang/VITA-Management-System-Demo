@@ -40,6 +40,10 @@ export const CARD_TEMPLATES = Object.freeze({
   // Hints given by a matcher rather than the rule
   spouse_hint: pair("Needed if you file together", "如合并申报则需要", "Needed if filing jointly"),
   prior_return_hint: pair("If you filed together last year, upload one return. If you filed separately, upload both.", "去年合并申报的，上传一份；分开申报的，两份都上传。", "If they filed jointly last year, one return. If separately, both."),
+  // The direct-deposit card's hint: the spouse only when married (change
+  // add-unmarried-intake-wording, design D7).
+  bank_hint: pair("The account must be in your name (or your spouse's).", "账户必须是您（或配偶）名下的账户。", "The account must be in the client's or spouse's name."),
+  bank_hint_single: pair("The account must be in your name.", "账户必须是您名下的账户。", "The account must be in the client's name."),
 });
 
 // Why lines, keyed <rule id>_<the answer it reports>. The said() lines read
@@ -471,13 +475,15 @@ export const CARD_RULES = Object.freeze([
   {
     id: "bank", type: "household", substep: "events",
     label: { en: "A voided check or a bank letter with routing and account numbers", zh: "作废支票或写有路由号和账号的银行信" },
-    hint: { en: "The account must be in your name (or your spouse's).", zh: "账户必须是您（或配偶）名下的账户。", office: "The account must be in the client's or spouse's name." },
-    match: (a) => [
-      ...(a.refund_method === "direct_deposit" || a.refund_method === "split"
-        ? [{ owner: HOUSEHOLD, group: "needed", ask: "refund_method", why: CARD_WHY.bank_refund_method }] : []),
-      ...(a.payment_method === "bank_account"
-        ? [{ owner: HOUSEHOLD, group: "maybe", ask: "payment_method", why: CARD_WHY.bank_payment_method }] : []),
-    ],
+    match: (a) => {
+      const hint = isMarried(a) ? CARD_TEMPLATES.bank_hint : CARD_TEMPLATES.bank_hint_single;
+      return [
+        ...(a.refund_method === "direct_deposit" || a.refund_method === "split"
+          ? [{ owner: HOUSEHOLD, group: "needed", ask: "refund_method", why: CARD_WHY.bank_refund_method, hint }] : []),
+        ...(a.payment_method === "bank_account"
+          ? [{ owner: HOUSEHOLD, group: "maybe", ask: "payment_method", why: CARD_WHY.bank_payment_method, hint }] : []),
+      ];
+    },
   },
 
   // A.5 Other documents: optional, always shown
