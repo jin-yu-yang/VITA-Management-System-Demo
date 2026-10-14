@@ -96,7 +96,7 @@
 - [x] 5.1 Update `docs/design/DESIGN.md` §8 "Masked phone" (design D8): replace "There's no click-to-copy, so a shared screen never keeps a number on display." with wording that says:
   - the number stays shown only while the mask has focus, so it can be selected and copied;
   - there is no copy button.
-- [ ] 5.2 Run `npm test` and `npm run test:browser`. Record in verify.md why the database suites, `test:auth-browser` and `build:hant -- --check` aren't needed:
+- [x] 5.2 Run `npm test` and `npm run test:browser`. Record in verify.md why the database suites, `test:auth-browser` and `build:hant -- --check` aren't needed:
   - no database, sign-in or Chinese text changes;
   - staff screens stay English.
 - [ ] 5.3 The PR description says this is display-only masking:
