@@ -52,7 +52,7 @@
 
 ## 3. The summary page (design D6–D8; plan Task 3)
 
-- [ ] 3.1 Tests first:
+- [x] 3.1 Tests first:
   - `tests/client-views.test.mjs`:
     - the order: intro, tools, fold, printed block;
     - the intro's exact text;
@@ -66,7 +66,7 @@
     - the two new actions are handled;
     - `V2_PANELS` accepts `summary-shut:<step>` and nothing else new;
     - the print rules.
-- [ ] 3.2 Implement:
+- [x] 3.2 Implement:
   - in `src/intake-views.mjs`: `summarySection`, `answerSteps(…, { panels })`, `documentsSummary` and `summaryBody`;
   - `setSummaryShut` in `src/controller.mjs`;
   - in `src/app.mjs`: `V2_PANELS`, `summary-expand-all` and `summary-collapse-all`;
