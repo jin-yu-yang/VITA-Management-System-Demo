@@ -218,7 +218,7 @@ export function conflictForm(state) {
     .filter((question) => !sameAnswer(sendable(question, mine[question.id]), sendable(question, server[question.id])))
     .map(
       (question) =>
-        `<tr><th scope="row">${esc(wording(question, { variant, lang }))}</th><td>${shown(question, mine[question.id])}</td><td>${shown(question, server[question.id])}</td></tr>`,
+        `<tr><th scope="row">${esc(wording(question, { variant, lang, answers: mine }))}</th><td>${shown(question, mine[question.id])}</td><td>${shown(question, server[question.id])}</td></tr>`,
     )
     .join("");
   return conflictPanel(state, lang, rows);

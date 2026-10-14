@@ -1320,6 +1320,14 @@ const v2Panel = (record, person = SAM) => answersPanel(record, { person });
 const D5_SENTENCE =
   "Contact details are shown to the office, and to the preparer and reviewer once the case is claimed.";
 
+test("the staff answers panel shows the wording the client saw", () => {
+  const single = v2Panel(v2Case({ answers: { marital_status: "divorced", opt_veteran: "no" } }));
+  assert.match(single, /Are you a veteran of the U\.S\. Armed Forces\?/);
+  assert.doesNotMatch(single, /Are you or your spouse a veteran/);
+  const married = v2Panel(v2Case({ married: true, answers: { opt_veteran: "no" } }));
+  assert.match(married, /Are you or your spouse a veteran of the U\.S\. Armed Forces\?/);
+});
+
 test("a version-2 answers panel groups the answers by step and sub-step", () => {
   const html = v2Panel(v2Case({ answers: { tp_dob: "1961-04-12" } }));
   assert.match(html, /<h2 id="answers-title">What the client told us<\/h2>/);

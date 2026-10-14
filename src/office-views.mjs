@@ -3,6 +3,7 @@ import {
   stepsFor,
   substepsFor,
   findSubstep,
+  leadOf,
   substepQuestions,
   isVisible,
   missingToSubmit,
@@ -418,7 +419,7 @@ function partBody(id, view) {
     if (question.heading || !groups.length) groups.push({ heading: question.heading ?? null, questions: [] });
     groups.at(-1).questions.push(question);
   }
-  const lead = inVariant(findSubstep(id)?.lead, variant);
+  const lead = leadOf(findSubstep(id), { variant, lang: "en", answers });
   return `${lead ? `<p class="q-lead">${esc(lead)}</p>` : ""}${groups
     .map((group) => ({ ...group, questions: group.questions.filter((question) => isVisible(question, answers)) }))
     .filter((group) => group.questions.length)

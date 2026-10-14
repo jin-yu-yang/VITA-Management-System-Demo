@@ -860,8 +860,8 @@ test("show-if: the spouse questions render only for a married client", () => {
 
 test("a lead line replaces the section intro; a section's intro shows on its first sub-step only", () => {
   const wages = intakeScreen(v2State({ formSubstep: "income.wages" }));
-  assert.match(wages, /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
-  assert.match(intakeScreen(v2State({ formSubstep: "expenses.events" })), /<p class="q-lead">Did any of these happen to you or your spouse in 2025\?<\/p>/);
+  assert.match(wages, /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);
+  assert.match(intakeScreen(v2State({ formSubstep: "expenses.events" })), /<p class="q-lead">Did any of these happen to you in 2025\?<\/p>/);
   // No Section 9 intro anywhere, and no intro beside a lead.
   for (const id of ["income.wages", "income.retirement", "income.investments", "income.rental", "income.business", "income.other"])
     assert.doesNotMatch(intakeScreen(v2State({ formSubstep: id })), /class="q-intro"/, id);
@@ -1200,6 +1200,43 @@ test("the version-2 chip: revealed invalid answers need checking, in every quiet
   );
   assert.equal(chip({ saveState: "saved", draftAnswers: { ...sample, email: "a@" }, revealed: [] }), "Saved");
   assert.equal(chip({ ...one, saveState: "unsaved", dirty: true }), "Unsaved changes");
+});
+
+test("the client's form uses the not-married wording for an unmarried client", () => {
+  const single = { ...makeSampleAnswers(), inc_wages: "yes" };
+  const married = { ...makeSampleAnswers({ married: true }), inc_wages: "yes" };
+  const wages = (answers) => form({ formSubstep: "income.wages", draftAnswers: answers });
+  assert.match(wages(single), /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);
+  assert.match(wages(single), /How many jobs did you have in 2025\?/);
+  assert.doesNotMatch(wages(single), /your spouse/);
+  assert.match(wages(married), /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
+  assert.match(wages(married), /How many jobs did you and your spouse have in 2025\?/);
+
+  const household = (answers) => form({ formSubstep: "household.members", draftAnswers: answers });
+  assert.match(household(married), /\(except your spouse\)/);
+  assert.doesNotMatch(household(single), /except your spouse/);
+
+  // Alerts and the summary.
+  const alerts = form({ formSubstep: "review.check", draftAnswers: without(makeSampleAnswers(), "claimed_by_other") });
+  assert.match(alerts, /claim you as a dependent on their tax return\?/);
+  assert.doesNotMatch(alerts, /claim you or your spouse/);
+  const summary = form({ formSubstep: "review.summary", draftAnswers: makeSampleAnswers() });
+  assert.match(summary, /claim you as a dependent on their tax return\?/);
+});
+
+test("the conflict table labels a row with the wording the client saw", () => {
+  const sample = makeSampleAnswers(); // never married
+  const html = conflictForm(
+    v2State({
+      savedCase: v2Case({ revision: 4, answers: { ...sample, opt_veteran: "no" } }),
+      draftAnswers: { ...sample, opt_veteran: "yes" },
+      dirty: true,
+      editBaseRevision: 2,
+      conflict: { code: "REMOTE_CHANGED", baseRevision: 2, serverRevision: 4 },
+    }),
+  );
+  assert.match(html, /<th scope="row">Are you a veteran of the U\.S\. Armed Forces\?<\/th>/);
+  assert.doesNotMatch(html, /Are you or your spouse a veteran/);
 });
 
 test("the version-2 conflict screen compares sendable values and labels rows by wording", () => {

@@ -355,7 +355,7 @@ function renderField(question, value, ctx) {
   const describedBy = [tips.length ? tipsId : null, noteId, type === "longtext" ? countId : null].filter(Boolean).join(" ");
   const control = `${data} data-control aria-describedby="${describedBy}"`;
   const text = typeof value === "string" ? value : "";
-  const title = esc(wording(question, { variant, lang }));
+  const title = esc(wording(question, { variant, lang, answers }));
   const wrap = wrapQ ? ` data-q="${esc(wrapQ)}"` : "";
   const cls = `q q-${esc(type)}`;
   const tipsHtml = tips.length
@@ -482,7 +482,7 @@ function renderGroup(question, value, { scope, variant, lang, answers, showMissi
     members.length < MEMBER_LIMIT ? button(esc(t("member.add", {}, lang)), "add-member", "secondary", `aria-describedby="${noteId}"`) : "";
   const tipsId = `${base}-tips`;
   const describedBy = [tips.length ? tipsId : null, noteId].filter(Boolean).join(" ");
-  return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang }))}</legend>${
+  return `<fieldset class="q q-group" data-q="${qid}" aria-describedby="${describedBy}"><legend class="q-label">${esc(wording(question, { variant, lang, answers }))}</legend>${
     tips.length ? `<div class="q-tips" id="${tipsId}">${tips.map((tip) => `<div class="q-tip">${renderRichText(tip)}</div>`).join("")}</div>` : ""
   }<div class="hh-cards">${cards}</div>${add}<p id="${noteId}" class="q-note${note.className ? ` ${note.className}` : ""}" aria-live="polite">${esc(note.text)}</p></fieldset>`;
 }

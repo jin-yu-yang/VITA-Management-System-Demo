@@ -191,6 +191,14 @@ test("yes/no pairs, choices and the marital boxes", () => {
   for (const name of [...checks, ...Object.keys(text)]) assert.ok(known.has(name), name);
 });
 
+test("the not-sure lines quote the wording the client saw", () => {
+  const { comments: married } = draft(MARRIED);
+  assert.ok(married.includes("claim you or your spouse as a dependent on their tax return?"));
+  const { comments: single } = draft({ ...MARRIED, marital_status: "never_married" });
+  assert.ok(single.includes("Not sure: Can anyone else (such as a parent or adult child) claim you as a dependent on their tax return?"));
+  assert.doesNotMatch(single, /claim you or your spouse/);
+});
+
 test("Who answers tick the You, Spouse and No boxes", () => {
   const { checks } = draft();
   const c1 = "page1[0].youSpouseWereIn[0].column1[0].";

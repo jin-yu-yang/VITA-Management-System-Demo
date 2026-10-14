@@ -768,7 +768,7 @@ function answerRows(question, value, options) {
 export function answersPanelV2(record, { showContact = false } = {}) {
   const answers = serverAnswersV2(record);
   const variant = variantOf(answers);
-  const options = { variant, lang: "en" };
+  const options = { variant, lang: "en", answers };
   const substeps = substepsFor(2).filter((substep) => substep.kind === "questions");
   let notSure = 0;
   const steps = stepsFor(2)

@@ -298,7 +298,7 @@ const labelIn = (question, value, lang) => {
   const label = (question?.options ?? []).find((option) => option.value === value)?.label?.general;
   return label ? sourceText({ en: label.en, zh: label.zh }, lang) : String(value);
 };
-const generalWording = (question, lang) => wording(question, { variant: "general", lang });
+const generalWording = (question, lang, answers) => wording(question, { variant: "general", lang, answers });
 const YES_NO_WORD = { yes: "draft.yes", no: "draft.no", not_sure: "draft.not_sure_word" };
 // The English lines keep the form's own MM/DD/YYYY; Chinese lines read 1961年4月12日.
 const lineDate = (value, lang) => (lang === "en" ? usDate(value) : oneLine(formatDate(String(value), lang)));
@@ -339,7 +339,7 @@ function notSureLabels(answers, lang) {
           if (member?.[field.id] === "not_sure")
             labels.push(t("draft.not_sure_person", { person: t("member.person", { n: i + 1 }, lang), field: generalWording(field, lang) }, lang));
       });
-    } else if (value === "not_sure") labels.push(generalWording(question, lang));
+    } else if (value === "not_sure") labels.push(generalWording(question, lang, answers));
   }
   return labels;
 }
