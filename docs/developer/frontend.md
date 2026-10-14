@@ -207,7 +207,9 @@ dropped).
   Review's alerts and the Submit gate count every visible invalid answer.
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
-  `case_contacts`. Missing answers are computed from the draft alone. A required question counts only while it is shown: the Form 15080 signatures are required once the client consents, and the spouse's only when married.
+  `case_contacts`. Missing answers are computed from the draft alone.
+- A required question counts only while it is shown: the Form 15080 signatures are required once
+  the client consents, and the spouse's only when married.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:

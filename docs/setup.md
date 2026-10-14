@@ -410,10 +410,12 @@ new work changes these counts.
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~20–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
 | Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 57/57, ~11–16 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2, the only intake version (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
 
-The story passed 57/57 in one run on 2026-10-12 (about 11.5 minutes), after its version-1 phase
-was removed (that phase ran once per browser order, hence two fewer tests). Before that it passed
-59/59 twice in a row on 2026-10-10 (about 12 minutes each, on a machine with a load average of 7–8
-on 8 cores). Earlier runs had stopped intermittently in the
+The story passed 57/57 in one run on 2026-10-13 (about 12 minutes), on change
+`require-15080-signatures-and-household-middle-name`. Before that it passed 57/57 in one run on
+2026-10-12 (about 11.5 minutes), after its version-1 phase was removed (that phase ran once per
+browser order, hence two fewer tests). Earlier still, it passed 59/59 twice in a row on 2026-10-10
+(about 12 minutes each, on a machine with a load average of 7–8 on 8 cores). Earlier runs had
+stopped intermittently in the
 Chrome-client/Firefox-staff permutation on two Firefox-staff waits. Both are fixed: a persona press
 now waits for a still page, as every other story press does; and the walk-in's materials wait came
 from an app bug, now fixed, where a redraw unticked a box that was ticked but not yet saved. If a

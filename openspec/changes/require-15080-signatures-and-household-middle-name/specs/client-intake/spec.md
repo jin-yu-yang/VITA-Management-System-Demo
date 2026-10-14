@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: A household member may have a middle name
-A household member SHALL have an optional middle name (`hh[i].middle_name`), asked between the first and last name in both the standard and senior versions of the form. Leaving it empty SHALL NOT block the member or the application. Where the form shows a member's full name, it SHALL read first, middle and last name, separated by single spaces, skipping any part that is empty.
+A household member SHALL have an optional middle name (`hh[i].middle_name`), asked between the first and last name in both the standard and senior versions of the form. Leaving it empty SHALL NOT block the member or the application. The member's summary line, shown in the client's review summary, the office's review and the staff answers panel, SHALL read first, middle and last name, separated by single spaces, skipping any part that is empty. Document cards SHALL keep the member's first and last name, as the taxpayer's and spouse's cards do.
 
 #### Scenario: A member is saved with a middle name
 - **WHEN** a client adds a household member with first name "Ana", middle name "Mei" and last name "Lin", and saves
