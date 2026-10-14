@@ -94,6 +94,29 @@ The group's wording review can still adjust the Chinese.
   - The office's version: "The account must be in the client's name."
   - Married: today's text stays.
 
+**Q8. The "who" questions (final review, then the user, 2026-10-14).**
+- **The finding:** the final whole-branch review found that the senior Chinese of Q5.3–Q5.9 says 您和您爱人 to an unmarried client. The inventory had scanned the English only.
+- **First proposal:** drop "您和您爱人，". The user rejected it. A third-person "who" question ("谁是美国公民？") reads oddly when only one person can answer.
+- **Decided (user):** for a client who isn't married (the same rule), each of these questions is asked directly, with Yes/No options. The married version stays as it is. The user confirmed four points:
+  1. **Radio buttons** for Yes and No. A married client keeps the Me / My spouse / No one check boxes.
+  2. **Every screen** that shows the answer labels it Yes/No for an unmarried client: the review summary, the office's form and the staff panel.
+  3. **Section 8's two "who" questions** (Q8.1 IRS letters in another language, Q8.3 the $3 fund) get Yes/No too. Their wording is already direct, so only their options change.
+  4. **The wording:**
+
+| Q | Standard (not married) | Senior (not married) |
+|---|---|---|
+| 5.3 `us_citizen` | Are you a U.S. citizen? / 您是美国公民吗？ | Are you a U.S. citizen? / 您是美国公民吗？ |
+| 5.4 `on_visa` | Were you in the U.S. on a visa in 2025? / 2025 年，您是否持签证在美国？ | Were you in the U.S. on a visa in 2025? / 2025 年，您是拿签证待在美国的吗？ |
+| 5.5 `fulltime_student` | Were you a full-time student in 2025? / 2025 年，您是否为全日制学生？ | Were you a full-time student in 2025? / 2025 年，您有没有至少 5 个月是学校认定的全日制学生？ |
+| 5.6 `legally_blind` | Are you legally blind? / 您是否属于法定失明？ | Are you legally blind? / 您有医生证明是法定失明吗？ |
+| 5.7 `disabled` | Are you totally and permanently disabled? / 您是否属于完全且永久性残疾？ | Are you totally and permanently disabled? / 您是完全并且永久残疾吗？ |
+| 5.8 `ippin` | Were you issued an Identity Protection PIN (IP PIN)? / 您是否持有国税局（IRS）发放的身份保护码（IP PIN）？ | Did you get an Identity Protection PIN (IP PIN) from the IRS? / 您收到过国税局（IRS）寄来的 6 位数字号码，叫"身份保护码"（IP PIN）吗？ |
+| 5.9 `digital_assets` | Did you own or hold any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025? / 2025 年，您是否拥有或持有数字资产（如比特币、以太坊等加密货币）？ | Did you own or hold any digital money (like Bitcoin or other crypto) in 2025? / 2025 年，您拥有过数字货币（比如比特币、以太坊、狗狗币）吗？ |
+
+- **The saved answer stays `["me"]` (Yes) or `["none"]` (No),** so the database rules, the document cards and the draft 13614-C don't change.
+- **Migration (user's choice A1):** reset 025's row in `vitally-task2`'s migration ledger and regenerate 025 in place. It was never on `main`.
+- **The "Asked by:" lines on the office and staff document cards** use the client's wording too. The visa, IP PIN and digital-asset cards ask these questions.
+
 ## Design (agreed)
 
 - **Drafts** (both; the senior structure must equal the standard one):
@@ -126,4 +149,5 @@ The group's wording review can still adjust the Chinese.
   - the review gate and summary redesign;
   - multi-select languages;
   - section 0's page text.
+- **The "who" questions (Q8):** for an unmarried client, Q5.3–Q5.9 are asked directly, Q5.3–Q5.9 and Q8.1/Q8.3 offer Yes/No radio buttons, and the answer is still saved as `["me"]`/`["none"]`. 025 is regenerated in place.
 - **Direct-deposit card (Q7):** its hint follows the same married rule. It uses the cards' existing `isMarried`, which means the same as `spouseShown`.

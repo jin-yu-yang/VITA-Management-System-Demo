@@ -27,7 +27,9 @@ Every one of these renders a single application, and its answers are in scope or
 
 A change of marital status redraws the form, because the rule's field is a redraw driver (`intake-form.mjs:632`). Wording isn't stored in the database: `put_intake_field` (015) reads only the field's id, type, flags and options, and ignores other keys.
 
-The design was agreed with the user on 2026-10-13/14 (`brainstorm.md`, Q1–Q7).
+The design was agreed with the user on 2026-10-13/14 (`brainstorm.md`, Q1–Q8).
+
+**"Who" questions.** There are nine of them: Q5.3–Q5.9, Q8.1 and Q8.3. Each is a `who` question: check-box chips Me / My spouse / No one (`intake-form.mjs:423`), with "No one" clearing the others (`readOne`). The answer is a list, e.g. `["me"]`, read by the draft 13614-C, the document cards (the visa, IP PIN and digital-asset cards ask Q5.4, Q5.8 and Q5.9) and the database's `check_intake_value`. `shownOptions` already hides "My spouse" when `spouseShown` is false (`:68`).
 
 ## Goals / Non-Goals
 
@@ -37,6 +39,7 @@ The design was agreed with the user on 2026-10-13/14 (`brainstorm.md`, Q1–Q7).
 - One rule for "married", shared with the "My spouse" option.
 - The senior married leads use 您爱人.
 - The direct-deposit card's hint names the spouse only when married (user, planning review).
+- For an unmarried client, Q5.3–Q5.9 are asked directly, and every "who" question is a Yes/No pair of radio buttons. The saved answer doesn't change (Q8).
 
 **Non-Goals:**
 - The widowed rule (spouse died within two years). It's a later fix, and it covers the options as well as the wording.
@@ -111,7 +114,18 @@ The Chinese stays open to the group's wording review.
 - **Why:** the user's decision at the planning review. The card's hint is computed from the answers each time, so nothing is stored and there's no database change. `isMarried` means the same as `spouseShown` (D3), and 繁體 picks up the new `CARD_TEMPLATES` pair through `walkPairs`.
 - **Considered:** reading `spouseShown` in `document-cards.mjs`. That rewires a module this change otherwise leaves alone, for the same answer.
 
-### D8: Specs
+### D8: The "who" questions for an unmarried client (Q8)
+- **Wording:** Q5.3–Q5.9 get `wordingUnmarried` through the D2 `> Not married:` line, with the Q8 table's texts in each version. The D2 spouse check passes, because each question's senior Chinese names 爱人. Q8.1 and Q8.3 keep their wording.
+- **Options and control:** when `!spouseShown(answers)`, a `who` question renders its two shown options, `me` and `none`, as radio buttons. They're labelled with the yes/no labels: `me` reads `fixedOptions.yesno` "yes" (Yes / 是), and `none` reads "no" (No / 否). One helper, `asAloneOption(option)`, picks the label, and `shownOptions` and `labelOf` use it. `labelOf` maps only when it's given the application's answers (`options.answers`), so catalogue-level `formatAnswer` calls keep Me / No one.
+- **Reading back:** a radio gives one string. `valuesFromControls` wraps a `who` question's string as a list (`"me"` → `["me"]`), so the draft, the checks and the database see the same value as before.
+- **Screens:** `formatAnswer` gets the answers wherever D5 already passes them (summary, staff panel), and also in the office's part summary (`office-views.mjs:402`). The cards' "Asked by:" lines pass them too:
+  - the office's card: `docCard(card, { …, answers })` from `office-views.mjs:456`;
+  - the staff checklist: `checklistRow(card, { …, answers })` from `staff-views.mjs:972`.
+- **Married clients** keep the check boxes, Me / My spouse / No one, and today's wording.
+- **Considered:** new `yes`/`no` answer values. That would change the database rules, the cards and the draft for no gain.
+
+### D9: Specs
+- `client-intake`: ADDED, "An unmarried client answers the 'who' questions with Yes or No" (D8). Its scenarios cover the citizenship question in English and Chinese, a married client, Section 8, and staff.
 - `client-intake`: ADDED, "An unmarried client isn't asked about a spouse", which also covers the direct-deposit card (D7). It has scenarios for:
   - never married;
   - married;
@@ -127,10 +141,17 @@ The Chinese stays open to the group's wording review.
 - **[Risk] The compare table's two answer sets disagree about marital status.** → Mitigation: it uses the client's own draft, which matches the form they're looking at.
 - **[Risk] The shared test stack runs ahead of `main` once 025 is applied.** `main`'s "the field table matches the catalogue" would fail until this merges, as with 023 and 024. → Mitigation: say so when asking to apply, and in the PR.
   - 025 changes only text. The field rows are unchanged, so in practice the test may still pass on `main`. Check, and say which.
+- **[Risk] A "who" radio's single value could slip through as a string.** `checkValue` would call it invalid, and the save would quietly withhold it. → Mitigation: `valuesFromControls` wraps it as a list (D8), and a unit test reads two radio descriptors back as `["me"]`.
 - **[Risk] The 繁體 output drifts.** → Mitigation: CI runs `npm run build:hant -- --check`.
 - **[Trade-off] `document-cards.mjs` keeps its own `isMarried`, which D7 reuses.** Accepted, because it means the same as `spouseShown`.
 
 ## Migration Plan
+
+- **025 is regenerated in place (user's choice A1).** The first 025 (`5234cc6a`) was applied only to `vitally-task2` and never reached `main`. Steps:
+  1. delete its file and rebuild, which writes a new `025_intake_catalogue_<hash8>.sql`;
+  2. review and dry-run the new file;
+  3. delete the old row from `vitally_private.schema_migrations` on `vitally-task2`;
+  4. apply.
 
 - **Deploy:** `npm run db:migrate` applies `025_intake_catalogue_<hash8>.sql`, a catalogue reload with the same field rows. It's safe with drafts in progress.
 - **Rollback:** a later catalogue migration. Applied migrations are never edited.

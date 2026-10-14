@@ -14,6 +14,15 @@ A client who isn't married still reads about a spouse in three questions and nin
 - The client's form, the review alerts and summary, the "someone else changed this" table, the office's form, the staff answers panel, and the draft 13614-C's "not sure" lines all pick the wording from that application's answers.
 - Without an application, for example in catalogue tests, today's wording stands.
 
+**The "who" questions for an unmarried client**
+- **From:** Q5.3–Q5.9 ask "Who is a U.S. citizen?" and the like, with Me / No one check boxes. The senior Chinese says 您和您爱人, a spouse the client doesn't have. Q8.1 and Q8.3 also offer Me / No one.
+- **To:** for a client who isn't married:
+  - Q5.3–Q5.9 ask directly, for example "Are you a U.S. citizen?" / 您是美国公民吗？;
+  - all nine "who" questions offer **Yes** and **No** as radio buttons;
+  - every screen shows the answer as Yes/No.
+
+  The saved answer is still `["me"]` or `["none"]`, so the database, the document cards and the draft 13614-C are unchanged. A married client sees today's questions and check boxes.
+
 **The direct-deposit card's hint**
 - From: every client choosing direct deposit or a split refund (or a bank payment) reads "The account must be in your name (or your spouse's)." / 账户必须是您（或配偶）名下的账户。; the office reads "…the client's or spouse's name."
 - To: an unmarried client reads "The account must be in your name." / 账户必须是您名下的账户。, and the office reads "The account must be in the client's name." Married clients keep today's text.
@@ -24,6 +33,7 @@ A client who isn't married still reads about a spouse in three questions and nin
 
 **Generated files**
 - `npm run build:intake` regenerates `src/intake-catalogue-data.mjs` and writes `supabase/migrations/025_intake_catalogue_<hash8>.sql`. It's text only, and nothing is written by hand.
+- **025 is regenerated in place:** the first 025 was applied to the test stack only, and never reached `main`. Its row in the stack's migration ledger is reset with the user's OK, and the new 025 is applied.
 - `npm run build:hant` regenerates `src/zh-hant.mjs`.
 
 ## Capabilities
@@ -33,6 +43,7 @@ A client who isn't married still reads about a spouse in three questions and nin
 
 ### Modified Capabilities
 - `client-intake`: ADDED, "An unmarried client isn't asked about a spouse".
+- `client-intake`: ADDED, "An unmarried client answers the 'who' questions with Yes or No".
 - `draft-13614c`: ADDED, "The draft's not-sure lines quote the wording the client saw".
 
 ## Impact
@@ -44,6 +55,8 @@ A client who isn't married still reads about a spouse in three questions and nin
 - **Code:**
   - `src/intake-catalogue.mjs`: `spouseShown`, `wording()` with `answers`, and lead and intro helpers;
   - `src/document-cards.mjs`: the bank card's hint, married or not, through two new `CARD_TEMPLATES` entries;
+  - `src/intake-form.mjs`: an unmarried client's "who" questions render as Yes/No radio buttons, and their answer is read back as a list;
+  - `src/office-views.mjs` and `src/staff-views.mjs`: answer summaries, and the cards' "Asked by:" lines, use the client's answers;
   - the screens that pass answers: `src/intake-form.mjs`, `src/intake-views.mjs`, `src/client-views.mjs`, `src/office-views.mjs`, `src/staff-views.mjs` and `src/draft-form.mjs`.
 - **Database:** only the generated catalogue migration. The database doesn't store wording.
 - **Tests:**

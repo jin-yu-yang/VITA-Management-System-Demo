@@ -14,7 +14,7 @@
 
 **Spec:** in `openspec/changes/add-unmarried-intake-wording/`:
 - `specs/client-intake/spec.md` and `specs/draft-13614c/spec.md`;
-- `design.md` (D1–D8);
+- `design.md` (D1–D9);
 - `brainstorm.md` (Q4 is the wording table);
 - `proposal.md`, `tasks.md`.
 
@@ -58,6 +58,24 @@
   **The direct-deposit card (design D7):**
   - not married: `The account must be in your name.` / `账户必须是您名下的账户。`, office `The account must be in the client's name.`;
   - married: today's text, unchanged.
+
+  **The "who" questions (design D8, brainstorm Q8), for a client who isn't married:**
+  - **Wording:** Q5.3–Q5.9 use these exact texts.
+
+    | Q | Standard | Senior |
+    |---|---|---|
+    | 5.3 `us_citizen` | Are you a U.S. citizen? / 您是美国公民吗？ | Are you a U.S. citizen? / 您是美国公民吗？ |
+    | 5.4 `on_visa` | Were you in the U.S. on a visa in 2025? / 2025 年，您是否持签证在美国？ | Were you in the U.S. on a visa in 2025? / 2025 年，您是拿签证待在美国的吗？ |
+    | 5.5 `fulltime_student` | Were you a full-time student in 2025? / 2025 年，您是否为全日制学生？ | Were you a full-time student in 2025? / 2025 年，您有没有至少 5 个月是学校认定的全日制学生？ |
+    | 5.6 `legally_blind` | Are you legally blind? / 您是否属于法定失明？ | Are you legally blind? / 您有医生证明是法定失明吗？ |
+    | 5.7 `disabled` | Are you totally and permanently disabled? / 您是否属于完全且永久性残疾？ | Are you totally and permanently disabled? / 您是完全并且永久残疾吗？ |
+    | 5.8 `ippin` | Were you issued an Identity Protection PIN (IP PIN)? / 您是否持有国税局（IRS）发放的身份保护码（IP PIN）？ | Did you get an Identity Protection PIN (IP PIN) from the IRS? / 您收到过国税局（IRS）寄来的 6 位数字号码，叫"身份保护码"（IP PIN）吗？ |
+    | 5.9 `digital_assets` | Did you own or hold any digital assets (such as Bitcoin, Ethereum, or other cryptocurrency) in 2025? / 2025 年，您是否拥有或持有数字资产（如比特币、以太坊等加密货币）？ | Did you own or hold any digital money (like Bitcoin or other crypto) in 2025? / 2025 年，您拥有过数字货币（比如比特币、以太坊、狗狗币）吗？ |
+
+  - **Options:** every "who" question (Q5.3–Q5.9, Q8.1 `irs_language_pref`, Q8.3 `pecf`) shows **radio buttons** labelled with the catalogue's yes/no labels: `me` reads Yes / 是, and `none` reads No / 否.
+  - **Saved answer:** still `["me"]` or `["none"]`.
+  - **A married client:** today's wording, with check boxes Me / My spouse / No one.
+  - **Migration:** 025 is regenerated in place (user's choice A1). The old `025_intake_catalogue_5234cc6a.sql` is deleted and rebuilt. Only the controller resets its row on `vitally-task2`.
 
   **Section 6, not-married intro:**
   - standard: `List **everyone who lived with you in 2025**, and **anyone you financially supported** who did not live with you.` / `请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。`
@@ -854,6 +872,307 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git rev-parse --short HEAD
 ```
 
+### Task 7: The "who" questions for an unmarried client
+
+**Files:**
+- Modify: `docs/intake-questions/intake-questions.md` and `intake-questions-senior-v2.md` (Q5.3–Q5.9, ~lines 212–237).
+- Delete and regenerate: `supabase/migrations/025_intake_catalogue_5234cc6a.sql`, which becomes a new `025_intake_catalogue_<hash8>.sql`.
+- Generated: `src/intake-catalogue-data.mjs`, `src/zh-hant.mjs`.
+- Modify:
+  - `src/intake-form.mjs`: `shownOptions` and `labelOf` (~lines 55–75), the `who` case in `renderField` (~line 423), `valuesFromControls` (~line 576), `formatAnswer`'s options (~line 752);
+  - `src/office-views.mjs`: `partSummary` (~line 402) and the `docCard` call (~line 456);
+  - `src/intake-views.mjs`: `docCard` (~line 303);
+  - `src/staff-views.mjs`: `checklistRow` (~line 923) and its call (~line 972).
+- Test: `tests/intake-build.test.mjs`, `tests/intake-form.test.mjs`, `tests/staff-views.test.mjs`, `tests/client-views.test.mjs`.
+
+**Interfaces:**
+- Consumes: Task 2's `spouseShown`, and `wording(…, { answers })`.
+- Produces:
+  - `wordingUnmarried` on Q5.3–Q5.9;
+  - `formatAnswer(question, value, { variant, lang, answers })`;
+  - `docCard(card, { …, answers })`;
+  - `checklistRow(card, { …, answers })`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/intake-build.test.mjs`, in `"the real catalogue's unmarried wording, leads and intro"`: replace the three-ID list with all ten, and pin Q5.3:
+
+```js
+  assert.deepEqual(questions.filter((q) => q.wordingUnmarried).map((q) => q.id).sort(), [
+    "claimed_by_other", "digital_assets", "disabled", "fulltime_student", "inc_wages_job_count",
+    "ippin", "legally_blind", "on_visa", "opt_veteran", "us_citizen",
+  ]);
+  assert.deepEqual(unmarried("us_citizen"), {
+    general: { en: "Are you a U.S. citizen?", zh: "您是美国公民吗？" },
+    senior: { en: "Are you a U.S. citizen?", zh: "您是美国公民吗？" },
+  });
+  assert.deepEqual(unmarried("ippin").senior, {
+    en: "Did you get an Identity Protection PIN (IP PIN) from the IRS?",
+    zh: "您收到过国税局（IRS）寄来的 6 位数字号码，叫\"身份保护码\"（IP PIN）吗？",
+  });
+```
+
+`tests/intake-form.test.mjs` (`q`, `renderQuestion`, `valuesFromControls` and `formatAnswer` are already imported):
+
+```js
+test("an unmarried client's who question asks directly, as Yes/No radio buttons; the answer stays a list", () => {
+  const single = { marital_status: "never_married" };
+  const married = { marital_status: "married" };
+  const citizen = renderQuestion(q("us_citizen"), ["none"], { answers: single });
+  assert.match(citizen, /Are you a U\.S\. citizen\?/);
+  assert.equal((citizen.match(/type="radio"/g) ?? []).length, 2);
+  assert.doesNotMatch(citizen, /type="checkbox"/);
+  assert.match(citizen, /value="me"><span>Yes<\/span>/);
+  assert.match(citizen, /value="none" checked><span>No<\/span>/);
+  assert.match(renderQuestion(q("us_citizen"), null, { lang: "zh-Hans", answers: single }), /您是美国公民吗？[\s\S]*<span>是<\/span>[\s\S]*<span>否<\/span>/);
+
+  const asked = renderQuestion(q("us_citizen"), ["me"], { answers: married });
+  assert.match(asked, /Who is a U\.S\. citizen\?/);
+  assert.equal((asked.match(/type="checkbox"/g) ?? []).length, 3);
+  assert.match(asked, /My spouse/);
+
+  // Section 8's "who" questions: same options, their own wording.
+  const fund = renderQuestion(q("pecf"), null, { answers: single });
+  assert.equal((fund.match(/type="radio"/g) ?? []).length, 2);
+  assert.match(fund, /<span>Yes<\/span>[\s\S]*<span>No<\/span>/);
+
+  // A radio's single value is read back as a list.
+  const radios = (checked) => [
+    { q: "us_citizen", type: "radio", value: "me", checked: checked === "me" },
+    { q: "us_citizen", type: "radio", value: "none", checked: checked === "none" },
+  ];
+  assert.deepEqual(valuesFromControls(radios("me")), { us_citizen: ["me"] });
+  assert.deepEqual(valuesFromControls(radios("none")), { us_citizen: ["none"] });
+  assert.deepEqual(valuesFromControls(radios(null)), { us_citizen: null });
+
+  // Labels: Yes/No with an unmarried application, Me/No one without one or when married.
+  assert.equal(formatAnswer(q("on_visa"), ["none"], { answers: single }), "No");
+  assert.equal(formatAnswer(q("on_visa"), ["me"], { answers: single }), "Yes");
+  assert.equal(formatAnswer(q("on_visa"), ["none"]), "No one");
+  assert.equal(formatAnswer(q("on_visa"), ["me", "spouse"], { answers: married }), "Me, My spouse");
+});
+```
+
+`tests/staff-views.test.mjs` (`v2Case`, `v2Panel` and `checklist` exist; `v2Case()` is never married):
+
+```js
+test("staff see an unmarried client's who answers as Yes/No, with the wording the client saw", () => {
+  const panel = v2Panel(v2Case({ answers: { on_visa: ["none"] } }));
+  assert.match(panel, /<span>Were you in the U\.S\. on a visa in 2025\?<\/span><strong>No<\/strong>/);
+  assert.doesNotMatch(panel, /Who was in the U\.S\. on a visa/);
+  const docs = checklist(v2Case({ answers: { on_visa: ["me"] } }));
+  assert.match(docs, /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
+});
+```
+
+`tests/client-views.test.mjs` (`docCard`, `cardsFor` and `makeSampleAnswers` are already used in this file):
+
+```js
+test("the office's document card asks the question the client saw", () => {
+  const answers = { ...makeSampleAnswers(), on_visa: ["me"] };
+  const visa = cardsFor(answers, []).find((card) => card.slotId === "visa.tp");
+  assert.match(docCard(visa, { links: false, office: true, answers }), /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
+  const married = { ...makeSampleAnswers({ married: true }), on_visa: ["me"] };
+  const theirs = cardsFor(married, []).find((card) => card.slotId === "visa.tp");
+  assert.match(docCard(theirs, { links: false, office: true, answers: married }), /Asked by: Who was in the U\.S\. on a visa in 2025\?/);
+});
+```
+
+(If an existing test in any of these files renders a never-married client's "who" question or answer and expects Me / No one or check boxes, update it to Yes/No or radio buttons, and list it in the report.)
+
+- [ ] **Step 2: Run them and see them fail**
+
+Run: `npm test`
+Expected: FAIL. The new tests fail because there's no `wordingUnmarried` on Q5.3–Q5.9, the controls are still check boxes, and the labels still read Me / No one.
+
+- [ ] **Step 3: The drafts, and 025 regenerated**
+
+In both drafts, add a `> Not married:` line straight after each of Q5.3–Q5.9's ID lines, with the Global Constraints table's text for that version, for example:
+- in the standard draft, under `` `us_citizen` · Who (multi-select) · Required ``: `> Not married: Are you a U.S. citizen? / 您是美国公民吗？`;
+- in the senior draft, under the same ID line: `> Not married: Are you a U.S. citizen? / 您是美国公民吗？`.
+
+Then delete the old 025 from the index and the disk (`git rm supabase/migrations/025_intake_catalogue_5234cc6a.sql`), and run:
+
+```bash
+npm run build:intake
+npm run build:hant
+ls supabase/migrations
+```
+Expected: `build:intake` writes a new `025_intake_catalogue_<hash8>.sql`, because 024 is now the newest. Don't apply it.
+
+- [ ] **Step 4: The code**
+
+`src/intake-form.mjs`, next to `shownOptions`:
+
+```js
+// For a client who isn't married, a "who" question asks about the client alone
+// (design D8): "me" reads as Yes and "none" as No, with the yes/no labels, as
+// radio buttons. The saved answer is still ["me"] or ["none"].
+const ALONE = { me: "yes", none: "no" };
+const askedAlone = (question, answers) => question?.type === "who" && !spouseShown(answers);
+const asAloneOption = (option) => {
+  const yesno = CATALOGUE.fixedOptions.yesno.options.find((fixed) => fixed.value === ALONE[option.value]);
+  return yesno ? { value: option.value, label: yesno.label } : option;
+};
+
+// The options rendered now: who's "My spouse" only while married; Yes/No when asked alone.
+const shownOptions = (question, answers) =>
+  askedAlone(question, answers)
+    ? allOptions(question).filter((option) => option.value !== "spouse").map(asAloneOption)
+    : allOptions(question);
+
+const labelOf = (question, value, options) => {
+  let option = question ? allOptions(question).find((o) => o.value === value) : undefined;
+  // Only with the application's answers: catalogue-level labels stay Me / No one.
+  if (option && options?.answers && askedAlone(question, options.answers)) option = asAloneOption(option);
+  return option ? optionLabel(option, options) : String(value);
+};
+```
+
+(Replace the existing `shownOptions` and `labelOf`. Without answers, `spouseShown(undefined)` is false, so `renderField` keeps getting its form's answers object, as it does today.)
+
+In `renderField`'s `case "multi": case "who":`, before the check-box markup:
+
+```js
+      if (askedAlone(question, answers))
+        return group(
+          `<div class="q-options q-segmented">${options
+            .map((option) => {
+              const id = `${base}-${esc(option.value)}`;
+              return `<label for="${id}" class="q-option"><input id="${id}" ${control} type="radio" name="${base}" value="${esc(option.value)}"${picked.includes(option.value) ? " checked" : ""}><span>${esc(optionLabel(option, { variant, lang }))}</span></label>`;
+            })
+            .join("")}</div>`,
+        );
+```
+
+(It goes after `const picked = …`. `answers` is the field context's answers, already used for `tipsOf` in that function.)
+
+In `valuesFromControls`, after `out[id] = household ? … : readOne(…);`:
+
+```js
+    // An unmarried client's "who" question is a pair of radio buttons; its answer is still a list.
+    if (typeof out[id] === "string" && findQuestion(2, id)?.type === "who") out[id] = [out[id]];
+```
+
+In `formatAnswer`, take `answers` and carry it in `options`:
+
+```js
+export function formatAnswer(question, value, { variant = "general", lang = "en", answers } = {}) {
+  …
+  const options = { variant, lang, answers };
+```
+
+`src/office-views.mjs`:
+- `partSummary` → `formatAnswer(question, answers[question.id], { variant, lang: "en", answers })`;
+- the `docCard` call (~line 456) → `docCard(card, { links: false, off, office: true, answers: view.answers })`.
+
+`src/intake-views.mjs`, `docCard`:
+
+```js
+export function docCard(card, { links = true, off = "", office = false, lang = "en", answers } = {}) {
+  …
+  const asked = office && card.ask ? wording(findQuestion(2, card.ask), { variant: "general", lang: "en", answers }) : "";
+```
+
+`src/staff-views.mjs`:
+- `function checklistRow(card, { variant, markable, movable, off, answers })` → `const asked = card.ask ? wording(findQuestion(2, card.ask), { variant, answers }) : "";`
+- its call in `documentChecklist` → `checklistRow(card, { variant, markable, movable, off, answers })`.
+
+- [ ] **Step 5: Run them and see them pass**
+
+```bash
+npm test
+npm run build:hant -- --check
+npm run build:intake
+```
+Expected:
+- PASS for the whole unit suite;
+- the 繁體 check is clean;
+- the second `build:intake` reports "already records this catalogue".
+
+- [ ] **Step 6: Commit**
+
+Stage by name: the two drafts, `src/intake-catalogue-data.mjs`, `src/zh-hant.mjs`, `src/intake-form.mjs`, `src/office-views.mjs`, `src/intake-views.mjs`, `src/staff-views.mjs`, the four test files and the new 025 file. `git rm` already staged the old 025's deletion.
+
+Commit message:
+
+"An unmarried client's who questions ask directly, as Yes/No radio buttons (Q5.3-Q5.9, Q8.1, Q8.3); 025 regenerated"
+
+then a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Confirm with `git rev-parse --short HEAD`.
+
+---
+
+### Task 8: The regenerated 025 and the story
+
+**Files:**
+- Test: `tests/browser.mjs`, at the client's version-2 walk: the visit loop (add an `about.situation` check next to the `income.wages` one, ~line 3103) and the married part (~line 3570, after the married wages check).
+
+- [ ] **Step 1: The controller applies the new 025 (not the implementer)**
+
+1. Review the new `025_intake_catalogue_<hash8>.sql`: one `load_intake_catalogue` call, as before.
+2. Dry-run it in a rolled-back transaction. Expect 114 fields and 0 field rows changed.
+3. Delete the old row (the user's choice A1): `delete from vitally_private.schema_migrations where name = '025_intake_catalogue_5234cc6a.sql'`.
+4. Run `npm run db:migrate:test` and `npm run test:database`.
+
+- [ ] **Step 2: The story**
+
+In the visit loop, next to `if (id === "income.wages") {…}`:
+
+```js
+          if (id === "about.situation") {
+            // Never married: Q5.3 asks the client directly, with Yes/No radio buttons.
+            const citizen = await page.evaluate(() => ({
+              legend: document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "",
+              radios: document.querySelectorAll('[data-q="us_citizen"] input[type="radio"]').length,
+              boxes: document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length,
+            }));
+            assert.ok(citizen.legend.startsWith("Are you a U.S. citizen?"), citizen.legend);
+            assert.deepEqual([citizen.radios, citizen.boxes], [2, 0]);
+          }
+```
+
+After the married wages check (~line 3584):
+
+```js
+        // Married: Q5.3 is the "who" question again, with three check boxes.
+        await jump("about.situation");
+        await waitFor(
+          page,
+          "the married Q5.3 check boxes",
+          () => document.querySelectorAll('[data-q="us_citizen"] input[type="checkbox"]').length === 3,
+          undefined,
+          RENDER_MS,
+        );
+        assert.ok(
+          (await page.evaluate(() => document.querySelector('[data-q="us_citizen"] .q-label')?.textContent.trim() ?? "")).startsWith(
+            "Who is a U.S. citizen?",
+          ),
+        );
+```
+
+Run `node --check tests/browser.mjs`, then commit `tests/browser.mjs` with the Opus 5.5 trailer. The controller runs `npm run test:browser`.
+
+---
+
+### Task 9: Docs for the regenerated 025
+
+- [ ] **Step 1: The controller runs every check**
+  - `npm test`;
+  - `npm run build:hant -- --check`;
+  - `npm run build:intake`, which leaves nothing to commit;
+  - `npx openspec validate --all`;
+  - `npm run test:database`;
+  - `npm run test:auth-browser`;
+  - `npm run test:browser`, using Task 8's run.
+
+- [ ] **Step 2: The implementer edits the docs**
+  - **The 025 rows:** in `docs/setup.md` and `docs/developer/database.md`, change the file name to the new hash, and add to the text: "; for an unmarried client, Q5.3–Q5.9 ask directly and every \"who\" question offers Yes/No".
+  - **The counts:** update the unit and database counts wherever Task 6 put them.
+  - **`docs/developer/frontend.md`:** add one bullet after the marital-status bullet: "- For a client who isn't married, a \"who\" question (Me / My spouse / No one) renders as Yes/No radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is still a list (`[\"me\"]`/`[\"none\"]`). `valuesFromControls` wraps the radio's value; `formatAnswer` labels it Yes/No only when given the application's `answers`."
+
+  Commit with the Opus 5.5 trailer.
+
+
 ---
 
 ## Self-review
@@ -867,6 +1186,7 @@ git rev-parse --short HEAD
     - the office: Task 3;
     - the senior married lead in Chinese: Tasks 1 and 2;
     - the direct-deposit card, unmarried, unanswered and married, client and office: Task 4.
+  - `client-intake` "An unmarried client answers the 'who' questions with Yes or No": Task 7 (wording, radio buttons, Chinese, married, Section 8, staff, office card) and Task 8 (story).
   - `draft-13614c` "The draft's not-sure lines quote the wording the client saw": Task 3 (`tests/draft-form.test.mjs`), both scenarios.
 - **Placeholder scan:**
   - the generated `025_intake_catalogue_<hash8>.sql` name is decided by the build;
