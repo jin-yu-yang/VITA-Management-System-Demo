@@ -450,9 +450,9 @@ const row = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value).replace(/\n/g, "<br>")}</strong></div>`;
 
 // One summary section (design D7): the step's heading is its toggle, and its
-// body is hidden while `summary-shut:<step id>` is in openPanels. The toggle's
-// id lets any redraw put the keyboard back on it (ui.mjs restores by id first). Print shows
-// every body (styles.css), so folding changes only the screen.
+// body is hidden while `summary-shut:<step id>` is in openPanels. The toggle's id lets any
+// redraw put the keyboard back on it (ui.mjs restores by id first). Print shows every body
+// (styles.css), so folding changes only the screen.
 function summarySection(stepId, title, inner, { panels = [], lang = "en", extraClass = "" } = {}) {
   const shut = panels.includes(`summary-shut:${stepId}`);
   const id = esc(stepId);

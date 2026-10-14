@@ -337,6 +337,10 @@ export function substepStatus(id, { answers = {}, visited = [], revealed = new S
 /** A step's mark over its visible sub-steps: needs > docs > done when all are > none. */
 export function stepRollup(stepId, ctx = {}) {
   const mark = (key) => markIn(key, ctx.lang);
+  // The review step ends with the Submit page, which is never marked (it
+  // stays blank until the application is submitted), so the step itself is
+  // never Done, whichever of its pages the gate shows (gate-review-and-redesign-summary).
+  if (stepId === "review") return mark("none");
   const visible = new Set(visibleSubsteps(ctx.answers, ctx.cards, ctx.visited));
   const keys = substepsFor(2)
     .filter((substep) => substep.step.id === stepId && visible.has(substep.id))

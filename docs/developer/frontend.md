@@ -102,8 +102,9 @@ sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSign
 `moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `setSummaryShut`,
 `revealInvalid`, `guardSubmit`, `removeMember`), document cards (`setDocumentCard`,
 `setDocumentGroup`), the office's Add a case (`openAddCase`, `toggleAddSubstep`,
-`saveOfficeDraft`), assistance (`runAssistanceAction`), presenter tools (`selectPerson`, `resetFixtures`, `loadCheckpoint`), language (`setLanguage`,
-`adoptLanguage`), and navigation (`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
+`saveOfficeDraft`), assistance (`runAssistanceAction`), presenter tools (`selectPerson`,
+`resetFixtures`, `loadCheckpoint`), language (`setLanguage`, `adoptLanguage`), and navigation
+(`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
 `dismissError`).
 
@@ -206,11 +207,16 @@ dropped).
   answer" once a sub-step has been visited (`visitedSubsteps`). The Saved chip counts shown errors only;
   Review's alerts and the Submit gate count every visible invalid answer.
 - **The review gate** (openspec change `gate-review-and-redesign-summary`):
-  - `reviewAlerts(answers)` is every missing and invalid answer. 9.1 lists them, and while there is one, 9.1's Continue is disabled.
-  - 9.2 is visible only with no alerts. 9.3 is visible only with no alerts and once `review.submit` is among the visits, which only Continue on 9.2 adds (`moveSubstep`).
-  - `visibleSubsteps`, `resolveSubstep` and `adjacentSubstep` take the visits, so a gated place resolves to 9.1.
-  - The summary's sections fold through `openPanels` names `summary-shut:<step id>` (`setSummaryShut` for Expand and Collapse all), and print open.
-  - Submit's guard is `guardSubmit()`: a press on a page drawn before an alert came back reveals the invalid answers and goes to 9.1, and nothing is submitted.
+  - `reviewAlerts(answers)` is every missing and invalid answer. 9.1 lists them, and while there
+    is one, 9.1's Continue is disabled.
+  - 9.2 is visible only with no alerts. 9.3 is visible only with no alerts and once
+    `review.submit` is among the visits, which only Continue on 9.2 adds (`moveSubstep`).
+  - `visibleSubsteps`, `resolveSubstep` and `adjacentSubstep` take the visits, so a gated place
+    resolves to 9.1.
+  - The summary's sections fold through `openPanels` names `summary-shut:<step id>`
+    (`setSummaryShut` for Expand and Collapse all), and print open.
+  - Submit's guard is `guardSubmit()`: a press on a page drawn before an alert came back reveals
+    the invalid answers and goes to 9.1, and nothing is submitted.
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
   `case_contacts`. Missing answers are computed from the draft alone.

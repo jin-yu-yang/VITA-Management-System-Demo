@@ -539,9 +539,10 @@ test("stepRollup: needs, then docs, then done only when all are done", () => {
   const never = { ...STEP2, marital_status: "never_married" };
   assert.equal(visibleSubsteps(never, cardsFor(never)).includes("about.spouse"), false);
   assert.equal(stepRollup("nowhere", ctx({})).key, "none");
-  // The review step counts only what the gate shows: an earned 9.3 is never Done.
+  // The review step is never Done (its Submit page stays blank until submission),
+  // whether or not the gate has shown 9.3.
   const everything = fillAll();
-  assert.equal(stepRollup("review", ctx(everything, { visited: ["review.check", "review.summary"] })).key, "done");
+  assert.equal(stepRollup("review", ctx(everything, { visited: ["review.check", "review.summary"] })).key, "none");
   assert.equal(stepRollup("review", ctx(everything, { visited: ["review.check", "review.summary", "review.submit"] })).key, "none");
 });
 

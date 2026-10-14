@@ -3187,6 +3187,13 @@ test("guardSubmit: a Submit pressed on a stale page with an alert reveals it and
   // A clean draft passes, and the guard moves nothing.
   assert.equal(await controller.guardSubmit(), true);
   assert.equal(controller.currentSubstep(), "review.submit");
+  // A missing answer alone is refused too: the guard checks the review alerts, not only invalid answers.
+  controller.editAnswers({ addr_city: null });
+  assert.equal(await controller.guardSubmit(), false);
+  assert.equal(controller.getState().formSubstep, "review.check");
+  controller.editAnswers({ addr_city: "Philadelphia" });
+  await controller.goToSubstep("review.submit");
+  assert.equal(controller.currentSubstep(), "review.submit");
   // The draft changes under a page already drawn: an invalid email and no city.
   controller.editAnswers({ email: "a@", addr_city: null });
   assert.equal(await controller.guardSubmit(), false);

@@ -1124,6 +1124,9 @@ test("the rail and the count follow the review gate", () => {
   assert.deepEqual(reviewRail(alert), ["review.check"]);
   assert.match(alert, /id="intake-v2-form"[^>]*data-substep="review\.check"/);
   assert.equal(count(alert), count(clean) - 1);
+  // The review step's mark stays blank until submission, even with 9.1 and 9.2 Done.
+  const visitedBoth = intakeScreen(v2State({ formSubstep: "review.summary", visitedSubsteps: ["review.check", "review.summary"] }));
+  assert.match(visitedBoth, /<span id="rail-step-review-status" class="rail-status is-none">/);
 });
 
 const summaryPage = (overrides = {}) =>
