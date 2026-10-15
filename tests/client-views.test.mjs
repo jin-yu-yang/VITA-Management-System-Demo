@@ -1376,6 +1376,17 @@ test("the progress page labels service and language codes", () => {
   assert.match(v2, /<span>Service<\/span><strong>Drop-off<\/strong>/);
   assert.match(v2, /<span>Language<\/span><strong>English<\/strong>/);
   assert.match(v2, /Hello, Mei\./);
+  // Every language the client named, by full name, preferred first (allow-multiple-service-languages, design D7).
+  const both = progress(v2Case({ stage: "received", answers: { service: "drop_off", language: "cantonese", language_also: ["mandarin"], tp_first_name: "Mei" } }));
+  assert.match(both, /<span>Language<\/span><strong>Cantonese, Mandarin<\/strong>/);
+  const zh = progressScreen(
+    baseState({
+      screen: "progress",
+      lang: "zh-Hans",
+      savedCase: v2Case({ stage: "received", answers: { language: "mandarin", language_also: ["other"], language_also_other: "Vietnamese", tp_first_name: "Mei" } }),
+    }),
+  );
+  assert.match(zh, /<strong>普通话、Vietnamese<\/strong>/);
 });
 
 // Part 4c (Task 4): the card is exported for Add a case. Without `office` it is
