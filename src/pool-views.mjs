@@ -1,5 +1,5 @@
 import { phaseTab, describeStage } from "./domain.mjs";
-import { clientLanguages, languageFilterLabels, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
+import { clientLanguages, languageOptions, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
 import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell } from "./ui.mjs";
 
 export const POOL_TABS = Object.freeze([
@@ -135,7 +135,7 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
   const filters = `<div class="pool-filters">${filterSelect(
     "Stage", "poolStage", chosen.poolStage,
     [["all", "Any stage"], ...POOL_STAGES.map((stage) => [stage, describeStage(stage).label])],
-  )}${filterSelect("Language", "poolLanguage", chosen.poolLanguage, [["all", "Any language"], ...languageFilterLabels(all.map((record) => clientLanguages(record?.answers))).map((label) => [label, label])])}${filterSelect(
+  )}${filterSelect("Language", "poolLanguage", chosen.poolLanguage, languageOptions(all, "Any language"))}${filterSelect(
     "Service", "poolService", chosen.poolService, valueOptions(all, "service", "Any service", serviceLabel),
   )}${filterSelect("Prepared by", "poolPreparer", chosen.poolPreparer, personOptions(people))}${filterSelect(
     "Reviewed by", "poolReviewer", chosen.poolReviewer, personOptions(people),

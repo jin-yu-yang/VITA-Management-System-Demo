@@ -5,7 +5,7 @@ import {
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
   memberNameParts, spouseShown, leadOf, introOf,
-  LANGUAGE_LETTERS, clientLanguages, languageLetters, languageNames, speaksLanguage, languageFilterLabels, languageSummary,
+  LANGUAGE_LETTERS, clientLanguages, languageLetters, languageNames, speaksLanguage, languageFilterLabels, languageSummary, languageOptions,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
@@ -439,6 +439,10 @@ test("language letters, names, filter labels and the staff summary", () => {
   assert.deepEqual(
     languageFilterLabels([entries, clientLanguages({ language: "english" }), clientLanguages({ language: "mandarin" })]),
     ["Cantonese", "English", "Mandarin", "Other"],
+  );
+  assert.deepEqual(
+    languageOptions([{ answers: { language: "cantonese", language_also: ["mandarin"] } }], "Any language"),
+    [["all", "Any language"], ["Cantonese", "Cantonese"], ["Mandarin", "Mandarin"]],
   );
   assert.deepEqual(LANGUAGE_LETTERS, { english: "E", cantonese: "C", mandarin: "M", other: "O" });
   assert.ok(Object.isFrozen(LANGUAGE_LETTERS));

@@ -1,6 +1,6 @@
 import {
   clientLanguages,
-  languageFilterLabels,
+  languageOptions,
   languageSummary,
   speaksLanguage,
   serviceLabel,
@@ -476,8 +476,9 @@ const filterChips = (name, options, current) =>
     )
     .join("")}</div>`;
 
-// Language and service come from the records themselves, so a workspace with
-// one language does not show filters for languages nobody asked for.
+// Service comes from the records themselves, so a workspace with one service
+// does not show filters for services nobody asked for. Languages use
+// `languageOptions`.
 const valueOptions = (cases, key, allLabel, labelOf) => [
   ["all", allLabel],
   ...[
@@ -587,7 +588,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
-  )}${filterChips("language", [["all", "Any language"], ...languageFilterLabels(cases.map((record) => clientLanguages(record?.answers))).map((label) => [label, label])], chosen.language)}${filterChips(
+  )}${filterChips("language", languageOptions(cases, "Any language"), chosen.language)}${filterChips(
     "service",
     valueOptions(cases, "service", "Any service", serviceLabel),
     chosen.service,

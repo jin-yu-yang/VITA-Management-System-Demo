@@ -235,6 +235,10 @@ test("a help request with no case shows its own language, a label by its code an
   const other = page([], help, sam, { language: "Other" });
   assert.match(other, /Taxes/);
   assert.doesNotMatch(other, /Forms/);
+  const saved = page([], help, sam, { language: "Polish" });
+  assert.doesNotMatch(saved, /data-item-id="h2"/, "a saved free-text filter matches no row");
+  assert.doesNotMatch(saved, /Taxes/);
+  assert.match(saved, /<div class="empty-state">[\s\S]*data-filter="language" data-value="all"[^>]*>Show all languages/);
 });
 
 test("waiting is shown in words and marked amber at 3 days, red at 5", () => {

@@ -28,7 +28,7 @@ A Follow-ups row without a case SHALL use the help request's own language text:
 - **THEN** its Language cell shows "C"
 
 ### Requirement: Language filters match any language the client speaks
-The work board's and Follow-ups' language chips and the case pool's language filter SHALL match a client when any language they speak, preferred or other, is the chosen language. The filter's options SHALL be the full names of every language that appears among the listed cases, preferred or other, sorted. A saved filter value SHALL keep working.
+The work board's and Follow-ups' language chips and the case pool's language filter SHALL match a client when any language they speak, preferred or other, is the chosen language. The filter's options SHALL be the full names of every language that appears among the listed cases, preferred or other, sorted. A saved filter value that names English, Cantonese, Mandarin or Other SHALL keep working; a saved free-text value (for example "Polish", from before this change) SHALL match no row until it is cleared, and the empty state SHALL offer to show all languages.
 
 #### Scenario: Filtering by a second language
 - **WHEN** staff choose "Mandarin" on the work board
@@ -37,3 +37,7 @@ The work board's and Follow-ups' language chips and the case pool's language fil
 #### Scenario: The options include second languages
 - **WHEN** the only Mandarin speaker in the case pool named Mandarin in Q0.5
 - **THEN** "Mandarin" is one of the pool's language options
+
+#### Scenario: A saved free-text filter
+- **WHEN** Follow-ups opens with a saved language filter of "Polish"
+- **THEN** no row matches, and the empty state offers "Show all languages"

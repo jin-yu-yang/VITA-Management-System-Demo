@@ -230,7 +230,12 @@ dropped).
   radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is
   still a list (`["me"]`/`["none"]`). `valuesFromControls` wraps the radio's value; `formatAnswer`
   labels it Yes/No only when given the application's `answers`.
-- **A client's service languages** (openspec change `allow-multiple-service-languages`): Q0.3 `language` is the preferred one; Q0.5 `language_also` adds the others (Q0.6 `language_also_other` for Other). `clientLanguages(answers)` in `intake-catalogue.mjs` lists them, preferred first, never twice; the work board, case pool and Follow-ups show them as letters through `languageCell` (`ui.mjs`), with the names on hover and for screen readers, and their language filters match any of them (`speaksLanguage`). The progress page lists the full names.
+- **A client's service languages** (openspec change `allow-multiple-service-languages`): Q0.3
+  `language` is the preferred one; Q0.5 `language_also` adds the others (Q0.6 `language_also_other`
+  for Other). `clientLanguages(answers)` in `intake-catalogue.mjs` lists them, preferred first,
+  never twice; the work board, case pool and Follow-ups show them as letters through `languageCell`
+  (`ui.mjs`), with the names on hover and for screen readers, and their language filters match any
+  of them (`speaksLanguage`). The progress page lists the full names.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:

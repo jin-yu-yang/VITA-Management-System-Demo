@@ -331,6 +331,13 @@ export const speaksLanguage = (entries, chosen) =>
 export const languageFilterLabels = (lists) =>
   [...new Set(lists.flatMap((entries) => entries.map((entry) => entry.label)))].sort();
 
+// A language filter's options: "all" first, then the full name of every
+// language any listed case's client speaks (design D5).
+export const languageOptions = (cases, anyLabel) => [
+  ["all", anyLabel],
+  ...languageFilterLabels((cases ?? []).map((record) => clientLanguages(record?.answers))).map((label) => [label, label]),
+];
+
 export const languageSummary = (entries) => ({
   letters: languageLetters(entries),
   names: languageNames(entries, { preferred: true }),
