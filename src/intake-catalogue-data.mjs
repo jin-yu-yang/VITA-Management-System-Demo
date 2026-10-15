@@ -236,6 +236,111 @@ export default {
                   "zh": "请说明"
                 }
               }
+            },
+            {
+              "id": "language_also",
+              "type": "multi",
+              "required": false,
+              "options": [
+                {
+                  "value": "english",
+                  "label": {
+                    "general": {
+                      "en": "English",
+                      "zh": "英语"
+                    },
+                    "senior": {
+                      "en": "English",
+                      "zh": "英语"
+                    }
+                  }
+                },
+                {
+                  "value": "cantonese",
+                  "label": {
+                    "general": {
+                      "en": "Cantonese",
+                      "zh": "粤语"
+                    },
+                    "senior": {
+                      "en": "Cantonese",
+                      "zh": "粤语"
+                    }
+                  }
+                },
+                {
+                  "value": "mandarin",
+                  "label": {
+                    "general": {
+                      "en": "Mandarin",
+                      "zh": "普通话"
+                    },
+                    "senior": {
+                      "en": "Mandarin",
+                      "zh": "普通话"
+                    }
+                  }
+                },
+                {
+                  "value": "other",
+                  "label": {
+                    "general": {
+                      "en": "Other",
+                      "zh": "其他"
+                    },
+                    "senior": {
+                      "en": "Other",
+                      "zh": "其他"
+                    }
+                  }
+                }
+              ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Choose all that apply. Leave this blank if only your preferred language works for you.",
+                    "zh": "可多选。如果只能使用首选语言，请留空。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Choose all that apply. Leave this blank if only your preferred language works for you.",
+                    "zh": "可多选。如果只能使用首选语言，请留空。"
+                  }
+                ]
+              },
+              "wording": {
+                "general": {
+                  "en": "Any other languages we can help you in?",
+                  "zh": "我们还可以用哪些语言为您服务？"
+                },
+                "senior": {
+                  "en": "Any other languages we can help you in?",
+                  "zh": "我们还可以用哪些语言为您服务？"
+                }
+              }
+            },
+            {
+              "id": "language_also_other",
+              "type": "text",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "language_also",
+                  "op": "eq",
+                  "value": "other"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Please specify",
+                  "zh": "请说明"
+                },
+                "senior": {
+                  "en": "Please specify",
+                  "zh": "请说明"
+                }
+              }
             }
           ]
         }
@@ -290,7 +395,9 @@ export default {
           },
           "questions": [
             "language",
-            "language_other"
+            "language_other",
+            "language_also",
+            "language_also_other"
           ]
         }
       ]

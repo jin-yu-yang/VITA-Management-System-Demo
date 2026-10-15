@@ -386,3 +386,10 @@ test("wording, leadOf and introOf pick the not-married text from the application
   assert.doesNotMatch(introOf(section6, { answers: single }), /spouse/);
   assert.equal(introOf(CATALOGUE.steps.flatMap((s) => s.sections).find((x) => x.n === 1), { answers: single }), "");
 });
+
+test("before.language asks the preferred language, then the others", () => {
+  assert.deepEqual(
+    substepQuestions("before.language").map((question) => question.id),
+    ["language", "language_other", "language_also", "language_also_other"],
+  );
+});
