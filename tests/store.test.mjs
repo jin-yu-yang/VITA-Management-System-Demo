@@ -455,7 +455,7 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly four summary fields.
+  // The Case scalars, unchanged, plus exactly five summary fields.
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
@@ -464,25 +464,42 @@ test("a presenter list carries the summaries a work board reads", async () => {
       "openFollowups",
       "openRequests",
       "participants",
+      "phone",
     ].toSorted(),
   );
   assert.deepEqual(row.participants, ["person-alex"]);
   assert.equal(row.openFollowups, 1);
   assert.deepEqual(row.followupAssigneeIds, ["person-sam"]);
   assert.equal(row.openRequests, 1);
-  // Three grouped reads, each scoped to the cases this list actually holds,
+  // The client's phone for the list's masked column (D5), and nothing else
+  // of the contact row.
+  assert.equal(row.phone, "2155550100");
+  // Four grouped reads, each scoped to the cases this list actually holds,
   // and each asking only for the columns the board needs.
   const summaries = client.reads.filter((read) =>
-    ["preparation_participants", "admin_followups", "document_requests"].includes(
+    ["preparation_participants", "admin_followups", "document_requests", "case_contacts"].includes(
       read.table,
     ),
   );
-  assert.equal(summaries.length, 3);
+  assert.equal(summaries.length, 4);
   for (const read of summaries) assert.deepEqual(read.within, ["case_id", ["case-1"]]);
   assert.ok(!summaries.some((read) => read.columns === "*"), "no whole rows");
   // Only the open work is counted: a resolved task is not a task.
-  for (const read of summaries.filter((entry) => entry.table !== "preparation_participants"))
+  for (const read of summaries.filter((entry) =>
+    ["admin_followups", "document_requests"].includes(entry.table),
+  ))
     assert.deepEqual(read.filters, [["status", "open"]]);
+  // The phone read names the phone and nothing else: no spouse phone, best
+  // time or note reaches a list.
+  const phoneRead = summaries.find((read) => read.table === "case_contacts");
+  assert.equal(phoneRead.columns, "case_id,phone");
+  assert.deepEqual(phoneRead.filters, []);
+});
+
+test("a listed case with no contact row has no phone", async () => {
+  const client = fakeClient({ access: "presenter", rows: { case_contacts: [] } });
+  const [row] = await createStore(client).listCases();
+  assert.equal(row.phone, null);
 });
 
 test("an empty presenter list asks for no summaries at all", async () => {

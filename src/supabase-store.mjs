@@ -355,9 +355,10 @@ export function createStore(client) {
     // A client's list is their own cases and nothing more. A presenter's list
     // is a work board, and a board that cannot say who is already on a case,
     // what is waiting on a client, or who owes somebody a call is only a list
-    // of references. Those three answers come from three grouped reads over
-    // the same RLS-scoped tables the case screen uses — not from the rows
-    // themselves, which carry no related record at all (Ruling R56).
+    // of references. Those three answers, and the client's phone for the
+    // masked column, come from four grouped reads over the same RLS-scoped
+    // tables the case screen uses — not from the rows themselves, which carry
+    // no related record at all (Ruling R56).
     async listCases() {
       const staff = (await access()) === "presenter";
       const cases = (
@@ -386,6 +387,14 @@ export function createStore(client) {
           .in("case_id", ids)
           .eq("status", "open"),
       );
+      // The client's phone, for the list's masked column (D5). The phone
+      // alone: the case page reads the rest of the contact row.
+      const contacts = await read(
+        client
+          .from("case_contacts")
+          .select("case_id,phone")
+          .in("case_id", ids),
+      );
       const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
       return cases.map((record) => {
         const open = forCase(followups, record.id);
@@ -399,6 +408,7 @@ export function createStore(client) {
             ...new Set(open.map((row) => row.assignee_person_id)),
           ],
           openRequests: forCase(requests, record.id).length,
+          phone: forCase(contacts, record.id)[0]?.phone ?? null,
         };
       });
     },

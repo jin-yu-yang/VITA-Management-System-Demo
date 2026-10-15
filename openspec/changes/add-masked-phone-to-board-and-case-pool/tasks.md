@@ -1,11 +1,11 @@
 ## 1. The phone in the list read
 
-- [ ] 1.1 Update `tests/store.test.mjs` first, and run it to see it fail.
+- [x] 1.1 Update `tests/store.test.mjs` first, and run it to see it fail.
   - "a presenter list carries the summaries a work board reads": five summary fields (`phone` added), with `row.phone === "2155550100"` from the fake `case_contacts` row.
   - The grouped reads become four: `case_contacts` is read with `.in("case_id", ["case-1"])`, and its columns are exactly `case_id,phone` (no spouse phone, best time or note, no `*`).
   - A listed case with no contact row gets `phone: null`.
   - The applicant list and the empty presenter list still read only `memberships` and `cases`. Those tests are unchanged and must still pass.
-- [ ] 1.2 In `src/supabase-store.mjs`, add the fourth grouped read to the presenter branch of `listCases`, and set `phone` on each record (design D2). The 1.1 tests pass.
+- [x] 1.2 In `src/supabase-store.mjs`, add the fourth grouped read to the presenter branch of `listCases`, and set `phone` on each record (design D2). The 1.1 tests pass.
 
 ## 2. The work board's Phone column
 
