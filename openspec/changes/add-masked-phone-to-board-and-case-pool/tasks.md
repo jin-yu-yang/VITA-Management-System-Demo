@@ -22,15 +22,15 @@
 
 ## 3. The case pool's Phone column
 
-- [ ] 3.1 Write the unit tests first in `tests/pool-views.test.mjs`, and run them to see them fail.
+- [x] 3.1 Write the unit tests first in `tests/pool-views.test.mjs`, and run them to see them fail.
   - The header row reads Client, Stage, Phone, Language, Service, Preparer, Reviewer, Updated.
   - With an admin `person` in `ui`, every row with a phone is revealable with `id="pool-phone-<case id>"`, including an unclaimed case.
   - With a volunteer `person` (the rule, not the screen gate), an unclaimed row is locked with no id. This checks that the pool goes through `canSeeContact`.
   - With no `person`, every row is locked (`canSeeContact(record, null)` is false).
   - Empty phone: "—". Order: `board-reference` before `phone-mask`.
   - The footnote keeps "This pool shows workflow only" and adds "Phone numbers stay masked until you hover over or tab to them, so they don't show on a shared screen."
-- [ ] 3.2 In `src/pool-views.mjs`, read `person` from `ui` in `renderCasePool`, pass it to `poolRow`, add the Phone header and the `listPhone(record, person, "pool-phone")` cell after Stage, and append the footnote sentence. In `src/views.mjs`, pass `person` in the `renderCasePool` call (design D5). The 3.1 tests pass, and so do the existing pool tests.
-- [ ] 3.3 Run `npm test` and confirm the whole unit suite passes.
+- [x] 3.2 In `src/pool-views.mjs`, read `person` from `ui` in `renderCasePool`, pass it to `poolRow`, add the Phone header and the `listPhone(record, person, "pool-phone")` cell after Stage, and append the footnote sentence. In `src/views.mjs`, pass `person` in the `renderCasePool` call (design D5). The 3.1 tests pass, and so do the existing pool tests.
+- [x] 3.3 Run `npm test` and confirm the whole unit suite passes.
 
 ## 4. Browser check
 

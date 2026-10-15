@@ -270,7 +270,7 @@ export function staffScreen(state) {
         "Case pool",
         "Every case in this workspace, in every stage.",
         "",
-        renderCasePool(cases, people, { filters: state.boardFilters, now: Date.now() }),
+        renderCasePool(cases, people, { person, filters: state.boardFilters, now: Date.now() }),
         addCaseAction,
       );
     return office

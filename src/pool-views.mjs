@@ -1,6 +1,7 @@
 import { phaseTab, describeStage } from "./domain.mjs";
 import { languageLabel, serviceLabel } from "./intake-catalogue.mjs";
 import { esc, icon, button, relativeDay, stageBadge, clientNumberTag } from "./ui.mjs";
+import { listPhone } from "./staff-views.mjs";
 
 export const POOL_TABS = Object.freeze([
   ["all", "All cases"],
@@ -106,11 +107,11 @@ const TAB_LABELS = Object.fromEntries(POOL_TABS);
 const NARROWING_KEYS = POOL_FILTER_KEYS.filter((key) => key !== "poolPhase");
 const who = (name, id) => (id ? esc(name ?? "Unknown") : `<span class="unassigned">Unassigned</span>`);
 
-function poolRow(record, now) {
+function poolRow(record, now, person) {
   const phase = TAB_LABELS[poolPhase(record)];
   return `<tr class="pool-row"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}${
     phase ? `<span class="pool-phase">${esc(phase)}</span>` : ""
-  }</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
+  }</td><td>${listPhone(record, person, "pool-phone")}</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
     record.updatedAt ? relativeDay(record.updatedAt, now) : "No updates yet",
   )}</td></tr>`;
 }
@@ -118,6 +119,7 @@ function poolRow(record, now) {
 export function renderCasePool(cases = [], people = [], ui = {}) {
   const all = Array.isArray(cases) ? cases : [];
   const now = ui.now ?? Date.now();
+  const person = ui.person ?? null;
   const chosen = poolFilters(ui.filters);
   const counts = poolCounts(all, chosen);
   const shown = filterPool(all, chosen).sort(
@@ -146,9 +148,9 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
       : `<span class="field-note">No filters. Showing every case this season.</span>`
   }</p>`;
   const body = shown.length
-    ? `<div class="board-table-wrap"><table class="board-table pool-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th></tr></thead><tbody>${shown
-        .map((record) => poolRow(record, now))
+    ? `<div class="board-table-wrap"><table class="board-table pool-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Phone</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th></tr></thead><tbody>${shown
+        .map((record) => poolRow(record, now, person))
         .join("")}</tbody></table></div>`
     : `<div class="empty-state"><p>No case matches these filters.</p></div>`;
-  return `<section class="panel case-pool" aria-labelledby="pool-title"><h2 id="pool-title">All cases</h2>${tabs}${filters}${summary}${body}<p class="field-note board-note">${icon("lock")} This pool shows workflow only: no taxpayer names, no addresses and no document contents.</p></section>`;
+  return `<section class="panel case-pool" aria-labelledby="pool-title"><h2 id="pool-title">All cases</h2>${tabs}${filters}${summary}${body}<p class="field-note board-note">${icon("lock")} This pool shows workflow only: no taxpayer names, no addresses and no document contents. Phone numbers stay masked until you hover over or tab to them, so they don't show on a shared screen.</p></section>`;
 }

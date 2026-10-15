@@ -180,3 +180,49 @@ test("the pool's first column is the client number, before the reference", () =>
   assert.match(html, /<th scope="col">Client<\/th>/);
   assert.match(html, /<span class="client-number">#093<\/span><button class="board-reference"/);
 });
+
+// The masked phone in the case pool (D5): the same helper and rule as the
+// board. Only admins reach the pool, but the rule decides, not the screen.
+const ADMIN = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup"] };
+const VOLUNTEER = { id: "p-alex", name: "Alex", capabilities: ["prepare"] };
+const PHONE_CASES = [
+  rec("P", "preparation_ready", { phone: "2155550123" }),
+  rec("Q", "preparing", { preparerId: "p-alex", preparerName: "Alex", phone: "2155550124" }),
+  rec("R", "received", { phone: null }),
+];
+const phonePool = (person) => renderCasePool(PHONE_CASES, PEOPLE, { filters: {}, now: NOW, person });
+const poolRowOf = (html, reference) =>
+  html.split('<tr class="pool-row">').slice(1).find((row) => row.includes(`>${reference}<`))?.split("</tr>")[0] ?? "";
+
+test("the pool's Phone column comes right after Stage", () => {
+  const headers = [...phonePool(ADMIN).matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((match) => match[1]);
+  assert.deepEqual(headers, ["Client", "Stage", "Phone", "Language", "Service", "Preparer", "Reviewer", "Updated"]);
+});
+
+test("an admin can reveal every listed phone, claimed or not", () => {
+  const html = phonePool(ADMIN);
+  for (const id of ["P", "Q"]) {
+    const row = poolRowOf(html, `VT-${id}`);
+    assert.match(row, new RegExp(`<span class="phone-mask" id="pool-phone-${id}" tabindex="0">`));
+    assert.ok(row.indexOf('class="board-reference"') < row.indexOf("phone-mask"), "the phone is before the case link");
+  }
+  assert.match(poolRowOf(html, "VT-R"), /<td>—<\/td>/);
+});
+
+test("the pool goes through the rule: a volunteer's unclaimed row, and no person at all, are locked", () => {
+  const volunteer = phonePool(VOLUNTEER);
+  assert.match(poolRowOf(volunteer, "VT-P"), /phone-mask is-locked/);
+  assert.doesNotMatch(poolRowOf(volunteer, "VT-P"), /555|id="pool-phone-/);
+  assert.match(poolRowOf(volunteer, "VT-Q"), /id="pool-phone-Q"/);
+  const nobody = phonePool(undefined);
+  for (const id of ["P", "Q"]) {
+    assert.match(poolRowOf(nobody, `VT-${id}`), /phone-mask is-locked/);
+    assert.doesNotMatch(poolRowOf(nobody, `VT-${id}`), /555/);
+  }
+});
+
+test("the pool's note keeps workflow only and says phones stay masked", () => {
+  const html = phonePool(ADMIN);
+  assert.match(html, /This pool shows workflow only: no taxpayer names, no addresses and no document contents\./);
+  assert.match(html, /Phone numbers stay masked until you hover over or tab to them, so they don't show on a shared screen\./);
+});
