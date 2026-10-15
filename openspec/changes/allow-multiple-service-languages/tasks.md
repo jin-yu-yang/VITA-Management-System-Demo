@@ -48,8 +48,8 @@
 
 ## 5. Migration 026 on the test stack, and the story (plan Task 5)
 
-- [ ] 5.1 The controller dry-runs 026 in `begin … rollback` on `vitally-task2`, and applies it with `npm run db:migrate:test` after the user's OK. Then `npm run test:database` passes.
-- [ ] 5.2 In the story:
+- [x] 5.1 The controller dry-runs 026 in `begin … rollback` on `vitally-task2`, and applies it with `npm run db:migrate:test` after the user's OK. Then `npm run test:database` passes.
+- [x] 5.2 In the story:
   - the Follow-ups empty-state search reads the cells' `data-languages`;
   - the new application's staff row shows `E, M`, with `data-languages` "English|Mandarin" and the names on hover.
 
