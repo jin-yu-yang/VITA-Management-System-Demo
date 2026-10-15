@@ -230,6 +230,7 @@ dropped).
   radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is
   still a list (`["me"]`/`["none"]`). `valuesFromControls` wraps the radio's value; `formatAnswer`
   labels it Yes/No only when given the application's `answers`.
+- **A client's service languages** (openspec change `allow-multiple-service-languages`): Q0.3 `language` is the preferred one; Q0.5 `language_also` adds the others (Q0.6 `language_also_other` for Other). `clientLanguages(answers)` in `intake-catalogue.mjs` lists them, preferred first, never twice; the work board, case pool and Follow-ups show them as letters through `languageCell` (`ui.mjs`), with the names on hover and for screen readers, and their language filters match any of them (`speaksLanguage`). The progress page lists the full names.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:
@@ -456,7 +457,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (934) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (943) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
