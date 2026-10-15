@@ -666,6 +666,17 @@ async function runPermutation(t, roles) {
         .locator(".board-row")
         .filter({ has: staff.locator("button.board-reference", { hasText: classReference }) });
       assert.equal((await classRow.locator(".client-number").innerText()).trim(), clientNumber);
+      // The Fill names English (preferred) and Mandarin (allow-multiple-service-languages):
+      // the cell shows letters, with the full names on hover and for screen readers.
+      const languages = classRow.locator(".language-letters");
+      assert.deepEqual(
+        {
+          letters: (await languages.locator('[aria-hidden="true"]').innerText()).trim(),
+          title: await languages.getAttribute("title"),
+          labels: await languages.getAttribute("data-languages"),
+        },
+        { letters: "E, M", title: "English (preferred), Mandarin", labels: "English|Mandarin" },
+      );
       // Clear the reference search first: it already shows exactly this one
       // row, so a number search that did nothing would otherwise pass.
       await clickAction(staff, "set-board-filter", { attributes: '[data-filter="search"]' });
@@ -1347,18 +1358,20 @@ async function runPermutation(t, roles) {
       // An empty queue's own buttons go with the empty state: "Show all
       // languages" and "Show every task" leave the keyboard on the chip that
       // now shows that choice. A kind with rows, in a language with none of
-      // that kind, empties the queue.
+      // that kind, empties the queue. The cell shows letters, so a row's
+      // languages come from its data-languages, and a row counts under every
+      // language it lists, as the filter does.
       const emptyPair = await staff.evaluate(() => {
         const rows = [...document.querySelectorAll("tr.queue-row")].map((row) => ({
           kind: row.dataset.kind,
-          language: row.cells[3]?.textContent.trim(),
+          languages: (row.cells[3]?.querySelector(".language-letters")?.dataset.languages ?? "").split("|").filter(Boolean),
         }));
         const languages = [
           ...document.querySelectorAll('[data-filter="language"]:not([data-value="all"])'),
         ].map((chip) => chip.dataset.value);
         for (const kind of new Set(rows.map((row) => row.kind)))
           for (const language of languages)
-            if (!rows.some((row) => row.kind === kind && row.language === language))
+            if (!rows.some((row) => row.kind === kind && row.languages.includes(language)))
               return { kind, language };
         return null;
       });
