@@ -30,13 +30,13 @@
 
 ## 3. The staff tables and filters (design D5, D6; plan Task 3)
 
-- [ ] 3.1 Tests first, in `tests/staff-views.test.mjs`, `tests/pool-views.test.mjs` and `tests/office-views.test.mjs`:
+- [x] 3.1 Tests first, in `tests/staff-views.test.mjs`, `tests/pool-views.test.mjs` and `tests/office-views.test.mjs`:
   - each table's cell for a two-language client and for Other;
   - each filter matches a second language;
   - the options list second languages;
   - a Follow-ups help request without a case;
   - update the existing cell and label assertions.
-- [ ] 3.2 Use the helpers in the work board (`inLanguageAndService`, `valueOptions`, the row), the pool (`filterPool`, its options, the row) and Follow-ups (`rowLanguage`, `inLanguage`, the chips, the cell).
+- [x] 3.2 Use the helpers in the work board (`inLanguageAndService`, `valueOptions`, the row), the pool (`filterPool`, its options, the row) and Follow-ups (`rowLanguage`, `inLanguage`, the chips, the cell).
 
 ## 4. The progress page and the Fill (design D7, D8; plan Task 4)
 
