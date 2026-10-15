@@ -57,14 +57,14 @@
 
 ## 6. Docs and the full check (plan Task 6)
 
-- [ ] 6.1 Add migration 026 to the migration list and range in:
+- [x] 6.1 Add migration 026 to the migration list and range in:
   - `docs/developer/database.md`;
   - `docs/setup.md`;
   - `docs/developer/README.md`;
   - `README.md`.
 
   Update the unit count, and the database count if it changed. Add the language helpers to `docs/developer/frontend.md`.
-- [ ] 6.2 Final checks:
+- [x] 6.2 Final checks:
   - `npm test`;
   - `npm run build:hant -- --check`;
   - `npm run build:intake` leaves nothing to commit;
