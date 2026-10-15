@@ -1,6 +1,6 @@
 ## 1. The catalogue: Q0.5 and Q0.6 (design D1, D2; plan Task 1)
 
-- [ ] 1.1 Tests first:
+- [x] 1.1 Tests first:
   - `tests/intake-build.test.mjs`:
     - `language_also` is optional multi-select, with Q0.3's values and labels;
     - `language_also_other` is optional text, shown if `language_also = other`;
@@ -9,12 +9,12 @@
   - `tests/support/intake-value-cases.mjs`: `language_also` cases (a list valid; a string and an unknown code invalid).
 
   See them fail.
-- [ ] 1.2 Edit both drafts:
+- [x] 1.2 Edit both drafts:
   - add Q0.5 and Q0.6, with the exact wording from brainstorm Q5;
   - update the Q0.2 developer note.
 
   Add the two ids to `before.language` in `tools/build-intake-catalogue.mjs`.
-- [ ] 1.3 Run `npm run build:intake`, which writes `src/intake-catalogue-data.mjs` and `026_intake_catalogue_<hash8>.sql`, and `npm run build:hant`. `npm test` passes. Don't apply 026.
+- [x] 1.3 Run `npm run build:intake`, which writes `src/intake-catalogue-data.mjs` and `026_intake_catalogue_<hash8>.sql`, and `npm run build:hant`. `npm test` passes. Don't apply 026.
 
 ## 2. The language helpers (design D3, D4; plan Task 2)
 
