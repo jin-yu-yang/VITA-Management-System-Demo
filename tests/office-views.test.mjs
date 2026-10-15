@@ -207,6 +207,36 @@ test("language codes read and filter by their labels", () => {
   assert.doesNotMatch(html, /VT-MAND/);
 });
 
+test("a case row lists every language the client speaks, and the chip for a second language keeps it", () => {
+  const cases = [
+    kase({ id: "a", reference: "VT-BOTH", answers: { language: "cantonese", language_also: ["mandarin"] } }),
+    kase({ id: "b", reference: "VT-ENG", answers: { language: "english" } }),
+  ];
+  const all = page(cases, [], sam, {});
+  assert.match(all, /data-languages="Cantonese\|Mandarin"><span aria-hidden="true">C, M<\/span>/);
+  assert.match(all, /title="Cantonese \(preferred\), Mandarin"/);
+  assert.match(all, /data-filter="language" data-value="Mandarin"/);
+  const html = page(cases, [], sam, { language: "Mandarin" });
+  assert.match(html, /VT-BOTH/);
+  assert.doesNotMatch(html, /VT-ENG/);
+  assert.match(html, /data-filter="language" data-value="Mandarin" aria-pressed="true"/);
+});
+
+test("a help request with no case shows its own language, a label by its code and any other text as Other", () => {
+  const help = [
+    { id: "h1", status: "open", title: "Forms", language: "Cantonese", createdAt: daysAgo(0) },
+    { id: "h2", status: "open", title: "Taxes", language: "Polish", createdAt: daysAgo(1) },
+  ];
+  const html = page([], help, sam, {});
+  assert.match(html, /<span class="language-letters" title="Cantonese \(preferred\)" data-languages="Cantonese"><span aria-hidden="true">C<\/span>/);
+  assert.match(html, /<span class="language-letters" title="Other: Polish \(preferred\)" data-languages="Other"><span aria-hidden="true">O<\/span>/);
+  assert.match(html, /data-filter="language" data-value="Other"/);
+  assert.doesNotMatch(html, /data-filter="language" data-value="Polish"/);
+  const other = page([], help, sam, { language: "Other" });
+  assert.match(other, /Taxes/);
+  assert.doesNotMatch(other, /Forms/);
+});
+
 test("waiting is shown in words and marked amber at 3 days, red at 5", () => {
   const html = page([
     kase({ id: "a", updatedAt: daysAgo(6) }),

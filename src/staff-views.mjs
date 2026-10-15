@@ -1,5 +1,8 @@
 import {
-  languageLabel,
+  clientLanguages,
+  languageFilterLabels,
+  languageSummary,
+  speaksLanguage,
   serviceLabel,
   CONTACT_FIELDS,
   MATERIALS_ITEMS,
@@ -30,6 +33,7 @@ import {
   formatClientNumber,
   clientNumberLabel,
   clientNumberTag,
+  languageCell,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -403,9 +407,10 @@ export function boardFilters(filters) {
 }
 
 // Answers store codes ("drop_off"); they are compared, shown and grouped by
-// their label, so a saved filter value, already a label, still matches.
+// their label, so a saved filter value, already a label, still matches. A
+// client matches a language when they speak it, preferred or other.
 const inLanguageAndService = (record, chosen) =>
-  (chosen.language === "all" || languageLabel(record?.answers?.language ?? "") === languageLabel(chosen.language)) &&
+  speaksLanguage(clientLanguages(record?.answers), chosen.language) &&
   (chosen.service === "all" || serviceLabel(record?.answers?.service ?? "") === serviceLabel(chosen.service));
 
 // A query of digits (optionally after one "#") is a client number, matched
@@ -541,7 +546,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.
@@ -582,7 +587,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
-  )}${filterChips("language", valueOptions(cases, "language", "Any language", languageLabel), chosen.language)}${filterChips(
+  )}${filterChips("language", [["all", "Any language"], ...languageFilterLabels(cases.map((record) => clientLanguages(record?.answers))).map((label) => [label, label])], chosen.language)}${filterChips(
     "service",
     valueOptions(cases, "service", "Any service", serviceLabel),
     chosen.service,

@@ -165,6 +165,20 @@ test("answer codes display and filter by their labels", () => {
   assert.doesNotMatch(narrowed, /VT-Z/);
 });
 
+test("the pool's Language cell lists every language, and its filter and options include second languages", () => {
+  const cases = [
+    rec("A", "received", { answers: { language: "cantonese", language_also: ["mandarin"] } }),
+    rec("B", "received", { answers: { language: "english" } }),
+  ];
+  const opts = (html) => [...html.match(/data-board-filter="poolLanguage"[^>]*>(.*?)<\/select>/)[1].matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+  const all = render({}, cases);
+  assert.deepEqual(opts(all), ["all", "Cantonese", "English", "Mandarin"]);
+  assert.match(all, /data-languages="Cantonese\|Mandarin"><span aria-hidden="true">C, M<\/span>/);
+  const mandarin = render({ poolLanguage: "Mandarin" }, cases);
+  assert.match(mandarin, /VT-A/);
+  assert.doesNotMatch(mandarin, /VT-B/);
+});
+
 test("references and languages are escaped, and the footnote says what is not shown", () => {
   const html = render({}, [rec("X", "received", { reference: "<script>x</script>", answers: { language: "<script>y</script>", service: "s" } })]);
   assert.doesNotMatch(html, /<script>/);
