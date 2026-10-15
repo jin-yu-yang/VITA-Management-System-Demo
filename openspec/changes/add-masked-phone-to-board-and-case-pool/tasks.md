@@ -34,8 +34,8 @@
 
 ## 4. Browser check
 
-- [ ] 4.1 Run `npm run db:migrate:test` (main has migration 025).
-- [ ] 4.2 Add a phase to `tests/browser.mjs` that reuses the two-staff-window pattern (`staffB`, around line 1577), as design D8 describes. Take a `preparation_ready` fixture case that the phase claims, and leave the earlier phases alone.
+- [x] 4.1 Run `npm run db:migrate:test` (main has migration 025).
+- [x] 4.2 Add a phase to `tests/browser.mjs` that reuses the two-staff-window pattern (`staffB`, around line 1577), as design D8 describes. Take a `preparation_ready` fixture case that the phase claims, and leave the earlier phases alone.
   1. Window B, Alex, on the work board, finds the case by its Application ID with the board search. Search reaches every stage, so the row stays listed after the claim moves it off the Available tab. The case's row has a locked mask, with `is-locked`, no `tabindex`, no `id`, and no full number in the row's `outerHTML`.
   2. Window A, Alex, claims preparation from the board.
   3. Window B, without a reload, navigation or a new search: the same row's mask becomes `#board-phone-<case id>` with `tabindex="0"` and `.phone-full`.
