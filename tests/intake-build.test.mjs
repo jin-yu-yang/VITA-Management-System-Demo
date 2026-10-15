@@ -747,6 +747,8 @@ test("every real question states required, and the optional set is the agreed li
       "evt_other_desc",
       "irs_language",
       "language_other",
+      "language_also",
+      "language_also_other",
       "form_version",
       "hh.member_id",
       "hh.middle_name",
@@ -786,6 +788,20 @@ test("the real catalogue keeps service, language, form_version, hh and the phone
   assert.equal(other.type, "text");
   assert.equal(other.required, false);
   assert.deepEqual(other.showIf, [{ field: "language", op: "eq", value: "other" }]);
+
+  // Q0.5 and Q0.6: the client's other languages (allow-multiple-service-languages, design D1, D2).
+  const also = findQuestion(COMMITTED, "language_also");
+  assert.equal(also.type, "multi");
+  assert.equal(also.required, false);
+  assert.deepEqual(values("language_also"), values("language"));
+  assert.deepEqual(
+    also.options.map((o) => o.label.general),
+    language.options.map((o) => o.label.general),
+  );
+  const alsoOther = findQuestion(COMMITTED, "language_also_other");
+  assert.equal(alsoOther.type, "text");
+  assert.equal(alsoOther.required, false);
+  assert.deepEqual(alsoOther.showIf, [{ field: "language_also", op: "eq", value: "other" }]);
 
   const version = findQuestion(COMMITTED, "form_version");
   assert.equal(version.required, false);

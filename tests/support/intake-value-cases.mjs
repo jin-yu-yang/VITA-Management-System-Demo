@@ -113,6 +113,9 @@ export const INTAKE_VALUE_CASES = [
   // multi
   both("best_contact_time", ["weekend", "any_time"], true),
   both("best_contact_time", ["weekend", "weekend"], false),
+  both("language_also", ["mandarin", "other"], true),
+  both("language_also", "mandarin", false),
+  both("language_also", ["klingon"], false),
 
   // who
   both("us_citizen", ["me"], true),

@@ -18,7 +18,8 @@ import {
   wording,
   isAnswered,
   serviceLabel,
-  languageLabel,
+  clientLanguages,
+  languageNames,
 } from "./intake-catalogue.mjs";
 import {
   intakeFormV2,
@@ -355,7 +356,7 @@ export function progressScreen(state) {
           )
           .join("")}</div>`
       : `<p class="muted">${say("progress.history_empty")}</p>`
-  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">${say("progress.glance")}</span><h3>${say("progress.details")}</h3>${row(t("progress.tax_year", {}, lang), "2025")}${row(t("progress.service", {}, lang), serviceLabel(answers.service, lang))}${row(t("progress.language", {}, lang), languageLabel(answers.language, lang))}${row(t("id.application", {}, lang), record.reference)}<div class="gentle-note">${icon("lock")} ${say("progress.private")}</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>${say("progress.here")}</h3><p>${say("progress.questions")}</p>${officeContact()}${button(say("progress.contact"), "open-help", "secondary")}</div>${button(say("progress.back"), "open-applications", "text")}</aside></div></main>`;
+  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">${say("progress.glance")}</span><h3>${say("progress.details")}</h3>${row(t("progress.tax_year", {}, lang), "2025")}${row(t("progress.service", {}, lang), serviceLabel(answers.service, lang))}${row(t("progress.language", {}, lang), languageNames(clientLanguages(answers), { lang, separator: t("form.list_separator", {}, lang) }))}${row(t("id.application", {}, lang), record.reference)}<div class="gentle-note">${icon("lock")} ${say("progress.private")}</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>${say("progress.here")}</h3><p>${say("progress.questions")}</p>${officeContact()}${button(say("progress.contact"), "open-help", "secondary")}</div>${button(say("progress.back"), "open-applications", "text")}</aside></div></main>`;
 }
 
 // ---------------------------------------------------------------------------

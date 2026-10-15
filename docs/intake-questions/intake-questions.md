@@ -54,7 +54,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Q0.2** How would you like to get tax help? / 您希望以哪种方式获得报税帮助？
 `service` · Single choice · Required
 - `same_day` Same-day / 当天办理 · `drop_off` Drop-off / 送件办理 · `online` Online / 线上办理
-> Note for developers: Q0.2–Q0.4 keep version 1's `service` and `language` answers, which the work board, office queue and case pool filter and display. They are not on the paper form, and their wording is new: the group should review it (the Chinese especially).
+> Note for developers: Q0.2–Q0.4 keep version 1's `service` and `language` answers; Q0.5–Q0.6 add the client's other languages (`language_also`), after the preferred one in Q0.3. The work board, Follow-ups and the case pool filter and display them. They are not on the paper form, and their wording is new: the group should review it (the Chinese especially).
 
 **Q0.3** Preferred service language / 首选服务语言
 `language` · Single choice · Required
@@ -63,6 +63,15 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Q0.4** Please specify / 请说明
 `language_other` · Text · Optional
 **Show if** `language = other`
+
+**Q0.5** Any other languages we can help you in? / 我们还可以用哪些语言为您服务？
+`language_also` · Multi-select · Optional
+- `english` English / 英语 · `cantonese` Cantonese / 粤语 · `mandarin` Mandarin / 普通话 · `other` Other / 其他
+> Tip: Choose all that apply. Leave this blank if only your preferred language works for you. / 可多选。如果只能使用首选语言，请留空。
+
+**Q0.6** Please specify / 请说明
+`language_also_other` · Text · Optional
+**Show if** `language_also = other`
 
 ---
 

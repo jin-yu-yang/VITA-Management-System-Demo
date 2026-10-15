@@ -92,3 +92,9 @@ test("the version-2 fill keeps answered values and fills null, empty text and em
   assert.equal(Object.hasOwn(filled, "tp_middle_name"), false, "blank on both sides is left out");
   for (const key of ["stage", "firstName", "ownerUserId", "id", "reference"]) assert.equal(Object.hasOwn(filled, key), false, key);
 });
+
+test("the Fill names a second language, English preferred and Mandarin also", () => {
+  const answers = makeSampleAnswers();
+  assert.equal(answers.language, "english");
+  assert.deepEqual(answers.language_also, ["mandarin"]);
+});

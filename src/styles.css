@@ -2779,6 +2779,11 @@ textarea::placeholder {
   background: var(--vt-primary-soft);
   font-size: 12px;
 }
+/* A Language cell's letters: the names are on hover (allow-multiple-service-languages). */
+.language-letters {
+  white-space: nowrap;
+  cursor: help;
+}
 .board-table-wrap {
   position: relative;
   overflow-x: auto;

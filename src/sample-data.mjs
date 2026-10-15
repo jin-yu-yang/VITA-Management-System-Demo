@@ -35,6 +35,7 @@ function versionTwoAnswers(seed, married) {
   const answers = {
     service: "drop_off",
     language: "english",
+    language_also: ["mandarin"],
     tp_first_name: person.first,
     tp_last_name: person.last,
     tp_dob: person.dob,

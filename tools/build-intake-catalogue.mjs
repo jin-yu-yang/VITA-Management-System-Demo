@@ -99,7 +99,7 @@ export const STEPS = [
     substeps: [
       questions("before.ready", ["Before you start", "开始之前"], "form_version"),
       questions("before.service", ["How you'd like help", "服务方式"], "service"),
-      questions("before.language", ["Language", "语言"], "language language_other"),
+      questions("before.language", ["Language", "语言"], "language language_other language_also language_also_other"),
     ],
   },
   {

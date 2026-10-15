@@ -276,6 +276,22 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
   });
 });
 
+test("the board's Language cell lists every language, preferred first, and the filter matches any of them", () => {
+  const both = boardCase({ id: "b", reference: "VT-BOTH", answers: { language: "cantonese", language_also: ["mandarin"] } });
+  const mand = boardCase({ id: "m", reference: "VT-MAND", answers: { language: "mandarin" } });
+  const eng = boardCase({ id: "e", reference: "VT-ENG", answers: { language: "english", language_also: ["other"], language_also_other: "Vietnamese" } });
+  const cases = [both, mand, eng];
+  const ids = (filters) => filterCases(cases, { status: "available", ...filters }, ALEX).map((c) => c.id).sort();
+  assert.deepEqual(ids({ language: "Mandarin" }), ["b", "m"]);
+  assert.deepEqual(ids({ language: "Cantonese" }), ["b"]);
+  assert.deepEqual(ids({ language: "Other" }), ["e"]);
+  const html = renderStaffBoard(cases, PEOPLE, { person: ALEX, filters: { status: "available" } });
+  assert.match(html, /<span class="language-letters" title="Cantonese \(preferred\), Mandarin" data-languages="Cantonese\|Mandarin"><span aria-hidden="true">C, M<\/span>/);
+  assert.match(html, /title="English \(preferred\), Other: Vietnamese" data-languages="English\|Other"><span aria-hidden="true">E, O<\/span>/);
+  for (const label of ["Cantonese", "English", "Mandarin", "Other"])
+    assert.equal([...html.matchAll(new RegExp(`data-filter="language" data-value="${label}"`, "g"))].length, 1, label);
+});
+
 test("answer codes display and filter by their labels", () => {
   const v2 = boardCase({ id: "v2", reference: "VT-V2", answers: { service: "drop_off", language: "cantonese" } });
   const other = boardCase({ id: "v3", reference: "VT-V3", answers: { service: "online", language: "english" } });

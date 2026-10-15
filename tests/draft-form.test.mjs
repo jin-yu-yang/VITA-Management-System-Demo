@@ -18,6 +18,8 @@ const MARRIED = Object.freeze({
   service: "drop_off",
   language: "mandarin",
   language_other: "Should not appear",
+  language_also: ["cantonese"],
+  language_also_other: "Also should not appear",
   best_contact_time: ["weekday_evening"],
   best_contact_note: "After six",
   tp_first_name: "Mei",
@@ -379,7 +381,7 @@ test("each marital status ticks its own box, with its date", () => {
 test("the questions with no box never appear", () => {
   const { text, comments } = draft();
   const values = Object.values(text).join("\n") + comments;
-  for (const absent of ["Should not appear", "After six", "drop_off", "mandarin", "weekday_evening", "general"])
+  for (const absent of ["Should not appear", "Also should not appear", "cantonese", "After six", "drop_off", "mandarin", "weekday_evening", "general"])
     assert.ok(!values.includes(absent), absent);
   assert.ok(!Object.values(text).includes("yes"));
 });
