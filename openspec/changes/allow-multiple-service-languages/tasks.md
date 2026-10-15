@@ -18,7 +18,7 @@
 
 ## 2. The language helpers (design D3, D4; plan Task 2)
 
-- [ ] 2.1 Unit tests first, in `tests/intake-catalogue.test.mjs` and `tests/ui.test.mjs`:
+- [x] 2.1 Unit tests first, in `tests/intake-catalogue.test.mjs` and `tests/ui.test.mjs`:
   - `clientLanguages`: order, no repeats, typed text for Other, legacy labels, and free text;
   - `languageLetters`;
   - `languageNames`: the staff form and the client form in Chinese;
@@ -26,7 +26,7 @@
   - `languageFilterLabels`;
   - `languageSummary`;
   - `languageCell`: markup, escaping, and the "—" for none.
-- [ ] 2.2 Implement them in `src/intake-catalogue.mjs` and `src/ui.mjs`.
+- [x] 2.2 Implement them in `src/intake-catalogue.mjs` and `src/ui.mjs`.
 
 ## 3. The staff tables and filters (design D5, D6; plan Task 3)
 
