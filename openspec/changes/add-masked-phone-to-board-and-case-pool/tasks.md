@@ -46,5 +46,5 @@
 
 ## 5. Docs
 
-- [ ] 5.1 In `docs/design/DESIGN.md` §8 "Masked phone", replace "Today that is the case page's contact card and intake answers; no list shows a phone." with a sentence naming the case page's contact card and intake answers, the volunteer work board and the admin case pool.
-- [ ] 5.2 Do not regenerate the existing `implemented-*` screenshots. Each one records the part that added it.
+- [x] 5.1 In `docs/design/DESIGN.md` §8 "Masked phone", replace "Today that is the case page's contact card and intake answers; no list shows a phone." with a sentence naming the case page's contact card and intake answers, the volunteer work board and the admin case pool.
+- [x] 5.2 Do not regenerate the existing `implemented-*` screenshots. Each one records the part that added it.
