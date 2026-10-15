@@ -40,11 +40,11 @@
 
 ## 4. The progress page and the Fill (design D7, D8; plan Task 4)
 
-- [ ] 4.1 Tests first:
+- [x] 4.1 Tests first:
   - `tests/client-views.test.mjs`: the progress row, in English and in Chinese with a typed language;
   - `tests/sample-data.test.mjs`: the Fill answers `language_also: ["mandarin"]`, and it passes `checkValue`;
   - `tests/draft-form.test.mjs`: the draft 13614-C never shows `language_also` or `language_also_other`.
-- [ ] 4.2 The progress row uses `languageNames`, and `versionTwoAnswers` adds `language_also`. Fix the tests whose renders now show the extra answer, without weakening any assertion. `npm test` passes.
+- [x] 4.2 The progress row uses `languageNames`, and `versionTwoAnswers` adds `language_also`. Fix the tests whose renders now show the extra answer, without weakening any assertion. `npm test` passes.
 
 ## 5. Migration 026 on the test stack, and the story (plan Task 5)
 
