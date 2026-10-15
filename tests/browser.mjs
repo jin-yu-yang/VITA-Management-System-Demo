@@ -2827,6 +2827,16 @@ async function runPermutation(t, roles) {
       // 4. The claiming window, back on the board: revealable there too.
       await openBoard(staff);
       await findOnBoard(staff, target.reference);
+      await waitFor(
+        staff,
+        "the claiming window's row to show the revealable phone",
+        (id) => {
+          const mask = document.getElementById(id);
+          return Boolean(mask) && mask.getAttribute("tabindex") === "0";
+        },
+        maskId,
+        ARRIVAL_MS,
+      );
       const after = await rowMask(staff);
       assert.deepEqual(
         { locked: after?.locked, id: after?.id, focusable: after?.focusable },
@@ -2834,6 +2844,7 @@ async function runPermutation(t, roles) {
       );
 
       // 5. Tab from the case link lands on the phone and reveals it.
+      await waitForQuiet(watcher.page);
       await watcher.page.mouse.move(1, 1);
       await watcher.page.evaluate(
         (wanted) =>
@@ -2848,6 +2859,25 @@ async function runPermutation(t, roles) {
         full: (document.activeElement?.querySelector(".phone-full")?.getBoundingClientRect().width ?? 0) > 4,
       }));
       assert.deepEqual(landed, { id: maskId, full: true }, "Tab from the case link did not reveal the phone");
+
+      // 6. A realtime redraw keeps the revealed number revealed (spec:
+      // "A realtime update keeps a revealed listed number revealed"). A
+      // no-change bump on the case, from outside the window, rebuilds the
+      // board; the per-row id puts focus back on the mask.
+      await watcher.page.evaluate(() => document.querySelector("#main")?.setAttribute("data-phone-marker", "1"));
+      await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [target.id]);
+      await waitFor(
+        watcher.page,
+        "the realtime change to rebuild the board",
+        () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-phone-marker]"),
+        undefined,
+        ARRIVAL_MS,
+      );
+      const kept = await watcher.page.evaluate(() => ({
+        id: document.activeElement?.id ?? null,
+        full: (document.activeElement?.querySelector(".phone-full")?.getBoundingClientRect().width ?? 0) > 4,
+      }));
+      assert.deepEqual(kept, { id: maskId, full: true }, "a realtime redraw lost the revealed phone");
 
       assertConsoleQuiet(watcher, { name: "board phone window" });
       await watcher.context.close();

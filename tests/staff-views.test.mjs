@@ -1281,7 +1281,7 @@ const boardRowOf = (html, reference) =>
 const attributeValues = (html) => [...html.matchAll(/="([^"]*)"/g)].map((match) => match[1]);
 
 test("listPhone: a dash with no phone, the mask with a per-row id otherwise", () => {
-  for (const phone of [undefined, null, ""])
+  for (const phone of [undefined, null, "", "   "])
     assert.equal(listPhone({ id: "case-9", phone, preparerId: "alex" }, ALEX, "board-phone"), "—");
   const mine = listPhone({ id: "case-9", phone: PHONE, preparerId: "alex" }, ALEX, "board-phone");
   assert.equal(mine, phoneMask(PHONE, true, "board-phone-case-9"));

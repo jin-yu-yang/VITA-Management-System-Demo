@@ -633,7 +633,7 @@ export function phoneMask(value, allowed, id = "") {
 // on a revealed number. An empty phone is "—" like any other empty list cell,
 // not the contact card's "Not given".
 export function listPhone(record, person, prefix) {
-  if (!record?.phone) return "—";
+  if (!String(record?.phone ?? "").trim()) return "—";
   return phoneMask(record.phone, canSeeContact(record, person), `${prefix}-${record.id}`);
 }
 
