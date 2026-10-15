@@ -9,7 +9,7 @@
 
 ## 2. The work board's Phone column
 
-- [ ] 2.1 Write the unit tests first in `tests/staff-views.test.mjs` (around the board tests near line 1256), and run them to see them fail. Use fictional phones only.
+- [x] 2.1 Write the unit tests first in `tests/staff-views.test.mjs` (around the board tests near line 1256), and run them to see them fail. Use fictional phones only.
   - The header row reads Client, Stage, Phone, Language, Service, Preparer, Reviewer, Updated, then actions.
   - **Locked** (Alex on an available case; Morgan on a case Alex prepares): the row's Phone cell has `phone-mask is-locked`, the lock, the tooltip, no `tabindex`, no `id="board-phone-…"`, and the row contains neither the full number nor its first six digits.
   - **Revealable** (Alex on a case Alex prepares; a `followup` persona on any case): `id="board-phone-<case id>"`, `tabindex="0"`, the eye, `.phone-full` with the formatted number, and no attribute carrying digits beyond the last four.
@@ -18,7 +18,7 @@
   - **`listPhone` directly:** "—" for a missing, null or empty phone; the revealable mask with `id="board-phone-case-9"` for an allowed viewer; the locked mask with no id otherwise.
   - **Order:** in each row's markup, `class="board-reference"` comes before `phone-mask`.
   - **Footnote:** it keeps "This board shows workflow only" and adds "Phone numbers stay masked: on cases you work on, hover over or tab to a number to see it."
-- [ ] 2.2 In `src/staff-views.mjs`, add the exported helper `listPhone(record, person, prefix)` next to `phoneMask` (design D3), then add the Phone header and the `listPhone(record, person, "board-phone")` cell after Stage in `boardRow`, and append the footnote sentence (design D4, D6, D7). The 2.1 tests pass, and so do the existing board tests.
+- [x] 2.2 In `src/staff-views.mjs`, add the exported helper `listPhone(record, person, prefix)` next to `phoneMask` (design D3), then add the Phone header and the `listPhone(record, person, "board-phone")` cell after Stage in `boardRow`, and append the footnote sentence (design D4, D6, D7). The 2.1 tests pass, and so do the existing board tests.
 
 ## 3. The case pool's Phone column
 
