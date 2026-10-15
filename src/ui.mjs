@@ -129,6 +129,14 @@ export const clientNumberLabel = (record, lang = "en") =>
 export const clientNumberTag = (record, lang = "en") =>
   `<span class="client-number${record?.clientNumber == null ? " none" : ""}">${esc(clientNumberLabel(record, lang))}</span>`;
 
+// A staff table's Language cell (allow-multiple-service-languages, design D4):
+// the letters for sighted staff, the full names on hover and for screen
+// readers, and the labels (data-languages) for tests and the story.
+export const languageCell = ({ letters = "", names = "", labels = [] } = {}) =>
+  letters
+    ? `<span class="language-letters" title="${esc(names)}" data-languages="${esc(labels.join("|"))}"><span aria-hidden="true">${esc(letters)}</span><span class="sr-only">${esc(names)}</span></span>`
+    : "—";
+
 // How long ago, in days, for lists where the minute does not matter. Dates are
 // compared as calendar days in the viewer's time zone, so a case updated late
 // last night reads "Yesterday", not "Today".

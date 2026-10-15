@@ -13,6 +13,7 @@ import {
   formatClientNumber,
   clientNumberLabel,
   clientNumberTag,
+  languageCell,
 } from "../src/ui.mjs";
 
 // `describeFocus` is the one piece of the DOM wiring that is worth testing on
@@ -431,4 +432,16 @@ test("badges and client-number labels follow the language", () => {
   assert.equal(clientNumberLabel({ clientNumber: null, stage: "closed" }, "zh-Hans"), "从未发送");
   assert.equal(clientNumberLabel({ clientNumber: 93, stage: "received" }, "zh-Hans"), "#093");
   assert.equal(clientNumberTag({ clientNumber: null, stage: "draft" }, "zh-Hans"), '<span class="client-number none">尚无客户编号</span>');
+});
+
+test("languageCell: the letters for sighted staff, the names on hover and for screen readers, the labels for tests", () => {
+  assert.equal(
+    languageCell({ letters: "C, M", names: "Cantonese (preferred), Mandarin", labels: ["Cantonese", "Mandarin"] }),
+    '<span class="language-letters" title="Cantonese (preferred), Mandarin" data-languages="Cantonese|Mandarin"><span aria-hidden="true">C, M</span><span class="sr-only">Cantonese (preferred), Mandarin</span></span>',
+  );
+  assert.equal(languageCell({ letters: "", names: "", labels: [] }), "—");
+  assert.equal(languageCell(), "—");
+  const odd = languageCell({ letters: "O", names: 'Other: <b>"x"</b>', labels: ["Other"] });
+  assert.doesNotMatch(odd, /<b>/);
+  assert.match(odd, /title="Other: &lt;b&gt;&quot;x&quot;&lt;\/b&gt;"/);
 });

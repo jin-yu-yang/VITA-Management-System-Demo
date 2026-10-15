@@ -5,6 +5,7 @@ import {
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
   memberNameParts, spouseShown, leadOf, introOf,
+  LANGUAGE_LETTERS, clientLanguages, languageLetters, languageNames, speaksLanguage, languageFilterLabels, languageSummary,
 } from "../src/intake-catalogue.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
@@ -392,4 +393,53 @@ test("before.language asks the preferred language, then the others", () => {
     substepQuestions("before.language").map((question) => question.id),
     ["language", "language_other", "language_also", "language_also_other"],
   );
+});
+
+test("clientLanguages: the preferred language first, then the others in option order, never twice", () => {
+  const codes = (answers) => clientLanguages(answers).map((entry) => entry.code);
+  assert.deepEqual(codes({ language: "cantonese", language_also: ["other", "mandarin"] }), ["cantonese", "mandarin", "other"]);
+  assert.deepEqual(codes({ language: "mandarin", language_also: ["mandarin", "english"] }), ["mandarin", "english"]);
+  assert.deepEqual(codes({ language: "english" }), ["english"]);
+  assert.deepEqual(codes({}), []);
+  assert.deepEqual(codes({ language: "" , language_also: ["mandarin"] }), ["mandarin"]);
+  // Other carries what was typed; the preferred one's box and the follow-up's are separate.
+  assert.deepEqual(
+    clientLanguages({ language: "other", language_other: " Vietnamese ", language_also: ["other"], language_also_other: "Tagalog" }),
+    [
+      { code: "other", label: "Other", text: "Vietnamese" },
+      { code: "other", label: "Other", text: "Tagalog" },
+    ],
+  );
+  assert.deepEqual(clientLanguages({ language: "other", language_other: "Tagalog", language_also: ["other"], language_also_other: "tagalog" }).length, 1);
+  // A label (a version-1 answer, or a help request's text) maps back to its code; anything else is Other.
+  assert.deepEqual(clientLanguages({ language: "Cantonese" }), [{ code: "cantonese", label: "Cantonese", text: "" }]);
+  assert.deepEqual(clientLanguages({ language: "Polish" }), [{ code: "other", label: "Other", text: "Polish" }]);
+  assert.deepEqual(clientLanguages({ language: "cantonese", language_also: "mandarin" }).length, 1, "a non-list follow-up is ignored");
+});
+
+test("language letters, names, filter labels and the staff summary", () => {
+  const entries = clientLanguages({ language: "cantonese", language_also: ["mandarin", "other"], language_also_other: "Vietnamese" });
+  assert.equal(languageLetters(entries), "C, M, O");
+  assert.equal(languageNames(entries, { preferred: true }), "Cantonese (preferred), Mandarin, Other: Vietnamese");
+  assert.equal(languageNames(entries), "Cantonese, Mandarin, Vietnamese");
+  assert.equal(languageNames(entries, { lang: "zh-Hans", separator: "、" }), "粤语、普通话、Vietnamese");
+  assert.equal(languageNames(clientLanguages({ language: "other" })), "Other");
+  assert.equal(languageNames(clientLanguages({ language: "other" }), { preferred: true }), "Other (preferred)");
+  assert.equal(languageNames(clientLanguages({ language: "other" }), { lang: "zh-Hans" }), "其他");
+  assert.deepEqual(languageSummary(entries), {
+    letters: "C, M, O",
+    names: "Cantonese (preferred), Mandarin, Other: Vietnamese",
+    labels: ["Cantonese", "Mandarin", "Other"],
+  });
+  assert.deepEqual(languageSummary([]), { letters: "", names: "", labels: [] });
+  assert.equal(speaksLanguage(entries, "all"), true);
+  assert.equal(speaksLanguage(entries, "Mandarin"), true);
+  assert.equal(speaksLanguage(entries, "mandarin"), true, "a code is compared by its label");
+  assert.equal(speaksLanguage(entries, "English"), false);
+  assert.deepEqual(
+    languageFilterLabels([entries, clientLanguages({ language: "english" }), clientLanguages({ language: "mandarin" })]),
+    ["Cantonese", "English", "Mandarin", "Other"],
+  );
+  assert.deepEqual(LANGUAGE_LETTERS, { english: "E", cantonese: "C", mandarin: "M", other: "O" });
+  assert.ok(Object.isFrozen(LANGUAGE_LETTERS));
 });

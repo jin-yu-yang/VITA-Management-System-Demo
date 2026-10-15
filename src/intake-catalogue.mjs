@@ -270,3 +270,69 @@ const labelOf = (table, value, lang) => {
 };
 export const serviceLabel = (value, lang = "en") => labelOf(SERVICE_LABELS, value, lang);
 export const languageLabel = (value, lang = "en") => labelOf(LANGUAGE_LABELS, value, lang);
+
+// ---------------------------------------------------------------------------
+// The client's service languages (allow-multiple-service-languages, design
+// D3): the preferred one (Q0.3, `language`) first, then the others (Q0.5,
+// `language_also`) in option order, never twice. Other carries what was typed
+// (Q0.4 or Q0.6). A label, from a version-1 answer or a help request's text,
+// maps back to its code; any other text is Other with that text.
+// ---------------------------------------------------------------------------
+
+export const LANGUAGE_LETTERS = Object.freeze({ english: "E", cantonese: "C", mandarin: "M", other: "O" });
+const LANGUAGE_CODES = [...LANGUAGE_LABELS.keys()];
+const CODE_OF_LABEL = new Map(
+  [...LANGUAGE_LABELS.values()].map((option) => [String(option.label?.general?.en ?? option.value).toLowerCase(), option.value]),
+);
+const trimmed = (value) => (typeof value === "string" ? value.trim() : "");
+
+function languageEntry(value, typed) {
+  const raw = trimmed(value);
+  if (!raw) return null;
+  const code = LANGUAGE_LABELS.has(raw) ? raw : CODE_OF_LABEL.get(raw.toLowerCase());
+  if (code) return { code, label: languageLabel(code), text: code === "other" ? trimmed(typed) : "" };
+  return { code: "other", label: languageLabel("other"), text: raw };
+}
+
+export function clientLanguages(answers) {
+  const draft = answers ?? {};
+  const also = Array.isArray(draft.language_also) ? draft.language_also : [];
+  const entries = [
+    languageEntry(draft.language, draft.language_other),
+    ...LANGUAGE_CODES.filter((code) => also.includes(code)).map((code) => languageEntry(code, draft.language_also_other)),
+  ].filter(Boolean);
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = `${entry.code}|${entry.text.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export const languageLetters = (entries) => entries.map((entry) => LANGUAGE_LETTERS[entry.code] ?? "O").join(", ");
+
+// Staff (`preferred`): English, the first marked "(preferred)", Other as
+// "Other: <text>". A client: the screen language, Other as what they typed.
+export function languageNames(entries, { lang = "en", preferred = false, separator = ", " } = {}) {
+  const names = entries.map((entry) => {
+    if (entry.code !== "other") return languageLabel(entry.code, preferred ? "en" : lang);
+    if (preferred) return entry.text ? `${entry.label}: ${entry.text}` : entry.label;
+    return entry.text || languageLabel("other", lang);
+  });
+  if (preferred && names.length) names[0] = `${names[0]} (preferred)`;
+  return names.join(preferred ? ", " : separator);
+}
+
+// A filter's choice is a label (or a code), compared by its label.
+export const speaksLanguage = (entries, chosen) =>
+  chosen === "all" || entries.some((entry) => entry.label === languageLabel(chosen));
+
+export const languageFilterLabels = (lists) =>
+  [...new Set(lists.flatMap((entries) => entries.map((entry) => entry.label)))].sort();
+
+export const languageSummary = (entries) => ({
+  letters: languageLetters(entries),
+  names: languageNames(entries, { preferred: true }),
+  labels: entries.map((entry) => entry.label),
+});
