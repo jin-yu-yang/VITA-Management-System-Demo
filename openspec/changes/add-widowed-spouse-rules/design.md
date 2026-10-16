@@ -40,7 +40,7 @@
 
 ### D1: Show-if gains `gte`, `lte` and `any` (brainstorm Q2-A, I1, I9)
 - **Choice:** a condition list stays AND, with three new condition kinds:
-  - `{ field, op: "gte", value: <integer> }` holds when the answer is a whole number written in digits without a leading zero (`0`, or `[1-9][0-9]*`) and is at least `value`. It doesn't hold when the answer is unanswered, not a number, or written with a leading zero, so "02025", which the year check refuses, can't switch a rule on either (brainstorm I9);
+  - `{ field, op: "gte", value: <integer> }` holds when the answer is a whole number written in digits without a leading zero (`0`, or `[1-9][0-9]*`) and is at least `value`. It doesn't hold when the answer is unanswered, not a number, or written with a leading zero, so "02025", which the year check refuses, can't switch a rule on either (brainstorm I9). The browser reads the answer as it is sent, trimmed, as `sendable` trims a year; the server only ever stores trimmed values (`check_intake_value` refuses " 2024"), so the two agree (final review, fix 48ffc71);
   - `{ field, op: "lte", value: <integer> }` is the same with at most `value`;
   - `{ op: "any", groups: [[cond, …], …] }` holds when at least one group holds.
 - **Where:**
@@ -127,9 +127,9 @@
 
 ### D7: The controller, the Fill and the draft (I7, I8)
 - **Choice:**
-  - **The controller.** `editAnswers` runs `clearSpouse` when `!spouseShown(merged draft)` and either the patch changes `marital_status` (an unchanged value, as a move re-sends it, doesn't count), or it contains a `spouse_death_year` that passes `checkValue` and is answered. A partly typed or cleared year leaves the who answers alone, on a move too (brainstorm I10).
+  - **The controller.** `editAnswers` runs `clearSpouse` when `!spouseShown(merged draft)` and either the patch changes `marital_status` (an unchanged value, as a move re-sends it, doesn't count), or it contains a `spouse_death_year` that, as sent (trimmed), is answered and passes `checkValue`. A partly typed or cleared year leaves the who answers alone, on a move too (brainstorm I10).
   - **The redraw.** A visibility driver's `change` also redraws the form when the sub-steps the page lists (the rail, or Add a case's parts) differ from the ones the draft shows now, not only when the current sub-step's questions do (brainstorm I11). It compares the page with the draft, as `needsRedraw` does, because typing has already put the value in the draft. The death year is the first driver whose effect is on another sub-step.
-  - **"Fill fictional details"** passes `married: spouseOnReturn(draft)` in both places. The married sample's other married-only answers stay hidden by their show-ifs.
+  - **"Fill fictional details"** uses `sampleAnswersFor(draft, { seed })` (`src/sample-data.mjs`) in both places: the married sample when `spouseOnReturn(draft)` holds. A widowed client stays widowed with their year, on Regenerate too, and a late spouse gets no phone, no `married_last_day` or `lived_apart_last_6mo`, and a job title only while J holds. Hidden answers are not harmless here: a stored `sp_phone` reaches `case_contacts` and the staff contact card (final review, fix 48ffc71).
   - **The draft 13614-C** (`src/draft-form.mjs`) skips `sp_first_name`, `sp_middle_name`, `sp_last_name` and `sp_dob` unless `spouseShown(visible)` holds (J). The widowed box and year fill as today.
   - **The draft's not-sure lines** quote `wording(question, { answers })`, which follows J through `spouseShown`.
 - **Why:**
@@ -164,8 +164,8 @@
    - `spouse_death_year` has min 1900 and max 2025;
    - the parity queries agree.
 3. Only after the user's OK in chat, `npm run db:migrate:test` applies both, then `npm run test:database` runs.
-4. Any shared database applies 027 and 028 before, or together with, the merge. The browser sends the new show-ifs only through the catalogue, and the server needs 027's functions to load and evaluate them.
-5. **Rollback:** a later migration restoring the 011 and 015 function bodies, and a catalogue migration without the rules. Stored answers are unaffected.
+4. Any shared database applies 027 and 028 together with the front end that ships them. The server reads its own `intake_fields`, not the browser's catalogue. The risky order is the new database with the old front end: the server would require the late spouse's name and date of birth from a 2023–2025 widow that the old browser hides. The new front end with the old database is harmless: the browser asks for more than the server requires. 027 must apply before 028, since 015's loader refuses `any`.
+5. **Rollback:** a later catalogue migration without the rules, applied in the same migration as, or before, a migration restoring 011's `intake_holds` and 015's loader and year check. In the other order, 011's `else false` would hide every field whose show-if is an `any`, married spouses included. Stored answers are unaffected.
 
 ## Open Questions
 
