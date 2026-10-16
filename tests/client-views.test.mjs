@@ -24,6 +24,7 @@ import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src
 import { cardsFor } from "../src/document-cards.mjs";
 import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
+import { t } from "../src/client-text.mjs";
 import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
@@ -1210,6 +1211,12 @@ test("the summary offers the draft Form 14446 in English and 繁體, never 简�
   const hans = summary("zh-Hans");
   assert.match(hans, /data-draft="14446" data-form="zh-t"/);
   assert.doesNotMatch(hans, /data-draft="14446" data-form="zh-s"/);
+  // The primary button names the form it opens, 繁體, in the screen's own script.
+  const primary = (html, form) => new RegExp(`<button[^>]*class="btn secondary"[^>]*data-draft="14446" data-form="${form}"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? "";
+  assert.ok(primary(hans, "zh-t").includes(t("draft.form_zh_t", {}, "zh-Hans")), "简体 screen: 繁体中文版");
+  const hant = summary("zh-Hant");
+  assert.ok(primary(hant, "zh-t").includes(t("draft.form_zh_t", {}, "zh-Hant")), "繁體 screen: 繁體中文版");
+  assert.doesNotMatch(primary(en, "en"), /繁/);
 });
 
 test("review.summary: a section folds from its heading, and Expand or Collapse all sets them all", () => {
@@ -1571,4 +1578,36 @@ test("1.5's details name a late spouse, and print the dates and phones as the su
   assert.match(html, new RegExp(`<dt>Telephone number</dt><dd>${reEsc(phone)}</dd>`));
   const dob = formatAnswer(findQuestion(2, "tp_dob"), answers.tp_dob, { lang: "en" });
   assert.match(html, new RegExp(`<dt>Date of birth</dt><dd>${reEsc(dob)}</dd>`));
+});
+
+test("1.5 shows only the details the draft prints: a late spouse has no phone or email (add-form-14446-consent)", () => {
+  const spouseBlock = (html) => /<h2 class="q-heading">Your (?:late )?spouse<\/h2>[\s\S]*?<\/dl>/.exec(html)?.[0] ?? "";
+  const stale = { sp_phone: "2155550150", vc_sp_email: "wei@example.com" };
+  const widowed = { ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025", ...stale };
+  const late = spouseBlock(intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: widowed })));
+  assert.match(late, /Your late spouse/);
+  assert.match(late, new RegExp(`${reEsc(widowed.sp_first_name)} ${reEsc(widowed.sp_last_name)}`));
+  const dob = formatAnswer(findQuestion(2, "sp_dob"), widowed.sp_dob, { lang: "en" });
+  assert.match(late, new RegExp(`<dt>Date of birth</dt><dd>${reEsc(dob)}</dd>`));
+  assert.doesNotMatch(late, /Telephone number/);
+  assert.doesNotMatch(late, /Email address/);
+  assert.doesNotMatch(late, /2155550150|\(215\) 555-0150|wei@example\.com/);
+  const marriedAnswers = { ...makeSampleAnswers({ married: true }), ...stale };
+  const married = spouseBlock(intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: marriedAnswers })));
+  assert.match(married, /<dt>Telephone number<\/dt><dd>[^<]*555[^<]*<\/dd>/);
+  assert.match(married, /<dt>Email address<\/dt><dd>wei@example\.com<\/dd>/);
+});
+
+test("1.5's spouse-signature tip follows the marital status (add-form-14446-consent)", () => {
+  const sign = (answers) => intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: answers }));
+  const marriedTip = escText("Leave this empty if you won't file a joint return.");
+  const lateTip = escText("Type your late spouse's full name. You sign for them because a joint return is possible for 2025.");
+  const married = sign(makeSampleAnswers({ married: true }));
+  assert.ok(married.includes(marriedTip), "married: the leave-empty tip");
+  assert.ok(!married.includes(lateTip));
+  const widowed = sign({ ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025" });
+  assert.ok(widowed.includes(lateTip), "widowed 2025: the late-spouse tip");
+  assert.ok(!widowed.includes(marriedTip));
+  const single = sign(makeSampleAnswers());
+  assert.ok(!single.includes(marriedTip) && !single.includes(lateTip), "never married: neither tip");
 });

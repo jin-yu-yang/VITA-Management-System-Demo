@@ -25,7 +25,9 @@ test("the client's block (draft-14446)", () => {
   assert.equal(text[F("signature1[0].telephoneNumber[0]")], "(215) 555-0101");
   assert.equal(text[F("signature1[0].emailAddress[0]")], "mei@example.com");
   assert.equal(text[F("signature1[0].signatureTypePrint[0]")], "Mei Chen");
-  assert.equal(fileName, "14446-draft.pdf");
+  assert.equal(fileName, "14446-draft-VT-AAAA-BBBB.pdf");
+  assert.equal(draft(MEI, "zh-t").fileName, "14446-draft-VT-AAAA-BBBB-zh-t.pdf");
+  assert.equal(draft14446Fields(MEI, { today: "2026-02-03" }).fileName, "14446-draft.pdf", "no reference, no suffix");
   const { vc_tp_date: _d, ...undated } = MEI;
   assert.equal(draft(undated).text[F("signature1[0].dateSigned[0]")] ?? "", "");
 });

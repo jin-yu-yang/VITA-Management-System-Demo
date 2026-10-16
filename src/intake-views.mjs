@@ -38,6 +38,7 @@ import {
   substepTitleOf,
   isAnswered,
   spouseShown,
+  visibleAnswers,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
@@ -259,13 +260,17 @@ function questionsBody(view) {
 // add-form-14446-consent, design D3): the client's details and, while a joint
 // return is possible (J), the spouse's. Formatted as the summary formats them.
 function signDetails(answers, lang) {
-  const shown = (id, value) => (isAnswered(value) ? formatAnswer(findQuestion(2, id), value, { lang, answers }) : "");
+  // Read what the draft reads (visibleAnswers), so a hidden or stale answer
+  // never shows here: a late spouse has no phone or email rows at all.
+  const visible = visibleAnswers(2, answers);
+  const shown = (id) => (isAnswered(visible[id]) ? formatAnswer(findQuestion(2, id), visible[id], { lang, answers: visible }) : "");
+  const asked = (id) => isVisible(findQuestion(2, id), answers);
   const signer = (label, [first, middle, last, dob, phone, email]) => {
     const rows = [
-      [t("sign.name", {}, lang), [answers[first], answers[middle], answers[last]].filter(isAnswered).join(" ")],
-      [t("sign.dob", {}, lang), shown(dob, answers[dob])],
-      [t("sign.phone", {}, lang), shown(phone, answers[phone])],
-      [t("sign.email", {}, lang), isAnswered(answers[email]) ? String(answers[email]).trim() : ""],
+      [t("sign.name", {}, lang), [visible[first], visible[middle], visible[last]].filter(isAnswered).join(" ")],
+      [t("sign.dob", {}, lang), shown(dob)],
+      ...(asked(phone) ? [[t("sign.phone", {}, lang), shown(phone)]] : []),
+      ...(asked(email) ? [[t("sign.email", {}, lang), isAnswered(visible[email]) ? String(visible[email]).trim() : ""]] : []),
     ];
     return `<div class="sign-signer"><h2 class="q-heading">${esc(label)}</h2><dl>${rows
       .map(([dt, dd]) => `<dt>${esc(dt)}</dt><dd>${esc(dd || t("sign.none", {}, lang))}</dd>`)
@@ -595,7 +600,9 @@ function draft14446Buttons(lang) {
   const other = english
     ? button(esc(t("draft.form_zh_t", {}, lang)), "view-draft", "inline", 'data-draft="14446" data-form="zh-t" lang="zh-Hant"')
     : button(esc(t("draft.form_en", {}, lang)), "view-draft", "inline", 'data-draft="14446" data-form="en"');
-  return `${button(`${icon("file")} ${esc(t("draft14446.view", {}, lang))}`, "view-draft", "secondary", `data-draft="14446" data-form="${first}"`)}<span class="draft-languages">${other}</span>`;
+  // A Chinese screen opens the 繁體 form, so the button says so in the screen's script.
+  const name = english ? t("draft14446.view", {}, lang) : `${t("draft14446.view", {}, lang)}（${t("draft.form_zh_t", {}, lang)}）`;
+  return `${button(`${icon("file")} ${esc(name)}`, "view-draft", "secondary", `data-draft="14446" data-form="${first}"`)}<span class="draft-languages">${other}</span>`;
 }
 
 // The summary page (gate-review-and-redesign-summary, design D6-D8): the

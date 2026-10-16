@@ -927,7 +927,8 @@ export function materialsCard(record, rights, ui = {}) {
   }</form></section>`;
 }
 
-// The three draft 13614-C buttons (spec 2026-10-04 §7.4). They reuse 4b2's
+// The draft 13614-C in three languages and the draft Form 14446 in English
+// and 繁體 (spec 2026-10-04 §7.4; add-form-14446-consent). They reuse 4b2's
 // `view-draft` wiring, which builds from the case's answers and contact fields.
 const draftTools = () =>
   `<div class="summary-tools">${button("View Draft 13614-C", "view-draft", "secondary", 'data-form="en"')}${button(

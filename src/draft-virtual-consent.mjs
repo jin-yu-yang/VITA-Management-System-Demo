@@ -77,5 +77,5 @@ export function draft14446Fields(answers, { form = "en", reference = "", today }
   if (visible.vc_review === "yes" || visible.vc_review === "no") checks.push(P3 + names.review[visible.vc_review]);
   if (consented(answers)) checks.push(P3 + names.agree);
 
-  return { text, checks, comments: "", consentPage: true, words: {}, stamp: draftStamp(reference, today), fileName: "14446-draft.pdf" };
+  return { text, checks, comments: "", consentPage: true, words: {}, stamp: draftStamp(reference, today), fileName: `14446-draft${reference ? `-${oneLine(reference)}` : ""}${form === "en" ? "" : `-${form}`}.pdf` };
 }
