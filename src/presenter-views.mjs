@@ -1,4 +1,4 @@
-import { esc, icon, button, select } from "./ui.mjs";
+import { esc, icon, button, select, confirmBody } from "./ui.mjs";
 import { describeStage } from "./domain.mjs";
 import { CHECKPOINTS } from "./contracts.mjs";
 
@@ -108,13 +108,15 @@ export function renderPresenterPanel({
  */
 export function resetDialogBody(state = {}) {
   const samples = (state.cases ?? []).filter((record) => record?.fixture);
-  return `<p>This rebuilds the ${esc(samples.length || "six")} sample cases and the sample request for help with forms. They get new Application IDs, so any sample case open in another window is replaced.</p><div class="info-note">${icon(
-    "shield",
-  )}<p>Applications this class created stay exactly as they are, and so do every sign-in, every volunteer persona and the office's own settings. Nobody is emailed.</p></div>${button(
-    "Reset the sample cases",
-    "confirm-reset-fixtures",
-    "primary full",
-  )}${button("Keep them as they are", "close-dialog", "text")}`;
+  return confirmBody({
+    lead: `This rebuilds the ${esc(samples.length || "six")} sample cases and the sample request for help with forms. They get new Application IDs, so any sample case open in another window is replaced.`,
+    note: {
+      icon: "shield",
+      html: "Applications this class created stay exactly as they are, and so do every sign-in, every volunteer persona and the office's own settings. Nobody is emailed.",
+    },
+    confirm: button("Reset the sample cases", "confirm-reset-fixtures", "primary full"),
+    keep: "Keep them as they are",
+  });
 }
 
 /**
@@ -124,37 +126,36 @@ export function resetDialogBody(state = {}) {
 export function checkpointDialogBody(state = {}) {
   const samples = (state.cases ?? []).filter((record) => record?.fixture);
   if (!samples.length)
-    return `<p>There are no sample cases in this workspace yet.</p><div class="info-note">${icon(
-      "help",
-    )}<p>Reset the sample cases first; that is what creates them.</p></div>${button(
-      "Reset the sample cases",
-      "open-reset-fixtures",
-      "primary full",
-    )}${button("Close", "close-dialog", "text")}`;
+    return confirmBody({
+      lead: "There are no sample cases in this workspace yet.",
+      note: { icon: "help", html: "Reset the sample cases first; that is what creates them." },
+      confirm: button("Reset the sample cases", "open-reset-fixtures", "primary full"),
+      keep: "Close",
+    });
   const cases = samples.map((record) => [
     record.id,
     `${record.reference ?? "Sample case"} · ${describeStage(record.stage).label}`,
   ]);
   const points = CHECKPOINTS.map((name) => [name, CHECKPOINT_LABELS[name]]);
-  return `<p>This puts one sample case back to a chosen point in the story. It keeps its Application ID and its client, and replaces the work recorded on it.</p><form id="checkpoint-form" class="staff-form">${select(
-    "Sample case",
-    "caseId",
-    "",
-    cases,
-    "required",
-    "checkpoint",
-  )}${select(
-    "Point in the story",
-    "checkpoint",
-    "",
-    points,
-    "required",
-    "checkpoint",
-  )}<div class="info-note">${icon(
-    "help",
-  )}<p>The records it writes are simulated, and the case's history says so. Nothing is filed, signed or sent.</p></div><button type="submit" id="checkpoint-submit" class="btn primary full">Load this checkpoint</button></form>${button(
-    "Leave this case as it is",
-    "close-dialog",
-    "text",
-  )}`;
+  return confirmBody({
+    lead: "This puts one sample case back to a chosen point in the story. It keeps its Application ID and its client, and replaces the work recorded on it.",
+    note: {
+      icon: "help",
+      html: "The records it writes are simulated, and the case's history says so. Nothing is filed, signed or sent.",
+      inForm: true,
+    },
+    form: {
+      attrs: 'id="checkpoint-form" class="staff-form"',
+      fields: `${select("Sample case", "caseId", "", cases, "required", "checkpoint")}${select(
+        "Point in the story",
+        "checkpoint",
+        "",
+        points,
+        "required",
+        "checkpoint",
+      )}`,
+    },
+    confirm: `<button type="submit" id="checkpoint-submit" class="btn primary full">Load this checkpoint</button>`,
+    keep: "Leave this case as it is",
+  });
 }

@@ -37,6 +37,7 @@ import {
   languageCell,
   loadingLine,
   unloadedLine,
+  confirmBody,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -1306,18 +1307,26 @@ export function correctionsDialogBody(state = {}) {
         button("Try again", "retry-action", "secondary"),
       )}${button("Dismiss", "dismiss-error", "text")}</div></div></div>`
     : "";
-  return `${refused}<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
-    "Corrections to send back to the preparer",
-    "findings",
-    "",
-    `required maxlength="2000" rows="4"${state.error ? ' aria-describedby="corrections-error"' : ""}`,
-    "corrections",
-  )}${caseSubmit(
-    `${icon("back")} Send back for corrections`,
-    "REQUEST_CORRECTIONS",
-    "primary full",
-    state.busy ? "disabled" : "",
-  )}</form>${button("Keep reviewing", "close-dialog", "text")}`;
+  return confirmBody({
+    before: refused,
+    lead: "Tell the preparer what to correct in TaxSlayer. The client never sees these words.",
+    form: {
+      fields: textarea(
+        "Corrections to send back to the preparer",
+        "findings",
+        "",
+        `required maxlength="2000" rows="4"${state.error ? ' aria-describedby="corrections-error"' : ""}`,
+        "corrections",
+      ),
+    },
+    confirm: caseSubmit(
+      `${icon("back")} Send back for corrections`,
+      "REQUEST_CORRECTIONS",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep reviewing",
+  });
 }
 
 function followupPanel(record) {

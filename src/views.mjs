@@ -1,4 +1,4 @@
-import { esc, icon, button, officeContact, formatClientNumber, loadingLine } from "./ui.mjs";
+import { esc, icon, button, officeContact, formatClientNumber, loadingLine, confirmBody } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
@@ -410,11 +410,20 @@ export function dialog(state) {
   }
   if (state.dialog === "regenerate") {
     title = t("regenerate.title", {}, lang);
-    body = `<p>${say("regenerate.body")}</p><div class="info-note">${icon("help")}<p>${say("regenerate.note")}</p></div>${button(say("regenerate.confirm"), "confirm-regenerate", "primary full")}${button(say("regenerate.keep"), "close-dialog", "text")}`;
+    body = confirmBody({
+      lead: say("regenerate.body"),
+      note: { icon: "help", html: say("regenerate.note") },
+      confirm: button(say("regenerate.confirm"), "confirm-regenerate", "primary full"),
+      keep: say("regenerate.keep"),
+    });
   }
   if (state.dialog === "leave-add-case") {
     title = "Leave without saving?";
-    body = `<p>The answers on this page are not saved yet. If you leave now, they are lost. Nothing has been sent to the office.</p>${button("Leave and discard", "confirm-leave-add-case", "primary full")}${button("Keep editing", "close-dialog", "text")}`;
+    body = confirmBody({
+      lead: "The answers on this page are not saved yet. If you leave now, they are lost. Nothing has been sent to the office.",
+      confirm: button("Leave and discard", "confirm-leave-add-case", "primary full"),
+      keep: "Keep editing",
+    });
   }
   if (state.dialog === "close-case") {
     title = "Close this case?";
