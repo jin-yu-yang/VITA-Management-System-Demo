@@ -433,7 +433,8 @@ if (!config) {
 
   // The pressed control (design D5), kept only for the presses that hold the
   // buttons, and found again after every draw while the press runs. A
-  // sub-step move is never marked: the save chip says Saving.
+  // sub-step move is never marked because it is not on the allow-list (its
+  // `pressed` stays null); the save chip says Saving.
   const BUSY_ACTIONS = Object.freeze(["confirm-reset-fixtures", "save-office-draft", "send-office-draft"]);
   function busyControl(control) {
     if (!control?.dataset) return false;
@@ -447,7 +448,7 @@ if (!config) {
       pressed = null;
       return;
     }
-    if (!pressed || state.saveState === "saving") return;
+    if (!pressed) return;
     const control = findField(pressed);
     if (!control || control.classList.contains("is-busy")) return;
     control.classList.add("is-busy");

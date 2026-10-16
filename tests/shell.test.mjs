@@ -1107,7 +1107,8 @@ test("app.mjs marks only the allow-listed press while it runs (design D5)", () =
   assert.match(app, /pressed = null;\s*if \(event\.submitter && busyControl\(event\.submitter\)\) pressed = describeFocus\(event\.submitter\);/);
   const mark = app.slice(app.indexOf("function markPressed("), app.indexOf("function markPressed(") + 900);
   assert.match(mark, /if \(!state\.busy && !state\.officeSaving\) \{\s*pressed = null;\s*return;\s*\}/);
-  assert.match(mark, /if \(!pressed \|\| state\.saveState === "saving"\) return;/);
+  assert.match(mark, /if \(!pressed\) return;/);
+  assert.doesNotMatch(mark, /saveState/);
   assert.match(mark, /control\.classList\.contains\("is-busy"\)/);
   assert.match(mark, /setAttribute\("aria-busy", "true"\)/);
   assert.match(mark, /icon\("spinner", "spin"\)/);
