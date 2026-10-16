@@ -5175,3 +5175,53 @@ test("an applicant's help-request list counts as loaded, and sign-out starts ove
   assert.deepEqual(controller.getState().lists, { cases: "loading", assistance: "loading" });
   controller.stop();
 });
+
+test("a restored open case that also fails to load does not take Try again away from the lists", async () => {
+  const shared = fakeSession();
+  const record = { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { ...CONSENT_14446 } };
+  const store = fakeStore({ cases: [record] });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  await first.controller.selectCase("case-a");
+  first.controller.stop();
+
+  const realList = store.listCases;
+  const realGet = store.getCase;
+  store.listCases = offlineList();
+  store.getCase = offlineList();
+  const { controller } = build({ store, sessionStorage: shared });
+  await controller.start();
+  assert.equal(controller.getState().selectedCaseId, "case-a", "the open case was restored");
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().retryable, true, "Try again is offered");
+  store.listCases = realList;
+  store.getCase = realGet;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().cases.length, 1);
+  controller.stop();
+});
+
+test("a later refresh after a failed first load reads the people and the workspace too", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realList = store.listCases;
+  store.listCases = offlineList();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().people.length, 0);
+  assert.equal(controller.getState().workspace, null);
+  store.listCases = realList;
+  store.calls.length = 0;
+  await controller.refresh();
+  const state = controller.getState();
+  assert.equal(state.lists.cases, "ready");
+  assert.equal(state.lists.assistance, "ready");
+  assert.ok(state.people.length > 0, "the people are read");
+  assert.ok(state.workspace, "the workspace is read");
+  assert.ok(store.calls.includes("listPeople"), "listPeople was called again");
+  store.calls.length = 0;
+  await controller.refresh();
+  assert.ok(!store.calls.includes("listPeople"), "once loaded, a refresh does not read the people again");
+  controller.stop();
+});

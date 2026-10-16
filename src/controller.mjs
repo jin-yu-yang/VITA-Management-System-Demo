@@ -732,17 +732,26 @@ export function createController({
       return;
     }
     let failure = null;
-    try {
-      await loadList();
-    } catch (error) {
-      failure = error;
-    }
-    try {
-      // The office board shows these beside the cases, and a reconnect is the
-      // one path a missed subscription change comes back through.
-      await loadAssistance();
-    } catch (error) {
-      failure = failure ?? error;
+    if (!dataLoaded) {
+      // The first load never finished: read everything it reads.
+      try {
+        await loadData();
+      } catch (error) {
+        failure = error;
+      }
+    } else {
+      try {
+        await loadList();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        // The office board shows these beside the cases, and a reconnect is the
+        // one path a missed subscription change comes back through.
+        await loadAssistance();
+      } catch (error) {
+        failure = failure ?? error;
+      }
     }
     try {
       await loadSelected();
@@ -873,6 +882,9 @@ export function createController({
 
   // Everything the first load reads (design D6): the cases, and for a
   // presenter the people, the help requests and the workspace.
+  // `dataLoaded` is true once one whole pass has succeeded; until then a
+  // refresh reads everything, not only the lists.
+  let dataLoaded = false;
   async function loadData() {
     await loadList();
     if (state.principal?.access === "presenter") {
@@ -882,6 +894,7 @@ export function createController({
     } else {
       state.lists.assistance = "ready";
     }
+    dataLoaded = true;
   }
 
   // A list that never loaded and whose read failed says so; one that loaded
@@ -959,7 +972,6 @@ export function createController({
       state.error = null;
     } catch (error) {
       noteFailure(error);
-      noteUnloaded();
     }
     subscribe();
     if (state.selectedCaseId) {
@@ -970,6 +982,9 @@ export function createController({
         else noteFailure(error);
       }
     }
+    // After the open case: its own failure drops the local retry, so the
+    // lists' Try again is set last.
+    noteUnloaded();
     persistSession();
     show();
   }
@@ -1113,6 +1128,7 @@ export function createController({
     state.principal = null;
     state.cases = [];
     state.lists = { cases: "loading", assistance: "loading" };
+    dataLoaded = false;
     state.people = [];
     state.assistance = [];
     state.workspace = null;
