@@ -152,22 +152,24 @@ From the SDD ledger (`.superpowers/sdd/plan/progress.md`), before it was deleted
 
 ## 6. Promote candidates → long-term learning
 
-- [ ] 🟡 **`src/` module names are letters and dashes only, and served PDFs are named one by one** → **Promote to memory** (type: project)
+- [x] 🟡 **`src/` module names are letters and dashes only, and served PDFs are named one by one** → **Promoted to memory** `src-names-server-allow-list` (type: project)
   > **Why**: the plan named `src/draft-14446-form.mjs`; `server.mjs` refused it, the app failed to boot, and only the 16-minute story found it.
   > **How to apply**: when a plan adds a file under `src/` or `src/forms/`, check the name against `server.mjs`'s ASSET and FORMS rules (a server test now requests every `src/*.mjs`).
 
-- [ ] 🟡 **A page that previews what a draft prints must read the draft's `visibleAnswers`** → **Promote to memory** (append to `hidden-contact-fields-surface`)
+- [x] 🟡 **A page that previews what a draft prints must read the draft's `visibleAnswers`** → **Promoted to memory** (appended to `hidden-contact-fields-surface`)
   > **Why**: 1.5 listed a late spouse's phone and email from the raw answers, while the draft prints neither.
   > **How to apply**: when a view shows "what the form will print", read the same `visibleAnswers` call as the draft builder, and test a hidden and a stale answer.
 
-- [ ] 📌 **Check a PDF here with pdf-lib and `qlmanage`, not the browser pane** → **Promote to memory** (type: reference)
+- [x] 📌 **Check a PDF here with pdf-lib and `qlmanage`, not the browser pane** → **Promoted to memory** `check-pdfs-here` (type: reference)
   > **Why**: the browser pane can't render a local or served PDF and opened a download dialog for the user; `sips` drew a 繁體 page black.
   > **How to apply**: to look at a filled PDF, split its pages with pdf-lib and render them with `qlmanage -t`; never open a PDF in the browser pane.
 
-- [ ] 📌 **OpenCC converts a whole page differently from one string** → **Promote to memory** (append to `intake-4d-carry-forwards` or a new 繁體 note)
+- [x] 📌 **OpenCC converts a whole page differently from one string** → **Promoted to memory** `hant-page-segmentation` (type: feedback)
   > **Why**: 说明了 and 不合并 converted differently in context (說明瞭, 不合並), failing the sweep or the vocabulary.
   > **How to apply**: when new 简体 text has 了 after a verb or 合并 before a noun, run `npm run build:hant` and read the 繁體 in context; add an override to `tools/hant-overrides.mjs` when the tax term changes.
 
-- [ ] 📌 **The worktree guard refuses any command whose text contains "git", even inside a word** → **Promote to memory** (append to `worktree-git-commands`)
+- [x] 📌 **The worktree guard refuses any command whose text contains "git", even inside a word** → **Promoted to memory** (appended to `worktree-git-commands`)
   > **Why**: a command with "digits" in it was refused.
   > **How to apply**: put such text in a script file in the scratchpad and run the script.
+
+The ledger's open questions and deferred minors are also kept in memory `form-14446-carry-forwards`.
