@@ -387,7 +387,14 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
   };
   const answered = (id) => Object.hasOwn(visible, id) && isAnswered(visible[id]);
 
-  for (const [id, [box, how]] of Object.entries(TEXT)) if (answered(id)) put(box, write(visible[id], how));
+  // The spouse's name and birth date are the joint filer's lines: printed only
+  // while a joint return is possible (J), never for a 2023 or 2024 death
+  // (change add-widowed-spouse-rules, brainstorm Q6). The job title follows J
+  // by its own show-if.
+  const SPOUSE_LINES = new Set(["sp_first_name", "sp_middle_name", "sp_last_name", "sp_dob"]);
+  const joint = spouseShown(visible);
+  for (const [id, [box, how]] of Object.entries(TEXT))
+    if (answered(id) && (joint || !SPOUSE_LINES.has(id))) put(box, write(visible[id], how));
 
   const consentPage = visible.gcf_consent === "yes";
   if (consentPage)
@@ -406,7 +413,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
 
   // The Spouse box only counts while there is a spouse: a choice left over
   // from before a change of marital status ticks nothing (spouseShowIf).
-  const hasSpouse = spouseShown(visible);
+  const hasSpouse = joint;
   for (const [id, stem] of Object.entries(WHO)) {
     if (!answered(id) || !Array.isArray(visible[id])) continue;
     for (const choice of ["me", "spouse", "none"])

@@ -13,6 +13,7 @@ const ID_A = "a".repeat(32);
 const ID_B = "0123456789abcdef0123456789abcdef";
 const single = { marital_status: "never_married" };
 const married = { marital_status: "married", sp_first_name: "Mei", sp_last_name: "Lin" };
+const widowed = (year) => ({ marital_status: "widowed", spouse_death_year: year, sp_first_name: "Wei", sp_last_name: "Lin" });
 
 const slots = (answers, state) => cardsFor(answers, state).map((c) => c.slotId);
 const find = (answers, slotId, state) => cardsFor(answers, state).find((c) => c.slotId === slotId);
@@ -492,4 +493,34 @@ test("CARD_WHY holds every said() line, frozen, and the rules use its entries", 
       if (card.why && !card.why.zh?.template && card.ruleId !== "w2" && card.ruleId !== "custody") assert.ok(whys.has(card.why), `${card.slotId} why comes from CARD_WHY`);
     }
   }
+});
+
+test("a spouse who died in 2025: spouse cards, the shared owner line and the late-spouse bank hint (add-widowed-spouse-rules)", () => {
+  const a = widowed("2025");
+  assert.equal(find(a, "photo_id.sp")?.group, "needed");
+  assert.equal(find(a, "ssn.sp")?.group, "needed");
+  assert.deepEqual(find({ ...a, inc_wages: "yes" }, "w2.household").ownerLine, { en: "For you and your spouse", zh: "您和配偶", office: "Client and spouse" });
+  assert.deepEqual(slots({ ...a, ippin: ["me", "spouse"] }).filter((s) => s.startsWith("ippin")), ["ippin.tp", "ippin.sp"]);
+  const bank = cardsFor({ ...a, refund_method: "direct_deposit" }).find((c) => c.ruleId === "bank");
+  assert.deepEqual(bank.hint, {
+    en: "The account must be in the name of one of the taxpayers on this return: your own account, or a joint account with your late spouse.",
+    zh: "账户必须在该税单任一纳税人名下：您本人的账户，或您与已故配偶的联名账户。",
+    office: "The account must be in the name of one of the taxpayers on this return: the client's own account, or a joint account with their late spouse.",
+  });
+});
+
+test("a spouse who died in 2024: no spouse cards, and the single bank hint (add-widowed-spouse-rules)", () => {
+  const a = widowed("2024");
+  assert.equal(find(a, "photo_id.sp"), undefined);
+  assert.equal(find(a, "ssn.sp"), undefined);
+  assert.deepEqual(find({ ...a, inc_wages: "yes" }, "w2.household").ownerLine, { en: "For you", zh: "本人", office: "Client" });
+  assert.deepEqual(slots({ ...a, ippin: ["spouse"] }).filter((s) => s.startsWith("ippin")), []);
+  const bank = cardsFor({ ...a, refund_method: "direct_deposit" }).find((c) => c.ruleId === "bank");
+  assert.equal(bank.hint.en, "The account must be in your name.");
+});
+
+test("custody: a widowed client of any year can get Form 8332 (add-widowed-spouse-rules)", () => {
+  const base = { has_household_members: "yes", hh: [{ member_id: ID_A, months_lived: "4" }] };
+  for (const year of ["2025", "2024", "2015"]) assert.equal(find({ ...widowed(year), ...base }, "custody.household")?.group, "maybe", year);
+  assert.equal(find({ ...married, ...base }, "custody.household"), undefined);
 });

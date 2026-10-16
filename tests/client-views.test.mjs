@@ -858,6 +858,22 @@ test("show-if: the spouse questions render only for a married client", () => {
   assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
 });
 
+test("a widowed client's spouse sub-step reads Your late spouse, and follows the year (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => ({ ...makeSampleAnswers(), marital_status: "widowed", spouse_death_year: year, sp_first_name: "Wei", sp_last_name: "Lin", sp_dob: "1960-02-03" });
+  const died2025 = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: widowed("2025") }));
+  assert.match(died2025, /<h1>Your late spouse<\/h1>/);
+  assert.match(died2025, /<span class="rail-subtitle">Your late spouse<\/span>/);
+  assert.doesNotMatch(died2025, />Your spouse</);
+  assert.match(died2025, /data-q="sp_job_title"/);
+  assert.doesNotMatch(died2025, /data-q="sp_phone"/);
+  const died2024 = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: widowed("2024") }));
+  assert.match(died2024, /data-q="sp_first_name"/);
+  assert.doesNotMatch(died2024, /data-q="sp_job_title"/);
+  const died2015 = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: widowed("2015") }));
+  assert.doesNotMatch(died2015, /data-q="sp_first_name"/);
+  assert.match(died2015, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+});
+
 test("a lead line replaces the section intro; a section's intro shows on its first sub-step only", () => {
   const wages = intakeScreen(v2State({ formSubstep: "income.wages" }));
   assert.match(wages, /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);

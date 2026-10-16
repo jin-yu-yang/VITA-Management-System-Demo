@@ -14,6 +14,7 @@ import {
   wording,
   isVisible,
   findSubstep,
+  substepTitleOf,
 } from "./intake-catalogue.mjs";
 import { formatAnswer, sendable } from "./intake-form.mjs";
 import { cardsFor, CARD_SUBSTEPS } from "./document-cards.mjs";
@@ -829,7 +830,7 @@ export function answersPanelV2(record, { showContact = false } = {}) {
               return read.rows;
             });
           return rows.length
-            ? `<div class="answers-sub"><h4>${esc(substep.title?.general?.en ?? "")}</h4>${rows.join("")}</div>`
+            ? `<div class="answers-sub"><h4>${esc(substepTitleOf(substep, { answers }))}</h4>${rows.join("")}</div>`
             : "";
         })
         .join("");

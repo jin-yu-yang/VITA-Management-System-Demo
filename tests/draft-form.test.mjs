@@ -552,3 +552,16 @@ test("a 2025 death's not-sure line quotes the wording with the spouse (add-widow
   const { comments } = draft({ ...MARRIED, marital_status: "widowed", spouse_death_year: "2025", claimed_by_other: "not_sure" });
   assert.match(comments, /claim you or your spouse as a dependent/);
 });
+
+test("the spouse lines print only when a joint return is possible (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => draft({ ...MARRIED, marital_status: "widowed", spouse_death_year: year, sp_first_name: "Wei", sp_last_name: "Lin" });
+  const died2025 = widowed("2025");
+  assert.ok(died2025.checks.includes(F("page1[0].maritalStatus[0].statusWidowed[0].statusWidowed[0]")));
+  assert.equal(died2025.text[F("page1[0].maritalStatus[0].statusWidowed[0].yearSpousesDeath[0]")], "2025");
+  assert.equal(died2025.text[F("page1[0].spousesFirstName[0]")], "Wei");
+  const died2024 = widowed("2024");
+  assert.ok(died2024.checks.includes(F("page1[0].maritalStatus[0].statusWidowed[0].statusWidowed[0]")));
+  assert.equal(died2024.text[F("page1[0].maritalStatus[0].statusWidowed[0].yearSpousesDeath[0]")], "2024");
+  for (const box of ["spousesFirstName", "spousesMiddleInitial", "spousesLastName", "spousesDateOfBirth", "spousesJobTitle", "spousesTelephoneNumber"])
+    assert.equal(died2024.text[F(`page1[0].${box}[0]`)], undefined, box);
+});

@@ -34,6 +34,7 @@ import {
   leadOf,
   introOf,
   isVisible,
+  substepTitleOf,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
@@ -56,7 +57,7 @@ const topId = (id) => String(id).replace(/\[.*$/, "");
 const localized = (text, variant, lang = "en") =>
   sourceText({ en: text?.[variant]?.en ?? text?.general?.en ?? "", zh: text?.[variant]?.zh ?? text?.general?.zh }, lang);
 const stepTitle = (step, lang = "en") => sourceText({ en: step?.title?.en ?? "", zh: step?.title?.zh }, lang);
-const substepTitle = (substep, variant, lang = "en") => localized(substep?.title, variant, lang);
+const substepTitle = (substep, variant, lang = "en", answers) => substepTitleOf(substep, { variant, lang, answers });
 const stepLabel = (step, lang = "en") => {
   const n = stepNumber(step.id);
   return n ? `${t("rail.step", { n }, lang)}${stepTitle(step, lang)}` : stepTitle(step, lang);
@@ -163,7 +164,7 @@ function railStep(step, view) {
   const items = subs
     .map((substep) => {
       const here = substep.id === view.current;
-      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang))}</span>${here ? `<small class="rail-here">${esc(t("rail.here", {}, lang))}</small>` : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
+      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang, view.answers))}</span>${here ? `<small class="rail-here">${esc(t("rail.here", {}, lang))}</small>` : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
     })
     .join("");
   return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">${esc(t("rail.toggle", { title }, lang))}</span></button><button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">${esc(t("rail.step", { n }, lang))}</span>` : ""}${esc(title)}</span>${markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, marks))}</span></button></div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
@@ -189,7 +190,7 @@ function header(view) {
   // English overlines are capitals; Chinese has none.
   const name = lang === "en" ? stepTitle(step).toUpperCase() : stepTitle(step, lang);
   const overline = n ? t("intake.step_overline", { n, total: NUMBERED.length, name }, lang) : name;
-  return `<div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(substepTitle(view.substep, view.variant, lang))}</h1><p class="substep-count">${esc(view.within)}</p></div>`;
+  return `<div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(substepTitle(view.substep, view.variant, lang, view.answers))}</h1><p class="substep-count">${esc(view.within)}</p></div>`;
 }
 
 // The sub-step's visible questions in its order, one card per heading group.
@@ -476,7 +477,7 @@ function answerSteps(answers, variant, { change, off = "", lang = "en", panels =
           .filter(([, text]) => text !== null)
           .map(([question, text]) => row(wording(question, options), text))
           .join("");
-        const title = esc(substepTitle(substep, variant, lang));
+        const title = esc(substepTitle(substep, variant, lang, answers));
         if (!change) return rows ? `<div class="${subClass}"><h3>${title}</h3>${rows}</div>` : "";
         return `<div class="${subClass}"><div class="summary-sub-head"><h3>${title}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(substep.id)}"${off}>${esc(t("summary.change", {}, lang))}</button></div>${rows || `<p class="summary-none">${esc(t("summary.none", {}, lang))}</p>`}</div>`;
       })
@@ -508,7 +509,7 @@ function documentsSummary(view) {
           ),
         )
         .join("");
-      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant, lang))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>${esc(t("summary.change", {}, lang))}</button></div>${rows}</div>`;
+      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant, lang, view.answers))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>${esc(t("summary.change", {}, lang))}</button></div>${rows}</div>`;
     })
     .join("");
   return subs ? summarySection("documents", stepTitle(step, lang), subs, { panels: view.openPanels, lang, extraClass: " summary-documents" }) : "";

@@ -8,10 +8,12 @@ import {
   checkValue,
   findQuestion,
   findSubstep,
+  isAnswered,
   isMemberId,
   missingToSubmit,
   stepsFor,
   substepOfQuestion,
+  spouseShown,
   substepsFor,
 } from "./intake-catalogue.mjs";
 import {
@@ -139,8 +141,8 @@ function serverAnswersOf(record) {
   return result;
 }
 
-// Not married any more: no who answer may still name the spouse. A list left
-// empty reads as null, as an unticked group does.
+// No joint return any more: no who answer may still name the spouse. A list
+// left empty reads as null, as an unticked group does.
 function clearSpouse(draft) {
   const next = { ...draft };
   for (const id of WHO_IDS) {
@@ -1551,8 +1553,19 @@ export function createController({
     // Keys, not values: a patch of nulls is a real edit (it clears).
     if (!Object.keys(clean).length) return;
     let draft = mergeIntoDraft(state.draftAnswers, clean);
-    if (Object.hasOwn(clean, "marital_status") && clean.marital_status !== "married")
-      draft = clearSpouse(draft);
+    // The spouse leaves the who answers once a joint return stops being
+    // possible (change add-widowed-spouse-rules, brainstorm I10): when the
+    // marital status changes, or on a whole, valid death year. A move re-sends
+    // the page's answers, an unchanged marital status included, so only a
+    // changed one counts; a year half typed or cleared keeps them, so retyping
+    // 2025 never loses "My spouse".
+    const statusChanged =
+      Object.hasOwn(clean, "marital_status") && clean.marital_status !== (state.draftAnswers ?? {}).marital_status;
+    const yearDone =
+      Object.hasOwn(clean, "spouse_death_year") &&
+      isAnswered(clean.spouse_death_year) &&
+      checkValue(findQuestion(2, "spouse_death_year"), clean.spouse_death_year) === null;
+    if ((statusChanged || yearDone) && !spouseShown(draft)) draft = clearSpouse(draft);
     commitDraft(draft);
   }
 
