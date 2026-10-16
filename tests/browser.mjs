@@ -3731,6 +3731,33 @@ async function runPermutation(t, roles) {
 
         // ---- Show-if, a fill that follows the draft, and the senior switch
         await jump("about.marital");
+        // A recently widowed client (add-widowed-spouse-rules): a 2025 death
+        // brings "Your late spouse" with the job title and no phone; 2015 takes
+        // the sub-step away again. The year redraws on change, as a signature does.
+        await choose("marital_status", "widowed");
+        await waitFor(page, "the death year", () => Boolean(document.querySelector("#field-client-spouse_death_year")), undefined, RENDER_MS);
+        await box("spouse_death_year").fill("2025");
+        await page.keyboard.press("Tab");
+        await waitFor(
+          page,
+          "the rail to list Your late spouse",
+          () => document.querySelector('.rail-sublink[data-substep="about.spouse"] .rail-subtitle')?.textContent.trim() === "Your late spouse",
+          undefined,
+          RENDER_MS,
+        );
+        await jump("about.spouse");
+        await waitForQuiet(page);
+        assert.equal(
+          await page.evaluate(() => document.querySelector(".page-intro h1")?.textContent.trim()),
+          "Your late spouse",
+        );
+        assert.equal(await box("sp_job_title").count(), 1, "a 2025 death asks the job title");
+        assert.equal(await box("sp_phone").count(), 0, "a late spouse has no phone");
+        await jump("about.marital");
+        await waitForQuiet(page);
+        await box("spouse_death_year").fill("2015");
+        await page.keyboard.press("Tab");
+        await waitFor(page, "the late spouse to leave the rail", () => !document.querySelector('.rail-sublink[data-substep="about.spouse"]'), undefined, RENDER_MS);
         await choose("marital_status", "married");
         await waitFor(
           page,
