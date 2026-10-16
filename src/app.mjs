@@ -570,6 +570,10 @@ if (!config) {
     toastHost.classList.add("visible");
     placeToast();
     toast.show(kind);
+    // A toast that replaces another keeps the hold the page still has: no new
+    // mouseenter or focusin fires under a pointer or focus that hasn't moved.
+    toast.hover(toastHost.matches(":hover"));
+    toast.focus(toastHost.contains(document.activeElement));
   }
 
   // Errors never toast (design D1). The controller records what it refuses

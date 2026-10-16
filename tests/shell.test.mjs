@@ -1061,4 +1061,11 @@ test("the safety net and the toast host (design D1, D4)", () => {
   assert.match(app, /root\.after\(toastHost\)/);
   assert.match(app, /setAttribute\("role", "status"\)/);
   assert.doesNotMatch(app, /toastHost\.setAttribute\("role"/, "the live region is the text span, not the host");
+  // A replacing toast keeps the hold the page still has (no new mouseenter or
+  // focusin fires under a pointer or focus that hasn't moved).
+  const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function safetyNet("));
+  assert.match(
+    notifyFn,
+    /toast\.show\(kind\);\s*(?:\/\/[^\n]*\n\s*)*toast\.hover\(toastHost\.matches\(":hover"\)\);\s*toast\.focus\(toastHost\.contains\(document\.activeElement\)\);\s*\}/,
+  );
 });
