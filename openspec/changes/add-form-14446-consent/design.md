@@ -103,7 +103,7 @@
 
     The electronic-signature fields stay empty.
   - **The module's name is letters and dashes only** (`draft-virtual-consent.mjs`, not `draft-14446-form.mjs`): `server.mjs` serves only `src/` modules whose names are letters and dashes, and the forms rule names each served PDF exactly. The first story run found a module with numbers in its name refused, with the app failing to boot.
-  - **The build:** `buildDraftPdf` builds it, with the 繁體 font for the 繁體 form, a DRAFT stamp, and the file name `14446-draft.pdf`.
+  - **The build:** `buildDraftPdf` builds it, with the 繁體 font for the 繁體 form, a DRAFT stamp, and a file name in the 13614-C's pattern: `14446-draft.pdf`, plus the case reference when there is one and `-zh-t` for the 繁體 form (for example `14446-draft-VT-AAAA-BBBB-zh-t.pdf`), so the two downloads don't collide (final review).
   - **Buttons:** "View Draft Form 14446" and 繁體中文版 sit next to the 13614-C tools on the client's summary page and the staff answers panel. A 简体 screen lists 繁體 as its Chinese option.
 - **Why:**
   - Stripping once keeps the console clean, since the story fails on unexpected console messages, and pins exactly what ships.
