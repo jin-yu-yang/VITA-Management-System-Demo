@@ -1205,9 +1205,10 @@ test("starting a new application is explicit, idempotent and selects the new cas
 });
 
 test("window state is keyed by the authenticated user", async () => {
+  // case-a is consented, or the 14446 gate would keep it on 0.4 (add-form-14446-consent).
   const shared = fakeSession();
   const storeOne = fakeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { ...CONSENT_14446 } }],
   });
   const one = build({ store: storeOne, sessionStorage: shared });
   await one.controller.start();
@@ -4976,5 +4977,18 @@ test("a save whose re-read fails after its case was opened again does not pin th
   assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the saved values are not put back quietly");
   assert.equal(controller.getState().conflict?.serverRevision, 2, "a choice instead");
   assert.equal(controller.getState().draftAnswers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("the 14446 gate: no move past step 0 until consented, and unticking keeps the answers (add-form-14446-consent)", async () => {
+  const { controller } = await openV2({ answers: { vc_agree: null, tp_first_name: "Mei" } });
+  await controller.goToSubstep("about.address");
+  assert.equal(controller.currentSubstep(), "before.virtual");
+  controller.editAnswers({ vc_agree: ["yes"] });
+  await controller.goToSubstep("about.address");
+  assert.equal(controller.currentSubstep(), "about.address");
+  controller.editAnswers({ vc_agree: null });
+  assert.equal(controller.currentSubstep(), "before.virtual");
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
   controller.stop();
 });

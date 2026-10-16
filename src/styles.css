@@ -4135,6 +4135,11 @@ textarea::placeholder {
 .rail-sublink:hover {
   background: var(--vt-primary-soft);
 }
+.rail-sublink.is-locked,
+.rail-link.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .rail-sublink[aria-current="step"] {
   border-left-color: var(--vt-primary);
   background: var(--vt-primary-soft);

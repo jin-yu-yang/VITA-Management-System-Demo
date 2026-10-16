@@ -19,6 +19,7 @@ import {
   reviewAlerts,
   visibleSubsteps,
   resolveSubstep,
+  consented,
   substepStatus,
   stepRollup,
 } from "./intake-form.mjs";
@@ -123,6 +124,8 @@ function formView(state) {
     visible,
     current,
     substep,
+    // The Form 14446 gate: steps 1-9 show locked until 0.4 is ticked.
+    locked: !consented(answers),
     variant: variantOf(answers),
     openPanels: Array.isArray(state.openPanels) ? state.openPanels : [],
     marks: { answers, visited, revealed, cards },
@@ -161,13 +164,23 @@ function railStep(step, view) {
   const n = stepNumber(step.id);
   const title = stepTitle(step, lang);
   const id = esc(step.id);
+  // Locked (the 14446 gate): no link, but data-substep stays on every span,
+  // since the app compares the listed sub-steps with the draft's visible ones.
+  const locked = view.locked && step.id !== "before";
+  const lockedMark = `<span class="rail-status is-locked">${esc(t("rail.locked", {}, lang))}</span>`;
   const items = subs
     .map((substep) => {
       const here = substep.id === view.current;
+      if (locked)
+        return `<li><span class="rail-sublink is-locked" data-substep="${esc(substep.id)}" aria-disabled="true"><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang, view.answers))}</span>${lockedMark}</span></li>`;
       return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang, view.answers))}</span>${here ? `<small class="rail-here">${esc(t("rail.here", {}, lang))}</small>` : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
     })
     .join("");
-  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">${esc(t("rail.toggle", { title }, lang))}</span></button><button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">${esc(t("rail.step", { n }, lang))}</span>` : ""}${esc(title)}</span>${markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, marks))}</span></button></div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
+  const headInner = `${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">${esc(t("rail.step", { n }, lang))}</span>` : ""}${esc(title)}</span>${locked ? lockedMark : markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, marks))}</span>`;
+  const link = locked
+    ? `<span class="rail-link is-locked" data-substep="${esc(target.id)}" aria-disabled="true">${headInner}</span>`
+    : `<button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${headInner}</button>`;
+  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">${esc(t("rail.toggle", { title }, lang))}</span></button>${link}</div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
 }
 
 function rail(view) {
@@ -243,6 +256,8 @@ function actions(view, alerts) {
   const { state, visible, current } = view;
   const say = (key) => esc(t(key, {}, view.lang));
   const off = Boolean(state.conflict || state.busy);
+  // 0.4's Continue waits for the consent, and the line says why (add-form-14446-consent).
+  const gated = current === "before.virtual" && view.locked;
   let primary;
   if (current === "review.submit") {
     const confirmed = view.openPanels.includes("confirmed");
@@ -252,13 +267,15 @@ function actions(view, alerts) {
       "primary",
       alerts.length > 0 || !confirmed || off ? "disabled" : "",
     );
-  } else if (state.returnToSummary) {
+  } else if (state.returnToSummary && !gated) {
     primary = `<button type="button" class="btn primary" data-action="back-to-summary"${off ? " disabled" : ""}>${say("intake.back_to_summary")}</button>`;
   } else {
     // 9.1's Continue waits for the alerts, and the line says why
     // (openspec change gate-review-and-redesign-summary, design D4).
-    const blocked = current === "review.check" && alerts.length > 0;
-    primary = `${when(blocked, `<p id="continue-blocked" class="form-blocked">${say("review.continue_blocked")}</p>`)}<button type="submit" class="btn primary"${blocked ? ' aria-describedby="continue-blocked"' : ""}${off || blocked ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
+    const blocked = (current === "review.check" && alerts.length > 0) || gated;
+    const blockedId = gated ? "consent-blocked" : "continue-blocked";
+    const blockedKey = gated ? "consent.blocked" : "review.continue_blocked";
+    primary = `${when(blocked, `<p id="${blockedId}" class="form-blocked">${say(blockedKey)}</p>`)}<button type="submit" class="btn primary"${blocked ? ` aria-describedby="${blockedId}"` : ""}${off || blocked ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
   }
   return `<div class="form-actions"><div>${when(visible[0] !== current, button(`${icon("back")} ${say("intake.back")}`, "back-step", "text", view.off.trim()))}</div>${primary}</div>`;
 }

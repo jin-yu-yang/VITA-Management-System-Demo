@@ -273,13 +273,25 @@ export function visibleSubsteps(answers, cards, visited = []) {
   return substepsFor(2).filter((substep) => substepVisible(substep, draft, cards, gate)).map((substep) => substep.id);
 }
 
+// The Form 14446 gate (openspec change add-form-14446-consent, design D2):
+// until the client ticks 0.4, no sub-step after "Before you start" is
+// reached or shown. Not built with show-ifs: hidden questions would make an
+// unconsented form look complete.
+const GATE = "before.virtual";
+
+/** Consented to the virtual process: 0.4's box (`vc_agree`) is ticked. */
+export const consented = (answers) => Array.isArray(answers?.vc_agree) && answers.vc_agree.includes("yes");
+
 /**
  * Where a place in the form lands now: `id` while visible; when hidden, the
  * next visible sub-step after it in catalogue order, or the last visible one
  * (so a gated 9.2 or 9.3 lands on 9.1); an id the catalogue doesn't have (or
- * null) goes to the first visible one.
+ * null) goes to the first visible one. Until the client consents (0.4), every
+ * place after "Before you start" lands on 0.4.
  */
 export function resolveSubstep(id, answers, cards, visited = []) {
+  const place = findSubstep(id);
+  if (place && place.step.id !== "before" && !consented(answers)) return GATE;
   const visible = visibleSubsteps(answers, cards, visited);
   const all = substepsFor(2).map((substep) => substep.id);
   const at = all.indexOf(id);

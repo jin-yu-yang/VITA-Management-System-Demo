@@ -311,6 +311,8 @@ export const TEXT = Object.freeze({
   "review.more_maybe": { en: { one: "{n} more document may be needed", other: "{n} more documents may be needed" }, zh: "还有 {n} 份文件可能需要提供" },
   "review.empty": { en: "We found no alerts or warnings in your application.", zh: "您的申请没有需要处理的问题或提醒。" },
   "review.continue_blocked": { en: "Fix the items above to continue.", zh: "请先修正上面的问题，然后继续。" },
+  "consent.blocked": { en: "We need this consent to prepare your return. If you'd rather not give it, please call PCDC at 215-922-6156.", zh: "我们需要您的同意才能为您报税。如您不愿同意，请致电 PCDC：215-922-6156。" },
+  "rail.locked": { en: "Locked", zh: "未解锁" },
   "alert.missing": { en: "Needs an answer", zh: "需要回答" },
   "alert.invalid": { en: "Needs a change", zh: "需要修改" },
   "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },

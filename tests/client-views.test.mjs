@@ -1510,3 +1510,24 @@ test("the office's document card asks the question the client saw", () => {
   const theirs = cardsFor(married, []).find((card) => card.slotId === "visa.tp");
   assert.match(docCard(theirs, { links: false, office: true, answers: married }), /Asked by: Who was in the U\.S\. on a visa in 2025\?/);
 });
+
+test("the 14446 gate locks the rail and Continue until the client consents (add-form-14446-consent)", () => {
+  const { vc_agree: _a, ...unticked } = makeSampleAnswers();
+  const locked = intakeScreen(v2State({ formSubstep: "before.virtual", draftAnswers: unticked }));
+  assert.match(locked, /<h1>Virtual VITA consent \(Form 14446\)<\/h1>/);
+  assert.match(locked, /We need this consent to prepare your return\. If you&#39;d rather not give it, please call PCDC at 215-922-6156\./);
+  assert.match(locked, /<button type="submit" class="btn primary" aria-describedby="consent-blocked" disabled>/);
+  assert.doesNotMatch(locked, /data-action="go-substep" data-substep="about\./);
+  assert.match(locked, /data-step-id="about"[^>]*>[\s\S]*?aria-disabled="true"/);
+  // Locked spans keep data-substep: the app compares them with the visible sub-steps.
+  assert.match(locked, /<span class="rail-sublink is-locked" data-substep="about\.you" aria-disabled="true">/);
+  const atAddress = intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: unticked }));
+  assert.match(atAddress, /<h1>Virtual VITA consent \(Form 14446\)<\/h1>/);
+  const fromSummary = intakeScreen(v2State({ formSubstep: "before.virtual", returnToSummary: true, draftAnswers: unticked }));
+  assert.match(fromSummary, /id="consent-blocked"/);
+  assert.match(fromSummary, /<button type="submit" class="btn primary" aria-describedby="consent-blocked" disabled>/);
+  assert.doesNotMatch(fromSummary, /data-action="back-to-summary"/);
+  const open = intakeScreen(v2State({ formSubstep: "before.virtual" }));
+  assert.doesNotMatch(open, /consent-blocked/);
+  assert.match(open, /data-action="go-substep" data-substep="about\.you"/);
+});
