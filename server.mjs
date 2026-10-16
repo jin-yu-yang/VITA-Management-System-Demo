@@ -15,10 +15,12 @@ import path from "node:path";
 const PAGE = "/index.html";
 const ASSET = /^\/src\/[a-z-]+\.(?:mjs|css|svg|png)$/;
 const VENDOR = /^\/src\/vendor\/[a-z-]+\.mjs$/;
-// The three IRS forms the draft PDF is built on (English, Simplified and
-// Traditional Chinese), by their exact names: the module rule above admits no
-// digits, and nothing else under `src/forms/` is served.
-const FORMS = /^\/src\/forms\/f13614c[nt]?-2025\.pdf$/;
+// The forms the drafts are built on, by their exact names: the IRS 13614-C in
+// three languages (English, Simplified and Traditional Chinese) and PCDC's own
+// Form 14446 in English and Traditional Chinese. The module rule above admits
+// no digits, and nothing else under `src/forms/` is served.
+const FORMS =
+  /^\/src\/forms\/(?:f13614c[nt]?-2025|f14446-pcdc-(?:en|zh-t))\.pdf$/;
 const CONFIG = "/public-config.json";
 
 const TYPES = {

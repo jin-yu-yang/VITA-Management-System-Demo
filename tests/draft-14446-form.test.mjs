@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { FORM_14446_FILES, FORM_14446_SHA256, draft14446Fields } from "../src/draft-14446-form.mjs";
+import { FORM_14446_FILES, FORM_14446_SHA256, draft14446Fields } from "../src/draft-virtual-consent.mjs";
 
 const F = (name) => `form1[0].page3[0].${name}`;
 const MEI = Object.freeze({

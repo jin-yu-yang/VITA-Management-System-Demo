@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { buildDraftPdf } from "../src/draft-pdf.mjs";
-import { FORM_14446_FILES, draft14446Fields } from "../src/draft-14446-form.mjs";
+import { FORM_14446_FILES, draft14446Fields } from "../src/draft-virtual-consent.mjs";
 
 // The draft Form 14446 forms (openspec change add-form-14446-consent, design D5).
 const FILES = { en: "src/forms/f14446-pcdc-en.pdf", "zh-t": "src/forms/f14446-pcdc-zh-t.pdf" };

@@ -1,6 +1,7 @@
 // The draft Form 14446 (openspec change add-form-14446-consent, design D5):
 // PCDC's own form, pages 1-2 as PCDC filled them, page 3 filled here from the
 // answers. buildDraftPdf (draft-pdf.mjs) builds it, as it builds the 13614-C.
+// The file name has no digits on purpose: the server's module rule admits none.
 import { isAnswered, memberNameParts, spouseShown, visibleAnswers } from "./intake-catalogue.mjs";
 import { consented } from "./intake-form.mjs";
 import { draftStamp, oneLine, phone, usDate } from "./draft-form.mjs";
