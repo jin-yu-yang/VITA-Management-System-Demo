@@ -1284,13 +1284,18 @@ function reviewPanel(record) {
  * The Request corrections dialog: the form REQUEST_CORRECTIONS is built from.
  * A refused send is repeated here, because the page's own notice sits behind
  * the dialog (aria-modal), so that notice may not be read. This one carries
- * role="alert" and is tied to the textarea with aria-describedby.
+ * role="alert" and is tied to the textarea with aria-describedby. With the
+ * dialog open it is the only copy, so it carries the banner's controls: Try
+ * again (when the press can be re-sent) and Dismiss.
  */
 export function correctionsDialogBody(state = {}) {
   const refused = state.error
     ? `<div class="notice error" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
         state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
-      )}</h3><p>${esc(state.error.message)}</p></div></div>`
+      )}</h3><p>${esc(state.error.message)}</p><div class="conflict-choices">${when(
+        state.retryable,
+        button("Try again", "retry-action", "secondary"),
+      )}${button("Dismiss", "dismiss-error", "text")}</div></div></div>`
     : "";
   return `${refused}<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
     "Corrections to send back to the preparer",

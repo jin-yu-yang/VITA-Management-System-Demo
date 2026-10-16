@@ -1218,6 +1218,13 @@ test("the corrections dialog carries the form the action is built from", () => {
   assert.match(refused, /<textarea id="field-corrections-findings" name="findings" required maxlength="2000" rows="4" aria-describedby="corrections-error">/);
   assert.doesNotMatch(correctionsDialogBody({}), /role="alert"/);
   assert.doesNotMatch(correctionsDialogBody({}), /aria-describedby/);
+  // With a dialog open this is the only copy, so it carries the banner's
+  // controls: Dismiss always, Try again only when the press can be re-sent.
+  const notice = (html) => /<div class="notice error" role="alert" id="corrections-error">[\s\S]*?<\/div><\/div><\/div>/.exec(html)?.[0] ?? "";
+  assert.match(notice(refused), /<div class="conflict-choices">[\s\S]*data-action="dismiss-error"/);
+  assert.doesNotMatch(notice(refused), /data-action="retry-action"/);
+  const retryable = correctionsDialogBody({ error: { code: "OFFLINE", message: "Network error. Please try again later." }, retryable: true });
+  assert.match(notice(retryable), /<div class="conflict-choices"><button[^>]*data-action="retry-action"[^>]*>Try again<\/button><button[^>]*data-action="dismiss-error"[^>]*>Dismiss<\/button><\/div>/);
 });
 
 test("internal history reads as sentences, with who did it", () => {

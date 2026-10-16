@@ -548,7 +548,11 @@ if (!config) {
     onHide: () => {
       const hadFocus = toastHost.contains(document.activeElement);
       toastHost.classList.remove("visible");
-      toastText.textContent = "";
+      // After the 0.2 s fade, so it never shows an empty box; a toast shown
+      // again meanwhile keeps its words.
+      window.setTimeout(() => {
+        if (!toast.shown) toastText.textContent = "";
+      }, 200);
       if (hadFocus) {
         const back = toastCameFrom?.isConnected ? toastCameFrom : root.querySelector("#main");
         back?.focus({ preventScroll: true });
@@ -616,7 +620,9 @@ if (!config) {
     if (by !== signedInUserId()) return;
     const state = controller.getState();
     if (!state.principal || state.authError) return;
-    if (state.error !== shown) return;
+    // `shown` is the count of recorded errors when the press began: the
+    // error itself is cloned by getState, so it cannot be compared.
+    if (state.errorCount !== shown) return;
     const known = typeof error?.message === "string" && Object.hasOwn(SENTENCES, error.message);
     controller.noteLocalFailure({ code: error?.code ?? "SERVER_ERROR", message: known ? error.message : "Something went wrong." });
   }
@@ -1240,7 +1246,7 @@ if (!config) {
         showDraftLink();
       }
       // A draft that was built and offered: an earlier draft problem is over.
-      if (controller.getState().error?.code === "DRAFT") controller.dismissError();
+      controller.clearError("DRAFT");
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
       if (by !== signedInUserId()) return;
@@ -1686,7 +1692,7 @@ if (!config) {
   root.addEventListener("click", async (event) => {
     // Who pressed, before anything is awaited (see `notify`).
     const by = signedInUserId();
-    const shown = controller.getState().error;
+    const shown = controller.getState().errorCount;
     const caseTarget = event.target.closest("[data-case-action]");
     const assistTarget = event.target.closest("[data-assistance-action]");
     // A submit button inside a form is handled by the submit event, where the
@@ -1763,7 +1769,7 @@ if (!config) {
     event.preventDefault();
     // Who pressed, before anything is awaited (see `notify`).
     const by = signedInUserId();
-    const shown = controller.getState().error;
+    const shown = controller.getState().errorCount;
     const form = event.target;
     pressed = null;
     if (event.submitter && busyControl(event.submitter)) pressed = describeFocus(event.submitter);

@@ -1636,7 +1636,11 @@ textarea::placeholder {
 .toast[data-kind="warning"] { --toast-edge: #a07c32; }
 .toast .toast-icon-slot { display: flex; color: var(--toast-edge); }
 .toast .toast-icon { width: 20px; height: 20px; }
-.toast .toast-text { flex: 1; padding: 8px 0; }
+/* The live region stays in the accessibility tree while the host is hidden
+   (it is empty once the fade is over), so a toast's words are announced. */
+.toast .toast-text { flex: 1; padding: 8px 0; visibility: visible; }
+/* ...but never under the pointer once the toast is hidden. */
+.toast:not(.visible) .toast-text { pointer-events: none; }
 .toast .toast-dismiss {
   flex: none;
   display: grid;
@@ -5309,7 +5313,7 @@ html:lang(zh-Hant) {
 }
 .loading-line .icon,
 .unloaded-line .icon { flex: none; width: 20px; height: 20px; }
-.unloaded-line { color: #8a3b34; }
+.unloaded-line { color: var(--vt-error); }
 @keyframes vt-spin { to { transform: rotate(360deg); } }
 .icon.spin { animation: vt-spin 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) {

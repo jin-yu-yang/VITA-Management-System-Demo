@@ -255,6 +255,10 @@ export function createController({
     principal: null,
     connection: "unknown",
     error: null,
+    // How many errors have been recorded: app.mjs's safety net compares it
+    // to tell a press that recorded its own failure from one that did not
+    // (`error` is cloned by getState, so it cannot be compared).
+    errorCount: 0,
     retryable: false,
     // Sign-in. The half-typed code lives here for the same reason answers do:
     // a re-render must never be able to empty a field somebody is using.
@@ -504,9 +508,16 @@ export function createController({
     localRetry = typeof fn === "function" ? fn : null;
     state.retryable = Boolean(localRetry);
   }
+  // A dropped local retry takes its Try again with it. Only when one was
+  // pending: a store action's retry (`pendingAction`) keeps its own flag.
+  function dropLocalRetry() {
+    if (localRetry) state.retryable = false;
+    localRetry = null;
+  }
 
   function noteFailure(error, { message } = {}) {
-    localRetry = null;
+    dropLocalRetry();
+    state.errorCount += 1;
     state.error = {
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
@@ -906,7 +917,9 @@ export function createController({
         state.lists[key] = "failed";
         failed = true;
       }
-    if (failed)
+    // A first load can fail after both lists are read (the workspace, say):
+    // Try again still reads the rest.
+    if (failed || !dataLoaded)
       setLocalRetry(async () => {
         try {
           await loadData();
@@ -1120,7 +1133,7 @@ export function createController({
 
   // Signing out drops every record this window holds, not just the session.
   function forgetUser() {
-    localRetry = null;
+    dropLocalRetry();
     if (state.principal) windowState.clear(state.principal.userId);
     unsubscribe();
     clearSelection();
@@ -1209,9 +1222,18 @@ export function createController({
   }
 
   function dismissError() {
-    localRetry = null;
+    dropLocalRetry();
     state.error = null;
     state.notice = null;
+    show();
+  }
+
+  // Clears the error only when it is this code's: a draft that was built
+  // ends the draft's own problem, never another error or the notice.
+  function clearError(code) {
+    if (state.error?.code !== code) return;
+    dropLocalRetry();
+    state.error = null;
     show();
   }
 
@@ -1941,8 +1963,9 @@ export function createController({
         // The server may already have applied it. The retry must be the same
         // envelope so the stored receipt answers instead of a second action.
         pendingAction = { action, save, omit };
-        state.retryable = true;
         noteFailure(error);
+        // After noteFailure, which drops any older local retry and its flag.
+        state.retryable = true;
       } else {
         pendingAction = null;
         state.retryable = false;
@@ -2418,7 +2441,7 @@ export function createController({
       await run();
       return { local: true };
     }
-    localRetry = null;
+    dropLocalRetry();
     if (!pendingAction) return null;
     // Second guard, for any path that changes the draft without going through
     // editAnswers: an envelope that no longer matches the draft is dropped, not
@@ -2511,6 +2534,7 @@ export function createController({
     openDialog,
     closeDialog,
     dismissError,
+    clearError,
     noteLocalFailure,
   };
 }

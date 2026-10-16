@@ -5132,6 +5132,119 @@ const offlineList = () => async () => {
   throw Object.assign(new Error("offline"), { code: "OFFLINE" });
 };
 
+test("a dropped local retry takes its Try again with it", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  assert.equal(controller.getState().retryable, true);
+  controller.dismissError();
+  assert.equal(controller.getState().retryable, false, "Dismiss drops the draft's Try again");
+  // A focus or `online` re-read that fails offline: its banner offers no
+  // Try again that would do nothing.
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().error.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, false, "no Try again that does nothing");
+  assert.equal(await controller.retryLast(), null);
+  // A newer error drops it too.
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, () => {
+    runs += 1;
+  });
+  await controller.refresh();
+  assert.equal(controller.getState().retryable, false, "a newer error drops the draft's Try again");
+  // And a sign-out.
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, () => {
+    runs += 1;
+  });
+  await controller.signOut();
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
+test("a refusal replacing a retryable error offers no Try again", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().retryable, true, "the offline save can be sent again");
+  await assert.rejects(controller.resetFixtures(), (error) => error.code === "FORBIDDEN");
+  assert.equal(controller.getState().error.code, "FORBIDDEN");
+  assert.equal(controller.getState().retryable, false);
+  controller.stop();
+});
+
+test("a save that fails after a draft failure keeps its own Try again", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {});
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().error.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, true, "the save's envelope can be sent again");
+  const replay = await controller.retryLast();
+  assert.ok(replay && !replay.local, "Try again re-sends the save, not the dropped draft");
+  controller.stop();
+});
+
+test("every recorded error is counted", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  assert.equal(controller.getState().errorCount, 0);
+  await controller.start();
+  const before = controller.getState().errorCount;
+  controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
+  assert.equal(controller.getState().errorCount, before + 1, "noteLocalFailure");
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }));
+  assert.equal(controller.getState().errorCount, before + 2, "a refusal");
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().errorCount, before + 3, "a failed read (noteFailure)");
+  // The same words again are still a new error.
+  await controller.refresh();
+  assert.equal(controller.getState().errorCount, before + 4);
+  controller.stop();
+});
+
+test("clearError clears only its own error and leaves the notice", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.resetFixtures();
+  const notice = controller.getState().notice;
+  assert.ok(notice);
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  controller.clearError("OFFLINE");
+  assert.equal(controller.getState().error.code, "DRAFT", "another code is left alone");
+  assert.equal(controller.getState().retryable, true);
+  controller.clearError("DRAFT");
+  assert.equal(controller.getState().error, null);
+  assert.equal(controller.getState().notice, notice, "the notice is not the draft's to clear");
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
 test("a list that never loaded says so, and Try again reads everything again", async () => {
   const store = presenterStore({ cases: [sampleCase()] });
   const realList = store.listCases;
@@ -5163,6 +5276,25 @@ test("a list that loaded once keeps its cases when a reload fails", async () => 
   await controller.refresh();
   assert.equal(controller.getState().lists.cases, "ready");
   assert.equal(controller.getState().cases.length, 1);
+  assert.equal(controller.getState().error?.code, "OFFLINE", "the failed reload is still said");
+  controller.stop();
+});
+
+test("a first load that fails after both lists are read still offers Try again", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realWorkspace = store.getWorkspace;
+  store.getWorkspace = offlineList();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().lists.assistance, "ready");
+  assert.equal(controller.getState().workspace, null);
+  assert.equal(controller.getState().error?.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, true, "Try again reads the rest");
+  store.getWorkspace = realWorkspace;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.ok(controller.getState().workspace, "the workspace is read");
+  assert.equal(controller.getState().error, null);
   controller.stop();
 });
 

@@ -377,7 +377,9 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   const draftCatch = viewDraftFn.slice(viewDraftFn.indexOf("} catch (error) {"), viewDraftFn.indexOf("// ---- leaving Add a case"));
   assert.match(viewDraftFn, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
   assert.match(viewDraftFn, /controller\.noteLocalFailure\(\s*\{\s*code: "DRAFT",\s*message: error\?\.draftFont \? "The draft font could not be checked\. Try again later\." : "The draft could not be made\. Try again\.",?\s*\},\s*\(\) => viewDraft\(form, by, kind\),?\s*\)/);
-  assert.match(viewDraftFn, /if \(controller\.getState\(\)\.error\?\.code === "DRAFT"\) controller\.dismissError\(\);/);
+  // A built draft clears only the draft's own error, never the notice.
+  assert.match(viewDraftFn, /\/\/ A draft that was built and offered[^\n]*\n\s*controller\.clearError\("DRAFT"\);/);
+  assert.doesNotMatch(viewDraftFn, /dismissError/);
   assert.ok(draftCatch.startsWith("} catch (error) {"), "the catch block was found");
   assert.doesNotMatch(draftCatch, /notify\(/, "a draft failure never toasts");
   assert.doesNotMatch(viewDraftFn, /const failure/);
@@ -996,8 +998,8 @@ test("a press's result message is shown only while the person who pressed is sig
   assert.match(submit, /root\.addEventListener\("submit", async \(event\) => \{\s+event\.preventDefault\(\);\s+\/\/[^\n]*\n\s+const by = signedInUserId\(\);/);
   assert.doesNotMatch(change, /notify\(|await /);
   // Both handlers also take the error on screen at the press, for the safety net.
-  assert.match(click, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.error;/);
-  assert.match(submit, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.error;/);
+  assert.match(click, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.errorCount;/);
+  assert.match(submit, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.errorCount;/);
   // The three catches: the safety net, never a toast (design D1).
   const net = /\} catch \(error\) \{\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*safetyNet\(error, by, shown\);/g;
   assert.equal([...click.matchAll(net)].length, 1, "the click handler's catch is the safety net");
@@ -1073,11 +1075,22 @@ test("the safety net and the toast host (design D1, D4)", () => {
   const net = app.slice(app.indexOf("function safetyNet("), app.indexOf("function safetyNet(") + 900);
   assert.match(net, /if \(by !== signedInUserId\(\)\) return;/);
   assert.match(net, /const state = controller\.getState\(\);\s*if \(!state\.principal \|\| state\.authError\) return;/);
-  assert.match(net, /if \(state\.error !== shown\) return;/);
+  // getState() clones the error, so only the count says nothing new was recorded.
+  assert.match(net, /if \(state\.errorCount !== shown\) return;/);
+  assert.doesNotMatch(net, /state\.error !== shown/);
   assert.match(net, /controller\.noteLocalFailure\(/);
   assert.match(app, /root\.after\(toastHost\)/);
   assert.match(app, /setAttribute\("role", "status"\)/);
   assert.doesNotMatch(app, /toastHost\.setAttribute\("role"/, "the live region is the text span, not the host");
+  // The live region stays in the accessibility tree while the host is hidden
+  // (it is empty then), so a toast's words are announced.
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.toast \.toast-text \{[^}]*visibility: visible;/);
+  assert.match(css, /\.toast:not\(\.visible\) \.toast-text \{ pointer-events: none; \}/, "a hidden toast never takes a click");
+  // The text goes after the 0.2 s fade, and only if no toast came meanwhile.
+  const onHide = app.slice(app.indexOf("onHide: () => {"), app.indexOf("toastHost.addEventListener(\"mouseenter\""));
+  assert.match(onHide, /window\.setTimeout\(\(\) => \{\s*if \(!toast\.shown\) toastText\.textContent = "";\s*\}, 200\);/);
+  assert.doesNotMatch(onHide, /^\s*toastText\.textContent = "";$/m, "never cleared at once");
   // A replacing toast keeps the hold the page still has (no new mouseenter or
   // focusin fires under a pointer or focus that hasn't moved).
   const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function safetyNet("));
@@ -1122,6 +1135,8 @@ test("errors share one look (design D7)", () => {
     assert.ok(css.includes(token), token);
   assert.match(css, /\.notice\.error p \{[^}]*color: var\(--vt-error\)/);
   assert.match(css, /\.office-drawer \.notice\.error/);
+  assert.match(css, /\.unloaded-line \{ color: var\(--vt-error\); \}/);
+  assert.doesNotMatch(css, /\.unloaded-line \{[^}]*#8a3b34/);
   assert.doesNotMatch(css, /\.office-drawer \.notice\.amber/);
 });
 

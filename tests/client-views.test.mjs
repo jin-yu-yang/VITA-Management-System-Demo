@@ -745,6 +745,19 @@ const TODAY = new Date(2026, 9, 4, 12);
 const chrome = { saveStatus, conflictForm, fictionalTools: "", today: TODAY };
 const form = (overrides) => intakeFormV2(v2State(overrides), chrome);
 
+test("the v2 intake says an error once: the banner, or the chip for a failed save", () => {
+  const alerts = (html) => (html.match(/role="alert"/g) ?? []).length;
+  const drafted = v2State({ error: { code: "DRAFT", message: "The draft could not be made. Try again." }, retryable: true });
+  const withBanner = page(drafted, intakeScreen(drafted));
+  assert.match(withBanner, /class="problem-banner" role="alert"/);
+  assert.equal(alerts(withBanner), 1, "only the banner");
+  assert.doesNotMatch(intakeScreen(drafted), /<p class="error"/, "no copy inside the form");
+  const failed = v2State({ saveState: "failed", dirty: true, error: { code: "OFFLINE", message: "Network error. Please try again later." }, retryable: true });
+  const withChip = page(failed, intakeScreen(failed));
+  assert.match(withChip, /class="save-chip failed" role="alert"/);
+  assert.equal(alerts(withChip), 1, "only the chip");
+});
+
 // One step's <li>, up to the next step (its sub-steps included).
 const railStepOf = (html, id) => {
   const start = html.search(new RegExp(`<li class="rail-step[^"]*" data-step-id="${id}">`));

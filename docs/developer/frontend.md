@@ -107,7 +107,7 @@ sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSign
 `resetFixtures`, `loadCheckpoint`), language (`setLanguage`, `adoptLanguage`), and navigation
 (`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
-`dismissError`).
+`dismissError`, `clearError`).
 
 Three rules the controller keeps:
 
@@ -372,17 +372,19 @@ makes itself: it records the error, draws it, and only then returns the error fo
 throw, so nothing is refused without being shown. `noteLocalFailure(error, retry)` records a
 failure outside the store's actions (a draft PDF that could not be built, a missing form). Its
 optional `retry` is the one local retry: Try again runs it (`retryLast` answers `{ local: true }`),
-and any newer error drops it. The draft's retry calls `viewDraft` again before anything is awaited,
-so the rebuilt draft opens its tab inside the press. A draft built afterwards clears the banner. A
-press that throws with nothing on screen goes through `app.mjs`'s safety net, which records "Something
-went wrong." (or the known sentence) the same way.
+and any newer error, Dismiss or sign-out drops it, Try again included. The draft's retry calls
+`viewDraft` again before anything is awaited, so the rebuilt draft opens its tab inside the press. A
+draft built afterwards clears only the draft's own error (`clearError("DRAFT")`), never a notice. A
+press that throws and records nothing goes through `app.mjs`'s safety net, which records "Something
+went wrong." (or the known sentence) the same way. It tells the two apart by `errorCount`, which
+every recorded error raises.
 
 **The toast** ([`toast.mjs`](../../src/toast.mjs) for the timer, `app.mjs` for the page). It
 confirms, informs or warns, and nothing else: `notify(kind, text, by)` with `kind` one of
 `"success"`, `"info"` or `"warning"`. `TOAST_MS` keeps a success or information for 5 s and a
 warning for 8 s. The pointer over the toast or focus inside it holds it, and the full time starts
 again when both leave; Dismiss (a 44 px icon button with a name) or Escape hides it, and a hidden
-toast is out of the Tab order with its text cleared. Its host, `#toast`, is made once by `app.mjs`
+toast is out of the Tab order with its text cleared after its fade. Its host, `#toast`, is made once by `app.mjs`
 right after `#app` and never redrawn: children `.toast-icon-slot`, `.toast-text`
 (`role="status"`, `aria-live="polite"`) and `.toast-dismiss`. It sits bottom centre for clients and
 bottom right on staff screens (`.toast-staff`), lifted above Add a case's sticky bar while that bar
