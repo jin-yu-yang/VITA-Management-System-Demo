@@ -49,6 +49,10 @@ export const INTAKE_VALUE_CASES = [
   both("additional_notes", "x".repeat(5001), false),
   both("gcf_tp_signature", "Mei Lin", true),
   both("gcf_tp_signature", "x".repeat(201), false),
+  both("vc_agree", ["yes"], true),
+  both("vc_agree", ["no"], false),
+  both("vc_sp_email", "wei@example.com", true),
+  both("vc_sp_email", "wei@", false),
 
   // email
   both("email", "mei.lin@example.com", true),

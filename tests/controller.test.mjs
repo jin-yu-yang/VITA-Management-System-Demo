@@ -7,6 +7,7 @@ import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogu
 import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
+import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -2163,7 +2164,8 @@ function v2Store({
         stage,
         revision,
         intakeVersion: 2,
-        answers,
+        // Consented and signed unless a test says otherwise (add-form-14446-consent).
+        answers: { ...CONSENT_14446, ...answers },
         contact,
         intakeVisited,
         documentCards,
@@ -2269,7 +2271,7 @@ async function savedV2(answers = { tp_first_name: "Mei" }) {
 test("a version-2 draft takes its contact fields from the case's contact record", async () => {
   const bare = await openV2({ answers: { tp_first_name: "Mei" }, contact: null });
   const draft = bare.controller.getState().draftAnswers;
-  assert.deepEqual(draft, { tp_first_name: "Mei" });
+  assert.deepEqual(draft, { ...CONSENT_14446, tp_first_name: "Mei" });
   for (const id of Object.keys(CONTACT_FIELDS)) assert.equal(Object.hasOwn(draft, id), false, id);
   bare.controller.stop();
 
@@ -2278,6 +2280,7 @@ test("a version-2 draft takes its contact fields from the case's contact record"
     contact: { phone: "2155550199", spousePhone: null, bestContactTime: ["weekend"], bestContactNote: null },
   });
   assert.deepEqual(withContact.controller.getState().draftAnswers, {
+    ...CONSENT_14446,
     tp_first_name: "Mei",
     tp_phone: "2155550199",
     best_contact_time: ["weekend"],
@@ -2497,7 +2500,7 @@ test("a version-2 save withholds invalid values and trims, and never touches the
   const { controller, store } = await openV2();
   controller.editAnswers({ tp_first_name: "Mei", email: "a@", addr_zip: " 19107 " });
   await controller.saveAnswers();
-  assert.deepEqual(store.writes[0].payload.answers, { tp_first_name: "Mei", addr_zip: "19107" });
+  assert.deepEqual(store.writes[0].payload.answers, { ...CONSENT_14446, tp_first_name: "Mei", addr_zip: "19107" });
   const draft = controller.getState().draftAnswers;
   assert.equal(draft.addr_zip, " 19107 ");
   assert.equal(draft.email, "a@");
@@ -2840,13 +2843,14 @@ test("a new case opens at before.ready, and a resumed one at its first unfinishe
   const resumed = await openV2({
     answers: BEFORE_AND_YOU,
     contact: { phone: "2155550199" },
-    intakeVisited: ["before.ready", "before.service", "before.language", "about.you"],
+    intakeVisited: ["before.ready", "before.service", "before.language", "before.virtual", "about.you"],
   });
   assert.equal(resumed.controller.getState().formSubstep, "about.address");
   assert.deepEqual(resumed.controller.getState().visitedSubsteps, [
     "before.ready",
     "before.service",
     "before.language",
+    "before.virtual",
     "about.you",
   ]);
   resumed.controller.stop();
@@ -2858,7 +2862,7 @@ test("leaving a sub-step with nothing edited saves the visit once, with the answ
   assert.equal(store.writes.length, 1);
   assert.equal(store.writes[0].type, "SAVE_ANSWERS");
   assert.equal(store.writes[0].expectedRevision, 1);
-  assert.deepEqual(store.writes[0].payload, { answers: { tp_first_name: "Mei" }, visited: ["before.ready"] });
+  assert.deepEqual(store.writes[0].payload, { answers: { ...CONSENT_14446, tp_first_name: "Mei" }, visited: ["before.ready"] });
   assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
   assert.equal(controller.getState().dirty, false);
   assert.equal(controller.getState().formSubstep, "before.service");
@@ -3150,7 +3154,7 @@ test("moveSubstep goes to the next or previous visible sub-step and does nothing
   assert.equal(controller.getState().formSubstep, "before.service");
   await controller.goToSubstep("about.marital");
   await controller.moveSubstep(1);
-  assert.equal(controller.getState().formSubstep, "about.situation", "the hidden spouse sub-step is skipped");
+  assert.equal(controller.getState().formSubstep, "about.sign", "the hidden spouse sub-step is skipped");
   // With alerts the form ends at 9.1: Continue there goes nowhere and sends nothing.
   await controller.goToSubstep("review.submit");
   assert.equal(controller.getState().formSubstep, "review.check");
@@ -3250,7 +3254,7 @@ test("currentSubstep resolves a place the draft has hidden to the next visible o
   assert.equal(controller.currentSubstep(), "about.spouse");
   controller.editAnswers({ marital_status: "never_married" });
   assert.equal(controller.getState().formSubstep, "about.spouse");
-  assert.equal(controller.currentSubstep(), "about.situation");
+  assert.equal(controller.currentSubstep(), "about.sign");
   controller.stop();
 });
 

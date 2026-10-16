@@ -118,11 +118,14 @@ test("the Fill of a widowed client keeps them widowed and gives a late spouse no
   assert.deepEqual(Object.keys(w2015).filter((id) => id.startsWith("sp_")), []);
 });
 
+// The Fill leaves the Form 14446 consent and signatures (vc_*) to the client.
+const withoutConsent = (answers) => Object.fromEntries(Object.entries(answers).filter(([key]) => !key.startsWith("vc_")));
+
 test("the Fill of a married or never-married client is the plain sample (add-widowed-spouse-rules)", () => {
-  assert.deepEqual(sampleAnswersFor({ marital_status: "married" }, { seed: 1 }), makeSampleAnswers({ seed: 1, married: true }));
-  assert.deepEqual(sampleAnswersFor({ marital_status: "never_married" }, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
-  assert.deepEqual(sampleAnswersFor({}, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
-  assert.deepEqual(sampleAnswersFor(null, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
+  assert.deepEqual(sampleAnswersFor({ marital_status: "married" }, { seed: 1 }), withoutConsent(makeSampleAnswers({ seed: 1, married: true })));
+  assert.deepEqual(sampleAnswersFor({ marital_status: "never_married" }, { seed: 1 }), withoutConsent(makeSampleAnswers({ seed: 1 })));
+  assert.deepEqual(sampleAnswersFor({}, { seed: 1 }), withoutConsent(makeSampleAnswers({ seed: 1 })));
+  assert.deepEqual(sampleAnswersFor(null, { seed: 1 }), withoutConsent(makeSampleAnswers({ seed: 1 })));
 });
 
 test("Regenerate keeps a widow widowed (add-widowed-spouse-rules)", () => {
@@ -130,4 +133,23 @@ test("Regenerate keeps a widow widowed (add-widowed-spouse-rules)", () => {
   const patch = fictionalAnswers(draft, sampleAnswersFor(draft, { seed: 1 }), { replaceEverything: true });
   assert.equal(patch.marital_status, "widowed");
   assert.equal(patch.spouse_death_year, "2025");
+});
+
+test("the sample signs Form 14446; the Fill leaves it to the client (add-form-14446-consent)", () => {
+  const sample = makeSampleAnswers({ seed: 1 });
+  assert.deepEqual(sample.vc_agree, ["yes"]);
+  assert.equal(sample.vc_review, "yes");
+  assert.equal(sample.vc_tp_signature, `${sample.tp_first_name} ${sample.tp_last_name}`);
+  assert.equal(sample.vc_tp_date, "2026-02-02");
+  for (const draft of [{}, { marital_status: "married" }, { marital_status: "widowed", spouse_death_year: "2025" }])
+    assert.deepEqual(Object.keys(sampleAnswersFor(draft, { seed: 1 })).filter((key) => key.startsWith("vc_")), [], JSON.stringify(draft));
+});
+
+test("Regenerate keeps the client's own Form 14446 answers (add-form-14446-consent)", () => {
+  const draft = { vc_agree: ["yes"], vc_review: "no", vc_tp_signature: "Mei Chen", vc_tp_date: "2026-02-02", tp_first_name: "Old" };
+  const regenerated = fictionalAnswers(draft, sampleAnswersFor(draft, { seed: 2 }), { replaceEverything: true });
+  assert.deepEqual(regenerated.vc_agree, ["yes"]);
+  assert.equal(regenerated.vc_review, "no");
+  assert.equal(regenerated.vc_tp_signature, "Mei Chen");
+  assert.equal(regenerated.vc_tp_date, "2026-02-02");
 });

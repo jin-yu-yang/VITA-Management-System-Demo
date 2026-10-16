@@ -114,18 +114,19 @@ export const STEPS = [
     id: "before",
     n: 1,
     title: { en: "Before you start", zh: "开始之前" },
-    sections: [0],
+    sections: [0, 15],
     substeps: [
       questions("before.ready", ["Before you start", "开始之前"], "form_version"),
       questions("before.service", ["How you'd like help", "服务方式"], "service"),
       questions("before.language", ["Language", "语言"], "language language_other language_also language_also_other"),
+      questions("before.virtual", ["Virtual VITA consent (Form 14446)", "虚拟 VITA 纳税人同意书"], "vc_agree"),
     ],
   },
   {
     id: "about",
     n: 2,
     title: { en: "About you", zh: "基本信息" },
-    sections: [1, 2, 3, 4, 5, 8],
+    sections: [1, 2, 3, 4, 5, 8, 16],
     substeps: [
       questions(
         "about.you",
@@ -143,6 +144,11 @@ export const STEPS = [
         // A widowed client's title (design D5); the same for both variants, as the title is.
         titleWidowed: both("Your late spouse", "已故配偶"),
       },
+      questions(
+        "about.sign",
+        ["Sign Form 14446", "签署 14446 表"],
+        "vc_review vc_tp_signature vc_tp_date vc_sp_signature vc_sp_date vc_sp_email",
+      ),
       questions(
         "about.situation",
         ["Your 2025 situation", "2025 年基本情况"],

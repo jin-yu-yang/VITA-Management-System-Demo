@@ -24,6 +24,7 @@ import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src
 import { cardsFor } from "../src/document-cards.mjs";
 import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
+import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
 // the HTML string itself. No DOM library, and nothing here may reach a store.
@@ -283,7 +284,7 @@ test("applicant text is escaped everywhere it is rendered", () => {
         { id: "e1", action: "SUBMIT", message: nasty, createdAt: "2026-01-02T15:04:05Z" },
       ],
     }),
-    draftAnswers: { tp_first_name: nasty },
+    draftAnswers: { ...CONSENT_14446, tp_first_name: nasty },
   });
   for (const html of [
     progressScreen(state),
@@ -699,7 +700,7 @@ const MEMBER = "000000000000000000000000000003e9"; // the sample's first househo
 test("a version-2 draft gets the sub-step page: form, overline, title and count", () => {
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
   assert.match(html, /<form id="intake-v2-form" novalidate data-substep="about\.address">/);
-  assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 5<\/p>/);
+  assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 6<\/p>/);
   // The office card stays under the rail, and the chrome comes from client-views.
   assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
   assert.match(html, /Fill fictional details/);
@@ -710,13 +711,13 @@ test("a version-2 draft gets the sub-step page: form, overline, title and count"
   assert.doesNotMatch(html, /data-action="save-exit"/);
   assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
   // Before you start has no number; an ampersand in a title is escaped.
-  assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 3<\/p>/);
+  assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 4<\/p>/);
   assert.match(
     intakeScreen(v2State({ formSubstep: "expenses.other" })),
     /<span class="overline">STEP 4 OF 9 · EXPENSES &amp; LIFE EVENTS<\/span><h1>Other expenses<\/h1><p class="substep-count">2 of 3<\/p>/,
   );
   // A hidden sub-step resolves to the next visible one; an unknown id to the first.
-  assert.match(intakeScreen(v2State({ formSubstep: "about.spouse" })), /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(intakeScreen(v2State({ formSubstep: "about.spouse" })), /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
   assert.match(intakeScreen(v2State({ formSubstep: "nowhere.at_all" })), /<form id="intake-v2-form" novalidate data-substep="before\.ready">/);
   // The senior titles are used when chosen.
   const senior = intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: { ...sample(), form_version: "senior" } }));
@@ -725,7 +726,7 @@ test("a version-2 draft gets the sub-step page: form, overline, title and count"
 
 test("the rail tree: the current step expanded, the others collapsed, each with its toggle, link and marks", () => {
   const draftAnswers = sample();
-  const visitedSubsteps = ["before.ready", "before.service", "before.language", "about.you"];
+  const visitedSubsteps = ["before.ready", "before.service", "before.language", "before.virtual", "about.you"];
   const html = intakeScreen(v2State({ formSubstep: "about.address", visitedSubsteps }));
   assert.match(html, /<nav class="rail-nav" aria-label="Form steps"><ol id="rail-tree" class="rail-tree">/);
   const steps = stepsFor(2);
@@ -777,7 +778,7 @@ test("the rail's open and shut entries win over the current step, and the phone 
   // The phone bar, and the tree closed until "All steps" opens it.
   assert.match(
     html,
-    /<div class="rail-phone"><span>About you · 2 of 5<\/span><button type="button" class="btn secondary" data-action="toggle-panel" data-panel="rail-all" aria-expanded="false" aria-controls="rail-tree">All steps<\/button><\/div>/,
+    /<div class="rail-phone"><span>About you · 2 of 6<\/span><button type="button" class="btn secondary" data-action="toggle-panel" data-panel="rail-all" aria-expanded="false" aria-controls="rail-tree">All steps<\/button><\/div>/,
   );
   const open = intakeScreen(v2State({ formSubstep: "about.address", openPanels: ["rail-all"] }));
   assert.match(open, /<ol id="rail-tree" class="rail-tree is-open">/);
@@ -788,12 +789,12 @@ test("the progress bar counts visible sub-steps", () => {
   const draftAnswers = sample();
   const count = visibleSubsteps(draftAnswers, cardsFor(draftAnswers, [])).length;
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
-  assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="5"[^>]*></progress><p>Part 5 of ${count}</p>`));
+  assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="6"[^>]*></progress><p>Part 6 of ${count}</p>`));
   // A married client has one more part.
   const married = makeSampleAnswers({ married: true });
   const more = visibleSubsteps(married, cardsFor(married, [])).length;
   assert.equal(more, count + 1);
-  assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="5"`));
+  assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="6"`));
 });
 
 test("the rail counts a revealed invalid answer on its sub-step and its step", () => {
@@ -821,10 +822,10 @@ test("a Documents sub-step with a Needed card still Not done reads Needs documen
 });
 
 test("Needs an answer shows on the current sub-step only once it was visited", () => {
-  const fresh = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {} }));
+  const fresh = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: { ...CONSENT_14446 } }));
   assert.doesNotMatch(fresh, /Needs an answer/);
   assert.doesNotMatch(fresh, /is-missing/);
-  const again = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {}, visitedSubsteps: ["about.you"] }));
+  const again = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: { ...CONSENT_14446 }, visitedSubsteps: ["about.you"] }));
   assert.match(again, /<p id="field-client-tp_first_name-note" class="q-note is-missing" aria-live="polite">Needs an answer<\/p>/);
   // Every rendered question is a data-q wrapper (the page's renderedIds), and only this sub-step's.
   for (const id of ["tp_first_name", "tp_dob", "tp_phone", "email"]) assert.match(again, new RegExp(`data-q="${id}"`));
@@ -855,7 +856,7 @@ test("show-if: the spouse questions render only for a married client", () => {
   assert.match(married, /data-q="sp_first_name"/);
   const single = intakeScreen(v2State({ formSubstep: "about.spouse" }));
   assert.doesNotMatch(single, /data-q="sp_first_name"/);
-  assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
 });
 
 test("a widowed client's spouse sub-step reads Your late spouse, and follows the year (add-widowed-spouse-rules)", () => {
@@ -871,7 +872,7 @@ test("a widowed client's spouse sub-step reads Your late spouse, and follows the
   assert.doesNotMatch(died2024, /data-q="sp_job_title"/);
   const died2015 = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: widowed("2015") }));
   assert.doesNotMatch(died2015, /data-q="sp_first_name"/);
-  assert.match(died2015, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(died2015, /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
 });
 
 test("a lead line replaces the section intro; a section's intro shows on its first sub-step only", () => {

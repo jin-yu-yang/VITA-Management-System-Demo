@@ -96,6 +96,7 @@ const v2Answers = () => {
     ...answers,
     tp_first_name: "美",
     tp_last_name: "林",
+    vc_tp_signature: "美林",
     addr_street: "中山路 100",
     hh: answers.hh.map((member) => ({ ...member, first_name: "文", last_name: "林" })),
   };
@@ -440,6 +441,7 @@ const intakeAnswers = (overrides = {}) => {
     tp_first_name: "美",
     tp_last_name: "林",
     tp_job_title: "工人",
+    vc_tp_signature: "美林",
     best_contact_note: "晚上",
     addr_street: "中山路 100",
     sp_first_name: "文",
