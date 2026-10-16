@@ -19,6 +19,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
+- [Feedback](#feedback)
 - [Live updates](#live-updates)
 - [Sign-in](#sign-in)
 - [Window state](#window-state)
@@ -338,13 +339,71 @@ text.
 | Code | What the controller does |
 | --- | --- |
 | `CONFLICT` | Re-reads the case, shows "Someone else changed this ...", drops the envelope |
-| `OFFLINE`, `SERVER_ERROR` | Keeps the envelope, shows a notice with "Try again" |
+| `OFFLINE`, `SERVER_ERROR` | Keeps the envelope, shows the problem banner with "Try again" |
 | `FORBIDDEN`, `NOT_FOUND`, `INVALID_TRANSITION`, `SELF_REVIEW`, `INELIGIBLE`, `VALIDATION` | Shows the refusal; nothing to retry |
 
 **Eligibility helpers** (`staffEligibility` in `staff-views.mjs`, `adminEligibility` in
 `admin-views.mjs`) follow the database's check order so the page can hide unavailable buttons and
 explain why ("A different volunteer has to review this case"). They are predictions; the database
 answer always wins.
+
+## Feedback
+
+How the page says that something worked, failed, is loading or is busy (change
+`unify-feedback-and-loading-states`). The design system's colours for each are in
+[`docs/design/DESIGN.md`](../design/DESIGN.md).
+
+**Errors show where the person is looking, one at a time.** An error never toasts. It goes to:
+
+- the problem banner above `#main` (`.problem-banner`, `role="alert"`), with Try again
+  (`data-action="retry-action"`) when there is something to retry and Dismiss
+  (`data-action="dismiss-error"`);
+- in place, beside the failed action, on the staff case page (the banner then stays away);
+- inside the open dialog (`dialogError` in `views.mjs`, `#dialog-error`), because an alert behind an
+  `aria-modal` dialog could not be reached;
+- the save chip, for a failed save.
+
+The controller keeps one `state.error`: a newer error replaces the one before, including a failed
+save's (the draft stays and goes with the next move or save). The sign-in screens keep their own
+in-form alert.
+
+**`refuse` and `noteLocalFailure` (controller).** `refuse(code, message)` is a refusal the window
+makes itself: it records the error, draws it, and only then returns the error for the caller to
+throw, so nothing is refused without being shown. `noteLocalFailure(error, retry)` records a
+failure outside the store's actions (a draft PDF that could not be built, a missing form). Its
+optional `retry` is the one local retry: Try again runs it (`retryLast` answers `{ local: true }`),
+and any newer error drops it. The draft's retry calls `viewDraft` again before anything is awaited,
+so the rebuilt draft opens its tab inside the press. A draft built afterwards clears the banner. A
+press that throws with nothing on screen goes through `app.mjs`'s safety net, which records "Something
+went wrong." (or the known sentence) the same way.
+
+**The toast** ([`toast.mjs`](../../src/toast.mjs) for the timer, `app.mjs` for the page). It
+confirms, informs or warns, and nothing else: `notify(kind, text, by)` with `kind` one of
+`"success"`, `"info"` or `"warning"`. `TOAST_MS` keeps a success or information for 5 s and a
+warning for 8 s. The pointer over the toast or focus inside it holds it, and the full time starts
+again when both leave; Dismiss (a 44 px icon button with a name) or Escape hides it, and a hidden
+toast is out of the Tab order with its text cleared. Its host, `#toast`, is made once by `app.mjs`
+right after `#app` and never redrawn: children `.toast-icon-slot`, `.toast-text`
+(`role="status"`, `aria-live="polite"`) and `.toast-dismiss`. It sits bottom centre for clients and
+bottom right on staff screens (`.toast-staff`), lifted above Add a case's sticky bar while that bar
+is on screen. `views.toastParts` gives the icon, text and Dismiss label for a kind.
+
+**Lists say when they are loading or couldn't load.** `state.lists` holds `"loading"`, `"ready"` or
+`"failed"` for `cases` and `assistance`. Until a list is ready its screen shows one of two lines
+from [`ui.mjs`](../../src/ui.mjs): `loadingLine` (a spinner and a sentence, `role="status"`) or
+`unloadedLine` (under the banner's Try again, which reads everything again). A list that loaded once
+keeps what it shows when a later read fails. Staff views get it as `ui.list`.
+
+**Busy buttons.** While a press runs, `markPressed` in `app.mjs` gives the pressed control
+`.is-busy`, `aria-busy="true"` and a spinner, and finds it again after every redraw. Only presses
+that hold the buttons are marked: a workflow or assistance action, the checkpoint submit, and the
+`BUSY_ACTIONS` allow-list (`confirm-reset-fixtures`, `save-office-draft`, `send-office-draft`). A
+sub-step move is never marked; the save chip says Saving.
+
+**The connection notice and "back online".** `connectionNotice` in `views.mjs` shows while the
+channel is reconnecting (with a spinner) or offline. When the connection returns after a real loss,
+never on the first connection, the page toasts `toast.back_online` ("You're back online.") as
+information.
 
 ## Live updates
 
@@ -464,7 +523,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (999) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1036) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 

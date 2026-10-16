@@ -32,16 +32,19 @@ import {
   caseActionCount,
   chooseAnswer,
   choosePersona,
+  clearToast,
   clickAction,
   clickCaseActionUntil,
   continueToSubmit,
   fieldByLabel,
   findOnBoard,
+  guardToast,
   measureOverflow,
   openBoard,
   openCaseByReference,
   openCaseTab,
   pageText,
+  pressToastDismiss,
   pressUntil,
   pressUntilEffect,
   railJump,
@@ -234,14 +237,20 @@ const domainCode = (error) =>
 // Windows
 // ---------------------------------------------------------------------------
 
-/** A page in its own context, with its own console and page-error record. */
+/**
+ * A page in its own context, with its own console and page-error record. A
+ * visible toast never blocks one of its actions (`guardToast`).
+ */
 async function openWindow(engine, { viewport = DESKTOP } = {}) {
-  return await engine.newPage({ viewport });
+  const win = await engine.newPage({ viewport });
+  await guardToast(win.page);
+  return win;
 }
 
 /** A second page inside an existing context: the same storage, another window. */
 async function openTab(context, appOrigin) {
   const page = await context.newPage();
+  await guardToast(page);
   const errors = [];
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(String(error?.message ?? error)));
@@ -399,6 +408,30 @@ async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
     undefined,
     RENDER_MS,
   );
+  // The toast's Dismiss: an icon with a name and no words, 44 px square, and
+  // a press hides the toast and leaves no focus inside it.
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const dismiss = document.querySelector("#toast.visible .toast-dismiss");
+      const box = dismiss?.getBoundingClientRect();
+      return dismiss
+        ? {
+            named: Boolean(dismiss.getAttribute("aria-label")?.trim()),
+            words: dismiss.textContent.trim(),
+            size: [Math.round(box.width), Math.round(box.height)],
+          }
+        : null;
+    }),
+    { named: true, words: "", size: [44, 44] },
+    "the toast's Dismiss is not a named 44 px icon button",
+  );
+  await pressToastDismiss(page);
+  await waitFor(page, "Dismiss to hide the toast", () => !document.querySelector("#toast.visible"), undefined, RENDER_MS);
+  assert.equal(
+    await page.evaluate(() => Boolean(document.querySelector("#toast")?.contains(document.activeElement))),
+    false,
+    "the focus stayed inside the hidden toast",
+  );
   await consent14446(page);
   await sign14446(page);
   await railJump(page, "about.marital");
@@ -535,6 +568,8 @@ const OPEN_DOCUMENTS = Object.freeze([
 
 const DRAFT_FAILED = "The draft could not be made. Close this tab and try again.";
 const DRAFT_FONT_UNCHECKED = "The draft font could not be checked. Try again later.";
+// The problem banner's words for a draft that could not be built.
+const DRAFT_NOT_MADE = "The draft could not be made. Try again.";
 
 // ---------------------------------------------------------------------------
 // One permutation: client in one engine, staff in the other
@@ -2505,6 +2540,32 @@ async function runPermutation(t, roles) {
       const assistedReference = (await meta()).replace("Application ID: ", "");
       assert.match(assistedReference, REFERENCE_PATTERN);
       assert.equal(await workspaceCaseCount(fixture), casesBefore + 1, "Save draft made more than one case");
+      // The landed save's toast sits above Add a case's bar while that bar is
+      // sticky and on screen, never over it.
+      const savedToast = await waitFor(
+        staff,
+        "the saved draft's toast",
+        () => document.querySelector("#toast.visible")?.textContent.trim() === "The draft is saved. Nobody was emailed.",
+        undefined,
+        RENDER_MS,
+      ).then(
+        () => true,
+        () => false,
+      );
+      const clear = await staff.evaluate(() => {
+        const toast = document.querySelector("#toast.visible")?.getBoundingClientRect();
+        const bar = document.querySelector(".add-case-bar")?.getBoundingClientRect();
+        if (!toast || !bar || bar.top >= window.innerHeight) return true;
+        // Above the bar, or (a bar not stuck to the bottom) nowhere over it.
+        return (
+          toast.bottom <= bar.top + 1 ||
+          toast.top >= bar.bottom - 1 ||
+          toast.right <= bar.left + 1 ||
+          toast.left >= bar.right - 1
+        );
+      });
+      assert.ok(clear, "the toast covers Add a case's bar");
+      evidence.story.addCaseToast = savedToast ? "shown above the bar" : "not seen after the save";
       const assisted = await one(
         fixture,
         "select id,owner_user_id,intake_version,stage,answers,intake_visited from public.cases where workspace_id=$1 and reference=$2",
@@ -3828,6 +3889,11 @@ async function runPermutation(t, roles) {
           undefined,
           RENDER_MS,
         );
+        assert.equal(
+          await page.evaluate(() => document.querySelector("#toast")?.dataset.kind),
+          "warning",
+          "the unconfirmed Submit's toast is not a warning",
+        );
         assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
         assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
         await tickBox(page, "field-confirmed");
@@ -4198,14 +4264,22 @@ async function runPermutation(t, roles) {
               text,
               ARRIVAL_MS,
             );
-          const toastSays = (text) =>
+          // A draft that couldn't be built is an error: the problem banner
+          // says so, never the toast.
+          const bannerSays = (text) =>
             waitFor(
               page,
-              `the toast to say ${JSON.stringify(text)}`,
-              (wanted) => document.querySelector("#toast")?.textContent.trim() === wanted,
+              `the problem banner to say ${JSON.stringify(text)}`,
+              (wanted) => document.querySelector(".problem-banner")?.textContent.includes(wanted),
               text,
               ARRIVAL_MS,
             );
+          const toastShows = (text) =>
+            page.evaluate((wanted) => document.querySelector("#toast")?.textContent.includes(wanted) ?? false, text);
+          const pressBanner = async (action) => {
+            await waitForQuiet(page);
+            await page.locator(`.problem-banner [data-action="${action}"]`).click({ timeout: CLICK_MS });
+          };
 
           await jump("review.summary");
           // English, every answer in Latin letters: no font is fetched.
@@ -4297,14 +4371,19 @@ async function runPermutation(t, roles) {
           wrongFont[latin] = Buffer.from("not the pinned font");
           popup = await openDraft("zh-s");
           await tabSays(popup, DRAFT_FAILED);
-          await toastSays(DRAFT_FONT_UNCHECKED);
+          await bannerSays(DRAFT_FONT_UNCHECKED);
+          assert.equal(await toastShows(DRAFT_FONT_UNCHECKED), false, "the font failure was toasted");
           await popup.close();
+          await pressBanner("dismiss-error");
+          await waitFor(page, "Dismiss to clear the font failure", () => !document.querySelector(".problem-banner"), undefined, RENDER_MS);
           delete wrongFont[latin];
           draft.fontMismatch = DRAFT_FONT_UNCHECKED;
 
-          // The form itself refused: the tab and the toast say so. Chrome logs
+          // The form itself refused: the tab and the problem banner say so,
+          // and the banner's Try again builds the same draft again. Chrome logs
           // the refused request as one console error; that one line is caught
-          // here and excused by its place, and nothing else this check logs is.
+          // here and excused by its place, and nothing else this check logs is
+          // (the retry logs nothing).
           const formUrl = `${fixture.appOrigin}/src/forms/f13614c-2025.pdf`;
           const refusedForm = /^Failed to load resource: the server responded with a status of 500\b/;
           await page.route(formUrl, (route) => route.fulfill({ status: 500, body: "refused" }));
@@ -4315,10 +4394,24 @@ async function runPermutation(t, roles) {
           });
           popup = await openDraft("en");
           await tabSays(popup, DRAFT_FAILED);
-          await toastSays(DRAFT_FAILED);
+          await bannerSays(DRAFT_NOT_MADE);
+          assert.equal(await toastShows(DRAFT_NOT_MADE), false, "the draft failure was toasted");
           await logged;
           await popup.close();
           await page.unroute(formUrl);
+          // Try again rebuilds it inside the press: a new tab, or (blocked)
+          // the link; either way the banner goes.
+          const retried = page.waitForEvent("popup", { timeout: ARRIVAL_MS }).catch(() => null);
+          await pressBanner("retry-action");
+          const again = await retried;
+          if (again) {
+            assert.equal((await readDraft(again)).head, "%PDF-", "Try again did not rebuild the draft");
+            await again.close();
+          } else {
+            await page.locator("#draft-ready-link").waitFor({ state: "visible", timeout: ARRIVAL_MS });
+          }
+          await waitFor(page, "the draft error to clear", () => !document.querySelector(".problem-banner"), undefined, ARRIVAL_MS);
+          draft.retried = again ? "Try again opened the rebuilt draft in a new tab" : "Try again offered the rebuilt draft as a link";
           const caused = v2Win.errors.slice(from);
           assert.equal(caused.length, 1, `the refused form logged ${caused.length} console errors`);
           assert.match(caused[0], refusedForm);
@@ -4522,6 +4615,7 @@ async function runPermutation(t, roles) {
       try {
         zhWin = await clientEngine.newPage({ locale: "zh-CN" });
         const page = zhWin.page;
+        await guardToast(page);
         const hantRequests = [];
         page.on("request", (request) => {
           if (new URL(request.url()).pathname.endsWith("/src/zh-hant.mjs")) hantRequests.push(request.url());
@@ -4531,8 +4625,10 @@ async function runPermutation(t, roles) {
           waitFor(page, `<html lang> to be ${wanted}`, (code) => document.documentElement.lang === code, wanted, ARRIVAL_MS);
         const textOf = (selector) =>
           page.evaluate((wanted) => document.querySelector(wanted)?.textContent.trim() ?? null, selector);
-        // A toast would cover part of a screenshot: wait for it to go.
+        // A toast would cover part of a screenshot: dismiss it (it holds
+        // itself while the pointer is over it), and wait for it to go.
         const shootQuiet = async (name) => {
+          if (await page.locator("#toast.visible").count()) await clearToast(page);
           await waitFor(page, "the toast to close", () => !document.querySelector("#toast.visible"), undefined, ARRIVAL_MS);
           await waitForQuiet(page);
           await page.evaluate(() => window.scrollTo(0, 0));
