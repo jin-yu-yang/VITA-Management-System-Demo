@@ -36,6 +36,8 @@ import {
   introOf,
   isVisible,
   substepTitleOf,
+  isAnswered,
+  spouseShown,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
@@ -240,6 +242,7 @@ function questionsBody(view) {
     substep.id === "before.ready"
       ? `<p class="q-intro-extra">${esc(t(isSameDay(answers) ? "intake.will_bring" : "intake.will_upload", {}, lang))}</p>`
       : "";
+  const details = substep.id === "about.sign" ? signDetails(answers, lang) : "";
   const lead = leadOf(substep, { variant, lang, answers });
   let intro = "";
   if (lead) intro = `<p class="q-lead">${esc(lead)}</p>`;
@@ -249,7 +252,30 @@ function questionsBody(view) {
     if (text) intro = `<div class="q-intro">${renderRichText(text)}${extra}</div>`;
   }
   if (extra && !intro.includes(extra)) intro += extra;
-  return `<div class="q-section">${intro}${cards}</div>`;
+  return `<div class="q-section">${intro}${details}${cards}</div>`;
+}
+
+// What Form 14446 will print, read-only, above its signature boxes (change
+// add-form-14446-consent, design D3): the client's details and, while a joint
+// return is possible (J), the spouse's. Formatted as the summary formats them.
+function signDetails(answers, lang) {
+  const shown = (id, value) => (isAnswered(value) ? formatAnswer(findQuestion(2, id), value, { lang, answers }) : "");
+  const signer = (label, [first, middle, last, dob, phone, email]) => {
+    const rows = [
+      [t("sign.name", {}, lang), [answers[first], answers[middle], answers[last]].filter(isAnswered).join(" ")],
+      [t("sign.dob", {}, lang), shown(dob, answers[dob])],
+      [t("sign.phone", {}, lang), shown(phone, answers[phone])],
+      [t("sign.email", {}, lang), isAnswered(answers[email]) ? String(answers[email]).trim() : ""],
+    ];
+    return `<div class="sign-signer"><h2 class="q-heading">${esc(label)}</h2><dl>${rows
+      .map(([dt, dd]) => `<dt>${esc(dt)}</dt><dd>${esc(dd || t("sign.none", {}, lang))}</dd>`)
+      .join("")}</dl></div>`;
+  };
+  const spouseLabel = answers.marital_status === "widowed" ? "sign.late_spouse" : "sign.spouse";
+  return `<div class="sign-details">${signer(t("sign.you", {}, lang), ["tp_first_name", "tp_middle_name", "tp_last_name", "tp_dob", "tp_phone", "email"])}${when(
+    spouseShown(answers),
+    signer(t(spouseLabel, {}, lang), ["sp_first_name", "sp_middle_name", "sp_last_name", "sp_dob", "sp_phone", "vc_sp_email"]),
+  )}</div>`;
 }
 
 function actions(view, alerts) {

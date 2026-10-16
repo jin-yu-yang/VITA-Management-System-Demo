@@ -1531,3 +1531,28 @@ test("the 14446 gate locks the rail and Continue until the client consents (add-
   assert.doesNotMatch(open, /consent-blocked/);
   assert.match(open, /data-action="go-substep" data-substep="about\.you"/);
 });
+
+test("1.5 shows the details Form 14446 will print, the spouse's under J (add-form-14446-consent)", () => {
+  const single = intakeScreen(v2State({ formSubstep: "about.sign" }));
+  assert.match(single, /<h1>Sign Form 14446<\/h1>/);
+  assert.match(single, /class="sign-details"/);
+  const sample = makeSampleAnswers();
+  assert.match(single, new RegExp(`${sample.tp_first_name} ${sample.tp_last_name}`));
+  assert.doesNotMatch(single, /data-q="vc_sp_signature"/);
+  assert.doesNotMatch(single, /your spouse signs too/);
+  const married = intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: makeSampleAnswers({ married: true }) }));
+  assert.match(married, /If you file a joint return, your spouse signs too\./);
+  assert.match(married, /data-q="vc_sp_signature"/);
+  assert.match(married, /data-q="vc_sp_email"/);
+});
+
+test("1.5's details name a late spouse, and print the dates and phones as the summary does (add-form-14446-consent)", () => {
+  const answers = { ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025", tp_phone: "2155550101" };
+  const html = intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: answers }));
+  assert.match(html, /<h2 class="q-heading">Your late spouse<\/h2>/);
+  assert.doesNotMatch(html, /<h2 class="q-heading">Your spouse<\/h2>/);
+  const phone = formatAnswer(findQuestion(2, "tp_phone"), "2155550101", { lang: "en" });
+  assert.match(html, new RegExp(`<dt>Telephone number</dt><dd>${reEsc(phone)}</dd>`));
+  const dob = formatAnswer(findQuestion(2, "tp_dob"), answers.tp_dob, { lang: "en" });
+  assert.match(html, new RegExp(`<dt>Date of birth</dt><dd>${reEsc(dob)}</dd>`));
+});

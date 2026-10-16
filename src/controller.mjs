@@ -1566,6 +1566,18 @@ export function createController({
     const yearSent = Object.hasOwn(clean, "spouse_death_year") ? sendable(yearQuestion, clean.spouse_death_year) : null;
     const yearDone = isAnswered(yearSent) && checkValue(yearQuestion, yearSent) === null;
     if ((statusChanged || yearDone) && !spouseShown(draft)) draft = clearSpouse(draft);
+    // Form 14446's dates fill themselves (openspec change add-form-14446-consent,
+    // design D4): a signature typed into an empty box sets its empty date to
+    // today, in the browser's own calendar. The date stays editable; 15080's
+    // dates are not filled.
+    const before = state.draftAnswers ?? {};
+    for (const [signature, date] of [["vc_tp_signature", "vc_tp_date"], ["vc_sp_signature", "vc_sp_date"]]) {
+      if (!Object.hasOwn(clean, signature) || isAnswered(before[signature])) continue;
+      if (!isAnswered(sendable(findQuestion(2, signature), clean[signature])) || isAnswered(draft[date])) continue;
+      const day = new Date(clock());
+      const pad = (n) => String(n).padStart(2, "0");
+      draft = { ...draft, [date]: `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}` };
+    }
     commitDraft(draft);
   }
 

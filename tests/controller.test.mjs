@@ -2253,7 +2253,7 @@ const chip = (controller) => saveStatus(controller.getState()).replace(/<[^>]+>/
 
 async function openV2(options = {}) {
   const store = v2Store(options);
-  const built = build({ store, sessionStorage: options.sessionStorage });
+  const built = build({ store, sessionStorage: options.sessionStorage, clock: options.clock });
   await built.controller.start();
   await built.controller.selectCase("case-v2");
   return { store, ...built };
@@ -4990,5 +4990,21 @@ test("the 14446 gate: no move past step 0 until consented, and unticking keeps t
   controller.editAnswers({ vc_agree: null });
   assert.equal(controller.currentSubstep(), "before.virtual");
   assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
+  controller.stop();
+});
+
+test("signing Form 14446 fills its date with today, and a typed date is kept (add-form-14446-consent)", async () => {
+  const clock = () => new Date(2026, 1, 3, 10).getTime();
+  const { controller } = await openV2({ clock, answers: { vc_tp_signature: null, vc_tp_date: null, marital_status: "married" } });
+  controller.editAnswers({ vc_tp_signature: "M" });
+  assert.equal(controller.getState().draftAnswers.vc_tp_date, "2026-02-03");
+  controller.editAnswers({ vc_sp_date: "2026-01-30" });
+  controller.editAnswers({ vc_sp_signature: "W" });
+  assert.equal(controller.getState().draftAnswers.vc_sp_date, "2026-01-30");
+  controller.editAnswers({ vc_tp_date: "2026-01-31" });
+  controller.editAnswers({ vc_tp_signature: "Mei Chen" });
+  assert.equal(controller.getState().draftAnswers.vc_tp_date, "2026-01-31", "a signature already filled fills nothing");
+  controller.editAnswers({ gcf_consent: "yes", gcf_tp_signature: "Mei Chen" });
+  assert.equal(controller.getState().draftAnswers.gcf_tp_date ?? null, null, "15080's dates are not filled");
   controller.stop();
 });
