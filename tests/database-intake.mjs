@@ -623,6 +623,64 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), id);
     });
 
+    await t.test("intake_holds reads gte, lte and any as the browser does (add-widowed-spouse-rules)", async () => {
+      const holds = async (showIf, answers) =>
+        (
+          await f.sql("select vitally_private.intake_holds($1::jsonb, $2::jsonb) as held", [
+            JSON.stringify(showIf),
+            JSON.stringify(answers),
+          ])
+        ).rows[0].held;
+      const year = (op, value) => ({ field: "y", op, value });
+      const pick = { op: "any", groups: [[{ field: "m", op: "eq", value: "a" }], [{ field: "m", op: "eq", value: "b" }, year("gte", 2025)]] };
+      const cases = [
+        [[year("gte", 2023)], {}, false],
+        [[year("gte", 2023)], { y: "" }, false],
+        [[year("gte", 2023)], { y: "abcd" }, false],
+        [[year("gte", 2023)], { y: 2024 }, false],
+        [[year("gte", 2023)], { y: ["2024"] }, false],
+        [[year("gte", 2023)], { y: "2022" }, false],
+        [[year("gte", 2023)], { y: "2023" }, true],
+        [[year("lte", 2025)], { y: "2025" }, true],
+        [[year("lte", 2025)], { y: "2205" }, false],
+        [[year("gte", 2023)], { y: "02025" }, false],
+        [[year("gte", 2023)], { y: " 2025" }, false],
+        [[pick], { m: "a" }, true],
+        [[pick], { m: "b", y: "2025" }, true],
+        [[pick], { m: "b", y: "2024" }, false],
+        [[pick], { m: "b" }, false],
+        [[pick], { m: "c", y: "2025" }, false],
+        [[pick, { field: "z", op: "filled" }], { m: "a" }, false],
+      ];
+      for (const [showIf, answers, expected] of cases) {
+        const label = `${JSON.stringify(showIf)} ${JSON.stringify(answers)}`;
+        assert.equal(isVisible({ showIf }, answers), expected, `js ${label}`);
+        assert.equal(await holds(showIf, answers), expected, `sql ${label}`);
+      }
+    });
+
+    await t.test("the loader refuses a malformed show-if (add-widowed-spouse-rules)", async () => {
+      const put = (showIf) =>
+        f.sql("select vitally_private.put_intake_field(9::smallint, $1::jsonb, 1::smallint, null)", [
+          JSON.stringify({ id: "x", type: "text", showIf }),
+        ]);
+      for (const showIf of [
+        [{ field: "m", op: "gt", value: 1 }],
+        [{ op: "any" }],
+        [{ op: "any", groups: [] }],
+        [{ op: "any", groups: [[]] }],
+        [{ op: "any", groups: [{ field: "m", op: "eq", value: "a" }] }],
+        [{ op: "any", groups: [[{ field: "m", op: "bogus" }]] }],
+        [{ field: "y", op: "gte", value: "2023" }],
+        [{ field: "y", op: "lte" }],
+        [{ op: "gte", value: 2023 }],
+        ["eq"],
+      ])
+        await assert.rejects(put(showIf), rejected("VALIDATION"), JSON.stringify(showIf));
+      const stray = await f.sql("select count(*)::int as n from vitally_private.intake_fields where version = 9");
+      assert.equal(stray.rows[0].n, 0);
+    });
+
     await t.test("the loader refuses a catalogue without steps", async () => {
       await assert.rejects(
         f.sql("select vitally_private.load_intake_catalogue(3::smallint, '{}'::jsonb)"),
