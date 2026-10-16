@@ -226,8 +226,8 @@ test("the value-check contract table: checkValue gives each row's js result (spe
 });
 
 const SUBSTEP_IDS = [
-  "before.ready", "before.service", "before.language",
-  "about.you", "about.address", "about.marital", "about.spouse", "about.situation", "about.irs",
+  "before.ready", "before.service", "before.language", "before.virtual",
+  "about.you", "about.address", "about.marital", "about.spouse", "about.sign", "about.situation", "about.irs",
   "household.members",
   "income.wages", "income.retirement", "income.investments", "income.rental", "income.business", "income.other",
   "expenses.deductible", "expenses.other", "expenses.events",
@@ -547,4 +547,19 @@ test("missingToSubmit: a recently widowed client's spouse, and no spouse signatu
   assert.ok(died2024.includes("sp_last_name"));
   assert.ok(!died2024.includes("sp_job_title"));
   assert.ok(!missingToSubmit(2, { ...base, spouse_death_year: "2015" }).some((id) => id.startsWith("sp_")));
+});
+
+test("Form 14446: who sees which signing question, and what is missing (add-form-14446-consent)", () => {
+  const shown = (id, answers) => isVisible(findQuestion(2, id), answers);
+  const married = { marital_status: "married" };
+  const died = (year) => ({ marital_status: "widowed", spouse_death_year: year });
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, married)), [true, true]);
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, died("2025"))), [true, false]);
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, died("2024"))), [false, false]);
+  assert.equal(shown("vc_tp_date", {}), false);
+  assert.equal(shown("vc_tp_date", { vc_tp_signature: "Mei Chen" }), true);
+  const { vc_agree: _a, vc_review: _r, vc_tp_signature: _s, ...unsigned } = makeSampleAnswers();
+  const missing = missingToSubmit(2, unsigned);
+  for (const id of ["vc_agree", "vc_review", "vc_tp_signature"]) assert.ok(missing.includes(id), id);
+  assert.deepEqual(missingToSubmit(2, makeSampleAnswers()).filter((id) => id.startsWith("vc_")), []);
 });

@@ -9,7 +9,7 @@ import {
   renderQuestion, valuesFromControls, mergeIntoDraft, drivesVisibility, visibleIds,
   needsRedraw, noteState, invalidAnswers, sendable, withholdInvalid, withheldFields,
   sendableDiffers, keepLocalOnly, countText, renderRichText, formatAnswer,
-  visibleSubsteps, resolveSubstep, adjacentSubstep, reviewAlerts, substepStatus, stepRollup,
+  visibleSubsteps, resolveSubstep, consented, adjacentSubstep, reviewAlerts, substepStatus, stepRollup,
   firstUnfinishedSubstep, newMemberId, datePartsFor, formatDate, rangeText, invalidText,
 } from "../src/intake-form.mjs";
 import { setHantMap } from "../src/hant.mjs";
@@ -213,13 +213,15 @@ test("tips: a tip with a condition renders only while it holds", () => {
 test("drivesVisibility: conditions of questions, tips and who's spouse", () => {
   assert.equal(drivesVisibility("marital_status"), true);
   assert.equal(drivesVisibility("gcf_sp_signature"), true);
+  assert.equal(drivesVisibility("vc_tp_signature"), true);
+  assert.equal(drivesVisibility("vc_sp_signature"), true);
   assert.equal(drivesVisibility("spouse_death_year"), true);
   assert.equal(drivesVisibility("refund_method"), true);
   assert.equal(drivesVisibility("gcf_tp_signature"), false);
   assert.equal(drivesVisibility("tp_first_name"), false);
   const textLike = new Set(["text", "longtext", "signature", "email", "phone", "zip", "year", "number", "date"]);
   const drivers = [...ALL, ...HH.fields].filter((x) => textLike.has(x.type) && drivesVisibility(x.id)).map((x) => x.id);
-  assert.deepEqual(drivers, ["spouse_death_year", "gcf_sp_signature"]);
+  assert.deepEqual(drivers, ["spouse_death_year", "vc_tp_signature", "vc_sp_signature", "gcf_sp_signature"]);
 });
 
 test("visibleIds and needsRedraw: the ids a sub-step shows now against the ids on the page", () => {
@@ -372,31 +374,36 @@ test("visibleSubsteps: questions by visibility, documents by service and cards, 
   assert.ok(substepQuestions("household.members").some((question) => question.id === "hh" && question.showIf.length > 0));
 });
 
+// The Form 14446 gate sends every place after step 0 to 0.4 until 0.4 is ticked, so the
+// places below are tried with the consent given (add-form-14446-consent).
+const OPEN = { vc_agree: ["yes"] };
+
 test("resolveSubstep: visible stays; hidden goes to the next visible, else the last; unknown goes first", () => {
   const cards = NO_CARDS;
-  assert.equal(resolveSubstep("about.you", {}, cards), "about.you");
-  assert.equal(resolveSubstep("about.spouse", { marital_status: "never_married" }, cards), "about.situation");
-  assert.equal(resolveSubstep("documents.bring", {}, cards), "documents.identity");
+  assert.equal(resolveSubstep("about.you", OPEN, cards), "about.you");
+  // 1.5 (about.sign) always shows, so it is the next visible one after the hidden spouse sub-step.
+  assert.equal(resolveSubstep("about.spouse", { ...OPEN, marital_status: "never_married" }, cards), "about.sign");
+  assert.equal(resolveSubstep("documents.bring", OPEN, cards), "documents.identity");
   assert.equal(resolveSubstep("nowhere.at_all", {}, cards), "before.ready");
   assert.equal(resolveSubstep(null, {}, cards), "before.ready");
   assert.equal(resolveSubstep(undefined, {}, cards), "before.ready");
   // A client left on documents.identity when the service becomes same-day: the next visible
   // sub-step after it, which skips the rest of the documents step.
-  const sameDay = { service: "same_day" };
+  const sameDay = { ...OPEN, service: "same_day" };
   assert.equal(resolveSubstep("documents.identity", sameDay, cardsFor(sameDay)), "notes.anything");
   // With nothing visible after it, the last visible one: with alerts, a hidden review.submit lands on review.check.
-  assert.equal(resolveSubstep("review.submit", {}, NO_CARDS), "review.check");
+  assert.equal(resolveSubstep("review.submit", OPEN, NO_CARDS), "review.check");
 });
 
 test("adjacentSubstep: the visible neighbour of the resolved place, null at either end", () => {
-  assert.equal(adjacentSubstep("about.irs", {}, NO_CARDS, 1), "household.members");
-  assert.equal(adjacentSubstep("household.members", {}, NO_CARDS, -1), "about.irs");
-  assert.equal(adjacentSubstep("before.ready", {}, NO_CARDS, -1), null);
-  assert.equal(adjacentSubstep("review.submit", {}, NO_CARDS, 1), null);
+  assert.equal(adjacentSubstep("about.irs", OPEN, NO_CARDS, 1), "household.members");
+  assert.equal(adjacentSubstep("household.members", OPEN, NO_CARDS, -1), "about.irs");
+  assert.equal(adjacentSubstep("before.ready", OPEN, NO_CARDS, -1), null);
+  assert.equal(adjacentSubstep("review.submit", OPEN, NO_CARDS, 1), null);
   // From a hidden sub-step the neighbour is taken from where it resolves to.
-  assert.equal(adjacentSubstep("about.spouse", { marital_status: "never_married" }, NO_CARDS, -1), "about.marital");
-  assert.equal(adjacentSubstep("about.spouse", { marital_status: "married" }, NO_CARDS, -1), "about.marital");
-  assert.equal(adjacentSubstep("about.spouse", { marital_status: "never_married" }, NO_CARDS, 1), "about.irs");
+  assert.equal(adjacentSubstep("about.spouse", { ...OPEN, marital_status: "never_married" }, NO_CARDS, -1), "about.marital");
+  assert.equal(adjacentSubstep("about.spouse", { ...OPEN, marital_status: "married" }, NO_CARDS, -1), "about.marital");
+  assert.equal(adjacentSubstep("about.spouse", { ...OPEN, marital_status: "never_married" }, NO_CARDS, 1), "about.situation");
   assert.equal(adjacentSubstep("nowhere.at_all", {}, NO_CARDS, 1), visibleSubsteps({}, NO_CARDS)[1]);
 });
 
@@ -526,10 +533,11 @@ test("stepRollup: needs, then docs, then done only when all are done", () => {
   assert.deepEqual(stepRollup("about", ctx(answers, { visited })), { key: "needs", text: "Needs answers" });
   assert.deepEqual(stepRollup("about", ctx(answers)), { key: "none", text: "" });
   // Done only when every visible sub-step is Done.
-  const oneDone = stepRollup("before", ctx({ service: "online", language: "english" }, { visited: ["before.ready", "before.service"] }));
+  const consented = { service: "online", language: "english", vc_agree: ["yes"] };
+  const oneDone = stepRollup("before", ctx(consented, { visited: ["before.ready", "before.service"] }));
   assert.deepEqual(oneDone, { key: "none", text: "" });
   assert.deepEqual(
-    stepRollup("before", ctx({ service: "online", language: "english" }, { visited: ["before.ready", "before.service", "before.language"] })),
+    stepRollup("before", ctx(consented, { visited: ["before.ready", "before.service", "before.language", "before.virtual"] })),
     { key: "done", text: "Done" },
   );
   // Documents: a Needed card still Not done reads Needs documents when nothing needs answers.
@@ -550,8 +558,8 @@ test("stepRollup: needs, then docs, then done only when all are done", () => {
 test("firstUnfinishedSubstep: resume at the first visible sub-step that isn't Done", () => {
   const { cards } = ctx({});
   assert.equal(firstUnfinishedSubstep({}, cards, [], new Set()), "before.ready");
-  const answers = { service: "online", language: "english", ...STEP2 };
-  const visited = ["before.ready", "before.service", "before.language", "about.you"];
+  const answers = { service: "online", language: "english", vc_agree: ["yes"], ...STEP2 };
+  const visited = ["before.ready", "before.service", "before.language", "before.virtual", "about.you"];
   assert.equal(firstUnfinishedSubstep(answers, cardsFor(answers), visited, new Set()), "about.address");
   // A visited sub-step with something missing is where the client resumes.
   assert.equal(firstUnfinishedSubstep({ ...answers, tp_job_title: null }, cardsFor(answers), visited, new Set()), "about.you");
@@ -817,8 +825,20 @@ const withHant = (fn) => {
   }
 };
 // Answers under which every condition of `conditions` holds.
-const satisfying = (conditions) =>
-  Object.fromEntries((conditions ?? []).map((c) => [c.field, c.op === "eq" ? c.value : c.op === "filled" ? "x" : "__other__"]));
+// A rule (op "any") holds through the first of its groups that doesn't contradict
+// the plain conditions beside it.
+const satisfying = (conditions) => {
+  const plain = (conditions ?? []).filter((c) => c.op !== "any");
+  const answers = Object.fromEntries(
+    plain.map((c) => [c.field, c.op === "eq" || c.op === "gte" || c.op === "lte" ? String(c.value) : c.op === "filled" ? "x" : "__other__"]),
+  );
+  for (const rule of (conditions ?? []).filter((c) => c.op === "any")) {
+    const options = rule.groups.map((group) => satisfying(group));
+    const fits = options.find((option) => Object.entries(option).every(([field, value]) => !(field in answers) || answers[field] === value));
+    Object.assign(answers, fits ?? options[0]);
+  }
+  return answers;
+};
 const optionsOf = (question) =>
   question.type === "who" ? CATALOGUE.fixedOptions.who.options
     : question.type === "yesno" ? question.options.map((o) => CATALOGUE.fixedOptions.yesno.options.find((y) => y.value === o.value) ?? o)
@@ -1081,4 +1101,16 @@ test("invalidText: a year range in Chinese, without digit grouping (add-widowed-
   assert.equal(reason, "Enter a year from 1900 to 2025.");
   assert.equal(invalidText(reason, "zh-Hans"), "请输入 1900 至 2025 之间的年份。");
   assert.equal(invalidText(reason, "en"), reason);
+});
+
+test("the 14446 gate: an unconsented form lands on 0.4 (add-form-14446-consent)", () => {
+  assert.equal(consented({}), false);
+  assert.equal(consented({ vc_agree: [] }), false);
+  assert.equal(consented({ vc_agree: ["yes"] }), true);
+  const open = { vc_agree: ["yes"] };
+  assert.equal(resolveSubstep("about.address", {}, []), "before.virtual");
+  assert.equal(resolveSubstep("review.check", {}, []), "before.virtual");
+  assert.equal(resolveSubstep("before.language", {}, []), "before.language");
+  assert.equal(resolveSubstep("about.address", open, []), "about.address");
+  assert.equal(resolveSubstep(null, {}, []), "before.ready");
 });

@@ -844,7 +844,7 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.doesNotMatch(app, /await loadHant\(\)/, "nothing awaits the map without a timeout");
   assert.match(
     app,
-    /async function viewDraft\(form, by\) \{[\s\S]{0,1200}if \(form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = draftFields\(/,
+    /async function viewDraft\(form, by, kind = "13614c"\) \{[\s\S]{0,1200}if \(kind !== "14446" && form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = \(kind === "14446" \? draft14446Fields : draftFields\)\(/,
   );
   // Startup waits five seconds at most for a saved 繁體's map, and the draft as long.
   assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
@@ -983,10 +983,10 @@ test("a press's result message is shown only while the person who pressed is sig
   assert.match(app, /async function runAssistanceAction\(target, form = null, by\)/);
   assert.match(app, /async function runNavigation\(action, target, by\)/);
   assert.match(app, /async function reconcile\(useMine, by\)/);
-  assert.match(app, /async function viewDraft\(form, by\)/);
+  assert.match(app, /async function viewDraft\(form, by, kind = "13614c"\)/);
   assert.match(app, /await reconcile\(true, by\)/);
   assert.match(app, /await reconcile\(false, by\)/);
-  assert.match(app, /await viewDraft\(target\.dataset\.form \?\? "en", by\)/);
+  assert.match(app, /await viewDraft\(target\.dataset\.form \?\? "en", by, target\.dataset\.draft \?\? "13614c"\)/);
   // Every message in them names the presser, but two that come before any
   // await (nobody can have changed): Submit's "confirm first" and Resolve's
   // "say what you helped with".

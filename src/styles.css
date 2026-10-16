@@ -4135,6 +4135,11 @@ textarea::placeholder {
 .rail-sublink:hover {
   background: var(--vt-primary-soft);
 }
+.rail-sublink.is-locked,
+.rail-link.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .rail-sublink[aria-current="step"] {
   border-left-color: var(--vt-primary);
   background: var(--vt-primary-soft);
@@ -4549,6 +4554,33 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+/* 1.5's read-only details (add-form-14446-consent). */
+.sign-details {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.sign-signer {
+  padding: 8px 24px 16px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.sign-signer dl {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.sign-signer dt {
+  color: var(--vt-intake-hint);
+}
+.sign-signer dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  color: var(--vt-intake-ink);
+}
 /* The summary page (gate-review-and-redesign-summary): intro, tools, fold, sections. */
 .summary-intro p {
   margin: 0 0 10px;

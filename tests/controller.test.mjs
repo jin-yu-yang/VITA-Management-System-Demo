@@ -7,6 +7,7 @@ import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogu
 import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
+import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Doubles, not mocks: every test asserts the envelopes that reach the store and
 // the state the controller ends in, never "this function was called".
@@ -1204,9 +1205,10 @@ test("starting a new application is explicit, idempotent and selects the new cas
 });
 
 test("window state is keyed by the authenticated user", async () => {
+  // case-a is consented, or the 14446 gate would keep it on 0.4 (add-form-14446-consent).
   const shared = fakeSession();
   const storeOne = fakeStore({
-    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { ...CONSENT_14446 } }],
   });
   const one = build({ store: storeOne, sessionStorage: shared });
   await one.controller.start();
@@ -2163,7 +2165,8 @@ function v2Store({
         stage,
         revision,
         intakeVersion: 2,
-        answers,
+        // Consented and signed unless a test says otherwise (add-form-14446-consent).
+        answers: { ...CONSENT_14446, ...answers },
         contact,
         intakeVisited,
         documentCards,
@@ -2250,7 +2253,7 @@ const chip = (controller) => saveStatus(controller.getState()).replace(/<[^>]+>/
 
 async function openV2(options = {}) {
   const store = v2Store(options);
-  const built = build({ store, sessionStorage: options.sessionStorage });
+  const built = build({ store, sessionStorage: options.sessionStorage, clock: options.clock });
   await built.controller.start();
   await built.controller.selectCase("case-v2");
   return { store, ...built };
@@ -2269,7 +2272,7 @@ async function savedV2(answers = { tp_first_name: "Mei" }) {
 test("a version-2 draft takes its contact fields from the case's contact record", async () => {
   const bare = await openV2({ answers: { tp_first_name: "Mei" }, contact: null });
   const draft = bare.controller.getState().draftAnswers;
-  assert.deepEqual(draft, { tp_first_name: "Mei" });
+  assert.deepEqual(draft, { ...CONSENT_14446, tp_first_name: "Mei" });
   for (const id of Object.keys(CONTACT_FIELDS)) assert.equal(Object.hasOwn(draft, id), false, id);
   bare.controller.stop();
 
@@ -2278,6 +2281,7 @@ test("a version-2 draft takes its contact fields from the case's contact record"
     contact: { phone: "2155550199", spousePhone: null, bestContactTime: ["weekend"], bestContactNote: null },
   });
   assert.deepEqual(withContact.controller.getState().draftAnswers, {
+    ...CONSENT_14446,
     tp_first_name: "Mei",
     tp_phone: "2155550199",
     best_contact_time: ["weekend"],
@@ -2497,7 +2501,7 @@ test("a version-2 save withholds invalid values and trims, and never touches the
   const { controller, store } = await openV2();
   controller.editAnswers({ tp_first_name: "Mei", email: "a@", addr_zip: " 19107 " });
   await controller.saveAnswers();
-  assert.deepEqual(store.writes[0].payload.answers, { tp_first_name: "Mei", addr_zip: "19107" });
+  assert.deepEqual(store.writes[0].payload.answers, { ...CONSENT_14446, tp_first_name: "Mei", addr_zip: "19107" });
   const draft = controller.getState().draftAnswers;
   assert.equal(draft.addr_zip, " 19107 ");
   assert.equal(draft.email, "a@");
@@ -2840,13 +2844,14 @@ test("a new case opens at before.ready, and a resumed one at its first unfinishe
   const resumed = await openV2({
     answers: BEFORE_AND_YOU,
     contact: { phone: "2155550199" },
-    intakeVisited: ["before.ready", "before.service", "before.language", "about.you"],
+    intakeVisited: ["before.ready", "before.service", "before.language", "before.virtual", "about.you"],
   });
   assert.equal(resumed.controller.getState().formSubstep, "about.address");
   assert.deepEqual(resumed.controller.getState().visitedSubsteps, [
     "before.ready",
     "before.service",
     "before.language",
+    "before.virtual",
     "about.you",
   ]);
   resumed.controller.stop();
@@ -2858,7 +2863,7 @@ test("leaving a sub-step with nothing edited saves the visit once, with the answ
   assert.equal(store.writes.length, 1);
   assert.equal(store.writes[0].type, "SAVE_ANSWERS");
   assert.equal(store.writes[0].expectedRevision, 1);
-  assert.deepEqual(store.writes[0].payload, { answers: { tp_first_name: "Mei" }, visited: ["before.ready"] });
+  assert.deepEqual(store.writes[0].payload, { answers: { ...CONSENT_14446, tp_first_name: "Mei" }, visited: ["before.ready"] });
   assert.deepEqual(store.records.get("case-v2").intakeVisited, ["before.ready"]);
   assert.equal(controller.getState().dirty, false);
   assert.equal(controller.getState().formSubstep, "before.service");
@@ -3150,7 +3155,7 @@ test("moveSubstep goes to the next or previous visible sub-step and does nothing
   assert.equal(controller.getState().formSubstep, "before.service");
   await controller.goToSubstep("about.marital");
   await controller.moveSubstep(1);
-  assert.equal(controller.getState().formSubstep, "about.situation", "the hidden spouse sub-step is skipped");
+  assert.equal(controller.getState().formSubstep, "about.sign", "the hidden spouse sub-step is skipped");
   // With alerts the form ends at 9.1: Continue there goes nowhere and sends nothing.
   await controller.goToSubstep("review.submit");
   assert.equal(controller.getState().formSubstep, "review.check");
@@ -3250,7 +3255,7 @@ test("currentSubstep resolves a place the draft has hidden to the next visible o
   assert.equal(controller.currentSubstep(), "about.spouse");
   controller.editAnswers({ marital_status: "never_married" });
   assert.equal(controller.getState().formSubstep, "about.spouse");
-  assert.equal(controller.currentSubstep(), "about.situation");
+  assert.equal(controller.currentSubstep(), "about.sign");
   controller.stop();
 });
 
@@ -4972,5 +4977,34 @@ test("a save whose re-read fails after its case was opened again does not pin th
   assert.equal(store.records.get("case-v2").answers.tp_first_name, "Ming", "the saved values are not put back quietly");
   assert.equal(controller.getState().conflict?.serverRevision, 2, "a choice instead");
   assert.equal(controller.getState().draftAnswers.addr_city, "Camden");
+  controller.stop();
+});
+
+test("the 14446 gate: no move past step 0 until consented, and unticking keeps the answers (add-form-14446-consent)", async () => {
+  const { controller } = await openV2({ answers: { vc_agree: null, tp_first_name: "Mei" } });
+  await controller.goToSubstep("about.address");
+  assert.equal(controller.currentSubstep(), "before.virtual");
+  controller.editAnswers({ vc_agree: ["yes"] });
+  await controller.goToSubstep("about.address");
+  assert.equal(controller.currentSubstep(), "about.address");
+  controller.editAnswers({ vc_agree: null });
+  assert.equal(controller.currentSubstep(), "before.virtual");
+  assert.equal(controller.getState().draftAnswers.tp_first_name, "Mei");
+  controller.stop();
+});
+
+test("signing Form 14446 fills its date with today, and a typed date is kept (add-form-14446-consent)", async () => {
+  const clock = () => new Date(2026, 1, 3, 10).getTime();
+  const { controller } = await openV2({ clock, answers: { vc_tp_signature: null, vc_tp_date: null, marital_status: "married" } });
+  controller.editAnswers({ vc_tp_signature: "M" });
+  assert.equal(controller.getState().draftAnswers.vc_tp_date, "2026-02-03");
+  controller.editAnswers({ vc_sp_date: "2026-01-30" });
+  controller.editAnswers({ vc_sp_signature: "W" });
+  assert.equal(controller.getState().draftAnswers.vc_sp_date, "2026-01-30");
+  controller.editAnswers({ vc_tp_date: "2026-01-31" });
+  controller.editAnswers({ vc_tp_signature: "Mei Chen" });
+  assert.equal(controller.getState().draftAnswers.vc_tp_date, "2026-01-31", "a signature already filled fills nothing");
+  controller.editAnswers({ gcf_consent: "yes", gcf_tp_signature: "Mei Chen" });
+  assert.equal(controller.getState().draftAnswers.gcf_tp_date ?? null, null, "15080's dates are not filled");
   controller.stop();
 });

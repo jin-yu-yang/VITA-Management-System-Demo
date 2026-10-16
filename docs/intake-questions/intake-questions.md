@@ -691,6 +691,71 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 ---
 
+## Section 15: Virtual VITA Consent (Form 14446) / 虚拟 VITA 纳税人同意书
+
+**Page text (summary):**
+> **Everyone signs this form, whether we prepare your return online or in person.**
+> **无论线上还是到场报税，每位客户都需要签署此表。**
+>
+> Form 14446 is the IRS consent for "virtual" VITA. Parts of your return are handled while you are not sitting with the preparer: we may review your documents, interview you by phone or Zoom, and prepare and check your return without you there. Pages 1 and 2 of the form explain how PCDC handles each step.
+> 14446 表是美国国税局的"虚拟 VITA"同意书。部分报税工作会在您不在场时进行：我们可能会审核您的文件，通过电话或 Zoom 与您面谈，并在您不在场时准备和检查您的报税表。表格第 1、2 页说明 PCDC 如何处理每个步骤。
+>
+> Your consent lasts one year from the date you sign.
+> 您的同意自签署之日起一年内有效。
+>
+> **Note:** these systems are not run by the IRS. If they are hacked or breached, federal law may not protect your information.
+> **注意：**这些系统并非由国税局运营。如遭黑客攻击或泄露，联邦法律可能无法保护您的信息。
+>
+> If you believe your information was used improperly, contact TIGTA at **1-800-366-4484** or complaints@tigta.treas.gov.
+> 如您认为您的信息被不当使用，请联系 TIGTA：**1-800-366-4484** 或 complaints@tigta.treas.gov。
+
+**Q15.1** Do you agree to use PCDC's Virtual VITA/TCE process? / 您是否同意使用此服务处的虚拟 VITA/TCE 流程？
+`vc_agree` · Multi-select · Required
+- `yes` I agree to use PCDC's Virtual VITA/TCE process / 本人同意使用此服务处的虚拟 VITA/TCE 流程
+
+---
+
+## Section 16: Sign Form 14446 / 签署 14446 表
+
+**Page text (summary):**
+> Sign Form 14446 with the details below, as they will appear on the form. If you file a joint return, your spouse signs too.
+> 请核对以下将填入表格的信息，然后签署 14446 表。如合并申报，您的配偶也需要签名。
+
+**Intro text (not married):**
+> Sign Form 14446 with the details below, as they will appear on the form.
+> 请核对以下将填入表格的信息，然后签署 14446 表。
+
+**Q16.1** If our site is chosen at random, may an IRS employee review your return for accuracy? / 如本站点被随机抽中，您是否同意国税局工作人员审核您的报税表是否准确？
+`vc_review` · Single choice · Required
+- `yes` I consent / 同意
+- `no` I do not consent / 不同意
+> Tip: The IRS keeps none of your personal information from this review. Saying no doesn't change our service. / 国税局不会保留审核中的任何个人信息；不同意也不会影响我们为您提供的服务。
+
+**Q16.2** Your signature (type your full name) / 您的签名（输入全名）
+`vc_tp_signature` · Signature · Required
+
+**Q16.3** Date / 日期
+`vc_tp_date` · Date · Optional
+**Show if** `vc_tp_signature` is filled
+> Note for developers: filled with today when the signature is first typed (design D4).
+
+**Q16.4** Spouse's signature (type full name) / 配偶签名（输入全名）
+`vc_sp_signature` · Signature · Optional
+**Show if** rule `joint_possible`
+> Tip (show if `marital_status = married`): Leave this empty if you won't file a joint return. / 如不合并申报，请留空。
+> Tip (show if `marital_status = widowed` AND rule `joint_possible`): Type your late spouse's full name. You sign for them because a joint return is possible for 2025. / 请输入您已故配偶的全名。由于 2025 年仍可合并申报，由您代为签名。
+
+**Q16.5** Spouse signature date / 配偶签名日期
+`vc_sp_date` · Date · Optional
+**Show if** rule `joint_possible` AND `vc_sp_signature` is filled
+> Note for developers: filled with today when the spouse signature is first typed (design D4).
+
+**Q16.6** Spouse's email address / 配偶的电子邮箱
+`vc_sp_email` · Email · Optional
+**Show if** `marital_status = married`
+
+---
+
 ## Appendix A: Volunteer-Only Fields (NOT shown on public form)
 
 These are on the right side of the paper form, "To be completed by certified volunteer". Put them in the **volunteer back office**, not the taxpayer form.

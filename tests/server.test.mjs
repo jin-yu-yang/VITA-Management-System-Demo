@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { readdirSync } from "node:fs";
 import { createAppServer } from "../server.mjs";
 
 // A configured environment carrying one extra secret, so every response can be
@@ -217,12 +218,14 @@ test("a query string does not change what is served or refused", async () => {
   });
 });
 
-test("the three IRS forms are served as PDFs and nothing else under forms", async () => {
+test("the five form PDFs are served and nothing else under forms", async () => {
   await withServer(CONFIGURED, async (port) => {
     for (const path of [
       "/src/forms/f13614c-2025.pdf",
       "/src/forms/f13614cn-2025.pdf",
       "/src/forms/f13614ct-2025.pdf",
+      "/src/forms/f14446-pcdc-en.pdf",
+      "/src/forms/f14446-pcdc-zh-t.pdf",
     ]) {
       const response = await request(port, path);
       assert.equal(response.status, 200, path);
@@ -238,7 +241,32 @@ test("the three IRS forms are served as PDFs and nothing else under forms", asyn
       "/src/forms/%2e%2e/server.mjs",
       "/src/forms/",
       "/src/f13614c-2025.pdf",
+      "/src/forms/f14446-pcdc-zh-s.pdf",
+      "/src/forms/f14446-pcdc-en.PDF",
+      "/src/forms/f14446.pdf",
+      "/src/f14446-pcdc-en.pdf",
     ])
       assert.equal((await request(port, path)).status, 404, path);
+  });
+});
+
+// The module rule admits no digits, so a module named with one boots nowhere:
+// the browser gets a 404 for the import and the app never starts. Every module
+// the app can import must therefore be served.
+test("every module directly under src is served", async () => {
+  const modules = readdirSync(new URL("../src/", import.meta.url)).filter(
+    (name) => name.endsWith(".mjs"),
+  );
+  assert.ok(modules.includes("draft-virtual-consent.mjs"));
+  await withServer(CONFIGURED, async (port) => {
+    for (const name of modules) {
+      const response = await request(port, `/src/${name}`);
+      assert.equal(response.status, 200, `/src/${name}`);
+      assert.equal(
+        response.headers["content-type"],
+        "text/javascript; charset=utf-8",
+        `/src/${name}`,
+      );
+    }
   });
 });

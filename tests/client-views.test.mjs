@@ -24,6 +24,8 @@ import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src
 import { cardsFor } from "../src/document-cards.mjs";
 import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
+import { t } from "../src/client-text.mjs";
+import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
 // the HTML string itself. No DOM library, and nothing here may reach a store.
@@ -283,7 +285,7 @@ test("applicant text is escaped everywhere it is rendered", () => {
         { id: "e1", action: "SUBMIT", message: nasty, createdAt: "2026-01-02T15:04:05Z" },
       ],
     }),
-    draftAnswers: { tp_first_name: nasty },
+    draftAnswers: { ...CONSENT_14446, tp_first_name: nasty },
   });
   for (const html of [
     progressScreen(state),
@@ -699,7 +701,7 @@ const MEMBER = "000000000000000000000000000003e9"; // the sample's first househo
 test("a version-2 draft gets the sub-step page: form, overline, title and count", () => {
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
   assert.match(html, /<form id="intake-v2-form" novalidate data-substep="about\.address">/);
-  assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 5<\/p>/);
+  assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 6<\/p>/);
   // The office card stays under the rail, and the chrome comes from client-views.
   assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
   assert.match(html, /Fill fictional details/);
@@ -710,13 +712,13 @@ test("a version-2 draft gets the sub-step page: form, overline, title and count"
   assert.doesNotMatch(html, /data-action="save-exit"/);
   assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
   // Before you start has no number; an ampersand in a title is escaped.
-  assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 3<\/p>/);
+  assert.match(intakeScreen(v2State()), /<span class="overline">BEFORE YOU START<\/span><h1>Before you start<\/h1><p class="substep-count">1 of 4<\/p>/);
   assert.match(
     intakeScreen(v2State({ formSubstep: "expenses.other" })),
     /<span class="overline">STEP 4 OF 9 · EXPENSES &amp; LIFE EVENTS<\/span><h1>Other expenses<\/h1><p class="substep-count">2 of 3<\/p>/,
   );
   // A hidden sub-step resolves to the next visible one; an unknown id to the first.
-  assert.match(intakeScreen(v2State({ formSubstep: "about.spouse" })), /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(intakeScreen(v2State({ formSubstep: "about.spouse" })), /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
   assert.match(intakeScreen(v2State({ formSubstep: "nowhere.at_all" })), /<form id="intake-v2-form" novalidate data-substep="before\.ready">/);
   // The senior titles are used when chosen.
   const senior = intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: { ...sample(), form_version: "senior" } }));
@@ -725,7 +727,7 @@ test("a version-2 draft gets the sub-step page: form, overline, title and count"
 
 test("the rail tree: the current step expanded, the others collapsed, each with its toggle, link and marks", () => {
   const draftAnswers = sample();
-  const visitedSubsteps = ["before.ready", "before.service", "before.language", "about.you"];
+  const visitedSubsteps = ["before.ready", "before.service", "before.language", "before.virtual", "about.you"];
   const html = intakeScreen(v2State({ formSubstep: "about.address", visitedSubsteps }));
   assert.match(html, /<nav class="rail-nav" aria-label="Form steps"><ol id="rail-tree" class="rail-tree">/);
   const steps = stepsFor(2);
@@ -777,7 +779,7 @@ test("the rail's open and shut entries win over the current step, and the phone 
   // The phone bar, and the tree closed until "All steps" opens it.
   assert.match(
     html,
-    /<div class="rail-phone"><span>About you · 2 of 5<\/span><button type="button" class="btn secondary" data-action="toggle-panel" data-panel="rail-all" aria-expanded="false" aria-controls="rail-tree">All steps<\/button><\/div>/,
+    /<div class="rail-phone"><span>About you · 2 of 6<\/span><button type="button" class="btn secondary" data-action="toggle-panel" data-panel="rail-all" aria-expanded="false" aria-controls="rail-tree">All steps<\/button><\/div>/,
   );
   const open = intakeScreen(v2State({ formSubstep: "about.address", openPanels: ["rail-all"] }));
   assert.match(open, /<ol id="rail-tree" class="rail-tree is-open">/);
@@ -788,12 +790,12 @@ test("the progress bar counts visible sub-steps", () => {
   const draftAnswers = sample();
   const count = visibleSubsteps(draftAnswers, cardsFor(draftAnswers, [])).length;
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
-  assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="5"[^>]*></progress><p>Part 5 of ${count}</p>`));
+  assert.match(html, new RegExp(`<progress class="rail-bar" max="${count}" value="6"[^>]*></progress><p>Part 6 of ${count}</p>`));
   // A married client has one more part.
   const married = makeSampleAnswers({ married: true });
   const more = visibleSubsteps(married, cardsFor(married, [])).length;
   assert.equal(more, count + 1);
-  assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="5"`));
+  assert.match(intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: married })), new RegExp(`max="${more}" value="6"`));
 });
 
 test("the rail counts a revealed invalid answer on its sub-step and its step", () => {
@@ -821,10 +823,10 @@ test("a Documents sub-step with a Needed card still Not done reads Needs documen
 });
 
 test("Needs an answer shows on the current sub-step only once it was visited", () => {
-  const fresh = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {} }));
+  const fresh = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: { ...CONSENT_14446 } }));
   assert.doesNotMatch(fresh, /Needs an answer/);
   assert.doesNotMatch(fresh, /is-missing/);
-  const again = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: {}, visitedSubsteps: ["about.you"] }));
+  const again = intakeScreen(v2State({ formSubstep: "about.you", draftAnswers: { ...CONSENT_14446 }, visitedSubsteps: ["about.you"] }));
   assert.match(again, /<p id="field-client-tp_first_name-note" class="q-note is-missing" aria-live="polite">Needs an answer<\/p>/);
   // Every rendered question is a data-q wrapper (the page's renderedIds), and only this sub-step's.
   for (const id of ["tp_first_name", "tp_dob", "tp_phone", "email"]) assert.match(again, new RegExp(`data-q="${id}"`));
@@ -855,7 +857,7 @@ test("show-if: the spouse questions render only for a married client", () => {
   assert.match(married, /data-q="sp_first_name"/);
   const single = intakeScreen(v2State({ formSubstep: "about.spouse" }));
   assert.doesNotMatch(single, /data-q="sp_first_name"/);
-  assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(single, /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
 });
 
 test("a widowed client's spouse sub-step reads Your late spouse, and follows the year (add-widowed-spouse-rules)", () => {
@@ -871,7 +873,7 @@ test("a widowed client's spouse sub-step reads Your late spouse, and follows the
   assert.doesNotMatch(died2024, /data-q="sp_job_title"/);
   const died2015 = intakeScreen(v2State({ formSubstep: "about.spouse", draftAnswers: widowed("2015") }));
   assert.doesNotMatch(died2015, /data-q="sp_first_name"/);
-  assert.match(died2015, /<form id="intake-v2-form" novalidate data-substep="about\.situation">/);
+  assert.match(died2015, /<form id="intake-v2-form" novalidate data-substep="about\.sign">/);
 });
 
 test("a lead line replaces the section intro; a section's intro shows on its first sub-step only", () => {
@@ -1156,7 +1158,7 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   assert.ok(intro >= 0 && intro < tools && tools < fold && fold < start && start < end, "the order");
   assert.equal(
     html.slice(intro, tools),
-    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 13614-C made from your answers.</p></div>',
+    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 13614-C or Form 14446 made from your answers.</p></div>',
   );
   assert.equal(
     html.slice(fold, start),
@@ -1193,6 +1195,28 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   // Same-day: the bring list instead of the cards.
   const sameDay = form({ formSubstep: "review.summary", draftAnswers: { ...sample(), service: "same_day" } });
   assert.match(sameDay.slice(sameDay.indexOf("summary-print"), sameDay.indexOf("form-actions")), /<ul class="bring-list">/);
+});
+
+test("the summary offers the draft Form 14446 in English and 繁體, never 简体 (add-form-14446-consent)", () => {
+  const summary = (lang) => intakeScreen(v2State({ formSubstep: "review.summary", visitedSubsteps: ["review.check"], lang }));
+  const en = summary("en");
+  assert.match(en, /data-action="view-draft" data-draft="14446" data-form="en"/);
+  assert.match(en, /data-draft="14446" data-form="zh-t"/);
+  assert.doesNotMatch(en, /data-draft="14446" data-form="zh-s"/);
+  assert.match(en, /view and download a draft Form 13614-C or Form 14446 made from your answers/);
+  // The spec's order: Print, then View Draft 13614-C, then View Draft Form 14446.
+  const at = (pattern) => en.search(pattern);
+  assert.ok(at(/data-action="print-summary"/) < at(/data-action="view-draft"(?![^>]*data-draft="14446")/), "Print before the 13614-C");
+  assert.ok(at(/data-action="view-draft"(?![^>]*data-draft="14446")/) < at(/data-draft="14446"/), "the 13614-C before the 14446");
+  const hans = summary("zh-Hans");
+  assert.match(hans, /data-draft="14446" data-form="zh-t"/);
+  assert.doesNotMatch(hans, /data-draft="14446" data-form="zh-s"/);
+  // The primary button names the form it opens, 繁體, in the screen's own script.
+  const primary = (html, form) => new RegExp(`<button[^>]*class="btn secondary"[^>]*data-draft="14446" data-form="${form}"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? "";
+  assert.ok(primary(hans, "zh-t").includes(t("draft.form_zh_t", {}, "zh-Hans")), "简体 screen: 繁体中文版");
+  const hant = summary("zh-Hant");
+  assert.ok(primary(hant, "zh-t").includes(t("draft.form_zh_t", {}, "zh-Hant")), "繁體 screen: 繁體中文版");
+  assert.doesNotMatch(primary(en, "en"), /繁/);
 });
 
 test("review.summary: a section folds from its heading, and Expand or Collapse all sets them all", () => {
@@ -1508,4 +1532,82 @@ test("the office's document card asks the question the client saw", () => {
   const married = { ...makeSampleAnswers({ married: true }), on_visa: ["me"] };
   const theirs = cardsFor(married, []).find((card) => card.slotId === "visa.tp");
   assert.match(docCard(theirs, { links: false, office: true, answers: married }), /Asked by: Who was in the U\.S\. on a visa in 2025\?/);
+});
+
+test("the 14446 gate locks the rail and Continue until the client consents (add-form-14446-consent)", () => {
+  const { vc_agree: _a, ...unticked } = makeSampleAnswers();
+  const locked = intakeScreen(v2State({ formSubstep: "before.virtual", draftAnswers: unticked }));
+  assert.match(locked, /<h1>Virtual VITA consent \(Form 14446\)<\/h1>/);
+  assert.match(locked, /We need this consent to prepare your return\. If you&#39;d rather not give it, please call PCDC at 215-922-6156\./);
+  assert.match(locked, /<button type="submit" class="btn primary" aria-describedby="consent-blocked" disabled>/);
+  assert.doesNotMatch(locked, /data-action="go-substep" data-substep="about\./);
+  assert.match(locked, /data-step-id="about"[^>]*>[\s\S]*?aria-disabled="true"/);
+  // Locked spans keep data-substep: the app compares them with the visible sub-steps.
+  assert.match(locked, /<span class="rail-sublink is-locked" data-substep="about\.you" aria-disabled="true">/);
+  const atAddress = intakeScreen(v2State({ formSubstep: "about.address", draftAnswers: unticked }));
+  assert.match(atAddress, /<h1>Virtual VITA consent \(Form 14446\)<\/h1>/);
+  const fromSummary = intakeScreen(v2State({ formSubstep: "before.virtual", returnToSummary: true, draftAnswers: unticked }));
+  assert.match(fromSummary, /id="consent-blocked"/);
+  assert.match(fromSummary, /<button type="submit" class="btn primary" aria-describedby="consent-blocked" disabled>/);
+  assert.doesNotMatch(fromSummary, /data-action="back-to-summary"/);
+  const open = intakeScreen(v2State({ formSubstep: "before.virtual" }));
+  assert.doesNotMatch(open, /consent-blocked/);
+  assert.match(open, /data-action="go-substep" data-substep="about\.you"/);
+});
+
+test("1.5 shows the details Form 14446 will print, the spouse's under J (add-form-14446-consent)", () => {
+  const single = intakeScreen(v2State({ formSubstep: "about.sign" }));
+  assert.match(single, /<h1>Sign Form 14446<\/h1>/);
+  assert.match(single, /class="sign-details"/);
+  const sample = makeSampleAnswers();
+  assert.match(single, new RegExp(`${sample.tp_first_name} ${sample.tp_last_name}`));
+  assert.doesNotMatch(single, /data-q="vc_sp_signature"/);
+  assert.doesNotMatch(single, /your spouse signs too/);
+  const married = intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: makeSampleAnswers({ married: true }) }));
+  assert.match(married, /If you file a joint return, your spouse signs too\./);
+  assert.match(married, /data-q="vc_sp_signature"/);
+  assert.match(married, /data-q="vc_sp_email"/);
+});
+
+test("1.5's details name a late spouse, and print the dates and phones as the summary does (add-form-14446-consent)", () => {
+  const answers = { ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025", tp_phone: "2155550101" };
+  const html = intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: answers }));
+  assert.match(html, /<h2 class="q-heading">Your late spouse<\/h2>/);
+  assert.doesNotMatch(html, /<h2 class="q-heading">Your spouse<\/h2>/);
+  const phone = formatAnswer(findQuestion(2, "tp_phone"), "2155550101", { lang: "en" });
+  assert.match(html, new RegExp(`<dt>Telephone number</dt><dd>${reEsc(phone)}</dd>`));
+  const dob = formatAnswer(findQuestion(2, "tp_dob"), answers.tp_dob, { lang: "en" });
+  assert.match(html, new RegExp(`<dt>Date of birth</dt><dd>${reEsc(dob)}</dd>`));
+});
+
+test("1.5 shows only the details the draft prints: a late spouse has no phone or email (add-form-14446-consent)", () => {
+  const spouseBlock = (html) => /<h2 class="q-heading">Your (?:late )?spouse<\/h2>[\s\S]*?<\/dl>/.exec(html)?.[0] ?? "";
+  const stale = { sp_phone: "2155550150", vc_sp_email: "wei@example.com" };
+  const widowed = { ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025", ...stale };
+  const late = spouseBlock(intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: widowed })));
+  assert.match(late, /Your late spouse/);
+  assert.match(late, new RegExp(`${reEsc(widowed.sp_first_name)} ${reEsc(widowed.sp_last_name)}`));
+  const dob = formatAnswer(findQuestion(2, "sp_dob"), widowed.sp_dob, { lang: "en" });
+  assert.match(late, new RegExp(`<dt>Date of birth</dt><dd>${reEsc(dob)}</dd>`));
+  assert.doesNotMatch(late, /Telephone number/);
+  assert.doesNotMatch(late, /Email address/);
+  assert.doesNotMatch(late, /2155550150|\(215\) 555-0150|wei@example\.com/);
+  const marriedAnswers = { ...makeSampleAnswers({ married: true }), ...stale };
+  const married = spouseBlock(intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: marriedAnswers })));
+  assert.match(married, /<dt>Telephone number<\/dt><dd>[^<]*555[^<]*<\/dd>/);
+  assert.match(married, /<dt>Email address<\/dt><dd>wei@example\.com<\/dd>/);
+});
+
+test("1.5's spouse-signature tip follows the marital status (add-form-14446-consent)", () => {
+  const sign = (answers) => intakeScreen(v2State({ formSubstep: "about.sign", draftAnswers: answers }));
+  const marriedTip = escText("Leave this empty if you won't file a joint return.");
+  const lateTip = escText("Type your late spouse's full name. You sign for them because a joint return is possible for 2025.");
+  const married = sign(makeSampleAnswers({ married: true }));
+  assert.ok(married.includes(marriedTip), "married: the leave-empty tip");
+  assert.ok(!married.includes(lateTip));
+  const widowed = sign({ ...makeSampleAnswers({ married: true }), marital_status: "widowed", spouse_death_year: "2025" });
+  assert.ok(widowed.includes(lateTip), "widowed 2025: the late-spouse tip");
+  assert.ok(!widowed.includes(marriedTip));
+  const single = sign(makeSampleAnswers());
+  assert.ok(!single.includes(marriedTip) && !single.includes(lateTip), "never married: neither tip");
 });

@@ -260,10 +260,10 @@ export function draftFieldNames(form) {
 // ---------------------------------------------------------------------------
 
 /** One line, no control characters, single spaces. */
-const oneLine = (value) => String(value ?? "").replace(/[\s\p{Cc}]+/gu, " ").trim();
+export const oneLine = (value) => String(value ?? "").replace(/[\s\p{Cc}]+/gu, " ").trim();
 
 // Split, never new Date(…), which shifts a date by the time zone.
-function usDate(value) {
+export function usDate(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ""));
   return m ? `${m[2]}/${m[3]}/${m[1]}` : oneLine(value);
 }
@@ -274,17 +274,22 @@ const initial = (value) => {
 };
 
 const PHONE = findQuestion(2, "tp_phone");
-const phone = (value) => oneLine(formatAnswer(PHONE, String(value ?? "")) ?? value);
+export const phone = (value) => oneLine(formatAnswer(PHONE, String(value ?? "")) ?? value);
 
 const write = (value, how) =>
   how === "date" ? usDate(value) : how === "initial" ? initial(value) : how === "phone" ? phone(value) : oneLine(value);
 
 /** "YYYY-MM-DD" for a Date in its own time zone, or the string given. */
-function isoDay(today) {
+export function isoDay(today) {
   if (typeof today === "string") return today;
   const day = today instanceof Date ? today : new Date();
   const pad = (n) => String(n).padStart(2, "0");
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
+/** The DRAFT line the builder stamps on each page: shared with the draft Form 14446. */
+export function draftStamp(reference, today) {
+  return ["DRAFT – prepared from online answers", usDate(isoDay(today)), oneLine(reference)].filter(Boolean).join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -446,8 +451,7 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
   });
 
   const comments = commentsFor(visible, members, FORM_LANG[form]);
-  const day = usDate(isoDay(today));
-  const stamp = ["DRAFT – prepared from online answers", day, oneLine(reference)].filter(Boolean).join(", ");
+  const stamp = draftStamp(reference, today);
   const suffix = form === "en" ? "" : `-${form}`;
   const fileName = `13614-C-draft${reference ? `-${oneLine(reference)}` : ""}${suffix}.pdf`;
   const lang = FORM_LANG[form];

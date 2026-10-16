@@ -193,6 +193,10 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
         assert.equal(contact[0].phone, `215555010${index + 1}`);
         assert.deepEqual(contact[0].best_contact_time, ["weekday_evening"]);
         assert.equal(contact[0].best_contact_note, "Fictional sample; call any weekday evening.");
+        assert.deepEqual(row.answers.vc_agree, ["yes"], row.fixture_key);
+        assert.equal(row.answers.vc_review, "yes", row.fixture_key);
+        assert.equal(row.answers.vc_tp_signature, `${row.answers.tp_first_name} ${row.answers.tp_last_name}`, row.fixture_key);
+        assert.equal(row.answers.vc_tp_date, "2026-02-02", row.fixture_key);
         assert.deepEqual(await missingOf(f, row), [], `${row.fixture_key} is complete`);
       }
     });

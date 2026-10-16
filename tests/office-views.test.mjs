@@ -790,3 +790,9 @@ test("a conflict on a saved office draft shows the reconcile panel and holds the
   assert.doesNotMatch(calm, /conflict-panel/);
   assert.match(docCardOf(subOf(calm, "documents"), "w2.household"), /data-status="later">/);
 });
+
+test("Add a case is never locked by the 14446 gate (add-form-14446-consent)", () => {
+  const html = addV2({ draftAnswers: {}, openAddSubsteps: ["about.you"] });
+  assert.match(subOf(html, "about.you"), /id="field-office-tp_first_name"/);
+  assert.match(html, /data-substep="before\.virtual"/);
+});

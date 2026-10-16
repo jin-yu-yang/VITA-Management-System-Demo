@@ -27,6 +27,7 @@ import {
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
+import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
 import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
@@ -1079,8 +1080,9 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
-  async function viewDraft(form, by) {
-    if (!Object.hasOwn(FORM_FILES, form)) return;
+  async function viewDraft(form, by, kind = "13614c") {
+    const files = kind === "14446" ? FORM_14446_FILES : FORM_FILES;
+    if (!Object.hasOwn(files, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
     // An earlier press's link goes: this press makes a new draft.
@@ -1098,11 +1100,12 @@ if (!config) {
       // The 繁體 draft's lines need the map, whatever the screen language;
       // loading it changes nothing on screen. A failure, or a load still
       // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
-      if (form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
-      const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
+      // The 14446 has no generated lines of its own, so it never needs the map.
+      if (kind !== "14446" && form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
+      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, { form, reference, today });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
-        fetchBytes(FORM_FILES[form]),
+        fetchBytes(files[form]),
         fieldsNeedFont(fields) ? Promise.all(draftFontsFor(form).files.map(fetchCheckedFont)) : [],
       ]);
       const bytes = await buildDraftPdf({
@@ -1432,7 +1435,7 @@ if (!config) {
         window.print();
         break;
       case "view-draft":
-        await viewDraft(target.dataset.form ?? "en", by);
+        await viewDraft(target.dataset.form ?? "en", by, target.dataset.draft ?? "13614c");
         break;
       case "toggle-senior":
         controller.editAnswers({

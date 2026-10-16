@@ -560,8 +560,8 @@ test("the real catalogue has the ten steps of the redesign", () => {
   assert.deepEqual(
     COMMITTED.steps.map((step) => [step.id, step.n, step.title.en, step.sections.map((s) => s.n)]),
     [
-      ["before", 1, "Before you start", [0]],
-      ["about", 2, "About you", [1, 2, 3, 4, 5, 8]],
+      ["before", 1, "Before you start", [0, 15]],
+      ["about", 2, "About you", [1, 2, 3, 4, 5, 8, 16]],
       ["household", 3, "Household", [6]],
       ["income", 4, "Income", [9]],
       ["expenses", 5, "Expenses & life events", [10, 11]],
@@ -584,7 +584,7 @@ test("the real catalogue has the ten steps of the redesign", () => {
 
 test("the real sub-steps carry their kind, cards and lead lines", () => {
   const subs = COMMITTED.steps.flatMap((s) => s.substeps);
-  assert.equal(subs.length, 32);
+  assert.equal(subs.length, 34);
   const kinds = (id) => subs.find((x) => x.id === id).kind;
   assert.equal(kinds("income.wages"), "questions");
   assert.equal(kinds("review.summary"), "review");
@@ -653,7 +653,8 @@ test("the real catalogue's unmarried wording, leads and intro", () => {
   assert.equal(section6.introUnmarried.general.zh, "请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。");
   assert.equal(section6.introUnmarried.senior.en, section6.intro.senior.en.replace(" (not your spouse)", ""));
   assert.equal(section6.introUnmarried.senior.zh, section6.intro.senior.zh.replace("（您爱人除外）", ""));
-  assert.equal(COMMITTED.steps.flatMap((s) => s.sections).filter((x) => x.introUnmarried).length, 1);
+  // Section 6 and, since add-form-14446-consent, Section 16.
+  assert.deepEqual(COMMITTED.steps.flatMap((s) => s.sections).filter((x) => x.introUnmarried).map((x) => x.n), [16, 6]);
 });
 
 test("the real drafts: every Tip that mentions uploading points to the Documents step", () => {
@@ -743,6 +744,10 @@ test("every real question states required, and the optional set is the agreed li
       "gcf_consent",
       "gcf_tp_date",
       "gcf_sp_date",
+      "vc_tp_date",
+      "vc_sp_signature",
+      "vc_sp_date",
+      "vc_sp_email",
       "inc_wages_job_count",
       "refund_method_other",
       "inc_other_desc",
@@ -973,4 +978,31 @@ test("the real catalogue's spouse questions follow the two rules (add-widowed-sp
   });
   const year = findQuestion(COMMITTED, "spouse_death_year");
   assert.deepEqual([year.min, year.max], [1900, TAX_YEAR]);
+});
+
+test("Form 14446: the consent in 'Before you start' and the signatures in 'About you' (add-form-14446-consent)", () => {
+  const sub = (id) => COMMITTED.steps.flatMap((s) => s.substeps).find((s) => s.id === id);
+  const before = COMMITTED.steps.find((s) => s.id === "before");
+  const about = COMMITTED.steps.find((s) => s.id === "about");
+  assert.deepEqual(before.substeps.map((s) => s.id), ["before.ready", "before.service", "before.language", "before.virtual"]);
+  assert.deepEqual(sub("before.virtual").questions, ["vc_agree"]);
+  assert.deepEqual(sub("before.virtual").title.general, { en: "Virtual VITA consent (Form 14446)", zh: "虚拟 VITA 纳税人同意书" });
+  assert.equal(about.substeps.map((s) => s.id).indexOf("about.sign"), about.substeps.map((s) => s.id).indexOf("about.spouse") + 1);
+  assert.deepEqual(sub("about.sign").questions, ["vc_review", "vc_tp_signature", "vc_tp_date", "vc_sp_signature", "vc_sp_date", "vc_sp_email"]);
+  assert.deepEqual(sub("about.sign").title.general, { en: "Sign Form 14446", zh: "签署 14446 表" });
+  const q = (id) => findQuestion(COMMITTED, id);
+  assert.deepEqual([q("vc_agree").type, q("vc_agree").required, q("vc_agree").options.map((o) => o.value)], ["multi", true, ["yes"]]);
+  assert.deepEqual([q("vc_review").type, q("vc_review").required, q("vc_review").options.map((o) => o.value)], ["choice", true, ["yes", "no"]]);
+  assert.deepEqual([q("vc_tp_signature").type, q("vc_tp_signature").required], ["signature", true]);
+  for (const id of ["vc_tp_date", "vc_sp_signature", "vc_sp_date", "vc_sp_email"]) assert.equal(q(id).required, false, id);
+  assert.deepEqual(q("vc_tp_date").showIf, [{ field: "vc_tp_signature", op: "filled" }]);
+  assert.deepEqual(q("vc_sp_signature").showIf, COMMITTED.rules.joint_possible);
+  assert.deepEqual(q("vc_sp_date").showIf, [...COMMITTED.rules.joint_possible, { field: "vc_sp_signature", op: "filled" }]);
+  assert.deepEqual(q("vc_sp_email").showIf, [{ field: "marital_status", op: "eq", value: "married" }]);
+  assert.equal(q("vc_sp_email").type, "email");
+  const section16 = about.sections.find((s) => s.n === 16);
+  assert.match(section16.intro.general.en, /your spouse signs too/);
+  assert.ok(section16.introUnmarried?.general?.en, "Section 16 has a not-married intro");
+  assert.doesNotMatch(section16.introUnmarried.general.en, /spouse/i);
+  assert.ok(section16.introUnmarried.senior?.zh, "and the senior draft has one too");
 });

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 import {
   createBrowserFixture,
   loginTestUser,
@@ -269,12 +270,123 @@ async function startApplication(page) {
 }
 
 /**
+ * The Form 14446 consent at 0.4 (openspec change add-form-14446-consent):
+ * until it is ticked, every place after "Before you start" is locked. Jump to
+ * 0.4, tick the box, and wait until About you is a link on the rail again.
+ * Found by ids and data attributes only, so it works in every language.
+ */
+async function consent14446(page) {
+  await railJump(page, "before.virtual");
+  await tickBox(page, "field-client-vc_agree-yes");
+  await waitFor(
+    page,
+    "the rail to unlock About you",
+    () =>
+      Boolean(document.querySelector('.rail-step[data-step-id="about"] .rail-link[data-action="go-substep"]')) &&
+      !document.querySelector(".rail-tree .is-locked"),
+    undefined,
+    RENDER_MS,
+  );
+}
+
+/**
+ * Sign Form 14446 at 1.5: "I consent" to the IRS review, the client's typed
+ * name as the signature, then Tab. The date fills itself with today (in the
+ * browser's own calendar) on the first keystroke, so once the signature is
+ * left its box appears already filled. `name` defaults to the name the page
+ * shows it will print. Jumps there by the rail unless the form is already
+ * on 1.5. Returns the signature typed.
+ */
+async function sign14446(page, name) {
+  const here = await page.evaluate(() => document.querySelector("#intake-v2-form")?.dataset.substep ?? null);
+  if (here !== "about.sign") await railJump(page, "about.sign");
+  await chooseAnswer(page, "vc_review", "yes");
+  const signature =
+    name ?? (await page.evaluate(() => document.querySelector(".sign-details dd")?.textContent.trim() ?? ""));
+  assert.ok(signature, "no name to sign Form 14446 with");
+  await waitForQuiet(page);
+  await page.locator("#field-client-vc_tp_signature").fill(signature);
+  await page.keyboard.press("Tab");
+  await waitFor(
+    page,
+    "the Form 14446 date to fill itself with today",
+    () => {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const part = (which) => document.querySelector(`#field-client-vc_tp_date-${which}`)?.value ?? null;
+      return (
+        part("year") === String(now.getFullYear()) &&
+        part("month") === pad(now.getMonth() + 1) &&
+        part("day") === pad(now.getDate())
+      );
+    },
+    undefined,
+    RENDER_MS,
+  );
+  return signature;
+}
+
+/** A draft PDF's bytes, read in its own tab once it has loaded there. */
+async function draftBytes(popup) {
+  await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+  const base64 = await popup.evaluate(async () => {
+    const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    return btoa(binary);
+  });
+  return Buffer.from(base64, "base64");
+}
+
+/**
+ * The page count of a flattened draft PDF, and the Latin text one page draws:
+ * every `<hex> Tj` string in its content and in the flattened field
+ * appearances it holds. A box filled in Helvetica is drawn that way; text in
+ * a downloaded font (Chinese) is drawn as glyph ids and is not readable here.
+ */
+async function draftPageText(bytes, index) {
+  const doc = await PDFDocument.load(bytes);
+  const seen = new Set();
+  const streams = [];
+  const walk = (value) => {
+    if (value instanceof PDFRef) {
+      if (seen.has(value.toString())) return;
+      seen.add(value.toString());
+      walk(doc.context.lookup(value));
+    } else if (value instanceof PDFRawStream) {
+      try {
+        streams.push(Buffer.from(decodePDFRawStream(value).decode()).toString("latin1"));
+      } catch {
+        // An image or a font file: no text to read.
+      }
+      walk(value.dict);
+    } else if (value instanceof PDFDict) {
+      for (const [, entry] of value.entries()) walk(entry);
+    } else if (value instanceof PDFArray) {
+      for (const entry of value.asArray()) walk(entry);
+    }
+  };
+  const page = doc.getPage(index).node;
+  walk(page.get(PDFName.of("Contents")));
+  walk(page.get(PDFName.of("Resources")));
+  return {
+    pages: doc.getPageCount(),
+    strings: streams.flatMap((text) =>
+      [...text.matchAll(/<([0-9A-Fa-f]*)>\s*Tj/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")),
+    ),
+  };
+}
+
+/**
  * The version-2 walk the story's own application takes: Fill fictional
- * details, then the rail. On the way it becomes married (a show-if: the
+ * details, the Form 14446 consent and signature, then the rail. On the way it
+ * becomes married (a show-if: the
  * spouse's part joins the rail, and a second Fill answers it) and the wording
  * flips to Senior and back. It reaches review.submit by Continue on 9.1 and
  * 9.2 (the gate), with the box ticked; the Submit is the caller's, and
- * `atCheck` runs on an empty review.check.
+ * `atCheck` runs on an empty review.check. The fill never consents or signs,
+ * so 0.4 and 1.5 are done by hand, right after it.
  */
 async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
   await clickAction(page, "continue-intake");
@@ -287,6 +399,8 @@ async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
     undefined,
     RENDER_MS,
   );
+  await consent14446(page);
+  await sign14446(page);
   await railJump(page, "about.marital");
   assert.equal(
     await page.locator('.rail-sublink[data-substep="about.spouse"]').count(),
@@ -370,16 +484,19 @@ const cardRow = (fixture, caseId, slotId) =>
   );
 
 // Every sub-step the fictional example shows, in order: drop-off, never
-// married, one child, wages and a direct deposit. The walk presses Continue
-// once on each up to review.check and must arrive at the next (the gate holds
-// the last two until the walk's gap is fixed); this is also the rail's list.
+// married, one child, wages and a direct deposit, with Form 14446's consent
+// (0.4) and signature (1.5). The walk presses Continue once on each up to
+// review.check and must arrive at the next (the gate holds the last two until
+// the walk's gap is fixed); this is also the rail's list.
 const V2_WALK = Object.freeze([
   "before.ready",
   "before.service",
   "before.language",
+  "before.virtual",
   "about.you",
   "about.address",
   "about.marital",
+  "about.sign",
   "about.situation",
   "about.irs",
   "household.members",
@@ -895,10 +1012,12 @@ async function runPermutation(t, roles) {
       assert.deepEqual(
         await staff.evaluate(() =>
           [...document.querySelectorAll('#case-panel-intake [data-action="view-draft"]')].map(
-            (button) => button.dataset.form,
+            (button) => `${button.dataset.draft ?? "13614-C"} ${button.dataset.form}`,
           ),
         ),
-        ["en", "zh-s", "zh-t"],
+        // The draft 13614-C in three languages, then the draft Form 14446 in
+        // PCDC's two (add-form-14446-consent).
+        ["13614-C en", "13614-C zh-s", "13614-C zh-t", "14446 en", "14446 zh-t"],
       );
       // The draft opens as a PDF in its own tab. Chrome only, as in the
       // version-2 phase: Firefox may download a blob PDF instead of opening
@@ -912,7 +1031,9 @@ async function runPermutation(t, roles) {
         });
         await waitForQuiet(staff);
         const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
-        await staff.locator('#case-panel-intake [data-action="view-draft"][data-form="en"]').click({ timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
         const popup = await opened;
         await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
         staffDraft = await popup.evaluate(async () => {
@@ -1759,9 +1880,11 @@ async function runPermutation(t, roles) {
         await clickAction(clientB.page, "continue-intake");
         await waitForSubstep(clientB.page, "before.ready");
         await clickAction(clientB.page, "fill-fictional");
-        // The recorded first save, then a visits save, both online.
+        // The recorded first save, then a visits save, both online. The
+        // Form 14446 consent opens the steps after "Before you start".
         await clickContinue(clientB.page);
         await waitForSubstep(clientB.page, "before.service");
+        await consent14446(clientB.page);
         await railJump(clientB.page, "about.address");
         await waitForQuiet(clientB.page);
         const savedOnce = await caseById(fixture, own.id);
@@ -1827,6 +1950,7 @@ async function runPermutation(t, roles) {
       await clickAction(client, "fill-fictional");
       await clickContinue(client);
       await waitForSubstep(client, "before.service");
+      await consent14446(client);
       await railJump(client, "about.address");
       await waitForQuiet(client);
       await client.locator("#field-client-addr_city").fill(MINE_CITY);
@@ -1883,6 +2007,7 @@ async function runPermutation(t, roles) {
       await clickAction(client, "fill-fictional");
       await clickContinue(client);
       await waitForSubstep(client, "before.service");
+      await consent14446(client);
       await railJump(client, "about.address");
 
       // Save and exit, sign out, come back as the same applicant, and open
@@ -2302,6 +2427,31 @@ async function runPermutation(t, roles) {
       );
 
       await clickAction(staff, "fill-assisted-intake");
+      // The fill never consents or signs Form 14446 (add-form-14446-consent):
+      // 0.4 and 1.5 are the two parts it leaves, and Add a case is never
+      // locked. The office ticks and signs them with the client.
+      await waitFor(
+        staff,
+        "the fill to leave only the Form 14446 parts",
+        () =>
+          document.querySelector("#add-case-count")?.textContent.trim() === "2 parts still need answers" &&
+          document.querySelector("#add-sub-before-virtual-status")?.textContent.trim() === "Needs answers" &&
+          document.querySelector("#add-sub-about-sign-status")?.textContent.trim() === "Needs answers",
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(await staff.locator("#add-case-v2-form .is-locked").count(), 0, "Add a case shows a locked part");
+      await openPart("about.you");
+      const firstName = await box("tp_first_name").inputValue();
+      assert.ok(firstName, "Fill fictional details left the first name blank");
+      const officeSignature = `${firstName} ${await box("tp_last_name").inputValue()}`;
+      await openPart("before.virtual");
+      await tickBox(staff, "field-office-vc_agree-yes");
+      await openPart("about.sign");
+      await chooseAnswer(staff, "vc_review", "yes", "office");
+      await waitForQuiet(staff);
+      await box("vc_tp_signature").fill(officeSignature);
+      await staff.keyboard.press("Tab");
       await waitFor(
         staff,
         "every part to be answered",
@@ -2311,9 +2461,6 @@ async function runPermutation(t, roles) {
       );
       await waitForQuiet(staff);
       await shootWithoutSidebar(staff, "add-case-v2");
-      await openPart("about.you");
-      const firstName = await box("tp_first_name").inputValue();
-      assert.ok(firstName, "Fill fictional details left the first name blank");
 
       // The leave check: every way off the page asks first, and Keep
       // editing keeps every answer. No case exists yet.
@@ -2368,6 +2515,11 @@ async function runPermutation(t, roles) {
       assert.equal(Number(assisted.intake_version), 2);
       assert.equal(assisted.stage, "draft");
       assert.equal(assisted.answers.tp_first_name, firstName, "the draft's answers were not saved");
+      assert.deepEqual(
+        [assisted.answers.vc_agree, assisted.answers.vc_review, assisted.answers.vc_tp_signature],
+        [["yes"], "yes", officeSignature],
+        "the office's Form 14446 consent and signature were not saved",
+      );
       assert.deepEqual(assisted.intake_visited, [], "the office sent visits");
       const onAssisted = { caseId: assisted.id };
 
@@ -3020,6 +3172,8 @@ async function runPermutation(t, roles) {
         // The gate: 9.2 and 9.3 need every alert fixed, and the walk keeps a gap
         // (the city) for review.check, so Continue walks up to 9.1.
         const WALKED = V2_WALK.slice(0, V2_WALK.indexOf("review.check") + 1);
+        // The Form 14446 signature typed at 1.5, for the checks after it.
+        let walkSignature = null;
         for (let at = 0; at < WALKED.length; at += 1) {
           const id = WALKED[at];
           const next = WALKED[at + 1] ?? null;
@@ -3043,7 +3197,7 @@ async function runPermutation(t, roles) {
             assert.deepEqual(await header(), {
               overline: "BEFORE YOU START",
               title: "Before you start",
-              count: "1 of 3",
+              count: "1 of 4",
             });
             assert.deepEqual(await railOpen("about"), { expanded: "false", hidden: true });
             // Another step's toggle opens it where it is: no move, no save.
@@ -3067,15 +3221,62 @@ async function runPermutation(t, roles) {
               text: "Done",
             });
             assert.equal(await box("service-drop_off").isChecked(), true);
-            // The fill is saved: the rail now lists exactly the walk, less
-            // 9.3, which isn't earned yet.
+            // The fill is saved: the rail now lists exactly the walk (the
+            // locked sub-steps too), less 9.2 and 9.3: the fill never
+            // consents to or signs Form 14446, so the review gate is shut.
             assert.deepEqual(
               await page.evaluate(() =>
                 [...document.querySelectorAll(".rail-sublink")].map((link) => link.dataset.substep),
               ),
-              V2_WALK.filter((id) => id !== "review.submit"),
+              V2_WALK.filter((id) => id !== "review.summary" && id !== "review.submit"),
               "the rail does not list the sub-steps this example shows",
             );
+          }
+
+          if (id === "before.virtual") {
+            // The Form 14446 gate (add-form-14446-consent): until 0.4 is
+            // ticked, every step after "Before you start" is locked on the
+            // rail (no link), and Continue waits, with a line saying why.
+            const shut = await page.evaluate(() => ({
+              aboutHead: document.querySelectorAll('.rail-step[data-step-id="about"] .rail-link.is-locked').length,
+              aboutLinks: document.querySelectorAll('.rail-step[data-step-id="about"] [data-action="go-substep"]').length,
+              lockedSteps: [...document.querySelectorAll(".rail-step")]
+                .filter((step) => step.querySelector(".rail-link.is-locked"))
+                .map((step) => step.dataset.stepId),
+              links: [...document.querySelectorAll('.rail-tree [data-action="go-substep"]')].map(
+                (link) => link.dataset.substep,
+              ),
+            }));
+            assert.equal(shut.aboutHead, 1, "About you is not locked before the consent");
+            assert.equal(shut.aboutLinks, 0, "About you has a link before the consent");
+            assert.deepEqual(
+              shut.lockedSteps,
+              [...new Set(V2_WALK.map(stepOf))].filter((stepId) => stepId !== "before"),
+              "the steps after Before you start are not all locked",
+            );
+            assert.ok(
+              shut.links.every((substep) => stepOf(substep) === "before"),
+              `a link past Before you start before the consent: ${JSON.stringify(shut.links)}`,
+            );
+            assert.equal(await continueButton.isDisabled(), true, "Continue was on before the consent");
+            assert.equal(await continueButton.getAttribute("aria-describedby"), "consent-blocked");
+            assert.equal(
+              await page.locator("#consent-blocked").innerText(),
+              "We need this consent to prepare your return. If you'd rather not give it, please call PCDC at 215-922-6156.",
+            );
+            assert.equal(await box("vc_agree-yes").isChecked(), false, "Fill fictional details gave the consent");
+            await tickBox(page, "field-client-vc_agree-yes");
+            await waitFor(
+              page,
+              "the rail to unlock after the consent",
+              () =>
+                !document.querySelector(".rail-tree .is-locked") &&
+                Boolean(document.querySelector('.rail-step[data-step-id="about"] .rail-link[data-action="go-substep"]')),
+              undefined,
+              RENDER_MS,
+            );
+            assert.equal(await continueButton.isDisabled(), false, "Continue stayed off after the consent");
+            assert.equal(await page.locator("#consent-blocked").count(), 0, "the consent line outlived the consent");
           }
 
           if (id === "about.you") {
@@ -3137,7 +3338,7 @@ async function runPermutation(t, roles) {
             assert.deepEqual(await header(), {
               overline: "STEP 1 OF 9 · ABOUT YOU",
               title: "Mailing address",
-              count: "2 of 5",
+              count: "2 of 6",
             });
             assert.equal(await rail("about.spouse"), null, "a never-married client's rail lists the spouse");
             // A gap left on purpose: review.check lists it later.
@@ -3191,6 +3392,15 @@ async function runPermutation(t, roles) {
               RENDER_MS,
             );
             await page.setViewportSize(DESKTOP);
+          }
+
+          if (id === "about.sign") {
+            // Form 14446's signatures (add-form-14446-consent): the details it
+            // will print come first, read-only, and the date is asked only
+            // once there is a signature, which fills it with today.
+            assert.equal(await page.locator("#intake-v2-form .sign-details").count(), 1, "1.5 shows no details");
+            assert.equal(await box("vc_tp_date-year").count(), 0, "1.5 asked the date before the signature");
+            walkSignature = await sign14446(page);
           }
 
           if (id === "income.wages") {
@@ -3778,6 +3988,13 @@ async function runPermutation(t, roles) {
 
         // Married now: the wages lead and Q9.1a name the spouse again.
         await jump("income.wages");
+        // The move saved the second Fill: it kept the client's own Form
+        // 14446 consent and signature.
+        assert.deepEqual(
+          [JSON.parse((await answer("vc_agree")) ?? "null"), await answer("vc_review"), await answer("vc_tp_signature")],
+          [["yes"], "yes", walkSignature],
+          "Fill fictional details changed the client's Form 14446 answers",
+        );
         await waitFor(
           page,
           "the married wages lead",
@@ -3960,8 +4177,9 @@ async function runPermutation(t, roles) {
           const openDraft = async (form) => {
             await waitForQuiet(page);
             const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+            // The 13614-C's buttons: the Form 14446's carry data-draft.
             await page
-              .locator(`[data-action="view-draft"][data-form="${form}"]`)
+              .locator(`[data-action="view-draft"]:not([data-draft])[data-form="${form}"]`)
               .click({ timeout: CLICK_MS });
             return await opened;
           };
@@ -3999,6 +4217,38 @@ async function runPermutation(t, roles) {
           assert.ok(draft.en.size > 100 * 1024, `the English draft is only ${draft.en.size} bytes`);
           assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft fetched a font");
 
+          // The draft Form 14446 (add-form-14446-consent): PCDC's three-page
+          // form, its page 3 filled from the answers. The flattened page is
+          // read back here: in Latin letters, the printed name and the typed
+          // signature are drawn in Helvetica, so their text can be found.
+          const signedName = await answer("vc_tp_signature");
+          assert.equal(signedName, walkSignature);
+          const printedName = (
+            await Promise.all(["tp_first_name", "tp_middle_name", "tp_last_name"].map((key) => answer(key)))
+          )
+            .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+            .filter(Boolean)
+            .join(" ");
+          const open14446 = async (form) => {
+            await waitForQuiet(page);
+            const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+            await page
+              .locator(`[data-action="view-draft"][data-draft="14446"][data-form="${form}"]`)
+              .click({ timeout: CLICK_MS });
+            const tab = await opened;
+            const bytes = await draftBytes(tab);
+            await tab.close();
+            return { head: bytes.subarray(0, 5).toString("latin1"), size: bytes.length, ...(await draftPageText(bytes, 2)) };
+          };
+          before = { ...fontHits };
+          const en14446 = await open14446("en");
+          assert.equal(en14446.head, "%PDF-");
+          assert.equal(en14446.pages, 3, "the English draft 14446 is not PCDC's three pages");
+          assert.ok(en14446.strings.includes(printedName), `page 3 of the English 14446 does not print ${JSON.stringify(printedName)}: ${JSON.stringify(en14446.strings)}`);
+          assert.ok(en14446.strings.includes(signedName), `page 3 of the English 14446 does not print the signature: ${JSON.stringify(en14446.strings)}`);
+          assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft 14446 fetched a font");
+          draft.form14446 = { en: { size: en14446.size, pages: en14446.pages, page3: "printed name and signature found" } };
+
           // A Chinese first name (fictional), so the Chinese font path runs.
           await jump("about.you");
           await waitForQuiet(page);
@@ -4025,6 +4275,22 @@ async function runPermutation(t, roles) {
               `the ${form} draft fetched the wrong fonts`,
             );
           }
+
+          // The 繁體 draft 14446 with the Chinese first name: the name is
+          // drawn in the downloaded 繁體 font (so that font is fetched, which
+          // only a name needing it does), and the Latin signature is still
+          // readable on page 3.
+          before = { ...fontHits };
+          const zh14446 = await open14446("zh-t");
+          assert.equal(zh14446.head, "%PDF-");
+          assert.equal(zh14446.pages, 3, "the 繁體 draft 14446 is not PCDC's three pages");
+          assert.ok(zh14446.strings.includes(signedName), `page 3 of the 繁體 14446 does not print the signature: ${JSON.stringify(zh14446.strings)}`);
+          assert.deepEqual(
+            hitsSince(before),
+            { "NotoSansSC_400Regular.ttf": 0, "NotoSansTC_400Regular.ttf": 1, "NotoSans_400Regular.ttf": 1 },
+            "the 繁體 draft 14446 fetched the wrong fonts",
+          );
+          draft.form14446["zh-t"] = { size: zh14446.size, pages: zh14446.pages, page3: "signature found; the Chinese name drawn in the 繁體 font" };
 
           // A font whose bytes are not the pinned ones is refused.
           const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));
@@ -4173,6 +4439,10 @@ async function runPermutation(t, roles) {
         assert.equal(submitted.answers.gcf_consent, "yes");
         assert.equal(submitted.answers.gcf_tp_signature, "Mei Lin");
         assert.equal(submitted.answers.gcf_sp_signature, "Wei Lin");
+        assert.deepEqual(submitted.answers.vc_agree, ["yes"]);
+        assert.equal(submitted.answers.vc_review, "yes");
+        assert.equal(submitted.answers.vc_tp_signature, walkSignature);
+        assert.match(submitted.answers.vc_tp_date ?? "", /^\d{4}-\d{2}-\d{2}$/, "the Form 14446 date was not saved");
         const clientNumber = (
           await page
             .locator(".id-pill > div")
@@ -4215,7 +4485,7 @@ async function runPermutation(t, roles) {
           walked: V2_WALK.length,
           emailNoteHeight,
           clientNumber,
-          submitted: "consent and both signatures saved before the submit",
+          submitted: "consent and both signatures saved before the submit, with the Form 14446 consent and signature",
           openDocuments: await openSlots(),
           draft,
           secondWindowConsoleLines: againConsole,
@@ -4295,6 +4565,9 @@ async function runPermutation(t, roles) {
           say("toast.fictional_filled", {}, "zh-Hans"),
           RENDER_MS,
         );
+        // The fill never consents or signs Form 14446: 0.4 and 1.5 by hand.
+        await consent14446(page);
+        await sign14446(page);
 
         await railJump(page, "about.you");
         assert.equal(await textOf(".form-workspace .page-intro h1"), findSubstep("about.you").title.general.zh);
