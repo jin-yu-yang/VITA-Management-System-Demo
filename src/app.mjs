@@ -262,6 +262,7 @@ if (!config) {
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     showDraftLink();
+    markPressed(state);
     tickCooldown(state);
     const opened = Boolean(state.dialog) && state.dialog !== shownDialog;
     shownDialog = state.dialog ?? null;
@@ -428,6 +429,30 @@ if (!config) {
       if (field) return field;
     }
     return null;
+  }
+
+  // The pressed control (design D5), kept only for the presses that hold the
+  // buttons, and found again after every draw while the press runs. A
+  // sub-step move is never marked: the save chip says Saving.
+  const BUSY_ACTIONS = Object.freeze(["confirm-reset-fixtures", "save-office-draft", "send-office-draft"]);
+  function busyControl(control) {
+    if (!control?.dataset) return false;
+    if (control.dataset.caseAction || control.dataset.assistanceAction) return true;
+    if (control.id === "checkpoint-submit") return true;
+    return BUSY_ACTIONS.includes(control.dataset.action);
+  }
+  let pressed = null;
+  function markPressed(state) {
+    if (!state.busy && !state.officeSaving) {
+      pressed = null;
+      return;
+    }
+    if (!pressed || state.saveState === "saving") return;
+    const control = findField(pressed);
+    if (!control || control.classList.contains("is-busy")) return;
+    control.classList.add("is-busy");
+    control.setAttribute("aria-busy", "true");
+    control.insertAdjacentHTML("afterbegin", icon("spinner", "spin"));
   }
 
   // Answers whether the keyboard really landed (a disabled button refuses it).
@@ -1662,6 +1687,8 @@ if (!config) {
     const target =
       caseTarget ?? assistTarget ?? event.target.closest("[data-action]");
     if (!target) return;
+    pressed = null;
+    if (busyControl(target)) pressed = describeFocus(target);
     try {
       if (caseTarget) await runCaseAction(caseTarget, null, by);
       else if (assistTarget) await runAssistanceAction(assistTarget, null, by);
@@ -1730,6 +1757,8 @@ if (!config) {
     const by = signedInUserId();
     const shown = controller.getState().error;
     const form = event.target;
+    pressed = null;
+    if (event.submitter && busyControl(event.submitter)) pressed = describeFocus(event.submitter);
     // Add a case has no submit: its bar's controls are buttons. Enter in a
     // lone text box would otherwise reach `reportValidity`.
     if (form.id === "add-case-v2-form") return;

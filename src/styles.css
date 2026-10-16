@@ -5291,3 +5291,7 @@ html:lang(zh-Hant) {
 @media (prefers-reduced-motion: reduce) {
   .icon.spin { animation: none; }
 }
+
+/* The pressed button while its press runs (design D5). */
+.btn.is-busy { cursor: progress; }
+.btn.is-busy .icon.spin { width: 16px; height: 16px; margin-right: 6px; }

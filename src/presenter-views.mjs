@@ -152,7 +152,7 @@ export function checkpointDialogBody(state = {}) {
     "checkpoint",
   )}<div class="info-note">${icon(
     "help",
-  )}<p>The records it writes are simulated, and the case's history says so. Nothing is filed, signed or sent.</p></div><button type="submit" class="btn primary full">Load this checkpoint</button></form>${button(
+  )}<p>The records it writes are simulated, and the case's history says so. Nothing is filed, signed or sent.</p></div><button type="submit" id="checkpoint-submit" class="btn primary full">Load this checkpoint</button></form>${button(
     "Leave this case as it is",
     "close-dialog",
     "text",

@@ -1086,3 +1086,31 @@ test("the safety net and the toast host (design D1, D4)", () => {
     /toast\.show\(kind\);\s*(?:\/\/[^\n]*\n\s*)*toast\.hover\(toastHost\.matches\(":hover"\)\);\s*toast\.focus\(toastHost\.contains\(document\.activeElement\)\);\s*\}/,
   );
 });
+
+test("a pressed control is found again after a redraw (design D5)", () => {
+  const claim = { id: "", name: "", dataset: { caseAction: "CLAIM_PREPARATION", caseId: "case-7" }, tagName: "BUTTON" };
+  const help = { id: "", name: "", dataset: { assistanceAction: "CLAIM", itemId: "help-3" }, tagName: "BUTTON" };
+  const checkpoint = { id: "checkpoint-submit", name: "", dataset: {}, tagName: "BUTTON" };
+  assert.ok(focusSelectors(describeFocus(claim)).some((s) => s.includes('data-case-action="CLAIM_PREPARATION"') && s.includes('data-case-id="case-7"')));
+  assert.ok(focusSelectors(describeFocus(help)).some((s) => s.includes('data-assistance-action="CLAIM"') && s.includes('data-item-id="help-3"')));
+  assert.deepEqual(focusSelectors(describeFocus(checkpoint)), ['[id="checkpoint-submit"]']);
+});
+
+test("app.mjs marks only the allow-listed press while it runs (design D5)", () => {
+  const app = appSource();
+  assert.match(app, /const BUSY_ACTIONS = Object\.freeze\(\["confirm-reset-fixtures", "save-office-draft", "send-office-draft"\]\);/);
+  const allow = app.slice(app.indexOf("function busyControl("), app.indexOf("function busyControl(") + 600);
+  assert.match(allow, /dataset\.caseAction \|\| control\.dataset\.assistanceAction/);
+  assert.match(allow, /control\.id === "checkpoint-submit"/);
+  assert.match(allow, /BUSY_ACTIONS\.includes\(control\.dataset\.action\)/);
+  assert.match(app, /pressed = null;\s*if \(busyControl\(target\)\) pressed = describeFocus\(target\);/);
+  assert.match(app, /pressed = null;\s*if \(event\.submitter && busyControl\(event\.submitter\)\) pressed = describeFocus\(event\.submitter\);/);
+  const mark = app.slice(app.indexOf("function markPressed("), app.indexOf("function markPressed(") + 900);
+  assert.match(mark, /if \(!state\.busy && !state\.officeSaving\) \{\s*pressed = null;\s*return;\s*\}/);
+  assert.match(mark, /if \(!pressed \|\| state\.saveState === "saving"\) return;/);
+  assert.match(mark, /control\.classList\.contains\("is-busy"\)/);
+  assert.match(mark, /setAttribute\("aria-busy", "true"\)/);
+  assert.match(mark, /icon\("spinner", "spin"\)/);
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.match(renderBody, /markPressed\(state\);/);
+});
