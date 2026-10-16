@@ -42,7 +42,7 @@
   4. Window A: go back to the work board; the same row is revealable.
   5. Window B: focus the row's `button.board-reference`, press Tab once: the active element is `#board-phone-<case id>`, and its `.phone-full` is visible.
   6. Assert the console is quiet in both windows, as the neighbouring phases do.
-- [ ] 4.3 Check that the existing #68 case-page phone checks and the board, pool and queue phases still pass. Run `npm run test:browser`.
+- [x] 4.3 Check that the existing #68 case-page phone checks and the board, pool and queue phases still pass. Run `npm run test:browser`.
 
 ## 5. Docs
 
