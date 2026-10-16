@@ -447,3 +447,46 @@ test("language letters, names, filter labels and the staff summary", () => {
   assert.deepEqual(LANGUAGE_LETTERS, { english: "E", cantonese: "C", mandarin: "M", other: "O" });
   assert.ok(Object.isFrozen(LANGUAGE_LETTERS));
 });
+
+test("isVisible: gte and lte read a whole number, and nothing else (add-widowed-spouse-rules)", () => {
+  const atLeast = { showIf: [{ field: "y", op: "gte", value: 2023 }] };
+  const atMost = { showIf: [{ field: "y", op: "lte", value: 2025 }] };
+  for (const [answers, gte, lte] of [
+    [{}, false, false],
+    [{ y: "" }, false, false],
+    [{ y: "abcd" }, false, false],
+    [{ y: 2024 }, false, false],
+    [{ y: ["2024"] }, false, false],
+    [{ y: "2022" }, false, true],
+    [{ y: "2023" }, true, true],
+    [{ y: "2025" }, true, true],
+    [{ y: "2205" }, true, false],
+    [{ y: "02025" }, false, false],
+    [{ y: " 2025" }, false, false],
+  ]) {
+    assert.equal(isVisible(atLeast, answers), gte, `gte ${JSON.stringify(answers)}`);
+    assert.equal(isVisible(atMost, answers), lte, `lte ${JSON.stringify(answers)}`);
+  }
+});
+
+test("isVisible: any holds when one of its AND groups holds (add-widowed-spouse-rules)", () => {
+  const rule = {
+    showIf: [{ op: "any", groups: [[{ field: "m", op: "eq", value: "a" }], [{ field: "m", op: "eq", value: "b" }, { field: "y", op: "gte", value: 2025 }]] }],
+  };
+  assert.equal(isVisible(rule, { m: "a" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2025" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2024" }), false);
+  assert.equal(isVisible(rule, { m: "b" }), false);
+  assert.equal(isVisible(rule, { m: "c", y: "2025" }), false);
+  assert.equal(isVisible({ showIf: [...rule.showIf, { field: "z", op: "filled" }] }, { m: "a" }), false, "an any is one AND clause among others");
+});
+
+test("checkValue: a year with a range (add-widowed-spouse-rules)", () => {
+  const year = { id: "y", type: "year", min: 1900, max: 2025 };
+  assert.equal(checkValue(year, "1899"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "1900"), null);
+  assert.equal(checkValue(year, "2025"), null);
+  assert.equal(checkValue(year, "2026"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "205"), "Enter a 4-digit year.");
+  assert.equal(checkValue({ id: "y", type: "year" }, "2205"), null, "without a range, any four digits");
+});

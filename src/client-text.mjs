@@ -121,6 +121,7 @@ export const TEXT = Object.freeze({
   "note.needs_answer": { en: "Needs an answer", zh: "需要回答" },
   "invalid.too_long": { en: "Use at most {limit} characters.", zh: "最多 {limit} 个字。" },
   "invalid.number_range": { en: "Enter a number from {min} to {max}.", zh: "请输入 {min} 至 {max} 之间的数字。" },
+  "invalid.year_range": { en: "Enter a year from {min} to {max}.", zh: "请输入 {min} 至 {max} 之间的年份。" },
   "invalid.unknown_field": { en: "Unknown field {field}.", zh: "未知字段 {field}。" },
   "invalid.member_field": { en: "{field}: {reason}", zh: "{field}：{reason}" },
   // The version-2 form: part statuses on the rail

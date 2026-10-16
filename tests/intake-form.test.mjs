@@ -1074,3 +1074,10 @@ test("an unmarried client's who question asks directly, as Yes/No radio buttons;
   assert.equal(formatAnswer(q("on_visa"), ["none"]), "No one");
   assert.equal(formatAnswer(q("on_visa"), ["me", "spouse"], { answers: married }), "Me, My spouse");
 });
+
+test("invalidText: a year range in Chinese, without digit grouping (add-widowed-spouse-rules)", () => {
+  const reason = checkValue({ id: "y", type: "year", min: 1900, max: 2025 }, "2205");
+  assert.equal(reason, "Enter a year from 1900 to 2025.");
+  assert.equal(invalidText(reason, "zh-Hans"), "请输入 1900 至 2025 之间的年份。");
+  assert.equal(invalidText(reason, "en"), reason);
+});

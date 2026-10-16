@@ -172,6 +172,9 @@ export function invalidText(reason, lang = "en", question = null) {
   if ((m = /^Use at most (\d+) characters\.$/.exec(reason))) return t("invalid.too_long", { limit: num(m[1], lang) }, lang);
   if ((m = /^Enter a number from (\d+) to (\d+)\.$/.exec(reason)))
     return t("invalid.number_range", { min: num(m[1], lang), max: num(m[2], lang) }, lang);
+  // Years print as written: no digit grouping (1900, not 1,900).
+  if ((m = /^Enter a year from (\d{4}) to (\d{4})\.$/.exec(reason)))
+    return t("invalid.year_range", { min: m[1], max: m[2] }, lang);
   if ((m = /^Unknown field (.+)\.$/.exec(reason))) return t("invalid.unknown_field", { field: m[1] }, lang);
   // checkGroup's "<sub-field id>: <reason>": the sub-field's wording, and the reason translated.
   if ((m = /^(\w+): (.+)$/.exec(reason))) {
@@ -668,7 +671,9 @@ export const mergeIntoDraft = (draft, patch) => ({ ...(draft ?? {}), ...(patch ?
 const DRIVERS = (() => {
   const fields = new Set();
   const add = (conditions) => {
-    for (const condition of conditions ?? []) fields.add(condition.field);
+    for (const condition of conditions ?? [])
+      if (condition.op === "any") for (const group of condition.groups ?? []) add(group);
+      else fields.add(condition.field);
   };
   const visit = (question) => {
     add(question.showIf);

@@ -69,9 +69,21 @@ const filled = isAnswered;
 export const memberNameParts = (member) =>
   [member?.first_name, member?.middle_name, member?.last_name].filter(isAnswered);
 
+// A whole number written in ASCII digits without a leading zero, else null.
+// gte and lte read only these, as the database's intake_holds does (change
+// add-widowed-spouse-rules): "02025", which the year check refuses, never
+// counts as 2025.
+const wholeNumber = (value) => (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value) ? Number(value) : null);
+
 const holds = (condition, answers) => {
+  if (condition.op === "any")
+    return (condition.groups ?? []).some((group) => group.every((inner) => holds(inner, answers)));
   const value = answers?.[condition.field];
   if (condition.op === "filled") return filled(value);
+  if (condition.op === "gte" || condition.op === "lte") {
+    const n = wholeNumber(value);
+    return n !== null && (condition.op === "gte" ? n >= condition.value : n <= condition.value);
+  }
   const same = Array.isArray(value) ? value.includes(condition.value) : value === condition.value;
   if (condition.op === "eq") return same;
   if (condition.op === "ne") return filled(value) && !same;
@@ -182,7 +194,10 @@ export function checkValue(question, value) {
     case "date":
       return validDate(value) ? null : "Enter a real date as YYYY-MM-DD.";
     case "year":
-      return /^\d{4}$/.test(value) ? null : "Enter a 4-digit year.";
+      if (!/^\d{4}$/.test(value)) return "Enter a 4-digit year.";
+      if (question.min !== undefined && question.max !== undefined && (Number(value) < question.min || Number(value) > question.max))
+        return `Enter a year from ${question.min} to ${question.max}.`;
+      return null;
     case "number": {
       if (!/^\d+$/.test(value)) return "Digits only.";
       if (question.min !== undefined || question.max !== undefined) {
