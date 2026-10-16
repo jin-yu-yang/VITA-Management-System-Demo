@@ -348,3 +348,45 @@ export function dialogFocusTarget(controls = [], container = null) {
     null
   );
 }
+
+// Every confirmation has one shape (screen-states, "Every confirmation has the
+// same shape"): a sentence, an optional note, an optional form, the confirm
+// control, and a text button that closes without sending anything. The
+// confirm control comes ready-made from the caller, so its action, its kind,
+// its `disabled` and the payload's fields stay with the dialog that owns them.
+// `lead` and `note.html` are HTML the caller has already escaped.
+export function confirmBody({ before = "", lead, note = null, form = null, confirm, keep }) {
+  const said = note ? `<div class="info-note">${icon(note.icon)}<p>${note.html}</p></div>` : "";
+  const action = form
+    ? `<form ${form.attrs ?? 'class="staff-form"'}>${form.fields}${note?.inForm ? said : ""}${confirm}</form>`
+    : confirm;
+  return `${before}<p>${lead}</p>${note && !note.inForm ? said : ""}${action}${button(keep, "close-dialog", "text")}`;
+}
+
+// While a dialog is open everything behind it is inert, except the dialog and
+// the live regions: a toast or a banner announced while it is open, or just
+// after it closes, still has to reach a screen reader. The toast lives outside
+// #app, so it is never a candidate. A new live region inside #app joins this
+// list.
+const STAYS_REACHABLE = Object.freeze([
+  "modal-backdrop",
+  "connection-notice",
+  "notice-banner",
+  "problem-banner",
+]);
+export const inertWhileDialog = (element) =>
+  !STAYS_REACHABLE.some((name) => element?.classList?.contains(name));
+
+// Where Tab goes inside an open dialog: round from the last control to the
+// first and back, and in at the right end when the keyboard is on the dialog
+// itself or on its text (a click there focuses the container, which carries
+// tabindex="-1"). Null leaves the move to the browser.
+export function trapTarget(controls = [], active = null, shift = false) {
+  if (!controls.length) return null;
+  const first = controls[0];
+  const last = controls.at(-1);
+  if (!controls.includes(active)) return shift ? last : first;
+  if (shift && active === first) return last;
+  if (!shift && active === last) return first;
+  return null;
+}
