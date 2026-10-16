@@ -243,3 +243,13 @@ test("the pool's note keeps workflow only and says phones stay masked", () => {
   assert.match(html, /This pool shows workflow only: no taxpayer names, no addresses and no document contents\./);
   assert.match(html, /Phone numbers stay masked until you hover over or tab to them, so they don't show on a shared screen\./);
 });
+
+test("the case pool while its cases load, and when they couldn't", () => {
+  const loading = renderCasePool([], PEOPLE, { list: "loading", filters: {}, now: NOW });
+  assert.match(loading, /Loading cases…/);
+  assert.doesNotMatch(loading, /No case matches these filters|data-filter="poolPhase"|Showing 0/);
+  const failed = renderCasePool([], PEOPLE, { list: "failed", filters: {}, now: NOW });
+  assert.match(failed, /The cases couldn&#39;t load\./);
+  assert.doesNotMatch(failed, /No case matches these filters/);
+  assert.match(renderCasePool([], PEOPLE, { filters: {}, now: NOW }), /No case matches these filters\./, "ready by default");
+});

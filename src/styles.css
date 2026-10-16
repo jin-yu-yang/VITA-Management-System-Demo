@@ -20,6 +20,13 @@
   --vt-badge: #dc2626;
   --vt-progress: #2f8a4c;
   --vt-office: #b7791f;
+  /* Feedback looks (DESIGN.md): errors, notices and attention */
+  --vt-error-bg: #fbeceb;
+  --vt-error: #8a3b34;
+  --vt-error-line: #efc9c5;
+  --vt-notice-bg: #efedfb;
+  --vt-notice: #4b3fa3;
+  --vt-attention-bg: #faf0dd;
   /* Stage families: background / text */
   --vt-stage-intake-bg: #e6eefa;
   --vt-stage-intake: #3a6690;
@@ -778,6 +785,17 @@ textarea::placeholder {
   background: #faf2e4;
   border: 1px solid #ebd8b5;
   color: #a58344;
+}
+/* Every error shares one look: the case page's in-place error, the dialogs'
+   and the drawers'. */
+.notice.error {
+  background: var(--vt-error-bg);
+  border: 1px solid var(--vt-error-line);
+  color: var(--vt-error);
+}
+.notice.error h3,
+.notice.error p {
+  color: var(--vt-error);
 }
 .notice h3 {
   margin-bottom: 8px;
@@ -1580,29 +1598,63 @@ textarea::placeholder {
   font-size: 11px;
   color: #9ba889;
 }
+/* The toast (design D4): bottom centre for clients, bottom right for staff,
+   lifted above Add a case's bar. Hidden means out of the Tab order. */
 .toast {
   position: fixed;
-  bottom: 90px;
+  bottom: calc(24px + var(--toast-lift, 0px));
   left: 50%;
-  transform: translate(-50%, 12px);
   z-index: 80;
-  border: 1px solid var(--vt-line);
-  background: var(--vt-ink);
-  box-shadow: 0 10px 30px rgb(42 39 69 / 0.25);
-  color: #fff;
-  font-size: 13px;
-  padding: 13px 23px;
-  border-radius: var(--vt-radius);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 6px 6px 6px 18px;
+  border-left: 4px solid var(--toast-edge, #6a5acd);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--vt-ink);
+  box-shadow: 0 12px 32px rgb(42 39 69 / 0.18);
+  font-size: 15px;
+  line-height: 1.4;
   opacity: 0;
-  pointer-events: none;
-  transition: 0.2s;
-  text-align: center;
-  max-width: 90vw;
+  visibility: hidden;
+  transform: translate(-50%, 12px);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s linear 0.2s;
 }
 .toast.visible {
   opacity: 1;
+  visibility: visible;
   transform: translate(-50%, 0);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s;
 }
+.toast.toast-staff { left: auto; right: 24px; transform: translateY(12px); }
+.toast.toast-staff.visible { transform: none; }
+.toast[data-kind="success"] { --toast-edge: #2f8a4c; }
+.toast[data-kind="info"] { --toast-edge: #6a5acd; }
+.toast[data-kind="warning"] { --toast-edge: #a07c32; }
+.toast .toast-icon-slot { display: flex; color: var(--toast-edge); }
+.toast .toast-icon { width: 20px; height: 20px; }
+/* The live region stays in the accessibility tree while the host is hidden
+   (it is empty once the fade is over), so a toast's words are announced. */
+.toast .toast-text { flex: 1; padding: 8px 0; visibility: visible; }
+/* ...but never under the pointer once the toast is hidden. */
+.toast:not(.visible) .toast-text { pointer-events: none; }
+.toast .toast-dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6c6886;
+  cursor: pointer;
+}
+.toast .toast-dismiss:hover,
+.toast .toast-dismiss:focus-visible { background: var(--vt-primary-soft); }
 .exception-banner,
 .storage-banner {
   display: flex;
@@ -1867,11 +1919,6 @@ textarea::placeholder {
     font-size: 10px;
     padding: 8px 11px;
   }
-  .toast {
-    bottom: 128px;
-    font-size: 12px;
-    width: max-content;
-  }
   .narrow {
     padding: 28px 22px;
   }
@@ -2087,9 +2134,6 @@ textarea::placeholder {
   .site-footer {
     margin-bottom: 160px;
   }
-  .toast {
-    bottom: 165px;
-  }
   .hero-copy br {
     display: initial;
   }
@@ -2121,18 +2165,20 @@ textarea::placeholder {
   gap: 10px;
   padding: 11px 30px;
   font-size: 13px;
-  background: var(--vt-stage-amend-bg);
-  color: var(--vt-stage-amend);
   border-bottom: 1px solid var(--vt-line);
 }
+.connection-notice {
+  background: var(--vt-attention-bg);
+  color: var(--vt-stage-amend);
+}
 .problem-banner {
-  background: var(--vt-stage-stopped-bg);
-  color: var(--vt-stage-stopped);
+  background: var(--vt-error-bg);
+  color: var(--vt-error);
 }
 /* Nothing failed here: the demonstration cases were rebuilt. */
 .notice-banner {
-  background: var(--vt-primary-soft);
-  color: var(--vt-ink);
+  background: var(--vt-notice-bg);
+  color: var(--vt-notice);
 }
 .connection-notice .icon,
 .notice-banner .icon,
@@ -2144,6 +2190,7 @@ textarea::placeholder {
 .notice-banner .btn.inline,
 .problem-banner .btn.inline {
   margin-left: auto;
+  color: inherit;
 }
 .lookup-form {
   display: flex;
@@ -2224,7 +2271,10 @@ textarea::placeholder {
   color: var(--vt-stage-amend);
 }
 .save-chip.failed {
-  color: var(--vt-stage-stopped);
+  color: var(--vt-error);
+  background: var(--vt-error-bg);
+  border-radius: 7px;
+  padding: 4px 10px;
   flex-wrap: wrap;
 }
 .save-chip.saved {
@@ -2373,9 +2423,6 @@ textarea::placeholder {
   }
   .site-footer {
     margin-bottom: 30px;
-  }
-  .toast {
-    bottom: 24px;
   }
 }
 
@@ -3390,15 +3437,15 @@ textarea::placeholder {
 .office-drawer .attempt-list {
   border-color: var(--vt-line);
 }
-.office-drawer .notice.amber {
-  background: var(--vt-stage-amend-bg);
-  border: 1px solid var(--vt-stage-amend);
-  color: var(--vt-stage-amend);
+.office-drawer .notice.error {
+  background: var(--vt-error-bg);
+  border: 1px solid var(--vt-error-line);
+  color: var(--vt-error);
   margin: 16px 0;
 }
-.office-drawer .notice.amber h3,
-.office-drawer .notice.amber p {
-  color: var(--vt-stage-amend);
+.office-drawer .notice.error h3,
+.office-drawer .notice.error p {
+  color: var(--vt-error);
 }
 
 /* ---- Add a case ---- */
@@ -5254,3 +5301,25 @@ html:lang(zh-Hant) {
   color: var(--vt-stage-amend);
 }
 /* end part 4d */
+
+.loading-line,
+.unloaded-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 24px 0;
+  color: #6c6886;
+  font-size: 15px;
+}
+.loading-line .icon,
+.unloaded-line .icon { flex: none; width: 20px; height: 20px; }
+.unloaded-line { color: var(--vt-error); }
+@keyframes vt-spin { to { transform: rotate(360deg); } }
+.icon.spin { animation: vt-spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .icon.spin { animation: none; }
+}
+
+/* The pressed button while its press runs (design D5). */
+.btn.is-busy { cursor: progress; }
+.btn.is-busy .icon.spin { width: 16px; height: 16px; margin-right: 6px; }

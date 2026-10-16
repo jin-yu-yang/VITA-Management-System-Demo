@@ -18,6 +18,7 @@ import {
   CASE_TABS,
   nextStep,
   correctionsDialogBody,
+  problemNotice,
   historySentence,
   EVENT_SENTENCES,
   historyPanel,
@@ -1214,10 +1215,17 @@ test("the corrections dialog carries the form the action is built from", () => {
   // it (the dialog is aria-modal, so the page's own alert behind it may not
   // be read); it carries role="alert" and is tied to the textarea.
   const refused = correctionsDialogBody({ error: { code: "CONFLICT", message: "Someone else changed this case." } });
-  assert.match(refused, /<div class="notice amber" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
+  assert.match(refused, /<div class="notice error" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
   assert.match(refused, /<textarea id="field-corrections-findings" name="findings" required maxlength="2000" rows="4" aria-describedby="corrections-error">/);
   assert.doesNotMatch(correctionsDialogBody({}), /role="alert"/);
   assert.doesNotMatch(correctionsDialogBody({}), /aria-describedby/);
+  // With a dialog open this is the only copy, so it carries the banner's
+  // controls: Dismiss always, Try again only when the press can be re-sent.
+  const notice = (html) => /<div class="notice error" role="alert" id="corrections-error">[\s\S]*?<\/div><\/div><\/div>/.exec(html)?.[0] ?? "";
+  assert.match(notice(refused), /<div class="conflict-choices">[\s\S]*data-action="dismiss-error"/);
+  assert.doesNotMatch(notice(refused), /data-action="retry-action"/);
+  const retryable = correctionsDialogBody({ error: { code: "OFFLINE", message: "Network error. Please try again later." }, retryable: true });
+  assert.match(notice(retryable), /<div class="conflict-choices"><button[^>]*data-action="retry-action"[^>]*>Try again<\/button><button[^>]*data-action="dismiss-error"[^>]*>Dismiss<\/button><\/div>/);
 });
 
 test("internal history reads as sentences, with who did it", () => {
@@ -1925,4 +1933,21 @@ test("staff see an unmarried client's who answers as Yes/No, with the wording th
   assert.doesNotMatch(panel, /Who was in the U\.S\. on a visa/);
   const docs = checklist(v2Case({ answers: { on_visa: ["me"] } }));
   assert.match(docs, /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
+});
+
+test("the work board while its cases load, and when they couldn't", () => {
+  const loading = renderStaffBoard([], PEOPLE, { person: ALEX, list: "loading" });
+  assert.match(loading, /Loading cases…/);
+  assert.doesNotMatch(loading, /Nothing to claim right now|data-filter="status"|Showing 0/);
+  const failed = renderStaffBoard([], PEOPLE, { person: ALEX, list: "failed" });
+  assert.match(failed, /The cases couldn&#39;t load\./);
+  assert.doesNotMatch(failed, /Nothing to claim right now/);
+  assert.match(renderStaffBoard([], PEOPLE, { person: ALEX }), /Nothing to claim right now/, "ready by default");
+});
+
+test("the case page's in-place error is an error block with both controls", () => {
+  const html = problemNotice({ error: { code: "SERVER_ERROR", message: "x" }, retryable: true });
+  assert.match(html, /^<div class="notice error" role="alert">/);
+  assert.match(html, /data-action="retry-action"/);
+  assert.match(html, /data-action="dismiss-error"/);
 });

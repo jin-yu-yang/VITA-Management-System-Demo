@@ -82,6 +82,7 @@ export const TEXT = Object.freeze({
   "signin.footnote": { en: "ViTally is a fictional walkthrough of the PCDC community tax service for tax year 2025. Never enter real taxpayer information.", zh: "ViTally 是 PCDC 社区报税服务（2025 报税年度）的虚构演示。请勿输入任何真实的纳税人信息。" },
   // Toasts on client paths (app.mjs); staff-only toasts stay English
   "toast.saved": { en: "Your answers are saved.", zh: "您的回答已保存。" },
+  "toast.back_online": { en: "You're back online.", zh: "已重新连接。" },
   "toast.confirm_first": { en: "Confirm that you have checked your answers first.", zh: "请先确认您已核对过您的回答。" },
   "toast.needs_change": { en: "Some answers still need a change before you can send.", zh: "有些回答需要修改后才能发送。" },
   "toast.sent": { en: "Your application was sent to the office.", zh: "您的申请已发送给办公室。" },
@@ -178,6 +179,8 @@ export const TEXT = Object.freeze({
   "apps.not_found": { en: "We could not find that Application ID", zh: "找不到这个申请编号" },
   "apps.not_found_body": { en: "Check the characters and try again. This search only covers applications started with the email address you signed in with.", zh: "请检查输入的字符后再试一次。此搜索只包括用您登录的电子邮箱开始的申请。" },
   "apps.empty": { en: "No applications yet", zh: "还没有申请" },
+  "apps.loading": { en: "Loading your applications…", zh: "正在载入您的申请…" },
+  "apps.unloaded": { en: "Your applications couldn't load.", zh: "无法载入您的申请。" },
   "apps.empty_body": { en: "Start one whenever you are ready. Nothing is sent to the office until you submit it.", zh: "准备好后随时可以开始。在您提交之前，不会向办公室发送任何内容。" },
   "apps.start": { en: "Start a new application", zh: "开始新的申请" },
   "apps.start_note": { en: "This creates one new fictional application. Reopening, refreshing or filling a form never creates another.", zh: "这会建立一份新的虚构申请。重新打开、刷新页面或填写表格都不会再建立另一份。" },
@@ -395,6 +398,9 @@ export const SENTENCES = Object.freeze({
   // app.mjs: a refused action with no message of its own; the save chip's default
   "Something went wrong.": "出了点问题。",
   "Please try again.": "请再试一次。",
+  // app.mjs viewDraft: the banner's words for a draft that couldn't be built
+  "The draft could not be made. Try again.": "无法生成草稿。请再试一次。",
+  "The draft font could not be checked. Try again later.": "无法核对草稿所用的字体。请稍后再试。",
   // auth.mjs: sign-in (also saved in the window's sign-in record)
   "If this address is eligible, check your inbox for a sign-in code.": "如果这个电子邮箱符合资格，请查看收件箱中的登录验证码。",
   "Enter an email address, for example name@example.org.": "请输入电子邮箱，例如 name@example.org。",

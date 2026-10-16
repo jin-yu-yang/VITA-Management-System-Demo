@@ -255,6 +255,10 @@ export function createController({
     principal: null,
     connection: "unknown",
     error: null,
+    // How many errors have been recorded: app.mjs's safety net compares it
+    // to tell a press that recorded its own failure from one that did not
+    // (`error` is cloned by getState, so it cannot be compared).
+    errorCount: 0,
     retryable: false,
     // Sign-in. The half-typed code lives here for the same reason answers do:
     // a re-render must never be able to empty a field somebody is using.
@@ -265,6 +269,9 @@ export function createController({
     authError: null,
     // Records
     cases: [],
+    // Whether each list has been read (design D6): a first load that failed
+    // must never look like an empty list.
+    lists: { cases: "loading", assistance: "loading" },
     people: [],
     // The caller's own workspace row, read only for a presenter: it is where
     // the fixture generation lives, and the presenter panel shows it.
@@ -493,12 +500,53 @@ export function createController({
     if (state.connection !== "online") state.connection = "online";
   }
 
+  // One local retry (design D3): what Try again runs for a failure outside the
+  // store's actions. Any newer error drops it; only noteLocalFailure and
+  // noteUnloaded set it, after recording.
+  let localRetry = null;
+  function setLocalRetry(fn) {
+    localRetry = typeof fn === "function" ? fn : null;
+    state.retryable = Boolean(localRetry);
+  }
+  // A dropped local retry takes its Try again with it. Only when one was
+  // pending: a store action's retry (`pendingAction`) keeps its own flag.
+  function dropLocalRetry() {
+    if (localRetry) state.retryable = false;
+    localRetry = null;
+  }
+
   function noteFailure(error, { message } = {}) {
+    dropLocalRetry();
+    state.errorCount += 1;
     state.error = {
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
     };
     if (error?.code === "OFFLINE") state.connection = "offline";
+  }
+
+  // One error at a time (design D2): a newer error replaces a failed save's.
+  // The draft stays and goes with the next move or save.
+  function replaceFailedSave() {
+    if (state.saveState !== "failed") return;
+    forgetPendingSave();
+    state.saveState = "unsaved";
+  }
+
+  // A refusal the window makes itself: recorded, drawn, then thrown.
+  function refuse(code, message) {
+    replaceFailedSave();
+    noteFailure({ code }, { message });
+    state.retryable = false;
+    show();
+    return controllerError(code, message);
+  }
+
+  function noteLocalFailure(error, retry = null) {
+    replaceFailedSave();
+    noteFailure(error ?? {}, { message: error?.message ?? "Something went wrong." });
+    setLocalRetry(retry);
+    show();
   }
 
   // A snapshot from the server replaces what we knew only when it is newer, so
@@ -644,6 +692,7 @@ export function createController({
 
   async function loadList() {
     state.cases = await store.listCases();
+    state.lists.cases = "ready";
     noteConnected();
   }
 
@@ -654,8 +703,12 @@ export function createController({
   const presenter = () => state.principal?.access === "presenter";
 
   async function loadAssistance() {
-    if (!presenter()) return;
+    if (!presenter()) {
+      state.lists.assistance = "ready";
+      return;
+    }
     state.assistance = await store.listAssistance();
+    state.lists.assistance = "ready";
     noteConnected();
   }
 
@@ -690,17 +743,26 @@ export function createController({
       return;
     }
     let failure = null;
-    try {
-      await loadList();
-    } catch (error) {
-      failure = error;
-    }
-    try {
-      // The office board shows these beside the cases, and a reconnect is the
-      // one path a missed subscription change comes back through.
-      await loadAssistance();
-    } catch (error) {
-      failure = failure ?? error;
+    if (!dataLoaded) {
+      // The first load never finished: read everything it reads.
+      try {
+        await loadData();
+      } catch (error) {
+        failure = error;
+      }
+    } else {
+      try {
+        await loadList();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        // The office board shows these beside the cases, and a reconnect is the
+        // one path a missed subscription change comes back through.
+        await loadAssistance();
+      } catch (error) {
+        failure = failure ?? error;
+      }
     }
     try {
       await loadSelected();
@@ -716,7 +778,10 @@ export function createController({
     // with nothing, leaving a click that did nothing and no explanation. The
     // next deliberate action clears it (every dispatch, save, navigation and
     // the dismiss control do), and so does a successful identity load.
-    if (failure) noteFailure(failure);
+    if (failure) {
+      noteFailure(failure);
+      noteUnloaded();
+    }
     persistSession();
     show();
   }
@@ -826,6 +891,46 @@ export function createController({
     show();
   }
 
+  // Everything the first load reads (design D6): the cases, and for a
+  // presenter the people, the help requests and the workspace.
+  // `dataLoaded` is true once one whole pass has succeeded; until then a
+  // refresh reads everything, not only the lists.
+  let dataLoaded = false;
+  async function loadData() {
+    await loadList();
+    if (state.principal?.access === "presenter") {
+      state.people = await store.listPeople();
+      await loadAssistance();
+      await loadWorkspace();
+    } else {
+      state.lists.assistance = "ready";
+    }
+    dataLoaded = true;
+  }
+
+  // A list that never loaded and whose read failed says so; one that loaded
+  // once keeps what it shows. Try again reads everything again.
+  function noteUnloaded() {
+    let failed = false;
+    for (const key of ["cases", "assistance"])
+      if (state.lists[key] !== "ready") {
+        state.lists[key] = "failed";
+        failed = true;
+      }
+    // A first load can fail after both lists are read (the workspace, say):
+    // Try again still reads the rest.
+    if (failed || !dataLoaded)
+      setLocalRetry(async () => {
+        try {
+          await loadData();
+        } catch (error) {
+          noteFailure(error);
+          noteUnloaded();
+        }
+        show();
+      });
+  }
+
   // Identity first, and only then the subscription: a refused or unreachable
   // principal must never open a channel, and staff reads happen only when the
   // principal says staff.
@@ -876,12 +981,7 @@ export function createController({
     // unless this window was already somewhere this principal may be.
     if (!screens().includes(state.screen)) state.screen = homeScreen();
     try {
-      await loadList();
-      if (principal.access === "presenter") {
-        state.people = await store.listPeople();
-        await loadAssistance();
-        await loadWorkspace();
-      }
+      await loadData();
       state.error = null;
     } catch (error) {
       noteFailure(error);
@@ -895,6 +995,9 @@ export function createController({
         else noteFailure(error);
       }
     }
+    // After the open case: its own failure drops the local retry, so the
+    // lists' Try again is set last.
+    noteUnloaded();
     persistSession();
     show();
   }
@@ -1030,12 +1133,15 @@ export function createController({
 
   // Signing out drops every record this window holds, not just the session.
   function forgetUser() {
+    dropLocalRetry();
     if (state.principal) windowState.clear(state.principal.userId);
     unsubscribe();
     clearSelection();
     state.session = "none";
     state.principal = null;
     state.cases = [];
+    state.lists = { cases: "loading", assistance: "loading" };
+    dataLoaded = false;
     state.people = [];
     state.assistance = [];
     state.workspace = null;
@@ -1116,8 +1222,18 @@ export function createController({
   }
 
   function dismissError() {
+    dropLocalRetry();
     state.error = null;
     state.notice = null;
+    show();
+  }
+
+  // Clears the error only when it is this code's: a draft that was built
+  // ends the draft's own problem, never another error or the notice.
+  function clearError(code) {
+    if (state.error?.code !== code) return;
+    dropLocalRetry();
+    state.error = null;
     show();
   }
 
@@ -1379,7 +1495,7 @@ export function createController({
     if (state.officeSaving || substepSaveInFlight) return { sent: false, reason: "busy" };
     if (send && !state.openPanels.includes("confirmed")) return { sent: false, reason: "unconfirmed" };
     if (!state.savedCase && !state.officeDraft)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     // The flag is the one sub-step changes and card marks hold, so a mark
     // can't race the save.
     state.officeSaving = true;
@@ -1847,8 +1963,9 @@ export function createController({
         // The server may already have applied it. The retry must be the same
         // envelope so the stored receipt answers instead of a second action.
         pendingAction = { action, save, omit };
-        state.retryable = true;
         noteFailure(error);
+        // After noteFailure, which drops any older local retry and its flag.
+        state.retryable = true;
       } else {
         pendingAction = null;
         state.retryable = false;
@@ -1971,7 +2088,7 @@ export function createController({
   // first Save that waited for it.
   async function saveNow({ quiet = false } = {}) {
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     if (state.conflict) {
       // Refusing here is the point: the pending edits are not rebased onto the
       // newer revision behind the person's back.
@@ -2055,13 +2172,13 @@ export function createController({
   // its answers plus the contact record's four fields, not from `answers`.
   async function reconcileAnswers({ answers, expectedServerRevision, fromServer = false }) {
     if (!state.selectedCaseId)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     const latest = await store.getCase(state.selectedCaseId);
     applyCase(latest);
     noteConnected();
     if (Number(latest.revision) !== Number(expectedServerRevision)) {
       show();
-      throw controllerError(
+      throw refuse(
         "CONFLICT",
         "This application changed again. Check the newest values and choose once more.",
       );
@@ -2095,9 +2212,9 @@ export function createController({
 
   async function runAction(type, payload, { personId } = {}) {
     if (!CASE_ACTIONS.includes(type))
-      throw controllerError("VALIDATION", "This step is not available.");
+      throw refuse("VALIDATION", "This step is not available.");
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
@@ -2127,7 +2244,7 @@ export function createController({
     // is ignored like any other.
     if (substepSaveInFlight) return null;
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     takeFlag();
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
@@ -2163,10 +2280,10 @@ export function createController({
   // a timed-out claim is re-read rather than re-sent.
   async function runAssistanceAction(type, itemId, note = null) {
     if (!ASSISTANCE_ACTIONS.includes(type))
-      throw controllerError("VALIDATION", "This step is not available.");
+      throw refuse("VALIDATION", "This step is not available.");
     const item = state.assistance.find((entry) => entry?.id === itemId);
     if (!item)
-      throw controllerError("NOT_FOUND", "This request is no longer on screen.");
+      throw refuse("NOT_FOUND", "This request is no longer on screen.");
     const request = {
       actionId: newActionId(),
       itemId: item.id,
@@ -2218,7 +2335,7 @@ export function createController({
   // dropped and the next attempt is a new request.
 
   function requirePresenter(message) {
-    if (!presenter()) throw controllerError("FORBIDDEN", message);
+    if (!presenter()) throw refuse("FORBIDDEN", message);
   }
 
   // Everything this window holds about the demonstration set, read again. The
@@ -2268,15 +2385,15 @@ export function createController({
       "Only the person running the session can load a checkpoint.",
     );
     if (!CHECKPOINTS.includes(checkpoint))
-      throw controllerError("VALIDATION", "This checkpoint is not available.");
+      throw refuse("VALIDATION", "This checkpoint is not available.");
     const record = state.cases.find((entry) => entry?.id === caseId);
     if (!record)
-      throw controllerError("NOT_FOUND", "This sample case is no longer on screen.");
+      throw refuse("NOT_FOUND", "This sample case is no longer on screen.");
     // A case this class created is somebody's work, never a demonstration
     // prop. The database says the same thing; this says it without a round
     // trip and in words a person can read.
     if (!record.fixture)
-      throw controllerError(
+      throw refuse(
         "VALIDATION",
         "Checkpoints belong to the sample cases only.",
       );
@@ -2313,6 +2430,18 @@ export function createController({
   }
 
   async function retryLast() {
+    if (localRetry && state.error) {
+      const run = localRetry;
+      localRetry = null;
+      state.error = null;
+      state.retryable = false;
+      show();
+      // Called before anything is awaited: a draft rebuilt here opens its tab
+      // inside the press, as viewDraft does.
+      await run();
+      return { local: true };
+    }
+    dropLocalRetry();
     if (!pendingAction) return null;
     // Second guard, for any path that changes the draft without going through
     // editAnswers: an envelope that no longer matches the draft is dropped, not
@@ -2338,6 +2467,7 @@ export function createController({
     return {
       ...state,
       cases: [...state.cases],
+      lists: { ...state.lists },
       people: [...state.people],
       assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },
@@ -2404,5 +2534,7 @@ export function createController({
     openDialog,
     closeDialog,
     dismissError,
+    clearError,
+    noteLocalFailure,
   };
 }

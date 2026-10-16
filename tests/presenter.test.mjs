@@ -137,6 +137,7 @@ test("both presenter controls confirm before they change anything", () => {
   assert.match(checkpoint, /name="caseId"/);
   assert.match(checkpoint, /name="checkpoint"/);
   assert.match(checkpoint, /type="submit"/);
+  assert.match(checkpoint, /<button type="submit" id="checkpoint-submit" class="btn primary full">Load this checkpoint<\/button>/);
   for (const name of CHECKPOINTS)
     assert.ok(checkpoint.includes(`value="${name}"`), name);
 });

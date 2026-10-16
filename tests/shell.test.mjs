@@ -94,6 +94,12 @@ test("no legacy .case-tabs button selector styles the case tabs", () => {
   assert.doesNotMatch(css, /\.case-tabs\s+button/);
 });
 
+test("spinners stand still under reduced motion", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.icon\.spin \{ animation: vt-spin [^}]*\}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.icon\.spin \{ animation: none; \}\s*\}/);
+});
+
 test("the client top bar: logo home, language, help, save on intake, sign out", () => {
   const signedIn = { principal: { access: "applicant" }, screen: "applications" };
   const html = clientHeader(signedIn);
@@ -358,7 +364,7 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.ok(renderBody.indexOf("showDraftLink();") < renderBody.indexOf("restoreField("), "before the focus restore");
   // A create that lands after sign-out, or after somebody else signed in,
   // announces nothing (the rule is pinned with the other press messages).
-  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started\) notify\(t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
+  assert.match(app, /const started = await controller\.createCase\(\);\s*if \(started\) notify\("success", t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
   assert.doesNotMatch(app, /if \(started && controller\.getState\(\)\.principal\)/);
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
@@ -366,6 +372,18 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.equal(TEXT["draft.failed"].en, "The draft could not be made. Close this tab and try again.");
   assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
+  // A draft that couldn't be built is an error (design D1).
+  const viewDraftFn = app.slice(app.indexOf("async function viewDraft("), app.indexOf("// ---- leaving Add a case"));
+  const draftCatch = viewDraftFn.slice(viewDraftFn.indexOf("} catch (error) {"), viewDraftFn.indexOf("// ---- leaving Add a case"));
+  assert.match(viewDraftFn, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
+  assert.match(viewDraftFn, /controller\.noteLocalFailure\(\s*\{\s*code: "DRAFT",\s*message: error\?\.draftFont \? "The draft font could not be checked\. Try again later\." : "The draft could not be made\. Try again\.",?\s*\},\s*\(\) => viewDraft\(form, by, kind\),?\s*\)/);
+  // A built draft clears only the draft's own error, never the notice.
+  assert.match(viewDraftFn, /\/\/ A draft that was built and offered[^\n]*\n\s*controller\.clearError\("DRAFT"\);/);
+  assert.doesNotMatch(viewDraftFn, /dismissError/);
+  assert.ok(draftCatch.startsWith("} catch (error) {"), "the catch block was found");
+  assert.doesNotMatch(draftCatch, /notify\(/, "a draft failure never toasts");
+  assert.doesNotMatch(viewDraftFn, /const failure/);
+  assert.match(app, /const sent = await controller\.retryLast\(\);\s*if \(sent && !sent\.local\) notify\("success", t\("toast\.sent_again"/);
   assert.match(app, /addEventListener\("afterprint"/);
   for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/, /formStep/, /setFormStep/, /"edit-"/])
     assert.doesNotMatch(app, gone);
@@ -612,7 +630,7 @@ test("Add a case is the office draft's page, a new draft or a saved one, once th
   assert.match(fresh, /<h1>Add a case<\/h1>/);
   assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 2 } })), /id="add-case-v2-form"/);
   const loading = staffScreen(addState({ workspace: null }));
-  assert.match(loading, /<p class="muted" role="status">Loading…<\/p>/);
+  assert.match(loading, /<p class="loading-line" role="status">[\s\S]*<span>Loading…<\/span><\/p>/);
   assert.doesNotMatch(loading, /<form id="(assisted-intake-form|add-case-v2-form)"/);
   // A saved office draft opens on the page.
   const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 1, answers: {}, documentCards: [], materials: [], internalHistory: [] };
@@ -683,7 +701,7 @@ test("app.mjs wires the version-2 Add a case", () => {
   const save = handler("save-office-draft");
   assert.match(save, /const \{ reason \} = await controller\.saveOfficeDraft\(\);/);
   assert.match(save, /const landed =\s+!reason && Boolean\(after\.savedCase\) && !after\.dirty && \["saved", "idle"\]\.includes\(after\.saveState\);/);
-  assert.match(save, /if \(landed\) notify\("The draft is saved\. Nobody was emailed\.", by\);/);
+  assert.match(save, /if \(landed\) notify\("info", "The draft is saved\. Nobody was emailed\.", by\);/);
   // Fix round 1 (I1): a reconcile on Add a case keeps the keyboard on the page.
   assert.match(app, /async function reconcile\(useMine, by\)[\s\S]*?if \(controller\.getState\(\)\.screen === "office-add-case" && !root\.contains\(document\.activeElement\)\)/);
   assert.match(app, /"The application is with the office\."/);
@@ -745,7 +763,6 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
 const STAFF_ONLY_TOASTS = Object.freeze([
   // fillAssistedIntake: the office's fill on Add a case
   "Fictional details filled in. Nothing is saved yet.",
-  "There is no assisted intake form on screen.",
   // runCaseAction SUBMIT, presenter branch only
   "The application is with the office. Record the intake checks next.",
   // runAssistanceAction RESOLVE: the office's help-request drawer
@@ -788,29 +805,39 @@ function notifyArguments(source) {
 test("app.mjs writes no client text of its own: toasts and patched text go through t() or sentence()", () => {
   const app = appSource();
   // The direct forms first: a literal straight into notify or textContent.
-  for (const match of app.matchAll(/notify\(\s*(["'`])((?:(?!\1).)*)\1/g))
+  for (const match of app.matchAll(/notify\(\s*"(?:success|info|warning)",\s*(["'`])((?:(?!\1).)*)\1/g))
     assert.ok(STAFF_ONLY_TOASTS.includes(match[2]), `literal toast outside the staff allow-list: ${match[2]}`);
   for (const match of app.matchAll(/\.textContent = (["'`])((?:(?!\1).)+)\1/g))
     assert.fail(`literal textContent: ${match[2]}`);
   // Then every literal inside any notify(…), ternaries included. A text key
-  // ("toast.saved") is not text, and the error path's own fallback is a sentence.
+  // ("toast.saved") is not text, and a sentence(…) may name a known sentence.
   const calls = notifyArguments(app);
   assert.ok(calls.length > 20, "found the notify calls");
+  // Every call names its kind first (design D4). The definition's own
+  // parameter list is not a call.
   for (const call of calls)
-    for (const literal of call.matchAll(/(["'`])((?:(?!\1).)*)\1/g)) {
+    if (call !== "kind, text, by")
+      assert.match(call, /^\s*"(success|info|warning)",/, `a toast without a kind: notify(${call.slice(0, 60)}…)`);
+  for (const call of calls) {
+    const said = call.replace(/^\s*"(success|info|warning)",\s*/, "");
+    for (const literal of said.matchAll(/(["'`])((?:(?!\1).)*)\1/g)) {
       const text = literal[2];
       if (/^[a-z_]+(\.[a-z_]+)+$/.test(text)) {
         assert.ok(Object.hasOwn(TEXT, text), `unknown text key ${text}`);
         continue;
       }
-      if (call.startsWith("sentence(") && Object.hasOwn(SENTENCES, text)) continue;
+      if (said.startsWith("sentence(") && Object.hasOwn(SENTENCES, text)) continue;
       assert.ok(STAFF_ONLY_TOASTS.includes(text), `toast outside the staff allow-list: ${text}`);
     }
+  }
   // Every allow-listed toast is really there (the list does not go stale).
   for (const text of STAFF_ONLY_TOASTS) assert.ok(app.includes(`"${text}"`), `still raised: ${text}`);
-  // The error path's message is a sentence in the view language.
-  assert.doesNotMatch(app, /notify\(error\?\.message \?\? "Something went wrong\."\)/);
-  assert.match(app, /notify\(sentence\(error\?\.message \?\? "Something went wrong\.", /);
+  // Errors never toast (design D1).
+  assert.doesNotMatch(app, /notify\([^)]*error/);
+  assert.match(app, /notify\("success", t\("toast\.saved"/);
+  assert.match(app, /notify\("warning", t\("toast\.confirm_first"/);
+  assert.match(app, /notify\("warning", t\("toast\.needs_change"/);
+  assert.match(app, /import \{ TOAST_MS[^}]*\} from "\.\/toast\.mjs"|createToastTimer/);
   // The draft's own messages are keys now.
   assert.doesNotMatch(app, /DRAFT_FAILED|DRAFT_FONT_UNCHECKED/);
   assert.match(app, /"draft\.failed"/);
@@ -854,11 +881,11 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
     app,
     /if \(controller\.getState\(\)\.lang === "zh-Hant"\) \{[^]*?const outcome = await languageRequests\.want\("zh-Hant", \(\) => \{\}, \{ timeoutMs: HANT_START_TIMEOUT_MS \}\);\s*if \(controller\.getState\(\)\.lang === "zh-Hant" && \(outcome === "failed" \|\| !hantReady\(\)\)\) \{\s*controller\.adoptLanguage\("zh-Hans", \{ draw: false \}\);\s*pendingToast = "toast\.hant_failed_start";\s*\}\s*\}\s*controllerStarted = true;\s*await controller\.start\(\);\s*\}\s*$/,
   );
-  assert.match(app, /if \(pendingToast[\s\S]{0,200}notify\(t\(pendingToast, \{\}, lang\)\);[\s\S]{0,40}pendingToast = null;/);
+  assert.match(app, /if \(pendingToast\) \{\s*notify\("warning", t\(pendingToast, \{\}, lang\)\);\s*pendingToast = null;/);
   // The switch: sweep, then a request (a failure keeps the language).
   assert.match(
     app,
-    /case "set-language": \{[\s\S]{0,200}sweepV2Form\(\);[\s\S]{0,200}const outcome = await languageRequests\.want\(lang, \(wanted\) => controller\.setLanguage\(wanted\)\);\s*if \(outcome === "failed"\) notify\(t\("toast\.hant_failed", \{\}, screenLang\(\)\), by\);\s*break;/,
+    /case "set-language": \{[\s\S]{0,200}sweepV2Form\(\);[\s\S]{0,200}const outcome = await languageRequests\.want\(lang, \(wanted\) => controller\.setLanguage\(wanted\)\);\s*if \(outcome === "failed"\) notify\("warning", t\("toast\.hant_failed", \{\}, screenLang\(\)\), by\);\s*break;/,
   );
   // Other tabs follow through a request, without writing it back, and draw nothing before start.
   assert.match(
@@ -886,7 +913,7 @@ test("index.html keeps lang=\"en\" and today's title, which frame.title repeats"
 test("app.mjs treats a Save that saved nothing as not saved", () => {
   const app = readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
   const save = app.slice(app.indexOf('if (type === "SAVE_ANSWERS") {'), app.indexOf('if (type === "SUBMIT" && !state.openPanels'));
-  assert.match(save, /if \(!\(await controller\.saveAnswers\(\)\)\) return;\s+clearFormDrafts\(form\);\s+notify\(t\("toast\.saved"/);
+  assert.match(save, /if \(!\(await controller\.saveAnswers\(\)\)\) return;\s+clearFormDrafts\(form\);\s+notify\("success", t\("toast\.saved"/);
   const submit = app.slice(app.indexOf('if (type === "SUBMIT" && state.savedCase) {'), app.indexOf('if (type === "RESPOND_DOCUMENT"'));
   assert.match(submit, /if \(controller\.getState\(\)\.dirty && !\(await controller\.saveAnswers\(\)\)\) return;/);
   const exit = app.slice(app.indexOf('case "save-exit": {'), app.indexOf('case "fill-fictional":'));
@@ -961,7 +988,7 @@ test("a press's result message is shown only while the person who pressed is sig
   assert.equal([...app.matchAll(/principal\?\.userId/g)].length, 1, "one notion of the signed-in user");
   // The one place the rule lives: notify, given who the press was made by.
   const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function notify(") + 500);
-  assert.match(notifyFn, /function notify\(text, by\) \{\s+if \(by !== undefined && by !== signedInUserId\(\)\) return;/);
+  assert.match(notifyFn, /function notify\(kind, text, by\) \{\s+if \(by !== undefined && by !== signedInUserId\(\)\) return;/);
   // Taken at the start of the click and submit handlers (the change handler
   // awaits nothing and says nothing).
   const click = app.slice(app.indexOf('root.addEventListener("click"'), app.indexOf('root.addEventListener("input"'));
@@ -970,9 +997,13 @@ test("a press's result message is shown only while the person who pressed is sig
   assert.match(click, /root\.addEventListener\("click", async \(event\) => \{\s+\/\/[^\n]*\n\s+const by = signedInUserId\(\);/);
   assert.match(submit, /root\.addEventListener\("submit", async \(event\) => \{\s+event\.preventDefault\(\);\s+\/\/[^\n]*\n\s+const by = signedInUserId\(\);/);
   assert.doesNotMatch(change, /notify\(|await /);
-  // The three catches.
-  assert.match(click, /\} catch \(error\) \{\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*notify\(sentence\(error\?\.message \?\? "Something went wrong\.", screenLang\(\)\), by\);/);
-  assert.equal([...submit.matchAll(/notify\(sentence\(error\?\.message \?\? "Something went wrong\.", screenLang\(\)\), by\);/g)].length, 2);
+  // Both handlers also take the error on screen at the press, for the safety net.
+  assert.match(click, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.errorCount;/);
+  assert.match(submit, /const by = signedInUserId\(\);\s+const shown = controller\.getState\(\)\.errorCount;/);
+  // The three catches: the safety net, never a toast (design D1).
+  const net = /\} catch \(error\) \{\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*safetyNet\(error, by, shown\);/g;
+  assert.equal([...click.matchAll(net)].length, 1, "the click handler's catch is the safety net");
+  assert.equal([...submit.matchAll(net)].length, 2, "both submit catches are the safety net");
   // The press functions take it from the handler that called them.
   assert.match(click, /await runCaseAction\(caseTarget, null, by\)/);
   assert.match(click, /await runAssistanceAction\(assistTarget, null, by\)/);
@@ -998,8 +1029,8 @@ test("a press's result message is shown only while the person who pressed is sig
     submit,
   ];
   const BEFORE_ANY_AWAIT = [
-    't("toast.confirm_first", {}, screenLang())',
-    '"Say what you helped with before resolving this request."',
+    '"warning", t("toast.confirm_first", {}, screenLang())',
+    '"warning", "Say what you helped with before resolving this request."',
   ];
   // "Before any await" is checked, not assumed: a later await put ahead of
   // either message on its way would let another user sign in first. The one
@@ -1031,8 +1062,87 @@ test("a press's result message is shown only while the person who pressed is sig
     said += 1;
     assert.match(call, /,\s*by$/, `a message after an await names who pressed: ${call}`);
   }
-  assert.ok(said >= 24, `found the press messages (${said})`);
+  // 21 since the three catches became the safety net (design D1); 20 since a
+  // draft that couldn't be built went to the banner instead of a toast.
+  assert.ok(said >= 20, `found the press messages (${said})`);
   // The one that was reported and is still here: the client's "started"
   // (which used to ask only that somebody was signed in).
-  assert.match(app, /if \(started\) notify\(t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
+  assert.match(app, /if \(started\) notify\("success", t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
+});
+
+test("the safety net and the toast host (design D1, D4)", () => {
+  const app = appSource();
+  const net = app.slice(app.indexOf("function safetyNet("), app.indexOf("function safetyNet(") + 900);
+  assert.match(net, /if \(by !== signedInUserId\(\)\) return;/);
+  assert.match(net, /const state = controller\.getState\(\);\s*if \(!state\.principal \|\| state\.authError\) return;/);
+  // getState() clones the error, so only the count says nothing new was recorded.
+  assert.match(net, /if \(state\.errorCount !== shown\) return;/);
+  assert.doesNotMatch(net, /state\.error !== shown/);
+  assert.match(net, /controller\.noteLocalFailure\(/);
+  assert.match(app, /root\.after\(toastHost\)/);
+  assert.match(app, /setAttribute\("role", "status"\)/);
+  assert.doesNotMatch(app, /toastHost\.setAttribute\("role"/, "the live region is the text span, not the host");
+  // The live region stays in the accessibility tree while the host is hidden
+  // (it is empty then), so a toast's words are announced.
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.toast \.toast-text \{[^}]*visibility: visible;/);
+  assert.match(css, /\.toast:not\(\.visible\) \.toast-text \{ pointer-events: none; \}/, "a hidden toast never takes a click");
+  // The text goes after the 0.2 s fade, and only if no toast came meanwhile.
+  const onHide = app.slice(app.indexOf("onHide: () => {"), app.indexOf("toastHost.addEventListener(\"mouseenter\""));
+  assert.match(onHide, /window\.setTimeout\(\(\) => \{\s*if \(!toast\.shown\) toastText\.textContent = "";\s*\}, 200\);/);
+  assert.doesNotMatch(onHide, /^\s*toastText\.textContent = "";$/m, "never cleared at once");
+  // A replacing toast keeps the hold the page still has (no new mouseenter or
+  // focusin fires under a pointer or focus that hasn't moved).
+  const notifyFn = app.slice(app.indexOf("function notify("), app.indexOf("function safetyNet("));
+  assert.match(
+    notifyFn,
+    /toast\.show\(kind\);\s*(?:\/\/[^\n]*\n\s*)*toast\.hover\(toastHost\.matches\(":hover"\)\);\s*toast\.focus\(toastHost\.contains\(document\.activeElement\)\);\s*\}/,
+  );
+});
+
+test("a pressed control is found again after a redraw (design D5)", () => {
+  const claim = { id: "", name: "", dataset: { caseAction: "CLAIM_PREPARATION", caseId: "case-7" }, tagName: "BUTTON" };
+  const help = { id: "", name: "", dataset: { assistanceAction: "CLAIM", itemId: "help-3" }, tagName: "BUTTON" };
+  const checkpoint = { id: "checkpoint-submit", name: "", dataset: {}, tagName: "BUTTON" };
+  assert.ok(focusSelectors(describeFocus(claim)).some((s) => s.includes('data-case-action="CLAIM_PREPARATION"') && s.includes('data-case-id="case-7"')));
+  assert.ok(focusSelectors(describeFocus(help)).some((s) => s.includes('data-assistance-action="CLAIM"') && s.includes('data-item-id="help-3"')));
+  assert.deepEqual(focusSelectors(describeFocus(checkpoint)), ['[id="checkpoint-submit"]']);
+});
+
+test("app.mjs marks only the allow-listed press while it runs (design D5)", () => {
+  const app = appSource();
+  assert.match(app, /const BUSY_ACTIONS = Object\.freeze\(\["confirm-reset-fixtures", "save-office-draft", "send-office-draft"\]\);/);
+  const allow = app.slice(app.indexOf("function busyControl("), app.indexOf("function busyControl(") + 600);
+  assert.match(allow, /dataset\.caseAction \|\| control\.dataset\.assistanceAction/);
+  assert.match(allow, /control\.id === "checkpoint-submit"/);
+  assert.match(allow, /BUSY_ACTIONS\.includes\(control\.dataset\.action\)/);
+  assert.match(app, /pressed = null;\s*if \(busyControl\(target\)\) pressed = describeFocus\(target\);/);
+  assert.match(app, /pressed = null;\s*if \(event\.submitter && busyControl\(event\.submitter\)\) pressed = describeFocus\(event\.submitter\);/);
+  const mark = app.slice(app.indexOf("function markPressed("), app.indexOf("function markPressed(") + 900);
+  assert.match(mark, /if \(!state\.busy && !state\.officeSaving\) \{\s*pressed = null;\s*return;\s*\}/);
+  assert.match(mark, /if \(!pressed\) return;/);
+  assert.doesNotMatch(mark, /saveState/);
+  assert.match(mark, /control\.classList\.contains\("is-busy"\)/);
+  assert.match(mark, /setAttribute\("aria-busy", "true"\)/);
+  assert.match(mark, /icon\("spinner", "spin"\)/);
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.match(renderBody, /markPressed\(state\);/);
+});
+
+test("errors share one look (design D7)", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  for (const token of ["--vt-error-bg: #fbeceb", "--vt-error: #8a3b34", "--vt-notice-bg: #efedfb", "--vt-notice: #4b3fa3", "--vt-attention-bg: #faf0dd"])
+    assert.ok(css.includes(token), token);
+  assert.match(css, /\.notice\.error p \{[^}]*color: var\(--vt-error\)/);
+  assert.match(css, /\.office-drawer \.notice\.error/);
+  assert.match(css, /\.unloaded-line \{ color: var\(--vt-error\); \}/);
+  assert.doesNotMatch(css, /\.unloaded-line \{[^}]*#8a3b34/);
+  assert.doesNotMatch(css, /\.office-drawer \.notice\.amber/);
+});
+
+test("app.mjs says back online only after a real loss (design D7)", () => {
+  const app = appSource();
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.match(renderBody, /if \(\["offline", "reconnecting"\]\.includes\(drawnConnection\) && state\.connection === "online"\)\s*notify\("info", t\("toast\.back_online", \{\}, lang\)\);\s*drawnConnection = state\.connection;/);
+  assert.match(app, /let drawnConnection = "unknown";/);
 });

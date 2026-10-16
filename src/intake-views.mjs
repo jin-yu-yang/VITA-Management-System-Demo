@@ -42,7 +42,7 @@ import {
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
-import { t, sentence } from "./client-text.mjs";
+import { t } from "./client-text.mjs";
 
 const when = (condition, html) => (condition ? html : "");
 
@@ -650,7 +650,7 @@ export function intakeFormV2(state, chrome = {}) {
             : questionsBody(view);
   const reference = view.record?.reference;
   const say = (key) => esc(t(key, {}, view.lang));
-  return `<main id="main" class="workspace intake-v2" tabindex="-1"><aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">${say("intake.overline")}</span><h2>${say("intake.sidebar_1")}<br>${say("intake.sidebar_2")}</h2>${rail(view)}</div><div class="sidebar-help">${icon("help")}<h3>${say("intake.help_title")}</h3><p>${say("intake.help_body")}</p>${officeContact()}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(reference)}</span>${chrome.saveStatus ? chrome.saveStatus(state) : ""}</div>${chrome.conflictForm ? chrome.conflictForm(state) : ""}${header(view)}${chrome.fictionalTools ?? ""}<form id="intake-v2-form" novalidate data-substep="${esc(view.current)}">${body}${when(state.error, `<p class="error" role="alert">${esc(sentence(state.error?.message, view.lang))}</p>`)}${actions(view, alerts)}</form></section></main>`;
+  return `<main id="main" class="workspace intake-v2" tabindex="-1"><aside class="intake-sidebar"><div class="sidebar-top"><span class="overline">${say("intake.overline")}</span><h2>${say("intake.sidebar_1")}<br>${say("intake.sidebar_2")}</h2>${rail(view)}</div><div class="sidebar-help">${icon("help")}<h3>${say("intake.help_title")}</h3><p>${say("intake.help_body")}</p>${officeContact()}</div></aside><section class="form-workspace"><div class="application-meta"><span>${esc(reference)}</span>${chrome.saveStatus ? chrome.saveStatus(state) : ""}</div>${chrome.conflictForm ? chrome.conflictForm(state) : ""}${header(view)}${chrome.fictionalTools ?? ""}<form id="intake-v2-form" novalidate data-substep="${esc(view.current)}">${body}${actions(view, alerts)}</form></section></main>`;
 }
 
 /** After submission: read-only, grouped by step and sub-step (contact fields from record.contact). */

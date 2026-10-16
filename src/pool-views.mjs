@@ -1,6 +1,6 @@
 import { phaseTab, describeStage } from "./domain.mjs";
 import { clientLanguages, languageOptions, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
-import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell } from "./ui.mjs";
+import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell, loadingLine, unloadedLine } from "./ui.mjs";
 import { listPhone } from "./staff-views.mjs";
 
 export const POOL_TABS = Object.freeze([
@@ -117,6 +117,10 @@ function poolRow(record, now, person) {
 }
 
 export function renderCasePool(cases = [], people = [], ui = {}) {
+  if (ui.list === "loading" || ui.list === "failed")
+    return `<section class="panel case-pool" aria-labelledby="pool-title"><h2 id="pool-title">All cases</h2>${
+      ui.list === "loading" ? loadingLine("Loading cases…") : unloadedLine("The cases couldn't load.")
+    }</section>`;
   const all = Array.isArray(cases) ? cases : [];
   const now = ui.now ?? Date.now();
   const person = ui.person ?? null;

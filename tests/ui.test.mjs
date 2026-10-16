@@ -14,6 +14,9 @@ import {
   clientNumberLabel,
   clientNumberTag,
   languageCell,
+  loadingLine,
+  unloadedLine,
+  ICON_NAMES,
 } from "../src/ui.mjs";
 
 // `describeFocus` is the one piece of the DOM wiring that is worth testing on
@@ -444,4 +447,10 @@ test("languageCell: the letters for sighted staff, the names on hover and for sc
   const odd = languageCell({ letters: "O", names: 'Other: <b>"x"</b>', labels: ["Other"] });
   assert.doesNotMatch(odd, /<b>/);
   assert.match(odd, /title="Other: &lt;b&gt;&quot;x&quot;&lt;\/b&gt;"/);
+});
+
+test("the loading and couldn't-load lines", () => {
+  assert.match(loadingLine("Loading cases…"), /^<p class="loading-line" role="status"><svg class="icon spin"[^>]*aria-hidden="true"[\s\S]*<span>Loading cases…<\/span><\/p>$/);
+  assert.match(unloadedLine("The cases couldn't load."), /^<p class="unloaded-line"><svg[\s\S]*<span>The cases couldn&#39;t load\.<\/span><\/p>$/);
+  assert.ok(ICON_NAMES.includes("spinner"));
 });

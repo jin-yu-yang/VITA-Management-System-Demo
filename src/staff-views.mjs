@@ -35,6 +35,8 @@ import {
   clientNumberLabel,
   clientNumberTag,
   languageCell,
+  loadingLine,
+  unloadedLine,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -564,6 +566,10 @@ const yoursFirst = (records, personId) =>
  * @param {object}   ui     `{person|personId, filters, busy, now, searchDraft}`
  */
 export function renderStaffBoard(cases = [], people = [], ui = {}) {
+  if (ui.list === "loading" || ui.list === "failed")
+    return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">Work board</h2></div>${
+      ui.list === "loading" ? loadingLine("Loading cases…") : unloadedLine("The cases couldn't load.")
+    }</section>`;
   const roster = Array.isArray(people) ? people : [];
   const person = ui.person ?? roster.find((entry) => entry?.id === ui.personId) ?? null;
   const chosen = boardFilters(ui.filters);
@@ -649,7 +655,7 @@ export function listPhone(record, person, prefix) {
 // lost by announcing it here instead.
 export function problemNotice(ui) {
   if (!ui?.error) return "";
-  return `<div class="notice amber" role="alert">${icon("help")}<div><h3>${esc(
+  return `<div class="notice error" role="alert">${icon("help")}<div><h3>${esc(
     ui.error.code === "CONFLICT"
       ? "This case changed while you were working"
       : "That step did not go through",
@@ -1287,13 +1293,18 @@ function reviewPanel(record) {
  * The Request corrections dialog: the form REQUEST_CORRECTIONS is built from.
  * A refused send is repeated here, because the page's own notice sits behind
  * the dialog (aria-modal), so that notice may not be read. This one carries
- * role="alert" and is tied to the textarea with aria-describedby.
+ * role="alert" and is tied to the textarea with aria-describedby. With the
+ * dialog open it is the only copy, so it carries the banner's controls: Try
+ * again (when the press can be re-sent) and Dismiss.
  */
 export function correctionsDialogBody(state = {}) {
   const refused = state.error
-    ? `<div class="notice amber" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
+    ? `<div class="notice error" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
         state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
-      )}</h3><p>${esc(state.error.message)}</p></div></div>`
+      )}</h3><p>${esc(state.error.message)}</p><div class="conflict-choices">${when(
+        state.retryable,
+        button("Try again", "retry-action", "secondary"),
+      )}${button("Dismiss", "dismiss-error", "text")}</div></div></div>`
     : "";
   return `${refused}<p>Tell the preparer what to correct in TaxSlayer. The client never sees these words.</p><form class="staff-form">${textarea(
     "Corrections to send back to the preparer",
