@@ -146,7 +146,7 @@ Decision log from the explore and brainstorm conversation of 2026-10-16. The use
 - **Edits and the server:** the client can still change the date, and the server checks it as an ordinary date.
 
 **I5. The draft 14446.**
-- **A tool script** writes XFA-stripped copies to `src/forms/` (for example `f14446-pcdc-en.pdf` and `f14446-pcdc-zh-t.pdf`), with page 3's four Yes/No boxes cleared (Q1, and Q2, which is ticked from `vc_agree`). They are pinned by SHA-256 in a new module, `src/draft-14446-form.mjs`, which maps answers to page 3's fields for each language's field names.
+- **A tool script** writes XFA-stripped copies to `src/forms/` (for example `f14446-pcdc-en.pdf` and `f14446-pcdc-zh-t.pdf`), with page 3's four Yes/No boxes cleared (Q1, and Q2, which is ticked from `vc_agree`). They are pinned by SHA-256 in a new module, `src/draft-virtual-consent.mjs`, which maps answers to page 3's fields for each language's field names.
 - **What it fills:**
 
   | Block | Boxes |

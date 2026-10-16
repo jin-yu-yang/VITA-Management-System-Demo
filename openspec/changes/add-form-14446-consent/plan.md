@@ -12,7 +12,7 @@
 - **The catalogue:** two new catalogue sections; Section 15 holds `vc_agree` in "Before you start", and Section 16 the signatures in "About you". They are generated into migration 029.
 - **The gate:** a gate in `resolveSubstep` (`src/intake-form.mjs`), which every move and every drawn page already goes through, plus a locked rail and a disabled Continue in `src/intake-views.mjs`.
 - **The dates:** the controller fills them in `editAnswers`.
-- **The draft:** a new field map, `src/draft-14446-form.mjs`, over XFA-stripped copies of PCDC's PDFs, built by the existing `buildDraftPdf`.
+- **The draft:** a new field map, `src/draft-virtual-consent.mjs`, over XFA-stripped copies of PCDC's PDFs, built by the existing `buildDraftPdf`.
 - **The samples:** a hand-written migration, 030, gives them their 14446 answers.
 
 **Tech Stack:**
@@ -849,7 +849,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ### Task 5: The draft Form 14446
 
 **Files:**
-- Create: `src/draft-14446-form.mjs`, `tests/draft-14446-form.test.mjs`.
+- Create: `src/draft-virtual-consent.mjs`, `tests/draft-14446-form.test.mjs`.
 - Modify:
   - `src/app.mjs`: `viewDraft` (~line 1082) and the `view-draft` case (~line 1434);
   - `src/intake-views.mjs`: `draftButtons` (~line 533) and the summary tools (~line 553);
@@ -878,7 +878,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { FORM_14446_FILES, FORM_14446_SHA256, draft14446Fields } from "../src/draft-14446-form.mjs";
+import { FORM_14446_FILES, FORM_14446_SHA256, draft14446Fields } from "../src/draft-virtual-consent.mjs";
 
 const F = (name) => `form1[0].page3[0].${name}`;
 const MEI = Object.freeze({
@@ -941,7 +941,7 @@ test("the 繁體 form's field names (draft-14446)", () => {
 });
 ```
 
-  **`tests/draft-14446-pdf.test.mjs`** (append; add the imports `StandardFonts`, `rgb` from `pdf-lib`, `fontkit` from `@pdf-lib/fontkit`, `buildDraftPdf` from `../src/draft-pdf.mjs`, and `FORM_14446_FILES`, `draft14446Fields` from `../src/draft-14446-form.mjs`):
+  **`tests/draft-14446-pdf.test.mjs`** (append; add the imports `StandardFonts`, `rgb` from `pdf-lib`, `fontkit` from `@pdf-lib/fontkit`, `buildDraftPdf` from `../src/draft-pdf.mjs`, and `FORM_14446_FILES`, `draft14446Fields` from `../src/draft-virtual-consent.mjs`):
 
 ```js
 test("buildDraftPdf fills the 14446 forms with page 3's values, quietly (draft-14446)", async () => {
@@ -1025,7 +1025,7 @@ test("the summary offers the draft Form 14446 in English and 繁體, never 简�
 
 - [ ] **Step 3: The module**
 
-  Create `src/draft-14446-form.mjs`:
+  Create `src/draft-virtual-consent.mjs`:
 
 ```js
 // The draft Form 14446 (openspec change add-form-14446-consent, design D5):
@@ -1280,7 +1280,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   In `docs/developer/frontend.md`'s version-2 intake form section, add:
 
 ```markdown
-- **Form 14446** (openspec change `add-form-14446-consent`): 0.4 `before.virtual` asks the virtual-process consent (`vc_agree`, a required one-option checkbox). Until it is ticked, `resolveSubstep` (`intake-form.mjs`, `consented`) sends every place after "Before you start" back to 0.4, the rail shows those steps locked, and Continue is disabled. Add a case is never locked. 1.5 `about.sign` shows the details the form prints, then asks `vc_review` and the signatures; the controller fills `vc_tp_date`/`vc_sp_date` with today on a first signature. "View Draft Form 14446" (`draft-14446-form.mjs`) fills page 3 of PCDC's own form, XFA-stripped by `tools/strip-xfa.mjs`, in English and 繁體.
+- **Form 14446** (openspec change `add-form-14446-consent`): 0.4 `before.virtual` asks the virtual-process consent (`vc_agree`, a required one-option checkbox). Until it is ticked, `resolveSubstep` (`intake-form.mjs`, `consented`) sends every place after "Before you start" back to 0.4, the rail shows those steps locked, and Continue is disabled. Add a case is never locked. 1.5 `about.sign` shows the details the form prints, then asks `vc_review` and the signatures; the controller fills `vc_tp_date`/`vc_sp_date` with today on a first signature. "View Draft Form 14446" (`draft-virtual-consent.mjs`) fills page 3 of PCDC's own form, XFA-stripped by `tools/strip-xfa.mjs`, in English and 繁體.
 ```
 
 - [ ] **Step 3: The counts**

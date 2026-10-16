@@ -94,7 +94,7 @@
 
 ### D5: The draft 14446 (brainstorm Q2, Q4, Q5, Q11, Q16, I5)
 - **Choice:**
-  - **The forms:** a tool script (`tools/strip-xfa.mjs`) writes XFA-stripped copies of PCDC's two PDFs to `src/forms/`, with page 3's four Yes/No boxes (Q1 and Q2) cleared. `src/draft-14446-form.mjs` pins them by SHA-256. If pdf-lib can't flatten a field that has no appearance (an empty electronic-signature field), the tool removes that field.
+  - **The forms:** a tool script (`tools/strip-xfa.mjs`) writes XFA-stripped copies of PCDC's two PDFs to `src/forms/`, with page 3's four Yes/No boxes (Q1 and Q2) cleared. `src/draft-virtual-consent.mjs` pins them by SHA-256. If pdf-lib can't flatten a field that has no appearance (an empty electronic-signature field), the tool removes that field.
   - **The field map:** the same module maps answers to page 3's fields, for each language's field names. It fills:
     - the taxpayer block: the full name; `tp_dob` and `vc_tp_date` as MM/DD/YYYY; `tp_phone`; `email`; `vc_tp_signature`;
     - the spouse block, only when `vc_sp_signature` is filled and J holds: the spouse's full name, `sp_dob`, `vc_sp_date`, `sp_phone`, `vc_sp_email`, `vc_sp_signature`;
@@ -102,6 +102,7 @@
     - Q2's Yes while `vc_agree` is ticked.
 
     The electronic-signature fields stay empty.
+  - **The module's name is letters and dashes only** (`draft-virtual-consent.mjs`, not `draft-14446-form.mjs`): `server.mjs` serves only `src/` modules whose names are letters and dashes, and the forms rule names each served PDF exactly. The first story run found a module with numbers in its name refused, with the app failing to boot.
   - **The build:** `buildDraftPdf` builds it, with the 繁體 font for the 繁體 form, a DRAFT stamp, and the file name `14446-draft.pdf`.
   - **Buttons:** "View Draft Form 14446" and 繁體中文版 sit next to the 13614-C tools on the client's summary page and the staff answers panel. A 简体 screen lists 繁體 as its Chinese option.
 - **Why:**
