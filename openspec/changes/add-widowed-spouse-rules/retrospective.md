@@ -145,19 +145,19 @@ From the SDD ledger (`.superpowers/sdd/plan/progress.md`), before it was deleted
 
 ## 6. Promote candidates → long-term learning
 
-- [ ] 🟡 **Any check at `change` time sees a draft that `input` has already updated** → **Promote to memory** (type: feedback)
+- [x] 🟡 **Any check at `change` time sees a draft that `input` has already updated** → **Promoted to memory** `change-sees-updated-draft` (type: feedback)
   > **Why**: here a redraw that compared the draft's sub-steps before and after `change` could never fire, and a per-keystroke clean-up would have dropped "My spouse" mid-retype. The user caught the first at planning.
   > **How to apply**: when planning anything that reacts to a form edit, compare the page with the draft (as `needsRedraw` does), and treat partial or cleared values and a move's re-sent unchanged answers as edits too.
 
-- [ ] 🟡 **Browser/server parity must include the browser's own transformation of the value** → **Promote to memory** (type: feedback)
+- [x] 🟡 **Browser/server parity must include the browser's own transformation of the value** → **Promoted to memory** `browser-reads-as-sent` (type: feedback)
   > **Why**: the parity table compared literal JSON on both sides and passed, while "2024 " (trimmed by `sendable` before it is checked and sent) made the browser hide questions the server then required.
   > **How to apply**: when a rule reads an answer in the browser, read it the way `sendable` sends it, and add a padded or unnormalised value to the browser-side test.
 
-- [ ] 🟡 **Hidden answers aren't harmless when they are contact fields** → **Promote to memory** (type: project)
+- [x] 🟡 **Hidden answers aren't harmless when they are contact fields** → **Promoted to memory** `hidden-contact-fields-surface` (type: project)
   > **Why**: Fill stored the married sample's hidden `sp_phone` for a widow, and the save copies contact fields into `case_contacts`, which the staff contact card shows. A ruling that called hidden answers harmless was wrong.
   > **How to apply**: before ruling that a hidden answer is harmless, check whether it is in `CONTACT_FIELDS`, or otherwise copied by the save.
 
-- [ ] 📌 **A new story walk can break a later step's premise about visits** → **Promote to memory** (append to `story-save-timing`)
+- [x] 📌 **A new story walk can break a later step's premise about visits** → **Promoted to memory** (appended to `story-save-timing`)
   > **Why**: the widowed walk opened the spouse part, so "visits follow the client" no longer landed on a never-opened part.
   > **How to apply**: when a story step jumps to a sub-step, grep later steps for expectations about first-visit or "never opened" before committing.
 
