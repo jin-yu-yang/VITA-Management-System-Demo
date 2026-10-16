@@ -1200,16 +1200,25 @@ if (!config) {
       draftOffers.keep(url);
       if (tab && !tab.closed) {
         tab.location.href = url;
-        return;
+      } else {
+        // The browser blocked even the early tab: offer a link instead, drawn
+        // into the page as it is now and again after every redraw.
+        draftOffers.offer({ url, fileName: fields.fileName, caseId, userId });
+        showDraftLink();
       }
-      // The browser blocked even the early tab: offer a link instead, drawn
-      // into the page as it is now and again after every redraw.
-      draftOffers.offer({ url, fileName: fields.fileName, caseId, userId });
-      showDraftLink();
+      // A draft that was built and offered: an earlier draft problem is over.
+      if (controller.getState().error?.code === "DRAFT") controller.dismissError();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
-      const failure = error?.draftFont ? "draft.font_unchecked" : "draft.failed";
-      notify("warning", t(failure, {}, screenLang()), by);
+      if (by !== signedInUserId()) return;
+      // A draft that couldn't be built is an error: the banner, with Try again.
+      controller.noteLocalFailure(
+        {
+          code: "DRAFT",
+          message: error?.draftFont ? "The draft font could not be checked. Try again later." : "The draft could not be made. Try again.",
+        },
+        () => viewDraft(form, by, kind),
+      );
     }
   }
 
@@ -1609,7 +1618,7 @@ if (!config) {
         // the controller answers null and says so on screen. "Sent again."
         // would be a claim that something left this window.
         const sent = await controller.retryLast();
-        if (sent) notify("success", t("toast.sent_again", {}, screenLang()), by);
+        if (sent && !sent.local) notify("success", t("toast.sent_again", {}, screenLang()), by);
         break;
       }
       case "retry-connection":

@@ -395,6 +395,9 @@ export const SENTENCES = Object.freeze({
   // app.mjs: a refused action with no message of its own; the save chip's default
   "Something went wrong.": "出了点问题。",
   "Please try again.": "请再试一次。",
+  // app.mjs viewDraft: the banner's words for a draft that couldn't be built
+  "The draft could not be made. Try again.": "无法生成草稿。请再试一次。",
+  "The draft font could not be checked. Try again later.": "无法核对草稿所用的字体。请稍后再试。",
   // auth.mjs: sign-in (also saved in the window's sign-in record)
   "If this address is eligible, check your inbox for a sign-in code.": "如果这个电子邮箱符合资格，请查看收件箱中的登录验证码。",
   "Enter an email address, for example name@example.org.": "请输入电子邮箱，例如 name@example.org。",

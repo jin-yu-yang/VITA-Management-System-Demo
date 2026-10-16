@@ -25,7 +25,7 @@ import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src
 import { cardsFor } from "../src/document-cards.mjs";
 import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
-import { t } from "../src/client-text.mjs";
+import { t, sentence } from "../src/client-text.mjs";
 import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
@@ -1626,4 +1626,9 @@ test("1.5's spouse-signature tip follows the marital status (add-form-14446-cons
   assert.ok(!widowed.includes(marriedTip));
   const single = sign(makeSampleAnswers());
   assert.ok(!single.includes(marriedTip) && !single.includes(lateTip), "never married: neither tip");
+});
+
+test("the draft banner's sentences speak the screen's language", () => {
+  assert.equal(sentence("The draft could not be made. Try again.", "zh-Hans"), "无法生成草稿。请再试一次。");
+  assert.equal(sentence("The draft font could not be checked. Try again later.", "zh-Hans"), "无法核对草稿所用的字体。请稍后再试。");
 });

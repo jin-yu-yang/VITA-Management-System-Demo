@@ -366,6 +366,16 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.equal(TEXT["draft.failed"].en, "The draft could not be made. Close this tab and try again.");
   assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
+  // A draft that couldn't be built is an error (design D1).
+  const viewDraftFn = app.slice(app.indexOf("async function viewDraft("), app.indexOf("// ---- leaving Add a case"));
+  const draftCatch = viewDraftFn.slice(viewDraftFn.indexOf("} catch (error) {"), viewDraftFn.indexOf("// ---- leaving Add a case"));
+  assert.match(viewDraftFn, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
+  assert.match(viewDraftFn, /controller\.noteLocalFailure\(\s*\{\s*code: "DRAFT",\s*message: error\?\.draftFont \? "The draft font could not be checked\. Try again later\." : "The draft could not be made\. Try again\.",?\s*\},\s*\(\) => viewDraft\(form, by, kind\),?\s*\)/);
+  assert.match(viewDraftFn, /if \(controller\.getState\(\)\.error\?\.code === "DRAFT"\) controller\.dismissError\(\);/);
+  assert.ok(draftCatch.startsWith("} catch (error) {"), "the catch block was found");
+  assert.doesNotMatch(draftCatch, /notify\(/, "a draft failure never toasts");
+  assert.doesNotMatch(viewDraftFn, /const failure/);
+  assert.match(app, /const sent = await controller\.retryLast\(\);\s*if \(sent && !sent\.local\) notify\("success", t\("toast\.sent_again"/);
   assert.match(app, /addEventListener\("afterprint"/);
   for (const gone of [/goToStep\(/, /goToV2Step/, /"go-step"/, /still-title/, /\bstepStatus\(/, /rail-step-\$\{step\}-status/, /formStep/, /setFormStep/, /"edit-"/])
     assert.doesNotMatch(app, gone);
@@ -1044,8 +1054,9 @@ test("a press's result message is shown only while the person who pressed is sig
     said += 1;
     assert.match(call, /,\s*by$/, `a message after an await names who pressed: ${call}`);
   }
-  // 21 since the three catches became the safety net (design D1).
-  assert.ok(said >= 21, `found the press messages (${said})`);
+  // 21 since the three catches became the safety net (design D1); 20 since a
+  // draft that couldn't be built went to the banner instead of a toast.
+  assert.ok(said >= 20, `found the press messages (${said})`);
   // The one that was reported and is still here: the client's "started"
   // (which used to ask only that somebody was signed in).
   assert.match(app, /if \(started\) notify\("success", t\("toast\.started", \{\}, screenLang\(\)\), by\);/);
