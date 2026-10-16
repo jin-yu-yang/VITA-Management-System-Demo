@@ -1561,10 +1561,10 @@ export function createController({
     // 2025 never loses "My spouse".
     const statusChanged =
       Object.hasOwn(clean, "marital_status") && clean.marital_status !== (state.draftAnswers ?? {}).marital_status;
-    const yearDone =
-      Object.hasOwn(clean, "spouse_death_year") &&
-      isAnswered(clean.spouse_death_year) &&
-      checkValue(findQuestion(2, "spouse_death_year"), clean.spouse_death_year) === null;
+    // The year as the save sends it (trimmed), so "2020 " counts like "2020".
+    const yearQuestion = findQuestion(2, "spouse_death_year");
+    const yearSent = Object.hasOwn(clean, "spouse_death_year") ? sendable(yearQuestion, clean.spouse_death_year) : null;
+    const yearDone = isAnswered(yearSent) && checkValue(yearQuestion, yearSent) === null;
     if ((statusChanged || yearDone) && !spouseShown(draft)) draft = clearSpouse(draft);
     commitDraft(draft);
   }

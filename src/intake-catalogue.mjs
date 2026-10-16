@@ -72,8 +72,11 @@ export const memberNameParts = (member) =>
 // A whole number written in ASCII digits without a leading zero, else null.
 // gte and lte read only these, as the database's intake_holds does (change
 // add-widowed-spouse-rules): "02025", which the year check refuses, never
-// counts as 2025.
-const wholeNumber = (value) => (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value) ? Number(value) : null);
+// counts as 2025. The browser reads the answer as it is sent, trimmed ("2024 "
+// is 2024); the server only ever stores trimmed values, and check_intake_value
+// refuses " 2024", so migration 027 needs no change.
+const wholeNumber = (value) =>
+  typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value.trim()) ? Number(value.trim()) : null;
 
 const holds = (condition, answers) => {
   if (condition.op === "any")

@@ -2332,6 +2332,15 @@ test("a death year that ends the joint return drops the spouse from the who answ
   controller.stop();
 });
 
+test("a death year with spaces counts as the whole year the save sends (add-widowed-spouse-rules)", async () => {
+  const { controller } = await openV2({
+    answers: { marital_status: "widowed", spouse_death_year: "2025", us_citizen: ["me", "spouse"] },
+  });
+  controller.editAnswers({ spouse_death_year: "2020 " });
+  assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me"]);
+  controller.stop();
+});
+
 test("retyping the death year keeps the spouse (add-widowed-spouse-rules)", async () => {
   const { controller } = await openV2({
     answers: { marital_status: "widowed", spouse_death_year: "2025", us_citizen: ["me", "spouse"] },

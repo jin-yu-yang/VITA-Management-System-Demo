@@ -648,7 +648,9 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         [[year("lte", 2025)], { y: "2025" }, true],
         [[year("lte", 2025)], { y: "2205" }, false],
         [[year("gte", 2023)], { y: "02025" }, false],
-        [[year("gte", 2023)], { y: " 2025" }, false],
+        // No padded year row: the server never stores a padded value (the save
+        // trims it, check_intake_value refuses it); the browser's reading of
+        // one is pinned by the unit test in tests/intake-catalogue.test.mjs.
         [[pick], { m: "a" }, true],
         [[pick], { m: "b", y: "2025" }, true],
         [[pick], { m: "b", y: "2024" }, false],

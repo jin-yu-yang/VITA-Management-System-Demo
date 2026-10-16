@@ -463,7 +463,8 @@ test("isVisible: gte and lte read a whole number, and nothing else (add-widowed-
     [{ y: "2025" }, true, true],
     [{ y: "2205" }, true, false],
     [{ y: "02025" }, false, false],
-    [{ y: " 2025" }, false, false],
+    [{ y: " 2025" }, true, true],
+    [{ y: "2024 " }, true, true],
   ]) {
     assert.equal(isVisible(atLeast, answers), gte, `gte ${JSON.stringify(answers)}`);
     assert.equal(isVisible(atMost, answers), lte, `lte ${JSON.stringify(answers)}`);
@@ -503,6 +504,7 @@ test("spouseOnReturn (S) and spouseShown (J) by the year of death (add-widowed-s
     ["2025", true, true],
     ["2205", false, false],
     ["02025", false, false],
+    ["2024 ", true, false],
   ]) {
     assert.equal(spouseOnReturn(widowed(year)), s, `S ${year}`);
     assert.equal(spouseShown(widowed(year)), j, `J ${year}`);

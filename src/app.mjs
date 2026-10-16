@@ -4,8 +4,8 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
-import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered, spouseOnReturn } from "./intake-catalogue.mjs";
+import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
@@ -809,12 +809,9 @@ if (!config) {
     // What is in the boxes first, so a fill sees every answer as typed.
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const generated = makeSampleAnswers({
-      seed: sampleSeed,
-      // A married sample also for a recently widowed client: its spouse answers
-      // fill the late spouse's sub-step; the married-only ones stay hidden.
-      married: spouseOnReturn(draft),
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const generated = sampleAnswersFor(draft, { seed: sampleSeed });
     // A regenerate is the new example plus a clear of every other answer
     // already in the draft (the wording choice kept); a fill touches blank
     // answers only.
@@ -835,12 +832,9 @@ if (!config) {
     }
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const sample = makeSampleAnswers({
-      seed: sampleSeed,
-      // A married sample also for a recently widowed client: its spouse answers
-      // fill the late spouse's sub-step; the married-only ones stay hidden.
-      married: spouseOnReturn(draft),
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const sample = sampleAnswersFor(draft, { seed: sampleSeed });
     controller.editAnswers(fictionalAnswers(draft, sample));
     notify("Fictional details filled in. Nothing is saved yet.");
   }
