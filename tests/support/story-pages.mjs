@@ -220,6 +220,11 @@ export async function waitForQuiet(page, { quiet = QUIET_MS, timeout = ARRIVAL_M
           window.__vitallyQuiet.last = performance.now();
         });
         window.__vitallyQuiet.observer.observe(app, { childList: true, subtree: true });
+        // The toast lives beside #app, not in it: a toast arriving or going
+        // is the page changing too.
+        const toast = document.querySelector("#toast");
+        if (toast)
+          window.__vitallyQuiet.observer.observe(toast, { childList: true, subtree: true, characterData: true });
         return false;
       }
       return performance.now() - window.__vitallyQuiet.last > settle;
@@ -541,8 +546,9 @@ export const watchAlerts = (page) =>
       const seen = [];
       for (const node of document.querySelectorAll('[role="alert"]'))
         seen.push(safe(node.innerText.replace(/\s+/g, " ").trim()));
-      // The toast is where a refused click says what went wrong, and it is a
-      // status rather than an alert, so it needs its own look.
+      // The toast carries only successes, information and warnings now
+      // (errors go to the banner, in place, or into the open dialog), and it
+      // is a status rather than an alert, so it needs its own look.
       const toast = document.querySelector("#toast")?.textContent.trim();
       if (toast) seen.push(`toast: ${safe(toast)}`);
       for (const text of seen)
@@ -550,8 +556,60 @@ export const watchAlerts = (page) =>
           window.__vitallyAlerts.push(text);
     };
     new MutationObserver(sweep).observe(app, { childList: true, subtree: true });
+    // The toast's host sits beside #app, outside it, so it is watched on its own.
+    const toast = document.querySelector("#toast");
+    if (toast) new MutationObserver(sweep).observe(toast, { childList: true, subtree: true, characterData: true });
     sweep();
   });
+
+// Hide a visible toast by its own Dismiss, pressed in the page: a toast that
+// went by itself a moment ago leaves nothing to wait for, and the focus stays
+// where it was. Then the pointer goes to the top centre ((0, 0) is the staff
+// sidebar toggle), so it does not hold the next toast by hovering over it.
+async function hideToast(page) {
+  await page.evaluate(() => document.querySelector("#toast.visible .toast-dismiss")?.click());
+  const width = page.viewportSize()?.width ?? DESKTOP.width;
+  await page.mouse.move(Math.floor(width / 2), 2);
+}
+
+/**
+ * A visible toast takes the pointer (it has a Dismiss) and holds itself while
+ * hovered, so an action aimed under it would wait. Before every action, a
+ * visible toast is dismissed first. A locator handler stays with its page
+ * across reloads, so this is registered once per page.
+ */
+export async function guardToast(page) {
+  await page.addLocatorHandler(page.locator("#toast.visible"), () => hideToast(page), { noWaitAfter: true });
+}
+
+/** Dismiss a visible toast now (a screenshot is about to be taken), if there is one. */
+export const clearToast = (page) => hideToast(page);
+
+/**
+ * Press the toast's Dismiss with the real pointer, once it has finished
+ * arriving. The pointer and keyboard APIs never run a locator handler, so the
+ * guard above does not hide the toast first.
+ */
+export async function pressToastDismiss(page) {
+  await waitFor(
+    page,
+    "the toast to finish arriving",
+    () => {
+      const toast = document.querySelector("#toast.visible");
+      return Boolean(toast) && toast.getAnimations().length === 0;
+    },
+    undefined,
+    RENDER_MS,
+  );
+  const target = await page.evaluate(() => {
+    const box = document.querySelector("#toast.visible .toast-dismiss")?.getBoundingClientRect();
+    return box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null;
+  });
+  assert.ok(target, "the toast went before its Dismiss could be pressed");
+  await page.mouse.click(target.x, target.y);
+  const width = page.viewportSize()?.width ?? DESKTOP.width;
+  await page.mouse.move(Math.floor(width / 2), 2);
+}
 
 export const readAlerts = async (page) =>
   (await page.evaluate(() => window.__vitallyAlerts ?? null))?.map(

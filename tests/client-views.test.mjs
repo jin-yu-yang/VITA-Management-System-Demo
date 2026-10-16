@@ -16,6 +16,7 @@ import {
   connectionNotice,
   unreachableScreen,
   dialog,
+  toastParts,
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
@@ -24,7 +25,7 @@ import { formatAnswer, visibleSubsteps, substepStatus, stepRollup } from "../src
 import { cardsFor } from "../src/document-cards.mjs";
 import { intakeFormV2, docCard, submittedV2 } from "../src/intake-views.mjs";
 import { icon } from "../src/ui.mjs";
-import { t } from "../src/client-text.mjs";
+import { t, sentence } from "../src/client-text.mjs";
 import { CONSENT_14446 } from "./support/consent-14446.mjs";
 
 // Views are pure functions of a controller snapshot, so these tests operate on
@@ -171,6 +172,20 @@ test("an offline visitor reads the last view behind a connection notice", () => 
     }),
   );
   assert.match(offline, /Network error\. Please try again later\./);
+});
+
+test("the connection notice: reconnecting spins, offline doesn't", () => {
+  const reconnecting = connectionNotice({ ...baseState(), connection: "reconnecting" });
+  assert.match(reconnecting, /^<div class="connection-notice reconnecting" role="status"><svg class="icon spin"/);
+  const offline = connectionNotice({ ...baseState(), connection: "offline" });
+  assert.match(offline, /^<div class="connection-notice offline" role="status">/);
+  assert.doesNotMatch(offline, /class="icon spin"/);
+  assert.equal(connectionNotice({ ...baseState(), connection: "online" }), "");
+});
+
+test("back online, in both languages", () => {
+  assert.equal(t("toast.back_online", {}, "en"), "You're back online.");
+  assert.equal(t("toast.back_online", {}, "zh-Hans"), "已重新连接。");
 });
 
 test("a dialog can always take the keyboard, whatever its body holds", () => {
@@ -586,6 +601,65 @@ test("the staff workspace announces a failure once, beside the work", () => {
   assert.match(page(onBoard, staffScreen(onBoard)), /problem-banner/);
 });
 
+test("an error shows inside the open dialog, and the banner steps aside", () => {
+  const error = { code: "VALIDATION", message: "This checkpoint is not available." };
+  const presenter = { userId: "p1", workspaceId: "w1", access: "presenter" };
+  for (const name of ["help", "regenerate", "leave-add-case", "close-case", "reset-fixtures", "load-checkpoint", "print"]) {
+    const state = {
+      ...baseState({ savedCase: caseRecord() }),
+      principal: ["reset-fixtures", "load-checkpoint"].includes(name) ? presenter : baseState().principal,
+      dialog: name,
+      error,
+      retryable: false,
+    };
+    const html = dialog(state);
+    assert.match(html, /<div class="notice error" role="alert" id="dialog-error">[\s\S]*This checkpoint is not available\./, name);
+    assert.match(html, /data-action="dismiss-error"/, name);
+    assert.doesNotMatch(page(state, "<main></main>"), /class="problem-banner"/, `${name}: no banner behind the dialog`);
+  }
+  // Without an error, nothing is added.
+  assert.doesNotMatch(dialog(baseState({ dialog: "help" })), /dialog-error/);
+});
+
+test("a dialog on the case page holds the only copy of the error", () => {
+  const state = baseState({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    screen: "staff-case",
+    dialog: "close-case",
+    error: { code: "SERVER_ERROR", message: "x" },
+    retryable: false,
+    people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
+    selectedPersonId: "person-1",
+    savedCase: {
+      ...caseRecord({ id: "case-a", stage: "preparing", preparerId: "person-1" }),
+      participants: ["person-1"],
+      requests: [],
+      documents: [],
+      followups: [],
+      reviews: [],
+      internalHistory: [],
+    },
+  });
+  assert.doesNotMatch(staffScreen(state), /That step did not go through/, "no in-place copy behind the modal");
+  assert.match(staffScreen({ ...state, dialog: null }), /That step did not go through/, "with no dialog the case page says it");
+  assert.match(dialog(state), /id="dialog-error"/);
+});
+
+test("a toast's parts: an icon, the text, and a Dismiss label in the screen's language", () => {
+  const parts = toastParts({ kind: "success", text: "Your answers are saved.", lang: "en" });
+  assert.match(parts.icon, /<svg class="icon toast-icon[^"]*"[^>]*aria-hidden="true"/);
+  assert.equal(parts.text, "Your answers are saved.");
+  assert.equal(parts.dismissLabel, "Dismiss");
+  assert.equal(toastParts({ kind: "info", text: "x", lang: "zh-Hans" }).dismissLabel, "关闭");
+  assert.throws(() => toastParts({ kind: "error", text: "x", lang: "en" }), /kind/);
+});
+
+test("the page no longer draws the toast: its host lives beside #app (design D4)", () => {
+  const html = page(baseState(), applicationsScreen(baseState()));
+  assert.doesNotMatch(html, /id="toast"/);
+  assert.doesNotMatch(html, /class="toast"/);
+});
+
 test("the brand is ViTally, attributed to PCDC, for tax year 2025", () => {
   const html = page(baseState(), applicationsScreen(baseState()));
   assert.ok(html.includes("ViTally"));
@@ -670,6 +744,19 @@ const sample = () => makeSampleAnswers();
 const TODAY = new Date(2026, 9, 4, 12);
 const chrome = { saveStatus, conflictForm, fictionalTools: "", today: TODAY };
 const form = (overrides) => intakeFormV2(v2State(overrides), chrome);
+
+test("the v2 intake says an error once: the banner, or the chip for a failed save", () => {
+  const alerts = (html) => (html.match(/role="alert"/g) ?? []).length;
+  const drafted = v2State({ error: { code: "DRAFT", message: "The draft could not be made. Try again." }, retryable: true });
+  const withBanner = page(drafted, intakeScreen(drafted));
+  assert.match(withBanner, /class="problem-banner" role="alert"/);
+  assert.equal(alerts(withBanner), 1, "only the banner");
+  assert.doesNotMatch(intakeScreen(drafted), /<p class="error"/, "no copy inside the form");
+  const failed = v2State({ saveState: "failed", dirty: true, error: { code: "OFFLINE", message: "Network error. Please try again later." }, retryable: true });
+  const withChip = page(failed, intakeScreen(failed));
+  assert.match(withChip, /class="save-chip failed" role="alert"/);
+  assert.equal(alerts(withChip), 1, "only the chip");
+});
 
 // One step's <li>, up to the next step (its sub-steps included).
 const railStepOf = (html, id) => {
@@ -1610,4 +1697,18 @@ test("1.5's spouse-signature tip follows the marital status (add-form-14446-cons
   assert.ok(!widowed.includes(marriedTip));
   const single = sign(makeSampleAnswers());
   assert.ok(!single.includes(marriedTip) && !single.includes(lateTip), "never married: neither tip");
+});
+
+test("the draft banner's sentences speak the screen's language", () => {
+  assert.equal(sentence("The draft could not be made. Try again.", "zh-Hans"), "无法生成草稿。请再试一次。");
+  assert.equal(sentence("The draft font could not be checked. Try again later.", "zh-Hans"), "无法核对草稿所用的字体。请稍后再试。");
+});
+
+test("the client's applications while they load, and when they couldn't", () => {
+  const loading = applicationsScreen(baseState({ cases: [], lists: { cases: "loading", assistance: "ready" } }));
+  assert.match(loading, /Loading your applications…/);
+  assert.doesNotMatch(loading, /No applications yet/);
+  const failed = applicationsScreen(baseState({ cases: [], lists: { cases: "failed", assistance: "ready" }, lang: "zh-Hans" }));
+  assert.match(failed, /无法载入您的申请。/);
+  assert.match(applicationsScreen(baseState({ cases: [] })), /No applications yet/, "no lists means loaded");
 });

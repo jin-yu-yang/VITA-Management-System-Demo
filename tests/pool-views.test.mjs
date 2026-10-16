@@ -197,3 +197,13 @@ test("the pool's first column is the client number, before the reference", () =>
   assert.match(html, /<th scope="col">Client<\/th>/);
   assert.match(html, /<span class="client-number">#093<\/span><button class="board-reference"/);
 });
+
+test("the case pool while its cases load, and when they couldn't", () => {
+  const loading = renderCasePool([], PEOPLE, { list: "loading", filters: {}, now: NOW });
+  assert.match(loading, /Loading cases…/);
+  assert.doesNotMatch(loading, /No case matches these filters|data-filter="poolPhase"|Showing 0/);
+  const failed = renderCasePool([], PEOPLE, { list: "failed", filters: {}, now: NOW });
+  assert.match(failed, /The cases couldn&#39;t load\./);
+  assert.doesNotMatch(failed, /No case matches these filters/);
+  assert.match(renderCasePool([], PEOPLE, { filters: {}, now: NOW }), /No case matches these filters\./, "ready by default");
+});

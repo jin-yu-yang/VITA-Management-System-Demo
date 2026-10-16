@@ -5008,3 +5008,352 @@ test("signing Form 14446 fills its date with today, and a typed date is kept (ad
   assert.equal(controller.getState().draftAnswers.gcf_tp_date ?? null, null, "15080's dates are not filled");
   controller.stop();
 });
+
+test("a refusal is recorded before it is thrown, and offers no retry", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }), (error) => error.code === "NOT_FOUND");
+  assert.deepEqual(controller.getState().error, { code: "NOT_FOUND", message: "Open an application first." });
+  assert.equal(controller.getState().retryable, false);
+  controller.stop();
+});
+
+test("a presenter-only refusal is recorded too", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.resetFixtures(), (error) => error.code === "FORBIDDEN");
+  assert.equal(controller.getState().error.code, "FORBIDDEN");
+  assert.match(controller.getState().error.message, /^Only the person running the session/);
+  controller.stop();
+});
+
+test("a stale checkpoint is recorded", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.loadCheckpoint({ caseId: "fixture-a", checkpoint: "no-such-point" }));
+  assert.equal(controller.getState().error.message, "This checkpoint is not available.");
+  controller.stop();
+});
+
+test("noteLocalFailure records the error, and Try again runs its retry once, synchronously", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  assert.deepEqual(controller.getState().error, { code: "DRAFT", message: "The draft could not be made. Try again." });
+  assert.equal(controller.getState().retryable, true);
+  const pending = controller.retryLast();
+  assert.equal(runs, 1, "a rebuilt draft must open its tab inside the press");
+  assert.deepEqual(await pending, { local: true });
+  assert.equal(controller.getState().error, null);
+  assert.equal(await controller.retryLast(), null, "the retry is used up");
+  assert.equal(runs, 1);
+  controller.stop();
+});
+
+test("without a retry, noteLocalFailure offers Dismiss only", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(await controller.retryLast(), null);
+  controller.stop();
+});
+
+test("a newer error, a dismiss or a sign-out drops the local retry", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  const retry = () => {
+    runs += 1;
+  };
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  controller.dismissError();
+  assert.equal(await controller.retryLast(), null);
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true })); // a refusal: a newer error
+  assert.equal(await controller.retryLast(), null);
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  await controller.signOut();
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
+test("a local failure during a failed save falls back to unsaved and keeps the draft", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().saveState, "failed");
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {});
+  const state = controller.getState();
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.dirty, true, "the draft is still here");
+  assert.equal(state.error.code, "DRAFT");
+  assert.deepEqual(await controller.retryLast(), { local: true }, "Try again is the draft's, not the dropped save's");
+  controller.stop();
+});
+
+test("retryLast still replays a pending action when no local retry is pending", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().retryable, true);
+  const replay = await controller.retryLast();
+  assert.ok(replay && !replay.local, "a replayed save is not a local retry");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// Lists that are loading or couldn't load (design D6)
+// ---------------------------------------------------------------------------
+
+const offlineList = () => async () => {
+  throw Object.assign(new Error("offline"), { code: "OFFLINE" });
+};
+
+test("a dropped local retry takes its Try again with it", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  assert.equal(controller.getState().retryable, true);
+  controller.dismissError();
+  assert.equal(controller.getState().retryable, false, "Dismiss drops the draft's Try again");
+  // A focus or `online` re-read that fails offline: its banner offers no
+  // Try again that would do nothing.
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().error.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, false, "no Try again that does nothing");
+  assert.equal(await controller.retryLast(), null);
+  // A newer error drops it too.
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, () => {
+    runs += 1;
+  });
+  await controller.refresh();
+  assert.equal(controller.getState().retryable, false, "a newer error drops the draft's Try again");
+  // And a sign-out.
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, () => {
+    runs += 1;
+  });
+  await controller.signOut();
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
+test("a refusal replacing a retryable error offers no Try again", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().retryable, true, "the offline save can be sent again");
+  await assert.rejects(controller.resetFixtures(), (error) => error.code === "FORBIDDEN");
+  assert.equal(controller.getState().error.code, "FORBIDDEN");
+  assert.equal(controller.getState().retryable, false);
+  controller.stop();
+});
+
+test("a save that fails after a draft failure keeps its own Try again", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {});
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().error.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, true, "the save's envelope can be sent again");
+  const replay = await controller.retryLast();
+  assert.ok(replay && !replay.local, "Try again re-sends the save, not the dropped draft");
+  controller.stop();
+});
+
+test("every recorded error is counted", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  assert.equal(controller.getState().errorCount, 0);
+  await controller.start();
+  const before = controller.getState().errorCount;
+  controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
+  assert.equal(controller.getState().errorCount, before + 1, "noteLocalFailure");
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }));
+  assert.equal(controller.getState().errorCount, before + 2, "a refusal");
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().errorCount, before + 3, "a failed read (noteFailure)");
+  // The same words again are still a new error.
+  await controller.refresh();
+  assert.equal(controller.getState().errorCount, before + 4);
+  controller.stop();
+});
+
+test("clearError clears only its own error and leaves the notice", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.resetFixtures();
+  const notice = controller.getState().notice;
+  assert.ok(notice);
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  controller.clearError("OFFLINE");
+  assert.equal(controller.getState().error.code, "DRAFT", "another code is left alone");
+  assert.equal(controller.getState().retryable, true);
+  controller.clearError("DRAFT");
+  assert.equal(controller.getState().error, null);
+  assert.equal(controller.getState().notice, notice, "the notice is not the draft's to clear");
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
+test("a list that never loaded says so, and Try again reads everything again", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realList = store.listCases;
+  store.listCases = offlineList();
+  const { controller } = build({ store });
+  assert.equal(controller.getState().lists.cases, "loading");
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().retryable, true);
+  store.listCases = realList;
+  store.calls.length = 0;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  const state = controller.getState();
+  assert.equal(state.lists.cases, "ready");
+  assert.equal(state.lists.assistance, "ready");
+  assert.equal(state.cases.length, 1);
+  assert.ok(store.calls.includes("listPeople"), "the people are read again");
+  assert.ok(state.people.length > 0);
+  assert.ok(state.workspace, "the workspace is read again");
+  controller.stop();
+});
+
+test("a list that loaded once keeps its cases when a reload fails", async () => {
+  const store = fakeStore({ cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }] });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "ready");
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().cases.length, 1);
+  assert.equal(controller.getState().error?.code, "OFFLINE", "the failed reload is still said");
+  controller.stop();
+});
+
+test("a first load that fails after both lists are read still offers Try again", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realWorkspace = store.getWorkspace;
+  store.getWorkspace = offlineList();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().lists.assistance, "ready");
+  assert.equal(controller.getState().workspace, null);
+  assert.equal(controller.getState().error?.code, "OFFLINE");
+  assert.equal(controller.getState().retryable, true, "Try again reads the rest");
+  store.getWorkspace = realWorkspace;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.ok(controller.getState().workspace, "the workspace is read");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("an applicant's help-request list counts as loaded, and sign-out starts over", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.deepEqual(controller.getState().lists, { cases: "ready", assistance: "ready" });
+  await controller.signOut();
+  assert.deepEqual(controller.getState().lists, { cases: "loading", assistance: "loading" });
+  controller.stop();
+});
+
+test("a restored open case that also fails to load does not take Try again away from the lists", async () => {
+  const shared = fakeSession();
+  const record = { id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: { ...CONSENT_14446 } };
+  const store = fakeStore({ cases: [record] });
+  const first = build({ store, sessionStorage: shared });
+  await first.controller.start();
+  await first.controller.selectCase("case-a");
+  first.controller.stop();
+
+  const realList = store.listCases;
+  const realGet = store.getCase;
+  store.listCases = offlineList();
+  store.getCase = offlineList();
+  const { controller } = build({ store, sessionStorage: shared });
+  await controller.start();
+  assert.equal(controller.getState().selectedCaseId, "case-a", "the open case was restored");
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().retryable, true, "Try again is offered");
+  store.listCases = realList;
+  store.getCase = realGet;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().cases.length, 1);
+  controller.stop();
+});
+
+test("a later refresh after a failed first load reads the people and the workspace too", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realList = store.listCases;
+  store.listCases = offlineList();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().people.length, 0);
+  assert.equal(controller.getState().workspace, null);
+  store.listCases = realList;
+  store.calls.length = 0;
+  await controller.refresh();
+  const state = controller.getState();
+  assert.equal(state.lists.cases, "ready");
+  assert.equal(state.lists.assistance, "ready");
+  assert.ok(state.people.length > 0, "the people are read");
+  assert.ok(state.workspace, "the workspace is read");
+  assert.ok(store.calls.includes("listPeople"), "listPeople was called again");
+  store.calls.length = 0;
+  await controller.refresh();
+  assert.ok(!store.calls.includes("listPeople"), "once loaded, a refresh does not read the people again");
+  controller.stop();
+});

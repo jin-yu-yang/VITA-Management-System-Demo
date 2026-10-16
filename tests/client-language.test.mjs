@@ -381,7 +381,7 @@ test("every errors.mjs, controller, auth and notice sentence is a SENTENCES key"
   safe.forEach((s) => wanted.add(s));
   // controller.mjs: literal controllerError and requirePresenter sentences, *_NOTICE and the client conflict messages
   const controller = source("controller.mjs");
-  const errorsThrown = [...controller.matchAll(/controllerError\(\s*"[A-Z_]+"\s*,\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
+  const errorsThrown = [...controller.matchAll(/(?:controllerError|refuse)\(\s*"[A-Z_]+"\s*,\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
   assert.ok(errorsThrown.length >= 12);
   errorsThrown.forEach((s) => wanted.add(s));
   [...controller.matchAll(/requirePresenter\(\s*("(?:[^"\\]|\\.)*")/g)].forEach((m) => wanted.add(literal(m[1])));
