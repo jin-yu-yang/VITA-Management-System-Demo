@@ -935,7 +935,12 @@ const draftTools = () =>
     "view-draft",
     "secondary",
     'data-form="zh-s" lang="zh-Hans"',
-  )}${button("繁體中文版", "view-draft", "secondary", 'data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+  )}${button("繁體中文版", "view-draft", "secondary", 'data-form="zh-t" lang="zh-Hant"')}${button(
+    "View Draft Form 14446",
+    "view-draft",
+    "secondary",
+    'data-draft="14446" data-form="en"',
+  )}${button("繁體中文版", "view-draft", "secondary", 'data-draft="14446" data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
 
 // What the Intake answers tab holds, shared with the office page. The draft
 // prints the client's phones, so its buttons follow the contact rule.

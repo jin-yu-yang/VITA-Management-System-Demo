@@ -1824,6 +1824,8 @@ test("the draft 13614-C buttons show to staff who work on a version-2 case", () 
   assert.match(office, /data-action="view-draft" data-form="en">View Draft 13614-C</);
   assert.match(office, />简体中文版</);
   assert.match(office, />繁體中文版</);
+  assert.match(office, /data-action="view-draft" data-draft="14446" data-form="en"[^>]*>View Draft Form 14446</);
+  assert.match(office, /data-action="view-draft" data-draft="14446" data-form="zh-t" lang="zh-Hant"[^>]*>繁體中文版</);
   // After the answers panel, before the contact card.
   assert.ok(office.indexOf("answers-v2") < office.indexOf("summary-tools"));
   assert.ok(office.indexOf("summary-tools") < office.indexOf("contact-card"));
