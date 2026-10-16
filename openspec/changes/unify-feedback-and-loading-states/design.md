@@ -42,13 +42,13 @@
 - **Choice:**
   - **Guard refusals:** a controller helper `refuse(code, message)` records the error with `noteFailure`, draws, then returns the `controllerError` to throw. It replaces each of the 12 unrecorded `throw controllerError(...)` sites and `requirePresenter`'s throw.
   - **The three catches** in `app.mjs` stop toasting. They become a safety net. At the press, `app.mjs` keeps the error the state showed; in the catch, it records a general error through `noteLocalFailure` only when:
-    - the state's error is still that same one (nothing new was recorded);
+    - no error was recorded since the press: the controller counts every recorded error (`state.errorCount`, incremented in `noteFailure`), `app.mjs` keeps the count at the press, and the net returns when it changed (final review: `getState()` clones the error, so an object comparison never matched);
     - there is a principal, and no `authError` (the sign-in form states its own failures);
     - the same person is still signed in.
 
     The message is the error's own when `sentence()` knows it, otherwise "Something went wrong."
   - **App-side refusals:** Add a case's "There is no assisted intake form on screen." is recorded with `noteLocalFailure` and no retry.
-  - **Draft-build failures:** `app.mjs` calls `controller.noteLocalFailure(error, retry)`, where `retry` rebuilds the same draft (form, kind and language). The banner's text is a new sentence, "The draft could not be made. Try again." (`draft.failed` speaks of closing the tab, which fits only the blank tab, and still does). For a font failure it is "The draft font could not be checked. Try again later." A draft that is then built clears a draft error still showing.
+  - **Draft-build failures:** `app.mjs` calls `controller.noteLocalFailure(error, retry)`, where `retry` rebuilds the same draft (form, kind and language). The banner's text is a new sentence, "The draft could not be made. Try again." (`draft.failed` speaks of closing the tab, which fits only the blank tab, and still does). For a font failure it is "The draft font could not be checked. Try again later." A draft that is then built clears a draft error still showing, with `controller.clearError("DRAFT")`, which clears only an error of that code and leaves the notice banner alone (final review).
 - **Why:** one announcement (`role="alert"`) per failure, and nothing a person must act on disappears on a timer.
 - **Alternatives considered:**
   - Keeping the catch's toast for refusals only. Rejected: it keeps two kinds of error voice.
@@ -58,12 +58,13 @@
 - **Choice:**
   - **One error at a time.** A newer error replaces an older one. If the older one was a failed save (the save chip's "Not saved"), the chip falls back to "Unsaved" and the pending save is dropped (`forgetPendingSave`): the draft is still in the window and is sent with the next move or save.
   - **Where it shows**, in this order:
-    1. inside the open dialog, when one is open. The two drawers and the corrections dialog already state their own; every other dialog gets the same block (`dialogError`) at the top of its body;
+    1. inside the open dialog, when one is open. The two drawers and the corrections dialog already state their own (the corrections dialog's block gains Try again and Dismiss, final review); every other dialog gets the same block (`dialogError`) at the top of its body;
     2. in place on the staff case page;
     3. in the save chip, for a save that failed;
     4. otherwise in the problem banner.
 
     The problem banner, and the case page's in-place error, step aside whenever a dialog is open.
+  - **The client intake's own inline error is removed** (final review): `intakeFormV2` used to repeat `state.error` in a `role="alert"` paragraph beside Continue, so every error on the intake showed twice (with the banner, or with the save chip for a failed save).
 - **Why:** an error behind an `aria-modal` dialog can't be reached or read; two Try again buttons running different things would be a trap.
 - **Alternatives considered:** keeping a failed save's error beside a newer local one (two errors, two retries). Rejected: rare, and confusing when it happens.
 
@@ -71,6 +72,7 @@
 - **Choice:**
   - `noteLocalFailure(error, retry)` stores `retry` as the window's pending local retry and sets `retryable` when one is given.
   - **Its lifetime:** `noteFailure` always drops the local retry; `noteLocalFailure` and `noteUnloaded` (D6) set it after recording. So any newer error, a dismiss, a sign-out or a new action (each clears or replaces the error) also ends it. `retryLast` runs it only while an error is showing.
+  - **The Try again flag follows it** (final review): dropping a pending local retry also turns `retryable` off, so a banner never offers a Try again with nothing behind it. `dispatch` sets `retryable` after `noteFailure` for a failure that can be replayed, so a stale local retry being dropped can't take a failed save's own Try again away.
   - **`retryLast()`** runs the local retry when one is pending, otherwise replays `pendingAction` as today. It returns `{ local: true }` for a local retry, so "Sent again." follows only a replayed action. It calls the local retry before its first `await`, so a draft rebuilt by Try again opens its tab inside the press, as `viewDraft` does today; a blocked tab falls back to the existing draft link.
 - **Why:** the banner's Try again stays the single retry control, and the controller stays the one owner of what a retry does.
 
@@ -81,7 +83,7 @@
   - **Timing:** 5 s for success and information, 8 s for warnings. The pointer over the toast, or focus inside it, stops the timer; when both have left, it starts again from the full duration. Dismiss, or Escape while focus is inside the toast, hides it at once. A new toast replaces the current one and its timer.
   - **Its own host.** `app.mjs` creates the toast once beside `#app`, so a redraw neither wipes it nor re-announces it. Inside `#toast`:
     - an icon slot (`aria-hidden`);
-    - a persistent text span with `role="status"` and `aria-live="polite"`;
+    - a persistent text span with `role="status"` and `aria-live="polite"`. It stays `visibility: visible` (and `pointer-events: none` while the toast is hidden) so the live region is in the accessibility tree before its text changes (final review); its text clears 200 ms after a hide, once the fade is over;
     - a Dismiss button, outside the live region, 44 × 44 px, with only an icon and an `aria-label` from `frame.dismiss`.
 
     So `#toast`'s text is the message alone. The host carries `data-kind`.
@@ -106,15 +108,16 @@
     - `save-office-draft` and `send-office-draft`.
 
     No other press is marked: a sub-step move's Continue, the rail, the language switch and the other navigation never are.
-  - After each draw, while `state.busy` or `state.officeSaving` is true and the save chip isn't saving, the control that description finds gets the class `is-busy`, `aria-busy="true"` and a spinner before its label. The description is dropped when both are false. A control already marked isn't marked twice.
+  - After each draw, while `state.busy` or `state.officeSaving` is true, the control that description finds gets the class `is-busy`, `aria-busy="true"` and a spinner before its label. The description is dropped when both are false. A control already marked isn't marked twice.
   - `describeFocus` and `focusSelectors` in `ui.mjs` already describe and find a control by its action and row (`data-case-id`, `data-item-id`, …), so no new helper is needed.
-- **Why:** the views stay pure, the press knows which button it was, and the allow-list keeps a client's sub-step move free of a spinner (the save chip says Saving).
+- **Why:** the views stay pure, the press knows which button it was, and the allow-list keeps a client's sub-step move free of a spinner (the save chip says Saving). An extra "skip while the save chip is saving" guard was dropped during apply (Task 5 review): it also hid the spinner on Add a case's Save and Send through their save, and the allow-list already excludes sub-step moves.
 - **Alternatives considered:** a `pressed` field in the controller read by every button helper. Rejected: it touches every view's buttons for one class.
 
 ### D6: Lists that are loading or couldn't load (brainstorm Q6.1, Q6.2, Q8.8–Q8.10, I8, I14)
 - **Choice:**
   - The controller keeps `lists: { cases: "loading" | "ready" | "failed", assistance: ... }`.
   - **One data read.** `load()`'s data section moves into `loadData()`: the case list, and for a presenter the people, the help requests and the workspace. For anyone else, `assistance` is `ready` at once (there is nothing to read).
+  - **`dataLoaded`** (Task 4 review): `loadData` sets it at its end; while it is false, `refresh()` reads with `loadData()` too, so a refresh after a failed start reads the people and the workspace. `noteUnloaded` sets the retry when a list isn't ready or `dataLoaded` is false, and `load()` calls it after reading a restored open case, whose own failure would otherwise have dropped the retry.
   - A list becomes `ready` after its first successful read. When a read fails, `noteUnloaded()` marks every list that isn't `ready` as `failed`, and sets the local retry to `loadData` followed by a draw. Sign-out returns both to `loading`. A later reload that fails (`refresh`) leaves a `ready` list as it is, with the banner above.
   - **Readers:**
     - the work board, case pool, Follow-ups and the client's applications read `cases`;
