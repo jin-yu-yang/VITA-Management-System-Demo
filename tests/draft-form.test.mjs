@@ -547,3 +547,8 @@ test("the English form's generated lines do not change with the Traditional map 
   assert.equal(loaded.comments, plain.comments);
   assert.ok(!/\p{Script=Han}/u.test(plain.comments));
 });
+
+test("a 2025 death's not-sure line quotes the wording with the spouse (add-widowed-spouse-rules)", () => {
+  const { comments } = draft({ ...MARRIED, marital_status: "widowed", spouse_death_year: "2025", claimed_by_other: "not_sure" });
+  assert.match(comments, /claim you or your spouse as a dependent/);
+});

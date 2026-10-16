@@ -1069,6 +1069,8 @@ export default {
               "id": "spouse_death_year",
               "type": "year",
               "required": true,
+              "min": 1900,
+              "max": 2025,
               "showIf": [
                 {
                   "field": "marital_status",
@@ -1108,9 +1110,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1144,9 +1170,33 @@ export default {
               "required": false,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1180,9 +1230,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -1202,9 +1276,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -1224,9 +1322,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1893,7 +2015,17 @@ export default {
             "sp_dob",
             "sp_job_title",
             "sp_phone"
-          ]
+          ],
+          "titleWidowed": {
+            "general": {
+              "en": "Your late spouse",
+              "zh": "已故配偶"
+            },
+            "senior": {
+              "en": "Your late spouse",
+              "zh": "已故配偶"
+            }
+          }
         },
         {
           "id": "about.situation",
@@ -5605,9 +5737,33 @@ export default {
               ],
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -5931,9 +6087,33 @@ export default {
       ],
       "spouseShowIf": [
         {
-          "field": "marital_status",
-          "op": "eq",
-          "value": "married"
+          "op": "any",
+          "groups": [
+            [
+              {
+                "field": "marital_status",
+                "op": "eq",
+                "value": "married"
+              }
+            ],
+            [
+              {
+                "field": "marital_status",
+                "op": "eq",
+                "value": "widowed"
+              },
+              {
+                "field": "spouse_death_year",
+                "op": "gte",
+                "value": 2025
+              },
+              {
+                "field": "spouse_death_year",
+                "op": "lte",
+                "value": 2025
+              }
+            ]
+          ]
         }
       ]
     },
@@ -5980,6 +6160,70 @@ export default {
         }
       ]
     }
+  },
+  "rules": {
+    "spouse_on_return": [
+      {
+        "op": "any",
+        "groups": [
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "married"
+            }
+          ],
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "widowed"
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "gte",
+              "value": 2023
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "lte",
+              "value": 2025
+            }
+          ]
+        ]
+      }
+    ],
+    "joint_possible": [
+      {
+        "op": "any",
+        "groups": [
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "married"
+            }
+          ],
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "widowed"
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "gte",
+              "value": 2025
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "lte",
+              "value": 2025
+            }
+          ]
+        ]
+      }
+    ]
   },
   "materials": [
     {

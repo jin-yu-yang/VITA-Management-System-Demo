@@ -213,12 +213,13 @@ test("tips: a tip with a condition renders only while it holds", () => {
 test("drivesVisibility: conditions of questions, tips and who's spouse", () => {
   assert.equal(drivesVisibility("marital_status"), true);
   assert.equal(drivesVisibility("gcf_sp_signature"), true);
+  assert.equal(drivesVisibility("spouse_death_year"), true);
   assert.equal(drivesVisibility("refund_method"), true);
   assert.equal(drivesVisibility("gcf_tp_signature"), false);
   assert.equal(drivesVisibility("tp_first_name"), false);
   const textLike = new Set(["text", "longtext", "signature", "email", "phone", "zip", "year", "number", "date"]);
   const drivers = [...ALL, ...HH.fields].filter((x) => textLike.has(x.type) && drivesVisibility(x.id)).map((x) => x.id);
-  assert.deepEqual(drivers, ["gcf_sp_signature"]);
+  assert.deepEqual(drivers, ["spouse_death_year", "gcf_sp_signature"]);
 });
 
 test("visibleIds and needsRedraw: the ids a sub-step shows now against the ids on the page", () => {

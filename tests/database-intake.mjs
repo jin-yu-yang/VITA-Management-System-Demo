@@ -577,6 +577,10 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         [{ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }, {}],
         [completeAnswers({ gcf_consent: "no" }), {}],
         [completeAnswers({ has_household_members: "yes", hh: [(({ middle_name: _m, ...rest }) => rest)(member())] }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03", sp_job_title: "Retired" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2024" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2015" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", gcf_consent: "yes", gcf_tp_signature: "Mei Lin" }), {}],
       ];
       for (const [answers, contact] of sets) {
         const server = (
@@ -657,6 +661,34 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         assert.equal(isVisible({ showIf }, answers), expected, `js ${label}`);
         assert.equal(await holds(showIf, answers), expected, `sql ${label}`);
       }
+    });
+
+    await t.test("the spouse questions' visibility follows the two rules on both sides (add-widowed-spouse-rules)", async () => {
+      const visible = async (id, answers) =>
+        (
+          await f.sql("select vitally_private.intake_visible(2::smallint, $1, $2::jsonb, '{}'::jsonb) as shown", [
+            id,
+            JSON.stringify(answers),
+          ])
+        ).rows[0].shown;
+      const widowed = (year) => ({ marital_status: "widowed", ...(year === undefined ? {} : { spouse_death_year: year }) });
+      const answerSets = [
+        widowed(), widowed("abcd"), widowed("2022"), widowed("2023"), widowed("2024"), widowed("2025"), widowed("2205"),
+        { marital_status: "married" }, { marital_status: "divorced", spouse_death_year: "2025" },
+        { ...widowed("2025"), gcf_consent: "yes" },
+      ];
+      for (const id of ["sp_first_name", "sp_dob", "sp_job_title", "opt_race_sp", "sp_phone", "gcf_sp_signature"])
+        for (const answers of answerSets)
+          assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), `${id} ${JSON.stringify(answers)}`);
+      assert.equal(await visible("sp_last_name", widowed("2024")), true);
+      assert.equal(await visible("sp_job_title", widowed("2024")), false);
+      const missing = (
+        await f.sql("select vitally_private.intake_missing(2::smallint, $1::jsonb, '{}'::jsonb) as missing", [
+          // completeAnswers fills every visible required question, so drop the last name it filled.
+          JSON.stringify((({ sp_last_name: _l, ...rest }) => rest)(completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03", sp_job_title: "Retired" }))),
+        ])
+      ).rows[0].missing;
+      assert.ok(missing.includes("sp_last_name"), "the server names the late spouse's last name");
     });
 
     await t.test("the loader refuses a malformed show-if (add-widowed-spouse-rules)", async () => {

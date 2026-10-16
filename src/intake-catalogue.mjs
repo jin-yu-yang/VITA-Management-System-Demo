@@ -93,8 +93,19 @@ const holds = (condition, answers) => {
 export const isVisible = (question, answers) =>
   (question?.showIf ?? []).every((condition) => holds(condition, answers ?? {}));
 
-/** Married, by the rule that offers "My spouse" (who.spouseShowIf); unanswered is not married. */
+/** J, "filing with the spouse possible": married, or widowed with the death in
+ * the tax year (rules.joint_possible, the rule that offers "My spouse").
+ * Unanswered is neither. */
 export const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
+
+/** S, "spouse on the return": married, or widowed with the death from 2023 to
+ * the tax year (rules.spouse_on_return). */
+export const spouseOnReturn = (answers) => isVisible({ showIf: CATALOGUE.rules.spouse_on_return }, answers ?? {});
+
+/** A sub-step's title for one application, in `lang`: a widowed client's
+ * `titleWidowed` when the sub-step has one (design D5), else its title. */
+export const substepTitleOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
+  inVariant(answers?.marital_status === "widowed" && substep?.titleWidowed ? substep.titleWidowed : substep?.title, variant, lang);
 
 /** A sub-step's lead line for one application, in `lang`; "" without a lead. */
 export const leadOf = (substep, { variant = "general", lang = "en", answers } = {}) =>

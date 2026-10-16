@@ -1320,6 +1320,16 @@ test("the client's form uses the not-married wording for an unmarried client", (
   assert.match(summary, /claim you as a dependent on their tax return\?/);
 });
 
+test("a 2025 death keeps the married wording and the who questions; 2023 reads as unmarried (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => ({ ...makeSampleAnswers(), marital_status: "widowed", spouse_death_year: year, inc_wages: "yes" });
+  const wages = (answers) => form({ formSubstep: "income.wages", draftAnswers: answers });
+  assert.match(wages(widowed("2025")), /<p class="q-lead">Did you or your spouse receive any of these in 2025\?<\/p>/);
+  assert.match(wages(widowed("2023")), /<p class="q-lead">Did you receive any of these in 2025\?<\/p>/);
+  const situation = (answers) => form({ formSubstep: "about.situation", draftAnswers: answers });
+  assert.match(situation(widowed("2025")), /Who is a U\.S\. citizen\?/);
+  assert.match(situation(widowed("2023")), /Are you a U\.S\. citizen\?/);
+});
+
 test("the conflict table labels a row with the wording the client saw", () => {
   const sample = makeSampleAnswers(); // never married
   const html = conflictForm(

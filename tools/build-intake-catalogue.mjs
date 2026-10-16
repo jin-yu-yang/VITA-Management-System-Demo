@@ -45,6 +45,25 @@ const TYPES = {
   "Hidden id": "id",
 };
 
+// The spouse rules (change add-widowed-spouse-rules, design D2), written once.
+// A draft names one with the show-if clause rule `spouse_on_return`. IRS
+// Publication 501 (2025): a survivor is considered married for the year the
+// spouse died (a joint return is possible), and may be a qualifying surviving
+// spouse for the two years after. Each group stops at the tax year, so a
+// mistyped later year switches neither rule on.
+export const TAX_YEAR = 2025;
+const MARRIED = { field: "marital_status", op: "eq", value: "married" };
+const WIDOWED = { field: "marital_status", op: "eq", value: "widowed" };
+const diedFrom = (year) => [
+  WIDOWED,
+  { field: "spouse_death_year", op: "gte", value: year },
+  { field: "spouse_death_year", op: "lte", value: TAX_YEAR },
+];
+export const RULES = Object.freeze({
+  spouse_on_return: [{ op: "any", groups: [[MARRIED], diedFrom(2023)] }],
+  joint_possible: [{ op: "any", groups: [[MARRIED], diedFrom(TAX_YEAR)] }],
+});
+
 // Fixed value sets of the types that carry no option lines.
 const FIXED_OPTIONS = {
   "Who (multi-select)": ["me", "spouse", "none"],
@@ -119,7 +138,11 @@ export const STEPS = [
         ["Marital status", "婚姻状况"],
         "marital_status married_last_day lived_apart_last_6mo divorce_date separation_date spouse_death_year",
       ),
-      questions("about.spouse", ["Your spouse", "配偶信息"], "sp_first_name sp_middle_name sp_last_name sp_dob sp_job_title sp_phone"),
+      {
+        ...questions("about.spouse", ["Your spouse", "配偶信息"], "sp_first_name sp_middle_name sp_last_name sp_dob sp_job_title sp_phone"),
+        // A widowed client's title (design D5); the same for both variants, as the title is.
+        titleWidowed: both("Your late spouse", "已故配偶"),
+      },
       questions(
         "about.situation",
         ["Your 2025 situation", "2025 年基本情况"],
@@ -338,13 +361,18 @@ function splitWording(text) {
   return { en, zh };
 }
 
+// One clause per " AND ": `field = value`, `field ≠ value`, `field` is filled,
+// or rule `name`, which expands to that rule's conditions. An unknown rule
+// reads as unreadable.
 function parseCondition(text) {
-  return text.split(" AND ").map((clause) => {
-    let m = clause.match(new RegExp(`^\`(${ID}) (=|≠) (${VALUE})\`$`));
-    if (m) return { field: m[1], op: m[2] === "=" ? "eq" : "ne", value: m[3] };
+  return text.split(" AND ").flatMap((clause) => {
+    let m = clause.match(/^rule `([a-z_]+)`$/);
+    if (m) return Object.hasOwn(RULES, m[1]) ? structuredClone(RULES[m[1]]) : [null];
+    m = clause.match(new RegExp(`^\`(${ID}) (=|≠) (${VALUE})\`$`));
+    if (m) return [{ field: m[1], op: m[2] === "=" ? "eq" : "ne", value: m[3] }];
     m = clause.match(new RegExp(`^\`(${ID})\` is filled$`));
-    if (m) return { field: m[1], op: "filled" };
-    return null;
+    if (m) return [{ field: m[1], op: "filled" }];
+    return [null];
   });
 }
 
@@ -493,12 +521,12 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
       let typeName = parts[1];
       let min;
       let max;
-      const range = typeName.match(/^Number (\d+)[–-](\d+)$/);
+      const range = typeName.match(/^(Number|Year) (\d+)[–-](\d+)$/);
       if (range) {
-        typeName = "Number";
-        min = Number(range[1]);
-        max = Number(range[2]);
-        if (min > max) fail(idLineNo, "a number range must run low to high");
+        typeName = range[1];
+        min = Number(range[2]);
+        max = Number(range[3]);
+        if (min > max) fail(idLineNo, `a ${range[1].toLowerCase()} range must run low to high`);
       }
       const type = TYPES[typeName];
       if (!type) fail(idLineNo, `unknown type '${parts[1]}'`);
@@ -610,13 +638,22 @@ export function parseDraft(markdownText, { role = "standard", file = FILES[role]
           fail(f.idLine, `'${f.id}' needs options`);
       if (q.type === "group" && q.fields.length === 0) fail(q.idLine, `group '${q.id}' has no fields`);
     }
-  for (const { lineNo, list } of conditions)
-    for (const c of list) {
-      const target = top.get(c.field);
-      if (!target) fail(lineNo, `show-if names unknown field '${c.field}'`);
-      if (c.op !== "filled" && !(target.options ?? []).some((o) => o.value === c.value))
-        fail(lineNo, `show-if value '${c.value}' is not an option of '${c.field}'`);
+  const checkCondition = (lineNo, c) => {
+    if (c.op === "any") {
+      for (const group of c.groups) for (const inner of group) checkCondition(lineNo, inner);
+      return;
     }
+    const target = top.get(c.field);
+    if (!target) fail(lineNo, `show-if names unknown field '${c.field}'`);
+    if (c.op === "gte" || c.op === "lte") {
+      if (target.type !== "year" && target.type !== "number")
+        fail(lineNo, `show-if '${c.op}' needs a year or number field, not '${c.field}'`);
+      return;
+    }
+    if (c.op !== "filled" && !(target.options ?? []).some((o) => o.value === c.value))
+      fail(lineNo, `show-if value '${c.value}' is not an option of '${c.field}'`);
+  };
+  for (const { lineNo, list } of conditions) for (const c of list) checkCondition(lineNo, c);
   for (const value of CONVENTION_VALUES)
     if (!conventions[value])
       throw new Error(`${file}: the Design Conventions don't give the label of \`${value}\``);
@@ -673,7 +710,7 @@ function fixedOptions(general, senior) {
   return {
     who: {
       options: options(FIXED_OPTIONS["Who (multi-select)"]),
-      spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }],
+      spouseShowIf: structuredClone(RULES.joint_possible),
     },
     yesno: { options: options(FIXED_OPTIONS["Yes / No / Not sure"]) },
   };
@@ -686,6 +723,10 @@ function fixedOptions(general, senior) {
 export function buildCatalogue(standardText, seniorText, { steps = STEPS } = {}) {
   const general = parseDraft(standardText, { role: "standard" });
   const senior = parseDraft(seniorText, { role: "senior" });
+  // The spouse rules stop at TAX_YEAR; the death year's range must too.
+  const deathYear = general.sections.flatMap((s) => s.questions).find((q) => q.id === "spouse_death_year");
+  if (deathYear && deathYear.max !== TAX_YEAR)
+    throw new Error(`spouse_death_year's range must end at the tax year ${TAX_YEAR}, where the spouse rules stop`);
   const sectionsNs = (d) => d.sections.map((s) => s.n).join(",");
   if (sectionsNs(general) !== sectionsNs(senior))
     throw new Error(`the drafts differ in their sections: ${sectionsNs(general)} / ${sectionsNs(senior)}`);
@@ -748,6 +789,7 @@ export function buildCatalogue(standardText, seniorText, { steps = STEPS } = {})
       substeps: structuredClone(step.substeps),
     })),
     fixedOptions: fixedOptions(general, senior),
+    rules: structuredClone(RULES),
     materials: MATERIALS,
   };
   checkSubsteps(catalogue);
