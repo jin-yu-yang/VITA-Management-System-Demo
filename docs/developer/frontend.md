@@ -230,6 +230,7 @@ dropped).
   radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is
   still a list (`["me"]`/`["none"]`). `valuesFromControls` wraps the radio's value; `formatAnswer`
   labels it Yes/No only when given the application's `answers`.
+- **A recently widowed client's spouse** (openspec change `add-widowed-spouse-rules`): `spouseOnReturn(answers)` (rule `spouse_on_return`) asks the late spouse's name and date of birth; `spouseShown(answers)` (rule `joint_possible`, a 2025 death or married) also asks the job title and race, offers "My spouse", picks the married wording, gives the spouse's cards, and prints the draft 13614-C's spouse lines. `substepTitleOf` gives a widowed client the title "Your late spouse" / 已故配偶. The controller drops "spouse" from the who answers once a change of marital status, or a whole valid death year, ends the joint return; a half-typed year, or a move that re-sends an unchanged status, keeps it.
 - **A client's service languages** (openspec change `allow-multiple-service-languages`): Q0.3
   `language` is the preferred one; Q0.5 `language_also` adds the others (Q0.6 `language_also_other`
   for Other). `clientLanguages(answers)` in `intake-catalogue.mjs` lists them, preferred first,
@@ -462,7 +463,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (943) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (965) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
