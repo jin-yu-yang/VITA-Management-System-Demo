@@ -36,6 +36,8 @@ import {
   fieldId,
   icon,
   nextTabIndex,
+  inertWhileDialog,
+  trapTarget,
 } from "./ui.mjs";
 import * as views from "./views.mjs";
 import * as client from "./client-views.mjs";
@@ -258,6 +260,10 @@ if (!config) {
     const lang = viewLang(state);
     document.documentElement.lang = lang;
     document.title = t("frame.title", {}, lang);
+    // The page behind an open dialog is inert; the dialog and the live
+    // regions are not (screen-states). Every render, because a realtime
+    // redraw replaces everything it applied to.
+    for (const child of root.children) child.inert = Boolean(state.dialog) && inertWhileDialog(child);
     if (pendingToast) {
       notify("warning", t(pendingToast, {}, lang));
       pendingToast = null;
@@ -921,6 +927,9 @@ if (!config) {
     // A dialog's form closes with it; ticks left unsent go too.
     for (const form of root.querySelectorAll(".modal form")) clearFormTicks(form);
     controller.closeDialog();
+    // A render on the version-2 form can be held for a press in progress, so
+    // the page is made usable here, before the keyboard goes back to it.
+    for (const child of root.children) child.inert = false;
     const opener = findField(focusBeforeDialog);
     if (opener) opener.focus();
     else if (fallback) root.querySelector(fallback)?.focus();
@@ -1877,14 +1886,10 @@ if (!config) {
       ),
     ];
     if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (event.shiftKey && document.activeElement === first) {
+    const target = trapTarget(focusable, document.activeElement, event.shiftKey);
+    if (target) {
       event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
+      target.focus();
     }
   });
 
