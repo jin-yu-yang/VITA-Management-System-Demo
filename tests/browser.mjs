@@ -108,9 +108,11 @@ import HANT from "../src/zh-hant.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SHOTS = screenshotDir(ROOT);
 
-// Enough for a database fixture, two engines, eight windows and the whole
-// story with its regressions. A run that reaches this has stopped, not slowed.
-const PERMUTATION_TIMEOUT_MS = 600_000;
+// Enough for a database fixture, two engines, every window and tab the story
+// opens and the whole story with its regressions, on a slower machine too
+// (a clean permutation takes about 7–9 minutes). A run that reaches this has
+// stopped, not slowed.
+const PERMUTATION_TIMEOUT_MS = 900_000;
 
 // The fictional text this story types. Every sentence is invented, names a
 // fictional person or a simulated step, and carries no address or contact
