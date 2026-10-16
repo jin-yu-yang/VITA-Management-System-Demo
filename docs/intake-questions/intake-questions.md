@@ -167,36 +167,36 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 > Tip: Found on your court separation papers. / 见法院分居判决文件。
 
 **Q3.6** Year of spouse's death / 配偶去世年份
-`spouse_death_year` · Year · Required
+`spouse_death_year` · Year 1900–2025 · Required
 **Show if** `marital_status = widowed`
 
 ---
 
 ## Section 4: Spouse Information / 配偶信息
 
-> Note for developers: **Show this whole section if** `marital_status = married`. Each question below carries the rule.
+> Note for developers: **Show this whole section if** rule `spouse_on_return` (married, or widowed with the spouse's death from 2023 to 2025). Each question below carries its rule: the job title follows rule `joint_possible` (married, or a 2025 death), and the phone stays married only.
 
 **Q4.1** Spouse's first name / 配偶的名
 `sp_first_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: As shown on their Social Security card. / 请与社会安全卡上的拼写一致。
 
 **Q4.2** Spouse's middle name / 配偶的中间名
 `sp_middle_name` · Text · Optional
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: Leave blank if your spouse doesn't have one. / 如没有可留空。
 
 **Q4.3** Spouse's last name / 配偶的姓
 `sp_last_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.4** Spouse's date of birth / 配偶出生日期
 `sp_dob` · Date · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.5** Spouse's occupation / 配偶职业
 `sp_job_title` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 > Tip: For example: cook, cashier, driver, student, retired, unemployed. / 例如：厨师、收银员、司机、学生、退休、无业。
 
 **Q4.6** Spouse's phone number / 配偶电话号码
@@ -611,7 +611,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q12.6** What is your spouse's race and/or ethnicity? (Select all that apply) / 配偶的种族和/或族裔？（可多选）
 `opt_race_sp` · Multi-select · Optional
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 - `american_indian_alaska_native` American Indian or Alaska Native / 美洲原住民或阿拉斯加原住民
 - `asian` Asian / 亚裔
 - `black_african_american` Black or African American / 黑人或非裔美国人

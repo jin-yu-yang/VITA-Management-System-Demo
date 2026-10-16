@@ -168,36 +168,36 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 > Tip: This date is on your court papers. / 请看法院分居文件上的日期。
 
 **Q3.6** What year did your spouse die? / 您爱人是哪一年去世的？
-`spouse_death_year` · Year · Required
+`spouse_death_year` · Year 1900–2025 · Required
 **Show if** `marital_status = widowed`
 
 ---
 
 ## Section 4: About Your Spouse / 关于您爱人
 
-> Note for developers: **Show this whole section if** `marital_status = married`. Each question below carries the rule.
+> Note for developers: **Show this whole section if** rule `spouse_on_return` (married, or widowed with the spouse's death from 2023 to 2025). Each question below carries its rule: the job title follows rule `joint_possible` (married, or a 2025 death), and the phone stays married only.
 
 **Q4.1** Your spouse's first name / 您爱人的名字（名）是什么？请只写"名"，不要写"姓"。
 `sp_first_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: Write it the same way as on their Social Security card. / 拼写要和社安卡上的一模一样。
 
 **Q4.2** Your spouse's middle name / 您爱人的中间名是什么？
 `sp_middle_name` · Text · Optional
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: If your spouse doesn't have a middle name, leave this empty. / 有就写，没有就空着。
 
 **Q4.3** Your spouse's last name / 您爱人姓什么？
 `sp_last_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.4** Your spouse's date of birth / 您爱人的出生日期是哪一天？
 `sp_dob` · Date · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.5** Your spouse's job / 您爱人做什么工作？
 `sp_job_title` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 > Tip: For example: cook, caregiver, delivery driver, student, retired, no job. / 比如：厨师、护工、外卖司机、学生、退休、没有工作。
 
 **Q4.6** Your spouse's phone number / 您爱人的电话号码是多少？
@@ -621,7 +621,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如果志愿者
 
 **Q12.6** What is your spouse's race and/or ethnicity? (Choose all that apply) / 您爱人的种族或族裔是什么？（可以多选）
 `opt_race_sp` · Multi-select · Optional
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 - `american_indian_alaska_native` American Indian or Alaska Native / 美洲原住民或阿拉斯加原住民
 - `asian` Asian / 亚裔
 - `black_african_american` Black or African American / 黑人或非裔美国人

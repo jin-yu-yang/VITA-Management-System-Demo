@@ -550,6 +550,12 @@ test("the version-2 Add a case: one section per step in order, without Review", 
   assert.match(form, /<form id="add-case-v2-form"[^>]* novalidate/);
 });
 
+test("Add a case titles a widowed client's spouse part Your late spouse (add-widowed-spouse-rules)", () => {
+  const html = addV2({ draftAnswers: { ...V2_SAMPLE(), marital_status: "widowed", spouse_death_year: "2025" } });
+  assert.match(html, /data-substep="about\.spouse"/);
+  assert.match(html, /<span class="add-sub-title">Your late spouse<\/span>/);
+});
+
 test("the visible question sub-steps are accordions, and only the open ones hold questions", () => {
   const single = addV2({ draftAnswers: V2_SAMPLE(), openAddSubsteps: ["about.you"] });
   const parts = [...formOf(single).matchAll(/<div class="add-sub" data-substep="([a-z_.]+)">/g)].map((m) => m[1]);

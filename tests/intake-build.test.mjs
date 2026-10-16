@@ -11,6 +11,8 @@ import {
   LOADER_VERSION,
   nextCatalogueMigration,
   readMigrationEntries,
+  RULES,
+  TAX_YEAR,
 } from "../tools/build-intake-catalogue.mjs";
 import COMMITTED from "../src/intake-catalogue-data.mjs";
 
@@ -418,7 +420,7 @@ test("buildCatalogue turns the fixture drafts into the catalogue", () => {
         },
         { value: "none", label: both("No one", "均无") },
       ],
-      spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }],
+      spouseShowIf: RULES.joint_possible,
     },
     yesno: {
       options: [
@@ -771,7 +773,7 @@ test("the real catalogue labels the who and yesno values from the drafts' conven
   assert.deepEqual(spouse.senior, { en: "My spouse", zh: "我爱人" });
   assert.deepEqual(yesno.options[2].label.senior, { en: "I'm not sure", zh: "我不确定" });
   assert.deepEqual(yesno.options[0].label.general, { en: "Yes", zh: "是" });
-  assert.deepEqual(who.spouseShowIf, [{ field: "marital_status", op: "eq", value: "married" }]);
+  assert.deepEqual(who.spouseShowIf, RULES.joint_possible);
 });
 
 test("the real catalogue keeps service, language, form_version, hh and the phones", () => {
@@ -918,4 +920,57 @@ test("nextCatalogueMigration names, skips and round-trips catalogue migrations",
   );
   assert.ok(literal, first.text.slice(0, 200));
   assert.deepEqual(JSON.parse(literal[1].replaceAll("''", "'")), catalogue);
+});
+
+test("the spouse rules, exactly (add-widowed-spouse-rules)", () => {
+  const married = { field: "marital_status", op: "eq", value: "married" };
+  const widowedFrom = (year) => [
+    { field: "marital_status", op: "eq", value: "widowed" },
+    { field: "spouse_death_year", op: "gte", value: year },
+    { field: "spouse_death_year", op: "lte", value: 2025 },
+  ];
+  assert.equal(TAX_YEAR, 2025);
+  assert.deepEqual(RULES.spouse_on_return, [{ op: "any", groups: [[married], widowedFrom(2023)] }]);
+  assert.deepEqual(RULES.joint_possible, [{ op: "any", groups: [[married], widowedFrom(2025)] }]);
+});
+
+test("a 'rule' clause expands to the named rule, and AND joins it with other clauses (add-widowed-spouse-rules)", () => {
+  const phone = "`sp_phone` · Phone · Optional\n**Show if** `marital_status = married`";
+  assert.ok(STANDARD_TEXT.includes(phone));
+  const showIfOf = (text, id) =>
+    parseDraft(text, { role: "standard" }).sections.flatMap((s) => s.questions).find((q) => q.id === id).showIf;
+  assert.deepEqual(showIfOf(STANDARD_TEXT, "sp_first_name"), RULES.spouse_on_return);
+  const joined = STANDARD_TEXT.replace(phone, "`sp_phone` · Phone · Optional\n**Show if** rule `joint_possible` AND `tp_phone` is filled");
+  assert.deepEqual(showIfOf(joined, "sp_phone"), [...RULES.joint_possible, { field: "tp_phone", op: "filled" }]);
+  const unknown = STANDARD_TEXT.replace(phone, "`sp_phone` · Phone · Optional\n**Show if** rule `nope`");
+  assert.throws(() => parseDraft(unknown, { role: "standard" }), /unreadable condition/);
+});
+
+test("a Year can carry a range, and spouse_death_year's must end at the tax year (add-widowed-spouse-rules)", () => {
+  const year = parseDraft(STANDARD_TEXT, { role: "standard" }).sections.flatMap((s) => s.questions).find((q) => q.id === "spouse_death_year");
+  assert.deepEqual([year.type, year.min, year.max], ["year", 1900, 2025]);
+  const range = "`spouse_death_year` · Year 1900–2025 · Required";
+  assert.ok(STANDARD_TEXT.includes(range) && SENIOR_TEXT.includes(range));
+  const backwards = (text) => text.replace(range, "`spouse_death_year` · Year 2025–1900 · Required");
+  assert.throws(() => parseDraft(backwards(STANDARD_TEXT), { role: "standard" }), /low to high/);
+  const early = (text) => text.replace(range, "`spouse_death_year` · Year 1900–2024 · Required");
+  assert.throws(() => buildCatalogue(early(STANDARD_TEXT), early(SENIOR_TEXT)), /tax year 2025/);
+});
+
+test("the real catalogue's spouse questions follow the two rules (add-widowed-spouse-rules)", () => {
+  assert.deepEqual(COMMITTED.rules, RULES);
+  for (const id of ["sp_first_name", "sp_middle_name", "sp_last_name", "sp_dob"])
+    assert.deepEqual(findQuestion(COMMITTED, id).showIf, RULES.spouse_on_return, id);
+  for (const id of ["sp_job_title", "opt_race_sp"]) assert.deepEqual(findQuestion(COMMITTED, id).showIf, RULES.joint_possible, id);
+  const married = { field: "marital_status", op: "eq", value: "married" };
+  assert.deepEqual(findQuestion(COMMITTED, "sp_phone").showIf, [married]);
+  for (const id of ["gcf_sp_signature", "gcf_sp_date", "married_last_day", "lived_apart_last_6mo"])
+    assert.ok(findQuestion(COMMITTED, id).showIf.some((c) => c.op === "eq" && c.field === "marital_status" && c.value === "married"), id);
+  const spouse = COMMITTED.steps.flatMap((s) => s.substeps).find((s) => s.id === "about.spouse");
+  assert.deepEqual(spouse.titleWidowed, {
+    general: { en: "Your late spouse", zh: "已故配偶" },
+    senior: { en: "Your late spouse", zh: "已故配偶" },
+  });
+  const year = findQuestion(COMMITTED, "spouse_death_year");
+  assert.deepEqual([year.min, year.max], [1900, TAX_YEAR]);
 });

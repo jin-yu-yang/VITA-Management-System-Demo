@@ -2321,6 +2321,45 @@ test("leaving married drops the spouse from every who answer in the same edit", 
   controller.stop();
 });
 
+test("a death year that ends the joint return drops the spouse from the who answers (add-widowed-spouse-rules)", async () => {
+  const { controller } = await openV2({
+    answers: { marital_status: "widowed", spouse_death_year: "2025", us_citizen: ["me", "spouse"], pecf: ["spouse"] },
+  });
+  controller.editAnswers({ spouse_death_year: "2020" });
+  const draft = controller.getState().draftAnswers;
+  assert.deepEqual(draft.us_citizen, ["me"]);
+  assert.equal(draft.pecf, null);
+  controller.stop();
+});
+
+test("a death year with spaces counts as the whole year the save sends (add-widowed-spouse-rules)", async () => {
+  const { controller } = await openV2({
+    answers: { marital_status: "widowed", spouse_death_year: "2025", us_citizen: ["me", "spouse"] },
+  });
+  controller.editAnswers({ spouse_death_year: "2020 " });
+  assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me"]);
+  controller.stop();
+});
+
+test("retyping the death year keeps the spouse (add-widowed-spouse-rules)", async () => {
+  const { controller } = await openV2({
+    answers: { marital_status: "widowed", spouse_death_year: "2025", us_citizen: ["me", "spouse"] },
+  });
+  for (const typed of ["", "2", "20", "202", "2025"]) {
+    controller.editAnswers({ spouse_death_year: typed });
+    assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me", "spouse"], `after "${typed}"`);
+  }
+  controller.editAnswers({ spouse_death_year: "2205" });
+  assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me", "spouse"], "an invalid year waits for a whole one");
+  // What a move sends from the marital-status page: every answer on it,
+  // the unchanged marital status included.
+  controller.editAnswers({ marital_status: "widowed", spouse_death_year: "202" });
+  assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me", "spouse"], "a move with an unchanged status keeps the spouse");
+  controller.editAnswers({ marital_status: "divorced" });
+  assert.deepEqual(controller.getState().draftAnswers.us_citizen, ["me"], "a changed marital status cleans while J is off");
+  controller.stop();
+});
+
 test("goToSubstep records the sub-step being left, saves a dirty draft, then moves", async () => {
   const { controller, store } = await openV2({ answers: { tp_first_name: "Mei" } });
   assert.equal(controller.getState().formSubstep, "before.ready");

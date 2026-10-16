@@ -1435,6 +1435,13 @@ test("a hidden question and a hidden sub-step are absent", () => {
   assert.match(married, /Spouse&#39;s first name<\/span><strong>Casey<\/strong>/);
 });
 
+test("the staff answers panel titles a widowed client's spouse Your late spouse (add-widowed-spouse-rules)", () => {
+  const html = v2Panel(v2Case({ answers: { marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_last_name: "Lin" } }));
+  assert.match(html, /<h4>Your late spouse<\/h4>/);
+  assert.match(html, /Spouse&#39;s first name<\/span><strong>Wei<\/strong>/);
+  assert.doesNotMatch(html, /<h4>Your spouse<\/h4>/);
+});
+
 test('"Not sure" is highlighted with the words and an icon, and counted', () => {
   const one = v2Panel(v2Case({ answers: { inc_tips: "not_sure" } }));
   assert.match(one, /<div class="detail-row is-not-sure"><span>Tips<\/span><strong>[^<]*<span class="not-sure-flag"><svg[^>]*>.*?<\/svg> Not sure<\/span><\/strong><\/div>/);

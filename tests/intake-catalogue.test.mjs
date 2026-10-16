@@ -4,9 +4,10 @@ import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
-  memberNameParts, spouseShown, leadOf, introOf,
+  memberNameParts, spouseShown, spouseOnReturn, substepTitleOf, leadOf, introOf,
   LANGUAGE_LETTERS, clientLanguages, languageLetters, languageNames, speaksLanguage, languageFilterLabels, languageSummary, languageOptions,
 } from "../src/intake-catalogue.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
@@ -354,7 +355,7 @@ test("service and language labels in the screen language; English and unknown va
   }
 });
 
-test("spouseShown: married only; anything else, or unanswered, is not married", () => {
+test("spouseShown: married, or widowed in the tax year; anything else, or unanswered, is not", () => {
   assert.equal(spouseShown({ marital_status: "married" }), true);
   for (const status of ["never_married", "divorced", "separated", "widowed"])
     assert.equal(spouseShown({ marital_status: status }), false, status);
@@ -446,4 +447,104 @@ test("language letters, names, filter labels and the staff summary", () => {
   );
   assert.deepEqual(LANGUAGE_LETTERS, { english: "E", cantonese: "C", mandarin: "M", other: "O" });
   assert.ok(Object.isFrozen(LANGUAGE_LETTERS));
+});
+
+test("isVisible: gte and lte read a whole number, and nothing else (add-widowed-spouse-rules)", () => {
+  const atLeast = { showIf: [{ field: "y", op: "gte", value: 2023 }] };
+  const atMost = { showIf: [{ field: "y", op: "lte", value: 2025 }] };
+  for (const [answers, gte, lte] of [
+    [{}, false, false],
+    [{ y: "" }, false, false],
+    [{ y: "abcd" }, false, false],
+    [{ y: 2024 }, false, false],
+    [{ y: ["2024"] }, false, false],
+    [{ y: "2022" }, false, true],
+    [{ y: "2023" }, true, true],
+    [{ y: "2025" }, true, true],
+    [{ y: "2205" }, true, false],
+    [{ y: "02025" }, false, false],
+    [{ y: " 2025" }, true, true],
+    [{ y: "2024 " }, true, true],
+  ]) {
+    assert.equal(isVisible(atLeast, answers), gte, `gte ${JSON.stringify(answers)}`);
+    assert.equal(isVisible(atMost, answers), lte, `lte ${JSON.stringify(answers)}`);
+  }
+});
+
+test("isVisible: any holds when one of its AND groups holds (add-widowed-spouse-rules)", () => {
+  const rule = {
+    showIf: [{ op: "any", groups: [[{ field: "m", op: "eq", value: "a" }], [{ field: "m", op: "eq", value: "b" }, { field: "y", op: "gte", value: 2025 }]] }],
+  };
+  assert.equal(isVisible(rule, { m: "a" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2025" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2024" }), false);
+  assert.equal(isVisible(rule, { m: "b" }), false);
+  assert.equal(isVisible(rule, { m: "c", y: "2025" }), false);
+  assert.equal(isVisible({ showIf: [...rule.showIf, { field: "z", op: "filled" }] }, { m: "a" }), false, "an any is one AND clause among others");
+});
+
+test("checkValue: a year with a range (add-widowed-spouse-rules)", () => {
+  const year = { id: "y", type: "year", min: 1900, max: 2025 };
+  assert.equal(checkValue(year, "1899"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "1900"), null);
+  assert.equal(checkValue(year, "2025"), null);
+  assert.equal(checkValue(year, "2026"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "205"), "Enter a 4-digit year.");
+  assert.equal(checkValue({ id: "y", type: "year" }, "2205"), null, "without a range, any four digits");
+});
+
+test("spouseOnReturn (S) and spouseShown (J) by the year of death (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => ({ marital_status: "widowed", ...(year === undefined ? {} : { spouse_death_year: year }) });
+  for (const [year, s, j] of [
+    [undefined, false, false],
+    ["abcd", false, false],
+    ["2022", false, false],
+    ["2023", true, false],
+    ["2024", true, false],
+    ["2025", true, true],
+    ["2205", false, false],
+    ["02025", false, false],
+    ["2024 ", true, false],
+  ]) {
+    assert.equal(spouseOnReturn(widowed(year)), s, `S ${year}`);
+    assert.equal(spouseShown(widowed(year)), j, `J ${year}`);
+  }
+  assert.equal(spouseOnReturn({ marital_status: "married" }), true);
+  for (const status of ["never_married", "divorced", "separated"])
+    assert.equal(spouseOnReturn({ marital_status: status, spouse_death_year: "2025" }), false, status);
+  assert.equal(spouseOnReturn(null), false);
+  // The questions follow the same rules.
+  const shown = (id, answers) => isVisible(findQuestion(2, id), answers);
+  assert.deepEqual(
+    ["sp_first_name", "sp_dob", "sp_job_title", "sp_phone"].map((id) => shown(id, widowed("2024"))),
+    [true, true, false, false],
+  );
+  assert.deepEqual(
+    ["sp_first_name", "sp_dob", "sp_job_title", "sp_phone"].map((id) => shown(id, widowed("2025"))),
+    [true, true, true, false],
+  );
+  assert.equal(shown("sp_first_name", widowed("2015")), false);
+});
+
+test("substepTitleOf: a widowed client's spouse sub-step reads Your late spouse (add-widowed-spouse-rules)", () => {
+  const spouse = findSubstep("about.spouse");
+  assert.equal(substepTitleOf(spouse, { answers: { marital_status: "married" } }), "Your spouse");
+  assert.equal(substepTitleOf(spouse, { answers: { marital_status: "widowed", spouse_death_year: "2025" } }), "Your late spouse");
+  assert.equal(substepTitleOf(spouse, { lang: "zh-Hans", answers: { marital_status: "widowed" } }), "已故配偶");
+  assert.equal(substepTitleOf(spouse, { variant: "senior", answers: { marital_status: "widowed" } }), "Your late spouse");
+  assert.equal(substepTitleOf(spouse), "Your spouse");
+  assert.equal(substepTitleOf(findSubstep("about.you"), { answers: { marital_status: "widowed" } }), "About you");
+});
+
+test("missingToSubmit: a recently widowed client's spouse, and no spouse signature (add-widowed-spouse-rules)", () => {
+  const base = { ...makeSampleAnswers(), marital_status: "widowed", gcf_consent: "yes", gcf_tp_signature: "Mei Chen" };
+  const died2025 = missingToSubmit(2, { ...base, spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03" });
+  assert.ok(died2025.includes("sp_last_name"));
+  assert.ok(died2025.includes("sp_job_title"));
+  assert.ok(!died2025.includes("gcf_sp_signature"));
+  assert.ok(!died2025.includes("sp_phone"));
+  const died2024 = missingToSubmit(2, { ...base, spouse_death_year: "2024" });
+  assert.ok(died2024.includes("sp_last_name"));
+  assert.ok(!died2024.includes("sp_job_title"));
+  assert.ok(!missingToSubmit(2, { ...base, spouse_death_year: "2015" }).some((id) => id.startsWith("sp_")));
 });

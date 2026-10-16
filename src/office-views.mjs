@@ -7,6 +7,7 @@ import {
   stepsFor,
   substepsFor,
   findSubstep,
+  substepTitleOf,
   leadOf,
   substepQuestions,
   isVisible,
@@ -479,7 +480,7 @@ function addStep(step, view) {
       .filter((part) => findSubstep(part.id).step.id === step.id)
       .map((part) => {
         const open = view.open.has(part.id);
-        return accordion(part.id, inVariant(findSubstep(part.id).title, view.variant), {
+        return accordion(part.id, substepTitleOf(findSubstep(part.id), { variant: view.variant, answers: view.answers }), {
           open,
           needs: part.needs,
           summary: open ? "" : partSummary(part.id, view.answers, view.variant),

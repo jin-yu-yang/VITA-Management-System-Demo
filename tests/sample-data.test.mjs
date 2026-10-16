@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { makeSampleAnswers, fillBlankAnswers } from "../src/sample-data.mjs";
-import { checkValue, findQuestion, isMemberId, missingToSubmit } from "../src/intake-catalogue.mjs";
+import { makeSampleAnswers, fillBlankAnswers, fictionalAnswers, sampleAnswersFor } from "../src/sample-data.mjs";
+import { checkValue, findQuestion, isAnswered, isMemberId, missingToSubmit } from "../src/intake-catalogue.mjs";
 
 const passesEveryCheck = (answers) => {
   for (const [id, value] of Object.entries(answers)) {
@@ -97,4 +97,37 @@ test("the Fill names a second language, English preferred and Mandarin also", ()
   const answers = makeSampleAnswers();
   assert.equal(answers.language, "english");
   assert.deepEqual(answers.language_also, ["mandarin"]);
+});
+
+test("the Fill of a widowed client keeps them widowed and gives a late spouse no phone (add-widowed-spouse-rules)", () => {
+  const married = ["sp_phone", "sp_job_title", "married_last_day", "lived_apart_last_6mo"];
+  const w2024 = sampleAnswersFor({ marital_status: "widowed", spouse_death_year: "2024" }, { seed: 1 });
+  assert.equal(w2024.marital_status, "widowed");
+  assert.equal(w2024.spouse_death_year, "2024");
+  assert.ok(isAnswered(w2024.sp_first_name) && isAnswered(w2024.sp_dob));
+  for (const id of married) assert.equal(Object.hasOwn(w2024, id), false, `2024 ${id}`);
+
+  const w2025 = sampleAnswersFor({ marital_status: "widowed", spouse_death_year: "2025" }, { seed: 1 });
+  assert.equal(w2025.spouse_death_year, "2025");
+  assert.ok(isAnswered(w2025.sp_job_title));
+  for (const id of ["sp_phone", "married_last_day", "lived_apart_last_6mo"]) assert.equal(Object.hasOwn(w2025, id), false, `2025 ${id}`);
+
+  const w2015 = sampleAnswersFor({ marital_status: "widowed", spouse_death_year: "2015" }, { seed: 1 });
+  assert.equal(w2015.marital_status, "widowed");
+  assert.equal(w2015.spouse_death_year, "2015");
+  assert.deepEqual(Object.keys(w2015).filter((id) => id.startsWith("sp_")), []);
+});
+
+test("the Fill of a married or never-married client is the plain sample (add-widowed-spouse-rules)", () => {
+  assert.deepEqual(sampleAnswersFor({ marital_status: "married" }, { seed: 1 }), makeSampleAnswers({ seed: 1, married: true }));
+  assert.deepEqual(sampleAnswersFor({ marital_status: "never_married" }, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
+  assert.deepEqual(sampleAnswersFor({}, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
+  assert.deepEqual(sampleAnswersFor(null, { seed: 1 }), makeSampleAnswers({ seed: 1 }));
+});
+
+test("Regenerate keeps a widow widowed (add-widowed-spouse-rules)", () => {
+  const draft = { marital_status: "widowed", spouse_death_year: "2025" };
+  const patch = fictionalAnswers(draft, sampleAnswersFor(draft, { seed: 1 }), { replaceEverything: true });
+  assert.equal(patch.marital_status, "widowed");
+  assert.equal(patch.spouse_death_year, "2025");
 });

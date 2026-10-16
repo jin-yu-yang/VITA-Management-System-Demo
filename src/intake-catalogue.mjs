@@ -69,9 +69,24 @@ const filled = isAnswered;
 export const memberNameParts = (member) =>
   [member?.first_name, member?.middle_name, member?.last_name].filter(isAnswered);
 
+// A whole number written in ASCII digits without a leading zero, else null.
+// gte and lte read only these, as the database's intake_holds does (change
+// add-widowed-spouse-rules): "02025", which the year check refuses, never
+// counts as 2025. The browser reads the answer as it is sent, trimmed ("2024 "
+// is 2024); the server only ever stores trimmed values, and check_intake_value
+// refuses " 2024", so migration 027 needs no change.
+const wholeNumber = (value) =>
+  typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value.trim()) ? Number(value.trim()) : null;
+
 const holds = (condition, answers) => {
+  if (condition.op === "any")
+    return (condition.groups ?? []).some((group) => group.every((inner) => holds(inner, answers)));
   const value = answers?.[condition.field];
   if (condition.op === "filled") return filled(value);
+  if (condition.op === "gte" || condition.op === "lte") {
+    const n = wholeNumber(value);
+    return n !== null && (condition.op === "gte" ? n >= condition.value : n <= condition.value);
+  }
   const same = Array.isArray(value) ? value.includes(condition.value) : value === condition.value;
   if (condition.op === "eq") return same;
   if (condition.op === "ne") return filled(value) && !same;
@@ -81,8 +96,19 @@ const holds = (condition, answers) => {
 export const isVisible = (question, answers) =>
   (question?.showIf ?? []).every((condition) => holds(condition, answers ?? {}));
 
-/** Married, by the rule that offers "My spouse" (who.spouseShowIf); unanswered is not married. */
+/** J, "filing with the spouse possible": married, or widowed with the death in
+ * the tax year (rules.joint_possible, the rule that offers "My spouse").
+ * Unanswered is neither. */
 export const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
+
+/** S, "spouse on the return": married, or widowed with the death from 2023 to
+ * the tax year (rules.spouse_on_return). */
+export const spouseOnReturn = (answers) => isVisible({ showIf: CATALOGUE.rules.spouse_on_return }, answers ?? {});
+
+/** A sub-step's title for one application, in `lang`: a widowed client's
+ * `titleWidowed` when the sub-step has one (design D5), else its title. */
+export const substepTitleOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
+  inVariant(answers?.marital_status === "widowed" && substep?.titleWidowed ? substep.titleWidowed : substep?.title, variant, lang);
 
 /** A sub-step's lead line for one application, in `lang`; "" without a lead. */
 export const leadOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
@@ -182,7 +208,10 @@ export function checkValue(question, value) {
     case "date":
       return validDate(value) ? null : "Enter a real date as YYYY-MM-DD.";
     case "year":
-      return /^\d{4}$/.test(value) ? null : "Enter a 4-digit year.";
+      if (!/^\d{4}$/.test(value)) return "Enter a 4-digit year.";
+      if (question.min !== undefined && question.max !== undefined && (Number(value) < question.min || Number(value) > question.max))
+        return `Enter a year from ${question.min} to ${question.max}.`;
+      return null;
     case "number": {
       if (!/^\d+$/.test(value)) return "Digits only.";
       if (question.min !== undefined || question.max !== undefined) {

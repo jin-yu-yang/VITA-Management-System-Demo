@@ -4,7 +4,7 @@
 // answers plus the stored card state into the cards the Documents step shows.
 // The server's migration copies the rule ids and their card types (RULE_TYPES);
 // a test keeps the two lists in step.
-import { visibleAnswers, isMemberId } from "./intake-catalogue.mjs";
+import { visibleAnswers, isMemberId, spouseShown } from "./intake-catalogue.mjs";
 
 export const CARD_SUBSTEPS = Object.freeze(["identity", "income", "expenses", "events", "other"]);
 export const SLOT_PATTERN = /^[a-z0-9_]+\.(tp|sp|household|hh\.[0-9a-f]{32})$/;
@@ -40,10 +40,16 @@ export const CARD_TEMPLATES = Object.freeze({
   // Hints given by a matcher rather than the rule
   spouse_hint: pair("Needed if you file together", "如合并申报则需要", "Needed if filing jointly"),
   prior_return_hint: pair("If you filed together last year, upload one return. If you filed separately, upload both.", "去年合并申报的，上传一份；分开申报的，两份都上传。", "If they filed jointly last year, one return. If separately, both."),
-  // The direct-deposit card's hint: the spouse only when married (change
-  // add-unmarried-intake-wording, design D7).
+  // The direct-deposit card's hint: the spouse when married, the late spouse
+  // when widowed with a joint return possible (changes add-unmarried-intake-wording
+  // D7 and add-widowed-spouse-rules D6), else the client alone.
   bank_hint: pair("The account must be in your name (or your spouse's).", "账户必须是您（或配偶）名下的账户。", "The account must be in the client's or spouse's name."),
   bank_hint_single: pair("The account must be in your name.", "账户必须是您名下的账户。", "The account must be in the client's name."),
+  bank_hint_late: pair(
+    "The account must be in the name of one of the taxpayers on this return: your own account, or a joint account with your late spouse.",
+    "账户必须在该税单任一纳税人名下：您本人的账户，或您与已故配偶的联名账户。",
+    "The account must be in the name of one of the taxpayers on this return: the client's own account, or a joint account with their late spouse.",
+  ),
 });
 
 // Why lines, keyed <rule id>_<the answer it reports>. The said() lines read
@@ -102,7 +108,11 @@ export const CARD_WHY = Object.freeze({
 // ---------------------------------------------------------------------------
 
 const HOUSEHOLD = "household";
-const isMarried = (a) => a.marital_status === "married";
+// Married today. Only the custody card and the bank hint read it: Form 8332
+// concerns the child's parents, so a widowed client of any year can get it.
+// Everything about a spouse on the return reads spouseShown (J, change
+// add-widowed-spouse-rules, design D6).
+const isMarriedNow = (a) => a.marital_status === "married";
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
 // Household members that can own a card: a valid member_id, first one wins.
@@ -131,7 +141,7 @@ const whoOwners = (a, field) => {
   const chosen = Array.isArray(a[field]) ? a[field] : [];
   return [
     ...(chosen.includes("me") ? ["tp"] : []),
-    ...(chosen.includes("spouse") && isMarried(a) ? ["sp"] : []),
+    ...(chosen.includes("spouse") && spouseShown(a) ? ["sp"] : []),
   ];
 };
 const whoPerson = (field, group = "needed") => (a) => whoOwners(a, field).map((owner) => ({ owner, group }));
@@ -172,14 +182,14 @@ export const CARD_RULES = Object.freeze([
     id: "photo_id", type: "person", substep: "identity",
     label: { en: "Photo ID (driver's license, state ID, passport)", zh: "带照片的身份证件" },
     hint: { en: "Any document with your photo, name and birth date counts: a driver's license, state ID, passport, green card, EAD, Philadelphia city ID or Certificate of Naturalization.", zh: "任何带照片、姓名和出生日期的证件均可：驾照、州身份证、护照、绿卡、工卡（EAD）、费城市民卡或入籍证书。" },
-    match: (a) => [{ owner: "tp", group: "needed" }, ...(isMarried(a) ? [{ owner: "sp", group: "needed", hint: spouseHint }] : [])],
+    match: (a) => [{ owner: "tp", group: "needed" }, ...(spouseShown(a) ? [{ owner: "sp", group: "needed", hint: spouseHint }] : [])],
   },
   {
     id: "ssn", type: "person", substep: "identity",
     label: { en: "Social Security card or ITIN letter", zh: "社安卡或 ITIN 信" },
     match: (a) => [
       { owner: "tp", group: "needed" },
-      ...(isMarried(a) ? [{ owner: "sp", group: "needed", hint: spouseHint }] : []),
+      ...(spouseShown(a) ? [{ owner: "sp", group: "needed", hint: spouseHint }] : []),
       ...members(a).map(({ owner }) => ({
         owner, group: "maybe", ask: "hh",
         why: CARD_WHY.ssn_hh_listed,
@@ -469,14 +479,18 @@ export const CARD_RULES = Object.freeze([
     label: { en: "Form 8332 or the custody pages of the court order, if you have them", zh: "8332 表或法院监护权文件（如有）" },
     why: { en: "You said a child lived with you for less than 6 months", zh: "您说有孩子与您同住不足 6 个月" },
     match: (a) =>
-      !isMarried(a) && Array.isArray(a.hh) && a.hh.some((m) => text(m?.months_lived) !== "" && Number(m.months_lived) < 6)
+      !isMarriedNow(a) && Array.isArray(a.hh) && a.hh.some((m) => text(m?.months_lived) !== "" && Number(m.months_lived) < 6)
         ? [{ owner: HOUSEHOLD, group: "maybe" }] : [],
   },
   {
     id: "bank", type: "household", substep: "events",
     label: { en: "A voided check or a bank letter with routing and account numbers", zh: "作废支票或写有路由号和账号的银行信" },
     match: (a) => {
-      const hint = isMarried(a) ? CARD_TEMPLATES.bank_hint : CARD_TEMPLATES.bank_hint_single;
+      const hint = isMarriedNow(a)
+        ? CARD_TEMPLATES.bank_hint
+        : spouseShown(a)
+          ? CARD_TEMPLATES.bank_hint_late
+          : CARD_TEMPLATES.bank_hint_single;
       return [
         ...(a.refund_method === "direct_deposit" || a.refund_method === "split"
           ? [{ owner: HOUSEHOLD, group: "needed", ask: "refund_method", why: CARD_WHY.bank_refund_method, hint }] : []),
@@ -524,7 +538,7 @@ function ownerLineOf(owner, rule, a, position) {
       : { en: `Person ${position + 1}`, zh: { template: CARD_TEMPLATES.person, params: { n: position + 1 } } };
   }
   if (rule.type === "shared") {
-    return isMarried(a) ? CARD_TEMPLATES.for_you_and_spouse : CARD_TEMPLATES.for_you;
+    return spouseShown(a) ? CARD_TEMPLATES.for_you_and_spouse : CARD_TEMPLATES.for_you;
   }
   return CARD_TEMPLATES.for_household;
 }

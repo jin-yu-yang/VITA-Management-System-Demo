@@ -1,4 +1,4 @@
-import { findQuestion, isAnswered } from "./intake-catalogue.mjs";
+import { findQuestion, isAnswered, spouseOnReturn, spouseShown } from "./intake-catalogue.mjs";
 import { newMemberId } from "./intake-form.mjs";
 
 // One fictional person (spec 2026-09-30 §3.3), written out: a text question
@@ -136,6 +136,32 @@ function versionTwoAnswers(seed, married) {
 // One fictional client's answers, fixed by the seed; `married` adds a spouse.
 export function makeSampleAnswers({ seed = 0, married = false } = {}) {
   return versionTwoAnswers(seed, married);
+}
+
+/**
+ * The fictional answers for a Fill of `draft` (change add-widowed-spouse-rules):
+ * a married sample for a spouse on the return (spouseOnReturn), and a widowed
+ * client stays widowed with their year. A late spouse gets no phone and none of
+ * the married-only answers, and a job title only while a joint return is
+ * possible (spouseShown).
+ */
+export function sampleAnswersFor(draft = {}, { seed = 0 } = {}) {
+  const current = draft ?? {};
+  const generated = makeSampleAnswers({ seed, married: spouseOnReturn(current) });
+  if (current.marital_status !== "widowed") return generated;
+  const {
+    sp_phone: _phone,
+    married_last_day: _lastDay,
+    lived_apart_last_6mo: _apart,
+    sp_job_title: jobTitle,
+    ...rest
+  } = generated;
+  return {
+    ...rest,
+    ...(jobTitle !== undefined && spouseShown(current) ? { sp_job_title: jobTitle } : {}),
+    marital_status: "widowed",
+    ...(isAnswered(current.spouse_death_year) ? { spouse_death_year: current.spouse_death_year } : {}),
+  };
 }
 
 // The blank answers of `current` filled from `generated`. Blank is "not

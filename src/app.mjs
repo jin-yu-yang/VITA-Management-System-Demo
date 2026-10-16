@@ -4,7 +4,7 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
-import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
+import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
   countText,
@@ -17,6 +17,7 @@ import {
   sendable,
   stepRollup,
   substepStatus,
+  visibleSubsteps,
 } from "./intake-form.mjs";
 import {
   addCaseParts,
@@ -656,6 +657,25 @@ if (!config) {
       count.textContent = countText(answer.value, lang);
   }
 
+  // The sub-steps the page lists differ from the ones the draft shows now: a
+  // driver can add or remove another sub-step without changing this page's
+  // own questions (a death year adds "Your late spouse"). The page is the
+  // "before", as in needsRedraw: typing has already put the value in the
+  // draft. The client's form lists them in the rail; Add a case lists its
+  // question parts, plus its fixed Documents part.
+  function listedSubstepsStale(form) {
+    const state = controller.getState();
+    const answers = state.draftAnswers ?? {};
+    const ids = (selector) => [...root.querySelectorAll(selector)].map((element) => element.dataset.substep);
+    if (form.id === "add-case-v2-form")
+      return (
+        ids("#add-case-v2-form .add-sub[data-substep]").filter((id) => id !== "documents").join(" ") !==
+        addCaseParts(answers).map((part) => part.id).join(" ")
+      );
+    const cards = cardsFor(answers, state.savedCase?.documentCards ?? []);
+    return ids(".rail-sublink[data-substep]").join(" ") !== visibleSubsteps(answers, cards, state.visitedSubsteps ?? []).join(" ");
+  }
+
   // Every rendered answer into the draft, quietly: the action that follows
   // (a step change, a save, a fill) draws the page. Empty household cards are
   // dropped, as `readForm` drops them.
@@ -724,6 +744,7 @@ if (!config) {
           return id !== "documents" && body && !body.hidden && needsRedraw(idsIn(body), id, draft);
         });
       else redraw = needsRedraw(idsIn(form), controller.currentSubstep(), draft);
+      if (!redraw) redraw = listedSubstepsStale(form);
     }
     if (redraw) setTimeout(() => render(), 0);
   }
@@ -788,10 +809,9 @@ if (!config) {
     // What is in the boxes first, so a fill sees every answer as typed.
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const generated = makeSampleAnswers({
-      seed: sampleSeed,
-      married: draft.marital_status === "married",
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const generated = sampleAnswersFor(draft, { seed: sampleSeed });
     // A regenerate is the new example plus a clear of every other answer
     // already in the draft (the wording choice kept); a fill touches blank
     // answers only.
@@ -812,10 +832,9 @@ if (!config) {
     }
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const sample = makeSampleAnswers({
-      seed: sampleSeed,
-      married: draft.marital_status === "married",
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const sample = sampleAnswersFor(draft, { seed: sampleSeed });
     controller.editAnswers(fictionalAnswers(draft, sample));
     notify("Fictional details filled in. Nothing is saved yet.");
   }

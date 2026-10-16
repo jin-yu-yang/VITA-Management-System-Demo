@@ -91,6 +91,11 @@ export const INTAKE_VALUE_CASES = [
   // year
   both("spouse_death_year", "2020", true),
   both("spouse_death_year", "20201", false),
+  both("spouse_death_year", "1899", false),
+  both("spouse_death_year", "1900", true),
+  both("spouse_death_year", "2025", true),
+  both("spouse_death_year", "2026", false),
+  both("spouse_death_year", "2205", false),
 
   // number without a range
   both("inc_wages_job_count", "3", true),
