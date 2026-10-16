@@ -101,10 +101,11 @@ function problemBanner(state) {
   // enough, and that one is the more useful of the two — but only when that
   // screen is really the one being rendered (see `staffScreen`).
   if (state.screen === "staff-case" && state.savedCase) return "";
-  // A drawer states its own failure, with the same two controls (see
-  // `drawerError`); a second alert behind an aria-modal dialog would be
-  // announced twice and could not be reached.
-  if (DRAWERS.includes(state.dialog)) return "";
+  // While any dialog is open it says the failure itself (the drawers and the
+  // corrections dialog in their own bodies, the others through `dialogError`);
+  // a second alert behind an aria-modal dialog would be announced twice and
+  // could not be reached.
+  if (state.dialog) return "";
   const lang = viewLang(state);
   return `<div class="problem-banner" role="alert">${icon("help")}<span>${esc(sentence(state.error.message, lang))}</span>${when(state.retryable, button(esc(t("frame.try_again", {}, lang)), "retry-action", "inline"))}${button(esc(t("frame.dismiss", {}, lang)), "dismiss-error", "inline")}</div>`;
 }
@@ -248,7 +249,8 @@ export function staffScreen(state) {
       const ui = {
         person,
         busy: state.busy,
-        error: state.error,
+        // A dialog opened from the case page holds the only copy of the error.
+        error: state.dialog ? null : state.error,
         retryable: state.retryable,
         draftAnswers: state.draftAnswers,
         dirty: state.dirty,
@@ -381,6 +383,19 @@ function decorateAssistance(item, people = []) {
 
 const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
 
+// An error while a dialog is open is said inside it (design D2): the page's
+// banner is behind an aria-modal and could not be reached or read. The drawers
+// and the corrections dialog state their own failure in their bodies.
+const OWN_ERROR_DIALOGS = Object.freeze([...DRAWERS, "request-corrections"]);
+export function dialogError(state, lang) {
+  if (!state.error || !state.dialog || OWN_ERROR_DIALOGS.includes(state.dialog)) return "";
+  const say = (key) => esc(t(key, {}, lang));
+  return `<div class="notice error" role="alert" id="dialog-error">${icon("help")}<div><p>${esc(sentence(state.error.message, lang))}</p><div class="conflict-choices">${when(
+    state.retryable,
+    button(say("frame.try_again"), "retry-action", "secondary"),
+  )}${button(say("frame.dismiss"), "dismiss-error", "text")}</div></div></div>`;
+}
+
 export function dialog(state) {
   if (!state.dialog) return "";
   // The client's dialogs speak the view language; on staff screens it is English.
@@ -447,5 +462,5 @@ export function dialog(state) {
     : PRESENTER_DIALOGS.includes(state.dialog)
       ? "PRESENTER CONTROLS"
       : t("dialog.overline", {}, lang);
-  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="${say("dialog.close")}">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${body}</section></div>`;
+  return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="${say("dialog.close")}">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${dialogError(state, lang)}${body}</section></div>`;
 }

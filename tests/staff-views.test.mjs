@@ -18,6 +18,7 @@ import {
   CASE_TABS,
   nextStep,
   correctionsDialogBody,
+  problemNotice,
   historySentence,
   EVENT_SENTENCES,
   historyPanel,
@@ -1213,7 +1214,7 @@ test("the corrections dialog carries the form the action is built from", () => {
   // it (the dialog is aria-modal, so the page's own alert behind it may not
   // be read); it carries role="alert" and is tied to the textarea.
   const refused = correctionsDialogBody({ error: { code: "CONFLICT", message: "Someone else changed this case." } });
-  assert.match(refused, /<div class="notice amber" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
+  assert.match(refused, /<div class="notice error" role="alert" id="corrections-error">[\s\S]*Someone else changed this case\./);
   assert.match(refused, /<textarea id="field-corrections-findings" name="findings" required maxlength="2000" rows="4" aria-describedby="corrections-error">/);
   assert.doesNotMatch(correctionsDialogBody({}), /role="alert"/);
   assert.doesNotMatch(correctionsDialogBody({}), /aria-describedby/);
@@ -1850,4 +1851,11 @@ test("the work board while its cases load, and when they couldn't", () => {
   assert.match(failed, /The cases couldn&#39;t load\./);
   assert.doesNotMatch(failed, /Nothing to claim right now/);
   assert.match(renderStaffBoard([], PEOPLE, { person: ALEX }), /Nothing to claim right now/, "ready by default");
+});
+
+test("the case page's in-place error is an error block with both controls", () => {
+  const html = problemNotice({ error: { code: "SERVER_ERROR", message: "x" }, retryable: true });
+  assert.match(html, /^<div class="notice error" role="alert">/);
+  assert.match(html, /data-action="retry-action"/);
+  assert.match(html, /data-action="dismiss-error"/);
 });

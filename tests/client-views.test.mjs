@@ -587,6 +587,50 @@ test("the staff workspace announces a failure once, beside the work", () => {
   assert.match(page(onBoard, staffScreen(onBoard)), /problem-banner/);
 });
 
+test("an error shows inside the open dialog, and the banner steps aside", () => {
+  const error = { code: "VALIDATION", message: "This checkpoint is not available." };
+  const presenter = { userId: "p1", workspaceId: "w1", access: "presenter" };
+  for (const name of ["help", "regenerate", "leave-add-case", "close-case", "reset-fixtures", "load-checkpoint", "print"]) {
+    const state = {
+      ...baseState({ savedCase: caseRecord() }),
+      principal: ["reset-fixtures", "load-checkpoint"].includes(name) ? presenter : baseState().principal,
+      dialog: name,
+      error,
+      retryable: false,
+    };
+    const html = dialog(state);
+    assert.match(html, /<div class="notice error" role="alert" id="dialog-error">[\s\S]*This checkpoint is not available\./, name);
+    assert.match(html, /data-action="dismiss-error"/, name);
+    assert.doesNotMatch(page(state, "<main></main>"), /class="problem-banner"/, `${name}: no banner behind the dialog`);
+  }
+  // Without an error, nothing is added.
+  assert.doesNotMatch(dialog(baseState({ dialog: "help" })), /dialog-error/);
+});
+
+test("a dialog on the case page holds the only copy of the error", () => {
+  const state = baseState({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    screen: "staff-case",
+    dialog: "close-case",
+    error: { code: "SERVER_ERROR", message: "x" },
+    retryable: false,
+    people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
+    selectedPersonId: "person-1",
+    savedCase: {
+      ...caseRecord({ id: "case-a", stage: "preparing", preparerId: "person-1" }),
+      participants: ["person-1"],
+      requests: [],
+      documents: [],
+      followups: [],
+      reviews: [],
+      internalHistory: [],
+    },
+  });
+  assert.doesNotMatch(staffScreen(state), /That step did not go through/, "no in-place copy behind the modal");
+  assert.match(staffScreen({ ...state, dialog: null }), /That step did not go through/, "with no dialog the case page says it");
+  assert.match(dialog(state), /id="dialog-error"/);
+});
+
 test("a toast's parts: an icon, the text, and a Dismiss label in the screen's language", () => {
   const parts = toastParts({ kind: "success", text: "Your answers are saved.", lang: "en" });
   assert.match(parts.icon, /<svg class="icon toast-icon[^"]*"[^>]*aria-hidden="true"/);

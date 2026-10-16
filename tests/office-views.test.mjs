@@ -383,7 +383,7 @@ test("a refusal is stated once in the drawer, with its own controls", () => {
     ui: { error, retryable: true },
     caseId: "c1",
   });
-  assert.match(retry, /<div class="notice amber" role="alert" id="drawer-error">/);
+  assert.match(retry, /<div class="notice error" role="alert" id="drawer-error">/);
   assert.match(retry, /The note is too long\./);
   assert.match(retry, /data-action="dismiss-error"/);
   assert.match(retry, /data-action="retry-action"/);

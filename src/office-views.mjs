@@ -289,7 +289,7 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
 // branch of both drawers, or a failure would be announced nowhere.
 const drawerError = (ui) =>
   ui?.error
-    ? `<div class="notice amber" role="alert" id="drawer-error">${icon("help")}<div><h3>${esc(
+    ? `<div class="notice error" role="alert" id="drawer-error">${icon("help")}<div><h3>${esc(
         ui.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
       )}</h3><p>${esc(ui.error.message)}</p><div class="conflict-choices">${when(
         ui.retryable,

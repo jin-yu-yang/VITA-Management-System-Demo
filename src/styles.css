@@ -20,6 +20,13 @@
   --vt-badge: #dc2626;
   --vt-progress: #2f8a4c;
   --vt-office: #b7791f;
+  /* Feedback looks (DESIGN.md): errors, notices and attention */
+  --vt-error-bg: #fbeceb;
+  --vt-error: #8a3b34;
+  --vt-error-line: #efc9c5;
+  --vt-notice-bg: #efedfb;
+  --vt-notice: #4b3fa3;
+  --vt-attention-bg: #faf0dd;
   /* Stage families: background / text */
   --vt-stage-intake-bg: #e6eefa;
   --vt-stage-intake: #3a6690;
@@ -778,6 +785,17 @@ textarea::placeholder {
   background: #faf2e4;
   border: 1px solid #ebd8b5;
   color: #a58344;
+}
+/* Every error shares one look: the case page's in-place error, the dialogs'
+   and the drawers'. */
+.notice.error {
+  background: var(--vt-error-bg);
+  border: 1px solid var(--vt-error-line);
+  color: var(--vt-error);
+}
+.notice.error h3,
+.notice.error p {
+  color: var(--vt-error);
 }
 .notice h3 {
   margin-bottom: 8px;
@@ -2143,18 +2161,20 @@ textarea::placeholder {
   gap: 10px;
   padding: 11px 30px;
   font-size: 13px;
-  background: var(--vt-stage-amend-bg);
-  color: var(--vt-stage-amend);
   border-bottom: 1px solid var(--vt-line);
 }
+.connection-notice {
+  background: var(--vt-attention-bg);
+  color: var(--vt-stage-amend);
+}
 .problem-banner {
-  background: var(--vt-stage-stopped-bg);
-  color: var(--vt-stage-stopped);
+  background: var(--vt-error-bg);
+  color: var(--vt-error);
 }
 /* Nothing failed here: the demonstration cases were rebuilt. */
 .notice-banner {
-  background: var(--vt-primary-soft);
-  color: var(--vt-ink);
+  background: var(--vt-notice-bg);
+  color: var(--vt-notice);
 }
 .connection-notice .icon,
 .notice-banner .icon,
@@ -2166,6 +2186,7 @@ textarea::placeholder {
 .notice-banner .btn.inline,
 .problem-banner .btn.inline {
   margin-left: auto;
+  color: inherit;
 }
 .lookup-form {
   display: flex;
@@ -2246,7 +2267,10 @@ textarea::placeholder {
   color: var(--vt-stage-amend);
 }
 .save-chip.failed {
-  color: var(--vt-stage-stopped);
+  color: var(--vt-error);
+  background: var(--vt-error-bg);
+  border-radius: 7px;
+  padding: 4px 10px;
   flex-wrap: wrap;
 }
 .save-chip.saved {
@@ -3409,15 +3433,15 @@ textarea::placeholder {
 .office-drawer .attempt-list {
   border-color: var(--vt-line);
 }
-.office-drawer .notice.amber {
-  background: var(--vt-stage-amend-bg);
-  border: 1px solid var(--vt-stage-amend);
-  color: var(--vt-stage-amend);
+.office-drawer .notice.error {
+  background: var(--vt-error-bg);
+  border: 1px solid var(--vt-error-line);
+  color: var(--vt-error);
   margin: 16px 0;
 }
-.office-drawer .notice.amber h3,
-.office-drawer .notice.amber p {
-  color: var(--vt-stage-amend);
+.office-drawer .notice.error h3,
+.office-drawer .notice.error p {
+  color: var(--vt-error);
 }
 
 /* ---- Add a case ---- */

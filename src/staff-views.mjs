@@ -646,7 +646,7 @@ export function phoneMask(value, allowed, id = "") {
 // lost by announcing it here instead.
 export function problemNotice(ui) {
   if (!ui?.error) return "";
-  return `<div class="notice amber" role="alert">${icon("help")}<div><h3>${esc(
+  return `<div class="notice error" role="alert">${icon("help")}<div><h3>${esc(
     ui.error.code === "CONFLICT"
       ? "This case changed while you were working"
       : "That step did not go through",
@@ -1288,7 +1288,7 @@ function reviewPanel(record) {
  */
 export function correctionsDialogBody(state = {}) {
   const refused = state.error
-    ? `<div class="notice amber" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
+    ? `<div class="notice error" role="alert" id="corrections-error">${icon("help")}<div><h3>${esc(
         state.error.code === "CONFLICT" ? "This case changed while you were working" : "That did not go through",
       )}</h3><p>${esc(state.error.message)}</p></div></div>`
     : "";
