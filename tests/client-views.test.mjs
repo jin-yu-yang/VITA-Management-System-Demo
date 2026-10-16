@@ -16,6 +16,7 @@ import {
   connectionNotice,
   unreachableScreen,
   dialog,
+  toastParts,
 } from "../src/views.mjs";
 import { describeStage } from "../src/domain.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
@@ -584,6 +585,21 @@ test("the staff workspace announces a failure once, beside the work", () => {
   // The board keeps the page-wide banner, which is the only notice there.
   const onBoard = { ...state, screen: "staff" };
   assert.match(page(onBoard, staffScreen(onBoard)), /problem-banner/);
+});
+
+test("a toast's parts: an icon, the text, and a Dismiss label in the screen's language", () => {
+  const parts = toastParts({ kind: "success", text: "Your answers are saved.", lang: "en" });
+  assert.match(parts.icon, /<svg class="icon toast-icon[^"]*"[^>]*aria-hidden="true"/);
+  assert.equal(parts.text, "Your answers are saved.");
+  assert.equal(parts.dismissLabel, "Dismiss");
+  assert.equal(toastParts({ kind: "info", text: "x", lang: "zh-Hans" }).dismissLabel, "关闭");
+  assert.throws(() => toastParts({ kind: "error", text: "x", lang: "en" }), /kind/);
+});
+
+test("the page no longer draws the toast: its host lives beside #app (design D4)", () => {
+  const html = page(baseState(), applicationsScreen(baseState()));
+  assert.doesNotMatch(html, /id="toast"/);
+  assert.doesNotMatch(html, /class="toast"/);
 });
 
 test("the brand is ViTally, attributed to PCDC, for tax year 2025", () => {

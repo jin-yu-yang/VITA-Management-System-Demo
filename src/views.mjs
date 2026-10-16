@@ -1,6 +1,7 @@
 import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
 import { t, sentence } from "./client-text.mjs";
+import { TOAST_ICONS } from "./toast.mjs";
 import {
   renderStaffBoard,
   renderStaffCase,
@@ -128,7 +129,17 @@ export function page(state, body) {
   const presenter = state?.principal?.access === "presenter";
   const top = presenter ? "" : clientHeader(state);
   const main = presenter ? body : `<div class="client-shell">${body}</div>`;
-  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}<div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}`;
+}
+
+// The toast's parts (design D4). Its host lives outside the page, in app.mjs.
+export function toastParts({ kind, text, lang = "en" }) {
+  if (!Object.hasOwn(TOAST_ICONS, kind)) throw new Error(`unknown toast kind: ${kind}`);
+  return {
+    icon: icon(TOAST_ICONS[kind], "toast-icon"),
+    text: String(text ?? ""),
+    dismissLabel: t("frame.dismiss", {}, lang),
+  };
 }
 
 // Shown when `/public-config.json` cannot be read or reports `configured:false`.

@@ -34,6 +34,7 @@ import {
   focusSelectors,
   dialogFocusTarget,
   fieldId,
+  icon,
   nextTabIndex,
 } from "./ui.mjs";
 import * as views from "./views.mjs";
@@ -42,7 +43,8 @@ import { POOL_FILTER_KEYS } from "./pool-views.mjs";
 import { createSidebarPeek, peekZone, toggleLabel } from "./sidebar-peek.mjs";
 import { STORAGE_KEY, createLanguageRequests, isLang, loadHantWithin, viewLang } from "./language.mjs";
 import { createHantLoader, hantReady } from "./hant.mjs";
-import { t, sentence } from "./client-text.mjs";
+import { t, SENTENCES } from "./client-text.mjs";
+import { createToastTimer } from "./toast.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -118,8 +120,7 @@ if (!config) {
   // The screen language now, for text this file writes itself.
   const screenLang = () => viewLang(controller.getState());
 
-  let toastTimer = null;
-  // A toast that has to wait for the first render, when #toast exists: a
+  // A toast that has to wait for the first render: a
   // saved 繁體 whose map could not load at startup.
   let pendingToast = null;
   // The switch, other tabs and startup all ask for a language here; only the
@@ -254,8 +255,8 @@ if (!config) {
     const lang = viewLang(state);
     document.documentElement.lang = lang;
     document.title = t("frame.title", {}, lang);
-    if (pendingToast && root.querySelector("#toast")) {
-      notify(t(pendingToast, {}, lang));
+    if (pendingToast) {
+      notify("warning", t(pendingToast, {}, lang));
       pendingToast = null;
     }
     const v2Place = wasV2 || v2OnPage();
@@ -308,6 +309,8 @@ if (!config) {
     // missed) must not leave the peek held.
     peek.focus(peekZone(document.activeElement) === "sidebar" && keyboardFocus(document.activeElement));
     lastPlace = place;
+    // The page under the toast may have changed (a staff screen, Add a case's bar).
+    placeToast();
   }
 
   // ---- the version-2 form's redraw hold (spec §2.4) ----------------------
@@ -488,21 +491,97 @@ if (!config) {
     return controller.getState().principal?.userId ?? null;
   }
 
-  // `by` is the user id signed in when a press started (a press takes it before
-  // its first await). Its result message, success or error, is for that person
+  // The toast (design D4): one host beside #app, made once, never redrawn.
+  // The live region is the text span; the Dismiss sits outside it.
+  const toastHost = document.createElement("div");
+  toastHost.id = "toast";
+  toastHost.className = "toast";
+  const toastIcon = document.createElement("span");
+  toastIcon.className = "toast-icon-slot";
+  const toastText = document.createElement("span");
+  toastText.className = "toast-text";
+  toastText.setAttribute("role", "status");
+  toastText.setAttribute("aria-live", "polite");
+  const toastDismiss = document.createElement("button");
+  toastDismiss.type = "button";
+  toastDismiss.className = "toast-dismiss";
+  toastDismiss.innerHTML = icon("close");
+  toastHost.append(toastIcon, toastText, toastDismiss);
+  root.after(toastHost);
+  let toastCameFrom = null;
+  const toast = createToastTimer({
+    setTimer: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimer: (id) => window.clearTimeout(id),
+    onHide: () => {
+      const hadFocus = toastHost.contains(document.activeElement);
+      toastHost.classList.remove("visible");
+      toastText.textContent = "";
+      if (hadFocus) {
+        const back = toastCameFrom?.isConnected ? toastCameFrom : root.querySelector("#main");
+        back?.focus({ preventScroll: true });
+      }
+      toastCameFrom = null;
+    },
+  });
+  toastHost.addEventListener("mouseenter", () => toast.hover(true));
+  toastHost.addEventListener("mouseleave", () => toast.hover(false));
+  toastHost.addEventListener("focusin", (event) => {
+    if (!toastHost.contains(event.relatedTarget)) toastCameFrom = event.relatedTarget ?? null;
+    toast.focus(true);
+  });
+  toastHost.addEventListener("focusout", (event) => {
+    if (!toastHost.contains(event.relatedTarget)) toast.focus(false);
+  });
+  toastDismiss.addEventListener("click", () => toast.hide());
+  toastHost.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      toast.hide();
+    }
+  });
+
+  // On a staff screen bottom right; above Add a case's bar while it is sticky
+  // and on screen. Re-measured on scroll and resize while the toast shows.
+  function placeToast() {
+    toastHost.classList.toggle("toast-staff", controller.getState().principal?.access === "presenter");
+    const bar = root.querySelector(".add-case-bar");
+    let lift = 0;
+    if (bar && getComputedStyle(bar).position === "sticky") {
+      const rect = bar.getBoundingClientRect();
+      if (rect.top < window.innerHeight && rect.bottom > 0) lift = Math.ceil(rect.height);
+    }
+    toastHost.style.setProperty("--toast-lift", `${lift}px`);
+  }
+  window.addEventListener("scroll", () => toast.shown && placeToast(), { passive: true });
+  window.addEventListener("resize", () => toast.shown && placeToast());
+
+  // `kind` is "success", "info" or "warning" (design D4); errors never toast
+  // (design D1). `by` is the user id signed in when a press started (a press
+  // takes it before its first await). Its result message is for that person
   // only: if somebody else is signed in by now, or nobody, it is not shown.
   // Messages that are not the result of a press leave `by` out.
-  function notify(text, by) {
+  function notify(kind, text, by) {
     if (by !== undefined && by !== signedInUserId()) return;
-    window.clearTimeout(toastTimer);
-    const toast = root.querySelector("#toast");
-    if (!toast) return;
-    toast.textContent = text;
-    toast.classList.add("visible");
-    toastTimer = window.setTimeout(
-      () => toast.classList.remove("visible"),
-      3500,
-    );
+    const parts = views.toastParts({ kind, text, lang: screenLang() });
+    toastIcon.innerHTML = parts.icon;
+    toastText.textContent = parts.text;
+    toastDismiss.setAttribute("aria-label", parts.dismissLabel);
+    toastHost.dataset.kind = kind;
+    toastHost.classList.add("visible");
+    placeToast();
+    toast.show(kind);
+  }
+
+  // Errors never toast (design D1). The controller records what it refuses
+  // and what fails; this only makes sure a press never fails silently. The
+  // sign-in form states its own failures.
+  function safetyNet(error, by, shown) {
+    if (by !== signedInUserId()) return;
+    const state = controller.getState();
+    if (!state.principal || state.authError) return;
+    if (state.error !== shown) return;
+    const known = typeof error?.message === "string" && Object.hasOwn(SENTENCES, error.message);
+    controller.noteLocalFailure({ code: error?.code ?? "SERVER_ERROR", message: known ? error.message : "Something went wrong." });
   }
 
   // A typed character must not rebuild the page under the cursor, so the draft
@@ -817,7 +896,7 @@ if (!config) {
     // already in the draft (the wording choice kept); a fill touches blank
     // answers only.
     controller.editAnswers(fictionalAnswers(draft, generated, { replaceEverything }));
-    notify(t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
+    notify("info", t(replaceEverything ? "toast.fictional_replaced" : "toast.fictional_filled", {}, screenLang()));
   }
 
   // The office's own "fill fictional details", the same generator the client's
@@ -828,7 +907,7 @@ if (!config) {
   function fillAssistedIntake() {
     sampleSeed += 1;
     if (!root.querySelector("#add-case-v2-form")) {
-      notify("There is no assisted intake form on screen.");
+      controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
       return;
     }
     sweepV2Form();
@@ -837,7 +916,7 @@ if (!config) {
     // widowed, and the late spouse gets no phone (sampleAnswersFor).
     const sample = sampleAnswersFor(draft, { seed: sampleSeed });
     controller.editAnswers(fictionalAnswers(draft, sample));
-    notify("Fictional details filled in. Nothing is saved yet.");
+    notify("info", "Fictional details filled in. Nothing is saved yet.");
   }
 
   async function reconcile(useMine, by) {
@@ -849,7 +928,7 @@ if (!config) {
       // which the server keeps outside `answers`.
       fromServer: !useMine,
     });
-    notify(t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()), by);
+    notify("info", t(useMine ? "toast.reconcile_mine" : "toast.reconcile_office", {}, screenLang()), by);
     // On Add a case the choice's panel goes once made, and its button with it:
     // the keyboard goes to Save draft, the next thing to press.
     if (controller.getState().screen === "office-add-case" && !root.contains(document.activeElement))
@@ -898,11 +977,11 @@ if (!config) {
       // saved for it. A failure throws, and is shown by the caller.
       if (!(await controller.saveAnswers())) return;
       clearFormDrafts(form);
-      notify(t("toast.saved", {}, screenLang()), by);
+      notify("success", t("toast.saved", {}, screenLang()), by);
       return;
     }
     if (type === "SUBMIT" && !state.openPanels.includes("confirmed")) {
-      notify(t("toast.confirm_first", {}, screenLang()));
+      notify("warning", t("toast.confirm_first", {}, screenLang()));
       return;
     }
     if (type === "SUBMIT" && state.savedCase) {
@@ -916,7 +995,7 @@ if (!config) {
       // answer and gone to review.check: the toast says why, and the keyboard
       // goes to the alerts heading.
       if (!(await controller.guardSubmit())) {
-        notify(t("toast.needs_change", {}, screenLang()), by);
+        notify("warning", t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;
       }
@@ -968,17 +1047,17 @@ if (!config) {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
       if (controller.getState().principal?.access === "presenter") {
-        notify("The application is with the office. Record the intake checks next.", by);
+        notify("success", "The application is with the office. Record the intake checks next.", by);
         return;
       }
       controller.navigate("progress");
-      notify(t("toast.sent", {}, screenLang()), by);
+      notify("success", t("toast.sent", {}, screenLang()), by);
       return;
     }
     if (type === "RESPOND_DOCUMENT") {
       if (controller.getState().openPanels.includes("upload-failed"))
         controller.togglePanel("upload-failed");
-      notify(t("toast.document_sent", {}, screenLang()), by);
+      notify("success", t("toast.document_sent", {}, screenLang()), by);
       return;
     }
     // A claim opens the case that was just taken on.
@@ -987,7 +1066,7 @@ if (!config) {
       controller.getState().principal?.access === "presenter"
     )
       controller.navigate("staff-case");
-    if (receipt && STAFF_NOTICES[type]) notify(STAFF_NOTICES[type], by);
+    if (receipt && STAFF_NOTICES[type]) notify("success", STAFF_NOTICES[type], by);
   }
 
   // ---- assistance actions -----------------------------------------------
@@ -1007,7 +1086,7 @@ if (!config) {
     // database refuses an empty one.
     const note = type === "RESOLVE" ? String(values.note ?? "").trim() : null;
     if (type === "RESOLVE" && !note) {
-      notify("Say what you helped with before resolving this request.");
+      notify("warning", "Say what you helped with before resolving this request.");
       return;
     }
     const sent = await controller.runAssistanceAction(
@@ -1018,7 +1097,7 @@ if (!config) {
     clearFormDrafts(form);
     if (sent && type === "RESOLVE" && controller.getState().dialog === "resolve-help")
       closeDialog("#office-queue-title");
-    if (sent) notify(ASSISTANCE_NOTICES[type], by);
+    if (sent) notify("success", ASSISTANCE_NOTICES[type], by);
   }
 
   // ---- navigation actions -----------------------------------------------
@@ -1125,7 +1204,8 @@ if (!config) {
       showDraftLink();
     } catch (error) {
       if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
-      notify(t(error?.draftFont ? "draft.font_unchecked" : "draft.failed", {}, screenLang()), by);
+      const failure = error?.draftFont ? "draft.font_unchecked" : "draft.failed";
+      notify("warning", t(failure, {}, screenLang()), by);
     }
   }
 
@@ -1230,7 +1310,7 @@ if (!config) {
         const after = controller.getState();
         const landed =
           !reason && Boolean(after.savedCase) && !after.dirty && ["saved", "idle"].includes(after.saveState);
-        if (landed) notify("The draft is saved. Nobody was emailed.", by);
+        if (landed) notify("info", "The draft is saved. Nobody was emailed.", by);
         // The button was off while the save ran, which dropped the keyboard;
         // it goes back to it, unless the office has moved on to a field.
         if (!root.contains(document.activeElement))
@@ -1240,12 +1320,12 @@ if (!config) {
       case "send-office-draft": {
         sweepV2Form();
         const { sent, reason } = await controller.saveOfficeDraft({ send: true });
-        if (sent) notify("The application is with the office.", by);
+        if (sent) notify("success", "The application is with the office.", by);
         else if (reason === "answers") {
-          notify("The draft is saved. Some answers still need attention before it can be sent.", by);
+          notify("warning", "The draft is saved. Some answers still need attention before it can be sent.", by);
           root.querySelector("#add-case-count")?.focus();
         } else if (reason === "unconfirmed") {
-          notify("Confirm that you have checked these answers with the client first.", by);
+          notify("warning", "Confirm that you have checked these answers with the client first.", by);
           root.querySelector("#field-confirmed")?.focus();
         }
         break;
@@ -1296,7 +1376,7 @@ if (!config) {
         await controller.resetFixtures();
         formDrafts.clear();
         closeDialog();
-        notify("The sample cases were rebuilt. Nothing else was touched.", by);
+        notify("success", "The sample cases were rebuilt. Nothing else was touched.", by);
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
@@ -1346,7 +1426,7 @@ if (!config) {
         // Nor to anyone but the person who pressed (`notify`'s `by`): not on
         // the sign-in screen after a sign-out, not to the next user.
         const started = await controller.createCase();
-        if (started) notify(t("toast.started", {}, screenLang()), by);
+        if (started) notify("success", t("toast.started", {}, screenLang()), by);
         break;
       }
       case "continue-intake":
@@ -1459,7 +1539,7 @@ if (!config) {
         // Not saved: no "Saved", and the page stays.
         if (controller.getState().dirty && !(await controller.saveAnswers())) break;
         controller.navigate("applications");
-        notify(t("toast.saved", {}, screenLang()), by);
+        notify("success", t("toast.saved", {}, screenLang()), by);
         break;
       }
       case "fill-fictional":
@@ -1499,10 +1579,10 @@ if (!config) {
       case "copy-reference":
         try {
           await navigator.clipboard.writeText(state.savedCase?.reference ?? "");
-          notify(t("toast.id_copied", {}, screenLang()), by);
+          notify("success", t("toast.id_copied", {}, screenLang()), by);
         } catch {
           openDialog("print");
-          notify(t("toast.id_select", {}, screenLang()), by);
+          notify("info", t("toast.id_select", {}, screenLang()), by);
         }
         break;
       case "print-reference":
@@ -1525,7 +1605,7 @@ if (!config) {
         // the controller answers null and says so on screen. "Sent again."
         // would be a claim that something left this window.
         const sent = await controller.retryLast();
-        if (sent) notify(t("toast.sent_again", {}, screenLang()), by);
+        if (sent) notify("success", t("toast.sent_again", {}, screenLang()), by);
         break;
       }
       case "retry-connection":
@@ -1549,7 +1629,7 @@ if (!config) {
         sweepV2Form();
         // A press made while 繁體 is still loading wins over it.
         const outcome = await languageRequests.want(lang, (wanted) => controller.setLanguage(wanted));
-        if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()), by);
+        if (outcome === "failed") notify("warning", t("toast.hant_failed", {}, screenLang()), by);
         break;
       }
       default:
@@ -1560,6 +1640,7 @@ if (!config) {
   root.addEventListener("click", async (event) => {
     // Who pressed, before anything is awaited (see `notify`).
     const by = signedInUserId();
+    const shown = controller.getState().error;
     const caseTarget = event.target.closest("[data-case-action]");
     const assistTarget = event.target.closest("[data-assistance-action]");
     // A submit button inside a form is handled by the submit event, where the
@@ -1573,9 +1654,8 @@ if (!config) {
       else if (assistTarget) await runAssistanceAction(assistTarget, null, by);
       else await runNavigation(target.dataset.action, target, by);
     } catch (error) {
-      // The controller has already recorded the failure and re-rendered; this
-      // only makes sure a refused action is announced rather than silent.
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
+      // The safety net: never a toast (design D1).
+      safetyNet(error, by, shown);
     }
   });
 
@@ -1635,6 +1715,7 @@ if (!config) {
     event.preventDefault();
     // Who pressed, before anything is awaited (see `notify`).
     const by = signedInUserId();
+    const shown = controller.getState().error;
     const form = event.target;
     // Add a case has no submit: its bar's controls are buttons. Enter in a
     // lone text box would otherwise reach `reportValidity`.
@@ -1650,7 +1731,8 @@ if (!config) {
           await moveV2(() => controller.backToSummary());
         else await moveV2(() => controller.moveSubstep(1));
       } catch (error) {
-        notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
+        // The safety net: never a toast (design D1).
+        safetyNet(error, by, shown);
       }
       return;
     }
@@ -1680,7 +1762,7 @@ if (!config) {
         });
         formDrafts.clear();
         closeDialog();
-        notify("The sample case was moved to that point in the story.", by);
+        notify("success", "The sample case was moved to that point in the story.", by);
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {
@@ -1693,7 +1775,8 @@ if (!config) {
         render();
       }
     } catch (error) {
-      notify(sentence(error?.message ?? "Something went wrong.", screenLang()), by);
+      // The safety net: never a toast (design D1).
+      safetyNet(error, by, shown);
     }
   });
 
@@ -1762,7 +1845,7 @@ if (!config) {
       if (wanted !== controller.getState().lang)
         controller.adoptLanguage(wanted, { draw: controllerStarted });
     });
-    if (outcome === "failed") notify(t("toast.hant_failed", {}, screenLang()));
+    if (outcome === "failed") notify("warning", t("toast.hant_failed", {}, screenLang()));
   });
 
   // A saved 繁體 needs its map before the first render. If another tab chose

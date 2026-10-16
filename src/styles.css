@@ -1580,29 +1580,59 @@ textarea::placeholder {
   font-size: 11px;
   color: #9ba889;
 }
+/* The toast (design D4): bottom centre for clients, bottom right for staff,
+   lifted above Add a case's bar. Hidden means out of the Tab order. */
 .toast {
   position: fixed;
-  bottom: 90px;
+  bottom: calc(24px + var(--toast-lift, 0px));
   left: 50%;
-  transform: translate(-50%, 12px);
   z-index: 80;
-  border: 1px solid var(--vt-line);
-  background: var(--vt-ink);
-  box-shadow: 0 10px 30px rgb(42 39 69 / 0.25);
-  color: #fff;
-  font-size: 13px;
-  padding: 13px 23px;
-  border-radius: var(--vt-radius);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 6px 6px 6px 18px;
+  border-left: 4px solid var(--toast-edge, #6a5acd);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--vt-ink);
+  box-shadow: 0 12px 32px rgb(42 39 69 / 0.18);
+  font-size: 15px;
+  line-height: 1.4;
   opacity: 0;
-  pointer-events: none;
-  transition: 0.2s;
-  text-align: center;
-  max-width: 90vw;
+  visibility: hidden;
+  transform: translate(-50%, 12px);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s linear 0.2s;
 }
 .toast.visible {
   opacity: 1;
+  visibility: visible;
   transform: translate(-50%, 0);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s;
 }
+.toast.toast-staff { left: auto; right: 24px; transform: translateY(12px); }
+.toast.toast-staff.visible { transform: none; }
+.toast[data-kind="success"] { --toast-edge: #2f8a4c; }
+.toast[data-kind="info"] { --toast-edge: #6a5acd; }
+.toast[data-kind="warning"] { --toast-edge: #a07c32; }
+.toast .toast-icon-slot { display: flex; color: var(--toast-edge); }
+.toast .toast-icon { width: 20px; height: 20px; }
+.toast .toast-text { flex: 1; padding: 8px 0; }
+.toast .toast-dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6c6886;
+  cursor: pointer;
+}
+.toast .toast-dismiss:hover,
+.toast .toast-dismiss:focus-visible { background: var(--vt-primary-soft); }
 .exception-banner,
 .storage-banner {
   display: flex;
@@ -1867,11 +1897,6 @@ textarea::placeholder {
     font-size: 10px;
     padding: 8px 11px;
   }
-  .toast {
-    bottom: 128px;
-    font-size: 12px;
-    width: max-content;
-  }
   .narrow {
     padding: 28px 22px;
   }
@@ -2086,9 +2111,6 @@ textarea::placeholder {
   }
   .site-footer {
     margin-bottom: 160px;
-  }
-  .toast {
-    bottom: 165px;
   }
   .hero-copy br {
     display: initial;
@@ -2373,9 +2395,6 @@ textarea::placeholder {
   }
   .site-footer {
     margin-bottom: 30px;
-  }
-  .toast {
-    bottom: 24px;
   }
 }
 

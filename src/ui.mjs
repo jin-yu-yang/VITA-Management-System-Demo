@@ -57,6 +57,9 @@ const paths = {
   chart: "M3 3v18h18M7 15l4-4 3 3 6-7",
   // The intake redesign's document cards (spec 2026-10-04 §6.4)
   camera: "M3 8h4l2-3h6l2 3h4v12H3ZM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  // The toast's kinds (design D4): success is `check`.
+  info: "M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+  warning: "M12 3 2 21h20L12 3ZM12 10v5M12 18h.01",
 };
 
 // Every name the icon table knows. A name that is not here falls back to the
