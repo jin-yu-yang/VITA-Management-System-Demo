@@ -160,8 +160,9 @@ None of this exists yet; it is the list to work through.
   things such a policy must keep working: the draft 13614-C fetches its Chinese fonts (and the
   Latin font beside them) from `https://cdn.jsdelivr.net`, pinned by version and checked by
   SHA-256 (`DRAFT_FONTS` in `src/draft-pdf.mjs`), so `connect-src` must allow that origin; and
-  the three IRS forms are the app's own files under `src/forms/` (`server.mjs` serves exactly
-  those three as `application/pdf`), so a static host must publish that folder. The finished
+  the three IRS forms and PCDC's two Form 14446 files are the app's own files under `src/forms/`
+  (`server.mjs` serves exactly those five as `application/pdf`), so a static host must publish
+  that folder. The finished
   draft opens as a `blob:` URL in a new tab.
 - **Data retention.** Tax data has retention and deletion obligations; decide them before any real
   client uses the system.

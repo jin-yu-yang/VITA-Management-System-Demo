@@ -11,9 +11,9 @@ import { NEUTRAL_SEND_MESSAGE } from "../src/auth.mjs";
 import { payloadFor, SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { OFFICE_CONTACT } from "../src/ui.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
-import { visibleSubsteps } from "../src/intake-form.mjs";
+import { reviewAlerts, visibleSubsteps } from "../src/intake-form.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
-import { findQuestion } from "../src/intake-catalogue.mjs";
+import { findQuestion, substepQuestions } from "../src/intake-catalogue.mjs";
 import { intakeFormV2 } from "../src/intake-views.mjs";
 import {
   textOf,
@@ -96,6 +96,7 @@ const v2Answers = () => {
     ...answers,
     tp_first_name: "美",
     tp_last_name: "林",
+    vc_tp_signature: "美林",
     addr_street: "中山路 100",
     hh: answers.hh.map((member) => ({ ...member, first_name: "文", last_name: "林" })),
   };
@@ -440,6 +441,7 @@ const intakeAnswers = (overrides = {}) => {
     tp_first_name: "美",
     tp_last_name: "林",
     tp_job_title: "工人",
+    vc_tp_signature: "美林",
     best_contact_note: "晚上",
     addr_street: "中山路 100",
     sp_first_name: "文",
@@ -453,7 +455,7 @@ const intakeAnswers = (overrides = {}) => {
 const intakeCase = (overrides = {}) =>
   v2Case({ stage: "draft", clientNumber: null, answers: {}, documentCards: [], ...overrides });
 
-const ALL_VISIBLE = visibleSubsteps(intakeAnswers(), cardsFor(intakeAnswers(), []));
+const ALL_VISIBLE = visibleSubsteps(intakeAnswers(), cardsFor(intakeAnswers(), []), ["review.submit"]);
 
 const intakeState = (overrides = {}) =>
   baseState({
@@ -479,6 +481,15 @@ const withAlerts = () => {
   const answers = intakeAnswers({ email: "lin.mei@" });
   delete answers.tp_phone;
   answers.hh = answers.hh.map(({ dob, ...member }) => member);
+  return answers;
+};
+
+// The married sample with nothing answered in one part: optional.questions has
+// six questions, none required, so emptying it leaves no alerts and the gate
+// still shows the summary.
+const withEmptyPart = () => {
+  const answers = intakeAnswers();
+  for (const question of substepQuestions("optional.questions")) delete answers[question.id];
   return answers;
 };
 
@@ -509,8 +520,8 @@ const INTAKE_STATES = {
     draftAnswers: intakeAnswers({ service: "same_day" }),
   }),
   "review: the summary with marked cards": intakeState({ formSubstep: "review.summary", savedCase: intakeCase({ documentCards: MARKED }) }),
-  "review: the summary with nothing answered in a part": intakeState({ formSubstep: "review.summary", draftAnswers: withAlerts() }),
-  "review: submit with alerts": intakeState({ formSubstep: "review.submit", draftAnswers: withAlerts() }),
+  "review: the summary with nothing answered in a part": intakeState({ formSubstep: "review.summary", draftAnswers: withEmptyPart() }),
+  "review: submit": intakeState({ formSubstep: "review.submit" }),
   "review: submit, confirmed and busy": intakeState({ formSubstep: "review.submit", openPanels: ["confirmed"], busy: true, saveState: "saving" }),
   "same-day: the bring list": intakeState({ formSubstep: "documents.bring", draftAnswers: intakeAnswers({ service: "same_day" }) }),
   "same-day: the summary": intakeState({ formSubstep: "review.summary", draftAnswers: intakeAnswers({ service: "same_day" }) }),
@@ -551,6 +562,15 @@ test("the intake sweep covers every visible sub-step of the married sample", () 
     ([id, value]) => typeof value === "string" && /[A-Za-z]/.test(value) && findQuestion(2, id)?.type === "text",
   );
   assert.deepEqual(latin.map(([id]) => id).sort(), ["addr_city", "addr_state"]);
+});
+
+test("the summary's empty part reads in Chinese, and the part's draft has no alerts", () => {
+  const state = INTAKE_STATES["review: the summary with nothing answered in a part"];
+  assert.deepEqual(reviewAlerts(state.draftAnswers), [], "the summary only shows with no alerts");
+  const html = render({ ...state, lang: "zh-Hans" });
+  assert.match(html, /data-substep="review\.summary"/);
+  assert.ok(html.includes(t("summary.none", {}, "zh-Hans")), "the empty part's text");
+  assert.ok(textOf(html).includes("尚未回答任何问题。"));
 });
 
 test("English is the default on every intake state too", () => {

@@ -1,5 +1,8 @@
 import {
-  languageLabel,
+  clientLanguages,
+  languageOptions,
+  languageSummary,
+  speaksLanguage,
   serviceLabel,
   CONTACT_FIELDS,
   MATERIALS_ITEMS,
@@ -11,6 +14,7 @@ import {
   wording,
   isVisible,
   findSubstep,
+  substepTitleOf,
 } from "./intake-catalogue.mjs";
 import { formatAnswer, sendable } from "./intake-form.mjs";
 import { cardsFor, CARD_SUBSTEPS } from "./document-cards.mjs";
@@ -30,6 +34,7 @@ import {
   formatClientNumber,
   clientNumberLabel,
   clientNumberTag,
+  languageCell,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -403,9 +408,10 @@ export function boardFilters(filters) {
 }
 
 // Answers store codes ("drop_off"); they are compared, shown and grouped by
-// their label, so a saved filter value, already a label, still matches.
+// their label, so a saved filter value, already a label, still matches. A
+// client matches a language when they speak it, preferred or other.
 const inLanguageAndService = (record, chosen) =>
-  (chosen.language === "all" || languageLabel(record?.answers?.language ?? "") === languageLabel(chosen.language)) &&
+  speaksLanguage(clientLanguages(record?.answers), chosen.language) &&
   (chosen.service === "all" || serviceLabel(record?.answers?.service ?? "") === serviceLabel(chosen.service));
 
 // A query of digits (optionally after one "#") is a client number, matched
@@ -471,8 +477,9 @@ const filterChips = (name, options, current) =>
     )
     .join("")}</div>`;
 
-// Language and service come from the records themselves, so a workspace with
-// one language does not show filters for languages nobody asked for.
+// Service comes from the records themselves, so a workspace with one service
+// does not show filters for services nobody asked for. Languages use
+// `languageOptions`.
 const valueOptions = (cases, key, allLabel, labelOf) => [
   ["all", allLabel],
   ...[
@@ -541,7 +548,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${listPhone(record, person, "board-phone")}</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${listPhone(record, person, "board-phone")}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.
@@ -582,7 +589,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
-  )}${filterChips("language", valueOptions(cases, "language", "Any language", languageLabel), chosen.language)}${filterChips(
+  )}${filterChips("language", languageOptions(cases, "Any language"), chosen.language)}${filterChips(
     "service",
     valueOptions(cases, "service", "Any service", serviceLabel),
     chosen.service,
@@ -832,7 +839,7 @@ export function answersPanelV2(record, { showContact = false } = {}) {
               return read.rows;
             });
           return rows.length
-            ? `<div class="answers-sub"><h4>${esc(substep.title?.general?.en ?? "")}</h4>${rows.join("")}</div>`
+            ? `<div class="answers-sub"><h4>${esc(substepTitleOf(substep, { answers }))}</h4>${rows.join("")}</div>`
             : "";
         })
         .join("");
@@ -929,7 +936,8 @@ export function materialsCard(record, rights, ui = {}) {
   }</form></section>`;
 }
 
-// The three draft 13614-C buttons (spec 2026-10-04 §7.4). They reuse 4b2's
+// The draft 13614-C in three languages and the draft Form 14446 in English
+// and 繁體 (spec 2026-10-04 §7.4; add-form-14446-consent). They reuse 4b2's
 // `view-draft` wiring, which builds from the case's answers and contact fields.
 const draftTools = () =>
   `<div class="summary-tools">${button("View Draft 13614-C", "view-draft", "secondary", 'data-form="en"')}${button(
@@ -937,7 +945,12 @@ const draftTools = () =>
     "view-draft",
     "secondary",
     'data-form="zh-s" lang="zh-Hans"',
-  )}${button("繁體中文版", "view-draft", "secondary", 'data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+  )}${button("繁體中文版", "view-draft", "secondary", 'data-form="zh-t" lang="zh-Hant"')}${button(
+    "View Draft Form 14446",
+    "view-draft",
+    "secondary",
+    'data-draft="14446" data-form="en"',
+  )}${button("繁體中文版", "view-draft", "secondary", 'data-draft="14446" data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
 
 // What the Intake answers tab holds, shared with the office page. The draft
 // prints the client's phones, so its buttons follow the contact rule.

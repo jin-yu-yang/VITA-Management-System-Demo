@@ -1,8 +1,13 @@
 import {
   languageLabel,
+  clientLanguages,
+  languageFilterLabels,
+  languageSummary,
+  speaksLanguage,
   stepsFor,
   substepsFor,
   findSubstep,
+  substepTitleOf,
   leadOf,
   substepQuestions,
   isVisible,
@@ -23,6 +28,7 @@ import {
   clientNumberLabel,
   clientNumberTag,
   formatTime,
+  languageCell,
 } from "./ui.mjs";
 import {
   adminEligibility,
@@ -119,9 +125,13 @@ export function officeFilters(filters) {
   };
 }
 
-const rowLanguage = (row) => languageLabel(row.record?.answers?.language || row.item?.language || "");
-const inLanguage = (row, chosen) =>
-  chosen.language === "all" || rowLanguage(row) === languageLabel(chosen.language);
+// A row's languages (design D6): the case's answers, or for a help request
+// with no case, the request's own language text (a label maps to its code).
+const rowLanguages = (row) => {
+  const fromCase = clientLanguages(row.record?.answers);
+  return fromCase.length ? fromCase : clientLanguages({ language: row.item?.language });
+};
+const inLanguage = (row, chosen) => speaksLanguage(rowLanguages(row), chosen.language);
 
 export function queueCounts(rows, chosen) {
   const inScope = rows.filter((row) => inLanguage(row, chosen));
@@ -190,7 +200,7 @@ function queueRow(row, person, ui) {
     : item?.caseId
       ? '<span class="muted">A case in this workspace</span>'
       : '<span class="muted">No case yet</span>';
-  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${esc(rowLanguage(row) || "—")}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${waitingTone(row.days)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
+  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${languageCell(languageSummary(rowLanguages(row)))}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${waitingTone(row.days)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
 }
 
 /**
@@ -210,9 +220,7 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
   const scoped = rows.filter((row) => inLanguage(row, chosen));
   const over3 = scoped.filter((row) => (row.days ?? 0) >= 3).length;
   const shown = scoped.filter((row) => chosen.kind === "all" || row.kind === chosen.kind);
-  const languages = [
-    ...new Set(rows.map((row) => String(rowLanguage(row)).trim()).filter(Boolean)),
-  ].sort();
+  const languages = languageFilterLabels(rows.map(rowLanguages));
 
   const toggles = `<div class="board-filters"><div class="filter-group" role="group" aria-label="Task type">${[
     ["all", "All"],
@@ -472,7 +480,7 @@ function addStep(step, view) {
       .filter((part) => findSubstep(part.id).step.id === step.id)
       .map((part) => {
         const open = view.open.has(part.id);
-        return accordion(part.id, inVariant(findSubstep(part.id).title, view.variant), {
+        return accordion(part.id, substepTitleOf(findSubstep(part.id), { variant: view.variant, answers: view.answers }), {
           open,
           needs: part.needs,
           summary: open ? "" : partSummary(part.id, view.answers, view.variant),

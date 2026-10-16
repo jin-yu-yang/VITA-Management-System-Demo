@@ -1,4 +1,4 @@
-import { findQuestion, isAnswered } from "./intake-catalogue.mjs";
+import { findQuestion, isAnswered, spouseOnReturn, spouseShown } from "./intake-catalogue.mjs";
 import { newMemberId } from "./intake-form.mjs";
 
 // One fictional person (spec 2026-09-30 §3.3), written out: a text question
@@ -35,6 +35,7 @@ function versionTwoAnswers(seed, married) {
   const answers = {
     service: "drop_off",
     language: "english",
+    language_also: ["mandarin"],
     tp_first_name: person.first,
     tp_last_name: person.last,
     tp_dob: person.dob,
@@ -114,6 +115,13 @@ function versionTwoAnswers(seed, married) {
     payment_method: "bank_account",
     irs_language_pref: ["none"],
     pecf: ["none"],
+    // Form 14446 is not optional (openspec change add-form-14446-consent):
+    // the sample is a complete application, signed. The Fill removes these,
+    // so a client still consents and signs themselves (sampleAnswersFor).
+    vc_agree: ["yes"],
+    vc_review: "yes",
+    vc_tp_signature: `${person.first} ${person.last}`,
+    vc_tp_date: "2026-02-02",
     // No form_version, and nothing from section 14 (the Form 15080 consent):
     // consent is the client's own choice.
   };
@@ -135,6 +143,41 @@ function versionTwoAnswers(seed, married) {
 // One fictional client's answers, fixed by the seed; `married` adds a spouse.
 export function makeSampleAnswers({ seed = 0, married = false } = {}) {
   return versionTwoAnswers(seed, married);
+}
+
+/**
+ * The fictional answers for a Fill of `draft` (change add-widowed-spouse-rules):
+ * a married sample for a spouse on the return (spouseOnReturn), and a widowed
+ * client stays widowed with their year. A late spouse gets no phone and none of
+ * the married-only answers, and a job title only while a joint return is
+ * possible (spouseShown).
+ *
+ * It never carries the Form 14446 consent or signatures (`vc_*`): 0.4 and 1.5
+ * are the client's own choice, as the Form 15080 consent is.
+ */
+export function sampleAnswersFor(draft = {}, { seed = 0 } = {}) {
+  return withoutConsent(sampleFor(draft ?? {}, seed));
+}
+
+const withoutConsent = (answers) =>
+  Object.fromEntries(Object.entries(answers).filter(([key]) => !key.startsWith("vc_")));
+
+function sampleFor(current, seed) {
+  const generated = makeSampleAnswers({ seed, married: spouseOnReturn(current) });
+  if (current.marital_status !== "widowed") return generated;
+  const {
+    sp_phone: _phone,
+    married_last_day: _lastDay,
+    lived_apart_last_6mo: _apart,
+    sp_job_title: jobTitle,
+    ...rest
+  } = generated;
+  return {
+    ...rest,
+    ...(jobTitle !== undefined && spouseShown(current) ? { sp_job_title: jobTitle } : {}),
+    marital_status: "widowed",
+    ...(isAnswered(current.spouse_death_year) ? { spouse_death_year: current.spouse_death_year } : {}),
+  };
 }
 
 // The blank answers of `current` filled from `generated`. Blank is "not
@@ -179,10 +222,15 @@ export function fictionalAnswers(draft = {}, generated = {}, { replaceEverything
           key !== "form_version" &&
           // The email is the person's own: the verified one stays.
           key !== "email" &&
+          // The Form 14446 consent and signatures are the client's own.
+          !key.startsWith("vc_") &&
           findQuestion(2, key) &&
           !(key in generated),
       )
       .map((key) => [key, null]),
   );
-  return { ...cleared, ...fresh };
+  // The Form 14446 consent and signatures are the client's own: the patch
+  // carries them as they are, so Regenerate never clears them.
+  const kept = Object.fromEntries(Object.entries(current).filter(([key]) => key.startsWith("vc_") && findQuestion(2, key)));
+  return { ...cleared, ...kept, ...fresh };
 }

@@ -18,6 +18,8 @@ const MARRIED = Object.freeze({
   service: "drop_off",
   language: "mandarin",
   language_other: "Should not appear",
+  language_also: ["cantonese"],
+  language_also_other: "Also should not appear",
   best_contact_time: ["weekday_evening"],
   best_contact_note: "After six",
   tp_first_name: "Mei",
@@ -379,7 +381,7 @@ test("each marital status ticks its own box, with its date", () => {
 test("the questions with no box never appear", () => {
   const { text, comments } = draft();
   const values = Object.values(text).join("\n") + comments;
-  for (const absent of ["Should not appear", "After six", "drop_off", "mandarin", "weekday_evening", "general"])
+  for (const absent of ["Should not appear", "Also should not appear", "cantonese", "After six", "drop_off", "mandarin", "weekday_evening", "general"])
     assert.ok(!values.includes(absent), absent);
   assert.ok(!Object.values(text).includes("yes"));
 });
@@ -544,4 +546,22 @@ test("the English form's generated lines do not change with the Traditional map 
   const loaded = withHant(() => draft({ ...MARRIED, hh: SIX }));
   assert.equal(loaded.comments, plain.comments);
   assert.ok(!/\p{Script=Han}/u.test(plain.comments));
+});
+
+test("a 2025 death's not-sure line quotes the wording with the spouse (add-widowed-spouse-rules)", () => {
+  const { comments } = draft({ ...MARRIED, marital_status: "widowed", spouse_death_year: "2025", claimed_by_other: "not_sure" });
+  assert.match(comments, /claim you or your spouse as a dependent/);
+});
+
+test("the spouse lines print only when a joint return is possible (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => draft({ ...MARRIED, marital_status: "widowed", spouse_death_year: year, sp_first_name: "Wei", sp_last_name: "Lin" });
+  const died2025 = widowed("2025");
+  assert.ok(died2025.checks.includes(F("page1[0].maritalStatus[0].statusWidowed[0].statusWidowed[0]")));
+  assert.equal(died2025.text[F("page1[0].maritalStatus[0].statusWidowed[0].yearSpousesDeath[0]")], "2025");
+  assert.equal(died2025.text[F("page1[0].spousesFirstName[0]")], "Wei");
+  const died2024 = widowed("2024");
+  assert.ok(died2024.checks.includes(F("page1[0].maritalStatus[0].statusWidowed[0].statusWidowed[0]")));
+  assert.equal(died2024.text[F("page1[0].maritalStatus[0].statusWidowed[0].yearSpousesDeath[0]")], "2024");
+  for (const box of ["spousesFirstName", "spousesMiddleInitial", "spousesLastName", "spousesDateOfBirth", "spousesJobTitle", "spousesTelephoneNumber"])
+    assert.equal(died2024.text[F(`page1[0].${box}[0]`)], undefined, box);
 });

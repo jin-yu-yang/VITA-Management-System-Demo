@@ -49,6 +49,10 @@ export const INTAKE_VALUE_CASES = [
   both("additional_notes", "x".repeat(5001), false),
   both("gcf_tp_signature", "Mei Lin", true),
   both("gcf_tp_signature", "x".repeat(201), false),
+  both("vc_agree", ["yes"], true),
+  both("vc_agree", ["no"], false),
+  both("vc_sp_email", "wei@example.com", true),
+  both("vc_sp_email", "wei@", false),
 
   // email
   both("email", "mei.lin@example.com", true),
@@ -91,6 +95,11 @@ export const INTAKE_VALUE_CASES = [
   // year
   both("spouse_death_year", "2020", true),
   both("spouse_death_year", "20201", false),
+  both("spouse_death_year", "1899", false),
+  both("spouse_death_year", "1900", true),
+  both("spouse_death_year", "2025", true),
+  both("spouse_death_year", "2026", false),
+  both("spouse_death_year", "2205", false),
 
   // number without a range
   both("inc_wages_job_count", "3", true),
@@ -113,6 +122,9 @@ export const INTAKE_VALUE_CASES = [
   // multi
   both("best_contact_time", ["weekend", "any_time"], true),
   both("best_contact_time", ["weekend", "weekend"], false),
+  both("language_also", ["mandarin", "other"], true),
+  both("language_also", "mandarin", false),
+  both("language_also", ["klingon"], false),
 
   // who
   both("us_citizen", ["me"], true),

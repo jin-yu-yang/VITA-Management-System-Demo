@@ -277,6 +277,22 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
   });
 });
 
+test("the board's Language cell lists every language, preferred first, and the filter matches any of them", () => {
+  const both = boardCase({ id: "b", reference: "VT-BOTH", answers: { language: "cantonese", language_also: ["mandarin"] } });
+  const mand = boardCase({ id: "m", reference: "VT-MAND", answers: { language: "mandarin" } });
+  const eng = boardCase({ id: "e", reference: "VT-ENG", answers: { language: "english", language_also: ["other"], language_also_other: "Vietnamese" } });
+  const cases = [both, mand, eng];
+  const ids = (filters) => filterCases(cases, { status: "available", ...filters }, ALEX).map((c) => c.id).sort();
+  assert.deepEqual(ids({ language: "Mandarin" }), ["b", "m"]);
+  assert.deepEqual(ids({ language: "Cantonese" }), ["b"]);
+  assert.deepEqual(ids({ language: "Other" }), ["e"]);
+  const html = renderStaffBoard(cases, PEOPLE, { person: ALEX, filters: { status: "available" } });
+  assert.match(html, /<span class="language-letters" title="Cantonese \(preferred\), Mandarin" data-languages="Cantonese\|Mandarin"><span aria-hidden="true">C, M<\/span>/);
+  assert.match(html, /title="English \(preferred\), Other: Vietnamese" data-languages="English\|Other"><span aria-hidden="true">E, O<\/span>/);
+  for (const label of ["Cantonese", "English", "Mandarin", "Other"])
+    assert.equal([...html.matchAll(new RegExp(`data-filter="language" data-value="${label}"`, "g"))].length, 1, label);
+});
+
 test("answer codes display and filter by their labels", () => {
   const v2 = boardCase({ id: "v2", reference: "VT-V2", answers: { service: "drop_off", language: "cantonese" } });
   const other = boardCase({ id: "v3", reference: "VT-V3", answers: { service: "online", language: "english" } });
@@ -1504,6 +1520,13 @@ test("a hidden question and a hidden sub-step are absent", () => {
   assert.match(married, /Spouse&#39;s first name<\/span><strong>Casey<\/strong>/);
 });
 
+test("the staff answers panel titles a widowed client's spouse Your late spouse (add-widowed-spouse-rules)", () => {
+  const html = v2Panel(v2Case({ answers: { marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_last_name: "Lin" } }));
+  assert.match(html, /<h4>Your late spouse<\/h4>/);
+  assert.match(html, /Spouse&#39;s first name<\/span><strong>Wei<\/strong>/);
+  assert.doesNotMatch(html, /<h4>Your spouse<\/h4>/);
+});
+
 test('"Not sure" is highlighted with the words and an icon, and counted', () => {
   const one = v2Panel(v2Case({ answers: { inc_tips: "not_sure" } }));
   assert.match(one, /<div class="detail-row is-not-sure"><span>Tips<\/span><strong>[^<]*<span class="not-sure-flag"><svg[^>]*>.*?<\/svg> Not sure<\/span><\/strong><\/div>/);
@@ -1886,6 +1909,8 @@ test("the draft 13614-C buttons show to staff who work on a version-2 case", () 
   assert.match(office, /data-action="view-draft" data-form="en">View Draft 13614-C</);
   assert.match(office, />简体中文版</);
   assert.match(office, />繁體中文版</);
+  assert.match(office, /data-action="view-draft" data-draft="14446" data-form="en"[^>]*>View Draft Form 14446</);
+  assert.match(office, /data-action="view-draft" data-draft="14446" data-form="zh-t" lang="zh-Hant"[^>]*>繁體中文版</);
   // After the answers panel, before the contact card.
   assert.ok(office.indexOf("answers-v2") < office.indexOf("summary-tools"));
   assert.ok(office.indexOf("summary-tools") < office.indexOf("contact-card"));

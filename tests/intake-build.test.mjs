@@ -11,6 +11,8 @@ import {
   LOADER_VERSION,
   nextCatalogueMigration,
   readMigrationEntries,
+  RULES,
+  TAX_YEAR,
 } from "../tools/build-intake-catalogue.mjs";
 import COMMITTED from "../src/intake-catalogue-data.mjs";
 
@@ -418,7 +420,7 @@ test("buildCatalogue turns the fixture drafts into the catalogue", () => {
         },
         { value: "none", label: both("No one", "均无") },
       ],
-      spouseShowIf: [{ field: "marital_status", op: "eq", value: "married" }],
+      spouseShowIf: RULES.joint_possible,
     },
     yesno: {
       options: [
@@ -558,8 +560,8 @@ test("the real catalogue has the ten steps of the redesign", () => {
   assert.deepEqual(
     COMMITTED.steps.map((step) => [step.id, step.n, step.title.en, step.sections.map((s) => s.n)]),
     [
-      ["before", 1, "Before you start", [0]],
-      ["about", 2, "About you", [1, 2, 3, 4, 5, 8]],
+      ["before", 1, "Before you start", [0, 15]],
+      ["about", 2, "About you", [1, 2, 3, 4, 5, 8, 16]],
       ["household", 3, "Household", [6]],
       ["income", 4, "Income", [9]],
       ["expenses", 5, "Expenses & life events", [10, 11]],
@@ -582,7 +584,7 @@ test("the real catalogue has the ten steps of the redesign", () => {
 
 test("the real sub-steps carry their kind, cards and lead lines", () => {
   const subs = COMMITTED.steps.flatMap((s) => s.substeps);
-  assert.equal(subs.length, 32);
+  assert.equal(subs.length, 34);
   const kinds = (id) => subs.find((x) => x.id === id).kind;
   assert.equal(kinds("income.wages"), "questions");
   assert.equal(kinds("review.summary"), "review");
@@ -651,7 +653,8 @@ test("the real catalogue's unmarried wording, leads and intro", () => {
   assert.equal(section6.introUnmarried.general.zh, "请列出 2025 年与您同住的所有人，以及未与您同住但由您提供经济支持的人。");
   assert.equal(section6.introUnmarried.senior.en, section6.intro.senior.en.replace(" (not your spouse)", ""));
   assert.equal(section6.introUnmarried.senior.zh, section6.intro.senior.zh.replace("（您爱人除外）", ""));
-  assert.equal(COMMITTED.steps.flatMap((s) => s.sections).filter((x) => x.introUnmarried).length, 1);
+  // Section 6 and, since add-form-14446-consent, Section 16.
+  assert.deepEqual(COMMITTED.steps.flatMap((s) => s.sections).filter((x) => x.introUnmarried).map((x) => x.n), [16, 6]);
 });
 
 test("the real drafts: every Tip that mentions uploading points to the Documents step", () => {
@@ -741,12 +744,18 @@ test("every real question states required, and the optional set is the agreed li
       "gcf_consent",
       "gcf_tp_date",
       "gcf_sp_date",
+      "vc_tp_date",
+      "vc_sp_signature",
+      "vc_sp_date",
+      "vc_sp_email",
       "inc_wages_job_count",
       "refund_method_other",
       "inc_other_desc",
       "evt_other_desc",
       "irs_language",
       "language_other",
+      "language_also",
+      "language_also_other",
       "form_version",
       "hh.member_id",
       "hh.middle_name",
@@ -769,7 +778,7 @@ test("the real catalogue labels the who and yesno values from the drafts' conven
   assert.deepEqual(spouse.senior, { en: "My spouse", zh: "我爱人" });
   assert.deepEqual(yesno.options[2].label.senior, { en: "I'm not sure", zh: "我不确定" });
   assert.deepEqual(yesno.options[0].label.general, { en: "Yes", zh: "是" });
-  assert.deepEqual(who.spouseShowIf, [{ field: "marital_status", op: "eq", value: "married" }]);
+  assert.deepEqual(who.spouseShowIf, RULES.joint_possible);
 });
 
 test("the real catalogue keeps service, language, form_version, hh and the phones", () => {
@@ -786,6 +795,20 @@ test("the real catalogue keeps service, language, form_version, hh and the phone
   assert.equal(other.type, "text");
   assert.equal(other.required, false);
   assert.deepEqual(other.showIf, [{ field: "language", op: "eq", value: "other" }]);
+
+  // Q0.5 and Q0.6: the client's other languages (allow-multiple-service-languages, design D1, D2).
+  const also = findQuestion(COMMITTED, "language_also");
+  assert.equal(also.type, "multi");
+  assert.equal(also.required, false);
+  assert.deepEqual(values("language_also"), values("language"));
+  assert.deepEqual(
+    also.options.map((o) => o.label.general),
+    language.options.map((o) => o.label.general),
+  );
+  const alsoOther = findQuestion(COMMITTED, "language_also_other");
+  assert.equal(alsoOther.type, "text");
+  assert.equal(alsoOther.required, false);
+  assert.deepEqual(alsoOther.showIf, [{ field: "language_also", op: "eq", value: "other" }]);
 
   const version = findQuestion(COMMITTED, "form_version");
   assert.equal(version.required, false);
@@ -902,4 +925,84 @@ test("nextCatalogueMigration names, skips and round-trips catalogue migrations",
   );
   assert.ok(literal, first.text.slice(0, 200));
   assert.deepEqual(JSON.parse(literal[1].replaceAll("''", "'")), catalogue);
+});
+
+test("the spouse rules, exactly (add-widowed-spouse-rules)", () => {
+  const married = { field: "marital_status", op: "eq", value: "married" };
+  const widowedFrom = (year) => [
+    { field: "marital_status", op: "eq", value: "widowed" },
+    { field: "spouse_death_year", op: "gte", value: year },
+    { field: "spouse_death_year", op: "lte", value: 2025 },
+  ];
+  assert.equal(TAX_YEAR, 2025);
+  assert.deepEqual(RULES.spouse_on_return, [{ op: "any", groups: [[married], widowedFrom(2023)] }]);
+  assert.deepEqual(RULES.joint_possible, [{ op: "any", groups: [[married], widowedFrom(2025)] }]);
+});
+
+test("a 'rule' clause expands to the named rule, and AND joins it with other clauses (add-widowed-spouse-rules)", () => {
+  const phone = "`sp_phone` · Phone · Optional\n**Show if** `marital_status = married`";
+  assert.ok(STANDARD_TEXT.includes(phone));
+  const showIfOf = (text, id) =>
+    parseDraft(text, { role: "standard" }).sections.flatMap((s) => s.questions).find((q) => q.id === id).showIf;
+  assert.deepEqual(showIfOf(STANDARD_TEXT, "sp_first_name"), RULES.spouse_on_return);
+  const joined = STANDARD_TEXT.replace(phone, "`sp_phone` · Phone · Optional\n**Show if** rule `joint_possible` AND `tp_phone` is filled");
+  assert.deepEqual(showIfOf(joined, "sp_phone"), [...RULES.joint_possible, { field: "tp_phone", op: "filled" }]);
+  const unknown = STANDARD_TEXT.replace(phone, "`sp_phone` · Phone · Optional\n**Show if** rule `nope`");
+  assert.throws(() => parseDraft(unknown, { role: "standard" }), /unreadable condition/);
+});
+
+test("a Year can carry a range, and spouse_death_year's must end at the tax year (add-widowed-spouse-rules)", () => {
+  const year = parseDraft(STANDARD_TEXT, { role: "standard" }).sections.flatMap((s) => s.questions).find((q) => q.id === "spouse_death_year");
+  assert.deepEqual([year.type, year.min, year.max], ["year", 1900, 2025]);
+  const range = "`spouse_death_year` · Year 1900–2025 · Required";
+  assert.ok(STANDARD_TEXT.includes(range) && SENIOR_TEXT.includes(range));
+  const backwards = (text) => text.replace(range, "`spouse_death_year` · Year 2025–1900 · Required");
+  assert.throws(() => parseDraft(backwards(STANDARD_TEXT), { role: "standard" }), /low to high/);
+  const early = (text) => text.replace(range, "`spouse_death_year` · Year 1900–2024 · Required");
+  assert.throws(() => buildCatalogue(early(STANDARD_TEXT), early(SENIOR_TEXT)), /tax year 2025/);
+});
+
+test("the real catalogue's spouse questions follow the two rules (add-widowed-spouse-rules)", () => {
+  assert.deepEqual(COMMITTED.rules, RULES);
+  for (const id of ["sp_first_name", "sp_middle_name", "sp_last_name", "sp_dob"])
+    assert.deepEqual(findQuestion(COMMITTED, id).showIf, RULES.spouse_on_return, id);
+  for (const id of ["sp_job_title", "opt_race_sp"]) assert.deepEqual(findQuestion(COMMITTED, id).showIf, RULES.joint_possible, id);
+  const married = { field: "marital_status", op: "eq", value: "married" };
+  assert.deepEqual(findQuestion(COMMITTED, "sp_phone").showIf, [married]);
+  for (const id of ["gcf_sp_signature", "gcf_sp_date", "married_last_day", "lived_apart_last_6mo"])
+    assert.ok(findQuestion(COMMITTED, id).showIf.some((c) => c.op === "eq" && c.field === "marital_status" && c.value === "married"), id);
+  const spouse = COMMITTED.steps.flatMap((s) => s.substeps).find((s) => s.id === "about.spouse");
+  assert.deepEqual(spouse.titleWidowed, {
+    general: { en: "Your late spouse", zh: "已故配偶" },
+    senior: { en: "Your late spouse", zh: "已故配偶" },
+  });
+  const year = findQuestion(COMMITTED, "spouse_death_year");
+  assert.deepEqual([year.min, year.max], [1900, TAX_YEAR]);
+});
+
+test("Form 14446: the consent in 'Before you start' and the signatures in 'About you' (add-form-14446-consent)", () => {
+  const sub = (id) => COMMITTED.steps.flatMap((s) => s.substeps).find((s) => s.id === id);
+  const before = COMMITTED.steps.find((s) => s.id === "before");
+  const about = COMMITTED.steps.find((s) => s.id === "about");
+  assert.deepEqual(before.substeps.map((s) => s.id), ["before.ready", "before.service", "before.language", "before.virtual"]);
+  assert.deepEqual(sub("before.virtual").questions, ["vc_agree"]);
+  assert.deepEqual(sub("before.virtual").title.general, { en: "Virtual VITA consent (Form 14446)", zh: "虚拟 VITA 纳税人同意书" });
+  assert.equal(about.substeps.map((s) => s.id).indexOf("about.sign"), about.substeps.map((s) => s.id).indexOf("about.spouse") + 1);
+  assert.deepEqual(sub("about.sign").questions, ["vc_review", "vc_tp_signature", "vc_tp_date", "vc_sp_signature", "vc_sp_date", "vc_sp_email"]);
+  assert.deepEqual(sub("about.sign").title.general, { en: "Sign Form 14446", zh: "签署 14446 表" });
+  const q = (id) => findQuestion(COMMITTED, id);
+  assert.deepEqual([q("vc_agree").type, q("vc_agree").required, q("vc_agree").options.map((o) => o.value)], ["multi", true, ["yes"]]);
+  assert.deepEqual([q("vc_review").type, q("vc_review").required, q("vc_review").options.map((o) => o.value)], ["choice", true, ["yes", "no"]]);
+  assert.deepEqual([q("vc_tp_signature").type, q("vc_tp_signature").required], ["signature", true]);
+  for (const id of ["vc_tp_date", "vc_sp_signature", "vc_sp_date", "vc_sp_email"]) assert.equal(q(id).required, false, id);
+  assert.deepEqual(q("vc_tp_date").showIf, [{ field: "vc_tp_signature", op: "filled" }]);
+  assert.deepEqual(q("vc_sp_signature").showIf, COMMITTED.rules.joint_possible);
+  assert.deepEqual(q("vc_sp_date").showIf, [...COMMITTED.rules.joint_possible, { field: "vc_sp_signature", op: "filled" }]);
+  assert.deepEqual(q("vc_sp_email").showIf, [{ field: "marital_status", op: "eq", value: "married" }]);
+  assert.equal(q("vc_sp_email").type, "email");
+  const section16 = about.sections.find((s) => s.n === 16);
+  assert.match(section16.intro.general.en, /your spouse signs too/);
+  assert.ok(section16.introUnmarried?.general?.en, "Section 16 has a not-married intro");
+  assert.doesNotMatch(section16.introUnmarried.general.en, /spouse/i);
+  assert.ok(section16.introUnmarried.senior?.zh, "and the senior draft has one too");
 });

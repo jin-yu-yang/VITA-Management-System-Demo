@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 import {
   createBrowserFixture,
   loginTestUser,
@@ -33,6 +34,7 @@ import {
   choosePersona,
   clickAction,
   clickCaseActionUntil,
+  continueToSubmit,
   fieldByLabel,
   findOnBoard,
   measureOverflow,
@@ -268,11 +270,123 @@ async function startApplication(page) {
 }
 
 /**
+ * The Form 14446 consent at 0.4 (openspec change add-form-14446-consent):
+ * until it is ticked, every place after "Before you start" is locked. Jump to
+ * 0.4, tick the box, and wait until About you is a link on the rail again.
+ * Found by ids and data attributes only, so it works in every language.
+ */
+async function consent14446(page) {
+  await railJump(page, "before.virtual");
+  await tickBox(page, "field-client-vc_agree-yes");
+  await waitFor(
+    page,
+    "the rail to unlock About you",
+    () =>
+      Boolean(document.querySelector('.rail-step[data-step-id="about"] .rail-link[data-action="go-substep"]')) &&
+      !document.querySelector(".rail-tree .is-locked"),
+    undefined,
+    RENDER_MS,
+  );
+}
+
+/**
+ * Sign Form 14446 at 1.5: "I consent" to the IRS review, the client's typed
+ * name as the signature, then Tab. The date fills itself with today (in the
+ * browser's own calendar) on the first keystroke, so once the signature is
+ * left its box appears already filled. `name` defaults to the name the page
+ * shows it will print. Jumps there by the rail unless the form is already
+ * on 1.5. Returns the signature typed.
+ */
+async function sign14446(page, name) {
+  const here = await page.evaluate(() => document.querySelector("#intake-v2-form")?.dataset.substep ?? null);
+  if (here !== "about.sign") await railJump(page, "about.sign");
+  await chooseAnswer(page, "vc_review", "yes");
+  const signature =
+    name ?? (await page.evaluate(() => document.querySelector(".sign-details dd")?.textContent.trim() ?? ""));
+  assert.ok(signature, "no name to sign Form 14446 with");
+  await waitForQuiet(page);
+  await page.locator("#field-client-vc_tp_signature").fill(signature);
+  await page.keyboard.press("Tab");
+  await waitFor(
+    page,
+    "the Form 14446 date to fill itself with today",
+    () => {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const part = (which) => document.querySelector(`#field-client-vc_tp_date-${which}`)?.value ?? null;
+      return (
+        part("year") === String(now.getFullYear()) &&
+        part("month") === pad(now.getMonth() + 1) &&
+        part("day") === pad(now.getDate())
+      );
+    },
+    undefined,
+    RENDER_MS,
+  );
+  return signature;
+}
+
+/** A draft PDF's bytes, read in its own tab once it has loaded there. */
+async function draftBytes(popup) {
+  await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+  const base64 = await popup.evaluate(async () => {
+    const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+    let binary = "";
+    for (let at = 0; at < bytes.length; at += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    return btoa(binary);
+  });
+  return Buffer.from(base64, "base64");
+}
+
+/**
+ * The page count of a flattened draft PDF, and the Latin text one page draws:
+ * every `<hex> Tj` string in its content and in the flattened field
+ * appearances it holds. A box filled in Helvetica is drawn that way; text in
+ * a downloaded font (Chinese) is drawn as glyph ids and is not readable here.
+ */
+async function draftPageText(bytes, index) {
+  const doc = await PDFDocument.load(bytes);
+  const seen = new Set();
+  const streams = [];
+  const walk = (value) => {
+    if (value instanceof PDFRef) {
+      if (seen.has(value.toString())) return;
+      seen.add(value.toString());
+      walk(doc.context.lookup(value));
+    } else if (value instanceof PDFRawStream) {
+      try {
+        streams.push(Buffer.from(decodePDFRawStream(value).decode()).toString("latin1"));
+      } catch {
+        // An image or a font file: no text to read.
+      }
+      walk(value.dict);
+    } else if (value instanceof PDFDict) {
+      for (const [, entry] of value.entries()) walk(entry);
+    } else if (value instanceof PDFArray) {
+      for (const entry of value.asArray()) walk(entry);
+    }
+  };
+  const page = doc.getPage(index).node;
+  walk(page.get(PDFName.of("Contents")));
+  walk(page.get(PDFName.of("Resources")));
+  return {
+    pages: doc.getPageCount(),
+    strings: streams.flatMap((text) =>
+      [...text.matchAll(/<([0-9A-Fa-f]*)>\s*Tj/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")),
+    ),
+  };
+}
+
+/**
  * The version-2 walk the story's own application takes: Fill fictional
- * details, then the rail. On the way it becomes married (a show-if: the
+ * details, the Form 14446 consent and signature, then the rail. On the way it
+ * becomes married (a show-if: the
  * spouse's part joins the rail, and a second Fill answers it) and the wording
- * flips to Senior and back. It stops on review.submit with the box ticked;
- * the Submit is the caller's, and `atCheck` runs on an empty review.check.
+ * flips to Senior and back. It reaches review.submit by Continue on 9.1 and
+ * 9.2 (the gate), with the box ticked; the Submit is the caller's, and
+ * `atCheck` runs on an empty review.check. The fill never consents or signs,
+ * so 0.4 and 1.5 are done by hand, right after it.
  */
 async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
   await clickAction(page, "continue-intake");
@@ -285,6 +399,8 @@ async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
     undefined,
     RENDER_MS,
   );
+  await consent14446(page);
+  await sign14446(page);
   await railJump(page, "about.marital");
   assert.equal(
     await page.locator('.rail-sublink[data-substep="about.spouse"]').count(),
@@ -331,7 +447,7 @@ async function fillIntakeV2ToSubmit(page, { atCheck } = {}) {
     `the filled example still has alerts: ${await page.locator(".alerts-block").innerText().catch(() => "")}`,
   );
   if (atCheck) await atCheck();
-  await railJump(page, "review.submit");
+  await continueToSubmit(page);
   await tickBox(page, "field-confirmed");
 }
 
@@ -368,15 +484,19 @@ const cardRow = (fixture, caseId, slotId) =>
   );
 
 // Every sub-step the fictional example shows, in order: drop-off, never
-// married, one child, wages and a direct deposit. The walk presses Continue
-// once on each and must arrive at the next, so this is also the rail's list.
+// married, one child, wages and a direct deposit, with Form 14446's consent
+// (0.4) and signature (1.5). The walk presses Continue once on each up to
+// review.check and must arrive at the next (the gate holds the last two until
+// the walk's gap is fixed); this is also the rail's list.
 const V2_WALK = Object.freeze([
   "before.ready",
   "before.service",
   "before.language",
+  "before.virtual",
   "about.you",
   "about.address",
   "about.marital",
+  "about.sign",
   "about.situation",
   "about.irs",
   "household.members",
@@ -663,6 +783,17 @@ async function runPermutation(t, roles) {
         .locator(".board-row")
         .filter({ has: staff.locator("button.board-reference", { hasText: classReference }) });
       assert.equal((await classRow.locator(".client-number").innerText()).trim(), clientNumber);
+      // The Fill names English (preferred) and Mandarin (allow-multiple-service-languages):
+      // the cell shows letters, with the full names on hover and for screen readers.
+      const languages = classRow.locator(".language-letters");
+      assert.deepEqual(
+        {
+          letters: (await languages.locator('[aria-hidden="true"]').innerText()).trim(),
+          title: await languages.getAttribute("title"),
+          labels: await languages.getAttribute("data-languages"),
+        },
+        { letters: "E, M", title: "English (preferred), Mandarin", labels: "English|Mandarin" },
+      );
       // Clear the reference search first: it already shows exactly this one
       // row, so a number search that did nothing would otherwise pass.
       await clickAction(staff, "set-board-filter", { attributes: '[data-filter="search"]' });
@@ -881,10 +1012,12 @@ async function runPermutation(t, roles) {
       assert.deepEqual(
         await staff.evaluate(() =>
           [...document.querySelectorAll('#case-panel-intake [data-action="view-draft"]')].map(
-            (button) => button.dataset.form,
+            (button) => `${button.dataset.draft ?? "13614-C"} ${button.dataset.form}`,
           ),
         ),
-        ["en", "zh-s", "zh-t"],
+        // The draft 13614-C in three languages, then the draft Form 14446 in
+        // PCDC's two (add-form-14446-consent).
+        ["13614-C en", "13614-C zh-s", "13614-C zh-t", "14446 en", "14446 zh-t"],
       );
       // The draft opens as a PDF in its own tab. Chrome only, as in the
       // version-2 phase: Firefox may download a blob PDF instead of opening
@@ -898,7 +1031,9 @@ async function runPermutation(t, roles) {
         });
         await waitForQuiet(staff);
         const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
-        await staff.locator('#case-panel-intake [data-action="view-draft"][data-form="en"]').click({ timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
         const popup = await opened;
         await popup.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
         staffDraft = await popup.evaluate(async () => {
@@ -1344,18 +1479,20 @@ async function runPermutation(t, roles) {
       // An empty queue's own buttons go with the empty state: "Show all
       // languages" and "Show every task" leave the keyboard on the chip that
       // now shows that choice. A kind with rows, in a language with none of
-      // that kind, empties the queue.
+      // that kind, empties the queue. The cell shows letters, so a row's
+      // languages come from its data-languages, and a row counts under every
+      // language it lists, as the filter does.
       const emptyPair = await staff.evaluate(() => {
         const rows = [...document.querySelectorAll("tr.queue-row")].map((row) => ({
           kind: row.dataset.kind,
-          language: row.cells[3]?.textContent.trim(),
+          languages: (row.cells[3]?.querySelector(".language-letters")?.dataset.languages ?? "").split("|").filter(Boolean),
         }));
         const languages = [
           ...document.querySelectorAll('[data-filter="language"]:not([data-value="all"])'),
         ].map((chip) => chip.dataset.value);
         for (const kind of new Set(rows.map((row) => row.kind)))
           for (const language of languages)
-            if (!rows.some((row) => row.kind === kind && row.language === language))
+            if (!rows.some((row) => row.kind === kind && row.languages.includes(language)))
               return { kind, language };
         return null;
       });
@@ -1743,9 +1880,11 @@ async function runPermutation(t, roles) {
         await clickAction(clientB.page, "continue-intake");
         await waitForSubstep(clientB.page, "before.ready");
         await clickAction(clientB.page, "fill-fictional");
-        // The recorded first save, then a visits save, both online.
+        // The recorded first save, then a visits save, both online. The
+        // Form 14446 consent opens the steps after "Before you start".
         await clickContinue(clientB.page);
         await waitForSubstep(clientB.page, "before.service");
+        await consent14446(clientB.page);
         await railJump(clientB.page, "about.address");
         await waitForQuiet(clientB.page);
         const savedOnce = await caseById(fixture, own.id);
@@ -1811,6 +1950,7 @@ async function runPermutation(t, roles) {
       await clickAction(client, "fill-fictional");
       await clickContinue(client);
       await waitForSubstep(client, "before.service");
+      await consent14446(client);
       await railJump(client, "about.address");
       await waitForQuiet(client);
       await client.locator("#field-client-addr_city").fill(MINE_CITY);
@@ -1867,6 +2007,7 @@ async function runPermutation(t, roles) {
       await clickAction(client, "fill-fictional");
       await clickContinue(client);
       await waitForSubstep(client, "before.service");
+      await consent14446(client);
       await railJump(client, "about.address");
 
       // Save and exit, sign out, come back as the same applicant, and open
@@ -2286,6 +2427,31 @@ async function runPermutation(t, roles) {
       );
 
       await clickAction(staff, "fill-assisted-intake");
+      // The fill never consents or signs Form 14446 (add-form-14446-consent):
+      // 0.4 and 1.5 are the two parts it leaves, and Add a case is never
+      // locked. The office ticks and signs them with the client.
+      await waitFor(
+        staff,
+        "the fill to leave only the Form 14446 parts",
+        () =>
+          document.querySelector("#add-case-count")?.textContent.trim() === "2 parts still need answers" &&
+          document.querySelector("#add-sub-before-virtual-status")?.textContent.trim() === "Needs answers" &&
+          document.querySelector("#add-sub-about-sign-status")?.textContent.trim() === "Needs answers",
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(await staff.locator("#add-case-v2-form .is-locked").count(), 0, "Add a case shows a locked part");
+      await openPart("about.you");
+      const firstName = await box("tp_first_name").inputValue();
+      assert.ok(firstName, "Fill fictional details left the first name blank");
+      const officeSignature = `${firstName} ${await box("tp_last_name").inputValue()}`;
+      await openPart("before.virtual");
+      await tickBox(staff, "field-office-vc_agree-yes");
+      await openPart("about.sign");
+      await chooseAnswer(staff, "vc_review", "yes", "office");
+      await waitForQuiet(staff);
+      await box("vc_tp_signature").fill(officeSignature);
+      await staff.keyboard.press("Tab");
       await waitFor(
         staff,
         "every part to be answered",
@@ -2295,9 +2461,6 @@ async function runPermutation(t, roles) {
       );
       await waitForQuiet(staff);
       await shootWithoutSidebar(staff, "add-case-v2");
-      await openPart("about.you");
-      const firstName = await box("tp_first_name").inputValue();
-      assert.ok(firstName, "Fill fictional details left the first name blank");
 
       // The leave check: every way off the page asks first, and Keep
       // editing keeps every answer. No case exists yet.
@@ -2352,6 +2515,11 @@ async function runPermutation(t, roles) {
       assert.equal(Number(assisted.intake_version), 2);
       assert.equal(assisted.stage, "draft");
       assert.equal(assisted.answers.tp_first_name, firstName, "the draft's answers were not saved");
+      assert.deepEqual(
+        [assisted.answers.vc_agree, assisted.answers.vc_review, assisted.answers.vc_tp_signature],
+        [["yes"], "yes", officeSignature],
+        "the office's Form 14446 consent and signature were not saved",
+      );
       assert.deepEqual(assisted.intake_visited, [], "the office sent visits");
       const onAssisted = { caseId: assisted.id };
 
@@ -2892,8 +3060,9 @@ async function runPermutation(t, roles) {
     // is the one a check is about, and it is sent once, with no retry helper.
     //
     // Moving: Continue walks every visible sub-step exactly once, from
-    // before.ready to review.submit. Everywhere else the phase moves the way a
-    // person jumps around: a rail link (`go-substep`), an alert, a Change.
+    // before.ready to review.check (the gate holds 9.2 and 9.3 until the city
+    // is fixed). Everywhere else the phase moves the way a person jumps
+    // around: a rail link (`go-substep`), an alert, a Change.
     await phase("a client walks the version-2 intake, sub-step by sub-step", async () => {
       let v2Win = null;
       let againWin = null;
@@ -2998,8 +3167,6 @@ async function runPermutation(t, roles) {
         const railStep = (stepId) => readNode(`rail-step-${stepId}-status`);
         const chip = async () =>
           (await page.locator(".application-meta .save-chip").innerText()).trim();
-        const toast = () =>
-          page.evaluate(() => document.querySelector("#toast")?.textContent.trim() ?? null);
         const header = () =>
           page.evaluate(() => {
             const intro = document.querySelector(".form-workspace .page-intro");
@@ -3023,6 +3190,9 @@ async function runPermutation(t, roles) {
               shown: step ? step.querySelector(".rail-subs")?.hidden === false : null,
             };
           });
+        // The review step's rail entries, in order: the gate decides 9.2 and 9.3.
+        const reviewRail = () =>
+          page.evaluate(() => [...document.querySelectorAll("#rail-subs-review .rail-sublink")].map((link) => link.dataset.substep));
         // Every mark on the rail, collapsed steps included.
         const railMarks = () =>
           page.evaluate(() =>
@@ -3126,9 +3296,14 @@ async function runPermutation(t, roles) {
         await waitForSubstep(page, "before.ready");
 
         // ---- The walk: Continue on every visible sub-step, once ----------
-        for (let at = 0; at < V2_WALK.length; at += 1) {
-          const id = V2_WALK[at];
-          const next = V2_WALK[at + 1] ?? null;
+        // The gate: 9.2 and 9.3 need every alert fixed, and the walk keeps a gap
+        // (the city) for review.check, so Continue walks up to 9.1.
+        const WALKED = V2_WALK.slice(0, V2_WALK.indexOf("review.check") + 1);
+        // The Form 14446 signature typed at 1.5, for the checks after it.
+        let walkSignature = null;
+        for (let at = 0; at < WALKED.length; at += 1) {
+          const id = WALKED[at];
+          const next = WALKED[at + 1] ?? null;
           if (at > 0) await waitForSubstep(page, id);
           // The rail marks where the form is, and the current step is open.
           assert.deepEqual(
@@ -3149,7 +3324,7 @@ async function runPermutation(t, roles) {
             assert.deepEqual(await header(), {
               overline: "BEFORE YOU START",
               title: "Before you start",
-              count: "1 of 3",
+              count: "1 of 4",
             });
             assert.deepEqual(await railOpen("about"), { expanded: "false", hidden: true });
             // Another step's toggle opens it where it is: no move, no save.
@@ -3173,14 +3348,62 @@ async function runPermutation(t, roles) {
               text: "Done",
             });
             assert.equal(await box("service-drop_off").isChecked(), true);
-            // The fill is saved: the rail now lists exactly the walk.
+            // The fill is saved: the rail now lists exactly the walk (the
+            // locked sub-steps too), less 9.2 and 9.3: the fill never
+            // consents to or signs Form 14446, so the review gate is shut.
             assert.deepEqual(
               await page.evaluate(() =>
                 [...document.querySelectorAll(".rail-sublink")].map((link) => link.dataset.substep),
               ),
-              [...V2_WALK],
+              V2_WALK.filter((id) => id !== "review.summary" && id !== "review.submit"),
               "the rail does not list the sub-steps this example shows",
             );
+          }
+
+          if (id === "before.virtual") {
+            // The Form 14446 gate (add-form-14446-consent): until 0.4 is
+            // ticked, every step after "Before you start" is locked on the
+            // rail (no link), and Continue waits, with a line saying why.
+            const shut = await page.evaluate(() => ({
+              aboutHead: document.querySelectorAll('.rail-step[data-step-id="about"] .rail-link.is-locked').length,
+              aboutLinks: document.querySelectorAll('.rail-step[data-step-id="about"] [data-action="go-substep"]').length,
+              lockedSteps: [...document.querySelectorAll(".rail-step")]
+                .filter((step) => step.querySelector(".rail-link.is-locked"))
+                .map((step) => step.dataset.stepId),
+              links: [...document.querySelectorAll('.rail-tree [data-action="go-substep"]')].map(
+                (link) => link.dataset.substep,
+              ),
+            }));
+            assert.equal(shut.aboutHead, 1, "About you is not locked before the consent");
+            assert.equal(shut.aboutLinks, 0, "About you has a link before the consent");
+            assert.deepEqual(
+              shut.lockedSteps,
+              [...new Set(V2_WALK.map(stepOf))].filter((stepId) => stepId !== "before"),
+              "the steps after Before you start are not all locked",
+            );
+            assert.ok(
+              shut.links.every((substep) => stepOf(substep) === "before"),
+              `a link past Before you start before the consent: ${JSON.stringify(shut.links)}`,
+            );
+            assert.equal(await continueButton.isDisabled(), true, "Continue was on before the consent");
+            assert.equal(await continueButton.getAttribute("aria-describedby"), "consent-blocked");
+            assert.equal(
+              await page.locator("#consent-blocked").innerText(),
+              "We need this consent to prepare your return. If you'd rather not give it, please call PCDC at 215-922-6156.",
+            );
+            assert.equal(await box("vc_agree-yes").isChecked(), false, "Fill fictional details gave the consent");
+            await tickBox(page, "field-client-vc_agree-yes");
+            await waitFor(
+              page,
+              "the rail to unlock after the consent",
+              () =>
+                !document.querySelector(".rail-tree .is-locked") &&
+                Boolean(document.querySelector('.rail-step[data-step-id="about"] .rail-link[data-action="go-substep"]')),
+              undefined,
+              RENDER_MS,
+            );
+            assert.equal(await continueButton.isDisabled(), false, "Continue stayed off after the consent");
+            assert.equal(await page.locator("#consent-blocked").count(), 0, "the consent line outlived the consent");
           }
 
           if (id === "about.you") {
@@ -3242,7 +3465,7 @@ async function runPermutation(t, roles) {
             assert.deepEqual(await header(), {
               overline: "STEP 1 OF 9 · ABOUT YOU",
               title: "Mailing address",
-              count: "2 of 5",
+              count: "2 of 6",
             });
             assert.equal(await rail("about.spouse"), null, "a never-married client's rail lists the spouse");
             // A gap left on purpose: review.check lists it later.
@@ -3298,6 +3521,15 @@ async function runPermutation(t, roles) {
             await page.setViewportSize(DESKTOP);
           }
 
+          if (id === "about.sign") {
+            // Form 14446's signatures (add-form-14446-consent): the details it
+            // will print come first, read-only, and the date is asked only
+            // once there is a signature, which fills it with today.
+            assert.equal(await page.locator("#intake-v2-form .sign-details").count(), 1, "1.5 shows no details");
+            assert.equal(await box("vc_tp_date-year").count(), 0, "1.5 asked the date before the signature");
+            walkSignature = await sign14446(page);
+          }
+
           if (id === "income.wages") {
             // A sub-step with a lead line shows it, and no section intro.
             assert.deepEqual(
@@ -3336,23 +3568,20 @@ async function runPermutation(t, roles) {
             // Arriving by Continue puts the keyboard on the alerts heading.
             await waitForQuiet(page);
             assert.equal(await focused(), "alerts-title");
-          }
-
-          if (id === "review.submit") {
-            assert.equal(await submitButton.isDisabled(), true, "Submit was on before the box was ticked");
-            await tickBox(page, "field-confirmed");
+            // The gate: the city is missing, so Continue waits, a line says
+            // why, and the review step lists 9.1 alone.
+            assert.equal(await continueButton.isDisabled(), true, "Continue was on with an alert");
+            assert.equal(await continueButton.getAttribute("aria-describedby"), "continue-blocked");
+            assert.equal(await page.locator("#continue-blocked").innerText(), "Fix the items above to continue.");
+            assert.deepEqual(await reviewRail(), ["review.check"]);
             assert.equal(
-              await submitButton.isDisabled(),
-              true,
-              "Submit was on with an answer still missing",
+              await page.locator(".rail-progress p").innerText(),
+              `Part ${WALKED.length} of ${WALKED.length}`,
             );
-            // "See the alerts" is a jump like any other: to the heading.
-            await goTo(
-              page.locator('#intake-v2-form [data-action="go-substep"][data-substep="review.check"]'),
-              "review.check",
-            );
-            await waitForQuiet(page);
-            assert.equal(await focused(), "alerts-title");
+            // The alert is the way on: it opens its sub-step, and leaving
+            // review.check saves its visit.
+            await goTo(page.locator('.alert-item[data-substep="about.address"]'), "about.address");
+            pressed = true;
           }
 
           if (next && !pressed) {
@@ -3364,8 +3593,8 @@ async function runPermutation(t, roles) {
           (
             await one(fixture, "select intake_visited from public.cases where id=$1", [own.id])
           ).intake_visited,
-          // review.submit too: "See the alerts" left it.
-          [...V2_WALK].sort(),
+          // review.check too: its alert left it.
+          [...WALKED].sort(),
           "the server's visits are not the walk",
         );
 
@@ -3514,49 +3743,16 @@ async function runPermutation(t, roles) {
         assert.equal(await answer("tp_job_title"), "Baker", "the rest of about.you was not saved");
         assert.equal(await answer("email"), "mei.lin@example.com", "an invalid email reached the server");
 
-        // The Submit guard (spec 2026-09-30 §2.5: nothing invalid is ever
-        // submitted). Submit's disabled state is drawn at render and typing
-        // never redraws, so a stale Submit can be on while the draft is not
-        // sendable: the press re-checks the draft itself. Here the button is
-        // turned on by hand, the one way to reach that state on purpose.
-        const forceSubmit = async () => {
-          await waitForQuiet(page);
-          await submitButton.evaluate((button) => {
-            button.disabled = false;
-          });
-          await submitButton.click({ timeout: CLICK_MS });
-        };
-        await jump("review.submit");
+        // The gate (design D1, D4): with an invalid email and no city, neither
+        // the summary nor Submit is on the rail, and 9.1's Continue waits.
+        // (9.3 can't be drawn with an alert. The SUBMIT guard's redirect, for
+        // a press on a page drawn before an alert came back, is the
+        // controller's guardSubmit and is unit-tested there; its unticked-box
+        // refusal is checked at Submit below.)
+        await jump("review.check");
+        assert.deepEqual(await reviewRail(), ["review.check"]);
+        assert.equal(await continueButton.isDisabled(), true, "Continue was on with two alerts");
         assert.equal(await chip(), "1 answer needs checking");
-        // The box unticked: nothing is sent, and the page says why.
-        await waitForQuiet(page);
-        await confirmBox.click({ timeout: CLICK_MS });
-        await confirmTicked(false);
-        await forceSubmit();
-        await waitFor(
-          page,
-          "the unconfirmed Submit to be refused",
-          () =>
-            document.querySelector("#toast")?.textContent.trim() ===
-            "Confirm that you have checked your answers first.",
-          undefined,
-          RENDER_MS,
-        );
-        assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
-        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
-        // Ticked, with an invalid email and a missing city in the draft: the
-        // guard reveals them and goes to review.check, keyboard on its heading.
-        await tickBox(page, "field-confirmed");
-        assert.equal(await submitButton.isDisabled(), true, "Submit was drawn on with alerts");
-        await forceSubmit();
-        await waitForSubstep(page, "review.check");
-        await waitForQuiet(page);
-        assert.deepEqual(
-          { focus: await focused(), toast: await toast() },
-          { focus: "alerts-title", toast: "Some answers still need a change before you can send." },
-        );
-        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an invalid draft was submitted");
-        assert.equal(await answer("email"), "mei.lin@example.com", "the guard sent the invalid email");
 
         // review.check lists both, in sub-step order, under the step.
         await jump("review.check");
@@ -3725,9 +3921,43 @@ async function runPermutation(t, roles) {
         await jump("review.check");
         assert.deepEqual(await alertsList(), [], "an alert outlived its fix");
 
-        // Submit: on only with no alerts and the box ticked.
-        await jump("review.submit");
-        assert.equal(await confirmBox.isChecked(), true, "the confirmation was lost on the way");
+        // With nothing wrong, Continue on 9.1 opens the summary, and the rail
+        // lists it; Continue on 9.2 earns 9.3.
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary"]);
+        await goTo(continueButton, "review.summary");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary"], "9.3 before Continue on 9.2");
+        await goTo(continueButton, "review.submit");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary", "review.submit"]);
+        assert.ok(
+          (await one(fixture, "select intake_visited from public.cases where id=$1", [own.id])).intake_visited.includes("review.submit"),
+          "the earned 9.3 was not saved",
+        );
+
+        // Submit: on only with the box ticked. Its guard re-checks the draft
+        // itself: an unticked box is refused even when Submit is turned on by
+        // hand, the one way to reach that state on purpose.
+        const forceSubmit = async () => {
+          await waitForQuiet(page);
+          await submitButton.evaluate((button) => {
+            button.disabled = false;
+          });
+          await submitButton.click({ timeout: CLICK_MS });
+        };
+        assert.equal(await confirmBox.isChecked(), false);
+        assert.equal(await submitButton.isDisabled(), true, "Submit was on before the box was ticked");
+        await forceSubmit();
+        await waitFor(
+          page,
+          "the unconfirmed Submit to be refused",
+          () =>
+            document.querySelector("#toast")?.textContent.trim() ===
+            "Confirm that you have checked your answers first.",
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(await here(), "review.submit", "an unconfirmed Submit moved the form");
+        assert.equal((await caseById(fixture, own.id)).stage, "draft", "an unconfirmed Submit was sent");
+        await tickBox(page, "field-confirmed");
         assert.equal(await submitButton.isDisabled(), false, "Submit stayed off with nothing wrong");
         await waitForQuiet(page);
         await confirmBox.click({ timeout: CLICK_MS });
@@ -3736,7 +3966,87 @@ async function runPermutation(t, roles) {
         await tickBox(page, "field-confirmed");
         assert.equal(await submitButton.isDisabled(), false);
 
-        // The summary's Change opens a sub-step with "Back to summary".
+        // ---- The summary page (design D6-D8) ------------------------------
+        await jump("review.summary");
+        const order = await page.evaluate(() =>
+          [...document.querySelectorAll("#intake-v2-form > div, #intake-v2-form > p")].map((node) => node.className || node.id),
+        );
+        assert.deepEqual(
+          order.filter((name) => ["summary-intro", "summary-tools", "summary-fold", "summary-print"].includes(name)),
+          ["summary-intro", "summary-tools", "summary-fold", "summary-print"],
+          "the summary page's order",
+        );
+        assert.equal(
+          await page.locator(".summary-intro p").first().innerText(),
+          "Here is a summary of everything you told us in your application.",
+        );
+        // One section folds from its heading, and the keyboard stays on it.
+        const aboutToggle = page.locator('.summary-toggle[data-panel="summary-shut:about"]');
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(
+          page,
+          "About you to collapse",
+          () => document.getElementById("summary-body-about")?.hidden === true,
+          undefined,
+          RENDER_MS,
+        );
+        assert.equal(await aboutToggle.getAttribute("aria-expanded"), "false");
+        assert.equal(
+          await page.evaluate(() => document.activeElement?.dataset.panel ?? null),
+          "summary-shut:about",
+        );
+        // The Print button's printout shows it anyway. The press sets
+        // body.print-summary and opens the print dialog, which a story can't
+        // close, so the class is set by hand under print media instead.
+        await page.evaluate(() => document.body.classList.add("print-summary"));
+        await page.emulateMedia({ media: "print" });
+        assert.deepEqual(
+          await page.evaluate(() => {
+            const body = document.getElementById("summary-body-about");
+            return { display: getComputedStyle(body).display, shown: body.offsetHeight > 0 };
+          }),
+          { display: "block", shown: true },
+          "a collapsed section does not print",
+        );
+        await page.emulateMedia({ media: "screen" });
+        await page.evaluate(() => document.body.classList.remove("print-summary"));
+        // Collapse all and Expand all, each keeping the keyboard.
+        for (const [button, hidden] of [["summary-collapse-all", true], ["summary-expand-all", false]]) {
+          await waitForQuiet(page);
+          await page.locator(`#${button}`).click({ timeout: CLICK_MS });
+          await waitFor(
+            page,
+            `every section to be ${hidden ? "collapsed" : "expanded"}`,
+            (wanted) => [...document.querySelectorAll(".summary-body")].every((body) => body.hidden === wanted),
+            hidden,
+            RENDER_MS,
+          );
+          assert.equal(await focused(), button, `${button} lost the keyboard`);
+        }
+        // The fold is kept while moving: collapse About you, Change, come back.
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(page, "About you to collapse again", () => document.getElementById("summary-body-about")?.hidden === true, undefined, RENDER_MS);
+        await goTo(page.locator('.summary-print [data-action="change-substep"][data-substep="income.wages"]'), "income.wages");
+        await goTo(page.locator('[data-action="back-to-summary"]'), "review.summary");
+        assert.equal(await page.evaluate(() => document.getElementById("summary-body-about")?.hidden), true, "the fold was lost");
+        await waitForQuiet(page);
+        await aboutToggle.click({ timeout: CLICK_MS });
+        await waitFor(page, "About you to expand", () => document.getElementById("summary-body-about")?.hidden === false, undefined, RENDER_MS);
+
+        // An alert brought back from a Change: "Back to summary" lands on 9.1,
+        // and 9.2 and 9.3 hide until it is fixed (brainstorm Q2-A).
+        await goTo(page.locator('.summary-print [data-action="change-substep"][data-substep="about.address"]'), "about.address");
+        await waitForQuiet(page);
+        await box("addr_city").fill("");
+        await goTo(page.locator('[data-action="back-to-summary"]'), "review.check");
+        assert.deepEqual(await reviewRail(), ["review.check"]);
+        await goTo(page.locator('.alert-item[data-substep="about.address"]'), "about.address");
+        await waitForQuiet(page);
+        await box("addr_city").fill("Philadelphia");
+        await jump("review.check");
+        assert.deepEqual(await reviewRail(), ["review.check", "review.summary", "review.submit"], "the fix did not bring 9.2 and 9.3 back");
         await jump("review.summary");
         await goTo(
           page.locator('.summary-print [data-action="change-substep"][data-substep="about.address"]'),
@@ -3758,6 +4068,33 @@ async function runPermutation(t, roles) {
 
         // ---- Show-if, a fill that follows the draft, and the senior switch
         await jump("about.marital");
+        // A recently widowed client (add-widowed-spouse-rules): a 2025 death
+        // brings "Your late spouse" with the job title and no phone; 2015 takes
+        // the sub-step away again. The year redraws on change, as a signature does.
+        await choose("marital_status", "widowed");
+        await waitFor(page, "the death year", () => Boolean(document.querySelector("#field-client-spouse_death_year")), undefined, RENDER_MS);
+        await box("spouse_death_year").fill("2025");
+        await page.keyboard.press("Tab");
+        await waitFor(
+          page,
+          "the rail to list Your late spouse",
+          () => document.querySelector('.rail-sublink[data-substep="about.spouse"] .rail-subtitle')?.textContent.trim() === "Your late spouse",
+          undefined,
+          RENDER_MS,
+        );
+        await jump("about.spouse");
+        await waitForQuiet(page);
+        assert.equal(
+          await page.evaluate(() => document.querySelector(".page-intro h1")?.textContent.trim()),
+          "Your late spouse",
+        );
+        assert.equal(await box("sp_job_title").count(), 1, "a 2025 death asks the job title");
+        assert.equal(await box("sp_phone").count(), 0, "a late spouse has no phone");
+        await jump("about.marital");
+        await waitForQuiet(page);
+        await box("spouse_death_year").fill("2015");
+        await page.keyboard.press("Tab");
+        await waitFor(page, "the late spouse to leave the rail", () => !document.querySelector('.rail-sublink[data-substep="about.spouse"]'), undefined, RENDER_MS);
         await choose("marital_status", "married");
         await waitFor(
           page,
@@ -3778,6 +4115,13 @@ async function runPermutation(t, roles) {
 
         // Married now: the wages lead and Q9.1a name the spouse again.
         await jump("income.wages");
+        // The move saved the second Fill: it kept the client's own Form
+        // 14446 consent and signature.
+        assert.deepEqual(
+          [JSON.parse((await answer("vc_agree")) ?? "null"), await answer("vc_review"), await answer("vc_tp_signature")],
+          [["yes"], "yes", walkSignature],
+          "Fill fictional details changed the client's Form 14446 answers",
+        );
         await waitFor(
           page,
           "the married wages lead",
@@ -3895,7 +4239,8 @@ async function runPermutation(t, roles) {
         // ---- Visits follow the client (spec 2026-10-04 §3.7) -------------
         // A fresh sign-in in its own context has no window record: the rail
         // comes from the server's visits, and the case opens at the first
-        // sub-step that isn't Done (the new spouse part, never opened).
+        // sub-step that isn't Done: the spouse's new document cards, because
+        // the widowed walk above already opened the spouse part.
         await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /Unsaved|checking/, "the draft must be saved for this check");
         const marksHere = await railMarks();
@@ -3906,7 +4251,7 @@ async function runPermutation(t, roles) {
           .locator(`.application-row:has-text("${reference}")`)
           .first()
           .click({ timeout: CLICK_MS });
-        await waitForSubstep(againWin.page, "about.spouse");
+        await waitForSubstep(againWin.page, "documents.identity");
         await waitForQuiet(againWin.page);
         assert.deepEqual(
           await againWin.page.evaluate(() =>
@@ -3959,8 +4304,9 @@ async function runPermutation(t, roles) {
           const openDraft = async (form) => {
             await waitForQuiet(page);
             const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+            // The 13614-C's buttons: the Form 14446's carry data-draft.
             await page
-              .locator(`[data-action="view-draft"][data-form="${form}"]`)
+              .locator(`[data-action="view-draft"]:not([data-draft])[data-form="${form}"]`)
               .click({ timeout: CLICK_MS });
             return await opened;
           };
@@ -3998,6 +4344,38 @@ async function runPermutation(t, roles) {
           assert.ok(draft.en.size > 100 * 1024, `the English draft is only ${draft.en.size} bytes`);
           assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft fetched a font");
 
+          // The draft Form 14446 (add-form-14446-consent): PCDC's three-page
+          // form, its page 3 filled from the answers. The flattened page is
+          // read back here: in Latin letters, the printed name and the typed
+          // signature are drawn in Helvetica, so their text can be found.
+          const signedName = await answer("vc_tp_signature");
+          assert.equal(signedName, walkSignature);
+          const printedName = (
+            await Promise.all(["tp_first_name", "tp_middle_name", "tp_last_name"].map((key) => answer(key)))
+          )
+            .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+            .filter(Boolean)
+            .join(" ");
+          const open14446 = async (form) => {
+            await waitForQuiet(page);
+            const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+            await page
+              .locator(`[data-action="view-draft"][data-draft="14446"][data-form="${form}"]`)
+              .click({ timeout: CLICK_MS });
+            const tab = await opened;
+            const bytes = await draftBytes(tab);
+            await tab.close();
+            return { head: bytes.subarray(0, 5).toString("latin1"), size: bytes.length, ...(await draftPageText(bytes, 2)) };
+          };
+          before = { ...fontHits };
+          const en14446 = await open14446("en");
+          assert.equal(en14446.head, "%PDF-");
+          assert.equal(en14446.pages, 3, "the English draft 14446 is not PCDC's three pages");
+          assert.ok(en14446.strings.includes(printedName), `page 3 of the English 14446 does not print ${JSON.stringify(printedName)}: ${JSON.stringify(en14446.strings)}`);
+          assert.ok(en14446.strings.includes(signedName), `page 3 of the English 14446 does not print the signature: ${JSON.stringify(en14446.strings)}`);
+          assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft 14446 fetched a font");
+          draft.form14446 = { en: { size: en14446.size, pages: en14446.pages, page3: "printed name and signature found" } };
+
           // A Chinese first name (fictional), so the Chinese font path runs.
           await jump("about.you");
           await waitForQuiet(page);
@@ -4024,6 +4402,22 @@ async function runPermutation(t, roles) {
               `the ${form} draft fetched the wrong fonts`,
             );
           }
+
+          // The 繁體 draft 14446 with the Chinese first name: the name is
+          // drawn in the downloaded 繁體 font (so that font is fetched, which
+          // only a name needing it does), and the Latin signature is still
+          // readable on page 3.
+          before = { ...fontHits };
+          const zh14446 = await open14446("zh-t");
+          assert.equal(zh14446.head, "%PDF-");
+          assert.equal(zh14446.pages, 3, "the 繁體 draft 14446 is not PCDC's three pages");
+          assert.ok(zh14446.strings.includes(signedName), `page 3 of the 繁體 14446 does not print the signature: ${JSON.stringify(zh14446.strings)}`);
+          assert.deepEqual(
+            hitsSince(before),
+            { "NotoSansSC_400Regular.ttf": 0, "NotoSansTC_400Regular.ttf": 1, "NotoSans_400Regular.ttf": 1 },
+            "the 繁體 draft 14446 fetched the wrong fonts",
+          );
+          draft.form14446["zh-t"] = { size: zh14446.size, pages: zh14446.pages, page3: "signature found; the Chinese name drawn in the 繁體 font" };
 
           // A font whose bytes are not the pinned ones is refused.
           const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));
@@ -4172,6 +4566,10 @@ async function runPermutation(t, roles) {
         assert.equal(submitted.answers.gcf_consent, "yes");
         assert.equal(submitted.answers.gcf_tp_signature, "Mei Lin");
         assert.equal(submitted.answers.gcf_sp_signature, "Wei Lin");
+        assert.deepEqual(submitted.answers.vc_agree, ["yes"]);
+        assert.equal(submitted.answers.vc_review, "yes");
+        assert.equal(submitted.answers.vc_tp_signature, walkSignature);
+        assert.match(submitted.answers.vc_tp_date ?? "", /^\d{4}-\d{2}-\d{2}$/, "the Form 14446 date was not saved");
         const clientNumber = (
           await page
             .locator(".id-pill > div")
@@ -4214,7 +4612,7 @@ async function runPermutation(t, roles) {
           walked: V2_WALK.length,
           emailNoteHeight,
           clientNumber,
-          submitted: "consent and both signatures saved before the submit",
+          submitted: "consent and both signatures saved before the submit, with the Form 14446 consent and signature",
           openDocuments: await openSlots(),
           draft,
           secondWindowConsoleLines: againConsole,
@@ -4294,6 +4692,9 @@ async function runPermutation(t, roles) {
           say("toast.fictional_filled", {}, "zh-Hans"),
           RENDER_MS,
         );
+        // The fill never consents or signs Form 14446: 0.4 and 1.5 by hand.
+        await consent14446(page);
+        await sign14446(page);
 
         await railJump(page, "about.you");
         assert.equal(await textOf(".form-workspace .page-intro h1"), findSubstep("about.you").title.general.zh);
@@ -4335,7 +4736,7 @@ async function runPermutation(t, roles) {
           "zh-s",
         );
 
-        await railJump(page, "review.submit");
+        await continueToSubmit(page);
         await tickBox(page, "field-confirmed");
         await waitForQuiet(page);
         await page.locator('#intake-v2-form [data-case-action="SUBMIT"]').click({ timeout: CLICK_MS });

@@ -54,7 +54,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Q0.2** How would you like to get tax help? / 您希望以哪种方式获得报税帮助？
 `service` · Single choice · Required
 - `same_day` Same-day / 当天办理 · `drop_off` Drop-off / 送件办理 · `online` Online / 线上办理
-> Note for developers: Q0.2–Q0.4 keep version 1's `service` and `language` answers, which the work board, office queue and case pool filter and display. They are not on the paper form, and their wording is new: the group should review it (the Chinese especially).
+> Note for developers: Q0.2–Q0.4 keep version 1's `service` and `language` answers; Q0.5–Q0.6 add the client's other languages (`language_also`), after the preferred one in Q0.3. The work board, Follow-ups and the case pool filter and display them. They are not on the paper form, and their wording is new: the group should review it (the Chinese especially).
 
 **Q0.3** Preferred service language / 首选服务语言
 `language` · Single choice · Required
@@ -63,6 +63,15 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Q0.4** Please specify / 请说明
 `language_other` · Text · Optional
 **Show if** `language = other`
+
+**Q0.5** Any other languages we can help you in? / 我们还可以用哪些语言为您服务？
+`language_also` · Multi-select · Optional
+- `english` English / 英语 · `cantonese` Cantonese / 粤语 · `mandarin` Mandarin / 普通话 · `other` Other / 其他
+> Tip: Choose all that apply. Leave this blank if only your preferred language works for you. / 可多选。如果只能使用首选语言，请留空。
+
+**Q0.6** Please specify / 请说明
+`language_also_other` · Text · Optional
+**Show if** `language_also = other`
 
 ---
 
@@ -158,36 +167,36 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 > Tip: Found on your court separation papers. / 见法院分居判决文件。
 
 **Q3.6** Year of spouse's death / 配偶去世年份
-`spouse_death_year` · Year · Required
+`spouse_death_year` · Year 1900–2025 · Required
 **Show if** `marital_status = widowed`
 
 ---
 
 ## Section 4: Spouse Information / 配偶信息
 
-> Note for developers: **Show this whole section if** `marital_status = married`. Each question below carries the rule.
+> Note for developers: **Show this whole section if** rule `spouse_on_return` (married, or widowed with the spouse's death from 2023 to 2025). Each question below carries its rule: the job title follows rule `joint_possible` (married, or a 2025 death), and the phone stays married only.
 
 **Q4.1** Spouse's first name / 配偶的名
 `sp_first_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: As shown on their Social Security card. / 请与社会安全卡上的拼写一致。
 
 **Q4.2** Spouse's middle name / 配偶的中间名
 `sp_middle_name` · Text · Optional
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 > Tip: Leave blank if your spouse doesn't have one. / 如没有可留空。
 
 **Q4.3** Spouse's last name / 配偶的姓
 `sp_last_name` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.4** Spouse's date of birth / 配偶出生日期
 `sp_dob` · Date · Required
-**Show if** `marital_status = married`
+**Show if** rule `spouse_on_return`
 
 **Q4.5** Spouse's occupation / 配偶职业
 `sp_job_title` · Text · Required
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 > Tip: For example: cook, cashier, driver, student, retired, unemployed. / 例如：厨师、收银员、司机、学生、退休、无业。
 
 **Q4.6** Spouse's phone number / 配偶电话号码
@@ -602,7 +611,7 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 
 **Q12.6** What is your spouse's race and/or ethnicity? (Select all that apply) / 配偶的种族和/或族裔？（可多选）
 `opt_race_sp` · Multi-select · Optional
-**Show if** `marital_status = married`
+**Show if** rule `joint_possible`
 - `american_indian_alaska_native` American Indian or Alaska Native / 美洲原住民或阿拉斯加原住民
 - `asian` Asian / 亚裔
 - `black_african_american` Black or African American / 黑人或非裔美国人
@@ -679,6 +688,71 @@ To report unethical behavior by a volunteer: ts.voltax@irs.gov / 如需举报志
 **Footer text:**
 > If you believe your tax return information has been disclosed or used improperly, contact TIGTA at **1-800-366-4484** or https://www.tigta.gov/reportcrime-misconduct
 > 如您认为您的报税信息被不当披露或使用，请联系 TIGTA：**1-800-366-4484**，或访问上述网址。
+
+---
+
+## Section 15: Virtual VITA Consent (Form 14446) / 虚拟 VITA 纳税人同意书
+
+**Page text (summary):**
+> **Everyone signs this form, whether we prepare your return online or in person.**
+> **无论线上还是到场报税，每位客户都需要签署此表。**
+>
+> Form 14446 is the IRS consent for "virtual" VITA. Parts of your return are handled while you are not sitting with the preparer: we may review your documents, interview you by phone or Zoom, and prepare and check your return without you there. Pages 1 and 2 of the form explain how PCDC handles each step.
+> 14446 表是美国国税局的"虚拟 VITA"同意书。部分报税工作会在您不在场时进行：我们可能会审核您的文件，通过电话或 Zoom 与您面谈，并在您不在场时准备和检查您的报税表。表格第 1、2 页说明 PCDC 如何处理每个步骤。
+>
+> Your consent lasts one year from the date you sign.
+> 您的同意自签署之日起一年内有效。
+>
+> **Note:** these systems are not run by the IRS. If they are hacked or breached, federal law may not protect your information.
+> **注意：**这些系统并非由国税局运营。如遭黑客攻击或泄露，联邦法律可能无法保护您的信息。
+>
+> If you believe your information was used improperly, contact TIGTA at **1-800-366-4484** or complaints@tigta.treas.gov.
+> 如您认为您的信息被不当使用，请联系 TIGTA：**1-800-366-4484** 或 complaints@tigta.treas.gov。
+
+**Q15.1** Do you agree to use PCDC's Virtual VITA/TCE process? / 您是否同意使用此服务处的虚拟 VITA/TCE 流程？
+`vc_agree` · Multi-select · Required
+- `yes` I agree to use PCDC's Virtual VITA/TCE process / 本人同意使用此服务处的虚拟 VITA/TCE 流程
+
+---
+
+## Section 16: Sign Form 14446 / 签署 14446 表
+
+**Page text (summary):**
+> Sign Form 14446 with the details below, as they will appear on the form. If you file a joint return, your spouse signs too.
+> 请核对以下将填入表格的信息，然后签署 14446 表。如合并申报，您的配偶也需要签名。
+
+**Intro text (not married):**
+> Sign Form 14446 with the details below, as they will appear on the form.
+> 请核对以下将填入表格的信息，然后签署 14446 表。
+
+**Q16.1** If our site is chosen at random, may an IRS employee review your return for accuracy? / 如本站点被随机抽中，您是否同意国税局工作人员审核您的报税表是否准确？
+`vc_review` · Single choice · Required
+- `yes` I consent / 同意
+- `no` I do not consent / 不同意
+> Tip: The IRS keeps none of your personal information from this review. Saying no doesn't change our service. / 国税局不会保留审核中的任何个人信息；不同意也不会影响我们为您提供的服务。
+
+**Q16.2** Your signature (type your full name) / 您的签名（输入全名）
+`vc_tp_signature` · Signature · Required
+
+**Q16.3** Date / 日期
+`vc_tp_date` · Date · Optional
+**Show if** `vc_tp_signature` is filled
+> Note for developers: filled with today when the signature is first typed (design D4).
+
+**Q16.4** Spouse's signature (type full name) / 配偶签名（输入全名）
+`vc_sp_signature` · Signature · Optional
+**Show if** rule `joint_possible`
+> Tip (show if `marital_status = married`): Leave this empty if you won't file a joint return. / 如不合并申报，请留空。
+> Tip (show if `marital_status = widowed` AND rule `joint_possible`): Type your late spouse's full name. You sign for them because a joint return is possible for 2025. / 请输入您已故配偶的全名。由于 2025 年仍可合并申报，由您代为签名。
+
+**Q16.5** Spouse signature date / 配偶签名日期
+`vc_sp_date` · Date · Optional
+**Show if** rule `joint_possible` AND `vc_sp_signature` is filled
+> Note for developers: filled with today when the spouse signature is first typed (design D4).
+
+**Q16.6** Spouse's email address / 配偶的电子邮箱
+`vc_sp_email` · Email · Optional
+**Show if** `marital_status = married`
 
 ---
 

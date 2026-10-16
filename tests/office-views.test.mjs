@@ -207,6 +207,40 @@ test("language codes read and filter by their labels", () => {
   assert.doesNotMatch(html, /VT-MAND/);
 });
 
+test("a case row lists every language the client speaks, and the chip for a second language keeps it", () => {
+  const cases = [
+    kase({ id: "a", reference: "VT-BOTH", answers: { language: "cantonese", language_also: ["mandarin"] } }),
+    kase({ id: "b", reference: "VT-ENG", answers: { language: "english" } }),
+  ];
+  const all = page(cases, [], sam, {});
+  assert.match(all, /data-languages="Cantonese\|Mandarin"><span aria-hidden="true">C, M<\/span>/);
+  assert.match(all, /title="Cantonese \(preferred\), Mandarin"/);
+  assert.match(all, /data-filter="language" data-value="Mandarin"/);
+  const html = page(cases, [], sam, { language: "Mandarin" });
+  assert.match(html, /VT-BOTH/);
+  assert.doesNotMatch(html, /VT-ENG/);
+  assert.match(html, /data-filter="language" data-value="Mandarin" aria-pressed="true"/);
+});
+
+test("a help request with no case shows its own language, a label by its code and any other text as Other", () => {
+  const help = [
+    { id: "h1", status: "open", title: "Forms", language: "Cantonese", createdAt: daysAgo(0) },
+    { id: "h2", status: "open", title: "Taxes", language: "Polish", createdAt: daysAgo(1) },
+  ];
+  const html = page([], help, sam, {});
+  assert.match(html, /<span class="language-letters" title="Cantonese \(preferred\)" data-languages="Cantonese"><span aria-hidden="true">C<\/span>/);
+  assert.match(html, /<span class="language-letters" title="Other: Polish \(preferred\)" data-languages="Other"><span aria-hidden="true">O<\/span>/);
+  assert.match(html, /data-filter="language" data-value="Other"/);
+  assert.doesNotMatch(html, /data-filter="language" data-value="Polish"/);
+  const other = page([], help, sam, { language: "Other" });
+  assert.match(other, /Taxes/);
+  assert.doesNotMatch(other, /Forms/);
+  const saved = page([], help, sam, { language: "Polish" });
+  assert.doesNotMatch(saved, /data-item-id="h2"/, "a saved free-text filter matches no row");
+  assert.doesNotMatch(saved, /Taxes/);
+  assert.match(saved, /<div class="empty-state">[\s\S]*data-filter="language" data-value="all"[^>]*>Show all languages/);
+});
+
 test("waiting is shown in words and marked amber at 3 days, red at 5", () => {
   const html = page([
     kase({ id: "a", updatedAt: daysAgo(6) }),
@@ -516,6 +550,12 @@ test("the version-2 Add a case: one section per step in order, without Review", 
   assert.match(form, /<form id="add-case-v2-form"[^>]* novalidate/);
 });
 
+test("Add a case titles a widowed client's spouse part Your late spouse (add-widowed-spouse-rules)", () => {
+  const html = addV2({ draftAnswers: { ...V2_SAMPLE(), marital_status: "widowed", spouse_death_year: "2025" } });
+  assert.match(html, /data-substep="about\.spouse"/);
+  assert.match(html, /<span class="add-sub-title">Your late spouse<\/span>/);
+});
+
 test("the visible question sub-steps are accordions, and only the open ones hold questions", () => {
   const single = addV2({ draftAnswers: V2_SAMPLE(), openAddSubsteps: ["about.you"] });
   const parts = [...formOf(single).matchAll(/<div class="add-sub" data-substep="([a-z_.]+)">/g)].map((m) => m[1]);
@@ -749,4 +789,10 @@ test("a conflict on a saved office draft shows the reconcile panel and holds the
   const calm = addV2({ draftAnswers: answers, savedCase: savedV2(), openAddSubsteps: ["documents"] });
   assert.doesNotMatch(calm, /conflict-panel/);
   assert.match(docCardOf(subOf(calm, "documents"), "w2.household"), /data-status="later">/);
+});
+
+test("Add a case is never locked by the 14446 gate (add-form-14446-consent)", () => {
+  const html = addV2({ draftAnswers: {}, openAddSubsteps: ["about.you"] });
+  assert.match(subOf(html, "about.you"), /id="field-office-tp_first_name"/);
+  assert.match(html, /data-substep="before\.virtual"/);
 });

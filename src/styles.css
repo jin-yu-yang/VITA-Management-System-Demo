@@ -760,6 +760,13 @@ textarea::placeholder {
 .form-actions .btn.text {
   font-size: 13px;
 }
+/* 9.1's line beside its disabled Continue (gate-review-and-redesign-summary). */
+.form-blocked {
+  margin: 0 0 0 auto;
+  font-size: 14px;
+  color: var(--vt-intake-hint);
+  text-align: right;
+}
 .notice {
   display: flex;
   gap: 13px;
@@ -1785,6 +1792,9 @@ textarea::placeholder {
     padding: 9px;
     font-size: 11px;
   }
+  .form-blocked {
+    font-size: 12px;
+  }
   .dashboard {
     padding: 30px 22px;
   }
@@ -2768,6 +2778,11 @@ textarea::placeholder {
   border-radius: 999px;
   background: var(--vt-primary-soft);
   font-size: 12px;
+}
+/* A Language cell's letters: the names are on hover (allow-multiple-service-languages). */
+.language-letters {
+  white-space: nowrap;
+  cursor: help;
 }
 .board-table-wrap {
   position: relative;
@@ -4120,6 +4135,11 @@ textarea::placeholder {
 .rail-sublink:hover {
   background: var(--vt-primary-soft);
 }
+.rail-sublink.is-locked,
+.rail-link.is-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .rail-sublink[aria-current="step"] {
   border-left-color: var(--vt-primary);
   background: var(--vt-primary-soft);
@@ -4534,6 +4554,73 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+/* 1.5's read-only details (add-form-14446-consent). */
+.sign-details {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.sign-signer {
+  padding: 8px 24px 16px;
+  border: 1px solid var(--vt-line);
+  border-radius: var(--vt-radius);
+  background: var(--vt-surface);
+}
+.sign-signer dl {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.sign-signer dt {
+  color: var(--vt-intake-hint);
+}
+.sign-signer dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  color: var(--vt-intake-ink);
+}
+/* The summary page (gate-review-and-redesign-summary): intro, tools, fold, sections. */
+.summary-intro p {
+  margin: 0 0 10px;
+  color: var(--vt-intake-ink);
+}
+.summary-intro + .summary-tools {
+  margin-top: 12px;
+}
+.summary-fold {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 12px 0 8px;
+}
+.summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--vt-tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.summary-toggle .icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  transition: transform 0.15s;
+}
+.summary-toggle[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
+}
+.summary-body[hidden] {
+  display: none;
+}
+
 /* ---- The progress page's open documents ---- */
 .open-documents {
   padding: 27px 30px;
@@ -4603,6 +4690,8 @@ textarea::placeholder {
   body.print-summary .summary-print { position: absolute; inset: 0 auto auto 0; width: 100%; }
   body.print-summary .summary-tools { display: none; }
   body.print-summary .summary-sub-head .inline { display: none; }
+  .summary-print .summary-body[hidden] { display: block; }
+  .summary-toggle .icon { display: none; }
   body.print-summary .summary-meta,
   body.print-summary .summary-step {
     border: 0;

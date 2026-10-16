@@ -4,8 +4,10 @@ import {
   CATALOGUE, stepsFor, questionsFor, findQuestion, wording, isVisible, checkValue,
   missingToSubmit, isAnswered, CONTACT_FIELDS, serviceLabel, languageLabel, MATERIALS_ITEMS,
   canSeeContact, substepsFor, findSubstep, substepOfQuestion, substepQuestions, visibleAnswers, isMemberId,
-  memberNameParts, spouseShown, leadOf, introOf,
+  memberNameParts, spouseShown, spouseOnReturn, substepTitleOf, leadOf, introOf,
+  LANGUAGE_LETTERS, clientLanguages, languageLetters, languageNames, speaksLanguage, languageFilterLabels, languageSummary, languageOptions,
 } from "../src/intake-catalogue.mjs";
+import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
@@ -224,8 +226,8 @@ test("the value-check contract table: checkValue gives each row's js result (spe
 });
 
 const SUBSTEP_IDS = [
-  "before.ready", "before.service", "before.language",
-  "about.you", "about.address", "about.marital", "about.spouse", "about.situation", "about.irs",
+  "before.ready", "before.service", "before.language", "before.virtual",
+  "about.you", "about.address", "about.marital", "about.spouse", "about.sign", "about.situation", "about.irs",
   "household.members",
   "income.wages", "income.retirement", "income.investments", "income.rental", "income.business", "income.other",
   "expenses.deductible", "expenses.other", "expenses.events",
@@ -353,7 +355,7 @@ test("service and language labels in the screen language; English and unknown va
   }
 });
 
-test("spouseShown: married only; anything else, or unanswered, is not married", () => {
+test("spouseShown: married, or widowed in the tax year; anything else, or unanswered, is not", () => {
   assert.equal(spouseShown({ marital_status: "married" }), true);
   for (const status of ["never_married", "divorced", "separated", "widowed"])
     assert.equal(spouseShown({ marital_status: status }), false, status);
@@ -385,4 +387,179 @@ test("wording, leadOf and introOf pick the not-married text from the application
   assert.match(introOf(section6, { answers: married }), /\(except your spouse\)/);
   assert.doesNotMatch(introOf(section6, { answers: single }), /spouse/);
   assert.equal(introOf(CATALOGUE.steps.flatMap((s) => s.sections).find((x) => x.n === 1), { answers: single }), "");
+});
+
+test("before.language asks the preferred language, then the others", () => {
+  assert.deepEqual(
+    substepQuestions("before.language").map((question) => question.id),
+    ["language", "language_other", "language_also", "language_also_other"],
+  );
+});
+
+test("clientLanguages: the preferred language first, then the others in option order, never twice", () => {
+  const codes = (answers) => clientLanguages(answers).map((entry) => entry.code);
+  assert.deepEqual(codes({ language: "cantonese", language_also: ["other", "mandarin"] }), ["cantonese", "mandarin", "other"]);
+  assert.deepEqual(codes({ language: "mandarin", language_also: ["mandarin", "english"] }), ["mandarin", "english"]);
+  assert.deepEqual(codes({ language: "english" }), ["english"]);
+  assert.deepEqual(codes({}), []);
+  assert.deepEqual(codes({ language: "" , language_also: ["mandarin"] }), ["mandarin"]);
+  // Other carries what was typed; the preferred one's box and the follow-up's are separate.
+  assert.deepEqual(
+    clientLanguages({ language: "other", language_other: " Vietnamese ", language_also: ["other"], language_also_other: "Tagalog" }),
+    [
+      { code: "other", label: "Other", text: "Vietnamese" },
+      { code: "other", label: "Other", text: "Tagalog" },
+    ],
+  );
+  assert.deepEqual(clientLanguages({ language: "other", language_other: "Tagalog", language_also: ["other"], language_also_other: "tagalog" }).length, 1);
+  // A label (a version-1 answer, or a help request's text) maps back to its code; anything else is Other.
+  assert.deepEqual(clientLanguages({ language: "Cantonese" }), [{ code: "cantonese", label: "Cantonese", text: "" }]);
+  assert.deepEqual(clientLanguages({ language: "Polish" }), [{ code: "other", label: "Other", text: "Polish" }]);
+  assert.deepEqual(clientLanguages({ language: "cantonese", language_also: "mandarin" }).length, 1, "a non-list follow-up is ignored");
+});
+
+test("language letters, names, filter labels and the staff summary", () => {
+  const entries = clientLanguages({ language: "cantonese", language_also: ["mandarin", "other"], language_also_other: "Vietnamese" });
+  assert.equal(languageLetters(entries), "C, M, O");
+  assert.equal(languageNames(entries, { preferred: true }), "Cantonese (preferred), Mandarin, Other: Vietnamese");
+  assert.equal(languageNames(entries), "Cantonese, Mandarin, Vietnamese");
+  assert.equal(languageNames(entries, { lang: "zh-Hans", separator: "、" }), "粤语、普通话、Vietnamese");
+  assert.equal(languageNames(clientLanguages({ language: "other" })), "Other");
+  assert.equal(languageNames(clientLanguages({ language: "other" }), { preferred: true }), "Other (preferred)");
+  assert.equal(languageNames(clientLanguages({ language: "other" }), { lang: "zh-Hans" }), "其他");
+  assert.deepEqual(languageSummary(entries), {
+    letters: "C, M, O",
+    names: "Cantonese (preferred), Mandarin, Other: Vietnamese",
+    labels: ["Cantonese", "Mandarin", "Other"],
+  });
+  assert.deepEqual(languageSummary([]), { letters: "", names: "", labels: [] });
+  assert.equal(speaksLanguage(entries, "all"), true);
+  assert.equal(speaksLanguage(entries, "Mandarin"), true);
+  assert.equal(speaksLanguage(entries, "mandarin"), true, "a code is compared by its label");
+  assert.equal(speaksLanguage(entries, "English"), false);
+  assert.deepEqual(
+    languageFilterLabels([entries, clientLanguages({ language: "english" }), clientLanguages({ language: "mandarin" })]),
+    ["Cantonese", "English", "Mandarin", "Other"],
+  );
+  assert.deepEqual(
+    languageOptions([{ answers: { language: "cantonese", language_also: ["mandarin"] } }], "Any language"),
+    [["all", "Any language"], ["Cantonese", "Cantonese"], ["Mandarin", "Mandarin"]],
+  );
+  assert.deepEqual(LANGUAGE_LETTERS, { english: "E", cantonese: "C", mandarin: "M", other: "O" });
+  assert.ok(Object.isFrozen(LANGUAGE_LETTERS));
+});
+
+test("isVisible: gte and lte read a whole number, and nothing else (add-widowed-spouse-rules)", () => {
+  const atLeast = { showIf: [{ field: "y", op: "gte", value: 2023 }] };
+  const atMost = { showIf: [{ field: "y", op: "lte", value: 2025 }] };
+  for (const [answers, gte, lte] of [
+    [{}, false, false],
+    [{ y: "" }, false, false],
+    [{ y: "abcd" }, false, false],
+    [{ y: 2024 }, false, false],
+    [{ y: ["2024"] }, false, false],
+    [{ y: "2022" }, false, true],
+    [{ y: "2023" }, true, true],
+    [{ y: "2025" }, true, true],
+    [{ y: "2205" }, true, false],
+    [{ y: "02025" }, false, false],
+    [{ y: " 2025" }, true, true],
+    [{ y: "2024 " }, true, true],
+  ]) {
+    assert.equal(isVisible(atLeast, answers), gte, `gte ${JSON.stringify(answers)}`);
+    assert.equal(isVisible(atMost, answers), lte, `lte ${JSON.stringify(answers)}`);
+  }
+});
+
+test("isVisible: any holds when one of its AND groups holds (add-widowed-spouse-rules)", () => {
+  const rule = {
+    showIf: [{ op: "any", groups: [[{ field: "m", op: "eq", value: "a" }], [{ field: "m", op: "eq", value: "b" }, { field: "y", op: "gte", value: 2025 }]] }],
+  };
+  assert.equal(isVisible(rule, { m: "a" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2025" }), true);
+  assert.equal(isVisible(rule, { m: "b", y: "2024" }), false);
+  assert.equal(isVisible(rule, { m: "b" }), false);
+  assert.equal(isVisible(rule, { m: "c", y: "2025" }), false);
+  assert.equal(isVisible({ showIf: [...rule.showIf, { field: "z", op: "filled" }] }, { m: "a" }), false, "an any is one AND clause among others");
+});
+
+test("checkValue: a year with a range (add-widowed-spouse-rules)", () => {
+  const year = { id: "y", type: "year", min: 1900, max: 2025 };
+  assert.equal(checkValue(year, "1899"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "1900"), null);
+  assert.equal(checkValue(year, "2025"), null);
+  assert.equal(checkValue(year, "2026"), "Enter a year from 1900 to 2025.");
+  assert.equal(checkValue(year, "205"), "Enter a 4-digit year.");
+  assert.equal(checkValue({ id: "y", type: "year" }, "2205"), null, "without a range, any four digits");
+});
+
+test("spouseOnReturn (S) and spouseShown (J) by the year of death (add-widowed-spouse-rules)", () => {
+  const widowed = (year) => ({ marital_status: "widowed", ...(year === undefined ? {} : { spouse_death_year: year }) });
+  for (const [year, s, j] of [
+    [undefined, false, false],
+    ["abcd", false, false],
+    ["2022", false, false],
+    ["2023", true, false],
+    ["2024", true, false],
+    ["2025", true, true],
+    ["2205", false, false],
+    ["02025", false, false],
+    ["2024 ", true, false],
+  ]) {
+    assert.equal(spouseOnReturn(widowed(year)), s, `S ${year}`);
+    assert.equal(spouseShown(widowed(year)), j, `J ${year}`);
+  }
+  assert.equal(spouseOnReturn({ marital_status: "married" }), true);
+  for (const status of ["never_married", "divorced", "separated"])
+    assert.equal(spouseOnReturn({ marital_status: status, spouse_death_year: "2025" }), false, status);
+  assert.equal(spouseOnReturn(null), false);
+  // The questions follow the same rules.
+  const shown = (id, answers) => isVisible(findQuestion(2, id), answers);
+  assert.deepEqual(
+    ["sp_first_name", "sp_dob", "sp_job_title", "sp_phone"].map((id) => shown(id, widowed("2024"))),
+    [true, true, false, false],
+  );
+  assert.deepEqual(
+    ["sp_first_name", "sp_dob", "sp_job_title", "sp_phone"].map((id) => shown(id, widowed("2025"))),
+    [true, true, true, false],
+  );
+  assert.equal(shown("sp_first_name", widowed("2015")), false);
+});
+
+test("substepTitleOf: a widowed client's spouse sub-step reads Your late spouse (add-widowed-spouse-rules)", () => {
+  const spouse = findSubstep("about.spouse");
+  assert.equal(substepTitleOf(spouse, { answers: { marital_status: "married" } }), "Your spouse");
+  assert.equal(substepTitleOf(spouse, { answers: { marital_status: "widowed", spouse_death_year: "2025" } }), "Your late spouse");
+  assert.equal(substepTitleOf(spouse, { lang: "zh-Hans", answers: { marital_status: "widowed" } }), "已故配偶");
+  assert.equal(substepTitleOf(spouse, { variant: "senior", answers: { marital_status: "widowed" } }), "Your late spouse");
+  assert.equal(substepTitleOf(spouse), "Your spouse");
+  assert.equal(substepTitleOf(findSubstep("about.you"), { answers: { marital_status: "widowed" } }), "About you");
+});
+
+test("missingToSubmit: a recently widowed client's spouse, and no spouse signature (add-widowed-spouse-rules)", () => {
+  const base = { ...makeSampleAnswers(), marital_status: "widowed", gcf_consent: "yes", gcf_tp_signature: "Mei Chen" };
+  const died2025 = missingToSubmit(2, { ...base, spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03" });
+  assert.ok(died2025.includes("sp_last_name"));
+  assert.ok(died2025.includes("sp_job_title"));
+  assert.ok(!died2025.includes("gcf_sp_signature"));
+  assert.ok(!died2025.includes("sp_phone"));
+  const died2024 = missingToSubmit(2, { ...base, spouse_death_year: "2024" });
+  assert.ok(died2024.includes("sp_last_name"));
+  assert.ok(!died2024.includes("sp_job_title"));
+  assert.ok(!missingToSubmit(2, { ...base, spouse_death_year: "2015" }).some((id) => id.startsWith("sp_")));
+});
+
+test("Form 14446: who sees which signing question, and what is missing (add-form-14446-consent)", () => {
+  const shown = (id, answers) => isVisible(findQuestion(2, id), answers);
+  const married = { marital_status: "married" };
+  const died = (year) => ({ marital_status: "widowed", spouse_death_year: year });
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, married)), [true, true]);
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, died("2025"))), [true, false]);
+  assert.deepEqual(["vc_sp_signature", "vc_sp_email"].map((id) => shown(id, died("2024"))), [false, false]);
+  assert.equal(shown("vc_tp_date", {}), false);
+  assert.equal(shown("vc_tp_date", { vc_tp_signature: "Mei Chen" }), true);
+  const { vc_agree: _a, vc_review: _r, vc_tp_signature: _s, ...unsigned } = makeSampleAnswers();
+  const missing = missingToSubmit(2, unsigned);
+  for (const id of ["vc_agree", "vc_review", "vc_tp_signature"]) assert.ok(missing.includes(id), id);
+  assert.deepEqual(missingToSubmit(2, makeSampleAnswers()).filter((id) => id.startsWith("vc_")), []);
 });

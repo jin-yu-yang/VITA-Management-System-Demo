@@ -90,7 +90,7 @@ fields:
 | `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
-| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
+| `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once, plus `review.submit` once Continue on 9.2 has earned it (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
 | `screen`, `selectedCaseId`, `selectedPersonId`, `openPanels`, `boardFilters`, `caseTab`, `sidebarOpen` | Window-local navigation, remembered per window |
 | `boardSearchDraft` | The work board's half-typed search, kept so a redraw doesn't blank it |
 | `busy`, `error`, `retryable`, `notice`, `dialog` | What the page should show right now |
@@ -99,11 +99,12 @@ Its public API is the list at the end of the file: `start`, `stop`, `getState`, 
 sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSignIn`, `signOut`,
 `cooldownRemaining`), cases (`selectCase`, `createCase`, `editAnswers`, `saveAnswers`,
 `reconcileAnswers`, `runAction`, `retryLast`), the intake form (`currentSubstep`, `goToSubstep`,
-`moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `revealInvalid`,
-`removeMember`), document cards (`setDocumentCard`, `setDocumentGroup`), the office's Add a case
-(`openAddCase`, `toggleAddSubstep`, `saveOfficeDraft`), assistance (`runAssistanceAction`),
-presenter tools (`selectPerson`, `resetFixtures`, `loadCheckpoint`), language (`setLanguage`,
-`adoptLanguage`), and navigation (`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
+`moveSubstep`, `openForChange`, `backToSummary`, `setRailExpanded`, `setSummaryShut`,
+`revealInvalid`, `guardSubmit`, `removeMember`), document cards (`setDocumentCard`,
+`setDocumentGroup`), the office's Add a case (`openAddCase`, `toggleAddSubstep`,
+`saveOfficeDraft`), assistance (`runAssistanceAction`), presenter tools (`selectPerson`,
+`resetFixtures`, `loadCheckpoint`), language (`setLanguage`, `adoptLanguage`), and navigation
+(`navigate`, `togglePanel`, `setBoardFilter`, `clearBoardFilters`,
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
 `dismissError`).
 
@@ -205,6 +206,17 @@ dropped).
   the person leaves a sub-step. Typing never reveals; it only clears. Missing answers show "Needs an
   answer" once a sub-step has been visited (`visitedSubsteps`). The Saved chip counts shown errors only;
   Review's alerts and the Submit gate count every visible invalid answer.
+- **The review gate** (openspec change `gate-review-and-redesign-summary`):
+  - `reviewAlerts(answers)` is every missing and invalid answer. 9.1 lists them, and while there
+    is one, 9.1's Continue is disabled.
+  - 9.2 is visible only with no alerts. 9.3 is visible only with no alerts and once
+    `review.submit` is among the visits, which only Continue on 9.2 adds (`moveSubstep`).
+  - `visibleSubsteps`, `resolveSubstep` and `adjacentSubstep` take the visits, so a gated place
+    resolves to 9.1.
+  - The summary's sections fold through `openPanels` names `summary-shut:<step id>`
+    (`setSummaryShut` for Expand and Collapse all), and print open.
+  - Submit's guard is `guardSubmit()`: a press on a page drawn before an alert came back reveals
+    the invalid answers and goes to 9.1, and nothing is submitted.
 - **The four contact fields** (`tp_phone`, `sp_phone`, `best_contact_time`, `best_contact_note`)
   sit in the draft beside the answers (`CONTACT_FIELDS`); the server stores them in
   `case_contacts`. Missing answers are computed from the draft alone.
@@ -218,6 +230,14 @@ dropped).
   radio buttons: `me` reads Yes and `none` reads No, with the yes/no labels, and the saved answer is
   still a list (`["me"]`/`["none"]`). `valuesFromControls` wraps the radio's value; `formatAnswer`
   labels it Yes/No only when given the application's `answers`.
+- **A recently widowed client's spouse** (openspec change `add-widowed-spouse-rules`): `spouseOnReturn(answers)` (rule `spouse_on_return`) asks the late spouse's name and date of birth; `spouseShown(answers)` (rule `joint_possible`, a 2025 death or married) also asks the job title and race, offers "My spouse", picks the married wording, gives the spouse's cards, and prints the draft 13614-C's spouse lines. `substepTitleOf` gives a widowed client the title "Your late spouse" / 已故配偶. The controller drops "spouse" from the who answers once a change of marital status, or a whole valid death year, ends the joint return; a half-typed year, or a move that re-sends an unchanged status, keeps it.
+- **A client's service languages** (openspec change `allow-multiple-service-languages`): Q0.3
+  `language` is the preferred one; Q0.5 `language_also` adds the others (Q0.6 `language_also_other`
+  for Other). `clientLanguages(answers)` in `intake-catalogue.mjs` lists them, preferred first,
+  never twice; the work board, case pool and Follow-ups show them as letters through `languageCell`
+  (`ui.mjs`), with the names on hover and for screen readers, and their language filters match any
+  of them (`speaksLanguage`). The progress page lists the full names.
+- **Form 14446** (openspec change `add-form-14446-consent`): 0.4 `before.virtual` asks the virtual-process consent (`vc_agree`, a required one-option checkbox). Until it is ticked, `resolveSubstep` (`intake-form.mjs`, `consented`) sends every place after "Before you start" back to 0.4, the rail shows those steps locked, and Continue is disabled. Add a case is never locked. 1.5 `about.sign` shows the details the form prints, then asks `vc_review` and the signatures; the controller fills `vc_tp_date`/`vc_sp_date` with today on a first signature. "View Draft Form 14446" (`draft-virtual-consent.mjs`) fills page 3 of PCDC's own form, XFA-stripped by `tools/strip-xfa.mjs`, in English and 繁體; `server.mjs` serves the two 14446 PDFs by name.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:
@@ -444,7 +464,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (923) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (999) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 

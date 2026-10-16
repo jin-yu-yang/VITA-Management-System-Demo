@@ -16,9 +16,10 @@ import {
   renderQuestion,
   renderRichText,
   formatAnswer,
-  invalidAnswers,
+  reviewAlerts,
   visibleSubsteps,
   resolveSubstep,
+  consented,
   substepStatus,
   stepRollup,
 } from "./intake-form.mjs";
@@ -34,7 +35,10 @@ import {
   leadOf,
   introOf,
   isVisible,
-  missingToSubmit,
+  substepTitleOf,
+  isAnswered,
+  spouseShown,
+  visibleAnswers,
 } from "./intake-catalogue.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { sourceText, viewLang } from "./language.mjs";
@@ -57,7 +61,7 @@ const topId = (id) => String(id).replace(/\[.*$/, "");
 const localized = (text, variant, lang = "en") =>
   sourceText({ en: text?.[variant]?.en ?? text?.general?.en ?? "", zh: text?.[variant]?.zh ?? text?.general?.zh }, lang);
 const stepTitle = (step, lang = "en") => sourceText({ en: step?.title?.en ?? "", zh: step?.title?.zh }, lang);
-const substepTitle = (substep, variant, lang = "en") => localized(substep?.title, variant, lang);
+const substepTitle = (substep, variant, lang = "en", answers) => substepTitleOf(substep, { variant, lang, answers });
 const stepLabel = (step, lang = "en") => {
   const n = stepNumber(step.id);
   return n ? `${t("rail.step", { n }, lang)}${stepTitle(step, lang)}` : stepTitle(step, lang);
@@ -107,8 +111,8 @@ function formView(state) {
   const cards = cardsFor(answers, record?.documentCards ?? []);
   const visited = Array.isArray(state.visitedSubsteps) ? state.visitedSubsteps : [];
   const revealed = new Set(state.revealed ?? []);
-  const visible = visibleSubsteps(answers, cards);
-  const current = resolveSubstep(state.formSubstep, answers, cards) ?? visible[0];
+  const visible = visibleSubsteps(answers, cards, visited);
+  const current = resolveSubstep(state.formSubstep, answers, cards, visited) ?? visible[0];
   const substep = findSubstep(current);
   const inStep = visible.filter((id) => findSubstep(id).step.id === substep.step.id);
   const lang = viewLang(state);
@@ -123,6 +127,8 @@ function formView(state) {
     visible,
     current,
     substep,
+    // The Form 14446 gate: steps 1-9 show locked until 0.4 is ticked.
+    locked: !consented(answers),
     variant: variantOf(answers),
     openPanels: Array.isArray(state.openPanels) ? state.openPanels : [],
     marks: { answers, visited, revealed, cards },
@@ -161,13 +167,23 @@ function railStep(step, view) {
   const n = stepNumber(step.id);
   const title = stepTitle(step, lang);
   const id = esc(step.id);
+  // Locked (the 14446 gate): no link, but data-substep stays on every span,
+  // since the app compares the listed sub-steps with the draft's visible ones.
+  const locked = view.locked && step.id !== "before";
+  const lockedMark = `<span class="rail-status is-locked">${esc(t("rail.locked", {}, lang))}</span>`;
   const items = subs
     .map((substep) => {
       const here = substep.id === view.current;
-      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang))}</span>${here ? `<small class="rail-here">${esc(t("rail.here", {}, lang))}</small>` : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
+      if (locked)
+        return `<li><span class="rail-sublink is-locked" data-substep="${esc(substep.id)}" aria-disabled="true"><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang, view.answers))}</span>${lockedMark}</span></li>`;
+      return `<li><button type="button" class="rail-sublink" data-action="go-substep" data-substep="${esc(substep.id)}"${here ? ' aria-current="step"' : ""}${view.off}><span class="rail-subtitle">${esc(substepTitle(substep, view.variant, lang, view.answers))}</span>${here ? `<small class="rail-here">${esc(t("rail.here", {}, lang))}</small>` : ""}${markSpan(`rail-sub-${dashed(substep.id)}-status`, statuses.get(substep.id))}</button></li>`;
     })
     .join("");
-  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">${esc(t("rail.toggle", { title }, lang))}</span></button><button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">${esc(t("rail.step", { n }, lang))}</span>` : ""}${esc(title)}</span>${markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, marks))}</span></button></div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
+  const headInner = `${n ? `<span class="rail-step-num" aria-hidden="true">${n}</span>` : ""}<span class="rail-step-body"><span class="rail-step-title">${n ? `<span class="sr-only">${esc(t("rail.step", { n }, lang))}</span>` : ""}${esc(title)}</span>${locked ? lockedMark : markSpan(`rail-step-${step.id}-status`, stepRollup(step.id, marks))}</span>`;
+  const link = locked
+    ? `<span class="rail-link is-locked" data-substep="${esc(target.id)}" aria-disabled="true">${headInner}</span>`
+    : `<button type="button" class="rail-link" data-action="go-substep" data-substep="${esc(target.id)}"${view.off}>${headInner}</button>`;
+  return `<li class="rail-step${isCurrent ? " is-current" : ""}" data-step-id="${id}"><div class="rail-step-head"><button type="button" class="rail-toggle" data-action="toggle-rail-step" data-step-id="${id}" aria-expanded="${expanded}" aria-controls="rail-subs-${id}">${icon("expand")}<span class="sr-only">${esc(t("rail.toggle", { title }, lang))}</span></button>${link}</div><ol id="rail-subs-${id}" class="rail-subs"${expanded ? "" : " hidden"}>${items}</ol></li>`;
 }
 
 function rail(view) {
@@ -190,7 +206,7 @@ function header(view) {
   // English overlines are capitals; Chinese has none.
   const name = lang === "en" ? stepTitle(step).toUpperCase() : stepTitle(step, lang);
   const overline = n ? t("intake.step_overline", { n, total: NUMBERED.length, name }, lang) : name;
-  return `<div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(substepTitle(view.substep, view.variant, lang))}</h1><p class="substep-count">${esc(view.within)}</p></div>`;
+  return `<div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(substepTitle(view.substep, view.variant, lang, view.answers))}</h1><p class="substep-count">${esc(view.within)}</p></div>`;
 }
 
 // The sub-step's visible questions in its order, one card per heading group.
@@ -227,6 +243,7 @@ function questionsBody(view) {
     substep.id === "before.ready"
       ? `<p class="q-intro-extra">${esc(t(isSameDay(answers) ? "intake.will_bring" : "intake.will_upload", {}, lang))}</p>`
       : "";
+  const details = substep.id === "about.sign" ? signDetails(answers, lang) : "";
   const lead = leadOf(substep, { variant, lang, answers });
   let intro = "";
   if (lead) intro = `<p class="q-lead">${esc(lead)}</p>`;
@@ -236,13 +253,42 @@ function questionsBody(view) {
     if (text) intro = `<div class="q-intro">${renderRichText(text)}${extra}</div>`;
   }
   if (extra && !intro.includes(extra)) intro += extra;
-  return `<div class="q-section">${intro}${cards}</div>`;
+  return `<div class="q-section">${intro}${details}${cards}</div>`;
+}
+
+// What Form 14446 will print, read-only, above its signature boxes (change
+// add-form-14446-consent, design D3): the client's details and, while a joint
+// return is possible (J), the spouse's. Formatted as the summary formats them.
+function signDetails(answers, lang) {
+  // Read what the draft reads (visibleAnswers), so a hidden or stale answer
+  // never shows here: a late spouse has no phone or email rows at all.
+  const visible = visibleAnswers(2, answers);
+  const shown = (id) => (isAnswered(visible[id]) ? formatAnswer(findQuestion(2, id), visible[id], { lang, answers: visible }) : "");
+  const asked = (id) => isVisible(findQuestion(2, id), answers);
+  const signer = (label, [first, middle, last, dob, phone, email]) => {
+    const rows = [
+      [t("sign.name", {}, lang), [visible[first], visible[middle], visible[last]].filter(isAnswered).join(" ")],
+      [t("sign.dob", {}, lang), shown(dob)],
+      ...(asked(phone) ? [[t("sign.phone", {}, lang), shown(phone)]] : []),
+      ...(asked(email) ? [[t("sign.email", {}, lang), isAnswered(visible[email]) ? String(visible[email]).trim() : ""]] : []),
+    ];
+    return `<div class="sign-signer"><h2 class="q-heading">${esc(label)}</h2><dl>${rows
+      .map(([dt, dd]) => `<dt>${esc(dt)}</dt><dd>${esc(dd || t("sign.none", {}, lang))}</dd>`)
+      .join("")}</dl></div>`;
+  };
+  const spouseLabel = answers.marital_status === "widowed" ? "sign.late_spouse" : "sign.spouse";
+  return `<div class="sign-details">${signer(t("sign.you", {}, lang), ["tp_first_name", "tp_middle_name", "tp_last_name", "tp_dob", "tp_phone", "email"])}${when(
+    spouseShown(answers),
+    signer(t(spouseLabel, {}, lang), ["sp_first_name", "sp_middle_name", "sp_last_name", "sp_dob", "sp_phone", "vc_sp_email"]),
+  )}</div>`;
 }
 
 function actions(view, alerts) {
   const { state, visible, current } = view;
   const say = (key) => esc(t(key, {}, view.lang));
   const off = Boolean(state.conflict || state.busy);
+  // 0.4's Continue waits for the consent, and the line says why (add-form-14446-consent).
+  const gated = current === "before.virtual" && view.locked;
   let primary;
   if (current === "review.submit") {
     const confirmed = view.openPanels.includes("confirmed");
@@ -252,10 +298,15 @@ function actions(view, alerts) {
       "primary",
       alerts.length > 0 || !confirmed || off ? "disabled" : "",
     );
-  } else if (state.returnToSummary) {
+  } else if (state.returnToSummary && !gated) {
     primary = `<button type="button" class="btn primary" data-action="back-to-summary"${off ? " disabled" : ""}>${say("intake.back_to_summary")}</button>`;
   } else {
-    primary = `<button type="submit" class="btn primary"${off ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
+    // 9.1's Continue waits for the alerts, and the line says why
+    // (openspec change gate-review-and-redesign-summary, design D4).
+    const blocked = (current === "review.check" && alerts.length > 0) || gated;
+    const blockedId = gated ? "consent-blocked" : "continue-blocked";
+    const blockedKey = gated ? "consent.blocked" : "review.continue_blocked";
+    primary = `${when(blocked, `<p id="${blockedId}" class="form-blocked">${say(blockedKey)}</p>`)}<button type="submit" class="btn primary"${blocked ? ` aria-describedby="${blockedId}"` : ""}${off || blocked ? " disabled" : ""}>${say("intake.continue")} ${icon("arrow")}</button>`;
   }
   return `<div class="form-actions"><div>${when(visible[0] !== current, button(`${icon("back")} ${say("intake.back")}`, "back-step", "text", view.off.trim()))}</div>${primary}</div>`;
 }
@@ -384,13 +435,14 @@ const byOrder = (a, b) => {
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
 };
 
-// Alerts block Submit: every missing required answer and every invalid one,
-// from the draft alone (it holds the contact fields).
+// Alerts block 9.1's Continue and Submit: every missing required answer and
+// every invalid one, from the draft alone (reviewAlerts, design D2).
 function alertsOf(answers) {
-  return [
-    ...missingToSubmit(2, answers).map((id) => ({ id, kind: "missing", flag: "alert.missing" })),
-    ...invalidAnswers(null, answers).map((id) => ({ id, kind: "invalid", flag: "alert.invalid" })),
-  ].map((item) => ({ ...item, substep: substepOfQuestion(topId(item.id)) }));
+  return reviewAlerts(answers).map((item) => ({
+    ...item,
+    flag: item.kind === "missing" ? "alert.missing" : "alert.invalid",
+    substep: substepOfQuestion(topId(item.id)),
+  }));
 }
 
 // Warnings never block: Needed cards Not done or Later, and the open Maybe
@@ -446,11 +498,21 @@ function checkBody(view, alerts) {
 const row = (label, value) =>
   `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(value).replace(/\n/g, "<br>")}</strong></div>`;
 
+// One summary section (design D7): the step's heading is its toggle, and its
+// body is hidden while `summary-shut:<step id>` is in openPanels. The toggle's id lets any
+// redraw put the keyboard back on it (ui.mjs restores by id first). Print shows every body
+// (styles.css), so folding changes only the screen.
+function summarySection(stepId, title, inner, { panels = [], lang = "en", extraClass = "" } = {}) {
+  const shut = panels.includes(`summary-shut:${stepId}`);
+  const id = esc(stepId);
+  return `<section class="summary-step${extraClass}"><h2 class="summary-step-head"><button type="button" id="summary-toggle-${id}" class="summary-toggle" data-action="toggle-panel" data-panel="summary-shut:${id}" aria-expanded="${!shut}" aria-controls="summary-body-${id}" aria-label="${esc(t("summary.toggle", { section: title }, lang))}">${icon("expand")}<span>${esc(title)}</span></button></h2><div id="summary-body-${id}" class="summary-body"${shut ? " hidden" : ""}>${inner}</div></section>`;
+}
+
 // Every visible answer, grouped by step and sub-step, through formatAnswer.
 // With `change`, each sub-step is listed with its Change link even when
 // nothing in it is answered yet; without, only what has answers. `off` is
 // `offWhileBusy` for the Change links.
-function answerSteps(answers, variant, { change, off = "", lang = "en" }) {
+function answerSteps(answers, variant, { change, off = "", lang = "en", panels = [] }) {
   const visible = new Set(visibleSubsteps(answers, []));
   const options = { variant, lang, answers };
   const [stepClass, subClass] = change ? ["summary-step", "summary-sub"] : ["answer-step", "answer-sub"];
@@ -463,12 +525,15 @@ function answerSteps(answers, variant, { change, off = "", lang = "en" }) {
           .filter(([, text]) => text !== null)
           .map(([question, text]) => row(wording(question, options), text))
           .join("");
-        const title = esc(substepTitle(substep, variant, lang));
+        const title = esc(substepTitle(substep, variant, lang, answers));
         if (!change) return rows ? `<div class="${subClass}"><h3>${title}</h3>${rows}</div>` : "";
         return `<div class="${subClass}"><div class="summary-sub-head"><h3>${title}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(substep.id)}"${off}>${esc(t("summary.change", {}, lang))}</button></div>${rows || `<p class="summary-none">${esc(t("summary.none", {}, lang))}</p>`}</div>`;
       })
       .join("");
-    return subs ? `<section class="${stepClass}"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>` : "";
+    if (!subs) return "";
+    return change
+      ? summarySection(step.id, stepTitle(step, lang), subs, { panels, lang })
+      : `<section class="${stepClass}"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>`;
   }).join("");
 }
 
@@ -477,7 +542,7 @@ function documentsSummary(view) {
   const { lang } = view;
   const step = STEPS.find((candidate) => candidate.id === "documents");
   if (isSameDay(view.answers))
-    return `<section class="summary-step summary-documents"><h2>${esc(t("doc.bring", {}, lang))}</h2>${bringList(view.cards, lang)}</section>`;
+    return summarySection("documents", t("doc.bring", {}, lang), bringList(view.cards, lang), { panels: view.openPanels, lang, extraClass: " summary-documents" });
   const subs = view.visible
     .filter(isDocuments)
     .map((id) => {
@@ -492,10 +557,10 @@ function documentsSummary(view) {
           ),
         )
         .join("");
-      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant, lang))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>${esc(t("summary.change", {}, lang))}</button></div>${rows}</div>`;
+      return `<div class="summary-sub"><div class="summary-sub-head"><h3>${esc(substepTitle(substep, view.variant, lang, view.answers))}</h3><button type="button" class="inline" data-action="change-substep" data-substep="${esc(id)}"${view.off}>${esc(t("summary.change", {}, lang))}</button></div>${rows}</div>`;
     })
     .join("");
-  return subs ? `<section class="summary-step summary-documents"><h2>${esc(stepTitle(step, lang))}</h2>${subs}</section>` : "";
+  return subs ? summarySection("documents", stepTitle(step, lang), subs, { panels: view.openPanels, lang, extraClass: " summary-documents" }) : "";
 }
 
 // Today's long date for the printout: "October 5, 2026", or 2026年10月5日 in Chinese.
@@ -526,20 +591,37 @@ function draftButtons(lang) {
   return `${button(`${icon("file")} ${esc(t("draft.view", {}, lang))}`, "view-draft", "secondary", `data-form="${first.form}"`)}<span class="draft-languages">${others.join('<span aria-hidden="true">·</span>')}</span>`;
 }
 
-function summaryBody(view, today) {
-  const { lang } = view;
-  const printed = `<div class="summary-print"><div class="summary-meta">${row(t("id.application", {}, lang), view.record?.reference)}${row(t("summary.date", {}, lang), formatToday(today, lang))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off, lang })}${documentsSummary(view)}</div>`;
-  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(t("doc.print", {}, lang))}`, "print-summary", "secondary")}${draftButtons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
-  return printed + tools;
+// The draft Form 14446 (add-form-14446-consent, design D5): PCDC has only an
+// English and a 繁體 copy, so there is no 简体 button. The screen language's
+// form comes first (a Chinese screen gets 繁體), the other is an inline button.
+function draft14446Buttons(lang) {
+  const english = lang === "en";
+  const first = english ? "en" : "zh-t";
+  const other = english
+    ? button(esc(t("draft.form_zh_t", {}, lang)), "view-draft", "inline", 'data-draft="14446" data-form="zh-t" lang="zh-Hant"')
+    : button(esc(t("draft.form_en", {}, lang)), "view-draft", "inline", 'data-draft="14446" data-form="en"');
+  // A Chinese screen opens the 繁體 form, so the button says so in the screen's script.
+  const name = english ? t("draft14446.view", {}, lang) : `${t("draft14446.view", {}, lang)}（${t("draft.form_zh_t", {}, lang)}）`;
+  return `${button(`${icon("file")} ${esc(name)}`, "view-draft", "secondary", `data-draft="14446" data-form="${first}"`)}<span class="draft-languages">${other}</span>`;
 }
 
-function submitBody(view, alerts) {
+// The summary page (gate-review-and-redesign-summary, design D6-D8): the
+// intro, then Print and the draft buttons, then Expand all and Collapse all,
+// then the printed block. Only `.summary-print` prints, every section open.
+function summaryBody(view, today) {
+  const { lang } = view;
+  const say = (key, params) => t(key, params, lang);
+  const intro = `<div class="summary-intro">${renderRichText(say("summary.intro_all"))}${renderRichText(say("summary.intro_change", { change: say("summary.change") }))}${renderRichText(say("summary.intro_tools"))}</div>`;
+  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(say("doc.print"))}`, "print-summary", "secondary")}${draftButtons(lang)}${draft14446Buttons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+  const fold = `<div class="summary-fold"><button type="button" id="summary-expand-all" class="btn text" data-action="summary-expand-all">${esc(say("summary.expand_all"))}</button><button type="button" id="summary-collapse-all" class="btn text" data-action="summary-collapse-all">${esc(say("summary.collapse_all"))}</button></div>`;
+  const printed = `<div class="summary-print"><div class="summary-meta">${row(say("id.application"), view.record?.reference)}${row(say("summary.date"), formatToday(today, lang))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off, lang, panels: view.openPanels })}${documentsSummary(view)}</div>`;
+  return intro + tools + fold + printed;
+}
+
+function submitBody(view) {
   const say = (key) => esc(t(key, {}, view.lang));
   const confirmed = view.openPanels.includes("confirmed");
-  return `${when(
-    alerts.length,
-    `<div class="notice amber" role="status">${icon("help")}<div><p>${say("submit.attention")}</p><button type="button" class="inline" data-action="go-substep" data-substep="review.check"${view.off}>${say("submit.see_alerts")}</button></div></div>`,
-  )}<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>${say("submit.confirm")}</span></label><p class="field-note">${say("submit.note")}</p>`;
+  return `<label class="checkbox-row" for="field-confirmed"><input type="checkbox" id="field-confirmed" name="confirmed" ${confirmed ? "checked" : ""}><span>${say("submit.confirm")}</span></label><p class="field-note">${say("submit.note")}</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,7 +646,7 @@ export function intakeFormV2(state, chrome = {}) {
         : view.current === "review.summary"
           ? summaryBody(view, today)
           : view.current === "review.submit"
-            ? submitBody(view, alerts)
+            ? submitBody(view)
             : questionsBody(view);
   const reference = view.record?.reference;
   const say = (key) => esc(t(key, {}, view.lang));

@@ -172,6 +172,9 @@ export function invalidText(reason, lang = "en", question = null) {
   if ((m = /^Use at most (\d+) characters\.$/.exec(reason))) return t("invalid.too_long", { limit: num(m[1], lang) }, lang);
   if ((m = /^Enter a number from (\d+) to (\d+)\.$/.exec(reason)))
     return t("invalid.number_range", { min: num(m[1], lang), max: num(m[2], lang) }, lang);
+  // Years print as written: no digit grouping (1900, not 1,900).
+  if ((m = /^Enter a year from (\d{4}) to (\d{4})\.$/.exec(reason)))
+    return t("invalid.year_range", { min: m[1], max: m[2] }, lang);
   if ((m = /^Unknown field (.+)\.$/.exec(reason))) return t("invalid.unknown_field", { field: m[1] }, lang);
   // checkGroup's "<sub-field id>: <reason>": the sub-field's wording, and the reason translated.
   if ((m = /^(\w+): (.+)$/.exec(reason))) {
@@ -229,12 +232,26 @@ export const countText = (value, lang = "en") => {
 // (docs/superpowers/specs/2026-10-04-intake-redesign-design.md §2 and §3)
 // ---------------------------------------------------------------------------
 
+/**
+ * The review step's alerts: every missing required answer, then every invalid
+ * one, from the draft alone (it holds the contact fields). 9.1 lists them, and
+ * while there is one, 9.1's Continue waits and 9.2 and 9.3 are hidden
+ * (openspec change gate-review-and-redesign-summary, design D1, D2).
+ */
+export const reviewAlerts = (answers) => [
+  ...missingToSubmit(2, answers ?? {}).map((id) => ({ id, kind: "missing" })),
+  ...invalidAnswers(null, answers ?? {}).map((id) => ({ id, kind: "invalid" })),
+];
+
 const isSameDay = (answers) => answers?.service === "same_day";
 
-function substepVisible(substep, answers, cards) {
+// `gate` is visibleSubsteps' one reading of the review gate: `clean` with no
+// alerts, `earned` once Continue on 9.2 has added the visit to review.submit.
+function substepVisible(substep, answers, cards, gate) {
   switch (substep.kind) {
     case "review":
-      return true;
+      if (substep.id === "review.check") return true;
+      return gate.clean && (substep.id === "review.summary" || gate.earned);
     case "documents":
       if (substep.cards === "bring") return isSameDay(answers);
       if (isSameDay(answers)) return false;
@@ -245,17 +262,37 @@ function substepVisible(substep, answers, cards) {
   }
 }
 
-/** Ids of the visible sub-steps, in catalogue order. `cards` is cardsFor's output. */
-export const visibleSubsteps = (answers, cards) =>
-  substepsFor(2).filter((substep) => substepVisible(substep, answers ?? {}, cards)).map((substep) => substep.id);
+/**
+ * Ids of the visible sub-steps, in catalogue order. `cards` is cardsFor's
+ * output; `visited` (an array or Set of sub-step ids, none when missing)
+ * decides the review gate's 9.3.
+ */
+export function visibleSubsteps(answers, cards, visited = []) {
+  const draft = answers ?? {};
+  const gate = { clean: reviewAlerts(draft).length === 0, earned: asSet(visited).has("review.submit") };
+  return substepsFor(2).filter((substep) => substepVisible(substep, draft, cards, gate)).map((substep) => substep.id);
+}
+
+// The Form 14446 gate (openspec change add-form-14446-consent, design D2):
+// until the client ticks 0.4, no sub-step after "Before you start" is
+// reached or shown. Not built with show-ifs: hidden questions would make an
+// unconsented form look complete.
+const GATE = "before.virtual";
+
+/** Consented to the virtual process: 0.4's box (`vc_agree`) is ticked. */
+export const consented = (answers) => Array.isArray(answers?.vc_agree) && answers.vc_agree.includes("yes");
 
 /**
  * Where a place in the form lands now: `id` while visible; when hidden, the
- * next visible sub-step after it in catalogue order, or the last visible one;
- * an id the catalogue doesn't have (or null) goes to the first visible one.
+ * next visible sub-step after it in catalogue order, or the last visible one
+ * (so a gated 9.2 or 9.3 lands on 9.1); an id the catalogue doesn't have (or
+ * null) goes to the first visible one. Until the client consents (0.4), every
+ * place after "Before you start" lands on 0.4.
  */
-export function resolveSubstep(id, answers, cards) {
-  const visible = visibleSubsteps(answers, cards);
+export function resolveSubstep(id, answers, cards, visited = []) {
+  const place = findSubstep(id);
+  if (place && place.step.id !== "before" && !consented(answers)) return GATE;
+  const visible = visibleSubsteps(answers, cards, visited);
   const all = substepsFor(2).map((substep) => substep.id);
   const at = all.indexOf(id);
   if (at < 0) return visible[0] ?? null;
@@ -265,9 +302,9 @@ export function resolveSubstep(id, answers, cards) {
 }
 
 /** The visible sub-step `delta` (+1 or -1) from the resolved `id`, or null at either end. */
-export function adjacentSubstep(id, answers, cards, delta) {
-  const visible = visibleSubsteps(answers, cards);
-  const at = visible.indexOf(resolveSubstep(id, answers, cards));
+export function adjacentSubstep(id, answers, cards, delta, visited = []) {
+  const visible = visibleSubsteps(answers, cards, visited);
+  const at = visible.indexOf(resolveSubstep(id, answers, cards, visited));
   return at < 0 ? null : visible[at + delta] ?? null;
 }
 
@@ -291,7 +328,7 @@ export function substepStatus(id, { answers = {}, visited = [], revealed = new S
     case "review": {
       if (id === "review.submit") return mark("none");
       if (id === "review.summary") return mark(wasVisited ? "done" : "none");
-      const clean = missingToSubmit(2, draft).length === 0 && invalidAnswers(null, draft).length === 0;
+      const clean = reviewAlerts(draft).length === 0;
       return mark(wasVisited && clean ? "done" : "none");
     }
     case "documents": {
@@ -315,7 +352,11 @@ export function substepStatus(id, { answers = {}, visited = [], revealed = new S
 /** A step's mark over its visible sub-steps: needs > docs > done when all are > none. */
 export function stepRollup(stepId, ctx = {}) {
   const mark = (key) => markIn(key, ctx.lang);
-  const visible = new Set(visibleSubsteps(ctx.answers, ctx.cards));
+  // The review step ends with the Submit page, which is never marked (it
+  // stays blank until the application is submitted), so the step itself is
+  // never Done, whichever of its pages the gate shows (gate-review-and-redesign-summary).
+  if (stepId === "review") return mark("none");
+  const visible = new Set(visibleSubsteps(ctx.answers, ctx.cards, ctx.visited));
   const keys = substepsFor(2)
     .filter((substep) => substep.step.id === stepId && visible.has(substep.id))
     .map((substep) => substepStatus(substep.id, ctx).key);
@@ -332,7 +373,7 @@ export function stepRollup(stepId, ctx = {}) {
 export function firstUnfinishedSubstep(answers, cards, visited, revealed) {
   const ctx = { answers, visited, revealed, cards };
   return (
-    visibleSubsteps(answers, cards).find((id) => id !== "review.submit" && substepStatus(id, ctx).key !== "done") ?? "review.check"
+    visibleSubsteps(answers, cards, visited).find((id) => id !== "review.submit" && substepStatus(id, ctx).key !== "done") ?? "review.check"
   );
 }
 
@@ -642,7 +683,9 @@ export const mergeIntoDraft = (draft, patch) => ({ ...(draft ?? {}), ...(patch ?
 const DRIVERS = (() => {
   const fields = new Set();
   const add = (conditions) => {
-    for (const condition of conditions ?? []) fields.add(condition.field);
+    for (const condition of conditions ?? [])
+      if (condition.op === "any") for (const group of condition.groups ?? []) add(group);
+      else fields.add(condition.field);
   };
   const visit = (question) => {
     add(question.showIf);

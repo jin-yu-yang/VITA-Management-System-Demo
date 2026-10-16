@@ -4,12 +4,11 @@ import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
-import { makeSampleAnswers, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered, missingToSubmit } from "./intake-catalogue.mjs";
+import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
-  invalidAnswers,
   needsRedraw,
   newMemberId,
   noteState,
@@ -18,6 +17,7 @@ import {
   sendable,
   stepRollup,
   substepStatus,
+  visibleSubsteps,
 } from "./intake-form.mjs";
 import {
   addCaseParts,
@@ -27,6 +27,7 @@ import {
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
+import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
 import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
@@ -657,6 +658,25 @@ if (!config) {
       count.textContent = countText(answer.value, lang);
   }
 
+  // The sub-steps the page lists differ from the ones the draft shows now: a
+  // driver can add or remove another sub-step without changing this page's
+  // own questions (a death year adds "Your late spouse"). The page is the
+  // "before", as in needsRedraw: typing has already put the value in the
+  // draft. The client's form lists them in the rail; Add a case lists its
+  // question parts, plus its fixed Documents part.
+  function listedSubstepsStale(form) {
+    const state = controller.getState();
+    const answers = state.draftAnswers ?? {};
+    const ids = (selector) => [...root.querySelectorAll(selector)].map((element) => element.dataset.substep);
+    if (form.id === "add-case-v2-form")
+      return (
+        ids("#add-case-v2-form .add-sub[data-substep]").filter((id) => id !== "documents").join(" ") !==
+        addCaseParts(answers).map((part) => part.id).join(" ")
+      );
+    const cards = cardsFor(answers, state.savedCase?.documentCards ?? []);
+    return ids(".rail-sublink[data-substep]").join(" ") !== visibleSubsteps(answers, cards, state.visitedSubsteps ?? []).join(" ");
+  }
+
   // Every rendered answer into the draft, quietly: the action that follows
   // (a step change, a save, a fill) draws the page. Empty household cards are
   // dropped, as `readForm` drops them.
@@ -725,6 +745,7 @@ if (!config) {
           return id !== "documents" && body && !body.hidden && needsRedraw(idsIn(body), id, draft);
         });
       else redraw = needsRedraw(idsIn(form), controller.currentSubstep(), draft);
+      if (!redraw) redraw = listedSubstepsStale(form);
     }
     if (redraw) setTimeout(() => render(), 0);
   }
@@ -751,9 +772,10 @@ if (!config) {
   }
 
   // The panels a generic `toggle-panel` control may open: the phone's "All
-  // steps" and a documents sub-step's Maybe needed group. Rail steps have
-  // their own action (`setRailExpanded`), and nothing else is a panel here.
-  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+)$/;
+  // steps", a documents sub-step's Maybe needed group, and a summary section
+  // (`summary-shut:<step id>`, collapsed while present). Rail steps have their
+  // own action (`setRailExpanded`), and nothing else is a panel here.
+  const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+|summary-shut:[a-z]+)$/;
 
   // `opener` is passed when the control was described before an await (the
   // Log a call button, captured before its case is loaded); otherwise it is
@@ -788,10 +810,9 @@ if (!config) {
     // What is in the boxes first, so a fill sees every answer as typed.
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const generated = makeSampleAnswers({
-      seed: sampleSeed,
-      married: draft.marital_status === "married",
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const generated = sampleAnswersFor(draft, { seed: sampleSeed });
     // A regenerate is the new example plus a clear of every other answer
     // already in the draft (the wording choice kept); a fill touches blank
     // answers only.
@@ -812,10 +833,9 @@ if (!config) {
     }
     sweepV2Form();
     const draft = controller.getState().draftAnswers ?? {};
-    const sample = makeSampleAnswers({
-      seed: sampleSeed,
-      married: draft.marital_status === "married",
-    });
+    // A married sample for a spouse on the return; a widowed client stays
+    // widowed, and the late spouse gets no phone (sampleAnswersFor).
+    const sample = sampleAnswersFor(draft, { seed: sampleSeed });
     controller.editAnswers(fictionalAnswers(draft, sample));
     notify("Fictional details filled in. Nothing is saved yet.");
   }
@@ -890,26 +910,12 @@ if (!config) {
       // the saved case's revision: otherwise it would be dropped, and the
       // refresh would raise a conflict on a submitted case.
       sweepV2Form();
-      // Submit's disabled state is drawn at render, and typing never
-      // redraws, so the gate is checked again from the draft (spec §2.5:
-      // nothing invalid is ever submitted). Failing it reveals every invalid
-      // answer and goes to review.check, whose alerts list them.
-      const draft = controller.getState().draftAnswers ?? {};
-      const invalid = invalidAnswers(null, draft);
-      if (
-        invalid.length ||
-        missingToSubmit(2, draft).length ||
-        !controller.getState().openPanels.includes("confirmed")
-      ) {
-        quiet = true;
-        try {
-          for (const id of invalid) controller.revealInvalid(id);
-        } finally {
-          quiet = false;
-        }
-        // Submit stays off: the alerts list says what to fix, and the
-        // keyboard goes to its heading.
-        await controller.goToSubstep("review.check");
+      // Submit's disabled state is drawn at render, and a press can land on a
+      // page drawn before the draft changed, so the controller checks the
+      // draft again (guardSubmit). Refused, it has revealed every invalid
+      // answer and gone to review.check: the toast says why, and the keyboard
+      // goes to the alerts heading.
+      if (!(await controller.guardSubmit())) {
         notify(t("toast.needs_change", {}, screenLang()), by);
         focusV2Arrival();
         return;
@@ -1074,8 +1080,9 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
-  async function viewDraft(form, by) {
-    if (!Object.hasOwn(FORM_FILES, form)) return;
+  async function viewDraft(form, by, kind = "13614c") {
+    const files = kind === "14446" ? FORM_14446_FILES : FORM_FILES;
+    if (!Object.hasOwn(files, form)) return;
     const tab = window.open("", "_blank");
     if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
     // An earlier press's link goes: this press makes a new draft.
@@ -1093,11 +1100,12 @@ if (!config) {
       // The 繁體 draft's lines need the map, whatever the screen language;
       // loading it changes nothing on screen. A failure, or a load still
       // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
-      if (form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
-      const fields = draftFields(state.draftAnswers ?? {}, { form, reference, today });
+      // The 14446 has no generated lines of its own, so it never needs the map.
+      if (kind !== "14446" && form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
+      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, { form, reference, today });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
-        fetchBytes(FORM_FILES[form]),
+        fetchBytes(files[form]),
         fieldsNeedFont(fields) ? Promise.all(draftFontsFor(form).files.map(fetchCheckedFont)) : [],
       ]);
       const bytes = await buildDraftPdf({
@@ -1381,6 +1389,20 @@ if (!config) {
           ?.focus();
         break;
       }
+      case "summary-expand-all":
+      case "summary-collapse-all": {
+        // Every section at once (design D7): Collapse all names the sections
+        // on the page, Expand all none. The pressed button keeps the keyboard.
+        const shut =
+          action === "summary-collapse-all"
+            ? [...root.querySelectorAll('.summary-toggle[data-panel^="summary-shut:"]')].map((toggle) =>
+                toggle.dataset.panel.slice("summary-shut:".length),
+              )
+            : [];
+        controller.setSummaryShut(shut);
+        document.getElementById(target.id)?.focus();
+        break;
+      }
       case "mark-card": {
         const slot = target.dataset.slot ?? "";
         sweepV2Form();
@@ -1413,7 +1435,7 @@ if (!config) {
         window.print();
         break;
       case "view-draft":
-        await viewDraft(target.dataset.form ?? "en", by);
+        await viewDraft(target.dataset.form ?? "en", by, target.dataset.draft ?? "13614c");
         break;
       case "toggle-senior":
         controller.editAnswers({

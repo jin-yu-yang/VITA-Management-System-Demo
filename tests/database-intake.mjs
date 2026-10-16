@@ -577,6 +577,10 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         [{ gcf_consent: "yes", marital_status: "married", gcf_tp_signature: "Mei Lin" }, {}],
         [completeAnswers({ gcf_consent: "no" }), {}],
         [completeAnswers({ has_household_members: "yes", hh: [(({ middle_name: _m, ...rest }) => rest)(member())] }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03", sp_job_title: "Retired" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2024" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2015" }), {}],
+        [completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", gcf_consent: "yes", gcf_tp_signature: "Mei Lin" }), {}],
       ];
       for (const [answers, contact] of sets) {
         const server = (
@@ -621,6 +625,94 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
         ["gcf_sp_date", { gcf_sp_signature: "Mei" }],
       ])
         assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), id);
+    });
+
+    await t.test("intake_holds reads gte, lte and any as the browser does (add-widowed-spouse-rules)", async () => {
+      const holds = async (showIf, answers) =>
+        (
+          await f.sql("select vitally_private.intake_holds($1::jsonb, $2::jsonb) as held", [
+            JSON.stringify(showIf),
+            JSON.stringify(answers),
+          ])
+        ).rows[0].held;
+      const year = (op, value) => ({ field: "y", op, value });
+      const pick = { op: "any", groups: [[{ field: "m", op: "eq", value: "a" }], [{ field: "m", op: "eq", value: "b" }, year("gte", 2025)]] };
+      const cases = [
+        [[year("gte", 2023)], {}, false],
+        [[year("gte", 2023)], { y: "" }, false],
+        [[year("gte", 2023)], { y: "abcd" }, false],
+        [[year("gte", 2023)], { y: 2024 }, false],
+        [[year("gte", 2023)], { y: ["2024"] }, false],
+        [[year("gte", 2023)], { y: "2022" }, false],
+        [[year("gte", 2023)], { y: "2023" }, true],
+        [[year("lte", 2025)], { y: "2025" }, true],
+        [[year("lte", 2025)], { y: "2205" }, false],
+        [[year("gte", 2023)], { y: "02025" }, false],
+        // No padded year row: the server never stores a padded value (the save
+        // trims it, check_intake_value refuses it); the browser's reading of
+        // one is pinned by the unit test in tests/intake-catalogue.test.mjs.
+        [[pick], { m: "a" }, true],
+        [[pick], { m: "b", y: "2025" }, true],
+        [[pick], { m: "b", y: "2024" }, false],
+        [[pick], { m: "b" }, false],
+        [[pick], { m: "c", y: "2025" }, false],
+        [[pick, { field: "z", op: "filled" }], { m: "a" }, false],
+      ];
+      for (const [showIf, answers, expected] of cases) {
+        const label = `${JSON.stringify(showIf)} ${JSON.stringify(answers)}`;
+        assert.equal(isVisible({ showIf }, answers), expected, `js ${label}`);
+        assert.equal(await holds(showIf, answers), expected, `sql ${label}`);
+      }
+    });
+
+    await t.test("the spouse questions' visibility follows the two rules on both sides (add-widowed-spouse-rules)", async () => {
+      const visible = async (id, answers) =>
+        (
+          await f.sql("select vitally_private.intake_visible(2::smallint, $1, $2::jsonb, '{}'::jsonb) as shown", [
+            id,
+            JSON.stringify(answers),
+          ])
+        ).rows[0].shown;
+      const widowed = (year) => ({ marital_status: "widowed", ...(year === undefined ? {} : { spouse_death_year: year }) });
+      const answerSets = [
+        widowed(), widowed("abcd"), widowed("2022"), widowed("2023"), widowed("2024"), widowed("2025"), widowed("2205"),
+        { marital_status: "married" }, { marital_status: "divorced", spouse_death_year: "2025" },
+        { ...widowed("2025"), gcf_consent: "yes" },
+      ];
+      for (const id of ["sp_first_name", "sp_dob", "sp_job_title", "opt_race_sp", "sp_phone", "gcf_sp_signature"])
+        for (const answers of answerSets)
+          assert.equal(await visible(id, answers), isVisible(byId.get(id), answers), `${id} ${JSON.stringify(answers)}`);
+      assert.equal(await visible("sp_last_name", widowed("2024")), true);
+      assert.equal(await visible("sp_job_title", widowed("2024")), false);
+      const missing = (
+        await f.sql("select vitally_private.intake_missing(2::smallint, $1::jsonb, '{}'::jsonb) as missing", [
+          // completeAnswers fills every visible required question, so drop the last name it filled.
+          JSON.stringify((({ sp_last_name: _l, ...rest }) => rest)(completeAnswers({ marital_status: "widowed", spouse_death_year: "2025", sp_first_name: "Wei", sp_dob: "1960-02-03", sp_job_title: "Retired" }))),
+        ])
+      ).rows[0].missing;
+      assert.ok(missing.includes("sp_last_name"), "the server names the late spouse's last name");
+    });
+
+    await t.test("the loader refuses a malformed show-if (add-widowed-spouse-rules)", async () => {
+      const put = (showIf) =>
+        f.sql("select vitally_private.put_intake_field(9::smallint, $1::jsonb, 1::smallint, null)", [
+          JSON.stringify({ id: "x", type: "text", showIf }),
+        ]);
+      for (const showIf of [
+        [{ field: "m", op: "gt", value: 1 }],
+        [{ op: "any" }],
+        [{ op: "any", groups: [] }],
+        [{ op: "any", groups: [[]] }],
+        [{ op: "any", groups: [{ field: "m", op: "eq", value: "a" }] }],
+        [{ op: "any", groups: [[{ field: "m", op: "bogus" }]] }],
+        [{ field: "y", op: "gte", value: "2023" }],
+        [{ field: "y", op: "lte" }],
+        [{ op: "gte", value: 2023 }],
+        ["eq"],
+      ])
+        await assert.rejects(put(showIf), rejected("VALIDATION"), JSON.stringify(showIf));
+      const stray = await f.sql("select count(*)::int as n from vitally_private.intake_fields where version = 9");
+      assert.equal(stray.rows[0].n, 0);
     });
 
     await t.test("the loader refuses a catalogue without steps", async () => {

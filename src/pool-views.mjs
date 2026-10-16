@@ -1,6 +1,6 @@
 import { phaseTab, describeStage } from "./domain.mjs";
-import { languageLabel, serviceLabel } from "./intake-catalogue.mjs";
-import { esc, icon, button, relativeDay, stageBadge, clientNumberTag } from "./ui.mjs";
+import { clientLanguages, languageOptions, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
+import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell } from "./ui.mjs";
 import { listPhone } from "./staff-views.mjs";
 
 export const POOL_TABS = Object.freeze([
@@ -61,7 +61,7 @@ export function filterPool(cases = [], chosen, { ignorePhase = false } = {}) {
     (record) =>
       (ignorePhase || chosen.poolPhase === "all" || poolPhase(record) === chosen.poolPhase) &&
       matchesValue(record?.stage, chosen.poolStage) &&
-      matchesValue(record?.answers?.language, chosen.poolLanguage, languageLabel) &&
+      speaksLanguage(clientLanguages(record?.answers), chosen.poolLanguage) &&
       matchesValue(record?.answers?.service, chosen.poolService, serviceLabel) &&
       matchesPerson(record?.preparerId, chosen.poolPreparer) &&
       matchesPerson(record?.reviewerId, chosen.poolReviewer),
@@ -111,7 +111,7 @@ function poolRow(record, now, person) {
   const phase = TAB_LABELS[poolPhase(record)];
   return `<tr class="pool-row"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}${
     phase ? `<span class="pool-phase">${esc(phase)}</span>` : ""
-  }</td><td>${listPhone(record, person, "pool-phone")}</td><td>${esc(languageLabel(record?.answers?.language) || "—")}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
+  }</td><td>${listPhone(record, person, "pool-phone")}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
     record.updatedAt ? relativeDay(record.updatedAt, now) : "No updates yet",
   )}</td></tr>`;
 }
@@ -137,7 +137,7 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
   const filters = `<div class="pool-filters">${filterSelect(
     "Stage", "poolStage", chosen.poolStage,
     [["all", "Any stage"], ...POOL_STAGES.map((stage) => [stage, describeStage(stage).label])],
-  )}${filterSelect("Language", "poolLanguage", chosen.poolLanguage, valueOptions(all, "language", "Any language", languageLabel))}${filterSelect(
+  )}${filterSelect("Language", "poolLanguage", chosen.poolLanguage, languageOptions(all, "Any language"))}${filterSelect(
     "Service", "poolService", chosen.poolService, valueOptions(all, "service", "Any service", serviceLabel),
   )}${filterSelect("Prepared by", "poolPreparer", chosen.poolPreparer, personOptions(people))}${filterSelect(
     "Reviewed by", "poolReviewer", chosen.poolReviewer, personOptions(people),

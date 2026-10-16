@@ -69,9 +69,24 @@ const filled = isAnswered;
 export const memberNameParts = (member) =>
   [member?.first_name, member?.middle_name, member?.last_name].filter(isAnswered);
 
+// A whole number written in ASCII digits without a leading zero, else null.
+// gte and lte read only these, as the database's intake_holds does (change
+// add-widowed-spouse-rules): "02025", which the year check refuses, never
+// counts as 2025. The browser reads the answer as it is sent, trimmed ("2024 "
+// is 2024); the server only ever stores trimmed values, and check_intake_value
+// refuses " 2024", so migration 027 needs no change.
+const wholeNumber = (value) =>
+  typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value.trim()) ? Number(value.trim()) : null;
+
 const holds = (condition, answers) => {
+  if (condition.op === "any")
+    return (condition.groups ?? []).some((group) => group.every((inner) => holds(inner, answers)));
   const value = answers?.[condition.field];
   if (condition.op === "filled") return filled(value);
+  if (condition.op === "gte" || condition.op === "lte") {
+    const n = wholeNumber(value);
+    return n !== null && (condition.op === "gte" ? n >= condition.value : n <= condition.value);
+  }
   const same = Array.isArray(value) ? value.includes(condition.value) : value === condition.value;
   if (condition.op === "eq") return same;
   if (condition.op === "ne") return filled(value) && !same;
@@ -81,8 +96,19 @@ const holds = (condition, answers) => {
 export const isVisible = (question, answers) =>
   (question?.showIf ?? []).every((condition) => holds(condition, answers ?? {}));
 
-/** Married, by the rule that offers "My spouse" (who.spouseShowIf); unanswered is not married. */
+/** J, "filing with the spouse possible": married, or widowed with the death in
+ * the tax year (rules.joint_possible, the rule that offers "My spouse").
+ * Unanswered is neither. */
 export const spouseShown = (answers) => isVisible({ showIf: CATALOGUE.fixedOptions.who.spouseShowIf }, answers ?? {});
+
+/** S, "spouse on the return": married, or widowed with the death from 2023 to
+ * the tax year (rules.spouse_on_return). */
+export const spouseOnReturn = (answers) => isVisible({ showIf: CATALOGUE.rules.spouse_on_return }, answers ?? {});
+
+/** A sub-step's title for one application, in `lang`: a widowed client's
+ * `titleWidowed` when the sub-step has one (design D5), else its title. */
+export const substepTitleOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
+  inVariant(answers?.marital_status === "widowed" && substep?.titleWidowed ? substep.titleWidowed : substep?.title, variant, lang);
 
 /** A sub-step's lead line for one application, in `lang`; "" without a lead. */
 export const leadOf = (substep, { variant = "general", lang = "en", answers } = {}) =>
@@ -182,7 +208,10 @@ export function checkValue(question, value) {
     case "date":
       return validDate(value) ? null : "Enter a real date as YYYY-MM-DD.";
     case "year":
-      return /^\d{4}$/.test(value) ? null : "Enter a 4-digit year.";
+      if (!/^\d{4}$/.test(value)) return "Enter a 4-digit year.";
+      if (question.min !== undefined && question.max !== undefined && (Number(value) < question.min || Number(value) > question.max))
+        return `Enter a year from ${question.min} to ${question.max}.`;
+      return null;
     case "number": {
       if (!/^\d+$/.test(value)) return "Digits only.";
       if (question.min !== undefined || question.max !== undefined) {
@@ -270,3 +299,76 @@ const labelOf = (table, value, lang) => {
 };
 export const serviceLabel = (value, lang = "en") => labelOf(SERVICE_LABELS, value, lang);
 export const languageLabel = (value, lang = "en") => labelOf(LANGUAGE_LABELS, value, lang);
+
+// ---------------------------------------------------------------------------
+// The client's service languages (allow-multiple-service-languages, design
+// D3): the preferred one (Q0.3, `language`) first, then the others (Q0.5,
+// `language_also`) in option order, never twice. Other carries what was typed
+// (Q0.4 or Q0.6). A label, from a version-1 answer or a help request's text,
+// maps back to its code; any other text is Other with that text.
+// ---------------------------------------------------------------------------
+
+export const LANGUAGE_LETTERS = Object.freeze({ english: "E", cantonese: "C", mandarin: "M", other: "O" });
+const LANGUAGE_CODES = [...LANGUAGE_LABELS.keys()];
+const CODE_OF_LABEL = new Map(
+  [...LANGUAGE_LABELS.values()].map((option) => [String(option.label?.general?.en ?? option.value).toLowerCase(), option.value]),
+);
+const trimmed = (value) => (typeof value === "string" ? value.trim() : "");
+
+function languageEntry(value, typed) {
+  const raw = trimmed(value);
+  if (!raw) return null;
+  const code = LANGUAGE_LABELS.has(raw) ? raw : CODE_OF_LABEL.get(raw.toLowerCase());
+  if (code) return { code, label: languageLabel(code), text: code === "other" ? trimmed(typed) : "" };
+  return { code: "other", label: languageLabel("other"), text: raw };
+}
+
+export function clientLanguages(answers) {
+  const draft = answers ?? {};
+  const also = Array.isArray(draft.language_also) ? draft.language_also : [];
+  const entries = [
+    languageEntry(draft.language, draft.language_other),
+    ...LANGUAGE_CODES.filter((code) => also.includes(code)).map((code) => languageEntry(code, draft.language_also_other)),
+  ].filter(Boolean);
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = `${entry.code}|${entry.text.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export const languageLetters = (entries) => entries.map((entry) => LANGUAGE_LETTERS[entry.code] ?? "O").join(", ");
+
+// Staff (`preferred`): English, the first marked "(preferred)", Other as
+// "Other: <text>". A client: the screen language, Other as what they typed.
+export function languageNames(entries, { lang = "en", preferred = false, separator = ", " } = {}) {
+  const names = entries.map((entry) => {
+    if (entry.code !== "other") return languageLabel(entry.code, preferred ? "en" : lang);
+    if (preferred) return entry.text ? `${entry.label}: ${entry.text}` : entry.label;
+    return entry.text || languageLabel("other", lang);
+  });
+  if (preferred && names.length) names[0] = `${names[0]} (preferred)`;
+  return names.join(preferred ? ", " : separator);
+}
+
+// A filter's choice is a label (or a code), compared by its label.
+export const speaksLanguage = (entries, chosen) =>
+  chosen === "all" || entries.some((entry) => entry.label === languageLabel(chosen));
+
+export const languageFilterLabels = (lists) =>
+  [...new Set(lists.flatMap((entries) => entries.map((entry) => entry.label)))].sort();
+
+// A language filter's options: "all" first, then the full name of every
+// language any listed case's client speaks (design D5).
+export const languageOptions = (cases, anyLabel) => [
+  ["all", anyLabel],
+  ...languageFilterLabels((cases ?? []).map((record) => clientLanguages(record?.answers))).map((label) => [label, label]),
+];
+
+export const languageSummary = (entries) => ({
+  letters: languageLetters(entries),
+  names: languageNames(entries, { preferred: true }),
+  labels: entries.map((entry) => entry.label),
+});

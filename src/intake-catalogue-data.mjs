@@ -236,6 +236,166 @@ export default {
                   "zh": "请说明"
                 }
               }
+            },
+            {
+              "id": "language_also",
+              "type": "multi",
+              "required": false,
+              "options": [
+                {
+                  "value": "english",
+                  "label": {
+                    "general": {
+                      "en": "English",
+                      "zh": "英语"
+                    },
+                    "senior": {
+                      "en": "English",
+                      "zh": "英语"
+                    }
+                  }
+                },
+                {
+                  "value": "cantonese",
+                  "label": {
+                    "general": {
+                      "en": "Cantonese",
+                      "zh": "粤语"
+                    },
+                    "senior": {
+                      "en": "Cantonese",
+                      "zh": "粤语"
+                    }
+                  }
+                },
+                {
+                  "value": "mandarin",
+                  "label": {
+                    "general": {
+                      "en": "Mandarin",
+                      "zh": "普通话"
+                    },
+                    "senior": {
+                      "en": "Mandarin",
+                      "zh": "普通话"
+                    }
+                  }
+                },
+                {
+                  "value": "other",
+                  "label": {
+                    "general": {
+                      "en": "Other",
+                      "zh": "其他"
+                    },
+                    "senior": {
+                      "en": "Other",
+                      "zh": "其他"
+                    }
+                  }
+                }
+              ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "Choose all that apply. Leave this blank if only your preferred language works for you.",
+                    "zh": "可多选。如果只能使用首选语言，请留空。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "Choose all that apply. Leave this blank if only your preferred language works for you.",
+                    "zh": "可多选。如果只能使用首选语言，请留空。"
+                  }
+                ]
+              },
+              "wording": {
+                "general": {
+                  "en": "Any other languages we can help you in?",
+                  "zh": "我们还可以用哪些语言为您服务？"
+                },
+                "senior": {
+                  "en": "Any other languages we can help you in?",
+                  "zh": "我们还可以用哪些语言为您服务？"
+                }
+              }
+            },
+            {
+              "id": "language_also_other",
+              "type": "text",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "language_also",
+                  "op": "eq",
+                  "value": "other"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Please specify",
+                  "zh": "请说明"
+                },
+                "senior": {
+                  "en": "Please specify",
+                  "zh": "请说明"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "n": 15,
+          "title": {
+            "general": {
+              "en": "Virtual VITA Consent (Form 14446)",
+              "zh": "虚拟 VITA 纳税人同意书"
+            },
+            "senior": {
+              "en": "Virtual VITA Consent (Form 14446)",
+              "zh": "虚拟 VITA 纳税人同意书"
+            }
+          },
+          "intro": {
+            "general": {
+              "en": "**Everyone signs this form, whether we prepare your return online or in person.**\n\nForm 14446 is the IRS consent for \"virtual\" VITA. Parts of your return are handled while you are not sitting with the preparer: we may review your documents, interview you by phone or Zoom, and prepare and check your return without you there. Pages 1 and 2 of the form explain how PCDC handles each step.\n\nYour consent lasts one year from the date you sign.\n\n**Note:** these systems are not run by the IRS. If they are hacked or breached, federal law may not protect your information.\n\nIf you believe your information was used improperly, contact TIGTA at **1-800-366-4484** or complaints@tigta.treas.gov.",
+              "zh": "**无论线上还是到场报税，每位客户都需要签署此表。**\n\n14446 表是美国国税局的\"虚拟 VITA\"同意书。部分报税工作会在您不在场时进行：我们可能会审核您的文件，通过电话或 Zoom 与您面谈，并在您不在场时准备和检查您的报税表。表格第 1、2 页说明 PCDC 如何处理每个步骤。\n\n您的同意自签署之日起一年内有效。\n\n**注意：**这些系统并非由国税局运营。如遭黑客攻击或泄露，联邦法律可能无法保护您的信息。\n\n如您认为您的信息被不当使用，请联系 TIGTA：**1-800-366-4484** 或 complaints@tigta.treas.gov。"
+            },
+            "senior": {
+              "en": "**Everyone signs this form, whether we prepare your return online or in person.**\n\nForm 14446 is the IRS consent for \"virtual\" VITA. Parts of your return are handled while you are not sitting with the preparer: we may review your documents, interview you by phone or Zoom, and prepare and check your return without you there. Pages 1 and 2 of the form explain how PCDC handles each step.\n\nYour consent lasts one year from the date you sign.\n\n**Note:** these systems are not run by the IRS. If they are hacked or breached, federal law may not protect your information.\n\nIf you believe your information was used improperly, contact TIGTA at **1-800-366-4484** or complaints@tigta.treas.gov.",
+              "zh": "**无论您是线上还是到场报税，每个人都要签这张表。**\n\n14446 表是美国国税局的\"虚拟 VITA\"同意书。有些报税工作会在您不在场时进行：我们可能会看您的文件，通过电话或 Zoom 和您谈，并在您不在场时帮您准备和检查报税表。表格第 1、2 页写了 PCDC 每一步是怎么做的。\n\n您的同意从签名那天起，一年内有效。\n\n**注意：**这些系统不是国税局运营的。如果被黑客攻击或资料泄露，联邦法律可能保护不了您的信息。\n\n如果您认为您的信息被不当使用，请联系 TIGTA：**1-800-366-4484** 或 complaints@tigta.treas.gov。"
+            }
+          },
+          "questions": [
+            {
+              "id": "vc_agree",
+              "type": "multi",
+              "required": true,
+              "options": [
+                {
+                  "value": "yes",
+                  "label": {
+                    "general": {
+                      "en": "I agree to use PCDC's Virtual VITA/TCE process",
+                      "zh": "本人同意使用此服务处的虚拟 VITA/TCE 流程"
+                    },
+                    "senior": {
+                      "en": "I agree to use PCDC's Virtual VITA/TCE process",
+                      "zh": "本人同意使用此服务处的虚拟 VITA/TCE 流程"
+                    }
+                  }
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Do you agree to use PCDC's Virtual VITA/TCE process?",
+                  "zh": "您是否同意使用此服务处的虚拟 VITA/TCE 流程？"
+                },
+                "senior": {
+                  "en": "Do you agree to use PCDC's Virtual VITA/TCE process?",
+                  "zh": "您同意使用此服务处的虚拟 VITA/TCE 流程吗？"
+                }
+              }
             }
           ]
         }
@@ -290,7 +450,26 @@ export default {
           },
           "questions": [
             "language",
-            "language_other"
+            "language_other",
+            "language_also",
+            "language_also_other"
+          ]
+        },
+        {
+          "id": "before.virtual",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Virtual VITA consent (Form 14446)",
+              "zh": "虚拟 VITA 纳税人同意书"
+            },
+            "senior": {
+              "en": "Virtual VITA consent (Form 14446)",
+              "zh": "虚拟 VITA 纳税人同意书"
+            }
+          },
+          "questions": [
+            "vc_agree"
           ]
         }
       ]
@@ -962,6 +1141,8 @@ export default {
               "id": "spouse_death_year",
               "type": "year",
               "required": true,
+              "min": 1900,
+              "max": 2025,
               "showIf": [
                 {
                   "field": "marital_status",
@@ -1001,9 +1182,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1037,9 +1242,33 @@ export default {
               "required": false,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1073,9 +1302,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -1095,9 +1348,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2023
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -1117,9 +1394,33 @@ export default {
               "required": true,
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "tips": {
@@ -1695,6 +1996,360 @@ export default {
               }
             }
           ]
+        },
+        {
+          "n": 16,
+          "title": {
+            "general": {
+              "en": "Sign Form 14446",
+              "zh": "签署 14446 表"
+            },
+            "senior": {
+              "en": "Sign Form 14446",
+              "zh": "签署 14446 表"
+            }
+          },
+          "intro": {
+            "general": {
+              "en": "Sign Form 14446 with the details below, as they will appear on the form. If you file a joint return, your spouse signs too.",
+              "zh": "请核对以下将填入表格的信息，然后签署 14446 表。如合并申报，您的配偶也需要签名。"
+            },
+            "senior": {
+              "en": "Sign Form 14446 with the details below, as they will appear on the form. If you file a joint return, your spouse signs too.",
+              "zh": "请核对下面会填到表格上的信息，然后签署 14446 表。如果您和您爱人合并申报，您爱人也需要签名。"
+            }
+          },
+          "introUnmarried": {
+            "general": {
+              "en": "Sign Form 14446 with the details below, as they will appear on the form.",
+              "zh": "请核对以下将填入表格的信息，然后签署 14446 表。"
+            },
+            "senior": {
+              "en": "Sign Form 14446 with the details below, as they will appear on the form.",
+              "zh": "请核对下面会填到表格上的信息，然后签署 14446 表。"
+            }
+          },
+          "questions": [
+            {
+              "id": "vc_review",
+              "type": "choice",
+              "required": true,
+              "options": [
+                {
+                  "value": "yes",
+                  "label": {
+                    "general": {
+                      "en": "I consent",
+                      "zh": "同意"
+                    },
+                    "senior": {
+                      "en": "I consent",
+                      "zh": "同意"
+                    }
+                  }
+                },
+                {
+                  "value": "no",
+                  "label": {
+                    "general": {
+                      "en": "I do not consent",
+                      "zh": "不同意"
+                    },
+                    "senior": {
+                      "en": "I do not consent",
+                      "zh": "不同意"
+                    }
+                  }
+                }
+              ],
+              "tips": {
+                "general": [
+                  {
+                    "en": "The IRS keeps none of your personal information from this review. Saying no doesn't change our service.",
+                    "zh": "国税局不会保留审核中的任何个人信息；不同意也不会影响我们为您提供的服务。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "en": "The IRS keeps none of your personal information from this review. Saying no doesn't change our service.",
+                    "zh": "国税局不会保留这次检查中的任何个人信息；选不同意，也不影响我们帮您报税。"
+                  }
+                ]
+              },
+              "wording": {
+                "general": {
+                  "en": "If our site is chosen at random, may an IRS employee review your return for accuracy?",
+                  "zh": "如本站点被随机抽中，您是否同意国税局工作人员审核您的报税表是否准确？"
+                },
+                "senior": {
+                  "en": "If our site is chosen at random, may an IRS employee review your return for accuracy?",
+                  "zh": "如果本站点被随机抽中，您同意国税局工作人员检查您的报税表是否准确吗？"
+                }
+              }
+            },
+            {
+              "id": "vc_tp_signature",
+              "type": "signature",
+              "required": true,
+              "wording": {
+                "general": {
+                  "en": "Your signature (type your full name)",
+                  "zh": "您的签名（输入全名）"
+                },
+                "senior": {
+                  "en": "Your signature (type your full name)",
+                  "zh": "请输入您的全名作为签名"
+                }
+              }
+            },
+            {
+              "id": "vc_tp_date",
+              "type": "date",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "vc_tp_signature",
+                  "op": "filled"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Date",
+                  "zh": "日期"
+                },
+                "senior": {
+                  "en": "Date",
+                  "zh": "日期"
+                }
+              }
+            },
+            {
+              "id": "vc_sp_signature",
+              "type": "signature",
+              "required": false,
+              "showIf": [
+                {
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
+                }
+              ],
+              "tips": {
+                "general": [
+                  {
+                    "showIf": [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    "en": "Leave this empty if you won't file a joint return.",
+                    "zh": "如不合并申报，请留空。"
+                  },
+                  {
+                    "showIf": [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "op": "any",
+                        "groups": [
+                          [
+                            {
+                              "field": "marital_status",
+                              "op": "eq",
+                              "value": "married"
+                            }
+                          ],
+                          [
+                            {
+                              "field": "marital_status",
+                              "op": "eq",
+                              "value": "widowed"
+                            },
+                            {
+                              "field": "spouse_death_year",
+                              "op": "gte",
+                              "value": 2025
+                            },
+                            {
+                              "field": "spouse_death_year",
+                              "op": "lte",
+                              "value": 2025
+                            }
+                          ]
+                        ]
+                      }
+                    ],
+                    "en": "Type your late spouse's full name. You sign for them because a joint return is possible for 2025.",
+                    "zh": "请输入您已故配偶的全名。由于 2025 年仍可合并申报，由您代为签名。"
+                  }
+                ],
+                "senior": [
+                  {
+                    "showIf": [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    "en": "Leave this empty if you won't file a joint return.",
+                    "zh": "如果不合并申报，请留空。"
+                  },
+                  {
+                    "showIf": [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "op": "any",
+                        "groups": [
+                          [
+                            {
+                              "field": "marital_status",
+                              "op": "eq",
+                              "value": "married"
+                            }
+                          ],
+                          [
+                            {
+                              "field": "marital_status",
+                              "op": "eq",
+                              "value": "widowed"
+                            },
+                            {
+                              "field": "spouse_death_year",
+                              "op": "gte",
+                              "value": 2025
+                            },
+                            {
+                              "field": "spouse_death_year",
+                              "op": "lte",
+                              "value": 2025
+                            }
+                          ]
+                        ]
+                      }
+                    ],
+                    "en": "Type your late spouse's full name. You sign for them because a joint return is possible for 2025.",
+                    "zh": "请输入您已故爱人的全名。因为 2025 年还可以合并申报，所以由您替他/她签名。"
+                  }
+                ]
+              },
+              "wording": {
+                "general": {
+                  "en": "Spouse's signature (type full name)",
+                  "zh": "配偶签名（输入全名）"
+                },
+                "senior": {
+                  "en": "Spouse's signature (type full name)",
+                  "zh": "您爱人的签名（输入全名）"
+                }
+              }
+            },
+            {
+              "id": "vc_sp_date",
+              "type": "date",
+              "required": false,
+              "showIf": [
+                {
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "field": "vc_sp_signature",
+                  "op": "filled"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Spouse signature date",
+                  "zh": "配偶签名日期"
+                },
+                "senior": {
+                  "en": "Spouse signature date",
+                  "zh": "您爱人签名的日期"
+                }
+              }
+            },
+            {
+              "id": "vc_sp_email",
+              "type": "email",
+              "required": false,
+              "showIf": [
+                {
+                  "field": "marital_status",
+                  "op": "eq",
+                  "value": "married"
+                }
+              ],
+              "wording": {
+                "general": {
+                  "en": "Spouse's email address",
+                  "zh": "配偶的电子邮箱"
+                },
+                "senior": {
+                  "en": "Spouse's email address",
+                  "zh": "您爱人的电子邮箱"
+                }
+              }
+            }
+          ]
         }
       ],
       "substeps": [
@@ -1786,6 +2441,38 @@ export default {
             "sp_dob",
             "sp_job_title",
             "sp_phone"
+          ],
+          "titleWidowed": {
+            "general": {
+              "en": "Your late spouse",
+              "zh": "已故配偶"
+            },
+            "senior": {
+              "en": "Your late spouse",
+              "zh": "已故配偶"
+            }
+          }
+        },
+        {
+          "id": "about.sign",
+          "kind": "questions",
+          "title": {
+            "general": {
+              "en": "Sign Form 14446",
+              "zh": "签署 14446 表"
+            },
+            "senior": {
+              "en": "Sign Form 14446",
+              "zh": "签署 14446 表"
+            }
+          },
+          "questions": [
+            "vc_review",
+            "vc_tp_signature",
+            "vc_tp_date",
+            "vc_sp_signature",
+            "vc_sp_date",
+            "vc_sp_email"
           ]
         },
         {
@@ -5498,9 +6185,33 @@ export default {
               ],
               "showIf": [
                 {
-                  "field": "marital_status",
-                  "op": "eq",
-                  "value": "married"
+                  "op": "any",
+                  "groups": [
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "married"
+                      }
+                    ],
+                    [
+                      {
+                        "field": "marital_status",
+                        "op": "eq",
+                        "value": "widowed"
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "gte",
+                        "value": 2025
+                      },
+                      {
+                        "field": "spouse_death_year",
+                        "op": "lte",
+                        "value": 2025
+                      }
+                    ]
+                  ]
                 }
               ],
               "wording": {
@@ -5824,9 +6535,33 @@ export default {
       ],
       "spouseShowIf": [
         {
-          "field": "marital_status",
-          "op": "eq",
-          "value": "married"
+          "op": "any",
+          "groups": [
+            [
+              {
+                "field": "marital_status",
+                "op": "eq",
+                "value": "married"
+              }
+            ],
+            [
+              {
+                "field": "marital_status",
+                "op": "eq",
+                "value": "widowed"
+              },
+              {
+                "field": "spouse_death_year",
+                "op": "gte",
+                "value": 2025
+              },
+              {
+                "field": "spouse_death_year",
+                "op": "lte",
+                "value": 2025
+              }
+            ]
+          ]
         }
       ]
     },
@@ -5873,6 +6608,70 @@ export default {
         }
       ]
     }
+  },
+  "rules": {
+    "spouse_on_return": [
+      {
+        "op": "any",
+        "groups": [
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "married"
+            }
+          ],
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "widowed"
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "gte",
+              "value": 2023
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "lte",
+              "value": 2025
+            }
+          ]
+        ]
+      }
+    ],
+    "joint_possible": [
+      {
+        "op": "any",
+        "groups": [
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "married"
+            }
+          ],
+          [
+            {
+              "field": "marital_status",
+              "op": "eq",
+              "value": "widowed"
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "gte",
+              "value": 2025
+            },
+            {
+              "field": "spouse_death_year",
+              "op": "lte",
+              "value": 2025
+            }
+          ]
+        ]
+      }
+    ]
   },
   "materials": [
     {
