@@ -493,12 +493,46 @@ export function createController({
     if (state.connection !== "online") state.connection = "online";
   }
 
+  // One local retry (design D3): what Try again runs for a failure outside the
+  // store's actions. Any newer error drops it; only noteLocalFailure and
+  // noteUnloaded set it, after recording.
+  let localRetry = null;
+  function setLocalRetry(fn) {
+    localRetry = typeof fn === "function" ? fn : null;
+    state.retryable = Boolean(localRetry);
+  }
+
   function noteFailure(error, { message } = {}) {
+    localRetry = null;
     state.error = {
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
     };
     if (error?.code === "OFFLINE") state.connection = "offline";
+  }
+
+  // One error at a time (design D2): a newer error replaces a failed save's.
+  // The draft stays and goes with the next move or save.
+  function replaceFailedSave() {
+    if (state.saveState !== "failed") return;
+    forgetPendingSave();
+    state.saveState = "unsaved";
+  }
+
+  // A refusal the window makes itself: recorded, drawn, then thrown.
+  function refuse(code, message) {
+    replaceFailedSave();
+    noteFailure({ code }, { message });
+    state.retryable = false;
+    show();
+    return controllerError(code, message);
+  }
+
+  function noteLocalFailure(error, retry = null) {
+    replaceFailedSave();
+    noteFailure(error ?? {}, { message: error?.message ?? "Something went wrong." });
+    setLocalRetry(retry);
+    show();
   }
 
   // A snapshot from the server replaces what we knew only when it is newer, so
@@ -1030,6 +1064,7 @@ export function createController({
 
   // Signing out drops every record this window holds, not just the session.
   function forgetUser() {
+    localRetry = null;
     if (state.principal) windowState.clear(state.principal.userId);
     unsubscribe();
     clearSelection();
@@ -1116,6 +1151,7 @@ export function createController({
   }
 
   function dismissError() {
+    localRetry = null;
     state.error = null;
     state.notice = null;
     show();
@@ -1379,7 +1415,7 @@ export function createController({
     if (state.officeSaving || substepSaveInFlight) return { sent: false, reason: "busy" };
     if (send && !state.openPanels.includes("confirmed")) return { sent: false, reason: "unconfirmed" };
     if (!state.savedCase && !state.officeDraft)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     // The flag is the one sub-step changes and card marks hold, so a mark
     // can't race the save.
     state.officeSaving = true;
@@ -1971,7 +2007,7 @@ export function createController({
   // first Save that waited for it.
   async function saveNow({ quiet = false } = {}) {
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     if (state.conflict) {
       // Refusing here is the point: the pending edits are not rebased onto the
       // newer revision behind the person's back.
@@ -2055,13 +2091,13 @@ export function createController({
   // its answers plus the contact record's four fields, not from `answers`.
   async function reconcileAnswers({ answers, expectedServerRevision, fromServer = false }) {
     if (!state.selectedCaseId)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     const latest = await store.getCase(state.selectedCaseId);
     applyCase(latest);
     noteConnected();
     if (Number(latest.revision) !== Number(expectedServerRevision)) {
       show();
-      throw controllerError(
+      throw refuse(
         "CONFLICT",
         "This application changed again. Check the newest values and choose once more.",
       );
@@ -2095,9 +2131,9 @@ export function createController({
 
   async function runAction(type, payload, { personId } = {}) {
     if (!CASE_ACTIONS.includes(type))
-      throw controllerError("VALIDATION", "This step is not available.");
+      throw refuse("VALIDATION", "This step is not available.");
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
@@ -2127,7 +2163,7 @@ export function createController({
     // is ignored like any other.
     if (substepSaveInFlight) return null;
     if (!state.savedCase)
-      throw controllerError("NOT_FOUND", "Open an application first.");
+      throw refuse("NOT_FOUND", "Open an application first.");
     takeFlag();
     try {
       if (state.savedCase.stage === "draft" && state.dirty) {
@@ -2163,10 +2199,10 @@ export function createController({
   // a timed-out claim is re-read rather than re-sent.
   async function runAssistanceAction(type, itemId, note = null) {
     if (!ASSISTANCE_ACTIONS.includes(type))
-      throw controllerError("VALIDATION", "This step is not available.");
+      throw refuse("VALIDATION", "This step is not available.");
     const item = state.assistance.find((entry) => entry?.id === itemId);
     if (!item)
-      throw controllerError("NOT_FOUND", "This request is no longer on screen.");
+      throw refuse("NOT_FOUND", "This request is no longer on screen.");
     const request = {
       actionId: newActionId(),
       itemId: item.id,
@@ -2218,7 +2254,7 @@ export function createController({
   // dropped and the next attempt is a new request.
 
   function requirePresenter(message) {
-    if (!presenter()) throw controllerError("FORBIDDEN", message);
+    if (!presenter()) throw refuse("FORBIDDEN", message);
   }
 
   // Everything this window holds about the demonstration set, read again. The
@@ -2268,15 +2304,15 @@ export function createController({
       "Only the person running the session can load a checkpoint.",
     );
     if (!CHECKPOINTS.includes(checkpoint))
-      throw controllerError("VALIDATION", "This checkpoint is not available.");
+      throw refuse("VALIDATION", "This checkpoint is not available.");
     const record = state.cases.find((entry) => entry?.id === caseId);
     if (!record)
-      throw controllerError("NOT_FOUND", "This sample case is no longer on screen.");
+      throw refuse("NOT_FOUND", "This sample case is no longer on screen.");
     // A case this class created is somebody's work, never a demonstration
     // prop. The database says the same thing; this says it without a round
     // trip and in words a person can read.
     if (!record.fixture)
-      throw controllerError(
+      throw refuse(
         "VALIDATION",
         "Checkpoints belong to the sample cases only.",
       );
@@ -2313,6 +2349,18 @@ export function createController({
   }
 
   async function retryLast() {
+    if (localRetry && state.error) {
+      const run = localRetry;
+      localRetry = null;
+      state.error = null;
+      state.retryable = false;
+      show();
+      // Called before anything is awaited: a draft rebuilt here opens its tab
+      // inside the press, as viewDraft does.
+      await run();
+      return { local: true };
+    }
+    localRetry = null;
     if (!pendingAction) return null;
     // Second guard, for any path that changes the draft without going through
     // editAnswers: an envelope that no longer matches the draft is dropped, not
@@ -2404,5 +2452,6 @@ export function createController({
     openDialog,
     closeDialog,
     dismissError,
+    noteLocalFailure,
   };
 }

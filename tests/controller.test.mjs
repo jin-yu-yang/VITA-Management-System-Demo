@@ -5008,3 +5008,118 @@ test("signing Form 14446 fills its date with today, and a typed date is kept (ad
   assert.equal(controller.getState().draftAnswers.gcf_tp_date ?? null, null, "15080's dates are not filled");
   controller.stop();
 });
+
+test("a refusal is recorded before it is thrown, and offers no retry", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true }), (error) => error.code === "NOT_FOUND");
+  assert.deepEqual(controller.getState().error, { code: "NOT_FOUND", message: "Open an application first." });
+  assert.equal(controller.getState().retryable, false);
+  controller.stop();
+});
+
+test("a presenter-only refusal is recorded too", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.resetFixtures(), (error) => error.code === "FORBIDDEN");
+  assert.equal(controller.getState().error.code, "FORBIDDEN");
+  assert.match(controller.getState().error.message, /^Only the person running the session/);
+  controller.stop();
+});
+
+test("a stale checkpoint is recorded", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.loadCheckpoint({ caseId: "fixture-a", checkpoint: "no-such-point" }));
+  assert.equal(controller.getState().error.message, "This checkpoint is not available.");
+  controller.stop();
+});
+
+test("noteLocalFailure records the error, and Try again runs its retry once, synchronously", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
+    runs += 1;
+  });
+  assert.deepEqual(controller.getState().error, { code: "DRAFT", message: "The draft could not be made. Try again." });
+  assert.equal(controller.getState().retryable, true);
+  const pending = controller.retryLast();
+  assert.equal(runs, 1, "a rebuilt draft must open its tab inside the press");
+  assert.deepEqual(await pending, { local: true });
+  assert.equal(controller.getState().error, null);
+  assert.equal(await controller.retryLast(), null, "the retry is used up");
+  assert.equal(runs, 1);
+  controller.stop();
+});
+
+test("without a retry, noteLocalFailure offers Dismiss only", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(await controller.retryLast(), null);
+  controller.stop();
+});
+
+test("a newer error, a dismiss or a sign-out drops the local retry", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  let runs = 0;
+  const retry = () => {
+    runs += 1;
+  };
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  controller.dismissError();
+  assert.equal(await controller.retryLast(), null);
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  await assert.rejects(controller.runAction("SUBMIT", { confirmed: true })); // a refusal: a newer error
+  assert.equal(await controller.retryLast(), null);
+  controller.noteLocalFailure({ code: "DRAFT", message: "x" }, retry);
+  await controller.signOut();
+  assert.equal(await controller.retryLast(), null);
+  assert.equal(runs, 0);
+  controller.stop();
+});
+
+test("a local failure during a failed save falls back to unsaved and keeps the draft", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().saveState, "failed");
+  controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {});
+  const state = controller.getState();
+  assert.equal(state.saveState, "unsaved");
+  assert.equal(state.dirty, true, "the draft is still here");
+  assert.equal(state.error.code, "DRAFT");
+  assert.deepEqual(await controller.retryLast(), { local: true }, "Try again is the draft's, not the dropped save's");
+  controller.stop();
+});
+
+test("retryLast still replays a pending action when no local retry is pending", async () => {
+  const store = fakeStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.editAnswers({ tp_first_name: "Mei" });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveAnswers());
+  assert.equal(controller.getState().retryable, true);
+  const replay = await controller.retryLast();
+  assert.ok(replay && !replay.local, "a replayed save is not a local retry");
+  controller.stop();
+});
