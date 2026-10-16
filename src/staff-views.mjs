@@ -550,7 +550,7 @@ function boardRow(record, person, ui) {
   if (!rights.claimPreparation.allowed && !rights.claimReview.allowed)
     actions.push(button("Open", "open-case", "secondary", `data-case-id="${id}"`));
   const own = mine(record, person?.id);
-  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
+  return `<tr class="board-row${own ? " own" : ""}"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${id}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}</td><td>${listPhone(record, person, "board-phone")}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerId, record.preparerName, person?.id)}</td><td>${who(record.reviewerId, record.reviewerName, person?.id)}</td><td class="board-updated">${esc(record.updatedAt ? relativeDay(record.updatedAt, ui.now ?? Date.now()) : "No updates yet")}</td><td class="board-actions"><div class="board-row-actions">${actions.join("")}</div></td></tr>`;
 }
 
 // Your own rows first, otherwise in the order the store returned them.
@@ -585,7 +585,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
         ? `Nothing of yours is ${chosen.status === "preparation" ? "waiting for preparation" : "waiting for review"}.`
         : EMPTY_TAB[chosen.status];
   const body = shown.length
-    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
+    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Phone</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
         .map((record) => boardRow(record, person, ui))
         .join("")}</tbody></table></div>`
     : `<div class="empty-state">${icon("folder")}<p>${emptyText}</p>${when(
@@ -602,7 +602,7 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
   )}</div>${when(
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this board is read-only.</p>`,
-  )}${body}<p class="field-note board-note">${icon("lock")} This board shows workflow only: no taxpayer names, no addresses and no document contents. Submitted, approved and closed cases are not on these tabs; find one by its Application ID.</p></section>`;
+  )}${body}<p class="field-note board-note">${icon("lock")} This board shows workflow only: no taxpayer names, no addresses and no document contents. Submitted, approved and closed cases are not on these tabs; find one by its Application ID. Phone numbers stay masked: on cases you work on, hover over or tab to a number to see it.</p></section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +639,15 @@ export function phoneMask(value, allowed, id = "") {
     return `<span class="phone-mask is-locked" title="${esc(PHONE_LOCKED)}">${dots}<span class="sr-only">${esc(said)}</span>${icon("lock")}</span>`;
   }
   return `<span class="phone-mask"${id ? ` id="${esc(id)}"` : ""} tabindex="0">${dots}<span class="phone-full">${esc(full)}</span>${icon("eye")}</span>`;
+}
+
+// A client phone in a list: the work board and the case pool (D5). The case
+// page's mask and its one rule, with a per-row id so a redraw puts focus back
+// on a revealed number. An empty phone is "—" like any other empty list cell,
+// not the contact card's "Not given".
+export function listPhone(record, person, prefix) {
+  if (!String(record?.phone ?? "").trim()) return "—";
+  return phoneMask(record.phone, canSeeContact(record, person), `${prefix}-${record.id}`);
 }
 
 // A refused or interrupted action, said beside the work it belongs to rather

@@ -27,6 +27,7 @@ import {
   materialsCard,
   documentChecklist,
   phoneMask,
+  listPhone,
   htmlRow,
   PHONE_LOCKED,
 } from "../src/staff-views.mjs";
@@ -1283,6 +1284,90 @@ test("a board row shows the client number before the reference, a draft says non
     /<span class="client-number">#093<\/span><button class="board-reference" data-action="open-case" data-case-id="n-1">VT-NNNN-0093<\/button>/,
   );
   assert.match(html, /No number yet/);
+});
+
+// The masked phone on the work board (D5, DESIGN.md §8): the case page's
+// mask and rule, one cell per row, after Stage.
+const PHONE = "2155550123";
+const FULL = "(215) 555-0123";
+const OLIVE = { id: "olive", name: "Olive", capabilities: ["followup"] };
+const PHONE_BOARD = [
+  boardCase({ id: "open-1", reference: "VT-PHON-0001", phone: PHONE }),
+  boardCase({ id: "mine-1", reference: "VT-PHON-0002", stage: "preparing", preparerId: "alex", phone: PHONE }),
+  boardCase({ id: "none-1", reference: "VT-PHON-0003", phone: null }),
+  boardCase({ id: "blank-1", reference: "VT-PHON-0004", phone: "" }),
+  boardCase({ id: "spouse-1", reference: "VT-PHON-0005", phone: null, spousePhone: "2155550188" }),
+];
+const phoneBoard = (person) =>
+  renderStaffBoard(PHONE_BOARD, PEOPLE, { person, filters: { search: "VT-PHON" } });
+const boardRowOf = (html, reference) =>
+  html.split('<tr class="board-row').slice(1).find((row) => row.includes(reference))?.split("</tr>")[0] ?? "";
+const attributeValues = (html) => [...html.matchAll(/="([^"]*)"/g)].map((match) => match[1]);
+
+test("listPhone: a dash with no phone, the mask with a per-row id otherwise", () => {
+  for (const phone of [undefined, null, "", "   "])
+    assert.equal(listPhone({ id: "case-9", phone, preparerId: "alex" }, ALEX, "board-phone"), "—");
+  const mine = listPhone({ id: "case-9", phone: PHONE, preparerId: "alex" }, ALEX, "board-phone");
+  assert.equal(mine, phoneMask(PHONE, true, "board-phone-case-9"));
+  const theirs = listPhone({ id: "case-9", phone: PHONE, preparerId: "morgan" }, ALEX, "board-phone");
+  assert.equal(theirs, phoneMask(PHONE, false));
+  assert.doesNotMatch(theirs, /id="/);
+});
+
+test("the board's Phone column comes right after Stage", () => {
+  const html = phoneBoard(ALEX);
+  const headers = [...html.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map((match) => match[1]);
+  assert.deepEqual(headers.slice(0, 8), ["Client", "Stage", "Phone", "Language", "Service", "Preparer", "Reviewer", "Updated"]);
+  const row = boardRowOf(html, "VT-PHON-0001");
+  assert.ok(row.indexOf('class="badge') < row.indexOf("phone-mask"), "the phone is not after the stage");
+  assert.ok(row.indexOf("phone-mask") < row.indexOf("English"), "the phone is not before the language");
+});
+
+test("an available case and someone else's case show the locked phone", () => {
+  for (const [person, reference] of [[ALEX, "VT-PHON-0001"], [MORGAN, "VT-PHON-0002"]]) {
+    const row = boardRowOf(phoneBoard(person), reference);
+    assert.match(row, /<span class="phone-mask is-locked" title="Claim this case to see the full number">/);
+    assert.match(row, /\(•••\) •••-0123/);
+    assert.doesNotMatch(row, /tabindex/);
+    assert.doesNotMatch(row, /id="board-phone-/);
+    assert.doesNotMatch(row, /555/, `the number reached ${person.name}'s locked row`);
+  }
+});
+
+test("the viewer's own case, and any case for office staff, show the revealable phone", () => {
+  for (const [person, reference, id] of [
+    [ALEX, "VT-PHON-0002", "mine-1"],
+    [OLIVE, "VT-PHON-0001", "open-1"],
+    [OLIVE, "VT-PHON-0002", "mine-1"],
+  ]) {
+    const row = boardRowOf(phoneBoard(person), reference);
+    assert.match(row, new RegExp(`<span class="phone-mask" id="board-phone-${id}" tabindex="0">`));
+    assert.ok(row.includes(`<span class="phone-full">${FULL}</span>`));
+    for (const value of attributeValues(row))
+      assert.doesNotMatch(value, /555/, `an attribute carries the number: ${value}`);
+  }
+});
+
+test("a listed case with no phone shows a dash, and a spouse phone is never listed", () => {
+  const html = phoneBoard(OLIVE);
+  for (const reference of ["VT-PHON-0003", "VT-PHON-0004", "VT-PHON-0005"]) {
+    const row = boardRowOf(html, reference);
+    assert.doesNotMatch(row, /phone-mask/);
+    assert.match(row, /<td>—<\/td>/);
+  }
+  assert.doesNotMatch(html, /0188/, "a spouse phone reached the board");
+});
+
+test("in a board row the case link comes before the phone", () => {
+  const row = boardRowOf(phoneBoard(ALEX), "VT-PHON-0002");
+  assert.ok(row.indexOf('class="board-reference"') > -1);
+  assert.ok(row.indexOf('class="board-reference"') < row.indexOf("phone-mask"));
+});
+
+test("the board's note keeps workflow only and says phones stay masked", () => {
+  const html = phoneBoard(ALEX);
+  assert.match(html, /This board shows workflow only: no taxpayer names, no addresses and no document contents\./);
+  assert.match(html, /Phone numbers stay masked: on cases you work on, hover over or tab to a number to see it\./);
 });
 
 test("the board search box asks for a client number or an Application ID", () => {

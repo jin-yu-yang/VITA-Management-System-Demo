@@ -2992,6 +2992,133 @@ async function runPermutation(t, roles) {
       await waitForText(client, classReference, ARRIVAL_MS);
     });
 
+    // D5 on the board: a claim unlocks the row's phone where the claimer is
+    // looking, with no reload. A board claim moves the claiming window to the
+    // case, so a second window of the same persona watches the row; it finds
+    // the case by search, which spans every stage, so the row stays listed
+    // when the claim moves it off the Available tab.
+    await phase("a claim unlocks the phone on the board in another window", async () => {
+      const target = (await fixtureCases(fixture)).find((row) => row.fixture_key === "preparation_ready");
+      assert.ok(target, "the preparation_ready sample is missing");
+      const maskId = `board-phone-${target.id}`;
+      const watcher = await openWindow(staffEngine);
+      await loginTestUser({ page: watcher.page, actor: presenter, fixture, heading: WORK_BOARD_HEADING });
+      await watchAlerts(watcher.page);
+      await choosePersona(watcher.page, alex);
+      await openBoard(watcher.page);
+      await findOnBoard(watcher.page, target.reference);
+      const rowMask = (page) =>
+        page.evaluate((wanted) => {
+          const row = [...document.querySelectorAll("tr.board-row")].find((tr) =>
+            tr.querySelector("button.board-reference")?.textContent.includes(wanted),
+          );
+          const mask = row?.querySelector(".phone-mask");
+          return row
+            ? {
+                locked: mask?.classList.contains("is-locked") ?? null,
+                id: mask?.id || null,
+                focusable: mask?.hasAttribute("tabindex") ?? null,
+                html: row.outerHTML,
+              }
+            : null;
+        }, target.reference);
+
+      // 1. Before the claim: locked, no id, no tab stop, no number.
+      const before = await rowMask(watcher.page);
+      assert.ok(before, "the case is not on the watching window's board");
+      assert.deepEqual(
+        { locked: before.locked, id: before.id, focusable: before.focusable },
+        { locked: true, id: null, focusable: false },
+      );
+      assert.doesNotMatch(before.html, SAMPLE_PHONE, "a locked row carries the number");
+      assert.doesNotMatch(before.html, /2155550\d\d\d/, "a locked row carries the stored number");
+
+      // 2. Alex claims from the board in the other window.
+      await choosePersona(staff, alex);
+      await openBoard(staff);
+      await findOnBoard(staff, target.reference);
+      await waitForQuiet(staff);
+      await staff
+        .locator(`[data-case-action="CLAIM_PREPARATION"][data-case-id="${target.id}"]`)
+        .click({ timeout: CLICK_MS });
+      await waitForCaseWorkspace(staff, target.reference);
+
+      // 3. The watching window: the same row unlocks in place.
+      await waitFor(
+        watcher.page,
+        "the row's phone to unlock without a reload",
+        (id) => {
+          const mask = document.getElementById(id);
+          return Boolean(mask) && mask.getAttribute("tabindex") === "0" && Boolean(mask.querySelector(".phone-full"));
+        },
+        maskId,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        await watcher.page.locator("#field-board-search").inputValue(),
+        target.reference,
+        "the watching window's search did not survive the redraw",
+      );
+
+      // 4. The claiming window, back on the board: revealable there too.
+      await openBoard(staff);
+      await findOnBoard(staff, target.reference);
+      await waitFor(
+        staff,
+        "the claiming window's row to show the revealable phone",
+        (id) => {
+          const mask = document.getElementById(id);
+          return Boolean(mask) && mask.getAttribute("tabindex") === "0";
+        },
+        maskId,
+        ARRIVAL_MS,
+      );
+      const after = await rowMask(staff);
+      assert.deepEqual(
+        { locked: after?.locked, id: after?.id, focusable: after?.focusable },
+        { locked: false, id: maskId, focusable: true },
+      );
+
+      // 5. Tab from the case link lands on the phone and reveals it.
+      await waitForQuiet(watcher.page);
+      await watcher.page.mouse.move(1, 1);
+      await watcher.page.evaluate(
+        (wanted) =>
+          [...document.querySelectorAll("button.board-reference")]
+            .find((button) => button.textContent.includes(wanted))
+            ?.focus(),
+        target.reference,
+      );
+      await watcher.page.keyboard.press("Tab");
+      const landed = await watcher.page.evaluate(() => ({
+        id: document.activeElement?.id ?? null,
+        full: (document.activeElement?.querySelector(".phone-full")?.getBoundingClientRect().width ?? 0) > 4,
+      }));
+      assert.deepEqual(landed, { id: maskId, full: true }, "Tab from the case link did not reveal the phone");
+
+      // 6. A realtime redraw keeps the revealed number revealed (spec:
+      // "A realtime update keeps a revealed listed number revealed"). A
+      // no-change bump on the case, from outside the window, rebuilds the
+      // board; the per-row id puts focus back on the mask.
+      await watcher.page.evaluate(() => document.querySelector("#main")?.setAttribute("data-phone-marker", "1"));
+      await fixture.database.sql("update public.cases set revision = revision + 1 where id=$1", [target.id]);
+      await waitFor(
+        watcher.page,
+        "the realtime change to rebuild the board",
+        () => Boolean(document.querySelector("#main")) && !document.querySelector("#main[data-phone-marker]"),
+        undefined,
+        ARRIVAL_MS,
+      );
+      const kept = await watcher.page.evaluate(() => ({
+        id: document.activeElement?.id ?? null,
+        full: (document.activeElement?.querySelector(".phone-full")?.getBoundingClientRect().width ?? 0) > 4,
+      }));
+      assert.deepEqual(kept, { id: maskId, full: true }, "a realtime redraw lost the revealed phone");
+
+      assertConsoleQuiet(watcher, { name: "board phone window" });
+      await watcher.context.close();
+    });
+
     // After the reset, which compares case sets. The case it makes is never
     // opened on a staff screen.
     //

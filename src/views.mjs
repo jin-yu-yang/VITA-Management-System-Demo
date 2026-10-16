@@ -292,6 +292,7 @@ export function staffScreen(state) {
         "",
         renderCasePool(cases, people, {
           list: state.lists?.cases ?? "ready",
+          person,
           filters: state.boardFilters,
           now: Date.now(),
         }),
