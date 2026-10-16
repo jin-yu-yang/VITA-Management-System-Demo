@@ -2541,17 +2541,19 @@ async function runPermutation(t, roles) {
       assert.match(assistedReference, REFERENCE_PATTERN);
       assert.equal(await workspaceCaseCount(fixture), casesBefore + 1, "Save draft made more than one case");
       // The landed save's toast sits above Add a case's bar while that bar is
-      // sticky and on screen, never over it.
+      // sticky and on screen, never over it. The toast is raised only when the
+      // save lands and lasts 5 s, and nothing here presses anything between
+      // the save and this wait (the guard runs only before an action), so it
+      // is still showing. A toast that never shows fails the wait (it throws).
       const savedToast = await waitFor(
         staff,
         "the saved draft's toast",
         () => document.querySelector("#toast.visible")?.textContent.trim() === "The draft is saved. Nobody was emailed.",
         undefined,
         RENDER_MS,
-      ).then(
-        () => true,
-        () => false,
-      );
+      ).then(() => true);
+      assert.ok(savedToast, "the saved draft's toast never showed on Add a case");
+      assert.equal(await staff.locator(".add-case-bar").count(), 1, "Add a case has no bar to keep clear");
       const clear = await staff.evaluate(() => {
         const toast = document.querySelector("#toast.visible")?.getBoundingClientRect();
         const bar = document.querySelector(".add-case-bar")?.getBoundingClientRect();
