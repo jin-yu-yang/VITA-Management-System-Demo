@@ -2552,12 +2552,17 @@ async function runPermutation(t, roles) {
         undefined,
         RENDER_MS,
       ).then(() => true);
-      assert.ok(savedToast, "the saved draft's toast never showed on Add a case");
       assert.equal(await staff.locator(".add-case-bar").count(), 1, "Add a case has no bar to keep clear");
+      assert.ok(
+        await staff.evaluate(() => {
+          const r = document.querySelector(".add-case-bar").getBoundingClientRect();
+          return r.top < window.innerHeight && r.bottom > 0;
+        }),
+        "Add a case's sticky bar is off screen when the toast shows",
+      );
       const clear = await staff.evaluate(() => {
-        const toast = document.querySelector("#toast.visible")?.getBoundingClientRect();
-        const bar = document.querySelector(".add-case-bar")?.getBoundingClientRect();
-        if (!toast || !bar || bar.top >= window.innerHeight) return true;
+        const toast = document.querySelector("#toast.visible").getBoundingClientRect();
+        const bar = document.querySelector(".add-case-bar").getBoundingClientRect();
         // Above the bar, or (a bar not stuck to the bottom) nowhere over it.
         return (
           toast.bottom <= bar.top + 1 ||
