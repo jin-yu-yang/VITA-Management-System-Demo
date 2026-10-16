@@ -237,6 +237,7 @@ dropped).
   never twice; the work board, case pool and Follow-ups show them as letters through `languageCell`
   (`ui.mjs`), with the names on hover and for screen readers, and their language filters match any
   of them (`speaksLanguage`). The progress page lists the full names.
+- **Form 14446** (openspec change `add-form-14446-consent`): 0.4 `before.virtual` asks the virtual-process consent (`vc_agree`, a required one-option checkbox). Until it is ticked, `resolveSubstep` (`intake-form.mjs`, `consented`) sends every place after "Before you start" back to 0.4, the rail shows those steps locked, and Continue is disabled. Add a case is never locked. 1.5 `about.sign` shows the details the form prints, then asks `vc_review` and the signatures; the controller fills `vc_tp_date`/`vc_sp_date` with today on a first signature. "View Draft Form 14446" (`draft-virtual-consent.mjs`) fills page 3 of PCDC's own form, XFA-stripped by `tools/strip-xfa.mjs`, in English and 繁體; `server.mjs` serves the two 14446 PDFs by name.
 
 **Redraw rules** (in `app.mjs`). The page is still rebuilt with `innerHTML`, so the form limits
 when that may happen:
@@ -463,7 +464,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (969) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (997) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
