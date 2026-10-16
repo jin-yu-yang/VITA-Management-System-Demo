@@ -178,6 +178,8 @@ export const TEXT = Object.freeze({
   "apps.not_found": { en: "We could not find that Application ID", zh: "找不到这个申请编号" },
   "apps.not_found_body": { en: "Check the characters and try again. This search only covers applications started with the email address you signed in with.", zh: "请检查输入的字符后再试一次。此搜索只包括用您登录的电子邮箱开始的申请。" },
   "apps.empty": { en: "No applications yet", zh: "还没有申请" },
+  "apps.loading": { en: "Loading your applications…", zh: "正在载入您的申请…" },
+  "apps.unloaded": { en: "Your applications couldn't load.", zh: "无法载入您的申请。" },
   "apps.empty_body": { en: "Start one whenever you are ready. Nothing is sent to the office until you submit it.", zh: "准备好后随时可以开始。在您提交之前，不会向办公室发送任何内容。" },
   "apps.start": { en: "Start a new application", zh: "开始新的申请" },
   "apps.start_note": { en: "This creates one new fictional application. Reopening, refreshing or filling a form never creates another.", zh: "这会建立一份新的虚构申请。重新打开、刷新页面或填写表格都不会再建立另一份。" },

@@ -60,6 +60,8 @@ const paths = {
   // The toast's kinds (design D4): success is `check`.
   info: "M12 11v6M12 7h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   warning: "M12 3 2 21h20L12 3ZM12 10v5M12 18h.01",
+  // The one loading pattern (design D6).
+  spinner: "M21 12a9 9 0 1 1-9-9",
 };
 
 // Every name the icon table knows. A name that is not here falls back to the
@@ -67,6 +69,12 @@ const paths = {
 export const ICON_NAMES = Object.freeze(Object.keys(paths));
 export const icon = (name, cls = "") =>
   `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
+// One loading pattern (design D6): a spinner and a sentence, as a status.
+export const loadingLine = (text) =>
+  `<p class="loading-line" role="status">${icon("spinner", "spin")}<span>${esc(text)}</span></p>`;
+// A list that never loaded: said plainly, under the banner's Try again.
+export const unloadedLine = (text) =>
+  `<p class="unloaded-line">${icon("help")}<span>${esc(text)}</span></p>`;
 export const button = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${text}</button>`;
 

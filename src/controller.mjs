@@ -265,6 +265,9 @@ export function createController({
     authError: null,
     // Records
     cases: [],
+    // Whether each list has been read (design D6): a first load that failed
+    // must never look like an empty list.
+    lists: { cases: "loading", assistance: "loading" },
     people: [],
     // The caller's own workspace row, read only for a presenter: it is where
     // the fixture generation lives, and the presenter panel shows it.
@@ -678,6 +681,7 @@ export function createController({
 
   async function loadList() {
     state.cases = await store.listCases();
+    state.lists.cases = "ready";
     noteConnected();
   }
 
@@ -688,8 +692,12 @@ export function createController({
   const presenter = () => state.principal?.access === "presenter";
 
   async function loadAssistance() {
-    if (!presenter()) return;
+    if (!presenter()) {
+      state.lists.assistance = "ready";
+      return;
+    }
     state.assistance = await store.listAssistance();
+    state.lists.assistance = "ready";
     noteConnected();
   }
 
@@ -750,7 +758,10 @@ export function createController({
     // with nothing, leaving a click that did nothing and no explanation. The
     // next deliberate action clears it (every dispatch, save, navigation and
     // the dismiss control do), and so does a successful identity load.
-    if (failure) noteFailure(failure);
+    if (failure) {
+      noteFailure(failure);
+      noteUnloaded();
+    }
     persistSession();
     show();
   }
@@ -860,6 +871,40 @@ export function createController({
     show();
   }
 
+  // Everything the first load reads (design D6): the cases, and for a
+  // presenter the people, the help requests and the workspace.
+  async function loadData() {
+    await loadList();
+    if (state.principal?.access === "presenter") {
+      state.people = await store.listPeople();
+      await loadAssistance();
+      await loadWorkspace();
+    } else {
+      state.lists.assistance = "ready";
+    }
+  }
+
+  // A list that never loaded and whose read failed says so; one that loaded
+  // once keeps what it shows. Try again reads everything again.
+  function noteUnloaded() {
+    let failed = false;
+    for (const key of ["cases", "assistance"])
+      if (state.lists[key] !== "ready") {
+        state.lists[key] = "failed";
+        failed = true;
+      }
+    if (failed)
+      setLocalRetry(async () => {
+        try {
+          await loadData();
+        } catch (error) {
+          noteFailure(error);
+          noteUnloaded();
+        }
+        show();
+      });
+  }
+
   // Identity first, and only then the subscription: a refused or unreachable
   // principal must never open a channel, and staff reads happen only when the
   // principal says staff.
@@ -910,15 +955,11 @@ export function createController({
     // unless this window was already somewhere this principal may be.
     if (!screens().includes(state.screen)) state.screen = homeScreen();
     try {
-      await loadList();
-      if (principal.access === "presenter") {
-        state.people = await store.listPeople();
-        await loadAssistance();
-        await loadWorkspace();
-      }
+      await loadData();
       state.error = null;
     } catch (error) {
       noteFailure(error);
+      noteUnloaded();
     }
     subscribe();
     if (state.selectedCaseId) {
@@ -1071,6 +1112,7 @@ export function createController({
     state.session = "none";
     state.principal = null;
     state.cases = [];
+    state.lists = { cases: "loading", assistance: "loading" };
     state.people = [];
     state.assistance = [];
     state.workspace = null;
@@ -2386,6 +2428,7 @@ export function createController({
     return {
       ...state,
       cases: [...state.cases],
+      lists: { ...state.lists },
       people: [...state.people],
       assistance: [...state.assistance],
       draftAnswers: { ...state.draftAnswers },

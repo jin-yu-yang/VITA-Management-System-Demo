@@ -35,6 +35,8 @@ import {
   clientNumberLabel,
   clientNumberTag,
   languageCell,
+  loadingLine,
+  unloadedLine,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -564,6 +566,10 @@ const yoursFirst = (records, personId) =>
  * @param {object}   ui     `{person|personId, filters, busy, now, searchDraft}`
  */
 export function renderStaffBoard(cases = [], people = [], ui = {}) {
+  if (ui.list === "loading" || ui.list === "failed")
+    return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">Work board</h2></div>${
+      ui.list === "loading" ? loadingLine("Loading cases…") : unloadedLine("The cases couldn't load.")
+    }</section>`;
   const roster = Array.isArray(people) ? people : [];
   const person = ui.person ?? roster.find((entry) => entry?.id === ui.personId) ?? null;
   const chosen = boardFilters(ui.filters);

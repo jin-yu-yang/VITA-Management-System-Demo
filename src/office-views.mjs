@@ -29,6 +29,8 @@ import {
   clientNumberTag,
   formatTime,
   languageCell,
+  loadingLine,
+  unloadedLine,
 } from "./ui.mjs";
 import {
   adminEligibility,
@@ -213,6 +215,10 @@ function queueRow(row, person, ui) {
  */
 export function renderFollowups(cases = [], assistance = [], ui = {}) {
   const view = ui ?? {};
+  if (view.list === "loading" || view.list === "failed")
+    return `<section class="panel office-queue" aria-labelledby="office-queue-title"><div class="section-head"><div><h2 id="office-queue-title" tabindex="-1">Office queue</h2></div></div>${
+      view.list === "loading" ? loadingLine("Loading cases…") : unloadedLine("The cases couldn't load.")
+    }</section>`;
   const person = view.person ?? null;
   const chosen = officeFilters(view.filters);
   const rows = followupQueue(cases, assistance, view.now ?? Date.now());

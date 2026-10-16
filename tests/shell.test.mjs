@@ -94,6 +94,12 @@ test("no legacy .case-tabs button selector styles the case tabs", () => {
   assert.doesNotMatch(css, /\.case-tabs\s+button/);
 });
 
+test("spinners stand still under reduced motion", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.icon\.spin \{ animation: vt-spin [^}]*\}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.icon\.spin \{ animation: none; \}\s*\}/);
+});
+
 test("the client top bar: logo home, language, help, save on intake, sign out", () => {
   const signedIn = { principal: { access: "applicant" }, screen: "applications" };
   const html = clientHeader(signedIn);
@@ -622,7 +628,7 @@ test("Add a case is the office draft's page, a new draft or a saved one, once th
   assert.match(fresh, /<h1>Add a case<\/h1>/);
   assert.match(staffScreen(addState({ workspace: { defaultIntakeVersion: 2 } })), /id="add-case-v2-form"/);
   const loading = staffScreen(addState({ workspace: null }));
-  assert.match(loading, /<p class="muted" role="status">Loading…<\/p>/);
+  assert.match(loading, /<p class="loading-line" role="status">[\s\S]*<span>Loading…<\/span><\/p>/);
   assert.doesNotMatch(loading, /<form id="(assisted-intake-form|add-case-v2-form)"/);
   // A saved office draft opens on the page.
   const draftV2 = { id: "c2", reference: "VT-TWO2-0002", stage: "draft", ownerUserId: null, intakeVersion: 2, revision: 1, answers: {}, documentCards: [], materials: [], internalHistory: [] };

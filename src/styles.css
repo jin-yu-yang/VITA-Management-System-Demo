@@ -5273,3 +5273,21 @@ html:lang(zh-Hant) {
   color: var(--vt-stage-amend);
 }
 /* end part 4d */
+
+.loading-line,
+.unloaded-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 24px 0;
+  color: #6c6886;
+  font-size: 15px;
+}
+.loading-line .icon,
+.unloaded-line .icon { flex: none; width: 20px; height: 20px; }
+.unloaded-line { color: #8a3b34; }
+@keyframes vt-spin { to { transform: rotate(360deg); } }
+.icon.spin { animation: vt-spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .icon.spin { animation: none; }
+}

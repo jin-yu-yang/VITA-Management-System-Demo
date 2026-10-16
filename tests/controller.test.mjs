@@ -5123,3 +5123,55 @@ test("retryLast still replays a pending action when no local retry is pending", 
   assert.ok(replay && !replay.local, "a replayed save is not a local retry");
   controller.stop();
 });
+
+// ---------------------------------------------------------------------------
+// Lists that are loading or couldn't load (design D6)
+// ---------------------------------------------------------------------------
+
+const offlineList = () => async () => {
+  throw Object.assign(new Error("offline"), { code: "OFFLINE" });
+};
+
+test("a list that never loaded says so, and Try again reads everything again", async () => {
+  const store = presenterStore({ cases: [sampleCase()] });
+  const realList = store.listCases;
+  store.listCases = offlineList();
+  const { controller } = build({ store });
+  assert.equal(controller.getState().lists.cases, "loading");
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "failed");
+  assert.equal(controller.getState().retryable, true);
+  store.listCases = realList;
+  store.calls.length = 0;
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  const state = controller.getState();
+  assert.equal(state.lists.cases, "ready");
+  assert.equal(state.lists.assistance, "ready");
+  assert.equal(state.cases.length, 1);
+  assert.ok(store.calls.includes("listPeople"), "the people are read again");
+  assert.ok(state.people.length > 0);
+  assert.ok(state.workspace, "the workspace is read again");
+  controller.stop();
+});
+
+test("a list that loaded once keeps its cases when a reload fails", async () => {
+  const store = fakeStore({ cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "draft", revision: 1, answers: {} }] });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.equal(controller.getState().lists.cases, "ready");
+  store.listCases = offlineList();
+  await controller.refresh();
+  assert.equal(controller.getState().lists.cases, "ready");
+  assert.equal(controller.getState().cases.length, 1);
+  controller.stop();
+});
+
+test("an applicant's help-request list counts as loaded, and sign-out starts over", async () => {
+  const store = fakeStore();
+  const { controller } = build({ store });
+  await controller.start();
+  assert.deepEqual(controller.getState().lists, { cases: "ready", assistance: "ready" });
+  await controller.signOut();
+  assert.deepEqual(controller.getState().lists, { cases: "loading", assistance: "loading" });
+  controller.stop();
+});

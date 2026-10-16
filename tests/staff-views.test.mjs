@@ -1841,3 +1841,13 @@ test("staff see an unmarried client's who answers as Yes/No, with the wording th
   const docs = checklist(v2Case({ answers: { on_visa: ["me"] } }));
   assert.match(docs, /Asked by: Were you in the U\.S\. on a visa in 2025\?/);
 });
+
+test("the work board while its cases load, and when they couldn't", () => {
+  const loading = renderStaffBoard([], PEOPLE, { person: ALEX, list: "loading" });
+  assert.match(loading, /Loading cases…/);
+  assert.doesNotMatch(loading, /Nothing to claim right now|data-filter="status"|Showing 0/);
+  const failed = renderStaffBoard([], PEOPLE, { person: ALEX, list: "failed" });
+  assert.match(failed, /The cases couldn&#39;t load\./);
+  assert.doesNotMatch(failed, /Nothing to claim right now/);
+  assert.match(renderStaffBoard([], PEOPLE, { person: ALEX }), /Nothing to claim right now/, "ready by default");
+});

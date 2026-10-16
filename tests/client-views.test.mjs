@@ -1632,3 +1632,12 @@ test("the draft banner's sentences speak the screen's language", () => {
   assert.equal(sentence("The draft could not be made. Try again.", "zh-Hans"), "无法生成草稿。请再试一次。");
   assert.equal(sentence("The draft font could not be checked. Try again later.", "zh-Hans"), "无法核对草稿所用的字体。请稍后再试。");
 });
+
+test("the client's applications while they load, and when they couldn't", () => {
+  const loading = applicationsScreen(baseState({ cases: [], lists: { cases: "loading", assistance: "ready" } }));
+  assert.match(loading, /Loading your applications…/);
+  assert.doesNotMatch(loading, /No applications yet/);
+  const failed = applicationsScreen(baseState({ cases: [], lists: { cases: "failed", assistance: "ready" }, lang: "zh-Hans" }));
+  assert.match(failed, /无法载入您的申请。/);
+  assert.match(applicationsScreen(baseState({ cases: [] })), /No applications yet/, "no lists means loaded");
+});

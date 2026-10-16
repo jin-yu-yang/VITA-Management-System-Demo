@@ -1,4 +1,4 @@
-import { esc, icon, button, officeContact, formatClientNumber } from "./ui.mjs";
+import { esc, icon, button, officeContact, formatClientNumber, loadingLine } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
@@ -213,6 +213,13 @@ export function staffSidebar(state, person, office) {
 // the renderers never see a bare id.
 const OFFICE_SCREENS = ["office-cases", "office-add-case"];
 
+// The Follow-ups queue reads the cases and the help requests; it is ready only
+// when both are (a list that was never given counts as loaded).
+const combineLists = (...states) => {
+  const all = states.map((s) => s ?? "ready");
+  return all.includes("failed") ? "failed" : all.includes("loading") ? "loading" : "ready";
+};
+
 export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
@@ -281,7 +288,11 @@ export function staffScreen(state) {
         "Case pool",
         "Every case in this workspace, in every stage.",
         "",
-        renderCasePool(cases, people, { filters: state.boardFilters, now: Date.now() }),
+        renderCasePool(cases, people, {
+          list: state.lists?.cases ?? "ready",
+          filters: state.boardFilters,
+          now: Date.now(),
+        }),
         addCaseAction,
       );
     return office
@@ -295,6 +306,7 @@ export function staffScreen(state) {
             (state.assistance ?? []).map((item) => decorateAssistance(item, people)),
             {
               person,
+              list: combineLists(state.lists?.cases, state.lists?.assistance),
               filters: state.boardFilters,
               busy: state.busy,
               now: Date.now(),
@@ -309,6 +321,7 @@ export function staffScreen(state) {
           "",
           renderStaffBoard(cases, people, {
             person,
+            list: state.lists?.cases ?? "ready",
             filters: state.boardFilters,
             busy: state.busy,
             searchDraft: state.boardSearchDraft,
@@ -328,7 +341,7 @@ export function staffScreen(state) {
 function addCasePage(state, person, people) {
   const saved = state.savedCase ?? null;
   if (!saved && !state.officeDraft && !state.workspace)
-    return '<p class="muted" role="status">Loading…</p>';
+    return loadingLine("Loading…");
   return renderAddCaseV2({
     person,
     busy: state.busy,

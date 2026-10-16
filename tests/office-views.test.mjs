@@ -796,3 +796,17 @@ test("Add a case is never locked by the 14446 gate (add-form-14446-consent)", ()
   assert.match(subOf(html, "about.you"), /id="field-office-tp_first_name"/);
   assert.match(html, /data-substep="before\.virtual"/);
 });
+
+test("Follow-ups while the cases or help requests load, and when they couldn't", () => {
+  const loading = renderFollowups([], [], { person: ALEX, list: "loading", filters: {}, busy: false, now: NOW });
+  assert.match(loading, /Loading cases…/);
+  assert.doesNotMatch(loading, /Nothing is waiting on the office right now|data-filter="officeKind"|0 open/);
+  const failed = renderFollowups([], [], { person: ALEX, list: "failed", filters: {}, busy: false, now: NOW });
+  assert.match(failed, /The cases couldn&#39;t load\./);
+  assert.doesNotMatch(failed, /Nothing is waiting on the office right now/);
+  assert.match(
+    renderFollowups([], [], { person: ALEX, filters: {}, busy: false, now: NOW }),
+    /Nothing is waiting on the office right now\./,
+    "ready by default",
+  );
+});

@@ -9,6 +9,8 @@ import {
   fieldId,
   officeContact,
   formatClientNumber,
+  loadingLine,
+  unloadedLine,
 } from "./ui.mjs";
 import { describeStage } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
@@ -132,11 +134,18 @@ export function applicationsScreen(state) {
     state.savedCase?.id === entry.id
       ? formatTime(state.savedCase.history?.at(-1)?.createdAt, lang)
       : "";
-  const list = shown.length
+  const listState = state.lists?.cases ?? "ready";
+  const loaded = shown.length
     ? `<div class="application-list">${shown.map((entry) => applicationRow(entry, updatedFor(entry), lang)).join("")}</div>`
     : query
       ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${say("apps.not_found")}</h3><p>${say("apps.not_found_body")}</p></div></div>`
       : `<div class="panel empty-state">${icon("folder")}<h2>${say("apps.empty")}</h2><p>${say("apps.empty_body")}</p></div>`;
+  const list =
+    listState === "loading"
+      ? loadingLine(t("apps.loading", {}, lang))
+      : listState === "failed"
+        ? unloadedLine(t("apps.unloaded", {}, lang))
+        : loaded;
   return `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${say("apps.overline")}</span><h1>${say("apps.title")}</h1><p>${say("apps.intro")}</p></div><form id="lookup-form" class="lookup-form">${input(
     t("id.application", {}, lang),
     "lookup",
