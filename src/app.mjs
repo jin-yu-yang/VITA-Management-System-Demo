@@ -156,6 +156,9 @@ if (!config) {
   // at the same place keeps focus, caret and scroll; one at a new place (a new
   // sub-step, or entering or leaving the form) starts at the top.
   let lastPlace = null;
+  // The connection as the last render drew it: "back online" is said only
+  // after a real loss, never on the first connection (design D7).
+  let drawnConnection = "unknown";
   // What is half-typed into a staff form, by field id. A re-render can arrive
   // at any moment — a realtime change, a persona click, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. What
@@ -312,6 +315,10 @@ if (!config) {
     lastPlace = place;
     // The page under the toast may have changed (a staff screen, Add a case's bar).
     placeToast();
+    // Back online after a real loss, never on the first connection (design D7).
+    if (["offline", "reconnecting"].includes(drawnConnection) && state.connection === "online")
+      notify("info", t("toast.back_online", {}, lang));
+    drawnConnection = state.connection;
   }
 
   // ---- the version-2 form's redraw hold (spec §2.4) ----------------------

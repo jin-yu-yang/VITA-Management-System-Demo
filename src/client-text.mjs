@@ -82,6 +82,7 @@ export const TEXT = Object.freeze({
   "signin.footnote": { en: "ViTally is a fictional walkthrough of the PCDC community tax service for tax year 2025. Never enter real taxpayer information.", zh: "ViTally 是 PCDC 社区报税服务（2025 报税年度）的虚构演示。请勿输入任何真实的纳税人信息。" },
   // Toasts on client paths (app.mjs); staff-only toasts stay English
   "toast.saved": { en: "Your answers are saved.", zh: "您的回答已保存。" },
+  "toast.back_online": { en: "You're back online.", zh: "已重新连接。" },
   "toast.confirm_first": { en: "Confirm that you have checked your answers first.", zh: "请先确认您已核对过您的回答。" },
   "toast.needs_change": { en: "Some answers still need a change before you can send.", zh: "有些回答需要修改后才能发送。" },
   "toast.sent": { en: "Your application was sent to the office.", zh: "您的申请已发送给办公室。" },

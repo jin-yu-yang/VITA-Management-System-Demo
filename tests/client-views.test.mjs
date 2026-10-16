@@ -174,6 +174,20 @@ test("an offline visitor reads the last view behind a connection notice", () => 
   assert.match(offline, /Network error\. Please try again later\./);
 });
 
+test("the connection notice: reconnecting spins, offline doesn't", () => {
+  const reconnecting = connectionNotice({ ...baseState(), connection: "reconnecting" });
+  assert.match(reconnecting, /^<div class="connection-notice reconnecting" role="status"><svg class="icon spin"/);
+  const offline = connectionNotice({ ...baseState(), connection: "offline" });
+  assert.match(offline, /^<div class="connection-notice offline" role="status">/);
+  assert.doesNotMatch(offline, /class="icon spin"/);
+  assert.equal(connectionNotice({ ...baseState(), connection: "online" }), "");
+});
+
+test("back online, in both languages", () => {
+  assert.equal(t("toast.back_online", {}, "en"), "You're back online.");
+  assert.equal(t("toast.back_online", {}, "zh-Hans"), "已重新连接。");
+});
+
 test("a dialog can always take the keyboard, whatever its body holds", () => {
   // The help dialog's body is prose: its only control is the close button. The
   // container carries tabindex="-1" so there is somewhere to put the keyboard

@@ -77,9 +77,9 @@ export function clientHeader(state) {
 export function connectionNotice(state) {
   if (state.connection === "online" || state.connection === "unknown") return "";
   const reconnecting = state.connection === "reconnecting";
-  return `<div class="connection-notice" role="status">${icon("clock")}<span>${esc(
-    t(reconnecting ? "frame.reconnecting" : "frame.offline", {}, viewLang(state)),
-  )}</span></div>`;
+  return `<div class="connection-notice ${reconnecting ? "reconnecting" : "offline"}" role="status">${
+    reconnecting ? icon("spinner", "spin") : icon("clock")
+  }<span>${esc(t(reconnecting ? "frame.reconnecting" : "frame.offline", {}, viewLang(state)))}</span></div>`;
 }
 
 // Something worth saying that is not a failure: today, that somebody rebuilt

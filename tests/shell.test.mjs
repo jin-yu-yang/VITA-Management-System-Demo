@@ -1124,3 +1124,10 @@ test("errors share one look (design D7)", () => {
   assert.match(css, /\.office-drawer \.notice\.error/);
   assert.doesNotMatch(css, /\.office-drawer \.notice\.amber/);
 });
+
+test("app.mjs says back online only after a real loss (design D7)", () => {
+  const app = appSource();
+  const renderBody = app.slice(app.indexOf("function render(focus = false) {"), app.indexOf("function v2OnPage("));
+  assert.match(renderBody, /if \(\["offline", "reconnecting"\]\.includes\(drawnConnection\) && state\.connection === "online"\)\s*notify\("info", t\("toast\.back_online", \{\}, lang\)\);\s*drawnConnection = state\.connection;/);
+  assert.match(app, /let drawnConnection = "unknown";/);
+});
