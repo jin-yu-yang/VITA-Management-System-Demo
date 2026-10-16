@@ -3895,7 +3895,8 @@ async function runPermutation(t, roles) {
         // ---- Visits follow the client (spec 2026-10-04 §3.7) -------------
         // A fresh sign-in in its own context has no window record: the rail
         // comes from the server's visits, and the case opens at the first
-        // sub-step that isn't Done (the new spouse part, never opened).
+        // sub-step that isn't Done: the spouse's new document cards, because
+        // the widowed walk above already opened the spouse part.
         await waitForQuiet(page);
         assert.doesNotMatch(await chip(), /Unsaved|checking/, "the draft must be saved for this check");
         const marksHere = await railMarks();
@@ -3906,7 +3907,7 @@ async function runPermutation(t, roles) {
           .locator(`.application-row:has-text("${reference}")`)
           .first()
           .click({ timeout: CLICK_MS });
-        await waitForSubstep(againWin.page, "about.spouse");
+        await waitForSubstep(againWin.page, "documents.identity");
         await waitForQuiet(againWin.page);
         assert.deepEqual(
           await againWin.page.evaluate(() =>
