@@ -569,28 +569,6 @@ const formatToday = (date, lang = "en") =>
     ? date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
     : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 
-// The draft 13614-C's three forms, the screen language's first and the other
-// two after it in this order. In English the Chinese forms are named in their
-// own script (with their lang); in Chinese every name is in the screen's script.
-const DRAFT_FORMS = Object.freeze([
-  { form: "en", lang: "en", key: "draft.form_en" },
-  { form: "zh-s", lang: "zh-Hans", key: "draft.form_zh_s" },
-  { form: "zh-t", lang: "zh-Hant", key: "draft.form_zh_t" },
-]);
-
-function draftButtons(lang) {
-  const first = DRAFT_FORMS.find((entry) => entry.lang === lang) ?? DRAFT_FORMS[0];
-  const others = DRAFT_FORMS.filter((entry) => entry !== first).map((entry) =>
-    button(
-      esc(t(entry.key, {}, lang)),
-      "view-draft",
-      "inline",
-      `data-form="${entry.form}"${lang === "en" ? ` lang="${entry.lang}"` : ""}`,
-    ),
-  );
-  return `${button(`${icon("file")} ${esc(t("draft.view", {}, lang))}`, "view-draft", "secondary", `data-form="${first.form}"`)}<span class="draft-languages">${others.join('<span aria-hidden="true">·</span>')}</span>`;
-}
-
 // The draft Form 14446 (add-form-14446-consent, design D5): PCDC has only an
 // English and a 繁體 copy, so there is no 简体 button. The screen language's
 // form comes first (a Chinese screen gets 繁體), the other is an inline button.
@@ -606,13 +584,13 @@ function draft14446Buttons(lang) {
 }
 
 // The summary page (gate-review-and-redesign-summary, design D6-D8): the
-// intro, then Print and the draft buttons, then Expand all and Collapse all,
+// intro, then Print and the draft Form 14446, then Expand all and Collapse all,
 // then the printed block. Only `.summary-print` prints, every section open.
 function summaryBody(view, today) {
   const { lang } = view;
   const say = (key, params) => t(key, params, lang);
   const intro = `<div class="summary-intro">${renderRichText(say("summary.intro_all"))}${renderRichText(say("summary.intro_change", { change: say("summary.change") }))}${renderRichText(say("summary.intro_tools"))}</div>`;
-  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(say("doc.print"))}`, "print-summary", "secondary")}${draftButtons(lang)}${draft14446Buttons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
+  const tools = `<div class="summary-tools">${button(`${icon("print")} ${esc(say("doc.print"))}`, "print-summary", "secondary")}${draft14446Buttons(lang)}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
   const fold = `<div class="summary-fold"><button type="button" id="summary-expand-all" class="btn text" data-action="summary-expand-all">${esc(say("summary.expand_all"))}</button><button type="button" id="summary-collapse-all" class="btn text" data-action="summary-collapse-all">${esc(say("summary.collapse_all"))}</button></div>`;
   const printed = `<div class="summary-print"><div class="summary-meta">${row(say("id.application"), view.record?.reference)}${row(say("summary.date"), formatToday(today, lang))}</div>${answerSteps(view.answers, view.variant, { change: true, off: view.off, lang, panels: view.openPanels })}${documentsSummary(view)}</div>`;
   return intro + tools + fold + printed;
