@@ -38,6 +38,8 @@ import {
   loadingLine,
   unloadedLine,
   confirmBody,
+  emptyState,
+  emptyLine,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -589,10 +591,11 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
     ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Phone</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
         .map((record) => boardRow(record, person, ui))
         .join("")}</tbody></table></div>`
-    : `<div class="empty-state">${icon("folder")}<p>${emptyText}</p>${when(
-        narrowed || chosen.search,
-        button("Clear filters", "clear-board-filters", "secondary"),
-      )}</div>`;
+    : emptyState({
+        icon: "folder",
+        text: emptyText,
+        actions: [when(narrowed || chosen.search, button("Clear filters", "clear-board-filters", "secondary"))],
+      });
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),
@@ -1121,7 +1124,7 @@ export function documentsPanel(record, rights, ui) {
   return `<section class="panel" aria-labelledby="documents-title"><div class="section-head"><h2 id="documents-title">Documents</h2><span class="muted small">${esc(requests.length)} requested, ${esc(unsettledRequests(record).length)} not settled</span></div>${
     requests.length
       ? requests.map((request) => requestCard(record, request, rights, ui)).join("")
-      : '<p class="muted">No documents have been requested on this case.</p>'
+      : emptyLine("No documents have been requested on this case.")
   }${form}</section>`;
 }
 
@@ -1259,7 +1262,7 @@ function preparationPanel(record) {
 function reviewAttempts(record) {
   const attempts = record.reviews ?? [];
   if (!attempts.length)
-    return '<p class="muted">No review attempt has been opened on this case yet.</p>';
+    return emptyLine("No review attempt has been opened on this case yet.");
   return `<ol class="review-list">${attempts
     .map(
       (attempt) =>
@@ -1350,7 +1353,7 @@ function followupPanel(record) {
               )}</li>`,
           )
           .join("")}</ul>`
-      : '<p class="muted">No office follow-up has been raised on this case.</p>'
+      : emptyLine("No office follow-up has been raised on this case.")
   }<p class="field-note">Follow-up calls are recorded on the office screens, not here.</p></section>`;
 }
 
@@ -1410,7 +1413,7 @@ export function historyPanel(record, staffShaped) {
                 `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(historySentence(entry))}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
             )
             .join("")}</div>`
-        : '<p class="muted">Nothing has been recorded on this case yet.</p>'
+        : emptyLine("Nothing has been recorded on this case yet.")
     }`,
   )}<h3>What the client sees</h3>${
     client.length
@@ -1420,7 +1423,7 @@ export function historyPanel(record, staffShaped) {
               `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(entry?.message)}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
           )
           .join("")}</div>`
-      : '<p class="muted" data-role="client-history">The client has seen no updates yet.</p>'
+      : emptyLine("The client has seen no updates yet.", 'data-role="client-history"')
   }<p class="field-note">Findings, resolutions and office notes stay in the internal list. The client list is the plain-language progress the client reads.</p></section>`;
 }
 

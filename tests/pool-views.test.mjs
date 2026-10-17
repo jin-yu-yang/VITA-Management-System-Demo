@@ -251,5 +251,29 @@ test("the case pool while its cases load, and when they couldn't", () => {
   const failed = renderCasePool([], PEOPLE, { list: "failed", filters: {}, now: NOW });
   assert.match(failed, /The cases couldn&#39;t load\./);
   assert.doesNotMatch(failed, /No case matches these filters/);
-  assert.match(renderCasePool([], PEOPLE, { filters: {}, now: NOW }), /No case matches these filters\./, "ready by default");
+  assert.match(renderCasePool([], PEOPLE, { filters: {}, now: NOW }), /No cases yet this season\./, "ready by default");
+});
+
+test("an empty pool says whether nothing exists or nothing matches", () => {
+  const none = renderCasePool([], PEOPLE, { filters: {}, now: NOW });
+  assert.match(none, /<div class="empty-state"><svg[^]*?<\/svg><p>No cases yet this season\.<\/p><\/div>/);
+  assert.doesNotMatch(none, /No case matches these filters/);
+  const filtered = renderCasePool([rec("A", "received", { answers: { language: "english" } })], PEOPLE, {
+    filters: { poolLanguage: "Mandarin" },
+    now: NOW,
+  });
+  assert.match(filtered, /<div class="empty-state"><svg[^]*?<\/svg><p>No case matches these filters\.<\/p><\/div>/);
+  assert.doesNotMatch(filtered, /No cases yet this season/);
+  assert.equal([...filtered.matchAll(/data-action="clear-pool-filters"/g)].length, 1, "Clear filters shows once");
+  const wrongTab = renderCasePool([rec("B", "received")], PEOPLE, { filters: { poolPhase: "closed" }, now: NOW });
+  assert.match(wrongTab, /<p>No case matches these filters\.<\/p>/, "a phase tab is a filter");
+  assert.doesNotMatch(wrongTab, /No cases yet this season/);
+  const emptyTab = renderCasePool([], PEOPLE, { filters: { poolPhase: "closed" }, now: NOW });
+  assert.match(emptyTab, /<p>No case matches these filters\.<\/p>/, "no cases and a phase tab counts as a filter");
+  const both = renderCasePool([rec("A", "received", { answers: { language: "english" } })], PEOPLE, {
+    filters: { poolPhase: "closed", poolLanguage: "Mandarin" },
+    now: NOW,
+  });
+  assert.match(both, /<p>No case matches these filters\.<\/p>/);
+  assert.equal([...both.matchAll(/data-action="clear-pool-filters"/g)].length, 1, "Clear filters shows once");
 });

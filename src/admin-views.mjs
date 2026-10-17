@@ -9,6 +9,7 @@ import {
   fieldId,
   formatTime,
   confirmBody,
+  emptyLine,
 } from "./ui.mjs";
 import {
   CONTACT_OUTCOMES,
@@ -382,7 +383,7 @@ function receiptPanel(record, person, ui) {
           }</div>`;
         })
         .join("")
-    : `<p class="muted">No document request on this case is waiting for a response.</p>${when(
+    : `${emptyLine("No document request on this case is waiting for a response.")}${when(
         !rights.recordDocumentResponse.allowed && requests.length,
         explain(rights.recordDocumentResponse),
       )}`;
@@ -408,7 +409,7 @@ function receiptPanel(record, person, ui) {
 export function attemptList(task) {
   const attempts = task?.attempts ?? [];
   if (!attempts.length)
-    return '<p class="muted">No call has been recorded on this task yet.</p>';
+    return emptyLine("No call has been recorded on this task yet.");
   return `<ul class="attempt-list">${attempts
     .map(
       (attempt) =>
@@ -505,7 +506,7 @@ function adminFollowupPanel(record, person, ui) {
       ? `<ul class="followup-list">${tasks
           .map((task) => followupTask(record, task, person, ui))
           .join("")}</ul>`
-      : '<p class="muted">No office follow-up has been raised on this case.</p>'
+      : emptyLine("No office follow-up has been raised on this case.")
   }</section>`;
 }
 

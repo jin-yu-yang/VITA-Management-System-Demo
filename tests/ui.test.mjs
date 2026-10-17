@@ -21,6 +21,8 @@ import {
   languageCell,
   loadingLine,
   unloadedLine,
+  emptyState,
+  emptyLine,
   ICON_NAMES,
 } from "../src/ui.mjs";
 
@@ -529,4 +531,28 @@ test("the loading and couldn't-load lines", () => {
   assert.match(loadingLine("Loading cases…"), /^<p class="loading-line" role="status"><svg class="icon spin"[^>]*aria-hidden="true"[\s\S]*<span>Loading cases…<\/span><\/p>$/);
   assert.match(unloadedLine("The cases couldn't load."), /^<p class="unloaded-line"><svg[\s\S]*<span>The cases couldn&#39;t load\.<\/span><\/p>$/);
   assert.ok(ICON_NAMES.includes("spinner"));
+});
+
+test("an empty panel: icon, heading, sentence and actions, each optional but the sentence", () => {
+  const clear = button("Clear filters", "clear-board-filters", "secondary");
+  assert.equal(emptyState({ text: "Nothing here." }), `<div class="empty-state"><p>Nothing here.</p></div>`);
+  assert.equal(
+    emptyState({ icon: "folder", text: "Nothing here.", actions: [clear] }),
+    `<div class="empty-state">${icon("folder")}<p>Nothing here.</p>${clear}</div>`,
+  );
+  // A conditional action that is off renders nothing, as `when` returns "".
+  assert.equal(
+    emptyState({ icon: "check", text: "T", actions: ["", clear] }),
+    `<div class="empty-state">${icon("check")}<p>T</p>${clear}</div>`,
+  );
+  // The client's list: a heading, and its own class first.
+  assert.equal(
+    emptyState({ icon: "folder", title: "No applications yet", text: "Start one.", className: "panel" }),
+    `<div class="panel empty-state">${icon("folder")}<h2>No applications yet</h2><p>Start one.</p></div>`,
+  );
+});
+
+test("an empty section is one muted line", () => {
+  assert.equal(emptyLine("No call has been recorded on this task yet."), '<p class="muted">No call has been recorded on this task yet.</p>');
+  assert.equal(emptyLine("T", 'data-role="x"'), '<p class="muted" data-role="x">T</p>');
 });

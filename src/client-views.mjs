@@ -11,6 +11,8 @@ import {
   formatClientNumber,
   loadingLine,
   unloadedLine,
+  emptyState,
+  emptyLine,
 } from "./ui.mjs";
 import { describeStage } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
@@ -139,7 +141,7 @@ export function applicationsScreen(state) {
     ? `<div class="application-list">${shown.map((entry) => applicationRow(entry, updatedFor(entry), lang)).join("")}</div>`
     : query
       ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${say("apps.not_found")}</h3><p>${say("apps.not_found_body")}</p></div></div>`
-      : `<div class="panel empty-state">${icon("folder")}<h2>${say("apps.empty")}</h2><p>${say("apps.empty_body")}</p></div>`;
+      : emptyState({ icon: "folder", title: say("apps.empty"), text: say("apps.empty_body"), className: "panel" });
   const list =
     listState === "loading"
       ? loadingLine(t("apps.loading", {}, lang))
@@ -364,7 +366,7 @@ export function progressScreen(state) {
               `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(historyLine(entry.message, lang))}</p><small>${esc(formatTime(entry.createdAt, lang))}</small></div></div>`,
           )
           .join("")}</div>`
-      : `<p class="muted">${say("progress.history_empty")}</p>`
+      : emptyLine(say("progress.history_empty"))
   }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">${say("progress.glance")}</span><h3>${say("progress.details")}</h3>${row(t("progress.tax_year", {}, lang), "2025")}${row(t("progress.service", {}, lang), serviceLabel(answers.service, lang))}${row(t("progress.language", {}, lang), languageNames(clientLanguages(answers), { lang, separator: t("form.list_separator", {}, lang) }))}${row(t("id.application", {}, lang), record.reference)}<div class="gentle-note">${icon("lock")} ${say("progress.private")}</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>${say("progress.here")}</h3><p>${say("progress.questions")}</p>${officeContact()}${button(say("progress.contact"), "open-help", "secondary")}</div>${button(say("progress.back"), "open-applications", "text")}</aside></div></main>`;
 }
 
