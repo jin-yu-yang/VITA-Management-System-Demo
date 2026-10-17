@@ -1146,3 +1146,22 @@ test("app.mjs says back online only after a real loss (design D7)", () => {
   assert.match(renderBody, /if \(\["offline", "reconnecting"\]\.includes\(drawnConnection\) && state\.connection === "online"\)\s*notify\("info", t\("toast\.back_online", \{\}, lang\)\);\s*drawnConnection = state\.connection;/);
   assert.match(app, /let drawnConnection = "unknown";/);
 });
+
+test("the page behind an open dialog is inert, on every render, and never when it closes", () => {
+  const app = appSource();
+  const renderBody = app.slice(app.indexOf("function render(focus = false)"), app.indexOf("function render(focus = false)") + 6000);
+  const inertLoop = "for (const child of root.children) child.inert = Boolean(state.dialog) && inertWhileDialog(child);";
+  assert.ok(renderBody.includes(inertLoop), "every render recomputes inert");
+  assert.ok(renderBody.indexOf(inertLoop) > renderBody.indexOf("root.innerHTML = views.page("), "after the page is drawn");
+  const closeBody = app.slice(app.indexOf("function closeDialog("), app.indexOf("function fictional("));
+  const clear = "for (const child of root.children) child.inert = false;";
+  assert.ok(closeBody.includes(clear), "closing clears inert itself (a held render may not)");
+  assert.ok(closeBody.indexOf(clear) > closeBody.indexOf("controller.closeDialog();"));
+  assert.ok(closeBody.indexOf(clear) < closeBody.indexOf("findField(focusBeforeDialog)"), "before focus goes back");
+});
+
+test("the Tab trap asks trapTarget, so the dialog itself cannot be tabbed out of", () => {
+  const app = appSource();
+  assert.match(app, /const target = trapTarget\(focusable, document\.activeElement, event\.shiftKey\);/);
+  assert.doesNotMatch(app, /document\.activeElement === first\)/);
+});

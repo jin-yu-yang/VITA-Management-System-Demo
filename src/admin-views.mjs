@@ -8,6 +8,7 @@ import {
   select,
   fieldId,
   formatTime,
+  confirmBody,
 } from "./ui.mjs";
 import {
   CONTACT_OUTCOMES,
@@ -536,28 +537,37 @@ function officeActionsPanel(record, rights, ui) {
  */
 export function closeCaseDialogBody(state = {}) {
   const record = state.savedCase ?? {};
-  return `<p>Closing <strong>${esc(
-    record.reference ?? "this case",
-  )}</strong> ends the office's work on it in ViTally. Its open document requests and office tasks are cancelled; their titles, reasons, notes and received documents stay exactly as they are.</p><div class="info-note">${icon(
-    "shield",
-  )}<p>This does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority. The client is told the office closed the application.</p></div><form class="staff-form">${textarea(
-    "Why the office is closing this case",
-    "reason",
-    "",
-    'required maxlength="1000" rows="3"',
-    "close",
-  )}<label class="checkbox-row" for="${fieldId(
-    "confirmed",
-    "close",
-  )}"><input type="checkbox" id="${fieldId(
-    "confirmed",
-    "close",
-  )}" name="confirmed" value="true" required><span>I understand this closes the case for everyone.</span></label>${caseSubmit(
-    `${icon("close")} Close this case`,
-    "CLOSE_CASE",
-    "primary full",
-    state.busy ? "disabled" : "",
-  )}</form>${button("Keep it open", "close-dialog", "text")}`;
+  return confirmBody({
+    lead: `Closing <strong>${esc(
+      record.reference ?? "this case",
+    )}</strong> ends the office's work on it in ViTally. Its open document requests and office tasks are cancelled; their titles, reasons, notes and received documents stay exactly as they are.`,
+    note: {
+      icon: "shield",
+      html: "This does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority. The client is told the office closed the application.",
+    },
+    form: {
+      fields: `${textarea(
+        "Why the office is closing this case",
+        "reason",
+        "",
+        'required maxlength="1000" rows="3"',
+        "close",
+      )}<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "close",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "close",
+      )}" name="confirmed" value="true" required><span>I understand this closes the case for everyone.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("close")} Close this case`,
+      "CLOSE_CASE",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it open",
+  });
 }
 
 /**

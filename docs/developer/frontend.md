@@ -167,7 +167,12 @@ compensate, all in `app.mjs` and [`ui.mjs`](../../src/ui.mjs):
   state (toggles with their own action, the "I have checked" box, answer forms) are not kept.
 - **In-place patches.** The sign-in countdown and the intake save indicator update their text
   without a rebuild, so they never interrupt typing.
-- **Dialogs** take focus when they open and return it to the control that opened them.
+- **Dialogs** take focus when they open and return it to the control that opened them. Tab stays
+  inside, also from the dialog itself, and Escape closes. While one is open, every child of `#app`
+  is `inert` except the dialog and the live regions (connection notice, notice banner, problem
+  banner); the toast sits outside `#app`. Every confirmation's body is built with `confirmBody`
+  (`src/ui.mjs`), which takes the confirm control ready-made, so the dialog keeps its own action
+  and payload.
 
 **Version-2 forms have stricter rules**, because a client can type while another window changes
 the same case; they are described in [the next section](#the-version-2-intake-form).

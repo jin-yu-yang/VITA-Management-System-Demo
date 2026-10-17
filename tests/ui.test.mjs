@@ -4,6 +4,11 @@ import {
   describeFocus,
   focusSelectors,
   dialogFocusTarget,
+  confirmBody,
+  inertWhileDialog,
+  trapTarget,
+  button,
+  icon,
   esc,
   stageBadge,
   relativeDay,
@@ -331,6 +336,77 @@ test("a dialog always has somewhere to put the keyboard", () => {
   assert.equal(dialogFocusTarget([disabled], container), container);
   assert.equal(dialogFocusTarget([], null), null);
   assert.equal(dialogFocusTarget(), null);
+});
+
+test("a confirmation has one shape: lead, note, form or confirm, keep", () => {
+  const confirm = button("Do it", "confirm-thing", "primary full");
+  const keep = button("Keep it", "close-dialog", "text");
+  // The simplest: a sentence, the confirm control, the keep button.
+  assert.equal(confirmBody({ lead: "It happens.", confirm, keep: "Keep it" }), `<p>It happens.</p>${confirm}${keep}`);
+  // A note sits between the lead and the confirm.
+  assert.equal(
+    confirmBody({ lead: "It happens.", note: { icon: "shield", html: "Nothing else." }, confirm, keep: "Keep it" }),
+    `<p>It happens.</p><div class="info-note">${icon("shield")}<p>Nothing else.</p></div>${confirm}${keep}`,
+  );
+  // A form wraps its fields and the confirm, and the keep button stays outside it.
+  assert.equal(
+    confirmBody({ lead: "L", form: { fields: "<i>f</i>" }, confirm, keep: "Keep it" }),
+    `<p>L</p><form class="staff-form"><i>f</i>${confirm}</form>${keep}`,
+  );
+  // A note can sit inside the form, after its fields (the checkpoint dialog).
+  assert.equal(
+    confirmBody({
+      lead: "L",
+      note: { icon: "help", html: "N", inForm: true },
+      form: { attrs: 'id="x-form" class="staff-form"', fields: "<i>f</i>" },
+      confirm,
+      keep: "Keep it",
+    }),
+    `<p>L</p><form id="x-form" class="staff-form"><i>f</i><div class="info-note">${icon("help")}<p>N</p></div>${confirm}</form>${keep}`,
+  );
+  // Something said before everything else (the corrections dialog's refusal).
+  assert.equal(
+    confirmBody({ before: "<div>refused</div>", lead: "L", confirm, keep: "Keep it" }),
+    `<div>refused</div><p>L</p>${confirm}${keep}`,
+  );
+  // No sentence, no empty paragraph: a missing or empty lead adds nothing.
+  assert.equal(confirmBody({ confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.equal(confirmBody({ lead: "", confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.doesNotMatch(confirmBody({ confirm, keep: "Keep it" }), /undefined/);
+});
+
+test("only the dialog and the live regions stay out of inert", () => {
+  const el = (...names) => ({ classList: { contains: (name) => names.includes(name) } });
+  for (const name of ["modal-backdrop", "connection-notice", "notice-banner", "problem-banner"])
+    assert.equal(inertWhileDialog(el(name)), false, name);
+  for (const name of ["skip", "client-header", "client-shell", "app-shell", "site-footer"])
+    assert.equal(inertWhileDialog(el(name)), true, name);
+  assert.equal(inertWhileDialog(el("connection-notice", "reconnecting")), false);
+});
+
+test("Tab stays inside a dialog, from its ends and from the dialog itself", () => {
+  const first = { name: "first" };
+  const middle = { name: "middle" };
+  const last = { name: "last" };
+  const container = { name: "modal" };
+  const controls = [first, middle, last];
+  assert.equal(trapTarget(controls, last, false), first);
+  assert.equal(trapTarget(controls, first, true), last);
+  assert.equal(trapTarget(controls, middle, false), null);
+  assert.equal(trapTarget(controls, middle, true), null);
+  assert.equal(trapTarget(controls, first, false), null);
+  assert.equal(trapTarget(controls, last, true), null);
+  // The dialog itself, or its text, holds the keyboard: Tab goes in at the start,
+  // Shift+Tab at the end, and never out behind the dialog.
+  assert.equal(trapTarget(controls, container, false), first);
+  assert.equal(trapTarget(controls, container, true), last);
+  assert.equal(trapTarget(controls, null, true), last);
+  // One control: it keeps the keyboard either way.
+  assert.equal(trapTarget([first], first, false), first);
+  assert.equal(trapTarget([first], first, true), first);
+  // No controls: the browser decides.
+  assert.equal(trapTarget([], container, false), null);
+  assert.equal(trapTarget(), null);
 });
 
 test("the shared helpers still escape and name stages", () => {
