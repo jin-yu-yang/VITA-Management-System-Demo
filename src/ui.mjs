@@ -75,7 +75,17 @@ export const loadingLine = (text) =>
 // A list that never loaded: said plainly, under the banner's Try again.
 export const unloadedLine = (text) =>
   `<p class="unloaded-line">${icon("help")}<span>${esc(text)}</span></p>`;
-export const button = (text, action, kind = "primary", extra = "") =>
+// A list that loaded and has nothing to show (screen-states). A panel list
+// gets an icon, an optional heading, its sentence and the actions that undo a
+// filter; a section inside a case gets one muted line. Each list keeps its own
+// words and passes its own ready-made buttons, so their data-* stay with it.
+// `title`, `text` and the actions are HTML the caller has already escaped.
+export const emptyState = ({ icon: name, title, text, actions = [], className } = {}) =>
+  `<div class="${className ? `${className} ` : ""}empty-state">${name ? icon(name) : ""}${
+    title ? `<h2>${title}</h2>` : ""
+  }<p>${text}</p>${actions.join("")}</div>`;
+export const emptyLine = (text) => `<p class="muted">${text}</p>`;
+export const button =(text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${text}</button>`;
 
 // Workflow buttons name the canonical action directly, so the DOM and the
