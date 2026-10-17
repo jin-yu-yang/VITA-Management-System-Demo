@@ -4387,7 +4387,7 @@ async function runPermutation(t, roles) {
         await againWin.context.close();
         againWin = null;
 
-        // ---- The draft 13614-C (spec 2026-10-04 §7) ----------------------
+        // ---- The client's drafts: the Form 14446 only (hide-draft-13614c-from-clients)
         // Chrome only: Firefox may download a blob PDF instead of opening it
         // in the tab, which leaves nothing for a check to read.
         let draft = "not run: the client engine is Firefox, which may download the PDF instead of opening it";
@@ -4417,12 +4417,13 @@ async function runPermutation(t, roles) {
             Object.fromEntries(
               Object.entries(fontHits).map(([url, n]) => [url.split("/").at(-1), n - before[url]]),
             );
-          const openDraft = async (form) => {
+          // Presses a Form 14446 button and returns its tab, still open, for
+          // the check to read.
+          const press14446 = async (form) => {
             await waitForQuiet(page);
             const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
-            // The 13614-C's buttons: the Form 14446's carry data-draft.
             await page
-              .locator(`[data-action="view-draft"]:not([data-draft])[data-form="${form}"]`)
+              .locator(`[data-action="view-draft"][data-draft="14446"][data-form="${form}"]`)
               .click({ timeout: CLICK_MS });
             return await opened;
           };
@@ -4459,14 +4460,25 @@ async function runPermutation(t, roles) {
           };
 
           await jump("review.summary");
-          // English, every answer in Latin letters: no font is fetched.
-          let before = { ...fontHits };
-          let popup = await openDraft("en");
-          draft.en = await readDraft(popup);
-          await popup.close();
-          assert.equal(draft.en.head, "%PDF-");
-          assert.ok(draft.en.size > 100 * 1024, `the English draft is only ${draft.en.size} bytes`);
-          assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft fetched a font");
+          // A client is offered no draft 13614-C: every draft button on 9.2
+          // is the Form 14446's, and a 13614-C button forged into the page
+          // opens no tab, offers no link and raises no banner.
+          await waitForQuiet(page);
+          assert.equal(await page.locator('[data-action="view-draft"]:not([data-draft="14446"])').count(), 0, "9.2 offers a draft 13614-C");
+          await page.evaluate(() => {
+            const forged = document.createElement("button");
+            forged.type = "button"; forged.id = "forged-13614c";
+            forged.dataset.action = "view-draft"; forged.dataset.form = "en";
+            document.querySelector(".summary-tools").append(forged);
+          });
+          const forgedPopup = page.waitForEvent("popup", { timeout: 1500 }).catch(() => null);
+          await page.locator("#forged-13614c").click({ timeout: CLICK_MS });
+          assert.equal(await forgedPopup, null, "a forged 13614-C button opened a tab on a client page");
+          assert.equal(await page.locator("#draft-ready a, .problem-banner").count(), 0);
+          draft.forged = "a forged 13614-C button opened nothing";
+
+          let before;
+          let popup;
 
           // The draft Form 14446 (add-form-14446-consent): PCDC's three-page
           // form, its page 3 filled from the answers. The flattened page is
@@ -4506,26 +4518,6 @@ async function runPermutation(t, roles) {
           await box("tp_first_name").fill("美");
           await jump("review.summary");
           assert.equal(await answer("tp_first_name"), "美");
-          for (const [form, font] of [
-            ["zh-s", "NotoSansSC_400Regular.ttf"],
-            ["zh-t", "NotoSansTC_400Regular.ttf"],
-          ]) {
-            before = { ...fontHits };
-            popup = await openDraft(form);
-            draft[form] = await readDraft(popup);
-            await popup.close();
-            assert.equal(draft[form].head, "%PDF-");
-            assert.ok(draft[form].size > 100 * 1024, `the ${form} draft is only ${draft[form].size} bytes`);
-            assert.deepEqual(
-              hitsSince(before),
-              {
-                "NotoSansSC_400Regular.ttf": font === "NotoSansSC_400Regular.ttf" ? 1 : 0,
-                "NotoSansTC_400Regular.ttf": font === "NotoSansTC_400Regular.ttf" ? 1 : 0,
-                "NotoSans_400Regular.ttf": 1,
-              },
-              `the ${form} draft fetched the wrong fonts`,
-            );
-          }
 
           // The 繁體 draft 14446 with the Chinese first name: the name is
           // drawn in the downloaded 繁體 font (so that font is fetched, which
@@ -4543,10 +4535,11 @@ async function runPermutation(t, roles) {
           );
           draft.form14446["zh-t"] = { size: zh14446.size, pages: zh14446.pages, page3: "signature found; the Chinese name drawn in the 繁體 font" };
 
-          // A font whose bytes are not the pinned ones is refused.
+          // A font whose bytes are not the pinned ones is refused: the 繁體
+          // 14446, built with the Chinese name, fetches the Latin font too.
           const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));
           wrongFont[latin] = Buffer.from("not the pinned font");
-          popup = await openDraft("zh-s");
+          popup = await press14446("zh-t");
           await tabSays(popup, DRAFT_FAILED);
           await bannerSays(DRAFT_FONT_UNCHECKED);
           assert.equal(await toastShows(DRAFT_FONT_UNCHECKED), false, "the font failure was toasted");
@@ -4556,12 +4549,13 @@ async function runPermutation(t, roles) {
           delete wrongFont[latin];
           draft.fontMismatch = DRAFT_FONT_UNCHECKED;
 
-          // The form itself refused: the tab and the problem banner say so,
-          // and the banner's Try again builds the same draft again. Chrome logs
-          // the refused request as one console error; that one line is caught
-          // here and excused by its place, and nothing else this check logs is
-          // (the retry logs nothing).
-          const formUrl = `${fixture.appOrigin}/src/forms/f13614c-2025.pdf`;
+          // The 14446's form itself refused: the tab and the problem banner
+          // say so, and the banner's Try again builds the same 14446 again.
+          // The English 14446 fetches no font (asserted above), so only the
+          // form can fail it. Chrome logs the refused request as one console
+          // error; that one line is caught here and excused by its place, and
+          // nothing else this check logs is (the retry logs nothing).
+          const formUrl = `${fixture.appOrigin}/src/forms/f14446-pcdc-en.pdf`;
           const refusedForm = /^Failed to load resource: the server responded with a status of 500\b/;
           await page.route(formUrl, (route) => route.fulfill({ status: 500, body: "refused" }));
           const from = v2Win.errors.length;
@@ -4569,8 +4563,11 @@ async function runPermutation(t, roles) {
             predicate: (message) => message.type() === "error" && refusedForm.test(message.text()),
             timeout: ARRIVAL_MS,
           });
-          popup = await openDraft("en");
+          popup = await press14446("en");
           await tabSays(popup, DRAFT_FAILED);
+          // Read on the failed tab, not while it is prepared (that would race
+          // the build).
+          assert.equal(await popup.title(), "Draft Form 14446");
           await bannerSays(DRAFT_NOT_MADE);
           assert.equal(await toastShows(DRAFT_NOT_MADE), false, "the draft failure was toasted");
           await logged;
@@ -4582,7 +4579,7 @@ async function runPermutation(t, roles) {
           await pressBanner("retry-action");
           const again = await retried;
           if (again) {
-            assert.equal((await readDraft(again)).head, "%PDF-", "Try again did not rebuild the draft");
+            assert.equal((await readDraft(again)).head, "%PDF-", "Try again did not rebuild the 14446");
             await again.close();
           } else {
             await page.locator("#draft-ready-link").waitFor({ state: "visible", timeout: ARRIVAL_MS });
@@ -4595,13 +4592,13 @@ async function runPermutation(t, roles) {
           excused.add(from);
           draft.failure = DRAFT_FAILED;
 
-          // A blocked tab: the page offers the finished draft as a link.
+          // A blocked tab: the page offers the finished 14446 as a link.
           await page.evaluate(() => {
             window.__vitallyOpen = window.open;
             window.open = () => null;
           });
           await waitForQuiet(page);
-          await page.locator('[data-action="view-draft"][data-form="zh-s"]').click({ timeout: CLICK_MS });
+          await page.locator('[data-action="view-draft"][data-draft="14446"][data-form="zh-t"]').click({ timeout: CLICK_MS });
           await waitFor(
             page,
             "the draft link",
@@ -4618,7 +4615,7 @@ async function runPermutation(t, roles) {
           });
           assert.deepEqual(draft.blocked, {
             text: "Your draft is ready: open it",
-            download: `13614-C-draft-${reference}-zh-s.pdf`,
+            download: `14446-draft-${reference}-zh-t.pdf`,
             blob: true,
           });
           // The link outlives a redraw from elsewhere, and so does the
