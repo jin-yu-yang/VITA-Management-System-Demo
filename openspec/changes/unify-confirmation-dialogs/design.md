@@ -32,7 +32,7 @@
 **Goals:**
 
 - One shared confirmation body, `confirmBody`, used by all six existing confirmations, with identical markup.
-- While a dialog is open, the page behind it is inert, and the live regions stay announced.
+- While a dialog is open, the page behind it is inert, and the toast and the three banners stay announced.
 - The Tab trap also holds when focus is on the dialog container.
 - Dialog keyboard behaviour (Esc, first focus, trap, return focus, inert) becomes requirements in `screen-states`.
 
@@ -50,7 +50,7 @@
 
 - **Choice:** `confirmBody({ before, lead, note, form, confirm, keep })` returns, in order:
   1. `before` (raw HTML, default empty): the corrections dialog's own refusal alert;
-  2. `lead`: HTML for a `<p>`;
+  2. `lead`: HTML for a `<p>`. An empty or missing `lead` adds no `<p>` (final review: it used to print `<p>undefined</p>`);
   3. the `note` as `<div class="info-note">${icon(note.icon)}<p>${note.html}</p></div>`, unless `note.inForm`;
   4. the form, if given: `<form ${form.attrs}>` + `form.fields` + the in-form note + `confirm` + `</form>`;
   5. otherwise `confirm` on its own;
@@ -67,7 +67,8 @@
   - `closeDialog` clears `inert` from every `#app` child itself, before it focuses the opener, so a held render can't leave the opener inert and unfocusable.
 - **Reason:**
   - The dialog lives inside `#app`, so `#app` itself can't be inert.
-  - Naming the exceptions keeps every live region announced: `#toast` is outside `#app` and never touched.
+  - Naming the exceptions keeps the live regions placed directly in `#app` (the three banners) announced, and `#toast` is outside `#app` and never touched.
+  - Live regions nested inside the page body (the intake's `q-note`, `#draft-ready`) are inert with the rest of the page while a dialog is open. Nothing uses them then; a dialog's own messages are said inside the dialog.
   - Recomputing after each render survives realtime redraws, which replace `#app`'s HTML.
 - **Alternatives considered:**
   - A wrapper `<div>` around the page. Rejected: it breaks the two print rules on `#app > *` and changes the DOM every screen relies on.
@@ -102,7 +103,7 @@
 
 ## Risks / Trade-offs
 
-- [Risk] A future live region added inside `#app` would be made inert while a dialog is open. → Mitigation: the exception list sits next to `inertWhileDialog` with a comment, and the spec requirement names the rule ("live regions stay announced").
+- [Risk] A future live region added directly inside `#app` would be made inert while a dialog is open. → Mitigation: the exception list sits next to `inertWhileDialog` with a comment, and the spec requirement names the rule ("live regions stay announced").
 - [Risk] A held render (version-2 form) leaves the old inert state on screen. → Mitigation: `closeDialog` clears `inert` itself before focusing the opener (D2). Opening never happens during a press on the form's own controls.
 - [Risk] Identical markup is easy to break by accident. → Mitigation: the existing view tests stay unchanged. New `confirmBody` tests compare each moved body's output to today's string, captured before the refactor.
 - [Trade-off] The problem banner stays non-inert while a dialog is open, though `screen-states` already says it steps aside then. → Accepted: it renders nothing while a dialog is open, so there is nothing to reach.

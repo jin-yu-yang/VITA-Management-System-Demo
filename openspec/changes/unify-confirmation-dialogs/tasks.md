@@ -79,3 +79,8 @@
 - [x] 6.2 In `docs/developer/frontend.md`, where dialogs are described, add one or two sentences:
   - confirmations are built with `confirmBody`;
   - the page behind an open dialog is inert, except the live regions.
+
+## 7. Follow-up from the final review
+
+- [ ] 7.1 `confirmBody` omits the `<p>` when `lead` is empty or missing (no `<p>undefined</p>`). Add a unit test in `tests/ui.test.mjs`; the golden test stays green. `npm test` only (user: no second browser run).
+- [ ] 7.2 Reword the comment above `STAYS_REACHABLE` in `src/ui.mjs`: only live regions placed directly in `#app` stay reachable; live regions nested in the page body are inert with the rest of the page while a dialog is open (design D2).

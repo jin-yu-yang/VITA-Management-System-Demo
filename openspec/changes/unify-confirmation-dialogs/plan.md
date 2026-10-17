@@ -677,3 +677,55 @@ git commit -m "Docs: dialogs are inert behind, trap Tab from the container, and 
 
 Co-Authored-By: <model> <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 7: Follow-up from the final review (empty lead, live-region comment)
+
+Added by `/opsx:update` after the final whole-branch review. Unit tests only: the user ruled out a second browser run for this, and nothing here changes rendered markup for any existing caller (the golden test proves it).
+
+**Files:**
+- Modify: `src/ui.mjs` (`confirmBody`, and the comment above `STAYS_REACHABLE`)
+- Test: `tests/ui.test.mjs` (the test "a confirmation has one shape: lead, note, form or confirm, keep")
+
+**Interfaces:**
+- Consumes: `confirmBody` from Task 2.
+- Produces: same signature; an empty or missing `lead` now renders no `<p>`.
+
+- [ ] **Step 1: Write the failing test.** At the end of the test "a confirmation has one shape: lead, note, form or confirm, keep", add:
+
+```js
+  // No sentence, no empty paragraph: a missing or empty lead adds nothing.
+  assert.equal(confirmBody({ confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.equal(confirmBody({ lead: "", confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.doesNotMatch(confirmBody({ confirm, keep: "Keep it" }), /undefined/);
+```
+
+- [ ] **Step 2: Run it to verify it fails.** Run: `node --test tests/ui.test.mjs`. Expected: FAIL (the output starts with `<p>undefined</p>`).
+- [ ] **Step 3: Implement.** In `confirmBody`, change the `return` line to:
+
+```js
+  return `${before}${lead ? `<p>${lead}</p>` : ""}${note && !note.inForm ? said : ""}${action}${button(keep, "close-dialog", "text")}`;
+```
+
+And replace the comment above `STAYS_REACHABLE` with:
+
+```js
+// While a dialog is open everything behind it is inert, except the dialog and
+// the live regions placed directly in #app: a toast or a banner announced while
+// it is open, or just after it closes, still has to reach a screen reader. The
+// toast lives outside #app, so it is never a candidate. A live region nested in
+// the page body (the intake's q-note, #draft-ready) is inert with the rest of
+// the page; a dialog says its own messages. A new live region placed directly
+// in #app joins this list.
+```
+
+- [ ] **Step 4: Run the tests.** Run: `node --test tests/ui.test.mjs tests/confirm-dialogs.test.mjs`, then `npm test`. Expected: all pass, and the golden test is unchanged.
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/ui.mjs tests/ui.test.mjs
+git commit -m "confirmBody adds no paragraph for an empty lead; the inert comment names which live regions stay reachable
+
+Co-Authored-By: <model> <noreply@anthropic.com>"
+```
