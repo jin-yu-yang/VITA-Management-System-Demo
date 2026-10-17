@@ -740,6 +740,19 @@ async function runPermutation(t, roles) {
     await phase("the presenter's reset leaves exactly the six seeded cases", async () => {
       evidence.story.indicatorBefore = await readFixtureIndicator(staff);
       evidence.story.indicatorAfter = await resetSampleCases(staff);
+      // The confirmation's toast reaches the live region, outside anything
+      // inert, though the dialog closed only a moment ago (screen-states).
+      await waitFor(
+        staff,
+        "the reset's toast, outside anything inert",
+        () => {
+          const toast = document.querySelector("#toast");
+          return /sample cases were rebuilt/.test(toast?.textContent ?? "") && !toast.closest("[inert]");
+        },
+        undefined,
+        RENDER_MS,
+      );
+      evidence.story.resetToast = "announced in #toast, outside anything inert";
       const totals = await readBoardTotals(staff);
       assert.equal(totals.total, 6);
       assert.equal(await staff.locator(".board-row").count(), totals.shown);
@@ -2155,6 +2168,29 @@ async function runPermutation(t, roles) {
         true,
         `the dialog opened without taking the keyboard: ${JSON.stringify(regenerate.focus)}`,
       );
+      // The page behind is inert; the dialog and the live regions are not, and
+      // the toast (outside #app) never is (screen-states).
+      const inertWhileOpen = await client.evaluate(() => ({
+        stray: [...document.querySelector("#app").children]
+          .filter(
+            (child) =>
+              !child.inert &&
+              !["modal-backdrop", "connection-notice", "notice-banner", "problem-banner"].some((name) =>
+                child.classList.contains(name),
+              ),
+          )
+          .map((child) => child.className || child.tagName),
+        modalInert: Boolean(document.querySelector(".modal")?.closest("[inert]")),
+        toastInert: Boolean(document.querySelector("#toast")?.closest("[inert]")),
+      }));
+      assert.deepEqual(inertWhileOpen.stray, [], "something behind the dialog can still be reached");
+      assert.equal(inertWhileOpen.modalInert, false, "the dialog itself is inert");
+      assert.equal(inertWhileOpen.toastInert, false, "the toast is inside something inert");
+      // From the dialog itself (a click on its text), Shift+Tab stays inside.
+      await client.evaluate(() => document.querySelector(".modal").focus());
+      await client.keyboard.press("Shift+Tab");
+      const fromContainer = await where();
+      assert.equal(fromContainer.inModal, true, "Shift+Tab from the dialog itself left the dialog");
       await client.keyboard.press("Tab");
       const firstTab = await where();
       await client.keyboard.press("Tab");
@@ -2162,6 +2198,10 @@ async function runPermutation(t, roles) {
       assert.equal(firstTab.inModal, true, "Tab left the dialog");
       assert.equal(secondTab.inModal, true, "Tab left the dialog on the way round");
       await closeWithEscape("regenerate-fictional");
+      const inertAfterClose = await client.evaluate(
+        () => [...document.querySelector("#app").children].filter((child) => child.inert).length,
+      );
+      assert.equal(inertAfterClose, 0, "something stayed inert after the dialog closed");
 
       // A dialog whose body is only prose — the help dialog's one focusable
       // control is its own close button. It still has to take the keyboard
@@ -2189,6 +2229,7 @@ async function runPermutation(t, roles) {
           presses: regenerate.presses,
         },
         afterTabInside: [firstTab.inModal, secondTab.inModal],
+        inert: { whileOpen: inertWhileOpen, afterClose: inertAfterClose, shiftTabFromContainer: fromContainer },
         help: { ...helpDialog.focus, landed: helpDialog.landed, presses: helpDialog.presses },
         helpAfterTab,
       };
