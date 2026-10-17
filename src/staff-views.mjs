@@ -39,6 +39,7 @@ import {
   unloadedLine,
   confirmBody,
   emptyState,
+  emptyLine,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -1123,7 +1124,7 @@ export function documentsPanel(record, rights, ui) {
   return `<section class="panel" aria-labelledby="documents-title"><div class="section-head"><h2 id="documents-title">Documents</h2><span class="muted small">${esc(requests.length)} requested, ${esc(unsettledRequests(record).length)} not settled</span></div>${
     requests.length
       ? requests.map((request) => requestCard(record, request, rights, ui)).join("")
-      : '<p class="muted">No documents have been requested on this case.</p>'
+      : emptyLine("No documents have been requested on this case.")
   }${form}</section>`;
 }
 
@@ -1261,7 +1262,7 @@ function preparationPanel(record) {
 function reviewAttempts(record) {
   const attempts = record.reviews ?? [];
   if (!attempts.length)
-    return '<p class="muted">No review attempt has been opened on this case yet.</p>';
+    return emptyLine("No review attempt has been opened on this case yet.");
   return `<ol class="review-list">${attempts
     .map(
       (attempt) =>
@@ -1352,7 +1353,7 @@ function followupPanel(record) {
               )}</li>`,
           )
           .join("")}</ul>`
-      : '<p class="muted">No office follow-up has been raised on this case.</p>'
+      : emptyLine("No office follow-up has been raised on this case.")
   }<p class="field-note">Follow-up calls are recorded on the office screens, not here.</p></section>`;
 }
 
@@ -1412,7 +1413,7 @@ export function historyPanel(record, staffShaped) {
                 `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(historySentence(entry))}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
             )
             .join("")}</div>`
-        : '<p class="muted">Nothing has been recorded on this case yet.</p>'
+        : emptyLine("Nothing has been recorded on this case yet.")
     }`,
   )}<h3>What the client sees</h3>${
     client.length

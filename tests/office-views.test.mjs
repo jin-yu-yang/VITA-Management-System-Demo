@@ -367,6 +367,19 @@ test("a case with no open task left says so and offers to close", () => {
   assert.doesNotMatch(html, /RECORD_CONTACT/);
 });
 
+test("the Log a call drawer's empty line is a muted line, like every case section", () => {
+  const html = logCallDrawerBody({
+    record: called([task({ status: "resolved" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(
+    html,
+    /<p class="muted">No open follow-up is left on this case\.<\/p><button[^>]*data-action="close-dialog"/,
+  );
+});
+
 test("a drawer for another case, or none, opens nothing", () => {
   for (const record of [called([task()]), null]) {
     const html = logCallDrawerBody({ record, person: sam, ui: {}, caseId: "c2" });

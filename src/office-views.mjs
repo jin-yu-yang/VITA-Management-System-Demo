@@ -32,6 +32,7 @@ import {
   loadingLine,
   unloadedLine,
   emptyState,
+  emptyLine,
 } from "./ui.mjs";
 import {
   adminEligibility,
@@ -311,7 +312,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   const tasks = openFollowups(record);
   const head = `<div class="drawer-case">${esc(clientNumberLabel(record))} · ${esc(record.reference)} ${stageBadge(record.stage)}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
   if (!tasks.length)
-    return `${head}${drawerError(ui)}<p>No open follow-up is left on this case.</p>${button("Close", "close-dialog", "secondary")}`;
+    return `${head}${drawerError(ui)}${emptyLine("No open follow-up is left on this case.")}${button("Close", "close-dialog", "secondary")}`;
   return `${head}${drawerError(ui)}${tasks
     .map(
       (task) =>
