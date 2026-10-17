@@ -4,6 +4,11 @@
 > Commit range: `7404fb6..` the retrospective commit (base: `main` with #78)
 > Worktree: `.claude/worktrees/unify-empty-states`
 
+> **Update 2026-10-16**: after the PR opened, CI (Linux, UTC) failed the golden `staffCase` (and `adminCase`) state.
+> - **Cause:** the case pages print "Updated" with `formatTime` in the machine's time zone, and the fixture was captured in New York.
+> - **Fix:** the test now pins `process.env.TZ = "America/New_York"`, and passes in UTC, New York, Tokyo and London.
+> - **Lesson:** §0 and §1 overstated the guard: "deterministic" was checked by rendering twice on one machine, not across machines. A golden capture that contains formatted times must pin the time zone. That is a new §6 candidate, carried into the next retrospective.
+
 ---
 
 ## 0. Evidence

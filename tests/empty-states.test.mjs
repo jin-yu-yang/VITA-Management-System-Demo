@@ -10,6 +10,12 @@ import { STATES, SENTENCES } from "./empty-states.states.mjs";
 // Moving the empty states onto emptyState / emptyLine must not change a
 // character (change unify-empty-states, design D2). The case pool and the Log
 // a call drawer change on purpose and are tested on their own.
+//
+// The case pages print "Updated" with formatTime, in the machine's own time
+// zone, and the fixture was captured in New York. Node re-reads TZ when it is
+// assigned, and nothing is formatted before the tests run, so pinning it here
+// gives the same strings on CI (UTC) and on every developer's machine.
+process.env.TZ = "America/New_York";
 const GOLDEN = JSON.parse(readFileSync(new URL("./fixtures/empty-states.json", import.meta.url), "utf8"));
 const render = { renderStaffBoard, renderStaffCase, renderFollowups, renderAdminCase, attemptList, applicationsScreen, progressScreen };
 
