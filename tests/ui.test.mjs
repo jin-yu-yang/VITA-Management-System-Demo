@@ -369,6 +369,10 @@ test("a confirmation has one shape: lead, note, form or confirm, keep", () => {
     confirmBody({ before: "<div>refused</div>", lead: "L", confirm, keep: "Keep it" }),
     `<div>refused</div><p>L</p>${confirm}${keep}`,
   );
+  // No sentence, no empty paragraph: a missing or empty lead adds nothing.
+  assert.equal(confirmBody({ confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.equal(confirmBody({ lead: "", confirm, keep: "Keep it" }), `${confirm}${keep}`);
+  assert.doesNotMatch(confirmBody({ confirm, keep: "Keep it" }), /undefined/);
 });
 
 test("only the dialog and the live regions stay out of inert", () => {

@@ -360,14 +360,16 @@ export function confirmBody({ before = "", lead, note = null, form = null, confi
   const action = form
     ? `<form ${form.attrs ?? 'class="staff-form"'}>${form.fields}${note?.inForm ? said : ""}${confirm}</form>`
     : confirm;
-  return `${before}<p>${lead}</p>${note && !note.inForm ? said : ""}${action}${button(keep, "close-dialog", "text")}`;
+  return `${before}${lead ? `<p>${lead}</p>` : ""}${note && !note.inForm ? said : ""}${action}${button(keep, "close-dialog", "text")}`;
 }
 
 // While a dialog is open everything behind it is inert, except the dialog and
-// the live regions: a toast or a banner announced while it is open, or just
-// after it closes, still has to reach a screen reader. The toast lives outside
-// #app, so it is never a candidate. A new live region inside #app joins this
-// list.
+// the live regions placed directly in #app: a toast or a banner announced while
+// it is open, or just after it closes, still has to reach a screen reader. The
+// toast lives outside #app, so it is never a candidate. A live region nested in
+// the page body (the intake's q-note, #draft-ready) is inert with the rest of
+// the page; a dialog says its own messages. A new live region placed directly
+// in #app joins this list.
 const STAYS_REACHABLE = Object.freeze([
   "modal-backdrop",
   "connection-notice",
