@@ -1,15 +1,15 @@
 ## 1. The summary page offers no 13614-C
 
-- [ ] 1.1 Update the failing tests first:
+- [x] 1.1 Update the failing tests first:
   - `tests/client-views.test.mjs` (the summary toolbox test, about line 1238): Print and the 14446 buttons, and no `view-draft` without `data-draft="14446"`. Pin the intro in its new wording.
   - The 14446 test (about line 1286): the intro sentence names only Form 14446, and the order is Print, then the 14446.
   - `tests/client-language.test.mjs` (about line 582): the three-forms test becomes "the summary offers no draft 13614-C in English, 简体 or 繁體", with the 14446's first form per language (en → en, zh-Hans and zh-Hant → zh-t).
-- [ ] 1.2 `src/intake-views.mjs`: `summaryBody` renders Print, `draft14446Buttons(lang)` and `#draft-ready`. Delete `draftButtons` and `DRAFT_FORMS`, and update the comments that name them (design D1).
-- [ ] 1.3 `src/client-text.mjs`:
+- [x] 1.2 `src/intake-views.mjs`: `summaryBody` renders Print, `draft14446Buttons(lang)` and `#draft-ready`. Delete `draftButtons` and `DRAFT_FORMS`, and update the comments that name them (design D1).
+- [x] 1.3 `src/client-text.mjs`:
   - reword `summary.intro_tools` in EN and 简体 (design D3);
   - remove `draft.view` and `draft.form_zh_s` after a grep shows nothing else uses them;
   - run `npm run build:hant`.
-- [ ] 1.4 Run `npm test`.
+- [x] 1.4 Run `npm test`.
 
 ## 2. Only staff make a draft 13614-C; the 14446's tab names its form
 
