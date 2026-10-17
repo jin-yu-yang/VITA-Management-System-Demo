@@ -327,7 +327,7 @@ export const TEXT = Object.freeze({
   "alert.missing": { en: "Needs an answer", zh: "需要回答" },
   "alert.invalid": { en: "Needs a change", zh: "需要修改" },
   "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },
-  // Review & submit: the summary, its Change links and printed date, and the draft 13614-C buttons
+  // Review & submit: the summary, its Change links and printed date, and the draft Form 14446 buttons
   // (the current language's form comes first; the others are named in the screen's script)
   "summary.change": { en: "Change", zh: "修改" },
   "summary.none": { en: "Nothing answered yet.", zh: "尚未回答任何问题。" },
@@ -340,6 +340,7 @@ export const TEXT = Object.freeze({
   "summary.collapse_all": { en: "Collapse all", zh: "全部收起" },
   "summary.toggle": { en: "Show or hide {section}", zh: "显示或隐藏{section}" },
   "draft14446.view": { en: "View Draft Form 14446", zh: "查看 14446 表草稿" },
+  "draft14446.tab_title": { en: "Draft Form 14446", zh: "14446 表草稿" },
   "draft.form_en": { en: "English version", zh: "英文版" },
   "draft.form_zh_t": { en: "繁體中文版", zh: "繁体中文版" },
   // The draft 13614-C's generated lines in Additional Comments (draft-form.mjs), in the form's
