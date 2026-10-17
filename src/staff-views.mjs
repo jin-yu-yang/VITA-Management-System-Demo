@@ -38,6 +38,7 @@ import {
   loadingLine,
   unloadedLine,
   confirmBody,
+  emptyState,
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
@@ -589,10 +590,11 @@ export function renderStaffBoard(cases = [], people = [], ui = {}) {
     ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Phone</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${shown
         .map((record) => boardRow(record, person, ui))
         .join("")}</tbody></table></div>`
-    : `<div class="empty-state">${icon("folder")}<p>${emptyText}</p>${when(
-        narrowed || chosen.search,
-        button("Clear filters", "clear-board-filters", "secondary"),
-      )}</div>`;
+    : emptyState({
+        icon: "folder",
+        text: emptyText,
+        actions: [when(narrowed || chosen.search, button("Clear filters", "clear-board-filters", "secondary"))],
+      });
   return `<section class="panel staff-board" aria-labelledby="board-title"><div class="section-head"><h2 id="board-title">${chosen.search ? "Search results" : "Work board"}</h2><span class="muted small" role="status">Showing ${esc(shown.length)} of ${esc(total)} ${total === 1 ? "case" : "cases"}</span></div>${searchForm(chosen, ui)}${boardTabs(chosen, counts)}<div class="board-filters">${when(
     !chosen.search && chosen.status !== "available",
     filterChips("assignment", SCOPES, chosen.assignment),

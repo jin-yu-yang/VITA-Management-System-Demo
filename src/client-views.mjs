@@ -11,6 +11,7 @@ import {
   formatClientNumber,
   loadingLine,
   unloadedLine,
+  emptyState,
 } from "./ui.mjs";
 import { describeStage } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
@@ -139,7 +140,7 @@ export function applicationsScreen(state) {
     ? `<div class="application-list">${shown.map((entry) => applicationRow(entry, updatedFor(entry), lang)).join("")}</div>`
     : query
       ? `<div class="notice amber" role="status">${icon("help")}<div><h3>${say("apps.not_found")}</h3><p>${say("apps.not_found_body")}</p></div></div>`
-      : `<div class="panel empty-state">${icon("folder")}<h2>${say("apps.empty")}</h2><p>${say("apps.empty_body")}</p></div>`;
+      : emptyState({ icon: "folder", title: say("apps.empty"), text: say("apps.empty_body"), className: "panel" });
   const list =
     listState === "loading"
       ? loadingLine(t("apps.loading", {}, lang))
