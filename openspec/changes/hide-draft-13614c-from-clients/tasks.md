@@ -13,15 +13,15 @@
 
 ## 2. Only staff make a draft 13614-C; the 14446's tab names its form
 
-- [ ] 2.1 Write the failing source checks in `tests/shell.test.mjs`'s draft block:
+- [x] 2.1 Write the failing source checks in `tests/shell.test.mjs`'s draft block:
   - `viewDraft` returns for a non-presenter 13614-C before `window.open`;
   - `writeTab` takes the draft's kind and uses `"draft14446.tab_title"` for a 14446;
   - add `draft14446.tab_title` to the view-language key list.
-- [ ] 2.2 `src/app.mjs`:
+- [x] 2.2 `src/app.mjs`:
   - the guard on `principal?.access !== "presenter"` for `kind !== "14446"`, as `viewDraft`'s first check (design D2);
   - `writeTab(tab, text, kind)`, with every caller passing `kind` (design D4).
-- [ ] 2.3 `src/client-text.mjs`: add `draft14446.tab_title` ("Draft Form 14446" / "14446 表草稿"), then run `npm run build:hant`.
-- [ ] 2.4 Run `npm test` and `npm run build:hant -- --check`.
+- [x] 2.3 `src/client-text.mjs`: add `draft14446.tab_title` ("Draft Form 14446" / "14446 表草稿"), then run `npm run build:hant`.
+- [x] 2.4 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 3. The browser story
 
