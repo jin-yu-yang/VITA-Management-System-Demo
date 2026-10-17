@@ -84,7 +84,9 @@ export const emptyState = ({ icon: name, title, text, actions = [], className } 
   `<div class="${className ? `${className} ` : ""}empty-state">${name ? icon(name) : ""}${
     title ? `<h2>${title}</h2>` : ""
   }<p>${text}</p>${actions.join("")}</div>`;
-export const emptyLine = (text) => `<p class="muted">${text}</p>`;
+// One muted line for a section inside a case. `attrs` is for a caller that needs an
+// extra attribute, e.g. a data-role the story reads.
+export const emptyLine = (text, attrs = "") => `<p class="muted"${attrs ? ` ${attrs}` : ""}>${text}</p>`;
 export const button = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${text}</button>`;
 

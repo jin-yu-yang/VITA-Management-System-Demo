@@ -1423,7 +1423,7 @@ export function historyPanel(record, staffShaped) {
               `<div class="timeline-item"><span class="timeline-dot"></span><div><p>${esc(entry?.message)}</p><small>${esc(formatTime(entry?.createdAt))}</small></div></div>`,
           )
           .join("")}</div>`
-      : '<p class="muted" data-role="client-history">The client has seen no updates yet.</p>'
+      : emptyLine("The client has seen no updates yet.", 'data-role="client-history"')
   }<p class="field-note">Findings, resolutions and office notes stay in the internal list. The client list is the plain-language progress the client reads.</p></section>`;
 }
 

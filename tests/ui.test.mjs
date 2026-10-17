@@ -554,4 +554,5 @@ test("an empty panel: icon, heading, sentence and actions, each optional but the
 
 test("an empty section is one muted line", () => {
   assert.equal(emptyLine("No call has been recorded on this task yet."), '<p class="muted">No call has been recorded on this task yet.</p>');
+  assert.equal(emptyLine("T", 'data-role="x"'), '<p class="muted" data-role="x">T</p>');
 });

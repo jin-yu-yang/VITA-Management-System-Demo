@@ -404,7 +404,8 @@ keeps what it shows when a later read fails. Staff views get it as `ui.list`.
 **Empty lists.** A list that has loaded and has nothing to show uses `emptyState` (a panel: icon,
 optional heading, one sentence, and the buttons that undo a filter) or `emptyLine` (one muted line
 inside a case or a drawer), both from [`ui.mjs`](../../src/ui.mjs). Each list keeps its own words
-and passes its own buttons. The work board's sentence per tab lives in `EMPTY_TAB`
+and passes its own buttons. Both take HTML the caller has already escaped, unlike `loadingLine`
+and `unloadedLine`, so a client's own text goes through `esc` first. The work board's sentence per tab lives in `EMPTY_TAB`
 (`staff-views.mjs`): a new phase adds its sentence there.
 
 **Busy buttons.** While a press runs, `markPressed` in `app.mjs` gives the pressed control
