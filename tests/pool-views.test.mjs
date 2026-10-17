@@ -265,4 +265,7 @@ test("an empty pool says whether nothing exists or nothing matches", () => {
   assert.match(filtered, /<div class="empty-state"><svg[^]*?<\/svg><p>No case matches these filters\.<\/p><\/div>/);
   assert.doesNotMatch(filtered, /No cases yet this season/);
   assert.equal([...filtered.matchAll(/data-action="clear-pool-filters"/g)].length, 1, "Clear filters shows once");
+  const wrongTab = renderCasePool([rec("B", "received")], PEOPLE, { filters: { poolPhase: "closed" }, now: NOW });
+  assert.match(wrongTab, /<p>No case matches these filters\.<\/p>/, "a phase tab is a filter");
+  assert.doesNotMatch(wrongTab, /No cases yet this season/);
 });

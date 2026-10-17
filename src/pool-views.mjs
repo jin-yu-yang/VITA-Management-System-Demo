@@ -155,6 +155,6 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
     ? `<div class="board-table-wrap"><table class="board-table pool-table"><thead><tr><th scope="col">Client</th><th scope="col">Stage</th><th scope="col">Phone</th><th scope="col">Language</th><th scope="col">Service</th><th scope="col">Preparer</th><th scope="col">Reviewer</th><th scope="col">Updated</th></tr></thead><tbody>${shown
         .map((record) => poolRow(record, now, person))
         .join("")}</tbody></table></div>`
-    : emptyState({ icon: "folder", text: narrowed ? "No case matches these filters." : "No cases yet this season." });
+    : emptyState({ icon: "folder", text: narrowed || chosen.poolPhase !== "all" ? "No case matches these filters." : "No cases yet this season." });
   return `<section class="panel case-pool" aria-labelledby="pool-title"><h2 id="pool-title">All cases</h2>${tabs}${filters}${summary}${body}<p class="field-note board-note">${icon("lock")} This pool shows workflow only: no taxpayer names, no addresses and no document contents. Phone numbers stay masked until you hover over or tab to them, so they don't show on a shared screen.</p></section>`;
 }
