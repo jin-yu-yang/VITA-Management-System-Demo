@@ -85,7 +85,7 @@ export const emptyState = ({ icon: name, title, text, actions = [], className } 
     title ? `<h2>${title}</h2>` : ""
   }<p>${text}</p>${actions.join("")}</div>`;
 export const emptyLine = (text) => `<p class="muted">${text}</p>`;
-export const button =(text, action, kind = "primary", extra = "") =>
+export const button = (text, action, kind = "primary", extra = "") =>
   `<button type="button" class="btn ${kind}" data-action="${action}" ${extra}>${text}</button>`;
 
 // Workflow buttons name the canonical action directly, so the DOM and the
