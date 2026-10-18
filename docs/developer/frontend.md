@@ -184,7 +184,7 @@ for you; raw template literals do not.
 ## The version-2 intake form
 
 The form (part 4b, redesigned in part 4b2 as steps 0–9 with sub-steps on a rail tree, a Documents step and Review & submit) is built from the catalogue by the shared renderer in
-[`src/intake-form.mjs`](../../src/intake-form.mjs) and the screens in [`src/intake-views.mjs`](../../src/intake-views.mjs); document cards come from [`src/document-cards.mjs`](../../src/document-cards.mjs) and the draft 13614-C from `src/draft-form.mjs` and `src/draft-pdf.mjs`. The full design is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
+[`src/intake-form.mjs`](../../src/intake-form.mjs) and the screens in [`src/intake-views.mjs`](../../src/intake-views.mjs); document cards come from [`src/document-cards.mjs`](../../src/document-cards.mjs) and the drafts from `src/draft-form.mjs`, `src/draft-pdf.mjs` and `src/draft-virtual-consent.mjs`. The client's summary page (9.2, `summaryBody`) offers Print and the draft Form 14446 only (`draft14446Buttons`); a client never opens the 13614-C, because its shaded parts are for a certified volunteer. The full design is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
 §2 (renderer, redraw rules, invalid values) and [the redesign spec](../superpowers/specs/2026-10-04-intake-redesign-design.md); this section is the map.
 
 **The renderer** is pure. `renderQuestion(question, value, { variant, lang, scope, answers,
@@ -283,8 +283,8 @@ volunteer and office pages):
   the note ("Edit best time", UPDATE_CONTACT), never a phone.
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
   anyone who passes `canSeeContact`, read-only for everyone else.
-- **The draft 13614-C** buttons (4b2's `view-draft` wiring), only for people who pass
-  `canSeeContact`, because the draft prints the phones.
+- **The draft 13614-C** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
+  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a presenter (`principal.access === "presenter"`); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
 
 The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
 (`src/form-values.mjs`); `Object.fromEntries(new FormData(form))` would keep only the last box.
@@ -469,7 +469,7 @@ with the switch in the client bar and saved per browser in `localStorage["vitall
 visit takes its language from `navigator.languages`. Staff and presenter screens are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
 character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
-the 繁體 draft 13614-C is made (which leaves the screen's language as it is). A saved 繁體 waits at
+a staff member makes the 繁體 draft 13614-C (the Form 14446 never loads it) (which leaves the screen's language as it is). A saved 繁體 waits at
 most five seconds for it at startup, then starts in 简体 with a toast; a retry after a failed fetch
 asks for a fresh URL (`./zh-hant.mjs?r=1`, …), since some browsers cache a failed module.
 The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-screen-design.md).
