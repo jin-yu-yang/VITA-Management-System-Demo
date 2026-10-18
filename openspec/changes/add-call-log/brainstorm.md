@@ -159,3 +159,74 @@ A presenter signs in and chooses a persona; every case action names the persona 
   stays on screen to select by hand.
 - **Old versions** open in place under the entry ("Earlier versions (2)"), each shown as its own summary line with
   its edit time; they are read-only.
+
+---
+
+## Revision agreed 2026-10-17 (before apply)
+
+Hailey's instructions, given after reviewing the first planning artifacts. They replace the earlier text where the
+two disagree.
+
+1. **Branch** rebased onto `origin/main` after #82.
+2. **Contact time.** Each entry has a contact time that defaults to now, can be set when logging and changed when
+   editing (each version keeps its own). A separate logged-at time is filled in and never edited. The summary line
+   uses the contact time.
+3. **Time zone.** All times in the log are shown and copied in America/New_York, not the browser's time zone.
+4. **Other windows** on the same case see new and edited entries: live if Realtime allows it without a case change,
+   otherwise when the tab is opened. design.md says which.
+5. **The office's "Log a call" is merged into the log.** One shared form helper serves the log tab, the case page's
+   Follow-up tab and the office queue's drawer. A contact logged from a follow-up task is stored in the log with a
+   link to that task; the task's list of contacts shows the linked entries. Existing follow-up attempts are moved into
+   the log once, by migration, linked to their tasks, with a clear mapping of their old outcomes. "Resolve this task"
+   stays as it is and separate. The UI stops recording attempts through `RECORD_CONTACT`; propose what to do with
+   `RECORD_CONTACT` itself. `RECORD_REVIEW_CONTACT` is not changed: `add-preparer-and-reviewer-questionnaires`
+   handles it.
+6. **Follow-ups table.** `add-preparer-and-reviewer-questionnaires` also changes `admin_followups` (a kind column);
+   whichever merges second reconciles.
+7. **A contact log, not only calls.**
+   - "Log a call" becomes **"Log contact"** everywhere (and "Add a call" is dropped); the Calls tab becomes
+     **"Contacts"**.
+   - A **direction**: we contacted the client / the client contacted us. Incoming entries are always "reached". The
+     summary line turns the arrow round for incoming: "client (Mei Wang) → Hailey Z., phone — …".
+   - **Outcomes follow the method.** Phone and video: reached / no answer / left voicemail / wrong or invalid number.
+     Text and email: sent / client replied / failed to deliver. In person: no outcome (reached). A text or email
+     logged as "sent" is edited to "client replied" when they answer; the edit history keeps both times.
+   - Method, direction, purpose and outcome are **one-click button groups**, not dropdowns. Defaults: "we contacted",
+     phone.
+   - The questionnaire prefill still reads entries with purpose "go over tax return" and outcome reached (incoming
+     counts).
+
+### Findings and calls made while revising (to check at review)
+
+- **Names.** `case_contacts` already exists (the client's phones), so the tables are `contact_log` and
+  `contact_log_versions`, the RPCs `vitally_log_contact` and `vitally_edit_contact`, the module
+  `src/contact-log.mjs`. The change keeps its name, `add-call-log`.
+- **Live updates: yes.** The log rows carry `case_id`; Realtime announces INSERT and UPDATE under the same RLS, and
+  `handleChange` already re-reads the open case for any table whose row names it. No case change is needed, so no
+  tab-open fallback is built. The story checks it with two windows.
+- **`RECORD_CONTACT`: refuse new calls (my proposal).** Redefine only its private handler, `act_record_contact`, to
+  raise VALIDATION, and drop it from the browser's action list and builders. A replay of an old accepted request
+  still returns its stored receipt (receipts are checked before the handler), and old History events keep their
+  wording. *Why not keep it:* an old open tab could keep writing to `contact_attempts`, which nothing reads any more.
+  *Why not remove it now:* removal means redefining `vitally_apply_action`, `check_operation_authority`,
+  `check_payload` and `check_authority`, the shared code #73 is rewriting. Removing it and dropping the empty
+  `contact_attempts` table is a later cleanup after #73.
+- **Who may log from a task:** the old `RECORD_CONTACT` rule, unchanged: the persona has `followup`, is the task's
+  assignee, and the task is open on the same case (`lock_open_followup`, reused as it is). A contact not linked to a
+  task keeps the open rule (any persona).
+- **Moving the old attempts:** each becomes an entry with version 1, linked to its task: with the client, outgoing,
+  phone, purpose "request documents" (every follow-up hangs off a document request), contact time and logged-at time
+  = the attempt's time, logger = the attempt's persona. Outcomes: `no_answer` → no answer; `reached` → reached;
+  `no_further_contact` → reached, with "Client asked for no further contact." before the note; `closure_requested` →
+  reached, with "Client asked to close the case." before the note. The attempts are then deleted from
+  `contact_attempts`, which stays as an empty table until the cleanup.
+- **Fixtures change after all.** The `admin_followup` sample seeds an attempt, so `apply_fixture_scenario` is
+  redefined to seed a log entry instead, and a checkpoint now clears the case's log with the rest of its work. This
+  is fixture code #73 may also edit; whichever merges second reconciles.
+- **History.** A contact logged from a task no longer writes a "recorded a call attempt" History event, and no longer
+  bumps the case revision; the task's list and the Contacts tab are its record.
+- **In person and incoming:** the outcome group is not shown and "reached" is stored. The summary line leaves the
+  outcome out for them, since it says nothing ("… — Go over tax return."). A "sent → client replied" edit keeps the
+  contact time unless the editor changes it; each version records when it was saved, so "Earlier versions" shows when
+  it was sent and when the reply was recorded.
+- **The task's list** is headed "Contacts so far".
