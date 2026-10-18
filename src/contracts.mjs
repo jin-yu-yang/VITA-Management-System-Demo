@@ -23,7 +23,8 @@ export const CASE_ACTIONS = Object.freeze([
   "RECORD_DOCUMENT_RESPONSE",
   "VERIFY_DOCUMENT",
   "ESCALATE_CONTACT",
-  "RECORD_CONTACT",
+  // RECORD_CONTACT left the browser with the contact log (change
+  // add-contact-log, design D12); the database refuses new requests.
   "RESOLVE_FOLLOWUP",
   "SUBMIT_REVIEW",
   "CLAIM_REVIEW",

@@ -83,7 +83,7 @@ export const STATES = Object.freeze({
   progressNoHistory: ["progressScreen", [baseState({ screen: "progress", cases: [emptyCase], selectedCaseId: emptyCase.id, savedCase: emptyCase })]],
   staffCase: ["renderStaffCase", [emptyCase, ALEX, { now: NOW }]],
   adminCase: ["renderAdminCase", [emptyCase, { person: SAM, now: NOW }]],
-  attemptsNone: ["attemptList", [{ attempts: [] }]],
+  taskContactsNone: ["taskContacts", [emptyCase, { id: "task-1" }]],
 });
 
 // Every sentence the golden states must contain between them, so a state that
@@ -105,5 +105,6 @@ export const SENTENCES = Object.freeze([
   "No office follow-up has been raised on this case.",
   "Nothing has been recorded on this case yet.",
   "No document request on this case is waiting for a response.",
-  "No call has been recorded on this task yet.",
+  "No contact has been logged on this task yet.",
+  "No contacts logged yet.",
 ]);

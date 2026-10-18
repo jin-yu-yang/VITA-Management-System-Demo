@@ -120,9 +120,39 @@ const openTask = (overrides = {}) => ({
   resolutionOutcome: null,
   resolutionNote: null,
   createdAt: "2026-09-12T11:00:00.000Z",
-  attempts: [],
   ...overrides,
 });
+
+// A contact log entry, as the store maps it, with its one version.
+const contactEntry = (overrides = {}) => {
+  const entry = {
+    direction: "outgoing",
+    contactedAt: "2026-09-12T16:00:00.000Z",
+    withWhom: "client",
+    otherName: null,
+    method: "phone",
+    purpose: "request_documents",
+    outcome: "no_answer",
+    note: "Rang twice, no voicemail.",
+    ...overrides,
+  };
+  return {
+    id: "contact-1",
+    caseId: "case-a",
+    followupId: "task-1",
+    revision: 1,
+    loggedAt: entry.contactedAt,
+    editedAt: null,
+    loggedByPersonId: "sam",
+    versions: [{ version: 1, createdAt: entry.contactedAt, editedByPersonId: "sam", ...entry }],
+    ...entry,
+    ...overrides,
+  };
+};
+
+// The shared Log contact form, linked to one task.
+const linkedForm = (taskId) =>
+  new RegExp(`<form class="staff-form contact-form" data-case-id="case-a" data-followup-id="${taskId}">`);
 
 const openRequest = (overrides = {}) => ({
   id: "req-1",
@@ -164,7 +194,9 @@ test("the intake checks are offered once, as four simulated attestations", () =>
     ],
   });
   assert.doesNotMatch(all, /data-case-action="VERIFY_INTAKE" disabled/);
-  assert.equal((all.match(/checked/g) ?? []).length, 4);
+  // Counted outside the Contacts tab, whose form draws its own defaults.
+  const outsideContacts = all.slice(0, all.indexOf('id="case-panel-contacts"'));
+  assert.equal((outsideContacts.match(/checked/g) ?? []).length, 4);
   // The payload the form's four ticked boxes build is exactly the contract's.
   assert.deepEqual(
     payloadFor("VERIFY_INTAKE", {}, {
@@ -202,36 +234,24 @@ test("the intake checks are offered once, as four simulated attestations", () =>
 // Follow-up
 // ---------------------------------------------------------------------------
 
-test("the assignee records attempts and resolves separately, and nobody else can", () => {
+test("each open task has the shared form and Resolve", () => {
   const record = officeCase({
     requests: [openRequest()],
-    followups: [
-      openTask({
-        attempts: [
-          {
-            id: "att-1",
-            outcome: "no_answer",
-            note: "Rang twice, no voicemail.",
-            actorPersonId: "sam",
-            createdAt: "2026-09-12T12:00:00.000Z",
-          },
-        ],
-      }),
-    ],
+    followups: [openTask()],
+    contacts: [contactEntry()],
   });
-  const html = renderAdminCase(record, { person: SAM });
-  assert.match(html, /data-case-action="RECORD_CONTACT" data-followup-id="task-1"/);
-  assert.match(html, /data-case-action="RESOLVE_FOLLOWUP" data-followup-id="task-1"/);
+  const html = renderAdminCase(record, { person: SAM, now: Date.parse("2026-09-12T17:00:00.000Z") });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, linkedForm("task-1"));
+  assert.match(followup, /<h4>Log contact<\/h4>/);
+  assert.match(followup, /id="field-contact-task-task-1-note"/);
+  assert.doesNotMatch(html, /RECORD_CONTACT/);
+  assert.match(followup, /data-case-action="RESOLVE_FOLLOWUP" data-followup-id="task-1"/);
   // The request the task is about, its reason and the assignee the server chose.
   assert.match(html, /<h3>Mileage record<\/h3>/);
   assert.match(html, /No answer on the number we have\./);
   assert.match(html, /<span>Assigned to<\/span><strong>Sam<\/strong>/);
-  // The attempt list carries the outcome, the note, the person and the time.
-  assert.match(html, /No answer · Sam · [^<]*<small>Rang twice, no voicemail\.<\/small>/);
-  // Four outcomes for an attempt, two for a resolution, with per-task ids so
-  // two tasks can never share a box.
-  for (const value of ["no_answer", "reached", "no_further_contact", "closure_requested"])
-    assert.match(html, new RegExp(`id="field-contact-task-1-outcome"[^]*value="${value}"`));
+  // "Resolve this task" is as it was: two outcomes, per-task ids.
   const resolveForm = html.slice(html.indexOf('id="field-resolve-task-1-outcome"'));
   const resolveOptions = [...resolveForm.matchAll(/<option value="([a-z_]+)"/g)].map(
     (match) => match[1],
@@ -239,23 +259,52 @@ test("the assignee records attempts and resolves separately, and nobody else can
   assert.deepEqual(resolveOptions.slice(0, 2), ["reached", "no_further_contact"]);
   assert.ok(!resolveOptions.includes("no_answer"));
   assert.ok(!resolveOptions.includes("closure_requested"));
-  // The two steps say plainly that they are two steps.
-  assert.match(html, /Recording an attempt never resolves the task/);
+  assert.match(html, /<h4>Resolve this task<\/h4>/);
   assert.match(html, /does not verify a document, change the preparer, or close the case/);
+  // The log form comes before Resolve.
+  assert.ok(followup.indexOf("contact-form") < followup.indexOf("Resolve this task"));
   // There is no way to hand the task to somebody else.
   assert.doesNotMatch(html, /name="assignee/i);
   assert.match(html, /no way to hand it to someone else/i);
 
   // Both directions of the rule (Ruling R53).
   const forAlex = renderAdminCase(record, { person: ALEX });
-  assert.doesNotMatch(forAlex, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(forAlex, linkedForm("task-1"));
   assert.doesNotMatch(forAlex, /data-case-action="RESOLVE_FOLLOWUP"/);
   assert.match(forAlex, /Needs office follow-up access\./);
   // Holding the capability is still not holding the task.
   const forMorgan = renderAdminCase(record, { person: MORGAN_FOLLOWUP });
-  assert.doesNotMatch(forMorgan, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(forMorgan, linkedForm("task-1"));
   assert.match(forMorgan, /The office assigned this task to someone else\./);
   assert.doesNotMatch(forMorgan, /Needs office follow-up access\./);
+});
+
+test("the task lists its linked contacts", () => {
+  const record = officeCase({
+    requests: [openRequest()],
+    followups: [openTask()],
+    contacts: [contactEntry(), contactEntry({ id: "contact-2", followupId: null, note: "Not about the task." })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /<h4>Contacts so far<\/h4><ul class="contact-task-list"><li>9\/12\/2026 12:00 PM — Sam → client, phone — Request documents — No answer\. Note: Rang twice, no voicemail\.<\/li><\/ul>/);
+  assert.doesNotMatch(followup, /Not about the task/);
+  const none = renderAdminCase(officeCase({ requests: [openRequest()], followups: [openTask()] }), { person: SAM });
+  assert.match(none, /<h4>Contacts so far<\/h4><p class="muted">No contact has been logged on this task yet\.<\/p>/);
+});
+
+test("the office case has the Contacts tab with its count", () => {
+  const html = renderAdminCase(
+    officeCase({ contacts: [contactEntry({ followupId: null }), contactEntry({ id: "contact-2", followupId: null })] }),
+    { person: SAM },
+  );
+  const order = [...html.matchAll(/role="tab" id="case-tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["overview", "intake", "documents", "followup", "contacts", "history"]);
+  assert.match(html, /data-value="contacts">Contacts <span class="tab-count">2<\/span><\/button>/);
+  assert.match(html, /<h2 id="contacts-title">Contacts<\/h2>/);
+  assert.match(html, /<form class="staff-form contact-form" data-case-id="case-a">/);
+  // Sam is an admin: he may edit the entries he did not log too.
+  assert.match(html, /data-action="toggle-contact-edit" data-contact-id="contact-2"/);
 });
 
 test("two open tasks get four forms that cannot be confused", () => {
@@ -271,12 +320,14 @@ test("two open tasks get four forms that cannot be confused", () => {
   // page must never share one: a namesake would take the cursor, and the rest
   // of the sentence would be typed into, and sent for, the other task.
   for (const id of [
-    "field-contact-task-1-outcome",
-    "field-contact-task-1-note",
+    "field-contact-task-task-1-direction-outgoing",
+    "field-contact-task-task-1-contactedAt",
+    "field-contact-task-task-1-note",
     "field-resolve-task-1-outcome",
     "field-resolve-task-1-note",
-    "field-contact-task-2-outcome",
-    "field-contact-task-2-note",
+    "field-contact-task-task-2-direction-outgoing",
+    "field-contact-task-task-2-contactedAt",
+    "field-contact-task-task-2-note",
     "field-resolve-task-2-outcome",
     "field-resolve-task-2-note",
   ]) {
@@ -285,20 +336,19 @@ test("two open tasks get four forms that cannot be confused", () => {
       1,
       id,
     );
-    assert.match(html, new RegExp(`<label class="field" for="${id}">`));
+    assert.match(html, new RegExp(`<label class="(field|seg)" for="${id}">`));
   }
-  // Each form names its own task on the button and in its hidden field.
-  for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
-    for (const taskId of ["task-1", "task-2"])
-      assert.match(
-        html,
-        new RegExp(`data-case-action="${type}" data-followup-id="${taskId}"`),
-      );
+  // Each form names its own task: the log form on itself, Resolve on its
+  // button and in its hidden field.
+  for (const taskId of ["task-1", "task-2"]) {
+    assert.match(html, linkedForm(taskId));
+    assert.match(html, new RegExp(`data-case-action="RESOLVE_FOLLOWUP" data-followup-id="${taskId}"`));
+  }
   assert.equal(
     (html.match(/<input type="hidden" name="followupId" value="task-2">/g) ?? [])
       .length,
-    2,
-    "one hidden id per form, and both belong to the second task",
+    1,
+    "one hidden id, on the second task's Resolve form",
   );
 });
 
@@ -314,7 +364,7 @@ test("a resolved task keeps its history and offers no further action", () => {
     ],
   });
   const html = renderAdminCase(record, { person: SAM });
-  assert.doesNotMatch(html, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(html, linkedForm("task-1"));
   assert.doesNotMatch(html, /data-case-action="RESOLVE_FOLLOWUP"/);
   assert.match(html, /Spoke with the client — Spoke to the client; they will bring it in\./);
   assert.match(html, /Resolved/);
@@ -329,7 +379,7 @@ test("a client response arriving while the task is open is shown beside it", () 
   assert.match(html, /The client responded; awaiting preparer verification\./);
   assert.match(html, /Resolving this task does not verify the document\./);
   // The task is still open and still both steps.
-  assert.match(html, /data-case-action="RECORD_CONTACT"/);
+  assert.match(html, linkedForm("task-1"));
   assert.match(html, /data-case-action="RESOLVE_FOLLOWUP"/);
   // While the request is still open there is nothing to say about a response.
   const waiting = renderAdminCase(
@@ -494,13 +544,13 @@ test("a persona without the office roles gets explanations, not office actions",
     "VERIFY_INTAKE",
     "REMIND",
     "CLOSE_CASE",
-    "RECORD_CONTACT",
     "RESOLVE_FOLLOWUP",
     "RECORD_DOCUMENT_RESPONSE",
     "SAVE_ANSWERS",
   ])
     assert.ok(!caseActions(html).includes(type), type);
   assert.doesNotMatch(html, /data-assistance-action/);
+  assert.doesNotMatch(html, linkedForm("task-1"));
   assert.match(html, /Needs office administrator access\./);
   assert.match(html, /Needs office follow-up access\./);
   assert.match(html, /Needs office document-receipt access\./);
@@ -516,17 +566,9 @@ test("notes, reasons and titles are escaped wherever they are shown", () => {
         status: "resolved",
         resolutionOutcome: "reached",
         resolutionNote: nasty,
-        attempts: [
-          {
-            id: "att-1",
-            outcome: "no_answer",
-            note: nasty,
-            actorPersonId: "sam",
-            createdAt: "2026-09-12T12:00:00.000Z",
-          },
-        ],
       }),
     ],
+    contacts: [contactEntry({ note: nasty, withWhom: "other", otherName: nasty })],
     documents: [
       {
         id: "doc-1",

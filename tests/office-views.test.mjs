@@ -309,24 +309,42 @@ const task = (over = {}) => ({
   reason: "Ask for the missing W-2",
   assigneeId: "p-sam",
   assigneeName: "Sam",
-  attempts: [
-    { outcome: "no_answer", actorName: "Sam", createdAt: daysAgo(1), note: "Rang twice" },
-  ],
   ...over,
 });
-const called = (followups) =>
-  kase({ id: "c1", reference: "VT-CALL", stage: "preparing", followups });
+// One contact linked to the task, already decorated with its logger's name.
+const rang = {
+  id: "k1",
+  caseId: "c1",
+  followupId: "f1",
+  revision: 1,
+  loggedAt: "2026-09-26T14:00:00.000Z",
+  editedAt: null,
+  loggedByPersonId: "p-sam",
+  loggedByName: "Sam",
+  direction: "outgoing",
+  contactedAt: "2026-09-26T14:00:00.000Z",
+  withWhom: "client",
+  otherName: null,
+  method: "phone",
+  purpose: "request_documents",
+  outcome: "no_answer",
+  note: "Rang twice",
+  versions: [],
+};
+const called = (followups, contacts = [rang]) =>
+  kase({ id: "c1", reference: "VT-CALL", stage: "preparing", followups, contacts });
 const count = (html, pattern) => (html.match(pattern) ?? []).length;
 
-test("the Log a call drawer holds Sam's own task and both of its forms", () => {
-  const html = logCallDrawerBody({ record: called([task()]), person: sam, ui: {}, caseId: "c1" });
+test("the Log contact drawer holds Sam's own task, the shared form and Resolve", () => {
+  const html = logCallDrawerBody({ record: called([task()]), person: sam, ui: { now: NOW }, caseId: "c1" });
   assert.match(html, /VT-CALL/);
   assert.match(html, /class="badge/);
   assert.match(html, /Ask for the missing W-2/);
-  assert.match(html, /Calls so far/);
-  assert.match(html, /class="attempt-list"/);
-  assert.match(html, /Rang twice/);
-  assert.match(html, /data-case-action="RECORD_CONTACT"[^>]*data-followup-id="f1"/);
+  assert.match(html, /<h4>Contacts so far<\/h4><ul class="contact-task-list"><li>9\/26\/2026 10:00 AM — Sam → client, phone — Request documents — No answer\. Note: Rang twice<\/li>/);
+  assert.match(html, /<form class="staff-form contact-form" data-case-id="c1" data-followup-id="f1">/);
+  assert.match(html, /<h4>Log contact<\/h4>/);
+  assert.doesNotMatch(html, /RECORD_CONTACT/);
+  assert.match(html, /<h4>Resolve this task<\/h4>/);
   assert.match(html, /data-case-action="RESOLVE_FOLLOWUP"[^>]*data-followup-id="f1"/);
   assert.match(html, /data-action="open-case"[^>]*data-case-id="c1"[^>]*>Open the case</);
 });
@@ -339,7 +357,7 @@ test("a task assigned to someone else shows the reason and no form", () => {
     caseId: "c1",
   });
   assert.match(html, /The office assigned this task to someone else\./);
-  assert.doesNotMatch(html, /RECORD_CONTACT/);
+  assert.doesNotMatch(html, /contact-form/);
 });
 
 test("two open tasks are two sections with their own field ids", () => {
@@ -353,6 +371,14 @@ test("two open tasks are two sections with their own field ids", () => {
   const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, "every field id is unique");
   assert.match(html, /data-followup-id="f2"/);
+  // Each task lists only its own contacts.
+  assert.match(html, /<section class="drawer-task"><h3>Confirm the address<\/h3>[^]*?No contact has been logged on this task yet\./);
+});
+
+test("the drawer and its button say Log contact", () => {
+  const row = rowOf(page([kase({ id: "e", stage: "preparing", openFollowups: 1 })]), "e");
+  assert.match(row, /data-action="open-log-call"[^>]*data-case-id="e"[^>]*>[^]*?<\/svg> Log contact<\/button>/);
+  assert.doesNotMatch(row, /Log a call/);
 });
 
 test("a case with no open task left says so and offers to close", () => {
@@ -364,10 +390,10 @@ test("a case with no open task left says so and offers to close", () => {
   });
   assert.match(html, /No open follow-up is left on this case\./);
   assert.match(html, /data-action="close-dialog"/);
-  assert.doesNotMatch(html, /RECORD_CONTACT/);
+  assert.doesNotMatch(html, /contact-form/);
 });
 
-test("the Log a call drawer's empty line is a muted line, like every case section", () => {
+test("the Log contact drawer's empty line is a muted line, like every case section", () => {
   const html = logCallDrawerBody({
     record: called([task({ status: "resolved" })]),
     person: sam,
@@ -442,7 +468,7 @@ test("the help drawer resolves one assigned request, as the old card did", () =>
   assert.match(refused, /id="drawer-error"/);
 });
 
-test("the Log a call drawer states a refusal once in every branch without a task", () => {
+test("the Log contact drawer states a refusal once in every branch without a task", () => {
   const ui = { error: { code: "VALIDATION", message: "Refused here." } };
   for (const [record, caseId] of [
     [called([task()]), "c2"], // another case
@@ -465,7 +491,7 @@ test("the help drawer states a refusal once in every branch", () => {
   }
 });
 
-test("a queue row and the Log a call drawer show the client number", () => {
+test("a queue row and the Log contact drawer show the client number", () => {
   const html = page([kase({ id: "n", reference: "VT-NUM", clientNumber: 93, season: 2025 })]);
   assert.match(rowOf(html, "n"), /<span class="client-number">#093<\/span><button class="board-reference"/);
   const drawer = logCallDrawerBody({

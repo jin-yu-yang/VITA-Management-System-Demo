@@ -36,7 +36,7 @@ import {
 } from "./ui.mjs";
 import {
   adminEligibility,
-  attemptList,
+  taskContacts,
   followupForms,
   openFollowups,
   openFollowupCount,
@@ -184,7 +184,7 @@ function rowAction(row, person, ui) {
       : explain(rights.remind);
   }
   if (kind === "call")
-    return button(`${icon("phone")} Log a call`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
+    return button(`${icon("phone")} Log contact`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
   const rights = adminEligibility({ item }, person);
   if (item?.status === "open")
     return rights.claimAssistance.allowed
@@ -282,7 +282,7 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The two drawers: Log a call, and Resolve a help request
+// The two drawers: Log contact, and Resolve a help request
 // ---------------------------------------------------------------------------
 
 // The one announcement of a failure while a drawer is open (pitfall 8): the
@@ -299,8 +299,9 @@ const drawerError = (ui) =>
     : "";
 
 /**
- * The Log a call drawer: every open follow-up task on one case, each with the
- * same two forms the case page's Follow-up tab uses.
+ * The Log contact drawer: every open follow-up task on one case, each with its
+ * contacts so far and the same two forms the case page's Follow-up tab uses.
+ * (Its name and dialog key, `log-call`, are internal and stay.)
  *
  * @param {object} args `{record, person, ui, caseId}` — `record` is the loaded
  *   case, decorated (`decorateStaffCase`); `caseId` is the case the drawer was
@@ -316,7 +317,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   return `${head}${drawerError(ui)}${tasks
     .map(
       (task) =>
-        `<section class="drawer-task"><h3>${esc(task.reason)}</h3>${detailRow("Assigned to", task.assigneeName ?? UNKNOWN_PERSON)}<h4>Calls so far</h4>${attemptList(task)}${followupForms(record, task, person, ui)}</section>`,
+        `<section class="drawer-task"><h3>${esc(task.reason)}</h3>${detailRow("Assigned to", task.assigneeName ?? UNKNOWN_PERSON)}<h4>Contacts so far</h4>${taskContacts(record, task)}${followupForms(record, task, person, ui)}</section>`,
     )
     .join("")}`;
 }

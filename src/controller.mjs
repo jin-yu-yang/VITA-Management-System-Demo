@@ -326,7 +326,7 @@ export function createController({
     openPanels: [],
     lookup: "",
     dialog: null,
-    // What the open dialog is about — the case a Log a call drawer was opened
+    // What the open dialog is about — the case a Log contact drawer was opened
     // from, the help request being resolved. Window-local and never persisted:
     // a reload closes every dialog.
     dialogContext: null,

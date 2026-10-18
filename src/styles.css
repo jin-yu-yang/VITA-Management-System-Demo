@@ -5323,3 +5323,157 @@ html:lang(zh-Hant) {
 /* The pressed button while its press runs (design D5). */
 .btn.is-busy { cursor: progress; }
 .btn.is-busy .icon.spin { width: 16px; height: 16px; margin-right: 6px; }
+
+/* ---- The contact log (change add-contact-log): the Log contact form's
+   button groups, the Contacts tab's entries, and the task's own list. The
+   groups are real radios inside a fieldset; only the dot is hidden, so the
+   keyboard and screen readers get native radio groups. ---- */
+.contact-form .seg-group {
+  border: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  min-width: 0;
+}
+.contact-form .seg-group[hidden],
+.contact-form [data-other-name][hidden] {
+  display: none;
+}
+.contact-form .seg-group legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vt-ink);
+}
+.seg-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+.seg {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+.seg input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+.seg span {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--vt-tap);
+  padding: 0 14px;
+  border: 1px solid var(--vt-primary-line);
+  border-radius: var(--vt-radius-sm);
+  background: var(--vt-surface);
+  color: var(--vt-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg:hover span {
+  background: var(--vt-primary-soft);
+}
+.seg input:checked + span {
+  border-color: var(--vt-primary);
+  background: var(--vt-primary);
+  color: #fff;
+}
+.seg input:focus-visible + span {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.contact-form input[type="datetime-local"] {
+  max-width: 100%;
+}
+.contact-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.contact-list,
+.contact-task-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+.contact-entry {
+  border: 1px solid var(--vt-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+}
+.contact-entry:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.contact-line {
+  margin: 0;
+}
+.contact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  color: var(--vt-muted);
+  font-size: 12px;
+}
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.contact-actions .btn,
+.contacts-panel .section-head .btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.contact-versions {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.contact-versions summary {
+  cursor: pointer;
+  color: var(--vt-muted);
+}
+.contact-versions summary:focus-visible {
+  outline: 3px solid var(--vt-primary);
+  outline-offset: 2px;
+}
+.contact-versions ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+.contact-versions small {
+  display: block;
+  color: var(--vt-muted);
+  font-size: 12px;
+}
+.contact-task-list {
+  margin: 8px 0 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--vt-line);
+  overflow-wrap: anywhere;
+}
+.office-drawer .contact-task-list,
+.office-drawer .contact-form {
+  border-color: var(--vt-line);
+}
+@media (max-width: 420px) {
+  .seg span {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}

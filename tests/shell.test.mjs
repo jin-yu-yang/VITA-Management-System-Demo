@@ -242,7 +242,7 @@ const drawerCase = {
   stage: "preparing",
   revision: 3,
   answers: {},
-  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam", attempts: [] }],
+  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam" }],
 };
 const drawerState = (over = {}) => ({
   principal: { access: "presenter" },
@@ -276,8 +276,9 @@ test("the drawer is the modal frame at the edge, and each dialog names its place
   );
   assert.match(drawer, /class="modal office-drawer"/);
   assert.match(drawer, /OFFICE FOLLOW-UP/);
-  assert.match(drawer, /Log a call/);
-  assert.match(drawer, /data-case-action="RECORD_CONTACT"/);
+  assert.match(drawer, /<h2[^>]*>Log contact<\/h2>/);
+  assert.doesNotMatch(drawer, /Log a call|RECORD_CONTACT/);
+  assert.match(drawer, /<form class="staff-form contact-form" data-case-id="c1" data-followup-id="f1">/);
 
   const help = dialog(
     drawerState({
@@ -1172,4 +1173,35 @@ test("the Tab trap asks trapTarget, so the dialog itself cannot be tabbed out of
   const app = appSource();
   assert.match(app, /const target = trapTarget\(focusable, document\.activeElement, event\.shiftKey\);/);
   assert.doesNotMatch(app, /document\.activeElement === first\)/);
+});
+
+// The contact log (change add-contact-log, Task 4): app.mjs has no DOM
+// harness, so its wiring is pinned at the source, like the version-2 actions.
+test("app.mjs wires the Log contact form, Copy, Copy all and Edit", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const views = read("../src/staff-views.mjs");
+  for (const action of ["toggle-contact-edit", "copy-contact", "copy-all-contacts"]) {
+    assert.match(views, new RegExp(`"${action}"`), `the Contacts tab emits ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  // The submit goes through the form builder, to the controller's own calls,
+  // never through a case action.
+  assert.match(app, /form\.matches\("\.contact-form"\)[^]*?submitContact\(form, by\)/);
+  assert.match(app, /contactEntryFromForm\(values\)/);
+  assert.match(app, /controller\.logContact\(caseId, entry, followupId \|\| null\)/);
+  assert.match(app, /controller\.editContact\(contactId, entry\)/);
+  // The outcome groups follow the radios after every restore and every change.
+  assert.match(app, /restoreFormDrafts\(\);\n\s*syncContactForms\(\);/);
+  assert.match(app, /set\.hidden = !on;\n\s*set\.disabled = !on;/);
+  // Copy writes the same lines the page shows.
+  assert.match(app, /navigator\.clipboard\.writeText\(one \? contactSummary\(one, options\) : contactSummaries\(contacts, options\)\)/);
+  for (const toast of [
+    "The contact is logged.", "The contact is updated.", "Copied.",
+    "Copy did not work. Select the line and copy it by hand.", "Type the name of the person you contacted.",
+  ])
+    assert.ok(app.includes(`"${toast}"`), toast);
+  assert.match(app, /`Copied \$\{n\} contacts\.`/);
+  // The old attempt is gone from the browser, notice and all.
+  assert.doesNotMatch(app, /RECORD_CONTACT/);
 });

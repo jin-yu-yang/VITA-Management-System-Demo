@@ -12,7 +12,6 @@ import {
   emptyLine,
 } from "./ui.mjs";
 import {
-  CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
   INTAKE_CHECK_KEYS,
   SAMPLE_DOCUMENT_FILENAME,
@@ -37,7 +36,14 @@ import {
   CONTACT_OUTCOME_LABELS,
   CHOOSE_PERSONA,
   UNKNOWN_PERSON,
+  contactsPanel,
+  logContactForm,
+  taskContacts,
 } from "./staff-views.mjs";
+
+// The task's own list lives beside the Contacts tab, in staff-views.mjs, and
+// the office drawer takes it from here as it always took the attempt list.
+export { taskContacts };
 
 // Sam's side of the workspace: the office board and the office view of one
 // case. Pure functions, exactly like `staff-views.mjs` — no state, no store, no
@@ -406,51 +412,17 @@ function receiptPanel(record, person, ui) {
   )}${body}</section>`;
 }
 
-export function attemptList(task) {
-  const attempts = task?.attempts ?? [];
-  if (!attempts.length)
-    return emptyLine("No call has been recorded on this task yet.");
-  return `<ul class="attempt-list">${attempts
-    .map(
-      (attempt) =>
-        `<li>${esc(
-          named(CONTACT_OUTCOME_LABELS, attempt?.outcome, "Attempt"),
-        )} · ${esc(attempt?.actorName ?? UNKNOWN_PERSON)} · ${esc(
-          formatTime(attempt?.createdAt),
-        )}<small>${esc(attempt?.note)}</small></li>`,
-    )
-    .join("")}</ul>`;
-}
-
-// The two forms an assignee uses on an open task: record an attempt, then
-// resolve it. Shared by the case page's Follow-up tab and the office queue's
-// Log a call drawer, so the two can never ask for different things.
+// The two forms an assignee uses on an open task: the shared Log contact form,
+// linked to the task, then Resolve. Shared by the case page's Follow-up tab
+// and the office queue's Log contact drawer, so the two can never ask for
+// different things; the Contacts tab draws the same form, unlinked.
 export function followupForms(record, task, person, ui = {}) {
   const busy = ui.busy ? "disabled" : "";
   const rights = adminEligibility({ caseRecord: record, followup: task }, person);
   if (!rights.recordContact.allowed) return explain(rights.recordContact);
-  const contactScope = `contact-${task?.id ?? "task"}`;
   const resolveScope = `resolve-${task?.id ?? "task"}`;
   const hidden = `<input type="hidden" name="followupId" value="${esc(task?.id ?? "")}">`;
-  return `<form class="staff-form"><h4>Record a call</h4>${hidden}${select(
-        "What happened",
-        "outcome",
-        "",
-        outcomeOptions(CONTACT_OUTCOMES),
-        "required",
-        contactScope,
-      )}${textarea(
-        "Note for the office",
-        "note",
-        "",
-        'required maxlength="1000" rows="2"',
-        contactScope,
-      )}${caseSubmit(
-        `${icon("phone")} Record this attempt`,
-        "RECORD_CONTACT",
-        "secondary",
-        `data-followup-id="${esc(task?.id ?? "")}" ${busy}`,
-      )}<p class="field-note">Recording an attempt never resolves the task, even when you reached the client. Resolving it is the separate step below.</p></form><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
+  return `${logContactForm(record, person, ui, { followupId: task?.id ?? null })}<p class="field-note">Logging a contact never resolves the task, even when you reached the client. Resolving it is the separate step below.</p><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
         "How it ended",
         "outcome",
         "",
@@ -489,7 +461,7 @@ function followupTask(record, task, person, ui) {
   )}${detailRow(
     "Raised",
     task?.createdAt ? formatTime(task.createdAt) : "—",
-  )}${answered}<h4>Calls so far</h4>${attemptList(task)}${when(
+  )}${answered}<h4>Contacts so far</h4>${taskContacts(record, task)}${when(
     task?.resolutionNote,
     `<p class="field-note">${icon("check")} ${esc(
       named(CONTACT_OUTCOME_LABELS, task?.resolutionOutcome, "Resolved"),
@@ -619,6 +591,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
       `${documentChecklist(record, staffRights, view)}${documentsPanel(record, staffRights, view)}`,
     ],
     ["followup", "Follow-up", adminFollowupPanel(record, person, view)],
+    ["contacts", "Contacts", contactsPanel(record, person, view)],
     ["history", "History", historyPanel(record, Array.isArray(record.internalHistory))],
   ];
   return [
@@ -627,6 +600,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
     caseTabs(panels, view.caseTab, {
       documents: (record.requests ?? []).length,
       followup: openFollowups,
+      contacts: (record.contacts ?? []).length,
     }),
   ].join("");
 }

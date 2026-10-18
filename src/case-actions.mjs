@@ -21,7 +21,8 @@ import {
 // no other name.
 export const SAMPLE_DOCUMENT_FILENAME = "demo-mileage-record-2025.pdf";
 
-// A contact attempt's outcome, and the subset that may also resolve the task.
+// The review conversation's outcome, and the subset that may resolve an office
+// task. (A follow-up contact is logged in the contact log instead.)
 export const CONTACT_OUTCOMES = Object.freeze([
   "no_answer",
   "reached",
@@ -174,11 +175,6 @@ const BUILDERS = Object.freeze({
   ESCALATE_CONTACT: (dataset, values) => ({
     requestId: relatedId(dataset, values, "requestId", "request"),
     reason: text(values, "reason", "A reason for the office"),
-  }),
-  RECORD_CONTACT: (dataset, values) => ({
-    followupId: relatedId(dataset, values, "followupId", "task"),
-    outcome: outcome(values, CONTACT_OUTCOMES),
-    note: text(values, "note", "A note"),
   }),
   RESOLVE_FOLLOWUP: (dataset, values) => ({
     followupId: relatedId(dataset, values, "followupId", "task"),
