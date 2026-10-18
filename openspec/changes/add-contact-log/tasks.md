@@ -1,6 +1,6 @@
 ## 1. Database
 
-- [ ] 1.1 Write `tests/database-contacts.mjs` first (it fails until 1.2 exists), with `createDatabaseFixture`:
+- [x] 1.1 Write `tests/database-contacts.mjs` first (it fails until 1.2 exists), with `createDatabaseFixture`:
   - Logging: Alex, Morgan and Sam each log on cases in different stages; `logged_at`, the logger and version 1 are set by the database; a past `contacted_at` is kept; `cases.revision`, `case_events` and `client_events` are unchanged.
   - Outcome rules: each method's allowed outcomes succeed and the others are `VT007`; incoming or in person with anything but `reached` is `VT007`.
   - Other refusals with no receipt left behind: "other" without a name, a name with client/spouse, an unknown key or value, a note over 1000 characters, `contacted_at` more than 5 minutes ahead (`VT007`); a client's private draft (`VT002`); an applicant session, no persona, a persona from another workspace (`VT001`).
@@ -11,9 +11,9 @@
   - The move (D11): attempts of all four old outcomes, written into `contact_attempts` by `f.sql` before the move function runs, become linked entries with every mapped field; none remain in `contact_attempts`.
   - `RECORD_CONTACT`: a new request is `VT007` with nothing written; a replay of an accepted one returns its receipt.
   - Fixtures: the `admin_followup` checkpoint seeds one linked entry and no attempt; a checkpoint clears the case's entries; a sample reset removes them.
-- [ ] 1.2 Add `supabase/migrations/031_contact_log.sql` (design D1–D6, D11, D12): tables, checks, foreign keys, RLS, grants, Realtime; `vitally_log_contact` and `vitally_edit_contact`; the one-time move; `act_record_contact` refusing; `apply_fixture_scenario` copied from 019 with the two changes. Redefine no other existing function.
-- [ ] 1.3 Move the existing database tests off `RECORD_CONTACT`: where a test records an attempt as setup or to check its effect (`database-assistance.mjs`, `database-documents.mjs`, `database-realtime.mjs`, `database-review.mjs`, `database-fixtures.mjs`, `database.mjs`), log a linked contact instead; refusals that happen before the handler (capability, assignee, payload) keep testing `RECORD_CONTACT`; checks that read `contact_attempts` read `contact_log`.
-- [ ] 1.4 Run `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 1.2 Add `supabase/migrations/031_contact_log.sql` (design D1–D6, D11, D12): tables, checks, foreign keys, RLS, grants, Realtime; `vitally_log_contact` and `vitally_edit_contact`; the one-time move; `act_record_contact` refusing; `apply_fixture_scenario` copied from 019 with the two changes. Redefine no other existing function.
+- [x] 1.3 Move the existing database tests off `RECORD_CONTACT`: where a test records an attempt as setup or to check its effect (`database-assistance.mjs`, `database-documents.mjs`, `database-realtime.mjs`, `database-review.mjs`, `database-fixtures.mjs`, `database.mjs`), log a linked contact instead; refusals that happen before the handler (capability, assignee, payload) keep testing `RECORD_CONTACT`; checks that read `contact_attempts` read `contact_log`.
+- [x] 1.4 Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 2. Summary line and New York time
 
