@@ -9,7 +9,8 @@
 --     authority, revision, entry) without touching the case row, its history
 --     or the shared case-action helpers.
 --   * The office's follow-up attempts (`contact_attempts`) are moved into the
---     log once, linked to their task; the table stays, empty.
+--     log once, linked to their task; the table stays, empty, and leaves the
+--     Realtime publication (the browser watches the log instead).
 --   * `act_record_contact` refuses every new RECORD_CONTACT (D12), and
 --     `apply_fixture_scenario` clears a sample's entries and seeds the sample
 --     follow-up's call as a log entry (D6).
@@ -121,6 +122,14 @@ begin
    execute format('alter publication supabase_realtime add table public.%I', v_table);
   end if;
  end loop;
+ -- Nothing writes or watches the old attempts any more (D10, D12), and the
+ -- publication must stay exactly the set the browser adapter watches.
+ if exists(
+  select 1 from pg_publication_tables
+  where pubname='supabase_realtime' and schemaname='public' and tablename='contact_attempts'
+ ) then
+  alter publication supabase_realtime drop table public.contact_attempts;
+ end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -290,12 +299,19 @@ begin
   perform vitally_private.contact_person(v_member,p_person_id);
   return v_receipt.receipt;
  end if;
+ -- The case first, then the entry, in the same order as every case action;
+ -- the entry is re-read under its lock and must still be on that case.
  select * into v_contact from public.contact_log
-  where id=p_contact_id and workspace_id=v_member.workspace_id for update;
+  where id=p_contact_id and workspace_id=v_member.workspace_id;
  if not found then
   raise sqlstate 'VT002' using message='NOT_FOUND';
  end if;
  v_case=vitally_private.lock_case(v_member,v_contact.case_id);
+ select * into v_contact from public.contact_log
+  where id=p_contact_id and workspace_id=v_member.workspace_id and case_id=v_case.id for update;
+ if not found then
+  raise sqlstate 'VT002' using message='NOT_FOUND';
+ end if;
  v_person=vitally_private.contact_person(v_member,p_person_id);
  if v_contact.logged_by_person_id is distinct from v_person.id and not ('admin'=any(v_person.capabilities)) then
   raise sqlstate 'VT001' using message='FORBIDDEN';
@@ -322,18 +338,33 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 6. Move the follow-up attempts into the log, once (D11): each becomes an
+-- 6. RECORD_CONTACT refuses new requests (D12). Receipts are checked before
+-- the handler, so a replay of a request accepted before this change still
+-- returns its receipt. The shared action code is left as it is. It comes
+-- before the move, so no new attempt can be written once the move has run.
+
+create or replace function vitally_private.act_record_contact(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ -- Contacts are logged with vitally_log_contact (design D12).
+ raise sqlstate 'VT007' using message='VALIDATION';
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7. Move the follow-up attempts into the log, once (D11): each becomes an
 -- entry and its version 1, linked to its task, outgoing, by phone, with the
 -- client, to request documents, at the attempt's time and by its persona. The
 -- two closing outcomes were said by a client who was reached, so they keep
--- their meaning in the note. Returns the number moved.
+-- their meaning in the note. Only the attempts moved are deleted. Returns the
+-- number moved.
 
 create or replace function vitally_private.move_contact_attempts() returns int
 language plpgsql security definer set search_path='' as $$
 declare v_count int;
 begin
  with moved as materialized (
-  select gen_random_uuid() as contact_id,a.workspace_id,a.case_id,a.followup_id,a.actor_user_id,a.actor_person_id,a.created_at,
+  select a.id as attempt_id,gen_random_uuid() as contact_id,a.workspace_id,a.case_id,a.followup_id,a.actor_user_id,a.actor_person_id,a.created_at,
    case when a.outcome='no_answer' then 'no_answer' else 'reached' end as outcome,
    left(case a.outcome
     when 'no_further_contact' then concat_ws(' ','Client asked for no further contact.',nullif(btrim(a.note),''))
@@ -348,32 +379,23 @@ begin
     'outgoing',m.created_at,'client',null,'phone','request_documents',m.outcome,m.note
   from moved m
   returning id
+ ), versioned as (
+  insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
+    direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+  select m.contact_id,1,m.workspace_id,m.case_id,m.actor_user_id,m.actor_person_id,m.created_at,
+    'outgoing',m.created_at,'client',null,'phone','request_documents',m.outcome,m.note
+  from moved m join logged l on l.id=m.contact_id
+  returning contact_id
+ ), deleted as (
+  delete from public.contact_attempts a using moved m where a.id=m.attempt_id
+  returning a.id
  )
- insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
-   direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
- select m.contact_id,1,m.workspace_id,m.case_id,m.actor_user_id,m.actor_person_id,m.created_at,
-   'outgoing',m.created_at,'client',null,'phone','request_documents',m.outcome,m.note
- from moved m join logged l on l.id=m.contact_id;
- get diagnostics v_count=row_count;
- delete from public.contact_attempts;
+ select count(*) into v_count from versioned;
  return v_count;
 end;
 $$;
 
 select vitally_private.move_contact_attempts();
-
--- ---------------------------------------------------------------------------
--- 7. RECORD_CONTACT refuses new requests (D12). Receipts are checked before
--- the handler, so a replay of a request accepted before this change still
--- returns its receipt. The shared action code is left as it is.
-
-create or replace function vitally_private.act_record_contact(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
-returns jsonb language plpgsql security definer set search_path='' as $$
-begin
- -- Contacts are logged with vitally_log_contact (design D12).
- raise sqlstate 'VT007' using message='VALIDATION';
-end;
-$$;
 
 -- ---------------------------------------------------------------------------
 -- 8. apply_fixture_scenario, verbatim from 019 with two changes (D6): it

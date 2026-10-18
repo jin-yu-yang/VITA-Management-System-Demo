@@ -229,6 +229,39 @@ test("the contact log", async (t) => {
         otherName: "  Pat Example ",
       });
       assert.equal((await contactRow(f, contactId)).other_name, "Pat Example");
+      // A blank name with the client is no name, not a refusal.
+      const blank = await f.logContact(f.presenter, caseId, f.alex, {
+        ...base,
+        withWhom: "client",
+        otherName: "  ",
+      });
+      assert.equal((await contactRow(f, blank.contactId)).other_name, null);
+    });
+
+    await t.test("an edit that breaks a rule is refused", async () => {
+      const caseId = await f.readyCase();
+      const { contactId } = await f.logContact(f.presenter, caseId, f.alex, SAMPLE_CONTACT());
+      const before = {
+        row: await contactRow(f, contactId),
+        versions: await versionRows(f, contactId),
+      };
+      for (const entry of [
+        { ...SAMPLE_CONTACT(), method: "text", outcome: "reached" },
+        { ...SAMPLE_CONTACT(), withWhom: "other", otherName: null },
+        { ...SAMPLE_CONTACT(), contactedAt: "yesterday" },
+        { ...SAMPLE_CONTACT(), extra: 1 },
+      ])
+        await refuse(
+          f,
+          f.presenter,
+          "vitally_edit_contact",
+          editContactArgs({ contactId, revision: 1, personId: f.alex, entry }),
+          "VT007",
+        );
+      assert.deepEqual(
+        { row: await contactRow(f, contactId), versions: await versionRows(f, contactId) },
+        before,
+      );
     });
 
     await t.test("a blank note is stored as no note", async () => {
@@ -442,6 +475,8 @@ test("the contact log", async (t) => {
         p_entry: { ...args.p_entry, note: "Another note." },
       });
       assert.equal(error?.code, "VT007");
+      const after = await f.sql("select count(*)::int as n from public.contact_log where case_id=$1", [caseId]);
+      assert.equal(after.rows[0].n, 1);
       const editArgs = editContactArgs({
         contactId: one.data.contactId,
         revision: 1,
