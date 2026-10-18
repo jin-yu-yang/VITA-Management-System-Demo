@@ -35,6 +35,8 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
 
 **Out of scope:** generating the Exit Form PDF; the call log (`add-call-log`) and its 3a/3b prefill; any change to "Record this conversation" (`RECORD_REVIEW_CONTACT`); importing TaxSlayer reports; client text.
 
+**Tracking:** part of #85, the TODO list this work was folded into (#83 was folded into #85). The PR says "Part of #85" and uses no closing keyword ("Fixes", "Closes", "Resolves"), so merging it leaves #85 open.
+
 **Sequencing:** this change is applied only after Jinyu's lifecycle chain (#73) merges. The plan uses today's stage names, and they will be updated with `/opsx:update` once the chain lands.
 
 ## Capabilities
