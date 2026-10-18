@@ -1160,10 +1160,10 @@ if (!config) {
   // blockers stop it; the PDF is loaded into it when ready. pdf-lib and the
   // form load only now, and the Chinese font only when some answer needs it
   // (the same files whatever the text says).
-  function writeTab(tab, text) {
+  function writeTab(tab, text, kind = "13614c") {
     try {
       const page = tab.document;
-      page.title = t("draft.tab_title", {}, screenLang());
+      page.title = t(kind === "14446" ? "draft14446.tab_title" : "draft.tab_title", {}, screenLang());
       page.documentElement?.setAttribute("lang", screenLang());
       if (!page.body) page.documentElement?.append(page.createElement("body"));
       page.body.textContent = text;
@@ -1212,10 +1212,12 @@ if (!config) {
   }
 
   async function viewDraft(form, by, kind = "13614c") {
+    // A client's 13614-C is half finished (hide-draft-13614c-from-clients): only staff make one.
+    if (kind !== "14446" && controller.getState().principal?.access !== "presenter") return;
     const files = kind === "14446" ? FORM_14446_FILES : FORM_FILES;
     if (!Object.hasOwn(files, form)) return;
     const tab = window.open("", "_blank");
-    if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
+    if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()), kind);
     // An earlier press's link goes: this press makes a new draft.
     draftOffers.drop();
     showDraftLink();
@@ -1257,7 +1259,7 @@ if (!config) {
       // A draft that was built and offered: an earlier draft problem is over.
       controller.clearError("DRAFT");
     } catch (error) {
-      if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
+      if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()), kind);
       if (by !== signedInUserId()) return;
       // A draft that couldn't be built is an error: the banner, with Try again.
       controller.noteLocalFailure(

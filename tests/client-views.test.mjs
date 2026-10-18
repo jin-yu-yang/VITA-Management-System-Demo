@@ -1245,7 +1245,7 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   assert.ok(intro >= 0 && intro < tools && tools < fold && fold < start && start < end, "the order");
   assert.equal(
     html.slice(intro, tools),
-    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 13614-C or Form 14446 made from your answers.</p></div>',
+    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 14446 made from your answers.</p></div>',
   );
   assert.equal(
     html.slice(fold, start),
@@ -1254,9 +1254,9 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   // The tools, before the printed block.
   const toolbox = html.slice(tools, fold);
   assert.match(toolbox, /data-action="print-summary"[^>]*>[\s\S]*?Print<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="en"[^>]*>[\s\S]*?View Draft 13614-C<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-s"[^>]*>简体中文版<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-t"[^>]*>繁體中文版<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-draft="14446" data-form="en"[^>]*>[\s\S]*?View Draft Form 14446<\/button>/);
+  assert.doesNotMatch(toolbox, /data-action="view-draft"(?![^>]*data-draft="14446")/);
+  assert.doesNotMatch(toolbox, /13614-C/);
   assert.match(toolbox, /<p id="draft-ready" class="draft-ready" aria-live="polite"><\/p>/);
   const printed = html.slice(start, end);
   assert.match(printed, /VT-GJPY-JAY9/);
@@ -1290,11 +1290,11 @@ test("the summary offers the draft Form 14446 in English and 繁體, never 简�
   assert.match(en, /data-action="view-draft" data-draft="14446" data-form="en"/);
   assert.match(en, /data-draft="14446" data-form="zh-t"/);
   assert.doesNotMatch(en, /data-draft="14446" data-form="zh-s"/);
-  assert.match(en, /view and download a draft Form 13614-C or Form 14446 made from your answers/);
-  // The spec's order: Print, then View Draft 13614-C, then View Draft Form 14446.
+  assert.match(en, /view and download a draft Form 14446 made from your answers/);
+  assert.doesNotMatch(en, /13614-C/);
+  // The spec's order: Print, then View Draft Form 14446.
   const at = (pattern) => en.search(pattern);
-  assert.ok(at(/data-action="print-summary"/) < at(/data-action="view-draft"(?![^>]*data-draft="14446")/), "Print before the 13614-C");
-  assert.ok(at(/data-action="view-draft"(?![^>]*data-draft="14446")/) < at(/data-draft="14446"/), "the 13614-C before the 14446");
+  assert.ok(at(/data-action="print-summary"/) < at(/data-draft="14446"/), "Print before the 14446");
   const hans = summary("zh-Hans");
   assert.match(hans, /data-draft="14446" data-form="zh-t"/);
   assert.doesNotMatch(hans, /data-draft="14446" data-form="zh-s"/);
