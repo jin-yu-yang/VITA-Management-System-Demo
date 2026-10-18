@@ -23,9 +23,9 @@
 
 ## 3. Store and controller
 
-- [ ] 3.1 `src/supabase-store.mjs`: read `contact_log` and `contact_log_versions` in the staff `getCase` (and stop reading `contact_attempts`); map them as `contacts` (each with `versions`); add `logContact` and `editContact`; `STAFF_TABLES` swaps `contact_attempts` for the two tables. Update `tests/store.test.mjs`, including that the client path names neither table.
+- [x] 3.1 `src/supabase-store.mjs`: read `contact_log` and `contact_log_versions` in the staff `getCase` (and stop reading `contact_attempts`); map them as `contacts` (each with `versions`); add `logContact` and `editContact`; `STAFF_TABLES` swaps `contact_attempts` for the two tables. Update `tests/store.test.mjs`, including that the client path names neither table.
 - [ ] 3.2 `src/staff-views.mjs` `decorateStaffCase`: names on contacts and versions; follow-ups no longer carry `attempts`. `src/controller.mjs`: `logContact(caseId, entry, followupId)` and `editContact(contactId, entry)` (design D10); a Realtime change on either table re-reads the open case. `src/contracts.mjs`, `src/case-actions.mjs`, `src/app.mjs` notices: drop `RECORD_CONTACT` (keep its History label in `staff-views.mjs`). Update `tests/controller.test.mjs`, `tests/case-actions.test.mjs`, `tests/domain.test.mjs` and `tests/shell.test.mjs` where they name `RECORD_CONTACT` or `attempts`.
-- [ ] 3.3 Run `npm test`.
+- [x] 3.3 Run `npm test`.
 
 ## 4. The form, the Contacts tab and the office
 
