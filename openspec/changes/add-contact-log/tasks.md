@@ -37,8 +37,8 @@
 
 ## 5. Browser story
 
-- [ ] 5.1 Update `tests/browser.mjs`: the office follow-up phase logs through the Log contact form (in the drawer and on the Follow-up tab) instead of `RECORD_CONTACT`; add a contact-log phase (log, live in a second window, edit sent → client replied, admin correction, persona without Edit, incoming line, Copy all on the clipboard, the client window shows nothing).
-- [ ] 5.2 Ask Hailey before switching the main checkout to this branch; then, from the main checkout, run `npm run db:migrate:test` and `npm run test:browser` once. Record the result in verify.md.
+- [x] 5.1 Update `tests/browser.mjs`: the office follow-up phase logs through the Log contact form (in the drawer and on the Follow-up tab) instead of `RECORD_CONTACT`; add a contact-log phase (log, live in a second window, edit sent → client replied, admin correction, persona without Edit, incoming line, Copy all on the clipboard, the client window shows nothing).
+- [x] 5.2 Ask Hailey before switching the main checkout to this branch; then, from the main checkout, run `npm run db:migrate:test` and `npm run test:browser` once. Record the result in verify.md.
 
 ## 6. Docs and checks
 
