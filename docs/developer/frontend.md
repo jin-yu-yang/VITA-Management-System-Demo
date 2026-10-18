@@ -21,6 +21,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
 - [Feedback](#feedback)
 - [Live updates](#live-updates)
+- [The contact log](#the-contact-log)
 - [Sign-in](#sign-in)
 - [Window state](#window-state)
 - [Client languages](#client-languages)
@@ -432,12 +433,39 @@ re-reads it:
 - a `workspaces` event (a sample reset, or a change to the workspace row such as its intake
   version): everything, with a notice if the open case vanished.
 
-`case_contacts` and `case_materials` events carry a case id like the other child tables, so they
-re-read the open case.
+`case_contacts`, `case_materials`, `contact_log` and `contact_log_versions` events carry a case id
+like the other child tables, so they re-read the open case. That is how a contact logged in one
+window shows in another.
 
 Connection status (`online`, `reconnecting`, `offline`) comes from the channel and shows in the
 page header and presenter panel. On reconnect, window focus and the browser's `online` event, the
 controller refreshes.
+
+## The contact log
+
+Staff log contacts (calls, texts, emails, visits) from three places that share one form. The
+database side is in [Database: the contact log](database.md#the-contact-log).
+
+- **`src/contact-log.mjs`** is pure. It holds the option lists and labels, `outcomesFor(method,
+  direction)`, `staffShortName`, and `contactSummary` / `contactSummaries`, which build the
+  one-line text the list and both Copy buttons use (so they cannot differ). Every time in the log
+  is **America/New_York**: `contactTime` formats an instant, and `nyLocalInput` / `nyLocalToIso`
+  convert to and from the `datetime-local` field's New York wall time, including daylight saving.
+  `contactEntryFromForm` builds the payload; its `contactedAt` always ends in `Z`.
+- **`logContactForm(record, person, ui, { followupId, contact })`** in `staff-views.mjs` is the only
+  form. Direction, method, purpose, who and outcome are radio groups styled as buttons; the outcome
+  group that matches the method is shown and the browser toggles them on change. With `contact` it
+  edits that entry ("Save changes"). It is rendered by:
+  - the **Contacts tab** (`contactsPanel`, in both `renderStaffCase` and `renderAdminCase`): Copy
+    all, the form, then the entries newest first with Copy, Edit and an "Earlier versions" list;
+  - the case page's **Follow-up tab** and the office queue's **Log contact** drawer, inside each
+    open task the persona may record on (`followupForms` in `admin-views.mjs`), linked to that task.
+    Each task also lists its entries under "Contacts so far" (`taskContacts`).
+- **Flow.** `app.mjs` reads the form into an entry and calls `controller.logContact(caseId, entry,
+  followupId)` or `controller.editContact(contactId, entry)`, which call the store's RPCs and
+  re-read the case. The store reads `contact_log` and `contact_log_versions` for `getCase`.
+- **Copy** writes to the system clipboard with `navigator.clipboard.writeText` (`copyContacts` in
+  `app.mjs`). A refused clipboard shows a warning toast instead. Tests that check the text read the clipboard back.
 
 ## Sign-in
 
@@ -537,9 +565,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1055) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1119) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (61) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in
