@@ -9,22 +9,23 @@ import { COMMENTS_FIELD } from "./draft-form.mjs";
 // Fonts (Task 1's decision: docs/superpowers/notes/2026-10-04-draft-font-spike.md)
 // ---------------------------------------------------------------------------
 
-// One entry per Chinese form. `files` are fetched in full, in this order, whatever the text says.
-// For each character the first file whose cmap has the glyph is used (Latin falls to file 2 only
-// where the CJK font lacks it: Ł ł Ż ż ć ą ę š č ... ).
+// The downloaded fonts. Each file is fetched in full when it is fetched at all.
+const NOTO_SANS_SC = { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-sc@0.4.3/400Regular/NotoSansSC_400Regular.ttf",
+  sha256: "d45f67f0a7c0ca3f256950777ce6a61cc7ce5f9696d02900cbbaac25f8aa7d16" };   // 10,559,284 bytes
+const NOTO_SANS_TC = { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-tc@0.4.3/400Regular/NotoSansTC_400Regular.ttf",
+  sha256: "add35d53f70727657b4509531677c4e3712b67df3d54661efdee5d3a0c16d954" };   //  7,109,460 bytes
+const NOTO_SANS = { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular/NotoSans_400Regular.ttf",
+  sha256: "fe8c022f48d8dd29f17b744d16f9346f4357e16f7d4f7be58b000ae7c291b614" };   //    629,024 bytes
+
+// One entry per Chinese form: `files` in fallback order. For each character the first file whose
+// cmap has the glyph is used (Latin falls to the last file only where the CJK fonts lack it:
+// Ł ł Ż ż ć ą ę š č ... ). The 繁體 chain has SC between TC and Latin, for the simplified
+// characters a client may type that TC lacks (陈 张 刘 …, issue #81): what the client typed is
+// printed as typed, never converted. SC is `ifMissing`: draftFontFiles fetches it only when
+// the other files lack a character the draft prints.
 export const DRAFT_FONTS = {
-  "zh-s": { files: [
-    { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-sc@0.4.3/400Regular/NotoSansSC_400Regular.ttf",
-      sha256: "d45f67f0a7c0ca3f256950777ce6a61cc7ce5f9696d02900cbbaac25f8aa7d16" },   // 10,559,284 bytes
-    { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular/NotoSans_400Regular.ttf",
-      sha256: "fe8c022f48d8dd29f17b744d16f9346f4357e16f7d4f7be58b000ae7c291b614" },   //    629,024 bytes
-  ] },
-  "zh-t": { files: [
-    { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-tc@0.4.3/400Regular/NotoSansTC_400Regular.ttf",
-      sha256: "add35d53f70727657b4509531677c4e3712b67df3d54661efdee5d3a0c16d954" },   //  7,109,460 bytes
-    { url: "https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular/NotoSans_400Regular.ttf",
-      sha256: "fe8c022f48d8dd29f17b744d16f9346f4357e16f7d4f7be58b000ae7c291b614" },
-  ] },
+  "zh-s": { files: [NOTO_SANS_SC, NOTO_SANS] },
+  "zh-t": { files: [NOTO_SANS_TC, { ...NOTO_SANS_SC, ifMissing: true }, NOTO_SANS] },
 };
 export const CJK_DRAW = "runs";
 
@@ -110,6 +111,29 @@ const printedValues = (fields) => [
 
 /** Whether these draft fields need the downloaded font at all. */
 export const fieldsNeedFont = (fields) => printedValues(fields).some(needsEmbeddedFont);
+
+/**
+ * The bytes of `entry.files` (draftFontsFor's entry) this draft needs, in the
+ * entry's order. Files are fetched with `fetchFont(file)`, together; a file
+ * marked `ifMissing` is fetched afterwards, and only when the others lack some
+ * character of a value that will be drawn in the downloaded fonts. Call it only
+ * when fieldsNeedFont(fields).
+ */
+export async function draftFontFiles(entry, fields, { fetchFont, fontkit }) {
+  const fetchAll = (files) => Promise.all(files.map(async (file) => [file, await fetchFont(file)]));
+  const got = new Map(await fetchAll(entry.files.filter((file) => !file.ifMissing)));
+  const optional = entry.files.filter((file) => file.ifMissing);
+  if (optional.length) {
+    const loaded = [...got.values()].map((bytes) => fontkit.create(bytes));
+    const missing = printedValues(fields).filter(needsEmbeddedFont).some((value) =>
+      [...String(value).normalize("NFC")].some((ch) => {
+        const cp = ch.codePointAt(0);
+        return !LAYOUT.has(cp) && !loaded.some((font) => font.hasGlyphForCodePoint(cp));
+      }));
+    if (missing) for (const [file, bytes] of await fetchAll(optional)) got.set(file, bytes);
+  }
+  return entry.files.filter((file) => got.has(file)).map((file) => got.get(file));
+}
 
 const charSets = new WeakMap();
 const charSetOf = (font) => {
@@ -352,6 +376,10 @@ export async function buildDraftPdf({
   if (needsEmbeddedFont(comments) && printable(comments, fonts) !== comments.normalize("NFC")) lost = true;
   if (lost) comments = [comments, words.notice].filter(Boolean).join("\n\n");
   if (comments !== "") {
+    // The 14446 has no Additional Comments: with every character printable
+    // there is nothing to write, and otherwise the notice has nowhere to go.
+    if (!form.getFieldMaybe(COMMENTS_FIELD))
+      throw new Error("Some characters can't be printed, and this form has no Additional Comments field for the notice.");
     const field = form.getTextField(COMMENTS_FIELD);
     const widget = field.acroField.getWidgets()[0];
     const rect = widget.getRectangle();

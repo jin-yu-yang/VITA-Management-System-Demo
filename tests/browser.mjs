@@ -4535,6 +4535,31 @@ async function runPermutation(t, roles) {
           );
           draft.form14446["zh-t"] = { size: zh14446.size, pages: zh14446.pages, page3: "signature found; the Chinese name drawn in the 繁體 font" };
 
+          // A simplified first name the 繁體 font lacks (陈, fictional; issue
+          // #81): the 繁體 14446 still builds, printed as typed, and only now
+          // is the Simplified font fetched, after TC and Latin. Then back to 美.
+          await jump("about.you");
+          await waitForQuiet(page);
+          await box("tp_first_name").fill("陈");
+          await jump("review.summary");
+          assert.equal(await answer("tp_first_name"), "陈");
+          before = { ...fontHits };
+          const simplified14446 = await open14446("zh-t");
+          assert.equal(simplified14446.head, "%PDF-");
+          assert.equal(simplified14446.pages, 3, "the 繁體 draft 14446 with 陈 is not PCDC's three pages");
+          assert.ok(simplified14446.strings.includes(signedName), `page 3 of the 繁體 14446 with 陈 does not print the signature: ${JSON.stringify(simplified14446.strings)}`);
+          assert.deepEqual(
+            hitsSince(before),
+            { "NotoSansSC_400Regular.ttf": 1, "NotoSansTC_400Regular.ttf": 1, "NotoSans_400Regular.ttf": 1 },
+            "the 繁體 draft 14446 with 陈 fetched the wrong fonts",
+          );
+          draft.form14446["zh-t simplified"] = { size: simplified14446.size, pages: simplified14446.pages, fonts: "TC, SC and Latin, each once" };
+          await jump("about.you");
+          await waitForQuiet(page);
+          await box("tp_first_name").fill("美");
+          await jump("review.summary");
+          assert.equal(await answer("tp_first_name"), "美");
+
           // A font whose bytes are not the pinned ones is refused: the 繁體
           // 14446, built with the Chinese name, fetches the Latin font too.
           const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));

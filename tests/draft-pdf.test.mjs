@@ -13,8 +13,8 @@ import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/dr
 import HANT_MAP from "../src/zh-hant.mjs";
 import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
-  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontsFor,
-  draftLink, fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
+  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontFiles,
+  draftFontsFor, draftLink, fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
 } from "../src/draft-pdf.mjs";
 
 // Node, with pdf-lib and fontkit from node_modules. The fonts are the
@@ -245,8 +245,12 @@ test("the fonts: which entry each form uses, pinned, with byte-identical fixture
   assert.equal(draftFontsFor("en"), DRAFT_FONTS["zh-s"]);
   assert.equal(draftFontsFor("zh-s"), DRAFT_FONTS["zh-s"]);
   assert.equal(draftFontsFor("zh-t"), DRAFT_FONTS["zh-t"]);
+  // 简体: SC, then Latin. 繁體: TC, then SC for the simplified characters TC
+  // lacks (陈, 张, …), fetched only when needed, then Latin.
+  const names = (entry) => entry.files.map((file) => `${file.url.split("/").at(-1)}${file.ifMissing ? " (if missing)" : ""}`);
+  assert.deepEqual(names(DRAFT_FONTS["zh-s"]), ["NotoSansSC_400Regular.ttf", "NotoSans_400Regular.ttf"]);
+  assert.deepEqual(names(DRAFT_FONTS["zh-t"]), ["NotoSansTC_400Regular.ttf", "NotoSansSC_400Regular.ttf (if missing)", "NotoSans_400Regular.ttf"]);
   for (const entry of Object.values(DRAFT_FONTS)) {
-    assert.equal(entry.files.length, 2);
     for (const file of entry.files) {
       assert.match(file.url, /^https:\/\/cdn\.jsdelivr\.net\/npm\/@expo-google-fonts\/[a-z-]+@\d+\.\d+\.\d+\//);
       const fixture = DRAFT_FONT_FIXTURES[file.url];
@@ -384,6 +388,39 @@ test("Chinese and accented Latin names build with the fixture fonts", async () =
   const fields = draftFields({ ...BASE, sp_first_name: "Łukasz", tp_first_name: "美" }, { ...OPTIONS, form: "en" });
   const bytes = await buildDraftPdf({ PDFLib, fontkit, formBytes: await formBytes("en"), fontFiles: files, fields, stamp: fields.stamp });
   assert.equal(embeddedFonts(await PDFDocument.load(bytes)).length, 2);
+});
+
+test("draftFontFiles fetches the 繁體 form's Simplified font only when TC lacks a printed character", async () => {
+  const fetched = [];
+  const fetchFont = (file) => {
+    fetched.push(file.url.split("/").at(-1));
+    return fixtureBytes(file.url);
+  };
+  const filesFor = async (form, names) => {
+    fetched.length = 0;
+    const fields = draftFields({ ...BASE, ...names }, { ...OPTIONS, form });
+    const bytes = await draftFontFiles(draftFontsFor(form), fields, { fetchFont, fontkit });
+    return { bytes, fetched: [...fetched].sort() };
+  };
+  const tc = await filesFor("zh-t", { tp_first_name: "美", tp_last_name: "林" });
+  assert.deepEqual(tc.fetched, ["NotoSansTC_400Regular.ttf", "NotoSans_400Regular.ttf"]);
+  assert.equal(tc.bytes.length, 2);
+  const sc = await filesFor("zh-t", { tp_first_name: "美", tp_last_name: "陈" });
+  assert.deepEqual(sc.fetched, ["NotoSansSC_400Regular.ttf", "NotoSansTC_400Regular.ttf", "NotoSans_400Regular.ttf"]);
+  // In the chain's order: TC, SC, then Latin (the subset patch reads the last).
+  assert.deepEqual(sc.bytes.map((b) => b.length), (await fontFilesFor("zh-t")).map((b) => b.length));
+  const hans = await filesFor("zh-s", { tp_first_name: "美", tp_last_name: "陈" });
+  assert.deepEqual(hans.fetched, ["NotoSansSC_400Regular.ttf", "NotoSans_400Regular.ttf"]);
+});
+
+test("the 繁體 13614-C prints 陈 as typed, with no missing-character notice", async () => {
+  const fields = draftFields({ ...BASE, tp_last_name: "陈" }, { ...OPTIONS, form: "zh-t" });
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), fields, { fetchFont: (file) => fixtureBytes(file.url), fontkit });
+  const { doc } = await build({ ...BASE, tp_last_name: "陈" }, { form: "zh-t", fontFiles, flatten: false });
+  assert.ok(drawnText(doc.getPage(0)).some((line) => line.text.includes("陈")), "陈 is drawn on page 1");
+  const page5 = drawnText(doc.getPage(4)).map((line) => line.text);
+  assert.ok(!page5.some((line) => line.includes(fields.words.notice)), `the notice: ${JSON.stringify(page5)}`);
+  assert.ok(!page5.some((line) => line.includes("?")), `a "?" on page 5: ${JSON.stringify(page5)}`);
 });
 
 test("Chinese comments with no spaces wrap by characters and continue on page 7", async () => {
@@ -535,8 +572,10 @@ test("the subset padding patch: without it the subset is corrupt, with it every 
 test("the committed vendor bundle builds a Chinese draft whose subsets decode", async () => {
   assert.equal(typeof bundled.PDFDocument.load, "function");
   assert.equal(typeof bundled.fontkit.create, "function");
-  const files = await fontFilesFor("zh-t");
   const fields = draftFields({ ...BASE, tp_first_name: "美", tp_last_name: "林", sp_first_name: "Żółć" }, { ...OPTIONS, form: "zh-t" });
+  // What app.mjs passes: TC and Latin; TC has 美 and 林, so SC isn't fetched.
+  const files = await draftFontFiles(draftFontsFor("zh-t"), fields, { fetchFont: (file) => fixtureBytes(file.url), fontkit: bundled.fontkit });
+  assert.equal(files.length, 2);
   const bytes = await buildDraftPdf({
     PDFLib: bundled, fontkit: bundled.fontkit, formBytes: await formBytes("zh-t"), fontFiles: files, fields, stamp: fields.stamp,
   });
