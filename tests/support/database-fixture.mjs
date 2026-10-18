@@ -66,6 +66,8 @@ const STATE_TABLES = Object.freeze([
   "documents",
   "admin_followups",
   "contact_attempts",
+  "contact_log",
+  "contact_log_versions",
   "reviews",
   "assistance_items",
   "case_contacts",
@@ -121,6 +123,45 @@ export const assistanceArgs = ({
   p_person_id: personId,
   p_type: type,
   p_note: note,
+});
+// The contact log's two RPCs (OpenSpec change add-contact-log, design D1).
+// An entry has exactly these eight keys; SAMPLE_CONTACT is a function so each
+// call takes a fresh contact time.
+export const SAMPLE_CONTACT = () => ({
+  direction: "outgoing",
+  contactedAt: new Date().toISOString(),
+  withWhom: "client",
+  otherName: null,
+  method: "phone",
+  purpose: "go_over_return",
+  outcome: "reached",
+  note: "Asked about the fictional 1099-R.",
+});
+export const contactArgs = ({
+  actionId = randomUUID(),
+  caseId,
+  personId,
+  followupId = null,
+  entry,
+}) => ({
+  p_action_id: actionId,
+  p_case_id: caseId,
+  p_person_id: personId,
+  p_followup_id: followupId,
+  p_entry: entry,
+});
+export const editContactArgs = ({
+  actionId = randomUUID(),
+  contactId,
+  revision,
+  personId,
+  entry,
+}) => ({
+  p_action_id: actionId,
+  p_contact_id: contactId,
+  p_expected_revision: revision,
+  p_person_id: personId,
+  p_entry: entry,
 });
 export async function createDatabaseFixture({ afterInitialize } = {}) {
   const target = await assertTestTarget();
@@ -254,6 +295,30 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         personId,
         type,
         note,
+      }),
+    );
+    if (error) throw createAppError(error);
+    return data;
+  };
+  // A contact log entry, linked to a follow-up task when `followupId` is given.
+  f.logContact = async (client, caseId, personId, entry, followupId = null) => {
+    const { data, error } = await client.rpc(
+      "vitally_log_contact",
+      contactArgs({ caseId, personId, followupId, entry }),
+    );
+    if (error) throw createAppError(error);
+    return data;
+  };
+  // An edit against the entry's current revision, as the caller reads it.
+  f.editContact = async (client, contactId, personId, entry) => {
+    const current = await visibleRow(client, "contact_log", contactId);
+    const { data, error } = await client.rpc(
+      "vitally_edit_contact",
+      editContactArgs({
+        contactId,
+        revision: Number(current.revision),
+        personId,
+        entry,
       }),
     );
     if (error) throw createAppError(error);

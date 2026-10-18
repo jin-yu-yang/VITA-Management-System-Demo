@@ -49,7 +49,7 @@ flowchart LR
   end
   Auth --> GoTrue
   Store -- "SELECT (row-level security)" --> PostgREST
-  Store -- "5 RPC functions (all writes)" --> PostgREST
+  Store -- "7 RPC functions (all writes)" --> PostgREST
   PostgREST --> PG
   PG -- "INSERT/UPDATE events" --> Realtime
   Realtime -- "row ids only" --> Store
@@ -59,7 +59,7 @@ flowchart LR
 
 There is no application server. The browser talks to Supabase directly with the public
 (publishable) key. Every read goes through row-level security, and **every write goes through one
-of five database functions** that check who may do what, in a fixed order, inside one
+of seven database functions** that check who may do what, in a fixed order, inside one
 transaction. The database is the back end.
 
 ## Repository map
@@ -71,8 +71,9 @@ src/
   app.mjs                  Bootstrap and DOM event wiring. No state, no HTML, no queries.
   controller.mjs           All browser state and every user-level operation.
   window-state.mjs         Per-window, per-user navigation memory (sessionStorage).
-  supabase-store.mjs       The only data adapter: reads, the 5 RPCs, Realtime, row mapping.
+  supabase-store.mjs       The only data adapter: reads, the 7 RPCs, Realtime, row mapping.
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
+  contact-log.mjs          The contact log's summary line, labels and New York time helpers.
   contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
   errors.mjs               The one mapper from database/transport errors to domain codes.
   domain.mjs               Stages, phases, stage wording.
@@ -95,15 +96,15 @@ src/
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
 supabase/
-  migrations/001-030       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-031       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
   build.mjs                Rebuilds src/vendor/supabase.mjs.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1055.
-  database*.mjs            Database tests against the local stack: 253.
+  *.test.mjs               Unit tests (no network): 1119.
+  database*.mjs            Database tests against the local stack: 272.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
   browser.mjs              The full demonstration story, two browsers, both directions: 57.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
@@ -125,14 +126,14 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
    in PostgreSQL. The browser predicts what is allowed so it can hide buttons, but a prediction is
    never permission. See [Database: the action API](database.md#the-action-api).
 2. **Browser roles can read, never write, tables.** `authenticated` has `SELECT` only; all
-   changes go through the five `SECURITY DEFINER` functions. See
+   changes go through the seven `SECURITY DEFINER` functions. See
    [Database: visibility](database.md#who-can-see-what).
 3. **Every write is idempotent and revision-fenced.** A write carries a client-generated action
    id and the revision the person saw. Replaying the same envelope returns the same receipt;
    acting on a stale revision is refused with `CONFLICT`. See
    [Architecture: writes](architecture.md#how-a-write-works).
 4. **Clients never see staff information.** Internal history, findings, follow-up notes and
-   contact attempts are unreadable to applicants by row-level security, and the client adapter
+   the contact log is unreadable to applicants by row-level security, and the client adapter
    never even asks for them.
 5. **Errors are codes, not messages.** Database errors carry `SQLSTATE` codes `VT001`-`VT007`,
    mapped once to domain codes in [`src/errors.mjs`](../../src/errors.mjs). Nothing parses error

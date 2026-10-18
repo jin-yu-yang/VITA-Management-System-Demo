@@ -162,7 +162,8 @@ have email, or is standing at the desk?":
   detail on it is marked `simulated`. The workspace's first active presenter membership — the
   lowest Auth user id, chosen at `009:334-336` — is recorded only where a column requires a real
   member: `cases.created_by_user_id` (`009:349-351`), `documents.submitted_by_user_id`
-  (`009:234-235`) and `contact_attempts.actor_user_id` (`009:244-245`). Those three are internal,
+  (`009:234-235`), `contact_log.logged_by_user_id` (`031:478-480`) and
+  `contact_log_versions.edited_by_user_id` (`031:484-486`). Those four are internal,
   no screen renders any of them, and they name an account, not the persona the story attributes
   the step to.
 - **An accepted action can produce more than one shared-update notification** for the same case.

@@ -82,6 +82,9 @@ const STAFF_CONFLICT_MESSAGE =
   "Someone else changed this case. The newest version is shown — check it and try again.";
 const ASSISTANCE_CONFLICT_MESSAGE =
   "Someone else changed this item. The newest version is shown — check it and try again.";
+const STAFF_CONTACT_GONE_MESSAGE = "This contact is no longer on screen.";
+const STAFF_CONTACT_CONFLICT_MESSAGE =
+  "Someone else changed this contact. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 // What a window says when the demonstration set is rebuilt underneath it. The
@@ -323,7 +326,7 @@ export function createController({
     openPanels: [],
     lookup: "",
     dialog: null,
-    // What the open dialog is about — the case a Log a call drawer was opened
+    // What the open dialog is about — the case a Log contact drawer was opened
     // from, the help request being resolved. Window-local and never persisted:
     // a reload closes every dialog.
     dialogContext: null,
@@ -2324,6 +2327,71 @@ export function createController({
     }
   }
 
+  // The contact log: its own RPCs and its own revision per entry, beside the
+  // case actions (they touch neither the case row nor its revision). Both are
+  // shaped like `runAssistanceAction`: a refusal is shown and thrown, a
+  // CONFLICT re-reads the case before it is shown, and a landed write whose
+  // re-read fails is a stale view, never a failed write. Not retryable: the
+  // form keeps what was typed and the person presses the button again.
+  async function runContactWrite(request, write) {
+    state.busy = true;
+    state.error = null;
+    show();
+    try {
+      await write(request);
+      state.busy = false;
+      noteConnected();
+      try {
+        await loadSelected();
+        state.error = null;
+      } catch (error) {
+        noteFailure(error);
+      }
+      show();
+      return request;
+    } catch (error) {
+      state.busy = false;
+      noteFailure(
+        error,
+        error?.code === "CONFLICT" ? { message: STAFF_CONTACT_CONFLICT_MESSAGE } : undefined,
+      );
+      if (error?.code === "CONFLICT") await loadSelected().catch(() => {});
+      show();
+      throw error;
+    }
+  }
+
+  async function logContact(caseId, entry, followupId = null) {
+    return await runContactWrite(
+      {
+        actionId: newActionId(),
+        caseId,
+        personId: state.selectedPersonId ?? null,
+        followupId,
+        entry,
+      },
+      (request) => store.logContact(request),
+    );
+  }
+
+  async function editContact(contactId, entry) {
+    const contact = (state.savedCase?.contacts ?? []).find(
+      (item) => item?.id === contactId,
+    );
+    if (!contact)
+      throw refuse("NOT_FOUND", STAFF_CONTACT_GONE_MESSAGE);
+    return await runContactWrite(
+      {
+        actionId: newActionId(),
+        contactId: contact.id,
+        expectedRevision: Number(contact.revision),
+        personId: state.selectedPersonId ?? null,
+        entry,
+      },
+      (request) => store.editContact(request),
+    );
+  }
+
   // ---- the presenter's own controls ---------------------------------------
   //
   // Rebuilding the demonstration set, and putting one of its cases back to a
@@ -2501,6 +2569,8 @@ export function createController({
     toggleAddSubstep,
     saveOfficeDraft,
     runAssistanceAction,
+    logContact,
+    editContact,
     resetFixtures,
     loadCheckpoint,
     selectPerson,

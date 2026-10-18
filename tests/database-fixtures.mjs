@@ -38,7 +38,7 @@ const SCENARIOS = Object.freeze({
     requests: [],
     documents: 0,
     followups: [],
-    attempts: 0,
+    contacts: 0,
     reviews: [],
     events: 2,
     clientEvents: 2,
@@ -52,7 +52,7 @@ const SCENARIOS = Object.freeze({
     requests: ["open"],
     documents: 0,
     followups: [],
-    attempts: 0,
+    contacts: 0,
     reviews: [],
     events: 4,
     clientEvents: 4,
@@ -66,7 +66,7 @@ const SCENARIOS = Object.freeze({
     requests: ["open"],
     documents: 0,
     followups: ["open"],
-    attempts: 1,
+    contacts: 1,
     reviews: [],
     events: 6,
     clientEvents: 4,
@@ -80,7 +80,7 @@ const SCENARIOS = Object.freeze({
     requests: ["verified"],
     documents: 1,
     followups: [],
-    attempts: 0,
+    contacts: 0,
     reviews: [],
     events: 7,
     clientEvents: 7,
@@ -94,7 +94,7 @@ const SCENARIOS = Object.freeze({
     requests: [],
     documents: 0,
     followups: [],
-    attempts: 0,
+    contacts: 0,
     reviews: ["corrections_requested"],
     events: 6,
     clientEvents: 6,
@@ -108,7 +108,7 @@ const SCENARIOS = Object.freeze({
     requests: [],
     documents: 0,
     followups: [],
-    attempts: 0,
+    contacts: 0,
     reviews: ["corrections_requested", "approved"],
     events: 9,
     clientEvents: 9,
@@ -204,12 +204,21 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
     assert.equal(followup.request_id, requests[0].id, `${key} follow-up request`);
     assert.equal(followup.resolved_at, null, `${key} follow-up unresolved`);
   }
+  // The sample follow-up's call is a linked contact log entry (OpenSpec
+  // change add-contact-log, design D6); no scenario writes an old attempt.
   const attempts = await rowsFor(f, "contact_attempts", caseId);
-  assert.equal(attempts.length, expected.attempts, `${key} contact attempts`);
-  for (const attempt of attempts) {
-    assert.equal(attempt.outcome, "no_answer", `${key} attempt outcome`);
-    assert.equal(attempt.actor_person_id, f.sam, `${key} attempt actor`);
-    assert.equal(attempt.followup_id, followups[0].id, `${key} attempt follow-up`);
+  assert.equal(attempts.length, 0, `${key} contact attempts`);
+  const contacts = await rowsFor(f, "contact_log", caseId, "logged_at,id");
+  assert.equal(contacts.length, expected.contacts, `${key} contacts`);
+  for (const contact of contacts) {
+    assert.equal(contact.outcome, "no_answer", `${key} contact outcome`);
+    assert.equal(contact.logged_by_person_id, f.sam, `${key} contact logger`);
+    assert.equal(contact.followup_id, followups[0].id, `${key} contact follow-up`);
+    assert.equal(
+      contact.note,
+      "Called during office hours. No answer, so a message was left.",
+      `${key} contact note`,
+    );
   }
   const reviews = await rowsFor(f, "reviews", caseId, "created_at,id");
   assert.deepEqual(
@@ -375,7 +384,12 @@ test("the seeded workspace tells one coherent story", async (t) => {
       assert.equal(staff.stage, "preparing");
       assert.deepEqual(staff.participants, [f.alex]);
       assert.equal(staff.followups.length, 1);
-      assert.equal(staff.followups[0].attempts.length, 1);
+      const contacts = await f.presenter
+        .from("contact_log")
+        .select("id")
+        .eq("followup_id", staff.followups[0].id);
+      assert.equal(contacts.error, null);
+      assert.equal(contacts.data.length, 1);
       // The bound scenario is the client's own case; nobody else's is.
       const mine = await f.applicantA.from("cases").select("id,fixture_key").eq("fixture", true);
       assert.equal(mine.error, null);

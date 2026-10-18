@@ -4,7 +4,16 @@ import {
   createDatabaseFixture,
   applyArgs,
   rejected,
+  SAMPLE_CONTACT,
 } from "./support/database-fixture.mjs";
+// The contact log entries linked to one follow-up task, oldest first.
+const taskContacts = async (f, followupId) =>
+  (
+    await f.sql(
+      "select * from public.contact_log where followup_id=$1 order by contacted_at,logged_at",
+      [followupId],
+    )
+  ).rows;
 // A client case Alex has claimed: the stage documents may be requested in.
 async function preparingCase(f) {
   const caseId = await f.readyCase();
@@ -643,10 +652,13 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         });
         let c = await f.readStaffCase(id);
         assert.equal(c.followups[0].assigneeId, f.sam);
-        await f.act(f.presenter, id, f.sam, "RECORD_CONTACT", {
-          outcome: "reached",
-          note: "Client will respond",
-        });
+        await f.logContact(
+          f.presenter,
+          id,
+          f.sam,
+          { ...SAMPLE_CONTACT(), outcome: "reached", note: "Client will respond" },
+          c.followups[0].id,
+        );
         c = await f.readStaffCase(id);
         assert.equal(c.followups[0].status, "open");
         await f.act(f.presenter, id, f.sam, "RESOLVE_FOLLOWUP", {
@@ -665,18 +677,19 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         assert.equal(c.followups[0].resolutionOutcome, "reached");
         assert.equal(c.followups[0].resolutionNote, "Contact completed");
         assert.ok(c.followups[0].resolvedAt);
-        // A reached attempt is history, not a resolution of its own.
-        assert.equal(c.followups[0].attempts.length, 1);
+        // A reached contact is history, not a resolution of its own.
+        const contacts = await taskContacts(f, c.followups[0].id);
+        assert.equal(contacts.length, 1);
         assert.deepEqual(
           {
-            outcome: c.followups[0].attempts[0].outcome,
-            note: c.followups[0].attempts[0].note,
-            actorPersonId: c.followups[0].attempts[0].actorPersonId,
+            outcome: contacts[0].outcome,
+            note: contacts[0].note,
+            loggedByPersonId: contacts[0].logged_by_person_id,
           },
           {
             outcome: "reached",
             note: "Client will respond",
-            actorPersonId: f.sam,
+            loggedByPersonId: f.sam,
           },
         );
         assert.equal(c.stage, "preparing");
@@ -691,7 +704,6 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
             "CLAIM_PREPARATION",
             "REQUEST_DOCUMENT",
             "ESCALATE_CONTACT",
-            "RECORD_CONTACT",
             "RESOLVE_FOLLOWUP",
           ],
         );
@@ -718,10 +730,14 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", {
           reason: "Office contact needed",
         });
-        await f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
-          outcome: "no_answer",
-          note: "Left a message",
-        });
+        const [task] = (await f.readStaffCase(caseId)).followups;
+        await f.logContact(
+          f.presenter,
+          caseId,
+          f.sam,
+          { ...SAMPLE_CONTACT(), outcome: "no_answer", note: "Left a message" },
+          task.id,
+        );
         await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
           filename: f.sampleFilename,
         });
@@ -730,7 +746,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         assert.equal(staff.requests[0].status, "awaiting_verification");
         assert.equal(staff.documents.length, 1);
         assert.equal(staff.followups[0].status, "open");
-        assert.equal(staff.followups[0].attempts.length, 1);
+        assert.equal((await taskContacts(f, task.id)).length, 1);
         assert.equal(staff.preparerId, f.alex);
         assert.deepEqual(staff.participants, [f.alex]);
         await f.act(f.presenter, caseId, f.sam, "RESOLVE_FOLLOWUP", {
@@ -941,10 +957,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         try {
           await assert.rejects(
             () =>
-              f.act(f.presenter, caseId, f.morgan, "RECORD_CONTACT", {
-                outcome: "reached",
-                note: "Spoke with the client",
-              }),
+              f.logContact(f.presenter, caseId, f.morgan, SAMPLE_CONTACT(), followupId),
             rejected("FORBIDDEN"),
           );
           await assert.rejects(
@@ -961,10 +974,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
             f.morgan,
           ]);
         }
-        assert.deepEqual(
-          (await f.readStaffCase(caseId)).followups[0].attempts,
-          [],
-        );
+        assert.deepEqual(await taskContacts(f, followupId), []);
         for (const payload of [
           { followupId },
           { followupId, outcome: "reached" },
@@ -980,22 +990,47 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
             rejected("VALIDATION"),
             JSON.stringify(payload),
           );
-        // Every listed contact outcome is recordable, and none resolves.
+        // RECORD_CONTACT refuses every outcome now (design D12); the assignee
+        // logs linked contacts instead, and none resolves the task.
         for (const outcome of [
           "no_answer",
           "reached",
           "no_further_contact",
           "closure_requested",
         ])
-          await f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
+          await assert.rejects(
+            () =>
+              f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
+                outcome,
+                note: `Recorded ${outcome}`,
+              }),
+            rejected("VALIDATION"),
             outcome,
-            note: `Recorded ${outcome}`,
-          });
+          );
+        const loggedAt = Date.now();
+        for (const [index, outcome] of [
+          "no_answer",
+          "reached",
+          "left_voicemail",
+          "wrong_number",
+        ].entries())
+          await f.logContact(
+            f.presenter,
+            caseId,
+            f.sam,
+            {
+              ...SAMPLE_CONTACT(),
+              contactedAt: new Date(loggedAt - (4 - index) * 60_000).toISOString(),
+              outcome,
+              note: `Logged ${outcome}`,
+            },
+            followupId,
+          );
         let staff = await f.readStaffCase(caseId);
         assert.equal(staff.followups[0].status, "open");
         assert.deepEqual(
-          staff.followups[0].attempts.map((attempt) => attempt.outcome),
-          ["no_answer", "reached", "no_further_contact", "closure_requested"],
+          (await taskContacts(f, followupId)).map((contact) => contact.outcome),
+          ["no_answer", "reached", "left_voicemail", "wrong_number"],
         );
         assert.equal(staff.requests[0].status, "open");
         // Resolution accepts only the two conclusive outcomes.
@@ -1021,18 +1056,20 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         staff = await f.readStaffCase(caseId);
         assert.equal(staff.followups[0].status, "resolved");
         assert.equal(staff.requests[0].status, "open");
-        // A resolved task takes no further attempts or resolutions.
-        for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
-          await assert.rejects(
-            () =>
-              f.act(f.presenter, caseId, f.sam, type, {
-                followupId,
-                outcome: "reached",
-                note: "Once more",
-              }),
-            rejected("INVALID_TRANSITION"),
-            type,
-          );
+        // A resolved task takes no further contacts or resolutions.
+        await assert.rejects(
+          () =>
+            f.act(f.presenter, caseId, f.sam, "RESOLVE_FOLLOWUP", {
+              followupId,
+              outcome: "reached",
+              note: "Once more",
+            }),
+          rejected("INVALID_TRANSITION"),
+        );
+        await assert.rejects(
+          () => f.logContact(f.presenter, caseId, f.sam, SAMPLE_CONTACT(), followupId),
+          rejected("INVALID_TRANSITION"),
+        );
         // Assignment answers before readiness: a capable non-assignee is
         // FORBIDDEN on the resolved task, never told that it is closed.
         await f.sql("update public.people set capabilities=$1 where id=$2", [
@@ -1040,27 +1077,27 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
           f.morgan,
         ]);
         try {
-          for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
-            await assert.rejects(
-              () =>
-                f.act(f.presenter, caseId, f.morgan, type, {
-                  followupId,
-                  outcome: "reached",
-                  note: "Once more",
-                }),
-              rejected("FORBIDDEN"),
-              type,
-            );
+          await assert.rejects(
+            () =>
+              f.act(f.presenter, caseId, f.morgan, "RESOLVE_FOLLOWUP", {
+                followupId,
+                outcome: "reached",
+                note: "Once more",
+              }),
+            rejected("FORBIDDEN"),
+          );
+          await assert.rejects(
+            () =>
+              f.logContact(f.presenter, caseId, f.morgan, SAMPLE_CONTACT(), followupId),
+            rejected("FORBIDDEN"),
+          );
         } finally {
           await f.sql("update public.people set capabilities=$1 where id=$2", [
             ["review"],
             f.morgan,
           ]);
         }
-        assert.equal(
-          (await f.readStaffCase(caseId)).followups[0].attempts.length,
-          4,
-        );
+        assert.equal((await taskContacts(f, followupId)).length, 4);
       },
     );
     await t.test(

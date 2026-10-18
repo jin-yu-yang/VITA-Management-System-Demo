@@ -169,6 +169,47 @@ function fakeStore({
         resolutionNote: request.note ?? current.resolutionNote,
       });
     },
+    async logContact(request) {
+      store.calls.push("logContact");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      const record = records.get(request.caseId);
+      const contacts = record.contacts ?? [];
+      records.set(request.caseId, {
+        ...record,
+        contacts: [
+          ...contacts,
+          { id: `contact-${contacts.length + 1}`, revision: 1, ...request.entry },
+        ],
+      });
+      return { actionId: request.actionId, caseId: request.caseId, revision: 1 };
+    },
+    async editContact(request) {
+      store.calls.push("editContact");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      for (const [id, record] of records) {
+        const contacts = record.contacts ?? [];
+        if (!contacts.some((entry) => entry.id === request.contactId)) continue;
+        records.set(id, {
+          ...record,
+          contacts: contacts.map((entry) =>
+            entry.id === request.contactId
+              ? { ...entry, ...request.entry, revision: entry.revision + 1 }
+              : entry,
+          ),
+        });
+      }
+      return { actionId: request.actionId, contactId: request.contactId, revision: 2 };
+    },
     async getWorkspace() {
       store.calls.push("getWorkspace");
       return { ...store.workspace };
@@ -5355,5 +5396,153 @@ test("a later refresh after a failed first load reads the people and the workspa
   store.calls.length = 0;
   await controller.refresh();
   assert.ok(!store.calls.includes("listPeople"), "once loaded, a refresh does not read the people again");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The contact log (OpenSpec change add-contact-log)
+// ---------------------------------------------------------------------------
+
+const CONTACT_ENTRY = Object.freeze({
+  contactedAt: "2026-09-04T12:00:00.000Z",
+  direction: "outgoing",
+  method: "phone",
+  note: "Left word.",
+  otherName: null,
+  outcome: "left_voicemail",
+  purpose: "ask_question",
+  withWhom: "client",
+});
+
+const contactStore = () =>
+  officeStore({
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "preparing",
+        revision: 5,
+        answers: {},
+        contacts: [{ id: "contact-1", revision: 3, ...CONTACT_ENTRY }],
+      },
+    ],
+  });
+
+const readsOf = (store) =>
+  store.calls.filter((entry) => entry === "getCase:case-a").length;
+
+test("logging sends the persona and the task, then re-reads the case", async () => {
+  const store = contactStore();
+  const { controller } = build({ store, newActionId: () => "action-1" });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  const reads = readsOf(store);
+  const request = await controller.logContact("case-a", CONTACT_ENTRY, "followup-1");
+  assert.deepEqual(store.writes.at(-1), {
+    actionId: "action-1",
+    caseId: "case-a",
+    personId: "sam",
+    followupId: "followup-1",
+    entry: CONTACT_ENTRY,
+  });
+  assert.equal(request.actionId, "action-1");
+  assert.equal(readsOf(store), reads + 1);
+  assert.equal(controller.getState().savedCase.contacts.length, 2);
+  assert.equal(controller.getState().busy, false);
+  await controller.logContact("case-a", CONTACT_ENTRY);
+  assert.equal(store.writes.at(-1).followupId, null);
+  controller.stop();
+});
+
+test("editing sends the revision on screen", async () => {
+  const store = contactStore();
+  const { controller } = build({ store, newActionId: () => "action-2" });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  await controller.editContact("contact-1", { ...CONTACT_ENTRY, note: "Changed." });
+  assert.deepEqual(store.writes.at(-1), {
+    actionId: "action-2",
+    contactId: "contact-1",
+    expectedRevision: 3,
+    personId: "sam",
+    entry: { ...CONTACT_ENTRY, note: "Changed." },
+  });
+  assert.equal(controller.getState().savedCase.contacts[0].note, "Changed.");
+  assert.equal(controller.getState().savedCase.contacts[0].revision, 4);
+  controller.stop();
+});
+
+test("a conflicting edit shows the newest version", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  const reads = readsOf(store);
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.editContact("contact-1", CONTACT_ENTRY),
+    (error) => error.code === "CONFLICT",
+  );
+  const state = controller.getState();
+  assert.equal(state.error.code, "CONFLICT");
+  assert.equal(
+    state.error.message,
+    "Someone else changed this contact. The newest version is shown — check it and try again.",
+  );
+  assert.equal(state.busy, false);
+  assert.equal(readsOf(store), reads + 1);
+  controller.stop();
+});
+
+test("a failed log shows the error and throws", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  store.failNext = Object.assign(new Error("Pick an outcome."), { code: "VALIDATION" });
+  await assert.rejects(
+    controller.logContact("case-a", CONTACT_ENTRY),
+    (error) => error.code === "VALIDATION",
+  );
+  assert.equal(controller.getState().error.code, "VALIDATION");
+  assert.equal(controller.getState().error.message, "Pick an outcome.");
+  assert.equal(controller.getState().busy, false);
+  controller.stop();
+});
+
+test("an edit of a contact not on screen is refused without a call", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  await assert.rejects(
+    controller.editContact("contact-9", CONTACT_ENTRY),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.ok(!store.calls.includes("editContact"));
+  assert.equal(controller.getState().error.code, "NOT_FOUND");
+  controller.stop();
+});
+
+test("a contact log change on the open case re-reads it", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  store.records.set("case-a", { ...store.records.get("case-a"), contacts: [] });
+  for (const table of ["contact_log", "contact_log_versions"]) {
+    const reads = readsOf(store);
+    await store.handlers.onChange({
+      table,
+      eventType: "INSERT",
+      id: "x",
+      caseId: "case-a",
+    });
+    assert.equal(readsOf(store), reads + 1, table);
+  }
+  assert.deepEqual(controller.getState().savedCase.contacts, []);
   controller.stop();
 });

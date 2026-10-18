@@ -14,6 +14,8 @@ const STAFF_ONLY_TABLES = [
   "preparation_participants",
   "admin_followups",
   "contact_attempts",
+  "contact_log",
+  "contact_log_versions",
   "case_events",
   "reviews",
   "assistance_items",
@@ -122,17 +124,97 @@ const RELATED_ROWS = Object.freeze({
       resolved_at: null,
     },
   ],
-  contact_attempts: [
+  contact_log: [
     {
-      id: "attempt-1",
+      id: "contact-1",
       workspace_id: "workspace-1",
       case_id: "case-1",
       followup_id: "followup-1",
-      actor_user_id: "user-2",
-      actor_person_id: "person-sam",
+      logged_by_user_id: "user-2",
+      logged_by_person_id: "person-sam",
+      logged_at: "2026-09-04T00:05:00Z",
+      revision: 1,
+      edited_at: null,
+      direction: "outgoing",
+      contacted_at: "2026-09-04T00:00:00Z",
+      with_whom: "client",
+      other_name: null,
+      method: "phone",
+      purpose: "request_documents",
       outcome: "no_answer",
       note: null,
-      created_at: "2026-09-04T00:00:00Z",
+    },
+    {
+      id: "contact-2",
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      followup_id: null,
+      logged_by_user_id: "user-2",
+      logged_by_person_id: "person-sam",
+      logged_at: "2026-09-04T12:05:00Z",
+      revision: 2,
+      edited_at: "2026-09-04T13:00:00Z",
+      direction: "incoming",
+      contacted_at: "2026-09-04T12:00:00Z",
+      with_whom: "other",
+      other_name: "Pat Lee",
+      method: "phone",
+      purpose: "ask_question",
+      outcome: "reached",
+      note: "Asked about the W-2.",
+    },
+  ],
+  contact_log_versions: [
+    {
+      contact_id: "contact-1",
+      version: 1,
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      edited_by_user_id: "user-2",
+      edited_by_person_id: "person-sam",
+      created_at: "2026-09-04T00:05:00Z",
+      direction: "outgoing",
+      contacted_at: "2026-09-04T00:00:00Z",
+      with_whom: "client",
+      other_name: null,
+      method: "phone",
+      purpose: "request_documents",
+      outcome: "no_answer",
+      note: null,
+    },
+    {
+      contact_id: "contact-2",
+      version: 1,
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      edited_by_user_id: "user-2",
+      edited_by_person_id: "person-sam",
+      created_at: "2026-09-04T12:05:00Z",
+      direction: "incoming",
+      contacted_at: "2026-09-04T12:00:00Z",
+      with_whom: "client",
+      other_name: null,
+      method: "phone",
+      purpose: "ask_question",
+      outcome: "reached",
+      note: null,
+    },
+    {
+      contact_id: "contact-2",
+      version: 2,
+      workspace_id: "workspace-1",
+      case_id: "case-1",
+      edited_by_user_id: "user-3",
+      edited_by_person_id: "person-alex",
+      created_at: "2026-09-04T13:00:00Z",
+      direction: "incoming",
+      contacted_at: "2026-09-04T12:00:00Z",
+      with_whom: "other",
+      other_name: "Pat Lee",
+      method: "phone",
+      purpose: "ask_question",
+      outcome: "reached",
+      note: "Asked about the W-2.",
     },
   ],
   reviews: [
@@ -668,7 +750,8 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "case_materials",
       "cases",
       "client_events",
-      "contact_attempts",
+      "contact_log",
+      "contact_log_versions",
       "document_requests",
       "documents",
       "memberships",
@@ -722,18 +805,181 @@ test("a presenter case read adds exactly the staff sections", async () => {
       createdByPersonId: "person-alex",
       createdAt: "2026-09-03T00:00:00Z",
       resolvedAt: null,
-      attempts: [
+    },
+  ]);
+  assert.equal(found.internalHistory[0].action, "VERIFY_INTAKE");
+});
+
+test("the staff case carries its contacts with their versions", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const found = await createStore(client).getCase("case-1");
+  const version = (fields) => ({
+    direction: "incoming",
+    contactedAt: "2026-09-04T12:00:00Z",
+    withWhom: "client",
+    otherName: null,
+    method: "phone",
+    purpose: "ask_question",
+    outcome: "reached",
+    note: null,
+    ...fields,
+  });
+  assert.deepEqual(found.contacts, [
+    {
+      id: "contact-1",
+      caseId: "case-1",
+      followupId: "followup-1",
+      revision: 1,
+      loggedAt: "2026-09-04T00:05:00Z",
+      editedAt: null,
+      loggedByPersonId: "person-sam",
+      ...version({
+        direction: "outgoing",
+        contactedAt: "2026-09-04T00:00:00Z",
+        purpose: "request_documents",
+        outcome: "no_answer",
+      }),
+      versions: [
         {
-          id: "attempt-1",
-          outcome: "no_answer",
-          note: null,
-          actorPersonId: "person-sam",
-          createdAt: "2026-09-04T00:00:00Z",
+          version: 1,
+          createdAt: "2026-09-04T00:05:00Z",
+          editedByPersonId: "person-sam",
+          ...version({
+            direction: "outgoing",
+            contactedAt: "2026-09-04T00:00:00Z",
+            purpose: "request_documents",
+            outcome: "no_answer",
+          }),
+        },
+      ],
+    },
+    {
+      id: "contact-2",
+      caseId: "case-1",
+      followupId: null,
+      revision: 2,
+      loggedAt: "2026-09-04T12:05:00Z",
+      editedAt: "2026-09-04T13:00:00Z",
+      loggedByPersonId: "person-sam",
+      ...version({
+        withWhom: "other",
+        otherName: "Pat Lee",
+        note: "Asked about the W-2.",
+      }),
+      versions: [
+        {
+          version: 1,
+          createdAt: "2026-09-04T12:05:00Z",
+          editedByPersonId: "person-sam",
+          ...version({}),
+        },
+        {
+          version: 2,
+          createdAt: "2026-09-04T13:00:00Z",
+          editedByPersonId: "person-alex",
+          ...version({
+            withWhom: "other",
+            otherName: "Pat Lee",
+            note: "Asked about the W-2.",
+          }),
         },
       ],
     },
   ]);
-  assert.equal(found.internalHistory[0].action, "VERIFY_INTAKE");
+  const [log] = client.reads.filter((read) => read.table === "contact_log");
+  assert.deepEqual(log.filters, [["case_id", "case-1"]]);
+  assert.deepEqual(log.orders, ["contacted_at", "logged_at", "id"]);
+  const [versions] = client.reads.filter(
+    (read) => read.table === "contact_log_versions",
+  );
+  assert.deepEqual(versions.filters, [["case_id", "case-1"]]);
+  assert.deepEqual(versions.orders, ["contact_id", "version"]);
+});
+
+test("a case with no contacts has an empty list", async () => {
+  const client = fakeClient({
+    access: "presenter",
+    rows: { contact_log: [], contact_log_versions: [] },
+  });
+  assert.deepEqual((await createStore(client).getCase("case-1")).contacts, []);
+});
+
+test("the client path never reads the contact log", async () => {
+  const client = fakeClient({ access: "applicant" });
+  const found = await createStore(client).getCase("case-1");
+  for (const table of ["contact_log", "contact_log_versions", "contact_attempts"])
+    assert.ok(!client.reads.some((read) => read.table === table), table);
+  assert.ok(!("contacts" in found));
+});
+
+test("follow-ups no longer read contact_attempts", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const found = await createStore(client).getCase("case-1");
+  assert.ok(!client.reads.some((read) => read.table === "contact_attempts"));
+  assert.ok(found.followups.every((followup) => !("attempts" in followup)));
+});
+
+test("log and edit call their RPCs, keeping the action id for a retry", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const store = createStore(client);
+  const entry = {
+    contactedAt: "2026-09-04T12:00:00.000Z",
+    direction: "outgoing",
+    method: "phone",
+    note: null,
+    otherName: null,
+    outcome: "reached",
+    purpose: "ask_question",
+    withWhom: "client",
+  };
+  await store.logContact({
+    actionId: "action-1",
+    caseId: "case-1",
+    personId: "person-sam",
+    followupId: "followup-1",
+    entry,
+  });
+  const editRequest = {
+    contactId: "contact-1",
+    expectedRevision: 3,
+    personId: "person-sam",
+    entry,
+  };
+  await store.editContact(editRequest);
+  assert.match(editRequest.actionId, /^[0-9a-f-]{36}$/);
+  await store.logContact({ caseId: "case-1", personId: null, entry });
+  assert.deepEqual(client.rpcCalls.slice(0, 2), [
+    {
+      name: "vitally_log_contact",
+      args: {
+        p_action_id: "action-1",
+        p_case_id: "case-1",
+        p_person_id: "person-sam",
+        p_followup_id: "followup-1",
+        p_entry: entry,
+      },
+    },
+    {
+      name: "vitally_edit_contact",
+      args: {
+        p_action_id: editRequest.actionId,
+        p_contact_id: "contact-1",
+        p_expected_revision: 3,
+        p_person_id: "person-sam",
+        p_entry: entry,
+      },
+    },
+  ]);
+  assert.equal(client.rpcCalls[2].args.p_followup_id, null);
+  assert.equal(client.rpcCalls[2].args.p_person_id, null);
+});
+
+test("the staff channel watches the contact log, not the old attempts", () => {
+  for (const table of ["contact_log", "contact_log_versions"]) {
+    assert.ok(SUBSCRIBED_TABLES.presenter.includes(table), table);
+    assert.ok(!SUBSCRIBED_TABLES.applicant.includes(table), table);
+  }
+  assert.ok(!SUBSCRIBED_TABLES.presenter.includes("contact_attempts"));
 });
 
 test("an invisible or absent case is one NOT_FOUND", async () => {
@@ -972,7 +1218,8 @@ test("a subscription watches only the tables its principal may read", async () =
     "people",
     "preparation_participants",
     "admin_followups",
-    "contact_attempts",
+    "contact_log",
+    "contact_log_versions",
     "case_events",
     "assistance_items",
     "reviews",

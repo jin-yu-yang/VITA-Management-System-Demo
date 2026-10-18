@@ -72,4 +72,33 @@ export const RPC_SIGNATURES = Object.freeze([
       p_checkpoint: "ready_for_review",
     }),
   }),
+  // The contact log (OpenSpec change add-contact-log): presenter work on any
+  // case a presenter can open, under any persona.
+  Object.freeze({
+    name: "vitally_log_contact",
+    signature: "vitally_log_contact(uuid,uuid,uuid,uuid,jsonb)",
+    authorized: (f) => f.presenter,
+    receiptKeys: Object.freeze(["actionId", "contactId", "caseId", "revision"]),
+    args: (context) => ({
+      p_action_id: crypto.randomUUID(),
+      p_case_id: context.fixtureCaseId,
+      p_person_id: context.assistPersonId,
+      p_followup_id: null,
+      p_entry: context.contactEntry,
+    }),
+  }),
+  Object.freeze({
+    name: "vitally_edit_contact",
+    signature: "vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb)",
+    authorized: (f) => f.presenter,
+    receiptKeys: Object.freeze(["actionId", "contactId", "caseId", "revision"]),
+    // The entry in `context` was logged by the same persona at revision 1.
+    args: (context) => ({
+      p_action_id: crypto.randomUUID(),
+      p_contact_id: context.contactId,
+      p_expected_revision: 1,
+      p_person_id: context.assistPersonId,
+      p_entry: { ...context.contactEntry, note: "Corrected." },
+    }),
+  }),
 ]);

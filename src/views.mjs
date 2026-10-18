@@ -256,6 +256,8 @@ export function staffScreen(state) {
         dirty: state.dirty,
         openPanels: state.openPanels,
         caseTab: state.caseTab,
+        // The Log contact form's time field starts at now (New York).
+        now: Date.now(),
       };
       return office
         ? frame(
@@ -445,9 +447,9 @@ export function dialog(state) {
   if (DRAWERS.includes(state.dialog)) {
     const people = state.people ?? [];
     const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
-    const ui = { busy: state.busy, error: state.error, retryable: state.retryable };
+    const ui = { busy: state.busy, error: state.error, retryable: state.retryable, now: Date.now() };
     if (state.dialog === "log-call") {
-      title = "Log a call";
+      title = "Log contact";
       body = logCallDrawerBody({
         record: decorateStaffCase(state.savedCase, people),
         person,

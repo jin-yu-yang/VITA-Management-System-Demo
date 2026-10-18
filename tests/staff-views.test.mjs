@@ -30,7 +30,13 @@ import {
   listPhone,
   htmlRow,
   PHONE_LOCKED,
+  contactsPanel,
+  logContactForm,
+  mayEditContact,
+  taskContacts,
+  outcomeGroup,
 } from "../src/staff-views.mjs";
+import { contactSummary, contactEntryFromForm, nowInput } from "../src/contact-log.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 import { describeStage } from "../src/domain.mjs";
@@ -65,6 +71,48 @@ const SAM = {
   capabilities: ["admin", "assist", "followup", "receive_documents"],
 };
 const PEOPLE = [ALEX, MORGAN, SAM];
+
+// One contact log entry as the store maps it (Task 3), before decoration: its
+// one version holds the same entry. 3:45 PM New York time on 10/17/2026.
+const contactEntry = (over = {}) => {
+  const entry = {
+    direction: "outgoing",
+    contactedAt: "2026-10-17T19:45:00.000Z",
+    withWhom: "client",
+    otherName: null,
+    method: "phone",
+    purpose: "go_over_return",
+    outcome: "reached",
+    note: null,
+    ...over,
+  };
+  return {
+    id: "c1",
+    caseId: "case-a",
+    followupId: null,
+    revision: 1,
+    loggedAt: "2026-10-17T19:46:00.000Z",
+    editedAt: null,
+    loggedByPersonId: "alex",
+    versions: [
+      {
+        version: 1,
+        createdAt: "2026-10-17T19:46:00.000Z",
+        editedByPersonId: over.loggedByPersonId ?? "alex",
+        direction: entry.direction,
+        contactedAt: entry.contactedAt,
+        withWhom: entry.withWhom,
+        otherName: entry.otherName,
+        method: entry.method,
+        purpose: entry.purpose,
+        outcome: entry.outcome,
+        note: entry.note,
+      },
+    ],
+    ...entry,
+    ...over,
+  };
+};
 
 const staffCase = (overrides = {}) =>
   decorateStaffCase(
@@ -178,7 +226,6 @@ test("names come from the roster, and only the sections the record carries", () 
         {
           id: "task-1",
           assigneeId: "sam",
-          attempts: [{ id: "a1", actorPersonId: "sam", outcome: "no_answer" }],
         },
       ],
       reviews: [{ id: "r1", reviewerId: "morgan" }],
@@ -190,7 +237,8 @@ test("names come from the roster, and only the sections the record carries", () 
   assert.equal(decorated.lastRemindedByName, "Sam");
   assert.deepEqual(decorated.participantNames, ["Alex", "Unknown person"]);
   assert.equal(decorated.followups[0].assigneeName, "Sam");
-  assert.equal(decorated.followups[0].attempts[0].actorName, "Sam");
+  // Follow-ups carry no attempts any more: their contacts are in the log.
+  assert.equal("attempts" in decorated.followups[0], false);
   assert.equal(decorated.reviews[0].reviewerName, "Morgan");
   // The ids are still there: names are added, nothing is replaced.
   assert.equal(decorated.preparerId, "alex");
@@ -584,7 +632,6 @@ test("the preparer's documents and hand-off, and nobody else's", () => {
           assigneeId: "sam",
           status: "open",
           reason: "No response for a week",
-          attempts: [],
         },
       ],
     }),
@@ -843,27 +890,29 @@ test("follow-up work is shown but never acted on from this screen", () => {
           status: "open",
           reason: "No response for a week",
           resolutionNote: null,
-          attempts: [
-            {
-              id: "attempt-1",
-              outcome: "no_answer",
-              note: "Left a message on the mobile number.",
-              actorPersonId: "sam",
-              createdAt: "2026-09-13T15:00:00.000Z",
-            },
-          ],
         },
+      ],
+      contacts: [
+        contactEntry({
+          followupId: "task-1",
+          loggedByPersonId: "sam",
+          outcome: "no_answer",
+          note: "Left a message on the mobile number.",
+        }),
       ],
     }),
     ALEX,
   );
   assert.match(html, /Open with the office/);
   assert.match(html, /No response for a week/);
-  assert.match(html, /No answer/);
-  assert.match(html, /Left a message on the mobile number\./);
-  assert.match(html, /Sam/);
+  // The task lists its linked contacts by their summary lines.
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /Contacts so far/);
+  assert.match(followup, /Sam → client, phone — Go over tax return — No answer\. Note: Left a message on the mobile number\./);
   for (const action of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP", "REMIND", "CLOSE_CASE"])
     assert.ok(!html.includes(`data-case-action="${action}"`), action);
+  // Nothing on this tab logs a contact: that is the office's, or the Contacts tab's.
+  assert.doesNotMatch(followup, /contact-form/);
 });
 
 test("internal notes stay in the internal history, never in the client's", () => {
@@ -935,9 +984,6 @@ test("findings, notes and names are escaped on the way out", () => {
             assigneeId: "sam",
             status: "open",
             reason: nasty,
-            attempts: [
-              { id: "a1", outcome: "no_answer", note: nasty, actorPersonId: "sam" },
-            ],
           },
         ],
         reviews: [
@@ -1104,7 +1150,7 @@ test("eligibility answers the same way for a board row and a full case", () => {
 // ---------------------------------------------------------------------------
 
 test("case tabs follow the ARIA tab pattern and keep every panel in the page", () => {
-  assert.deepEqual(CASE_TABS.map(([key]) => key), ["overview", "intake", "documents", "followup", "history"]);
+  assert.deepEqual(CASE_TABS.map(([key]) => key), ["overview", "intake", "documents", "followup", "contacts", "history"]);
   const panels = CASE_TABS.map(([key, label]) => [key, label, `<p>${key} body</p>`]);
   const html = caseTabs(panels, "documents", { documents: 2 });
   assert.match(html, /<div class="case-tabs" role="tablist" aria-label="Case sections">/);
@@ -1712,6 +1758,32 @@ test("decorateStaffCase names who recorded each material", () => {
   assert.equal(decorateStaffCase({ id: "c" }, PEOPLE).materials, undefined);
 });
 
+test("contacts get the logger's and editor's names", () => {
+  const record = decorateStaffCase(
+    {
+      id: "c",
+      contacts: [
+        {
+          id: "k1",
+          loggedByPersonId: "alex",
+          versions: [
+            { version: 1, editedByPersonId: "alex" },
+            { version: 2, editedByPersonId: "gone" },
+          ],
+        },
+        { id: "k2", loggedByPersonId: "gone" },
+      ],
+    },
+    PEOPLE,
+  );
+  assert.equal(record.contacts[0].loggedByName, "Alex");
+  assert.equal(record.contacts[0].versions[0].editedByName, "Alex");
+  assert.equal(record.contacts[0].versions[1].editedByName, "Unknown person");
+  assert.equal(record.contacts[1].loggedByName, "Unknown person");
+  assert.deepEqual(record.contacts[1].versions, []);
+  assert.equal(decorateStaffCase({ id: "c" }, PEOPLE).contacts, undefined);
+});
+
 // ---------------------------------------------------------------------------
 // Part 4c, Task 2: the document checklist with marks and Needed/Maybe moves,
 // and the draft 13614-C on the case page.
@@ -1950,4 +2022,287 @@ test("the case page's in-place error is an error block with both controls", () =
   assert.match(html, /^<div class="notice error" role="alert">/);
   assert.match(html, /data-action="retry-action"/);
   assert.match(html, /data-action="dismiss-error"/);
+});
+
+// ---------------------------------------------------------------------------
+// The contact log (OpenSpec change add-contact-log, Task 4): the Contacts tab
+// and the one Log contact form.
+// ---------------------------------------------------------------------------
+
+const NOW_1745 = Date.parse("2026-10-17T21:45:00.000Z"); // 5:45 PM in New York
+const tabOf = (html, key) => {
+  const from = html.indexOf(`id="case-panel-${key}"`);
+  return html.slice(from, html.indexOf('role="tabpanel"', from + 1));
+};
+const fieldsetOf = (html, legend) =>
+  html.match(new RegExp(`<fieldset[^>]*><legend>${legend}</legend>[\\s\\S]*?</fieldset>`))?.[0] ?? "";
+const radios = (fieldset) =>
+  [...fieldset.matchAll(/<input type="radio"[^>]*value="([a-z_]+)"[^>]*><span>([^<]+)<\/span>/g)].map((m) => [m[1], m[2]]);
+const checkedIn = (html) =>
+  [...html.matchAll(/name="([a-zA-Z]+)" value="([a-z_]+)"[^>]*checked/g)].map((m) => `${m[1]}=${m[2]}`);
+
+test("the case tabs include Contacts before History", () => {
+  const html = renderStaffCase(staffCase(), ALEX);
+  const order = [...html.matchAll(/role="tab" id="case-tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["overview", "intake", "documents", "followup", "contacts", "history"]);
+  assert.match(html, /data-value="contacts">Contacts<\/button>/);
+});
+
+test("the Contacts tab shows its count", () => {
+  const html = renderStaffCase(
+    staffCase({ contacts: [contactEntry(), contactEntry({ id: "c2" }), contactEntry({ id: "c3" })] }),
+    ALEX,
+  );
+  assert.match(html, /data-value="contacts">Contacts <span class="tab-count">3<\/span><\/button>/);
+  assert.match(tabOf(html, "contacts"), /<h2 id="contacts-title">Contacts<\/h2>/);
+  // An applicant-shaped record has no log to show.
+  const applicant = renderStaffCase({ id: "x", stage: "preparing", answers: {} }, ALEX);
+  assert.match(tabOf(applicant, "contacts"), /Open the case from the work board to see this\./);
+  assert.doesNotMatch(applicant, /contact-form/);
+});
+
+test("newest contact time first", () => {
+  const html = contactsPanel(
+    staffCase({
+      contacts: [
+        contactEntry({ id: "c-am", contactedAt: "2026-10-17T14:00:00.000Z" }),
+        contactEntry({ id: "c-pm", contactedAt: "2026-10-17T19:45:00.000Z" }),
+      ],
+    }),
+    ALEX,
+    { now: NOW_1745 },
+  );
+  assert.ok(html.indexOf('id="contact-c-pm"') < html.indexOf('id="contact-c-am"'));
+  assert.match(html, /<li id="contact-c-pm" class="contact-entry" tabindex="-1">/);
+  assert.match(html, /10\/17\/2026 3:45 PM — Alex → client, phone — Go over tax return — Reached\./);
+  assert.match(html, /10\/17\/2026 10:00 AM — Alex/);
+  // The section, its Copy all and each entry's Copy.
+  assert.match(html, /<h2 id="contacts-title">Contacts<\/h2>/);
+  assert.match(html, /data-action="copy-all-contacts"[^>]*>Copy all</);
+  assert.match(html, /data-action="copy-contact"[^>]*data-contact-id="c-am"[^>]*>Copy</);
+  // The form comes before the entries.
+  assert.ok(html.indexOf("contact-form") < html.indexOf('id="contact-c-pm"'));
+});
+
+test("Edit only for the logger or an admin", () => {
+  const record = staffCase({ contacts: [contactEntry({ loggedByPersonId: "morgan" })] });
+  const edit = /data-action="toggle-contact-edit" data-contact-id="c1"[^>]*>Edit</;
+  assert.doesNotMatch(contactsPanel(record, ALEX, {}), edit);
+  assert.match(contactsPanel(record, MORGAN, {}), edit);
+  assert.match(contactsPanel(record, SAM, {}), edit, "an admin edits anyone's entry");
+  assert.equal(mayEditContact(record.contacts[0], MORGAN), true);
+  assert.equal(mayEditContact(record.contacts[0], SAM), true);
+  assert.equal(mayEditContact(record.contacts[0], ALEX), false);
+  assert.equal(mayEditContact(record.contacts[0], null), false);
+  assert.equal(mayEditContact({ loggedByPersonId: undefined }, {}), false, "no persona is nobody's logger");
+});
+
+test("an edited entry says so and lists its earlier versions", () => {
+  const sent = contactEntry({ method: "text", outcome: "sent", contactedAt: "2026-10-17T14:00:00.000Z" });
+  const record = staffCase({
+    contacts: [
+      {
+        ...sent,
+        outcome: "replied",
+        revision: 2,
+        editedAt: "2026-10-17T15:30:00.000Z",
+        versions: [
+          { ...sent.versions[0], createdAt: "2026-10-17T14:00:00.000Z" },
+          { ...sent.versions[0], version: 2, outcome: "replied", createdAt: "2026-10-17T15:30:00.000Z", editedByPersonId: "sam" },
+        ],
+      },
+    ],
+  });
+  const html = contactsPanel(record, ALEX, {});
+  assert.match(html, /10\/17\/2026 10:00 AM — Alex → client, text — Go over tax return — Client replied\./);
+  assert.match(html, /edited 10\/17\/2026 11:30 AM/);
+  const details = html.match(/<details class="contact-versions">[\s\S]*?<\/details>/)?.[0] ?? "";
+  assert.match(details, /<summary>Earlier versions \(1\)<\/summary>/);
+  assert.match(details, /10\/17\/2026 10:00 AM — Alex → client, text — Go over tax return — Sent\./);
+  assert.match(details, /Saved 10\/17\/2026 10:00 AM · Alex/);
+  assert.doesNotMatch(details, /Client replied/, "the current version is not an earlier one");
+  // An entry never edited has neither.
+  const plain = contactsPanel(staffCase({ contacts: [contactEntry()] }), ALEX, {});
+  assert.doesNotMatch(plain, /edited |Earlier versions/);
+});
+
+test("a linked entry names its task", () => {
+  const html = contactsPanel(
+    staffCase({
+      followups: [{ id: "task-1", requestId: "r", assigneeId: "sam", status: "open", reason: "Ask for the <W-2>" }],
+      contacts: [contactEntry({ followupId: "task-1", loggedByPersonId: "sam" })],
+    }),
+    ALEX,
+    {},
+  );
+  assert.match(html, /For the follow-up: Ask for the &lt;W-2&gt;/);
+  assert.doesNotMatch(contactsPanel(staffCase({ contacts: [contactEntry()] }), ALEX, {}), /For the follow-up/);
+});
+
+test("an empty log", () => {
+  const html = contactsPanel(staffCase(), ALEX, { now: NOW_1745 });
+  assert.match(html, /<p class="muted">No contacts logged yet\.<\/p>/);
+  assert.doesNotMatch(html, /copy-all-contacts/);
+  assert.match(html, /<form class="staff-form contact-form" data-case-id="case-a"/);
+  // No persona: the reason, not a form the database would refuse.
+  const nobody = contactsPanel(staffCase(), null, {});
+  assert.doesNotMatch(nobody, /<form/);
+  assert.match(nobody, /Choose a volunteer persona to act as\./);
+});
+
+test("the form's button groups and defaults", () => {
+  const html = logContactForm(staffCase(), ALEX, { now: NOW_1745 });
+  assert.match(html, /^<form class="staff-form contact-form" data-case-id="case-a">/);
+  assert.match(html, /<h3>Log contact<\/h3>/);
+  assert.deepEqual(radios(fieldsetOf(html, "Direction")), [["outgoing", "We contacted"], ["incoming", "The client contacted us"]]);
+  assert.deepEqual(radios(fieldsetOf(html, "Method")), [
+    ["phone", "Phone"], ["text", "Text"], ["email", "Email"], ["in_person", "In person"], ["video", "Video"],
+  ]);
+  assert.deepEqual(radios(fieldsetOf(html, "Purpose")), [
+    ["go_over_return", "Go over tax return"], ["ask_question", "Ask a question"], ["request_documents", "Request documents"],
+    ["schedule_appointment", "Schedule an appointment"], ["other", "Other"],
+  ]);
+  assert.deepEqual(radios(fieldsetOf(html, "With")), [["client", "Client"], ["spouse", "Spouse"], ["other", "Other"]]);
+  const voice = html.match(/<fieldset[^>]*data-outcome-group="voice"[^>]*>[\s\S]*?<\/fieldset>/)?.[0] ?? "";
+  const written = html.match(/<fieldset[^>]*data-outcome-group="written"[^>]*>[\s\S]*?<\/fieldset>/)?.[0] ?? "";
+  assert.match(voice, /<legend>Outcome<\/legend>/);
+  assert.match(written, /<legend>Outcome<\/legend>/);
+  assert.deepEqual(radios(voice), [["reached", "Reached"], ["no_answer", "No answer"], ["left_voicemail", "Left voicemail"], ["wrong_number", "Wrong or invalid number"]]);
+  assert.deepEqual(radios(written), [["sent", "Sent"], ["replied", "Client replied"], ["failed", "Failed to deliver"]]);
+  assert.match(voice, /^<fieldset class="seg-group" data-outcome-group="voice">/, "phone shows the voice outcomes");
+  assert.match(written, /^<fieldset class="seg-group" data-outcome-group="written" hidden disabled>/);
+  // Real radios with real labels, required, ids scoped to this form.
+  assert.match(html, /<label class="seg" for="field-contact-new-direction-outgoing"><input type="radio" id="field-contact-new-direction-outgoing" name="direction" value="outgoing" required checked><span>We contacted<\/span><\/label>/);
+  for (const name of ["direction", "method", "purpose", "outcomeVoice", "outcomeWritten", "withWhom"])
+    assert.match(html, new RegExp(`name="${name}" value="[a-z_]+" required`), name);
+  // Only "We contacted" and "Phone" are chosen.
+  assert.deepEqual(checkedIn(html), ["direction=outgoing", "method=phone"]);
+  assert.match(html, /<input id="field-contact-new-contactedAt" name="contactedAt" type="datetime-local" value="2026-10-17T17:45" required>/);
+  assert.equal(nowInput(NOW_1745), "2026-10-17T17:45");
+  assert.match(html, /<span>Contact time<\/span>/);
+  assert.match(html, /<label class="field" for="field-contact-new-otherName" data-other-name hidden><span>Name<\/span><input id="field-contact-new-otherName" name="otherName" type="text" value="" maxlength="80"><\/label>/);
+  assert.match(html, /<span>Note<\/span><textarea id="field-contact-new-note" name="note" maxlength="1000"/);
+  assert.match(html, /<button type="submit" class="btn primary" id="field-contact-new-submit">Log contact<\/button><\/form>$/);
+  assert.doesNotMatch(html, /data-case-action/, "the log is not a case action");
+
+  // Linked to a task: the task's own scope and id.
+  const linked = logContactForm(staffCase(), SAM, { now: NOW_1745 }, { followupId: "task-1" });
+  assert.match(linked, /^<form class="staff-form contact-form" data-case-id="case-a" data-followup-id="task-1">/);
+  assert.match(linked, /<h4>Log contact<\/h4>/);
+  assert.match(linked, /id="field-contact-task-task-1-note"/);
+
+  // Editing: the entry's own values, Save changes and Cancel.
+  const entry = staffCase({
+    contacts: [contactEntry({ method: "text", outcome: "sent", purpose: "ask_question", withWhom: "other", otherName: "Lee Park", note: "Asked about Monday." })],
+  }).contacts[0];
+  const edit = logContactForm(staffCase(), ALEX, { now: NOW_1745 }, { contact: entry });
+  assert.match(edit, /^<form class="staff-form contact-form" data-case-id="case-a" data-contact-id="c1" aria-label="Edit this contact">/);
+  assert.deepEqual(checkedIn(edit), ["direction=outgoing", "method=text", "purpose=ask_question", "outcomeWritten=sent", "withWhom=other"]);
+  assert.match(edit, /data-outcome-group="voice" hidden disabled/);
+  assert.match(edit, /data-outcome-group="written">/);
+  assert.match(edit, /value="2026-10-17T15:45" required/);
+  assert.match(edit, /for="field-contact-edit-c1-otherName" data-other-name><span>Name/);
+  assert.match(edit, /value="Lee Park" maxlength="80"/);
+  assert.match(edit, />Asked about Monday\.<\/textarea>/);
+  assert.match(edit, /<button type="submit" class="btn primary" id="field-contact-edit-c1-submit">Save changes<\/button>/);
+  assert.match(edit, /<button type="button" class="btn secondary" data-action="toggle-contact-edit" data-contact-id="c1">Cancel<\/button>/);
+  // In person, or incoming: no outcome group shows.
+  for (const over of [{ method: "in_person" }, { direction: "incoming" }]) {
+    const none = logContactForm(staffCase(), ALEX, {}, { contact: { ...entry, ...over } });
+    assert.match(none, /data-outcome-group="voice" hidden disabled/);
+    assert.match(none, /data-outcome-group="written" hidden disabled/);
+  }
+  // Busy: the button waits.
+  assert.match(logContactForm(staffCase(), ALEX, { busy: true }), /<button type="submit" class="btn primary" id="field-contact-new-submit" disabled>Log contact/);
+});
+
+test("a note is text, not markup", () => {
+  const note = '<b>"Lee" & co</b>';
+  const record = staffCase({
+    contacts: [contactEntry({ note, withWhom: "other", otherName: "<i>Jo</i>" })],
+  });
+  const html = contactsPanel(record, ALEX, { openPanels: ["contact-edit:c1"] });
+  assert.doesNotMatch(html, /<b>|<i>/);
+  assert.match(html, /Note: &lt;b&gt;&quot;Lee&quot; &amp; co&lt;\/b&gt;/);
+  assert.match(html, /&lt;i&gt;Jo&lt;\/i&gt;/);
+  // The edit form holds it as text too.
+  assert.match(html, />&lt;b&gt;&quot;Lee&quot; &amp; co&lt;\/b&gt;<\/textarea>/);
+  // Copy puts the line on the clipboard exactly as typed (app.mjs copies this).
+  assert.match(contactSummary(record.contacts[0]), /<i>Jo<\/i>, phone[^]*Note: <b>"Lee" & co<\/b>$/);
+  // The task list escapes it as well.
+  const linked = { ...record, contacts: [{ ...record.contacts[0], followupId: "task-1" }] };
+  assert.doesNotMatch(taskContacts(linked, { id: "task-1" }), /<b>/);
+  assert.match(taskContacts(linked, { id: "task-1" }), /&lt;b&gt;/);
+});
+
+test("a persona switch closes someone else's edit form", () => {
+  const record = staffCase({ contacts: [contactEntry({ loggedByPersonId: "alex" })] });
+  const ui = { openPanels: ["contact-edit:c1"] };
+  const forAlex = contactsPanel(record, ALEX, ui);
+  assert.match(forAlex, /data-contact-id="c1" aria-label="Edit this contact"/);
+  assert.match(forAlex, /data-action="toggle-contact-edit" data-contact-id="c1" aria-expanded="true"/);
+  // Morgan, chosen with Alex's form still open, sees no form and nothing to save.
+  const forMorgan = contactsPanel(record, MORGAN, ui);
+  assert.doesNotMatch(forMorgan, /aria-label="Edit this contact"/);
+  assert.doesNotMatch(forMorgan, /Save changes/);
+  assert.doesNotMatch(forMorgan, /toggle-contact-edit/);
+  // A closed form is not drawn for Alex either.
+  assert.doesNotMatch(contactsPanel(record, ALEX, {}), /aria-label="Edit this contact"/);
+});
+
+test("no phone digits in the tab", () => {
+  const record = staffCase({ phone: "2155550123", contacts: [contactEntry({ note: "Called back." })] });
+  const tab = tabOf(renderStaffCase(record, SAM, { caseTab: "contacts", now: NOW_1745 }), "contacts");
+  assert.ok(tab.includes("Called back."));
+  assert.doesNotMatch(tab, /555|0123/);
+});
+
+test("an old RECORD_CONTACT event still reads as a call attempt", () => {
+  assert.ok(!CASE_ACTIONS.includes("RECORD_CONTACT"));
+  assert.equal(historySentence({ action: "RECORD_CONTACT", actorName: "Sam" }), "Sam recorded a call attempt.");
+  const html = historyPanel(
+    { internalHistory: [{ id: "e1", action: "RECORD_CONTACT", actorName: "Sam", createdAt: "2026-03-02T14:15:00.000Z" }], history: [] },
+    true,
+  );
+  assert.match(html, /Sam recorded a call attempt\./);
+});
+
+test("the task lists its linked contacts, oldest first", () => {
+  const record = staffCase({
+    contacts: [
+      contactEntry({ id: "late", followupId: "task-1", contactedAt: "2026-10-17T19:45:00.000Z", loggedByPersonId: "sam" }),
+      contactEntry({ id: "early", followupId: "task-1", contactedAt: "2026-10-17T14:00:00.000Z", loggedByPersonId: "sam", outcome: "no_answer" }),
+      contactEntry({ id: "other", followupId: null }),
+    ],
+  });
+  const html = taskContacts(record, { id: "task-1" });
+  assert.match(html, /^<ul class="contact-task-list">/);
+  assert.equal((html.match(/<li>/g) ?? []).length, 2);
+  assert.ok(html.indexOf("10:00 AM") < html.indexOf("3:45 PM"));
+  assert.match(taskContacts(record, { id: "task-2" }), /^<p class="muted">No contact has been logged on this task yet\.<\/p>$/);
+});
+
+test("switching method after picking an outcome sends only the shown group", () => {
+  // Phone → No answer, then Text (Review Focus 4). The page hides and disables
+  // the voice group (app.mjs, syncContactForm), so FormData leaves it out and
+  // the written group, shown and required, is the one that counts.
+  const text = logContactForm(staffCase(), ALEX, {}, { contact: { ...contactEntry({ method: "text", outcome: "sent" }) } });
+  assert.match(text, /data-outcome-group="voice" hidden disabled/);
+  assert.match(text, /<fieldset class="seg-group" data-outcome-group="written"><legend>Outcome<\/legend>[^]*?name="outcomeWritten" value="sent" required/);
+  const sent = contactEntryFromForm({
+    direction: "outgoing", method: "text", purpose: "ask_question", withWhom: "client",
+    outcomeVoice: "no_answer", outcomeWritten: "replied", contactedAt: "2026-10-17T15:45", note: "",
+  });
+  assert.equal(sent.outcome, "replied");
+  // Nothing chosen in the shown group sends no outcome at all; the database
+  // refuses that, and the browser never gets there (the group is required).
+  const none = contactEntryFromForm({
+    direction: "outgoing", method: "text", purpose: "ask_question", withWhom: "client",
+    outcomeVoice: "no_answer", contactedAt: "2026-10-17T15:45", note: "",
+  });
+  assert.equal(none.outcome, undefined);
+  assert.equal(outcomeGroup("text", "outgoing"), "written");
+  assert.equal(outcomeGroup("video", "outgoing"), "voice");
+  assert.equal(outcomeGroup("phone", "incoming"), null);
+  assert.equal(outcomeGroup("in_person", "outgoing"), null);
 });
