@@ -28,6 +28,7 @@
   - the amount format;
   - duplicate Local types;
   - more than five Local entries;
+  - an account number or routing number in any group (refused; design D3);
   - the old empty payloads.
 - [ ] 3.2 Implement `vitally_private.check_exit_form` and the new `check_payload` branches for `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` (design D3, D4). Copy every other branch verbatim.
 - [ ] 3.3 Write failing tests for the handlers:
@@ -38,9 +39,11 @@
   - an approval stores one reviewer row;
   - a no answer opens one `go_over_return` follow-up;
   - no office person refuses;
-  - another persona is refused and nothing is stored.
-- [ ] 3.4 Re-create `act_submit_review`, `act_resubmit_review` and `act_approve_review` from their latest definitions, with only the questionnaire insert, the date and appointment checks and the D5 follow-up added. Keep each client message as it is.
-- [ ] 3.5 Update `apply_fixture_scenario` (design D8) and its tests in `tests/database-fixtures.mjs`: clear both tables, and seed the fictional answers.
+  - another persona is refused and nothing is stored;
+  - the review-contact step is completed on yes (outcome reached) and on no (no outcome), and `RECORD_REVIEW_CONTACT` is then refused;
+  - a legacy pending approval can still be recorded (design D10).
+- [ ] 3.4 Re-create `act_submit_review`, `act_resubmit_review` and `act_approve_review` from their latest definitions, with only the questionnaire insert, the date and appointment checks, the D5 follow-up and the D10 contact-step completion added. Leave `act_record_review_contact` unchanged. Keep each client message as it is.
+- [ ] 3.5 Update `apply_fixture_scenario` (design D8) and its tests in `tests/database-fixtures.mjs`: clear both tables, seed the fictional answers, and seed the approved sample's contact step as completed (D10).
 - [ ] 3.6 Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 4. Browser: payloads and the store
@@ -68,13 +71,14 @@
 
   View tests.
 - [ ] 5.3 The previous preparer submission next to the current one, with changed answers marked, in `reviewing` (design D7). View tests.
-- [ ] 5.4 The review panel: each version's preparer answers and each approved attempt's reviewer answers, and "No questionnaire was recorded for this version." when there is none. View tests.
-- [ ] 5.5 A follow-up with no request in `src/admin-views.mjs` and `src/office-views.mjs`: the label "Go over the return with the client" and no document line. Tests in `tests/admin-views.test.mjs` and `tests/office-views.test.mjs`. Audit every `requestId` read on a follow-up.
-- [ ] 5.6 Styles for the forms and the comparison in `src/styles.css`, reusing existing staff-form classes.
-- [ ] 5.7 Run `npm test`.
+- [ ] 5.4 In `review_approved`, "Your next step" shows the D10 line and no "Record this conversation" form after a questionnaire approval. A legacy pending approval still shows the form. View tests.
+- [ ] 5.5 The review panel: each version's preparer answers and each approved attempt's reviewer answers, and "No questionnaire was recorded for this version." when there is none. View tests.
+- [ ] 5.6 A follow-up with no request in `src/admin-views.mjs` and `src/office-views.mjs`: the label "Go over the return with the client" and no document line. Tests in `tests/admin-views.test.mjs` and `tests/office-views.test.mjs`. Audit every `requestId` read on a follow-up.
+- [ ] 5.7 Styles for the forms and the comparison in `src/styles.css`, reusing existing staff-form classes.
+- [ ] 5.8 Run `npm test`.
 
 ## 6. Story and full checks
 
-- [ ] 6.1 Update `tests/browser.mjs` so that the story fills the preparer form on submit and on resubmit, and the reviewer form on approve. Add one path that answers no and finds the task in Follow-ups.
+- [ ] 6.1 Update `tests/browser.mjs` so that the story fills the preparer form on submit and on resubmit, and the reviewer form on approve. Add one path that answers no and finds the task in Follow-ups. Remove the story's "Record this conversation" press after approval, and assert that no such form is offered (D10).
 - [ ] 6.2 Run `npm run test:browser`.
 - [ ] 6.3 Run `npx openspec validate --all`, and confirm that `npm run build:intake` leaves nothing to commit. Client text is unchanged, so `build:hant -- --check` is not needed; say so in `verify.md`.

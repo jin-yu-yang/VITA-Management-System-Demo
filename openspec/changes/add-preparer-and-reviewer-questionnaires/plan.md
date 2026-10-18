@@ -27,6 +27,8 @@
   - Preparer `questionnaire`: `confirmedBy` (`client`|`spouse`|`other`), `confirmedByName` (only with `other`, 1–120 chars after trim), `confirmedMethod` (`phone`|`in_person`|`text`|`email`|`video`), `shadedPartsCompleted` (`true`), `stateForgivenessSet` (`true`), `readyForReviewOn` (`YYYY-MM-DD`).
   - Reviewer `questionnaire`: `completedOn` (`YYYY-MM-DD`), `paForgiveness` (`eligible`|`not_eligible`), `wentOver` (boolean), `wentOverOn` (only with `wentOver` true, required then), `wentOverHow` (only with `wentOver` true, optional: `in_person`|`phone`|`video`|`other`), `signMethod` (`portal`|`in_person`), `signAppointmentAt` (`YYYY-MM-DDTHH:MM`, site wall-clock time), `exitForm` (`{federal, state, local}`), `remarks` (optional, 1–2000 chars).
   - `SUBMIT_REVIEW` and `APPROVE_REVIEW` take `{questionnaire}`. `RESUBMIT_REVIEW` takes `{questionnaire, resolution}`.
+- **The Exit Form stores only payment methods, amounts and the debit date, never an account number, routing number or other banking detail** (design D3). This revises ruling R28, and the PR description must say so.
+- **An approval with a questionnaire never leaves the review-contact step pending** (design D10). `RECORD_REVIEW_CONTACT` is kept unchanged.
 - **The Exit Form shape is design D3, exactly.** The amount pattern is `^(0|[1-9][0-9]{0,5})(\.[0-9]{1,2})?$`. Local types are `NPT`, `BIRT`, `EET`, `SIT`, `PAIBWTR`.
 - **Fixed strings:**
   - follow-up reason: `Go over the return with the client: the reviewer did not.`;
@@ -132,6 +134,8 @@ const BAD_REVIEWER = {
   "amount three decimals": exit({ federal: { method: "efile", result: "owe", amount: "1.005", oweBy: "mail_check" } }),
   "duplicate local": exit({ local: [sit, sit] }),
   "unknown local type": exit({ local: [{ ...sit, type: "XYZ" }] }),
+  "banking detail": exit({ federal: { method: "efile", result: "refund", amount: "10", refundBy: "direct_deposit", accountNumber: "000123" } }),
+  "routing number": exit({ federal: { method: "efile", result: "refund", amount: "10", refundBy: "direct_deposit", routingNumber: "000000000" } }),
   "old empty payload": null, // send {} itself
 };
 ```
@@ -157,7 +161,9 @@ const BAD_REVIEWER = {
     - checks `completedOn` and `wentOverOn` with `check_taxslayer_date`;
     - applies the appointment rule against `p_case.answers->>'service'` (required when `signMethod = 'in_person'` and service ≠ `same_day`, absent otherwise);
     - inserts the reviewer row;
-    - when `wentOver` is false, finds the office person exactly as `act_escalate_contact` does and inserts an `admin_followups` row (`kind 'go_over_return'`, `request_id null`, the fixed reason, `created_by_person_id` = the reviewer).
+    - when `wentOver` is false, finds the office person exactly as `act_escalate_contact` does and inserts an `admin_followups` row (`kind 'go_over_return'`, `request_id null`, the fixed reason, `created_by_person_id` = the reviewer);
+    - updates the review to `status 'approved'`, `decided_at now()`, `client_contact_status 'completed'`, `client_contacted_at now()`, and `client_contact_outcome` `'reached'` on yes or null on no (design D10), in place of today's `client_contact_status 'pending'`.
+  - `act_record_review_contact` is not re-created. Its existing pending check refuses it after such an approval.
   - The returned `detail` of each handler gains nothing. Answers never go into history.
 
 - [ ] **Step 1: Write the failing tests**
@@ -175,11 +181,15 @@ test("approval with yes opens none", …)
 test("no office person refuses the approval", …)  // set default_followup_person_id null; review stays 'active'
 test("another volunteer cannot submit", …)        // FORBIDDEN, no row
 test("the office works a go-over follow-up", …)   // RECORD_CONTACT reached, RESOLVE_FOLLOWUP reached; stage unchanged; non-assignee FORBIDDEN
+test("yes completes the review-contact step", …)  // status completed, outcome 'reached', contacted_at set
+test("no completes it with no outcome", …)        // status completed, outcome null, contacted_at set, one go-over follow-up
+test("recording a conversation after a questionnaire approval is refused", …) // RECORD_REVIEW_CONTACT → INVALID_TRANSITION
+test("a legacy pending approval can still be recorded", …) // legacyApprovedCase(f): insert an approved review with client_contact_status 'pending' via f.sql, then RECORD_REVIEW_CONTACT reached → completed
 test("closing the case cancels the go-over follow-up", …)
 test("client messages carry no answer", …)        // assertPlainClientMessage on each new history line; Exit Form amounts absent
 ```
 
-  Set `service` on a test case by updating `cases.answers` through `f.sql`, or through the fixture's answer helper if one exists.
+  Set `service` on a test case by updating `cases.answers` through `f.sql`, or through the fixture's answer helper if one exists. Move the existing `RECORD_REVIEW_CONTACT` tests (and its stage sweep in `refusedByStage`) onto `legacyApprovedCase(f)`, since a questionnaire approval no longer leaves the step pending.
 - [ ] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL (no rows stored).
 - [ ] **Step 3:** Implement section 5 as in Interfaces, copying each handler from its latest definition.
 - [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes.
@@ -196,6 +206,7 @@ test("client messages carry no answer", …)        // assertPlainClientMessage 
   - Two new `delete` lines, placed before the `reviews` delete.
   - Fictional preparer rows: client / phone, both confirmations true, `current_date`. They go in for `review_ready` (version 1), `corrections_required` (version 1) and `review_approved` (version 1, client / in person; version 2, client / phone).
   - One reviewer row on the `review_approved` approved attempt: `completed_on current_date`, eligible, `went_over` true with `current_date` and phone, portal, an Exit Form with a Federal refund of `412.00` by direct deposit and Local NPT `paper`/`none`, and no remarks.
+  - That attempt's contact step is seeded `completed`, with outcome `reached` and `client_contacted_at now()-interval '1 hour'`, in place of `pending` (design D10).
 
 - [ ] **Step 1: Write the failing tests:** `seeded approved sample has answers` (two preparer rows and one reviewer row) and `checkpoint reset leaves no stale answers` (reset to `ready_for_review` leaves exactly one preparer row, version 1, and no reviewer row).
 - [ ] **Step 2:** Run `npm run test:database`. Expected: FAIL.
@@ -287,7 +298,8 @@ test("SUBMIT_REVIEW payload is { questionnaire }", …)    // replaces the old `
     - `preparerForm(record, previous, ui)`;
     - `reviewerForm(record, ui)`;
     - `preparerAnswers(q)` and `reviewerAnswers(q)`, which render detail rows;
-    - `submissionComparison(previous, current)`.
+    - `submissionComparison(previous, current)`;
+    - `contactStepLine(attempt, questionnaire)`, the D10 line for `review_approved` and the panel's "Client conversation" row. It returns null when there is no questionnaire, so the legacy path renders as today.
 
     All are internal to the file, built from `input`/`select`/`textarea`/`caseSubmit` in `src/ui.mjs`. Radios and checkboxes follow the existing staff-form markup (VERIFY_INTAKE's checks are the model).
   - CSS: `.q-when-yes`, `.q-when-in-person` and `.q-group`:
@@ -308,6 +320,9 @@ test("same-day reviewer form has no appointment block", …)
 test("reviewing shows previous and current with changes marked", …) // a "Changed" mark on the method row only
 test("review panel shows answers per version", …)                  // preparer rows for v1 and v2; reviewer rows incl. Exit Form and remarks
 test("no questionnaire recorded line", …)                          // exact string
+test("approved with yes offers no conversation form", …)          // no RECORD_REVIEW_CONTACT control; "The reviewer went over the return with the client on <date>."
+test("approved with no says the office takes over", …)            // no RECORD_REVIEW_CONTACT control; "The office will go over the return with the client."
+test("legacy pending approval still shows the conversation form", …) // approved attempt with no reviewer questionnaire, status pending
 test("Local entries one per type", …)                              // five .q-group entries named local.NPT … local.PAIBWTR
 ```
 
@@ -343,6 +358,7 @@ test("Local entries one per type", …)                              // five .q-
 
 - [ ] **Step 1:** Add `fillPreparer(page, answers)` and `fillReviewer(page, answers)` beside the story's other form helpers. Use them before each of the three presses (fictional answers). On resubmit, assert the prefill: the method is already chosen and the date is today.
 - [ ] **Step 2:** Add one path in which the reviewer answers "no", approves, and an office persona finds "Go over the return with the client" in Follow-ups. Assert the client window still passes the `MONEY_WORDS` check.
+- [ ] **Step 2a:** Drop the story's "Record this conversation" press after its approval (around `tests/browser.mjs:1683–1701`). Assert instead that the reviewer's next step shows no `RECORD_REVIEW_CONTACT` control and reads the D10 line. Remove the wait for the client message "A volunteer spoke with you about the next service step.", but keep the internal-text and `MONEY_WORDS` checks on the client window.
 - [ ] **Step 3:** Run `npm run test:browser`. Expected: all pass (about 11–16 minutes).
 - [ ] **Step 4:** Run `npm test`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.
 - [ ] **Step 5:** Tick every task in `tasks.md`, then commit: `git commit -am "Questionnaires: the story fills both questionnaires"`.

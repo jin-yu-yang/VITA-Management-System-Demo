@@ -153,8 +153,9 @@ Read on origin/main at 9992aab. The plan builds on these facts.
    the same configured office person `ESCALATE_CONTACT` uses. The office resolves it with the existing
    `RECORD_CONTACT`/`RESOLVE_FOLLOWUP`. If no office person is configured, the approval is refused (`VALIDATION`),
    as `ESCALATE_CONTACT` is today.
-4. **`RECORD_REVIEW_CONTACT` is untouched**, so on a 3 = No approval the reviewer's own "Record this
-   conversation" step still opens as today, next to the office task.
+4. ~~**`RECORD_REVIEW_CONTACT` is untouched**, so on a 3 = No approval the reviewer's own "Record this
+   conversation" step still opens as today, next to the office task.~~ Revised by Hailey after propose
+   (below).
 5. **"Defaults to today"** means the browser's local date, filled into the form. The database accepts any real
    calendar date no later than tomorrow (to allow for time zones) and no earlier than 1 January of the case's
    season. The appointment to sign is any real date and time, with no check that it is in the future.
@@ -165,3 +166,13 @@ Read on origin/main at 9992aab. The plan builds on these facts.
    as ones played through.
 8. **Amounts:** whole dollars or dollars and cents, 0 to 999,999.99. They are required when the result is refund
    or owe, and absent when it is none.
+
+### Revisions by Hailey after propose (2026-10-17)
+
+- **Call 8 (call 4 above):** two people must not be asked to contact the client. An approval with a
+  questionnaire marks the existing review-contact step done either way. On Yes, the questionnaire already
+  records it; on No, the office follow-up takes over. Don't remove `RECORD_REVIEW_CONTACT`; just stop
+  leaving it pending after an approval with a questionnaire. (design D10)
+- **Call 2:** the Exit Form stores only the payment method (direct deposit / check / direct debit / mail
+  check), the amounts and the dates. It never stores account or routing numbers. This revises ruling R28,
+  and the PR calls that out. (design D3)

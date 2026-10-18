@@ -101,7 +101,7 @@ The reviewer questionnaire SHALL hold three optional Exit Form groups: Federal, 
 
 A refund or an amount owed SHALL carry an amount from 0.00 to 999,999.99 with at most two decimal places. A result of `none` SHALL carry no amount. A refund SHALL say direct deposit or check. An amount owed SHALL say direct debit, with a debit date, or mail check.
 
-Each Local entry SHALL have a type: `NPT`, `BIRT`, `EET`, `SIT` or `PAIBWTR`, shown with those labels (PAIBWTR is the Philadelphia Wage Tax refund petition). Tax year, date, client number and taxpayer name SHALL NOT be asked; they come from the case. Any group that breaks these rules SHALL refuse the approval with `VALIDATION`.
+Each Local entry SHALL have a type: `NPT`, `BIRT`, `EET`, `SIT` or `PAIBWTR`, shown with those labels (PAIBWTR is the Philadelphia Wage Tax refund petition). Tax year, date, client number and taxpayer name SHALL NOT be asked; they come from the case. The Exit Form SHALL store only the payment method (direct deposit, check, direct debit or mail check), the amounts and the debit date. It SHALL NEVER store an account number, a routing number or any other banking detail. This revises historical ruling R28, which allowed no refund, banking or amount field in the review workflow. Any group that breaks these rules, or that carries any key outside them, SHALL refuse the approval with `VALIDATION`.
 
 #### Scenario: No Exit Form groups at all
 - **WHEN** the reviewer fills in answers 1 to 5 and no Exit Form group
@@ -119,9 +119,32 @@ Each Local entry SHALL have a type: `NPT`, `BIRT`, `EET`, `SIT` or `PAIBWTR`, sh
 - **WHEN** the reviewer adds two Local entries of type `SIT`
 - **THEN** the database refuses the approval with `VALIDATION`
 
+#### Scenario: Banking details are refused
+- **WHEN** the Federal group says refund by direct deposit and also carries an `accountNumber` or a `routingNumber`
+- **THEN** the database refuses the approval with `VALIDATION`, and nothing is stored
+
 #### Scenario: A direct debit needs its date
 - **WHEN** the State group says owe 45.50 by direct debit with no debit date
 - **THEN** the database refuses the approval with `VALIDATION`
+
+### Requirement: An approval with a questionnaire settles the review-contact step
+An approval that carries a reviewer questionnaire SHALL NOT leave the review's client-contact step pending, so no one else is asked to contact the client. On "yes" to going over the return, the step SHALL be completed with outcome reached. On "no", it SHALL be completed with no outcome, and the office follow-up takes the contact over. In both cases the step SHALL carry the approval time. `RECORD_REVIEW_CONTACT` SHALL remain, and SHALL be refused with `INVALID_TRANSITION` on such an approval. It SHALL keep working on an approval from before this change whose step is still pending. "Your next step" SHALL offer no "Record this conversation" form after a questionnaire approval.
+
+#### Scenario: Yes completes the step
+- **WHEN** the reviewer approves with "yes" and a date
+- **THEN** the review's contact step is completed with outcome reached, and "Your next step" says the reviewer went over the return with the client on that date
+
+#### Scenario: No hands the step to the office
+- **WHEN** the reviewer approves with "no"
+- **THEN** the review's contact step is completed with no outcome, the case has an open office follow-up, and "Your next step" says the office will go over the return with the client
+
+#### Scenario: Recording a conversation after a questionnaire approval is refused
+- **WHEN** the reviewer sends `RECORD_REVIEW_CONTACT` on a case approved with a questionnaire
+- **THEN** the database refuses it with `INVALID_TRANSITION`
+
+#### Scenario: A legacy pending approval can still be recorded
+- **WHEN** a review approved before this change still has its contact step pending, and its reviewer records a reached conversation
+- **THEN** the step is completed as today
 
 ### Requirement: Only the case's preparer and reviewer answer
 The preparer questionnaire SHALL be accepted only from the case's preparer, and the reviewer questionnaire only from the case's reviewer. These are the same checks the hand-off actions already make. Any other persona SHALL be refused as the action is refused today, and nothing SHALL be stored.

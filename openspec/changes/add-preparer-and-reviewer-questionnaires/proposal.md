@@ -29,11 +29,17 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
 - To: an approval that says the return was not gone over also opens an office follow-up to go over it with the client. The office works it in the existing Follow-ups queue with the existing call and resolve actions.
 - Impact: `admin_followups` gains a `kind`, and `request_id` becomes optional. Existing rows become `kind = document`.
 
+**The reviewer's contact step after approval**
+
+- From: every approval leaves "Record this conversation" pending for the reviewer.
+- To: an approval with a questionnaire completes that step. On yes, the questionnaire has already recorded it. On no, the office follow-up takes over. So two people are never asked to contact the client. `RECORD_REVIEW_CONTACT` stays, and still serves approvals from before this change.
+- Impact: staff screens only. No client message changes.
+
 **Case page**
 
 - To: every staff member who can open the case sees each submission's preparer answers and the reviewer's answers in the Independent review panel. The reviewer sees the previous submission next to the current one. Clients never read either questionnaire.
 
-**Out of scope:** generating the Exit Form PDF; the call log (`add-call-log`) and its 3a/3b prefill; any change to "Record this conversation" (`RECORD_REVIEW_CONTACT`); importing TaxSlayer reports; client text.
+**Out of scope:** generating the Exit Form PDF; the call log (`add-call-log`) and its 3a/3b prefill; removing "Record this conversation" (`RECORD_REVIEW_CONTACT`); importing TaxSlayer reports; client text.
 
 **Tracking:** part of #85, the TODO list this work was folded into (#83 was folded into #85). The PR says "Part of #85" and uses no closing keyword ("Fixes", "Closes", "Resolves"), so merging it leaves #85 open.
 
@@ -68,5 +74,6 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
   - `tests/case-actions.test.mjs`, `tests/staff-views.test.mjs`, `tests/admin-views.test.mjs`, `tests/office-views.test.mjs`;
   - `tests/database-review.mjs` and the fixture and realtime database suites;
   - `tests/browser.mjs` (the story fills the forms).
-- **Unchanged:** client text (`src/client-text.mjs`, `src/zh-hant.mjs`), the intake catalogue, and `RECORD_REVIEW_CONTACT`.
+- **Unchanged:** client text (`src/client-text.mjs`, `src/zh-hant.mjs`), the intake catalogue, and the `RECORD_REVIEW_CONTACT` action itself.
+- **Revises ruling R28:** the review workflow now stores refund and owed amounts, payment methods and debit dates, staff-only, for the Exit Form. It never stores account or routing numbers. The PR must call this out (design D3).
 - **Overlap:** Jinyu's lifecycle chain (#73) edits the same three stage functions and "Your next step". It blocks apply.

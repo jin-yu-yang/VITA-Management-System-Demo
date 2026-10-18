@@ -43,7 +43,8 @@
 - The Exit Form PDF (change D). This change stores the fields it will need, nothing more. Tax year, date,
   client number and taxpayer name come from the case and are not stored again.
 - The call log and the 3a/3b prefill from it (`add-call-log`).
-- Any change to `RECORD_REVIEW_CONTACT`, `CLAIM_REVIEW` or `REQUEST_CORRECTIONS`.
+- Removing `RECORD_REVIEW_CONTACT`, or any change to `CLAIM_REVIEW` or `REQUEST_CORRECTIONS`. An approval
+  with a questionnaire settles the contact step (D10), and the action itself is unchanged.
 - Importing TaxSlayer data. Client text, the intake catalogue and the stage model.
 - Editing answers after the action. A questionnaire is answered once per hand-off.
 
@@ -119,6 +120,13 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
   - Local types are unique within `local`, and `local` has at most five entries (one per type).
   - `amount` is a decimal string from `0.00` to `999999.99`, with zero to two decimal places. It is a string,
     so floating point never touches money.
+- **Payment details stored:** only the payment *method* (`direct_deposit`, `check`, `direct_debit`,
+  `mail_check`), the amounts and the debit date. **Never an account number, a routing number or any other
+  banking detail.** The shape has no key for one, and `check_exit_form` refuses any key outside D3, so a
+  payload carrying one is refused.
+- **This revises historical ruling R28.** R28 said the review workflow holds no banking, refund or amount
+  field (`006_review.sql`, the comment on `reviews`). The PR must call this out so Jinyu and the group see
+  it.
 - **Reason:** the form is the Exit Form, so its labels and branches are kept as the form says them. Being unique
   per type matches "one entry per type".
 
@@ -206,7 +214,7 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
   - It seeds a preparer questionnaire per seeded preparation version for `review_ready` (version 1),
     `corrections_required` (version 1) and `review_approved` (versions 1 and 2).
   - For `review_approved` it also seeds a reviewer questionnaire with `went_over = true`, a Federal refund and
-    one Local NPT entry.
+    one Local NPT entry. Its review-contact step is completed, as D10 sets it, with outcome `reached`.
   - All seeded values are fictional.
 - **Reason:** seeded and played-through cases should look alike on the case page.
 
@@ -216,6 +224,37 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
 - **Note:** if `add-call-log` has merged by the time of the #73 `/opsx:update`, that update adds the prefill
   (from the latest call log entry with outcome "reached" **and** purpose "go over the tax return"). Otherwise
   `add-call-log` adds it.
+
+### D10: An approval with a questionnaire settles the review-contact step
+
+- **Choice:**
+  - `act_approve_review` no longer leaves `reviews.client_contact_status = 'pending'`. It sets `'completed'`
+    either way, with `client_contacted_at = now()` (the approval time; `reviews_contacted` requires a time
+    on a completed step).
+  - On **yes**, `client_contact_outcome = 'reached'`. The questionnaire's date and how say when and how.
+  - On **no**, `client_contact_outcome` stays null. The `go_over_return` follow-up (D5) takes the contact
+    over.
+  - `RECORD_REVIEW_CONTACT` is not removed or changed. It still refuses anything that is not pending
+    (`INVALID_TRANSITION`), so after a questionnaire approval nobody is asked to record a conversation.
+  - It still works on an approval from before this change that is still pending.
+- **Browser:** in `review_approved`, "Your next step" stops reading `clientContactStatus` alone when the
+  approved attempt has a reviewer questionnaire:
+  - on yes: "The reviewer went over the return with the client on <date>." Nothing further is needed here.
+  - on no: "The office will go over the return with the client." The line links to nothing; the task is
+    in Follow-ups.
+
+  The review panel's "Client conversation" row reads the same way for a questionnaire attempt, instead of
+  the outcome label.
+- **Reason:** with the step left pending, a "no" asked both the reviewer and the office to contact the
+  client. A "yes" asked the reviewer to record what the questionnaire had just recorded.
+- **Consequence:** `RECORD_REVIEW_CONTACT` is now reachable only on a legacy approval. Its database tests
+  insert such a row directly. The browser story no longer records that conversation after its approval.
+- **Alternatives considered:**
+  - Remove `RECORD_REVIEW_CONTACT`. Rejected by Hailey: keep the action, just stop leaving it pending.
+  - Set the status to null on approval. Rejected: the panel would read the step as never opened, rather
+    than settled.
+  - A new status `handed_to_office`. Rejected: it widens the checks on `reviews` for a fact the follow-up
+    already holds.
 
 ## Risks / Trade-offs
 
@@ -232,10 +271,11 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
 - [Risk] The story (`tests/browser.mjs`, about 15 minutes) presses the three buttons. → Mitigation: the story's
   helpers fill the forms; the plan updates them in one task.
 - [Risk] Historical ruling R28 (`006_review.sql`'s comment on `reviews`) says the review workflow holds no
-  banking, refund or amount field. The approved design deliberately adds them, staff-only, for the Exit Form.
+  banking, refund or amount field. The approved design deliberately revises it (D3): amounts, payment methods
+  and debit dates are stored, staff-only, for the Exit Form. Account and routing numbers never are.
   → Mitigation: they live only in the presenter-only `reviewer_questionnaires`. No client message, client
   screen or `client_events` row mentions them, and the existing money-word checks on client messages and on
-  the client window stay. The migration's header records the departure from R28.
+  the client window stay. The migration's header and the PR description both record the revision of R28.
 - [Trade-off] Exit Form groups are `jsonb`, so SQL reports on them read JSON. → Accepted: change D reads the
   whole form, and no report needs a column.
 - [Trade-off] Answers cannot be edited after the hand-off. → Accepted: a resubmission is the correction path on
