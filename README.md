@@ -122,7 +122,6 @@ roadmap of what separates the demo from the product described in [`docs/spec.md`
 | --- | --- |
 | [`docs/proposal.md`](docs/proposal.md) | Project proposal: problem, users, scope, and plan |
 | [`docs/spec.md`](docs/spec.md) | Product specification: functional and non-functional requirements, case state machine |
-| [`docs/CSE 416 Milestone 1.pdf`](<docs/CSE 416 Milestone 1.pdf>) | Milestone 1 presentation |
 | [`docs/CSE416_VITA_SMS_Project_Notebook.docx`](docs/CSE416_VITA_SMS_Project_Notebook.docx) | Team project notebook: spec draft, pre-survey findings, meeting notes (9/6 – 9/29, English and Chinese), and UI design log |
 | [`docs/meeting-minutes/`](docs/meeting-minutes/) | Meeting minutes in Markdown |
 | [`docs/intake-questions/`](docs/intake-questions/) | Drafted intake questions, standard and senior wording |
