@@ -195,6 +195,15 @@ export function decorateStaffCase(caseRecord, people = []) {
         actorName: nameOf(attempt?.actorPersonId),
       })),
     }));
+  if (Array.isArray(caseRecord.contacts))
+    decorated.contacts = caseRecord.contacts.map((contact) => ({
+      ...contact,
+      loggedByName: nameOf(contact?.loggedByPersonId) ?? UNKNOWN_PERSON,
+      versions: (contact?.versions ?? []).map((version) => ({
+        ...version,
+        editedByName: nameOf(version?.editedByPersonId) ?? UNKNOWN_PERSON,
+      })),
+    }));
   if (Array.isArray(caseRecord.reviews))
     decorated.reviews = caseRecord.reviews.map((review) => ({
       ...review,

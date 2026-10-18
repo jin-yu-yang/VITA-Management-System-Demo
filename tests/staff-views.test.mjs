@@ -1712,6 +1712,32 @@ test("decorateStaffCase names who recorded each material", () => {
   assert.equal(decorateStaffCase({ id: "c" }, PEOPLE).materials, undefined);
 });
 
+test("contacts get the logger's and editor's names", () => {
+  const record = decorateStaffCase(
+    {
+      id: "c",
+      contacts: [
+        {
+          id: "k1",
+          loggedByPersonId: "alex",
+          versions: [
+            { version: 1, editedByPersonId: "alex" },
+            { version: 2, editedByPersonId: "gone" },
+          ],
+        },
+        { id: "k2", loggedByPersonId: "gone" },
+      ],
+    },
+    PEOPLE,
+  );
+  assert.equal(record.contacts[0].loggedByName, "Alex");
+  assert.equal(record.contacts[0].versions[0].editedByName, "Alex");
+  assert.equal(record.contacts[0].versions[1].editedByName, "Unknown person");
+  assert.equal(record.contacts[1].loggedByName, "Unknown person");
+  assert.deepEqual(record.contacts[1].versions, []);
+  assert.equal(decorateStaffCase({ id: "c" }, PEOPLE).contacts, undefined);
+});
+
 // ---------------------------------------------------------------------------
 // Part 4c, Task 2: the document checklist with marks and Needed/Maybe moves,
 // and the draft 13614-C on the case page.
