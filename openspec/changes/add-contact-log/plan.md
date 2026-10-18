@@ -8,7 +8,7 @@
 
 **Tech Stack:** Postgres/PL/pgSQL on Supabase (RLS, Realtime), plain ES modules, `node:test`, Playwright.
 
-**Spec:** `openspec/changes/add-call-log/specs/staff-case-work/spec.md`, with `design.md` (D1–D12) and `brainstorm.md` (both "Findings" sections) in the same folder. Read all three before Task 1.
+**Spec:** `openspec/changes/add-contact-log/specs/staff-case-work/spec.md`, with `design.md` (D1–D12) and `brainstorm.md` (both "Findings" sections) in the same folder. Read all three before Task 1.
 
 ## Global Constraints
 
@@ -93,7 +93,7 @@
 - [ ] **Step 7: Commit**
   ```bash
   git add supabase/migrations/031_contact_log.sql tests/database-*.mjs tests/database.mjs tests/support/database-fixture.mjs
-  git commit -m "Contact log: tables, staff-only policies, log and edit RPCs, follow-up attempts moved in (OpenSpec change add-call-log)"
+  git commit -m "Contact log: tables, staff-only policies, log and edit RPCs, follow-up attempts moved in (OpenSpec change add-contact-log)"
   ```
 
 ### Task 2: Summary line and New York time
@@ -127,7 +127,7 @@
 - [ ] **Step 5: Commit**
   ```bash
   git add src/contact-log.mjs tests/contact-log.test.mjs
-  git commit -m "Contact log: the one-line summary and New York time (OpenSpec change add-call-log)"
+  git commit -m "Contact log: the one-line summary and New York time (OpenSpec change add-contact-log)"
   ```
 
 ### Task 3: Store and controller
@@ -154,7 +154,7 @@
 - [ ] **Step 5: Commit**
   ```bash
   git add src tests
-  git commit -m "Contact log: read with the staff case, log and edit through the controller; RECORD_CONTACT leaves the browser (OpenSpec change add-call-log)"
+  git commit -m "Contact log: read with the staff case, log and edit through the controller; RECORD_CONTACT leaves the browser (OpenSpec change add-contact-log)"
   ```
 
 ### Task 4: The form, the Contacts tab and the office
@@ -184,7 +184,7 @@
 - [ ] **Step 7: Commit**
   ```bash
   git add src tests
-  git commit -m "Contact log: one Log contact form in the Contacts tab, the Follow-up tab and the office drawer (OpenSpec change add-call-log)"
+  git commit -m "Contact log: one Log contact form in the Contacts tab, the Follow-up tab and the office drawer (OpenSpec change add-contact-log)"
   ```
 
 ### Task 5: Browser story
@@ -199,7 +199,7 @@
 - [ ] **Step 5: Commit**
   ```bash
   git add tests/browser.mjs
-  git commit -m "Story: the office logs follow-up contacts in the contact log; log, edit, correct and copy contacts (OpenSpec change add-call-log)"
+  git commit -m "Story: the office logs follow-up contacts in the contact log; log, edit, correct and copy contacts (OpenSpec change add-contact-log)"
   ```
 
 ### Task 6: Docs and final checks
@@ -213,5 +213,5 @@
 - [ ] **Step 4: Commit**
   ```bash
   git add docs/developer
-  git commit -m "Docs: the contact log (OpenSpec change add-call-log)"
+  git commit -m "Docs: the contact log (OpenSpec change add-contact-log)"
   ```

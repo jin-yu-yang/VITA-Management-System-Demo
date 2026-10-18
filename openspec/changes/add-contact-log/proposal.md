@@ -34,7 +34,7 @@ Volunteers write contact history by hand in notes today ("10/17 HZ called, no an
 - `RECORD_REVIEW_CONTACT`: `add-preparer-and-reviewer-questionnaires` handles it.
 - Removing `RECORD_CONTACT` from the shared action code and dropping the then-empty `contact_attempts` table: a later cleanup after #73.
 
-**Tracking:** part of #85, the TODO list for several changes. The PR says "Part of #85" and uses no closing keyword ("Fixes", "Closes", "Resolves"), so merging it leaves #85 open.
+**Tracking:** change `add-contact-log`, part of #85, the TODO list for several changes. The PR says "Part of #85" and uses no closing keyword ("Fixes", "Closes", "Resolves"), so merging it leaves #85 open.
 
 ## Capabilities
 

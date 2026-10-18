@@ -66,7 +66,7 @@ Constraints from the code:
 ### D6: Fixtures and checkpoints
 - **Choice:** redefine `vitally_private.apply_fixture_scenario` (copied whole from migration 019) with two changes: it also deletes the case's `contact_log` rows (versions cascade) with the rest of its work, and the `admin_followup` scenario seeds a linked log entry (version 1) instead of a `contact_attempts` row, with the same values: Sam, outgoing, phone, client, `request_documents`, `no_answer`, note "Called during office hours. No answer, so a message was left." A sample reset still removes everything through the cascade.
 - **Reason:** without it, the sample follow-up's "Contacts so far" would be empty and a checkpoint would leave entries "from the future".
-- **Trade-off:** this is fixture code #73 may also edit; whichever merges second reconciles.
+- **Trade-off:** #73's lifecycle chain also redefines `apply_fixture_scenario`. Whichever of the two merges second combines both definitions in its own migration: #73's stages and seeds with this change's contact-log delete and seeded entry. The PR says so.
 
 ### D7: The summary line, in New York time
 - **Choice:** `src/contact-log.mjs` exports `contactSummary(entry, { answers })`, `contactSummaries(entries, …)` (oldest first by contact time, joined with `\n`), `staffShortName(name)`, `contactTime(iso)`, `nyLocalInput(iso)` / `nyLocalToIso(value)` for the time field, `outcomesFor(method, direction)`, and the option lists and labels.
@@ -117,6 +117,7 @@ Constraints from the code:
 ## Risks / Trade-offs
 
 - [Risk] Migration number clash: `add-preparer-and-reviewer-questionnaires` plans `031_review_questionnaires.sql`. → Mitigation: this change uses `031_contact_log.sql`; at step 8, if `main` has a `031_*`, rename to the next free number.
+- [Risk] #73 also redefines `apply_fixture_scenario`. → Mitigation: whichever merges second writes a migration that combines both definitions (D6); the PR description says so.
 - [Risk] `add-preparer-and-reviewer-questionnaires` also changes `admin_followups` (a `kind` column), and both changes touch fixture code (D6). → Mitigation: whichever merges second reconciles: the second keeps the other's `kind` column and seeds, and checks that a contact linked to a task of any kind still follows D2.
 - [Risk] The office's attempt list moves to a new table in one migration. → Mitigation: the database test moves attempts of all four outcomes and checks every mapped field; the story walks the office's follow-up end to end.
 - [Risk] New York time in the browser depends on `Intl` time-zone data. → Accepted: every supported browser and Node ship it; unit tests pin both sides of a daylight-saving change.

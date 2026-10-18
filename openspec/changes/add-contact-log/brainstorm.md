@@ -1,6 +1,6 @@
 # Brainstorm result: call log
 
-Agreed with Hailey on 2026-10-17. Change name: `add-call-log`.
+Agreed with Hailey on 2026-10-17. Change name: `add-call-log`, renamed to `add-contact-log` at approval (2026-10-17).
 Everything above "Findings during propose" is the approved brainstorm, as agreed. The last section records what
 propose found in the code; it settles the one dependency the brainstorm left to check and adds no new alternative.
 
@@ -200,7 +200,7 @@ two disagree.
 
 - **Names.** `case_contacts` already exists (the client's phones), so the tables are `contact_log` and
   `contact_log_versions`, the RPCs `vitally_log_contact` and `vitally_edit_contact`, the module
-  `src/contact-log.mjs`. The change keeps its name, `add-call-log`.
+  `src/contact-log.mjs`. The change was later renamed `add-contact-log`, its branch with it.
 - **Live updates: yes.** The log rows carry `case_id`; Realtime announces INSERT and UPDATE under the same RLS, and
   `handleChange` already re-reads the open case for any table whose row names it. No case change is needed, so no
   tab-open fallback is built. The story checks it with two windows.
