@@ -122,6 +122,15 @@ const REQUEST_MESSAGE = "Please add the fictional sample mileage record.";
 const ESCALATION_REASON =
   "The fictional client has not sent the sample yet; the office can ask about it.";
 const CONTACT_NOTE = "Simulated call: the fictional client will send the sample.";
+// The contact log phase (OpenSpec change add-contact-log). No note is a part
+// of another, so a line is found by its note alone.
+const HALF_CONTACT_NOTE = "Half a fictional note";
+const SAM_CONTACT_NOTE = "Simulated call: the fictional client asked about the sample.";
+const ALEX_TEXT_NOTE = "Simulated text: asked for the fictional mileage record.";
+const SAM_CORRECTION_NOTE = "Simulated text: asked for the fictional mileage log by Friday.";
+const INCOMING_NOTE = "Simulated call: the fictional client phoned to book a time.";
+// Every contact line starts with its New York time and an em dash.
+const CONTACT_LINE = /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} (AM|PM) — /;
 const HELP_NOTE = "Simulated help: walked the fictional client through the intake forms.";
 const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 // Internal staff text. It must never appear in a client window.
@@ -261,6 +270,22 @@ async function openTab(context, appOrigin) {
   });
   await page.goto(appOrigin);
   return { page, errors, pageErrors };
+}
+
+/**
+ * Choose one button of a Log contact form's group (direction, method,
+ * purpose, outcomeVoice, outcomeWritten, withWhom) by pressing its label, as
+ * a person does: the radio itself is drawn as the label's segment.
+ */
+async function chooseSeg(root, scope, name, key) {
+  await root.locator(`label[for="field-${scope}-${name}-${key}"]`).click({ timeout: CLICK_MS });
+}
+
+/** A `datetime-local` value ("YYYY-MM-DDTHH:MM") moved back by whole hours. */
+function hoursBefore(value, hours) {
+  const moment = new Date(`${value}:00Z`);
+  moment.setUTCHours(moment.getUTCHours() - hours);
+  return moment.toISOString().slice(0, 16);
 }
 
 /** The intake form's own submit: save what is dirty and move a step on. */
@@ -638,6 +663,21 @@ async function runPermutation(t, roles) {
     const revision = async () => Number((await caseById(fixture, id)).revision);
     const before = await revision();
     return async () => (await revision()) === before;
+  };
+  // The contact log is not a case action: logging and editing leave the
+  // case's revision alone, so whether a press reached the server is read from
+  // the log itself — no new entry and no new version means nothing landed.
+  const contactLogUnmoved = async (caseId) => {
+    const count = async () =>
+      (
+        await one(
+          fixture,
+          "select (select count(*) from public.contact_log where case_id=$1)::int as entries, (select count(*) from public.contact_log_versions where case_id=$1)::int as versions",
+          [caseId],
+        )
+      ) ?? null;
+    const before = JSON.stringify(await count());
+    return async () => JSON.stringify(await count()) === before;
   };
   const record = (type, outcome) => {
     if (outcome.attempts > 1 || outcome.conflicts || outcome.lost)
@@ -1322,9 +1362,9 @@ async function runPermutation(t, roles) {
       );
     });
 
-    await phase("Sam records the call and resolves the task; Alex stays the preparer", async () => {
+    await phase("Sam logs a contact on the task and resolves it; Alex stays the preparer", async () => {
       await choosePersona(staff, sam);
-      // The attempt goes through the queue's Log a call drawer; the resolution
+      // The contact goes through the queue's Log contact drawer; the resolution
       // below goes through the case page's Follow-up tab, so both stay covered.
       await openBoard(staff, OFFICE_BOARD_HEADING);
       const callRow = staff
@@ -1333,18 +1373,24 @@ async function runPermutation(t, roles) {
         .first();
       await callRow.waitFor({ state: "visible", timeout: RENDER_MS });
       await waitForQuiet(staff);
+      assert.equal(
+        (await callRow.locator('[data-action="open-log-call"]').innerText()).trim(),
+        "Log contact",
+        "the queue row's button is not named Log contact",
+      );
       await callRow.locator('[data-action="open-log-call"]').click({ timeout: CLICK_MS });
       const drawer = staff.locator(".modal.office-drawer");
       await drawer.waitFor({ state: "visible", timeout: ARRIVAL_MS });
-      const contactForm = drawer
-        .locator('form:has(button[type="submit"][data-case-action="RECORD_CONTACT"])')
-        .first();
+      // The task's own Log contact form: the one shared form, linked to the task.
+      const contactForm = drawer.locator("form.contact-form[data-followup-id]").first();
       await contactForm.waitFor({ state: "visible", timeout: RENDER_MS });
+      const taskId = await contactForm.getAttribute("data-followup-id");
+      const taskScope = `contact-task-${taskId}`;
 
       // Half a note, and a change from elsewhere that rebuilds the page but not
       // the drawer: the keyboard, the text and the caret all have to survive.
       await waitForQuiet(staff);
-      const noteField = await fieldByLabel(contactForm, "Note for the office", "RECORD_CONTACT");
+      const noteField = await fieldByLabel(contactForm, "Note", "Log contact");
       await noteField.click({ timeout: CLICK_MS });
       await noteField.pressSequentially("Reached the client", { timeout: CLICK_MS });
       const typed = await noteField.evaluate((field) => {
@@ -1385,45 +1431,76 @@ async function runPermutation(t, roles) {
       );
       evidence.regressions.drawerCaret = { typed, kept };
 
+      // Phone (already chosen), No answer, to request documents, with the
+      // client, and the note.
       const attempt = record(
-        "RECORD_CONTACT",
-        await submitCaseFormUntil(
-          staff,
-          "RECORD_CONTACT",
-          { "What happened": "reached", "Note for the office": CONTACT_NOTE },
-          {
-            ready: (note) =>
-              [...document.querySelectorAll(".modal.office-drawer .attempt-list li")].some(
-                (entry) => entry.textContent.includes(note),
-              ),
-            arg: CONTACT_NOTE,
-            what: "the recorded call in the drawer's list of calls",
-            safeToRepeat: await unmovedSince(),
+        "Log contact (office task)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            await chooseSeg(contactForm, taskScope, "outcomeVoice", "no_answer");
+            await chooseSeg(contactForm, taskScope, "purpose", "request_documents");
+            await chooseSeg(contactForm, taskScope, "withWhom", "client");
+            await noteField.fill(CONTACT_NOTE, { timeout: CLICK_MS });
+            await staff.locator(`[id="field-${taskScope}-submit"]`).click({ timeout: CLICK_MS });
           },
-        ),
+          ready: (note) =>
+            [...document.querySelectorAll(".modal.office-drawer .contact-task-list li")].some(
+              (entry) => entry.textContent.includes(note),
+            ),
+          arg: CONTACT_NOTE,
+          what: "the logged contact under the drawer's Contacts so far",
+          safeToRepeat: await contactLogUnmoved(classCase.id),
+        }),
       );
-      // Recording an attempt keeps the drawer open, and the keyboard goes back
-      // to the very button that was pressed — not merely somewhere in the
-      // drawer: before the fix each re-render moved it to the first dropdown.
+      const taskLine = await staff
+        .locator(".modal.office-drawer .contact-task-list li")
+        .filter({ hasText: CONTACT_NOTE })
+        .first()
+        .innerText();
+      assert.match(taskLine, CONTACT_LINE, "the task's contact line does not start with its time");
+      assert.ok(
+        taskLine.includes(", phone — Request documents — No answer. Note: "),
+        `the task's contact line reads ${JSON.stringify(taskLine)}`,
+      );
+      assert.deepEqual(
+        await one(
+          fixture,
+          "select direction,method,purpose,outcome,with_whom,note from public.contact_log where case_id=$1 and followup_id=$2",
+          [classCase.id, taskId],
+        ),
+        {
+          direction: "outgoing",
+          method: "phone",
+          purpose: "request_documents",
+          outcome: "no_answer",
+          with_whom: "client",
+          note: CONTACT_NOTE,
+        },
+        "the drawer's contact was not stored as logged, linked to its task",
+      );
+      // Logging a contact keeps the drawer open, and the keyboard goes back to
+      // the very button that was pressed — not merely somewhere in the drawer:
+      // before the fix each re-render moved it to the first control.
       await waitForQuiet(staff);
       const afterAttempt = await staff.evaluate(() => {
         const active = document.activeElement;
         return {
-          caseAction: active?.dataset?.caseAction ?? null,
+          id: active?.id ?? null,
           inDrawer: Boolean(active?.closest?.(".modal.office-drawer")),
         };
       });
       assert.deepEqual(
         afterAttempt,
-        { caseAction: "RECORD_CONTACT", inDrawer: true },
-        "the keyboard left the Record this attempt button when the attempt landed",
+        { id: `field-${taskScope}-submit`, inDrawer: true },
+        "the keyboard left the Log contact button when the contact landed",
       );
       // Escape closes the drawer and gives the keyboard back to this row's
-      // Log a call button.
+      // Log contact button.
       await staff.keyboard.press("Escape");
       await waitFor(
         staff,
-        "the Log a call drawer to close",
+        "the Log contact drawer to close",
         () => document.querySelector(".modal") === null,
         undefined,
         RENDER_MS,
@@ -1436,7 +1513,7 @@ async function runPermutation(t, roles) {
           classCase.id,
         ),
         true,
-        "Escape did not give the keyboard back to the row's Log a call button",
+        "Escape did not give the keyboard back to the row's Log contact button",
       );
       evidence.regressions.logCallDrawer = { attempt, afterAttempt, escape: "back on the row" };
 
@@ -1592,8 +1669,24 @@ async function runPermutation(t, roles) {
       await openCaseByReference(staff, classReference);
       await openCaseTab(staff, "followup");
       await waitForText(staff, "Follow-up with the client", RENDER_MS);
-      await waitForText(staff, CONTACT_NOTE, RENDER_MS);
-      // Recording a call never resolves the task.
+      // The same contact is under the task's Contacts so far here too, and the
+      // open task holds the same Log contact form.
+      await waitFor(
+        staff,
+        "the drawer's contact under the task's Contacts so far on the Follow-up tab",
+        (note) =>
+          [...document.querySelectorAll("#case-panel-followup .contact-task-list li")].some((entry) =>
+            entry.textContent.includes(note),
+          ),
+        CONTACT_NOTE,
+        RENDER_MS,
+      );
+      assert.equal(
+        await staff.locator(`#case-panel-followup form.contact-form[data-followup-id="${taskId}"]`).count(),
+        1,
+        "the open task on the Follow-up tab has no Log contact form",
+      );
+      // Logging a contact never resolves the task.
       await waitForBadge(staff, "Open with the office");
       await shoot(staff, "office-case-followup");
       await actForm(
@@ -1606,6 +1699,410 @@ async function runPermutation(t, roles) {
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.preparer_id, alex, "the office's work moved the preparer");
       assert.equal(row.stage, "preparing");
+      // Resolving logs nothing, and a resolved task takes no more contacts.
+      assert.equal(
+        Number(
+          (
+            await one(fixture, "select count(*)::int as n from public.contact_log where case_id=$1", [
+              classCase.id,
+            ])
+          ).n,
+        ),
+        1,
+        "resolving the task logged a contact",
+      );
+      await waitFor(
+        staff,
+        "the resolved task's Log contact form to go",
+        (id) => !document.querySelector(`form.contact-form[data-followup-id="${id}"]`),
+        taskId,
+        RENDER_MS,
+      );
+    });
+
+    await phase("the contact log: two windows, a text and its edit, a correction, Copy and Copy all", async () => {
+      // Two presenter windows in one new context, as in "two presenter windows
+      // in one browser": Alex in the first, Sam in the second. Chrome grants
+      // this context the clipboard and the story reads it back. Playwright's
+      // Firefox has no clipboard permission to grant, so in both engines the
+      // page's own writeText is wrapped to note what it wrote — only once the
+      // real write has resolved.
+      const context = await staffEngine.browser.newContext({ viewport: DESKTOP, locale: "en-US" });
+      const realClipboard = roles.staff === "chrome";
+      try {
+        if (realClipboard)
+          await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+            origin: fixture.appOrigin,
+          });
+        await context.addInitScript(() => {
+          const clipboard = navigator.clipboard;
+          if (!clipboard?.writeText) return;
+          const write = clipboard.writeText.bind(clipboard);
+          clipboard.writeText = async (text) => {
+            await write(text);
+            (window.__copied ??= []).push(String(text));
+          };
+        });
+        const alexWin = await openTab(context, fixture.appOrigin);
+        await loginTestUser({ page: alexWin.page, actor: presenter, fixture, heading: WORK_BOARD_HEADING });
+        const samWin = await openTab(context, fixture.appOrigin);
+        await waitForText(samWin.page, WORK_BOARD_HEADING, ARRIVAL_MS);
+        const win1 = alexWin.page;
+        const win2 = samWin.page;
+        await watchAlerts(win1);
+        await watchAlerts(win2);
+        const NEW = "contact-new";
+        const lineOf = (page, id) => page.locator(`[id="contact-${id}-line"]`).textContent();
+        const entryId = async (note) =>
+          (
+            await one(fixture, "select id from public.contact_log where case_id=$1 and note=$2", [
+              classCase.id,
+              note,
+            ])
+          )?.id ?? null;
+        const toastSeen = (page, text) =>
+          waitFor(
+            page,
+            `the toast ${JSON.stringify(text)}`,
+            (wanted) => (window.__vitallyAlerts ?? []).some((line) => line.startsWith("toast: ") && line.includes(wanted)),
+            text,
+            RENDER_MS,
+          );
+        const outcomeGroups = (page, scope) =>
+          page.evaluate(
+            (submitId) =>
+              Object.fromEntries(
+                [...(document.getElementById(submitId)?.form?.querySelectorAll("[data-outcome-group]") ?? [])].map(
+                  (set) => [set.dataset.outcomeGroup, { hidden: set.hidden, disabled: set.disabled }],
+                ),
+              ),
+            `field-${scope}-submit`,
+          );
+        // Log one contact from the Contacts tab's form: its choices, a contact
+        // time some hours back (so every entry has its own time), and a note
+        // the new line is then found by.
+        const logContact = async (page, { choices, hoursAgo, note, what }) => {
+          const timeField = page.locator(`[id="field-${NEW}-contactedAt"]`);
+          await timeField.waitFor({ state: "visible", timeout: RENDER_MS });
+          const contactedAt = hoursBefore(await timeField.inputValue(), hoursAgo);
+          return record(
+            what,
+            await pressUntilEffect(page, {
+              press: async () => {
+                await waitForQuiet(page);
+                for (const [name, key] of choices) await chooseSeg(page, NEW, name, key);
+                await timeField.fill(contactedAt, { timeout: CLICK_MS });
+                await page.locator(`[id="field-${NEW}-note"]`).fill(note, { timeout: CLICK_MS });
+                await page.locator(`[id="field-${NEW}-submit"]`).click({ timeout: CLICK_MS });
+              },
+              ready: (wanted) =>
+                [...document.querySelectorAll("#case-panel-contacts .contact-entry .contact-line")].some((line) =>
+                  line.textContent.includes(wanted),
+                ),
+              arg: note,
+              what: `${what} in the Contacts tab`,
+              safeToRepeat: await contactLogUnmoved(classCase.id),
+            }),
+          );
+        };
+        // Save an open edit form, after `change` has changed it; done when the
+        // entry's line has `expected` and its form has closed.
+        const saveEdit = async (page, id, change, expected, what) =>
+          record(
+            what,
+            await pressUntilEffect(page, {
+              press: async () => {
+                await waitForQuiet(page);
+                await change();
+                await page.locator(`[id="field-contact-edit-${id}-submit"]`).click({ timeout: CLICK_MS });
+              },
+              ready: ([entry, wanted]) =>
+                (document.getElementById(`contact-${entry}-line`)?.textContent ?? "").includes(wanted) &&
+                !document.querySelector(`form.contact-form[data-contact-id="${entry}"]`),
+              arg: [id, expected],
+              what: `${what}: the entry reading ${JSON.stringify(expected)}`,
+              safeToRepeat: await contactLogUnmoved(classCase.id),
+            }),
+          );
+        const openEdit = async (page, id) => {
+          await clickAction(page, "toggle-contact-edit", { attributes: `[data-contact-id="${id}"]` });
+          await page
+            .locator(`form.contact-form[data-contact-id="${id}"]`)
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+        };
+
+        // Both windows on the class case's Contacts tab; a persona switch
+        // keeps the case and goes back to its Overview.
+        await choosePersona(win1, alex);
+        await openCaseByReference(win1, classReference);
+        await openCaseTab(win1, "contacts");
+        await choosePersona(win2, alex);
+        await openCaseByReference(win2, classReference);
+        await choosePersona(win2, sam);
+        await waitForCaseWorkspace(win2, classReference);
+        await openCaseTab(win2, "contacts");
+        // The office's drawer contact is here too, marked with its task.
+        const taskEntry = win1.locator("#case-panel-contacts .contact-entry").filter({ hasText: CONTACT_NOTE });
+        await taskEntry.first().waitFor({ state: "visible", timeout: RENDER_MS });
+        assert.ok(
+          (await taskEntry.first().innerText()).includes("For the follow-up: "),
+          "the office task's contact is not marked with its task in the Contacts tab",
+        );
+
+        // Alex has half a note typed when Sam logs a contact on the same case
+        // in the other window: Alex's window shows it without a reload and
+        // keeps the half note.
+        await waitForQuiet(win1);
+        const alexNote = win1.locator(`[id="field-${NEW}-note"]`);
+        await alexNote.click({ timeout: CLICK_MS });
+        await alexNote.pressSequentially(HALF_CONTACT_NOTE, { timeout: CLICK_MS });
+        await win1.evaluate(() => {
+          window.__sameDocument = true;
+        });
+        const samLogged = await logContact(win2, {
+          choices: [
+            ["outcomeVoice", "reached"],
+            ["purpose", "ask_question"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 3,
+          note: SAM_CONTACT_NOTE,
+          what: "Sam's phone call",
+        });
+        await waitFor(
+          win1,
+          "Sam's contact in Alex's Contacts tab",
+          (wanted) =>
+            [...document.querySelectorAll("#case-panel-contacts .contact-entry .contact-line")].some((line) =>
+              line.textContent.includes(wanted),
+            ),
+          SAM_CONTACT_NOTE,
+          ARRIVAL_MS,
+        );
+        await waitForQuiet(win1);
+        const alexKept = await win1.evaluate(
+          (id) => ({
+            sameDocument: window.__sameDocument === true,
+            value: document.getElementById(id)?.value ?? null,
+            focused: document.activeElement?.id === id,
+          }),
+          `field-${NEW}-note`,
+        );
+        assert.equal(alexKept.sameDocument, true, "Alex's window reloaded to show Sam's contact");
+        assert.equal(alexKept.value, HALF_CONTACT_NOTE, "Sam's contact took Alex's half-typed note");
+        const samId = await entryId(SAM_CONTACT_NOTE);
+        assert.ok(samId, "Sam's contact is not in the log");
+
+        // Alex texts the client. Phone → No answer is chosen first, then Text:
+        // the voice outcomes are hidden and disabled, so the entry is Sent.
+        await waitForQuiet(win1);
+        const revisionBefore = Number((await caseById(fixture, classCase.id)).revision);
+        await chooseSeg(win1, NEW, "outcomeVoice", "no_answer");
+        await chooseSeg(win1, NEW, "method", "text");
+        assert.deepEqual(
+          await outcomeGroups(win1, NEW),
+          { voice: { hidden: true, disabled: true }, written: { hidden: false, disabled: false } },
+          "Text did not swap the voice outcomes for the written ones",
+        );
+        const alexLogged = await logContact(win1, {
+          choices: [
+            ["method", "text"],
+            ["outcomeWritten", "sent"],
+            ["purpose", "request_documents"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 2,
+          note: ALEX_TEXT_NOTE,
+          what: "Alex's text",
+        });
+        const alexId = await entryId(ALEX_TEXT_NOTE);
+        assert.ok(alexId, "Alex's text is not in the log");
+        const sentLine = await lineOf(win1, alexId);
+        assert.match(sentLine, CONTACT_LINE);
+        assert.ok(
+          sentLine.includes("— Alex → client") &&
+            sentLine.endsWith(`, text — Request documents — Sent. Note: ${ALEX_TEXT_NOTE}`),
+          `Alex's text reads ${JSON.stringify(sentLine)}`,
+        );
+        assert.deepEqual(
+          await one(fixture, "select method,outcome,revision::int from public.contact_log where id=$1", [alexId]),
+          { method: "text", outcome: "sent", revision: 1 },
+          "the hidden No answer was sent with the text",
+        );
+        assert.equal(
+          Number((await caseById(fixture, classCase.id)).revision),
+          revisionBefore,
+          "logging a contact moved the case's revision",
+        );
+
+        // The client replies: Alex edits his entry to Client replied.
+        await openEdit(win1, alexId);
+        const replied = await saveEdit(
+          win1,
+          alexId,
+          () => chooseSeg(win1, `contact-edit-${alexId}`, "outcomeWritten", "replied"),
+          "— Client replied.",
+          "Alex's edit",
+        );
+        const editedEntry = await win1.locator(`[id="contact-${alexId}"]`).innerText();
+        assert.ok(/\bedited \d/.test(editedEntry), `the edited entry does not say edited: ${editedEntry}`);
+        assert.equal(
+          (await win1.locator(`[id="contact-${alexId}"] .contact-versions summary`).innerText()).trim(),
+          "Earlier versions (1)",
+        );
+        assert.ok(
+          (await win1.locator(`[id="contact-${alexId}"] .contact-versions li`).first().textContent()).includes(
+            "— Sent.",
+          ),
+          "the earlier version does not keep Sent",
+        );
+        // Sam's window shows the edit without a reload.
+        await waitFor(
+          win2,
+          "Alex's edit in Sam's window",
+          (id) => (document.getElementById(`contact-${id}-line`)?.textContent ?? "").includes("— Client replied."),
+          alexId,
+          ARRIVAL_MS,
+        );
+
+        // Alex opens Edit again and the window becomes Morgan's: Morgan neither
+        // sees Alex's open form nor gets an Edit on Alex's entry.
+        await openEdit(win1, alexId);
+        await choosePersona(win1, morgan);
+        await waitForCaseWorkspace(win1, classReference);
+        await openCaseTab(win1, "contacts");
+        await win1.locator(`[id="contact-${alexId}"]`).waitFor({ state: "visible", timeout: RENDER_MS });
+        assert.equal(
+          await win1.locator(`form.contact-form[data-contact-id="${alexId}"]`).count(),
+          0,
+          "Morgan sees the edit form Alex left open",
+        );
+        assert.equal(
+          await win1.locator(`[id="contact-${alexId}"] [data-action="toggle-contact-edit"]`).count(),
+          0,
+          "Morgan is offered Edit on Alex's entry",
+        );
+
+        // Sam, an admin, corrects Alex's entry; it still says Alex logged it,
+        // and Morgan's window shows the correction.
+        await openEdit(win2, alexId);
+        const corrected = await saveEdit(
+          win2,
+          alexId,
+          () =>
+            win2
+              .locator(`[id="field-contact-edit-${alexId}-note"]`)
+              .fill(SAM_CORRECTION_NOTE, { timeout: CLICK_MS }),
+          SAM_CORRECTION_NOTE,
+          "Sam's correction",
+        );
+        const correctedLine = await lineOf(win2, alexId);
+        assert.ok(correctedLine.includes("— Alex → client"), `the correction changed the logger: ${correctedLine}`);
+        assert.equal(
+          (await win2.locator(`[id="contact-${alexId}"] .contact-versions summary`).innerText()).trim(),
+          "Earlier versions (2)",
+        );
+        assert.deepEqual(
+          await one(
+            fixture,
+            "select logged_by_person_id::text as logger,revision::int,outcome from public.contact_log where id=$1",
+            [alexId],
+          ),
+          { logger: alex, revision: 3, outcome: "replied" },
+          "Sam's correction did not keep Alex as the logger",
+        );
+        await waitFor(
+          win1,
+          "Sam's correction in Morgan's window",
+          ([id, wanted]) => (document.getElementById(`contact-${id}-line`)?.textContent ?? "").includes(wanted),
+          [alexId, SAM_CORRECTION_NOTE],
+          ARRIVAL_MS,
+        );
+
+        // The client phones in: no outcome is offered, and the line starts
+        // with its time and then the client.
+        await waitForQuiet(win2);
+        await chooseSeg(win2, NEW, "direction", "incoming");
+        assert.deepEqual(
+          await outcomeGroups(win2, NEW),
+          { voice: { hidden: true, disabled: true }, written: { hidden: true, disabled: true } },
+          "an incoming contact offered an outcome",
+        );
+        const incoming = await logContact(win2, {
+          choices: [
+            ["direction", "incoming"],
+            ["purpose", "schedule_appointment"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 1,
+          note: INCOMING_NOTE,
+          what: "the client's incoming call",
+        });
+        const incomingId = await entryId(INCOMING_NOTE);
+        const incomingLine = await lineOf(win2, incomingId);
+        assert.match(
+          incomingLine,
+          /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} (AM|PM) — client\b/,
+          "the incoming line does not start with its time and then the client",
+        );
+        assert.ok(
+          incomingLine.endsWith(`, phone — Schedule an appointment. Note: ${INCOMING_NOTE}`),
+          `the incoming line reads ${JSON.stringify(incomingLine)}`,
+        );
+        assert.equal(
+          (await one(fixture, "select outcome from public.contact_log where id=$1", [incomingId])).outcome,
+          "reached",
+        );
+        await shootWithoutSidebar(win2, "staff-case-contacts");
+
+        // Copy: Sam's own entry's line, as the page shows it.
+        await clickAction(win2, "copy-contact", { attributes: `[data-contact-id="${samId}"]` });
+        await toastSeen(win2, "Copied.");
+        const copied = await win2.evaluate(() => window.__copied ?? []);
+        assert.deepEqual(copied, [await lineOf(win2, samId)], "Copy did not put the entry's line on the clipboard");
+        if (realClipboard)
+          assert.equal(await win2.evaluate(() => navigator.clipboard.readText()), copied[0]);
+
+        // Copy all: every line, oldest contact time first, one per line.
+        const ordered = (
+          await fixture.database.sql(
+            "select id from public.contact_log where case_id=$1 order by contacted_at, logged_at",
+            [classCase.id],
+          )
+        ).rows.map((entry) => entry.id);
+        assert.deepEqual(
+          ordered.slice(0, 3),
+          [samId, alexId, incomingId],
+          "the contact times did not land as set",
+        );
+        await clickAction(win2, "copy-all-contacts");
+        await toastSeen(win2, `Copied ${ordered.length} contacts.`);
+        const all = (await win2.evaluate(() => window.__copied ?? []))[1] ?? "";
+        const lines = all.split("\n");
+        const expected = [];
+        for (const id of ordered) expected.push(await lineOf(win2, id));
+        assert.deepEqual(lines, expected, "Copy all is not every line, oldest first");
+        for (const line of lines) assert.match(line, CONTACT_LINE);
+        if (realClipboard) assert.equal(await win2.evaluate(() => navigator.clipboard.readText()), all);
+
+        // The client sees none of it: no Contacts tab and none of the text.
+        assert.equal(await client.locator("#case-tab-contacts").count(), 0, "the client window has a Contacts tab");
+        const seen = await pageText(client);
+        for (const secret of [CONTACT_NOTE, SAM_CONTACT_NOTE, ALEX_TEXT_NOTE, SAM_CORRECTION_NOTE, INCOMING_NOTE])
+          assert.ok(!seen.includes(secret), `a contact note reached the client window: ${secret.slice(0, 24)}…`);
+
+        assertConsoleQuiet(alexWin, { name: "contact log window 1" });
+        assertConsoleQuiet(samWin, { name: "contact log window 2" });
+        evidence.story.contactLog = {
+          entries: ordered.length,
+          liveWindow: alexKept,
+          presses: { samLogged, alexLogged, replied, corrected, incoming },
+          clipboard: realClipboard ? "read back from the real clipboard" : "the page's own writeText, resolved",
+          copyAll: lines.length,
+        };
+      } finally {
+        await context.close();
+      }
     });
 
     await phase("the client sends the sample document for their own case", async () => {
@@ -1700,7 +2197,15 @@ async function runPermutation(t, roles) {
       );
       await waitForText(client, "A volunteer spoke with you about the next service step.");
       const seen = await pageText(client);
-      for (const secret of [FINDINGS, CORRECTION_NOTE, REVIEW_CONTACT_NOTE, CONTACT_NOTE])
+      for (const secret of [
+        FINDINGS,
+        CORRECTION_NOTE,
+        REVIEW_CONTACT_NOTE,
+        CONTACT_NOTE,
+        SAM_CONTACT_NOTE,
+        SAM_CORRECTION_NOTE,
+        INCOMING_NOTE,
+      ])
         assert.ok(
           !seen.includes(secret),
           `internal staff text reached the client window: ${secret.slice(0, 24)}…`,
