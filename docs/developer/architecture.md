@@ -75,7 +75,7 @@ Visibility is enforced by row-level security on every table (full policies in
 | Principal | Sees |
 | --- | --- |
 | Applicant | Their own cases, and on those only: document requests, their documents, their contact details (`case_contacts`), and plain-language progress messages (`client_events`). |
-| Presenter | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, contact attempts, reviews, assistance items, materials received. |
+| Presenter | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, the contact log (`contact_log`, `contact_log_versions`), reviews, assistance items, materials received. |
 | Anonymous | Nothing. |
 
 The browser mirrors this: the applicant adapter never requests a staff table

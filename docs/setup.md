@@ -404,11 +404,9 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is below. The unit count was last verified after the masked phones on
-the board and case pool merged on top of the unified feedback and loading states (2026-10-16,
-changes `add-masked-phone-to-board-and-case-pool` and `unify-feedback-and-loading-states`). The database and story
-counts were last verified on the Form 14446 consent (2026-10-16, change `add-form-14446-consent`,
-with migrations 029–030 applied; the story in one run, see the note below the table). The auth-gate count is still from
+suite's **last-verified count** is below. The unit, database and story
+counts were last verified on the contact log (2026-10-18, change `add-contact-log`, with
+migration 031 applied; the story in one run, see the note below the table). The auth-gate count is still from
 the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording`, with migration
 025 applied). Re-run the commands yourself for the current number, since new work changes these counts.
 
@@ -419,7 +417,7 @@ the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~20–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
 | Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 61/61, ~11–16 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2, the only intake version (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
 
-The story passed 61/61 on change `add-contact-log` (run from the main checkout: a new worktree under OneDrive fails it). Before that it passed 57/57 in one run on 2026-10-16 (about 16.6 minutes), on change `add-form-14446-consent`. Before that
+The story passed 61/61 in one run on 2026-10-18, on change `add-contact-log`. Run it from the main checkout: a new worktree under OneDrive fails it. Before that it passed 57/57 in one run on 2026-10-16 (about 16.6 minutes), on change `add-form-14446-consent`. Before that
 it passed 57/57 in one run on 2026-10-16 (about 14 minutes), on change `add-widowed-spouse-rules`. Before that
 it passed 57/57 in one run on 2026-10-15 (about 12.5 minutes), on change
 `allow-multiple-service-languages`. Before that it passed 57/57 in one run on 2026-10-14 (about 13

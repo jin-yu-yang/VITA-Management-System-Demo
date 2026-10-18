@@ -255,7 +255,7 @@ caller itself, and returns a JSON receipt.
 the persona they chose.
 
 The exact signatures are pinned by a test ([`tests/support/rpc-signatures.mjs`](../../tests/support/rpc-signatures.mjs)),
-so adding a sixth function or changing an argument fails the database suite until the list is
+so adding an eighth function or changing an argument fails the database suite until the list is
 updated.
 
 ### Calling it
@@ -512,7 +512,6 @@ Migration 009 seeds six sample cases, one per story point (`preparation_ready`,
   sample and seeds nothing itself: a workspace has no samples again until the next reset.
 - **A checkpoint clears office work on the sample:** its `case_materials` and
   `case_document_cards` rows go with the rest of its workflow records; its `case_contacts` row stays.
-
 - **A reset or checkpoint clears the sample's contact log** with the rest of its work (031 redefines
   `apply_fixture_scenario`, copied whole from 019). The `admin_followup` scenario seeds one linked
   log entry (Sam, outgoing, phone, no answer) where it used to seed a `contact_attempts` row.

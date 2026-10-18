@@ -133,7 +133,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
    acting on a stale revision is refused with `CONFLICT`. See
    [Architecture: writes](architecture.md#how-a-write-works).
 4. **Clients never see staff information.** Internal history, findings, follow-up notes and
-   contact attempts are unreadable to applicants by row-level security, and the client adapter
+   the contact log is unreadable to applicants by row-level security, and the client adapter
    never even asks for them.
 5. **Errors are codes, not messages.** Database errors carry `SQLSTATE` codes `VT001`-`VT007`,
    mapped once to domain codes in [`src/errors.mjs`](../../src/errors.mjs). Nothing parses error
