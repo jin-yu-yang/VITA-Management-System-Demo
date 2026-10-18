@@ -28,7 +28,7 @@ import {
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
-import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
+import { buildDraftPdf, createDraftOffer, draftFontFiles, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -1237,7 +1237,7 @@ if (!config) {
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
         fetchBytes(files[form]),
-        fieldsNeedFont(fields) ? Promise.all(draftFontsFor(form).files.map(fetchCheckedFont)) : [],
+        fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor(form), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
       ]);
       const bytes = await buildDraftPdf({
         PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
