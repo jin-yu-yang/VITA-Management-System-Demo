@@ -17,9 +17,9 @@
 
 ## 2. Summary line and New York time
 
-- [ ] 2.1 Unit tests first in `tests/contact-log.test.mjs`: the exact outgoing line; the incoming line; in person; a one-word and an unknown persona; spouse/client with and without names; "other"; each method's outcome labels; note punctuation and line breaks; `contactSummaries` oldest first; New York time from a UTC instant on both sides of the daylight-saving change; `nyLocalToIso`/`nyLocalInput` round trips, including the change days; `outcomesFor`.
-- [ ] 2.2 Add `src/contact-log.mjs` (design D7).
-- [ ] 2.3 Run `npm test`.
+- [x] 2.1 Unit tests first in `tests/contact-log.test.mjs`: the exact outgoing line; the incoming line; in person; a one-word and an unknown persona; spouse/client with and without names; "other"; each method's outcome labels; note punctuation and line breaks; `contactSummaries` oldest first; New York time from a UTC instant on both sides of the daylight-saving change; `nyLocalToIso`/`nyLocalInput` round trips, including the change days; `outcomesFor`.
+- [x] 2.2 Add `src/contact-log.mjs` (design D7).
+- [x] 2.3 Run `npm test`.
 
 ## 3. Store and controller
 
