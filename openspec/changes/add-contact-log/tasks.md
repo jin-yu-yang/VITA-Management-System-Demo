@@ -24,16 +24,16 @@
 ## 3. Store and controller
 
 - [x] 3.1 `src/supabase-store.mjs`: read `contact_log` and `contact_log_versions` in the staff `getCase` (and stop reading `contact_attempts`); map them as `contacts` (each with `versions`); add `logContact` and `editContact`; `STAFF_TABLES` swaps `contact_attempts` for the two tables. Update `tests/store.test.mjs`, including that the client path names neither table.
-- [ ] 3.2 `src/staff-views.mjs` `decorateStaffCase`: names on contacts and versions; follow-ups no longer carry `attempts`. `src/controller.mjs`: `logContact(caseId, entry, followupId)` and `editContact(contactId, entry)` (design D10); a Realtime change on either table re-reads the open case. `src/contracts.mjs`, `src/case-actions.mjs`, `src/app.mjs` notices: drop `RECORD_CONTACT` (keep its History label in `staff-views.mjs`). Update `tests/controller.test.mjs`, `tests/case-actions.test.mjs`, `tests/domain.test.mjs` and `tests/shell.test.mjs` where they name `RECORD_CONTACT` or `attempts`.
+- [x] 3.2 `src/staff-views.mjs` `decorateStaffCase`: names on contacts and versions; follow-ups no longer carry `attempts`. `src/controller.mjs`: `logContact(caseId, entry, followupId)` and `editContact(contactId, entry)` (design D10); a Realtime change on either table re-reads the open case. `src/contracts.mjs`, `src/case-actions.mjs`, `src/app.mjs` notices: drop `RECORD_CONTACT` (keep its History label in `staff-views.mjs`). Update `tests/controller.test.mjs`, `tests/case-actions.test.mjs`, `tests/domain.test.mjs` and `tests/shell.test.mjs` where they name `RECORD_CONTACT` or `attempts`.
 - [x] 3.3 Run `npm test`.
 
 ## 4. The form, the Contacts tab and the office
 
-- [ ] 4.1 `src/staff-views.mjs`: `logContactForm` (design D8), `contactsPanel` and `mayEditContact`; `CASE_TABS` gains Contacts; `renderStaffCase` and `renderAdminCase` add the tab with its count. Tests in `tests/staff-views.test.mjs` and `tests/admin-views.test.mjs`.
-- [ ] 4.2 `src/admin-views.mjs`: `followupForms` renders `logContactForm` linked to the task in place of "Record a call", and "Resolve this task" unchanged; `attemptList` becomes `taskContacts`. `src/office-views.mjs` and `src/views.mjs`: the drawer and its queue button read "Log contact". Update `tests/admin-views.test.mjs`, `tests/office-views.test.mjs` and `tests/empty-states.states.mjs`.
-- [ ] 4.3 `src/app.mjs`: submit both forms (`reportValidity()`, the "Other" name warning, drafts kept, focus after save), toggle the outcome groups on change and after restoring drafts, Copy and Copy all, and the toasts (design D10).
-- [ ] 4.4 `src/styles.css`: button groups, the entry list, the inline form, the disclosure; check at phone width.
-- [ ] 4.5 Run `npm test`.
+- [x] 4.1 `src/staff-views.mjs`: `logContactForm` (design D8), `contactsPanel` and `mayEditContact`; `CASE_TABS` gains Contacts; `renderStaffCase` and `renderAdminCase` add the tab with its count. Tests in `tests/staff-views.test.mjs` and `tests/admin-views.test.mjs`.
+- [x] 4.2 `src/admin-views.mjs`: `followupForms` renders `logContactForm` linked to the task in place of "Record a call", and "Resolve this task" unchanged; `attemptList` becomes `taskContacts`. `src/office-views.mjs` and `src/views.mjs`: the drawer and its queue button read "Log contact". Update `tests/admin-views.test.mjs`, `tests/office-views.test.mjs` and `tests/empty-states.states.mjs`.
+- [x] 4.3 `src/app.mjs`: submit both forms (`reportValidity()`, the "Other" name warning, drafts kept, focus after save), toggle the outcome groups on change and after restoring drafts, Copy and Copy all, and the toasts (design D10).
+- [x] 4.4 `src/styles.css`: button groups, the entry list, the inline form, the disclosure; check at phone width.
+- [x] 4.5 Run `npm test`.
 
 ## 5. Browser story
 
