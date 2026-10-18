@@ -4867,17 +4867,62 @@ async function runPermutation(t, roles) {
         assert.equal(await textOf("#alerts-title"), say("review.alerts_title", {}, "zh-Hans"));
         await shootQuiet("zh-review");
 
-        // The summary holds the Change links and the draft buttons: the
-        // screen's own form comes first.
+        // The summary holds the Change links and the draft buttons, which are
+        // the Form 14446's only: the screen's Chinese form (繁體; there is no
+        // 简体 14446) comes first.
         await railJump(page, "review.summary");
         assert.equal(
           await textOf('#intake-v2-form [data-action="change-substep"]'),
           say("summary.change", {}, "zh-Hans"),
         );
-        assert.equal(
-          await page.locator('[data-action="view-draft"]').first().getAttribute("data-form"),
-          "zh-s",
+        const firstDraft = page.locator('[data-action="view-draft"]').first();
+        assert.deepEqual(
+          { draft: await firstDraft.getAttribute("data-draft"), form: await firstDraft.getAttribute("data-form") },
+          { draft: "14446", form: "zh-t" },
+          "the 简体 summary's first draft button is not the 繁體 Form 14446",
         );
+        assert.equal(
+          await page.locator('[data-action="view-draft"]:not([data-draft="14446"])').count(),
+          0,
+          "the 简体 summary offers a draft 13614-C",
+        );
+        // Building the 繁體 14446 never loads the 繁體 map: only a 13614-C
+        // in 繁體 would. Chrome only, as every draft build in the story is;
+        // the fonts come from the packages npm installed, never the internet.
+        let hantRequestsAfter14446 = "not run: the client engine is Firefox, which may download the PDF instead of opening it";
+        if (roles.client === "chrome") {
+          const strayRequests = [];
+          await page.route("https://cdn.jsdelivr.net/**", (route) => {
+            strayRequests.push(route.request().url());
+            return route.abort();
+          });
+          for (const [url, file] of Object.entries(DRAFT_FONT_FIXTURES)) {
+            const body = await readFile(path.join(ROOT, file.path));
+            await page.route(url, (route) =>
+              route.fulfill({
+                status: 200,
+                headers: { "content-type": "font/ttf", "access-control-allow-origin": "*" },
+                body,
+              }),
+            );
+          }
+          await waitForQuiet(page);
+          const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+          await firstDraft.click({ timeout: CLICK_MS });
+          const tab = await opened;
+          await tab.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+          const head = await tab.evaluate(async () => {
+            const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+            return String.fromCharCode(...bytes.slice(0, 5));
+          });
+          await tab.close();
+          assert.equal(head, "%PDF-", "the 繁體 Form 14446 from the 简体 summary is not a PDF");
+          assert.deepEqual(hantRequests, [], "building the 繁體 Form 14446 fetched the Traditional map");
+          assert.deepEqual(strayRequests, [], "the 繁體 Form 14446 reached for a CDN file it was not given");
+          await page.unroute("https://cdn.jsdelivr.net/**");
+          for (const url of Object.keys(DRAFT_FONT_FIXTURES)) await page.unroute(url);
+          hantRequestsAfter14446 = hantRequests.length;
+        }
 
         await continueToSubmit(page);
         await tickBox(page, "field-confirmed");
@@ -4948,6 +4993,7 @@ async function runPermutation(t, roles) {
         );
         evidence.story.chinese = {
           reference,
+          hantRequestsAfter14446,
           hantRequestsAtSwitch: 1,
           hantRequestsAfterReload: hantRequests.length,
           consoleLines: assertConsoleQuiet(zhWin, { name: "Chinese client window", allow: [] }),
