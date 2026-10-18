@@ -25,7 +25,7 @@
 
 ## 3. The browser story
 
-- [ ] 3.1 `tests/browser.mjs`, client draft section (Chrome only), per design D5:
+- [x] 3.1 `tests/browser.mjs`, client draft section (Chrome only), per design D5:
   - drop the client's 13614-C opens (en, zh-s, zh-t);
   - keep the 14446 en and zh-t checks;
   - move these to the 14446:
@@ -33,17 +33,17 @@
     - the refused form and Try again: route `src/forms/f14446-pcdc-en.pdf`, open the 14446 en; assert the failed tab's title is "Draft Form 14446";
     - the blocked-tab link: the 14446 zh-t, download `14446-draft-<reference>-zh-t.pdf`, with its redraw check.
   - Update the comments and the `draft` summary keys to match.
-- [ ] 3.2 `tests/browser.mjs`: on 9.2, assert every `view-draft` button carries `data-draft="14446"`. Inject a `data-action="view-draft" data-form="en"` button into the client page, press it, and assert: no popup, no `#draft-ready` link, no problem banner.
-- [ ] 3.3 Confirm the staff side's checks (the five buttons and the English 13614-C open, about line 1060) are unchanged.
-- [ ] 3.5 (added during apply: the plan missed this step) The story's 简体 client step ("a client works in Chinese, and 繁體 loads only when chosen", `tests/browser.mjs` ~4877) pinned the summary's first draft button as the 简体 13614-C (`data-form="zh-s"`). Make it the Form 14446's 繁體 (`data-draft="14446"`, `data-form="zh-t"`), with no 13614-C button. In Chrome, also build that 14446 and assert the 繁體 map (`src/zh-hant.mjs`) is still not fetched.
-- [ ] 3.4 Run `npm run test:browser` once. Record failures at steps this change doesn't touch; don't retry them.
+- [x] 3.2 `tests/browser.mjs`: on 9.2, assert every `view-draft` button carries `data-draft="14446"`. Inject a `data-action="view-draft" data-form="en"` button into the client page, press it, and assert: no popup, no `#draft-ready` link, no problem banner.
+- [x] 3.3 Confirm the staff side's checks (the five buttons and the English 13614-C open, about line 1060) are unchanged.
+- [x] 3.5 (added during apply: the plan missed this step) The story's 简体 client step ("a client works in Chinese, and 繁體 loads only when chosen", `tests/browser.mjs` ~4877) pinned the summary's first draft button as the 简体 13614-C (`data-form="zh-s"`). Make it the Form 14446's 繁體 (`data-draft="14446"`, `data-form="zh-t"`), with no 13614-C button. In Chrome, also build that 14446 and assert the 繁體 map (`src/zh-hant.mjs`) is still not fetched.
+- [x] 3.4 Run `npm run test:browser` once. Record failures at steps this change doesn't touch; don't retry them.
 
 ## 4. Docs and final checks
 
-- [ ] 4.1 `docs/developer/frontend.md`:
+- [x] 4.1 `docs/developer/frontend.md`:
   - the client's summary offers only the draft Form 14446;
   - `viewDraft` makes a 13614-C only for staff;
   - the tab is titled by form.
   
   Check `docs/developer/` for any other line that says the client opens the 13614-C.
-- [ ] 4.2 Run `npm test`, `npm run build:hant -- --check` and `npx openspec validate --all`.
+- [x] 4.2 Run `npm test`, `npm run build:hant -- --check` and `npx openspec validate --all`.
