@@ -2083,7 +2083,13 @@ async function runPermutation(t, roles) {
         for (const id of ordered) expected.push(await lineOf(win2, id));
         assert.deepEqual(lines, expected, "Copy all is not every line, oldest first");
         for (const line of lines) assert.match(line, CONTACT_LINE);
-        if (realClipboard) assert.equal(await win2.evaluate(() => navigator.clipboard.readText()), all);
+        // The system clipboard keeps the platform's line breaks (Windows reads
+        // back \r\n for the \n the page wrote), so only those are evened out.
+        if (realClipboard)
+          assert.equal(
+            (await win2.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n"),
+            all,
+          );
 
         // The client sees none of it: no Contacts tab and none of the text.
         assert.equal(await client.locator("#case-tab-contacts").count(), 0, "the client window has a Contacts tab");
