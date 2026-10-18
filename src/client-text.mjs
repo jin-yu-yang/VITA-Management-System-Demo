@@ -98,7 +98,7 @@ export const TEXT = Object.freeze({
   // Traditional Chinese loads on demand: the switch's failure, and a saved 繁體 that fell back at startup
   "toast.hant_failed": { en: "Traditional Chinese couldn't load. Try again.", zh: "无法载入繁体中文，请再试一次。" },
   "toast.hant_failed_start": { en: "Traditional Chinese couldn't load. Showing Simplified Chinese.", zh: "无法载入繁体中文，暂以简体中文显示。" },
-  // The draft 13614-C (app.mjs viewDraft): the new tab's text, the fallback link and the failures
+  // The drafts (app.mjs viewDraft): the new tab's text, the fallback link and the failures; the tab's title is per form
   "draft.tab_title": { en: "Draft 13614-C", zh: "13614-C 草稿" },
   "draft.preparing": { en: "Preparing your draft…", zh: "正在准备您的草稿…" },
   "draft.link": { en: "Your draft is ready: open it", zh: "您的草稿已准备好：打开草稿" },

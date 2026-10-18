@@ -283,7 +283,7 @@ volunteer and office pages):
   the note ("Edit best time", UPDATE_CONTACT), never a phone.
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
   anyone who passes `canSeeContact`, read-only for everyone else.
-- **The draft 13614-C** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
+- **The draft** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
   `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a presenter (`principal.access === "presenter"`); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
 
 The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
@@ -469,7 +469,7 @@ with the switch in the client bar and saved per browser in `localStorage["vitall
 visit takes its language from `navigator.languages`. Staff and presenter screens are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
 character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
-a staff member makes the 繁體 draft 13614-C (the Form 14446 never loads it) (which leaves the screen's language as it is). A saved 繁體 waits at
+a staff member makes the 繁體 draft 13614-C, which leaves the screen's language as it is (the Form 14446 never loads it). A saved 繁體 waits at
 most five seconds for it at startup, then starts in 简体 with a toast; a retry after a failed fetch
 asks for a fresh URL (`./zh-hant.mjs?r=1`, …), since some browsers cache a failed module.
 The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-screen-design.md).
