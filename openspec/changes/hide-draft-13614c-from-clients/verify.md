@@ -54,6 +54,18 @@ Notes on ticked items:
 | 4 | main checkout, `46f0121` | 55 / 57 | **The Chrome-client run passed everything**, including `hantRequestsAfter14446: 0`. The Firefox-client run failed at `tests/browser.mjs:3837`, "a long answer redrew the page" (intake notes step, code this change doesn't touch). |
 | 5 | main checkout, `47ffc8f`, the Firefox-client run only (`--test-name-pattern`) | **29 / 29** | Line 3837 passed, so it is a flaky step: it passed in runs 3 and 5 and failed in run 4. The fixed 简体 step passed in Firefox. |
 
+**After merging `main` (step 8, `c8ae374`, with #82):**
+- The merge's one conflict was the expected one in `tests/browser.mjs`. #82's 繁體 14446-with-陈 step is kept in full, followed by this branch's refused-font check.
+- `npm test`: 1071 / 1071 (1067 plus #82's 4).
+- `openspec validate --all`: 6 / 6.
+- `build:hant -- --check`: clean.
+- Story run 6, from the main checkout at `c8ae374`: **59 / 59**, both browsers, 1087 s. It passed:
+  - the forged button;
+  - #82's step (`TC, SC and Latin, each once`);
+  - the blocked tab (`14446-draft-…-zh-t.pdf`);
+  - `hantRequestsAfter14446: 0` in Chrome (not run in Firefox, by design);
+  - the Firefox step at line 3837.
+
 ### Checks run
 
 | Check | Result | Why |
