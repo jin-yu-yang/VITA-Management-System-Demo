@@ -109,7 +109,11 @@ export const contactSummary = (entry, { answers = {} } = {}) => {
 
 export const contactSummaries = (entries, options) =>
   [...entries]
-    .sort((a, b) => Date.parse(a.contactedAt) - Date.parse(b.contactedAt))
+    // Contact time, then logged-at, then id: the same order as the Contacts tab.
+    .sort((a, b) =>
+      Date.parse(a.contactedAt) - Date.parse(b.contactedAt) ||
+      Date.parse(a.loggedAt) - Date.parse(b.loggedAt) ||
+      String(a.id ?? "").localeCompare(String(b.id ?? "")))
     .map((e) => contactSummary(e, options))
     .join("\n");
 

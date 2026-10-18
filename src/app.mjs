@@ -1739,7 +1739,10 @@ if (!config) {
         // Cancel: nothing typed into it is kept for next time.
         if (!opening) clearFormDrafts(formOf());
         controller.togglePanel(panel);
-        if (opening) formOf()?.querySelector("input:checked, input")?.focus();
+        if (opening) {
+          const form = formOf();
+          (form?.querySelector("input:checked") ?? form?.querySelector("input"))?.focus();
+        }
         else root.querySelector(`[data-action="toggle-contact-edit"][data-contact-id="${CSS.escape(id)}"]`)?.focus();
         break;
       }

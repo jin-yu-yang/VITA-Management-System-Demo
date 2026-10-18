@@ -78,6 +78,14 @@ test("contactSummaries is oldest first", () => {
   assert.equal(contactSummaries([]), "");
 });
 
+test("contactSummaries breaks a contact-time tie by logged-at, whatever the input order", () => {
+  const first = { ...BASE, id: "b", loggedAt: "2026-10-18T16:00:00Z", note: "first" };
+  const second = { ...BASE, id: "a", loggedAt: "2026-10-18T17:00:00Z", note: "second" };
+  const out = contactSummaries([second, first], { answers: ANSWERS }).split("\n");
+  assert.ok(out[0].endsWith("Note: first"));
+  assert.ok(out[1].endsWith("Note: second"));
+});
+
 test("New York time whatever the zone", () => {
   assert.equal(contactTime("2026-07-01T16:05:00Z"), "7/1/2026 12:05 PM");
   assert.equal(contactTime("2026-12-01T17:05:00Z"), "12/1/2026 12:05 PM");
