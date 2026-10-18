@@ -4,7 +4,9 @@ import {
   createDatabaseFixture,
   applyArgs,
   assistanceArgs,
+  contactArgs,
   rejected,
+  SAMPLE_CONTACT,
 } from "./support/database-fixture.mjs";
 const RESOLUTION_NOTE = "Helped complete fictional forms";
 const ESCALATION_REASON = "No response to the document request.";
@@ -62,7 +64,7 @@ const caseCount = async (f) =>
     ).rows[0].count,
   );
 // A client case in preparation with one open request, one answered request, an
-// open follow-up carrying a recorded attempt, and a linked assistance item:
+// open follow-up carrying a logged contact, and a linked assistance item:
 // everything a closure has to cancel, keep, or leave alone.
 async function pendingCase(f) {
   const { itemId, caseId } = await f.seedAssistance();
@@ -74,10 +76,16 @@ async function pendingCase(f) {
   await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", {
     reason: ESCALATION_REASON,
   });
-  await f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
-    outcome: "no_answer",
-    note: "Left a message.",
-  });
+  const [task] = (
+    await f.sql("select id from public.admin_followups where case_id=$1", [caseId])
+  ).rows;
+  await f.logContact(
+    f.presenter,
+    caseId,
+    f.sam,
+    { ...SAMPLE_CONTACT(), outcome: "no_answer", note: "Left a message." },
+    task.id,
+  );
   await f.act(f.presenter, caseId, f.alex, "REQUEST_DOCUMENT", {
     ...f.sampleRequest,
     title: "Second mileage record",
@@ -669,6 +677,15 @@ test("closure cancels pending work without erasing its history", async (t) => {
       async () => {
         const pending = await pendingCase(f);
         const before = await f.readStaffCase(pending.caseId);
+        const contacts = async () =>
+          (
+            await f.sql(
+              "select to_jsonb(l.*) as row from public.contact_log l where case_id=$1 order by id",
+              [pending.caseId],
+            )
+          ).rows;
+        const contactsBefore = await contacts();
+        assert.equal(contactsBefore.length, 1);
         const item = await f.readStaffAssistance(pending.itemId);
         assert.equal(before.stage, "preparing");
         const closed = await f.act(
@@ -697,10 +714,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
         assert.equal(after.followups[0].resolutionOutcome, null);
         assert.equal(after.followups[0].resolutionNote, null);
         assert.equal(after.followups[0].resolvedAt, null);
-        assert.deepEqual(
-          after.followups[0].attempts,
-          before.followups[0].attempts,
-        );
+        assert.deepEqual(await contacts(), contactsBefore);
         // The people who did the work stay on the record.
         assert.equal(after.preparerId, f.alex);
         assert.deepEqual(after.participants, [f.alex]);
@@ -792,18 +806,6 @@ test("closure cancels pending work without erasing its history", async (t) => {
             f.presenter,
             {
               personId: f.sam,
-              type: "RECORD_CONTACT",
-              payload: {
-                followupId: pending.followupId,
-                outcome: "reached",
-                note: "Called back.",
-              },
-            },
-          ],
-          [
-            f.presenter,
-            {
-              personId: f.sam,
               type: "RESOLVE_FOLLOWUP",
               payload: {
                 followupId: pending.followupId,
@@ -829,6 +831,33 @@ test("closure cancels pending work without erasing its history", async (t) => {
             { ...spec, caseId: pending.caseId, revision },
             "VT004",
           );
+        // The cancelled task takes no linked contact, and RECORD_CONTACT
+        // refuses every request (design D12).
+        const linked = contactArgs({
+          caseId: pending.caseId,
+          personId: f.sam,
+          followupId: pending.followupId,
+          entry: SAMPLE_CONTACT(),
+        });
+        const refusedLink = await f.presenter.rpc("vitally_log_contact", linked);
+        assert.equal(refusedLink.error?.code, "VT004");
+        assert.equal(await f.receiptsFor(linked.p_action_id), 0);
+        await refuseAction(
+          f,
+          f.presenter,
+          {
+            caseId: pending.caseId,
+            revision,
+            personId: f.sam,
+            type: "RECORD_CONTACT",
+            payload: {
+              followupId: pending.followupId,
+              outcome: "reached",
+              note: "Called back.",
+            },
+          },
+          "VT007",
+        );
         assert.deepEqual(await f.stateSnapshot(), before);
       },
     );

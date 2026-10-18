@@ -4,6 +4,7 @@ import {
   createDatabaseFixture,
   applyArgs,
   rejected,
+  SAMPLE_CONTACT,
 } from "./support/database-fixture.mjs";
 import { RPC_SIGNATURES } from "./support/rpc-signatures.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
@@ -899,7 +900,12 @@ test("installed entry points deny anonymous callers and serve members", async (t
             assistPersonId: f.sam,
             fixtureCaseId: fixture.id,
             fixtureRevision: fixture.revision,
+            contactEntry: SAMPLE_CONTACT(),
           };
+          // An entry for the edit entry point to correct.
+          context.contactId = (
+            await f.logContact(f.presenter, fixture.id, f.sam, context.contactEntry)
+          ).contactId;
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
           assert.ok(denied.error, `${entry.name} anonymous call must fail`);
