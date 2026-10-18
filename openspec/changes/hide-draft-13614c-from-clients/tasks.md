@@ -35,6 +35,7 @@
   - Update the comments and the `draft` summary keys to match.
 - [ ] 3.2 `tests/browser.mjs`: on 9.2, assert every `view-draft` button carries `data-draft="14446"`. Inject a `data-action="view-draft" data-form="en"` button into the client page, press it, and assert: no popup, no `#draft-ready` link, no problem banner.
 - [ ] 3.3 Confirm the staff side's checks (the five buttons and the English 13614-C open, about line 1060) are unchanged.
+- [ ] 3.5 (added during apply: the plan missed this step) The story's 简体 client step ("a client works in Chinese, and 繁體 loads only when chosen", `tests/browser.mjs` ~4877) pinned the summary's first draft button as the 简体 13614-C (`data-form="zh-s"`). Make it the Form 14446's 繁體 (`data-draft="14446"`, `data-form="zh-t"`), with no 13614-C button. In Chrome, also build that 14446 and assert the 繁體 map (`src/zh-hant.mjs`) is still not fetched.
 - [ ] 3.4 Run `npm run test:browser` once. Record failures at steps this change doesn't touch; don't retry them.
 
 ## 4. Docs and final checks
