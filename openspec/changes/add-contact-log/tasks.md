@@ -42,5 +42,5 @@
 
 ## 6. Docs and checks
 
-- [ ] 6.1 `docs/developer/database.md`: the two tables, the two RPCs, why they sit beside `vitally_apply_action`, the move, `RECORD_CONTACT` refusing, the fixture change. `docs/developer/frontend.md`: the Contacts tab, the shared form, `src/contact-log.mjs`. Update the unit test count in `docs/developer/frontend.md` and `docs/developer/README.md`.
-- [ ] 6.2 Run `npm test`, `npx openspec validate --all`, and `npm run build:hant -- --check` (expected: nothing to regenerate).
+- [x] 6.1 `docs/developer/database.md`: the two tables, the two RPCs, why they sit beside `vitally_apply_action`, the move, `RECORD_CONTACT` refusing, the fixture change. `docs/developer/frontend.md`: the Contacts tab, the shared form, `src/contact-log.mjs`. Update the unit test count in `docs/developer/frontend.md` and `docs/developer/README.md`.
+- [x] 6.2 Run `npm test`, `npx openspec validate --all`, and `npm run build:hant -- --check` (expected: nothing to regenerate).
