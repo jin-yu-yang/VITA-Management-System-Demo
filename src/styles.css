@@ -5496,13 +5496,13 @@ html:lang(zh-Hant) {
 .staff-form:has(input[name="signMethod"][value="in_person"]:checked) .q-when-in-person {
   display: block;
 }
-.q-group {
+.q-exit-group {
   border: 1px solid var(--vt-line);
   border-radius: 8px;
   padding: 0 12px;
   margin-top: 8px;
 }
-.q-group > summary {
+.q-exit-group > summary {
   cursor: pointer;
   min-height: var(--vt-tap);
   display: flex;
@@ -5510,7 +5510,7 @@ html:lang(zh-Hant) {
   font-weight: 600;
   font-size: 14px;
 }
-.q-group-body {
+.q-exit-group-body {
   padding-bottom: 12px;
 }
 .q-compare {

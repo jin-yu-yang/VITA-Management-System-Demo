@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkDrafts, formValuesWithLists, restoreDraft, textDraft } from "../src/form-values.mjs";
+import { checkDrafts, formValuesWithLists, groupsToOpen, restoreDraft, textDraft } from "../src/form-values.mjs";
 
 // A form is only read through `new FormData(form)` and `querySelectorAll`, so
 // a tiny stand-in with a real FormData is enough (node has no DOM).
@@ -173,4 +173,12 @@ test("an edit to a saved value goes back over what the redraw drew, an empty one
   const disabled = { ...note("After 6 pm is best.", "After 6 pm is best."), disabled: true };
   restoreDraft(disabled, { value: "Text first" });
   assert.equal(disabled.value, "After 6 pm is best.", "a disabled box would not be sent");
+});
+
+test("a drafted field opens its Exit Form group, and only that group", () => {
+  const groups = [["f-method", "f-amount"], ["local.SIT.amount", "local.SIT.method"], ["local.NPT.amount"]];
+  assert.deepEqual(groupsToOpen(groups, new Map([["local.SIT.amount", "50.00"]])), [1]);
+  assert.deepEqual(groupsToOpen(groups, new Map([["local.NPT.amount", { checked: true }]])), [2]);
+  assert.deepEqual(groupsToOpen(groups, new Map()), []);
+  assert.deepEqual(groupsToOpen(groups, new Map([["local.SIT.amount", ""], ["f-amount", { value: "" }]])), []);
 });

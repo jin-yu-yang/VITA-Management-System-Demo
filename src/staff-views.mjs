@@ -1376,34 +1376,30 @@ function preparerForm(record, previous, ui = {}) {
   )}`;
 }
 
-// One Exit Form entry as a collapsible group. It is open only when the
-// volunteer typed something in it that a refused submit sent back.
-function exitGroup(title, prefix, values) {
+// One Exit Form entry as a collapsible group, closed until opened. A group the
+// volunteer typed in is reopened after a redraw by app.mjs (groupsToOpen).
+function exitGroup(title, prefix) {
   const scope = "rev";
-  const field = (key) => String(values?.[`${prefix}.${key}`] ?? "");
-  const filled = Object.entries(values ?? {}).some(
-    ([key, value]) => key.startsWith(`${prefix}.`) && String(value ?? "").trim() !== "",
-  );
-  return `<details class="q-group"${filled ? " open" : ""}><summary>${esc(title)}</summary><div class="q-group-body">${radios(
+  return `<details class="q-exit-group"><summary>${esc(title)}</summary><div class="q-exit-group-body">${radios(
     "How it was filed",
     scope,
     `${prefix}.method`,
     FILING_METHODS,
-    field("method"),
-  )}${radios("Result", scope, `${prefix}.result`, RESULTS, field("result"))}${input(
+    "",
+  )}${radios("Result", scope, `${prefix}.result`, RESULTS, "")}${input(
     "Amount (refund or owe)",
     `${prefix}.amount`,
-    field("amount"),
+    "",
     "text",
     'inputmode="decimal" maxlength="9" placeholder="0.00"',
     scope,
-  )}${radios("If a refund, paid by", scope, `${prefix}.refundBy`, REFUND_BY, field("refundBy"))}${radios(
+  )}${radios("If a refund, paid by", scope, `${prefix}.refundBy`, REFUND_BY, "")}${radios(
     "If owed, paid by",
     scope,
     `${prefix}.oweBy`,
     OWE_BY,
-    field("oweBy"),
-  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, field("debitOn"), "date", "", scope)}</div></details>`;
+    "",
+  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, "", "date", "", scope)}</div></details>`;
 }
 
 /**
@@ -1415,8 +1411,7 @@ function reviewerForm(record, ui = {}) {
   const scope = "rev";
   const service = record.answers?.service;
   const prefill = goOverPrefill(record.contacts) ?? {};
-  const values = ui.formValues ?? {};
-  const appointment =
+    const appointment =
     service === "same_day"
       ? ""
       : `<div class="q-when-in-person">${input(
@@ -1456,8 +1451,8 @@ function reviewerForm(record, ui = {}) {
     "signMethod",
     SIGN_METHODS,
     signDefault(service),
-  )}${appointment}<h4>Exit Form (optional)</h4>${exitGroup("Federal", "federal", values)}${exitGroup("State", "state", values)}${LOCAL_TYPES.map(
-    ([type, label]) => exitGroup(`Local: ${label}`, `local.${type}`, values),
+  )}${appointment}<h4>Exit Form (optional)</h4>${exitGroup("Federal", "federal")}${exitGroup("State", "state")}${LOCAL_TYPES.map(
+    ([type, label]) => exitGroup(`Local: ${label}`, `local.${type}`),
   ).join("")}${textarea("Remarks (optional)", "remarks", "", 'maxlength="2000" rows="3"', scope)}`;
 }
 

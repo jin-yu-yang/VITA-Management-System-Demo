@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
+import { checkDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
@@ -432,8 +432,9 @@ if (!config) {
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
     // A collapsed Exit Form group holding something typed is opened again, so
     // the field a refusal names is in view (design D7).
-    for (const group of root.querySelectorAll("details.q-group:not([open])"))
-      if ([...group.querySelectorAll("[id]")].some((field) => formDrafts.has(field.id))) group.open = true;
+    const exitGroups = [...root.querySelectorAll("details.q-exit-group:not([open])")];
+    const ids = exitGroups.map((group) => [...group.querySelectorAll("[id]")].map((field) => field.id));
+    for (const index of groupsToOpen(ids, formDrafts)) exitGroups[index].open = true;
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back

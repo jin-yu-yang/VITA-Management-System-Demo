@@ -87,3 +87,15 @@ export function restoreDraft(field, draft) {
   }
   if (!field.value) field.value = draft;
 }
+
+/**
+ * Which collapsible groups a redraw must open again: those with a field that
+ * holds a draft. `groups` is one list of field ids per group, in order;
+ * `drafts` is app.mjs's draft map. An empty string, null or an edit back to
+ * empty is no draft. Returns the indexes of the groups to open.
+ */
+export function groupsToOpen(groups, drafts) {
+  const held = (draft) =>
+    draft !== null && draft !== undefined && draft !== "" && !(typeof draft === "object" && draft.value === "");
+  return groups.flatMap((ids, index) => (ids.some((id) => held(drafts.get(id))) ? [index] : []));
+}

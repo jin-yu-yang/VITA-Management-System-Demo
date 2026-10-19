@@ -2503,20 +2503,12 @@ test("same-day reviewer form has no appointment block", () => {
 
 test("Exit Form groups are collapsed details", () => {
   const html = stepFor(REVIEWING, MORGAN);
-  const groups = html.match(/<details class="q-group"[^>]*>/g);
+  const groups = html.match(/<details class="q-exit-group"[^>]*>/g);
   assert.equal(groups.length, 7);
   assert.ok(groups.every((tag) => !/ open/.test(tag)));
   for (const type of ["NPT", "BIRT", "EET", "SIT", "PAIBWTR"]) assert.match(html, new RegExp(`name="local\\.${type}\\.amount"`));
   assert.match(html, /name="federal\.method"/);
   assert.match(html, /name="state\.result"/);
-});
-
-test("a filled group stays open", () => {
-  const html = stepFor(REVIEWING, MORGAN, { formValues: { "local.SIT.amount": "50.00", "federal.method": "" } });
-  const groups = html.match(/<details class="q-group"[^>]*><summary>[^<]*<\/summary>/g);
-  const open = groups.filter((tag) => / open>/.test(tag));
-  assert.equal(open.length, 1);
-  assert.match(open[0], /Local: SIT/);
 });
 
 test("Review in progress shows previous and current with changes marked", () => {
