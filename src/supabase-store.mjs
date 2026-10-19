@@ -33,7 +33,8 @@ const STAFF_TABLES = Object.freeze([
   "people",
   "preparation_participants",
   "admin_followups",
-  "contact_attempts",
+  "contact_log",
+  "contact_log_versions",
   "case_events",
   "assistance_items",
   "reviews",
@@ -144,16 +145,9 @@ export const mapReview = (row) => ({
   clientContactedAt: row.client_contacted_at,
 });
 
-export const mapContactAttempt = (row) => ({
-  id: row.id,
-  outcome: row.outcome,
-  note: row.note,
-  actorPersonId: row.actor_person_id,
-  createdAt: row.created_at,
-});
-
-// Each follow-up carries its own contact attempts (Ruling R20).
-export const mapFollowup = (row, attemptRows) => ({
+// Each follow-up is its own row; its calls live in the contact log, which the
+// case carries as `contacts`.
+export const mapFollowup = (row) => ({
   id: row.id,
   requestId: row.request_id,
   assigneeId: row.assignee_person_id,
@@ -164,9 +158,40 @@ export const mapFollowup = (row, attemptRows) => ({
   createdByPersonId: row.created_by_person_id,
   createdAt: row.created_at,
   resolvedAt: row.resolved_at,
-  attempts: attemptRows
-    .filter((attempt) => attempt.followup_id === row.id)
-    .map(mapContactAttempt),
+});
+
+// The fields of a contact that an edit can change; a version holds only these.
+const contactFields = (row) => ({
+  direction: row.direction,
+  contactedAt: row.contacted_at,
+  withWhom: row.with_whom,
+  otherName: row.other_name,
+  method: row.method,
+  purpose: row.purpose,
+  outcome: row.outcome,
+  note: row.note,
+});
+
+export const mapContactVersion = (row) => ({
+  version: Number(row.version),
+  createdAt: row.created_at,
+  editedByPersonId: row.edited_by_person_id,
+  ...contactFields(row),
+});
+
+// One contact log entry with all its versions (oldest first).
+export const mapContactEntry = (row, versionRows = []) => ({
+  id: row.id,
+  caseId: row.case_id,
+  followupId: row.followup_id,
+  revision: Number(row.revision),
+  loggedAt: row.logged_at,
+  editedAt: row.edited_at,
+  loggedByPersonId: row.logged_by_person_id,
+  ...contactFields(row),
+  versions: versionRows
+    .filter((version) => version.contact_id === row.id)
+    .map(mapContactVersion),
 });
 
 export const mapAssistance = (row) => ({
@@ -221,7 +246,7 @@ export const mapClientCase = ({
 });
 
 // The staff Case: the client sections plus participation, follow-ups with
-// their attempts, review attempts, the materials received and the internal
+// the contact log, review attempts, the materials received and the internal
 // history.
 export const mapStaffCase = ({
   row,
@@ -229,7 +254,8 @@ export const mapStaffCase = ({
   requests,
   documents,
   followups,
-  attempts,
+  contactLog = [],
+  contactVersions = [],
   reviews,
   history,
   internalHistory,
@@ -240,7 +266,8 @@ export const mapStaffCase = ({
   ...mapClientCase({ row, requests, documents, history, contacts, cards }),
   participants: participants.map((participant) => participant.person_id),
   reviews: reviews.map(mapReview),
-  followups: followups.map((followup) => mapFollowup(followup, attempts)),
+  followups: followups.map(mapFollowup),
+  contacts: contactLog.map((entry) => mapContactEntry(entry, contactVersions)),
   materials: materials.map(mapMaterial),
   internalHistory: internalHistory.map(camelRow),
 });
@@ -355,10 +382,10 @@ export function createStore(client) {
     // A client's list is their own cases and nothing more. A presenter's list
     // is a work board, and a board that cannot say who is already on a case,
     // what is waiting on a client, or who owes somebody a call is only a list
-    // of references. Those three answers, and the client's phone for the
-    // masked column, come from four grouped reads over the same RLS-scoped
-    // tables the case screen uses — not from the rows themselves, which carry
-    // no related record at all (Ruling R56).
+    // of references. Those three answers, the client's phone for the masked
+    // column and the reviewer's call status come from five grouped reads over
+    // the same RLS-scoped tables the case screen uses — not from the rows
+    // themselves, which carry no related record at all (Ruling R56).
     async listCases() {
       const staff = (await access()) === "presenter";
       const cases = (
@@ -395,6 +422,16 @@ export function createStore(client) {
           .select("case_id,phone")
           .in("case_id", ids),
       );
+      // The reviewer's call with the client, for Follow-ups' Mark ready to
+      // e-file (brainstorm Q12): the latest approved review's status alone.
+      const approvals = await read(
+        client
+          .from("reviews")
+          .select("case_id,client_contact_status,created_at")
+          .in("case_id", ids)
+          .eq("status", "approved")
+          .order("created_at"),
+      );
       const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
       return cases.map((record) => {
         const open = forCase(followups, record.id);
@@ -409,6 +446,9 @@ export function createStore(client) {
           ],
           openRequests: forCase(requests, record.id).length,
           phone: forCase(contacts, record.id)[0]?.phone ?? null,
+          // "pending", "completed", or null when no review has been approved.
+          reviewContactStatus:
+            forCase(approvals, record.id).at(-1)?.client_contact_status ?? null,
         };
       });
     },
@@ -468,7 +508,24 @@ export function createStore(client) {
           "person_id",
         ),
         followups: await relatedRows("admin_followups", id),
-        attempts: await relatedRows("contact_attempts", id),
+        // Staff only: the applicant path above never names these tables.
+        contactLog: await read(
+          client
+            .from("contact_log")
+            .select("*")
+            .eq("case_id", id)
+            .order("contacted_at")
+            .order("logged_at")
+            .order("id"),
+        ),
+        contactVersions: await read(
+          client
+            .from("contact_log_versions")
+            .select("*")
+            .eq("case_id", id)
+            .order("contact_id")
+            .order("version"),
+        ),
         reviews: await relatedRows("reviews", id),
         // Staff only: the applicant path above never names this table.
         materials: await read(
@@ -499,6 +556,26 @@ export function createStore(client) {
         p_person_id: action.personId ?? null,
         p_type: action.type,
         p_payload: action.payload,
+      });
+    },
+
+    async logContact(request) {
+      return await call("vitally_log_contact", {
+        p_action_id: actionId(request),
+        p_case_id: request.caseId,
+        p_person_id: request.personId ?? null,
+        p_followup_id: request.followupId ?? null,
+        p_entry: request.entry,
+      });
+    },
+
+    async editContact(request) {
+      return await call("vitally_edit_contact", {
+        p_action_id: actionId(request),
+        p_contact_id: request.contactId,
+        p_expected_revision: request.expectedRevision,
+        p_person_id: request.personId ?? null,
+        p_entry: request.entry,
       });
     },
 

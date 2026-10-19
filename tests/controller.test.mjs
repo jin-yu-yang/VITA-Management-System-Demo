@@ -137,6 +137,7 @@ function fakeStore({
           action.type === "SAVE_ANSWERS"
             ? { ...action.payload.answers }
             : record.answers,
+        stage: action.type === "START_SCREENING" ? "screening" : record.stage,
       };
       records.set(action.caseId, next);
       return {
@@ -168,6 +169,47 @@ function fakeStore({
           request.type === "CLAIM" ? request.personId : current.assigneeId,
         resolutionNote: request.note ?? current.resolutionNote,
       });
+    },
+    async logContact(request) {
+      store.calls.push("logContact");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      const record = records.get(request.caseId);
+      const contacts = record.contacts ?? [];
+      records.set(request.caseId, {
+        ...record,
+        contacts: [
+          ...contacts,
+          { id: `contact-${contacts.length + 1}`, revision: 1, ...request.entry },
+        ],
+      });
+      return { actionId: request.actionId, caseId: request.caseId, revision: 1 };
+    },
+    async editContact(request) {
+      store.calls.push("editContact");
+      store.writes.push(request);
+      const failure = store.failNext;
+      if (failure) {
+        store.failNext = null;
+        throw failure;
+      }
+      for (const [id, record] of records) {
+        const contacts = record.contacts ?? [];
+        if (!contacts.some((entry) => entry.id === request.contactId)) continue;
+        records.set(id, {
+          ...record,
+          contacts: contacts.map((entry) =>
+            entry.id === request.contactId
+              ? { ...entry, ...request.entry, revision: entry.revision + 1 }
+              : entry,
+          ),
+        });
+      }
+      return { actionId: request.actionId, contactId: request.contactId, revision: 2 };
     },
     async getWorkspace() {
       store.calls.push("getWorkspace");
@@ -5355,5 +5397,535 @@ test("a later refresh after a failed first load reads the people and the workspa
   store.calls.length = 0;
   await controller.refresh();
   assert.ok(!store.calls.includes("listPeople"), "once loaded, a refresh does not read the people again");
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// The contact log (OpenSpec change add-contact-log)
+// ---------------------------------------------------------------------------
+
+const CONTACT_ENTRY = Object.freeze({
+  contactedAt: "2026-09-04T12:00:00.000Z",
+  direction: "outgoing",
+  method: "phone",
+  note: "Left word.",
+  otherName: null,
+  outcome: "left_voicemail",
+  purpose: "ask_question",
+  withWhom: "client",
+});
+
+const contactStore = () =>
+  officeStore({
+    cases: [
+      {
+        id: "case-a",
+        reference: "VT-AAAA-BBBB",
+        stage: "preparing",
+        revision: 5,
+        answers: {},
+        contacts: [{ id: "contact-1", revision: 3, ...CONTACT_ENTRY }],
+      },
+    ],
+  });
+
+const readsOf = (store) =>
+  store.calls.filter((entry) => entry === "getCase:case-a").length;
+
+test("logging sends the persona and the task, then re-reads the case", async () => {
+  const store = contactStore();
+  const { controller } = build({ store, newActionId: () => "action-1" });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  const reads = readsOf(store);
+  const request = await controller.logContact("case-a", CONTACT_ENTRY, "followup-1");
+  assert.deepEqual(store.writes.at(-1), {
+    actionId: "action-1",
+    caseId: "case-a",
+    personId: "sam",
+    followupId: "followup-1",
+    entry: CONTACT_ENTRY,
+  });
+  assert.equal(request.actionId, "action-1");
+  assert.equal(readsOf(store), reads + 1);
+  assert.equal(controller.getState().savedCase.contacts.length, 2);
+  assert.equal(controller.getState().busy, false);
+  await controller.logContact("case-a", CONTACT_ENTRY);
+  assert.equal(store.writes.at(-1).followupId, null);
+  controller.stop();
+});
+
+test("editing sends the revision on screen", async () => {
+  const store = contactStore();
+  const { controller } = build({ store, newActionId: () => "action-2" });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  await controller.editContact("contact-1", { ...CONTACT_ENTRY, note: "Changed." });
+  assert.deepEqual(store.writes.at(-1), {
+    actionId: "action-2",
+    contactId: "contact-1",
+    expectedRevision: 3,
+    personId: "sam",
+    entry: { ...CONTACT_ENTRY, note: "Changed." },
+  });
+  assert.equal(controller.getState().savedCase.contacts[0].note, "Changed.");
+  assert.equal(controller.getState().savedCase.contacts[0].revision, 4);
+  controller.stop();
+});
+
+test("a conflicting edit shows the newest version", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.selectPerson("sam");
+  const reads = readsOf(store);
+  store.failNext = Object.assign(new Error("conflict"), { code: "CONFLICT" });
+  await assert.rejects(
+    controller.editContact("contact-1", CONTACT_ENTRY),
+    (error) => error.code === "CONFLICT",
+  );
+  const state = controller.getState();
+  assert.equal(state.error.code, "CONFLICT");
+  assert.equal(
+    state.error.message,
+    "Someone else changed this contact. The newest version is shown — check it and try again.",
+  );
+  assert.equal(state.busy, false);
+  assert.equal(readsOf(store), reads + 1);
+  controller.stop();
+});
+
+test("a failed log shows the error and throws", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  store.failNext = Object.assign(new Error("Pick an outcome."), { code: "VALIDATION" });
+  await assert.rejects(
+    controller.logContact("case-a", CONTACT_ENTRY),
+    (error) => error.code === "VALIDATION",
+  );
+  assert.equal(controller.getState().error.code, "VALIDATION");
+  assert.equal(controller.getState().error.message, "Pick an outcome.");
+  assert.equal(controller.getState().busy, false);
+  controller.stop();
+});
+
+test("an edit of a contact not on screen is refused without a call", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  await assert.rejects(
+    controller.editContact("contact-9", CONTACT_ENTRY),
+    (error) => error.code === "NOT_FOUND",
+  );
+  assert.ok(!store.calls.includes("editContact"));
+  assert.equal(controller.getState().error.code, "NOT_FOUND");
+  controller.stop();
+});
+
+test("a contact log change on the open case re-reads it", async () => {
+  const store = contactStore();
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  store.records.set("case-a", { ...store.records.get("case-a"), contacts: [] });
+  for (const table of ["contact_log", "contact_log_versions"]) {
+    const reads = readsOf(store);
+    await store.handlers.onChange({
+      table,
+      eventType: "INSERT",
+      id: "x",
+      caseId: "case-a",
+    });
+    assert.equal(readsOf(store), reads + 1, table);
+  }
+  assert.deepEqual(controller.getState().savedCase.contacts, []);
+  controller.stop();
+});
+
+// ---- screening starts when an admin opens a Request sent case ---------------
+
+const RECEIVED = { id: "case-r", reference: "VT-RRRR-RRRR", stage: "received", revision: 3, answers: {} };
+const adminPeople = [
+  { id: "person-sam", name: "Sam", capabilities: ["admin", "followup"] },
+  { id: "person-alex", name: "Alex", capabilities: ["prepare"] },
+];
+const startWrites = (store) => store.writes.filter((write) => write.type === "START_SCREENING");
+
+test("an admin persona opening a Request sent case starts screening, once", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1);
+  assert.deepEqual(
+    { ...startWrites(store)[0], actionId: "id" },
+    { actionId: "id", caseId: "case-r", expectedRevision: 3, personId: "person-sam", type: "START_SCREENING", payload: {} },
+  );
+  assert.equal(controller.getState().savedCase.stage, "screening", "the case was re-read");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "not twice");
+  assert.equal(controller.getState().busy, false);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a volunteer persona starts nothing; switching to an admin starts it", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-alex");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 0);
+  controller.selectPerson("person-sam");
+  await tick();
+  assert.equal(startWrites(store).length, 1);
+  controller.stop();
+});
+
+test("another admin got there first: no error, the case is re-read, nothing is sent twice", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  // The other admin's start lands first: the case is already at screening
+  // (revision 4) when ours is refused.
+  const act = store.act;
+  let first = true;
+  store.act = async (action) => {
+    if (first && action.type === "START_SCREENING") {
+      first = false;
+      store.writes.push(action);
+      store.records.set("case-r", { ...RECEIVED, stage: "screening", revision: 4 });
+      throw Object.assign(new Error("INVALID_TRANSITION"), { code: "INVALID_TRANSITION" });
+    }
+    return act(action);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const state = controller.getState();
+  assert.equal(state.error, null);
+  assert.equal(state.retryable, false);
+  assert.equal(state.savedCase.stage, "screening", "the case was re-read");
+  assert.equal(startWrites(store).length, 1, "no second start");
+  controller.stop();
+});
+
+test("offline on open: nothing shows, and a refresh sends the same start again", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(controller.getState().error, null);
+  assert.equal(controller.getState().connection, "offline", "the offline notice shows");
+  assert.equal(controller.getState().retryable, false, "no Try again for a start");
+  const first = startWrites(store)[0].actionId;
+  await controller.refresh();
+  await tick();
+  assert.equal(startWrites(store).length, 2);
+  assert.equal(startWrites(store)[1].actionId, first, "the same action id, so a receipt answers a replay");
+  controller.stop();
+});
+
+test("a case past Request sent starts nothing", async () => {
+  const store = presenterStore({ cases: [{ ...RECEIVED, stage: "screening" }], people: adminPeople });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 0);
+  controller.stop();
+});
+
+test("selecting a case in place from a list is not an open", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  // Follow-ups' Log contact and the Mark buttons read the case without leaving
+  // the list; after start() the window is on its home screen, not a case page.
+  await controller.selectCase("case-r", { navigate: false });
+  await tick();
+  assert.notEqual(controller.getState().screen, "staff-case");
+  assert.equal(startWrites(store).length, 0);
+  controller.stop();
+});
+
+test("a reload on the case page starts screening", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  // The window's stored record (window-state.mjs), under the presenter's user
+  // id: this case open on the staff case page, acting as Sam.
+  const sessionStorage = fakeSession({
+    "vitally:client:v1:p1": JSON.stringify({
+      screen: "staff-case",
+      selectedCaseId: "case-r",
+      selectedPersonId: "person-sam",
+    }),
+  });
+  const { controller } = build({ store, sessionStorage });
+  await controller.start();
+  await tick();
+  assert.equal(controller.getState().screen, "staff-case");
+  assert.equal(startWrites(store).length, 1);
+  controller.stop();
+});
+
+test("the connection's return sends the held start, unchanged", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(controller.getState().connection, "offline", "the offline notice shows");
+  await store.handlers.onConnection("offline");
+  await store.handlers.onConnection("online");
+  await tick();
+  assert.equal(controller.getState().connection, "online");
+  const sent = startWrites(store);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], sent[0], "the same action, id and revision alike");
+  controller.stop();
+});
+
+test("a race that leaves the case at Request sent tries once more, at the new revision", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  // The first start meets a case that moved on (another admin logged a
+  // contact): revision 4, still Request sent.
+  const act = store.act;
+  let first = true;
+  store.act = async (action) => {
+    if (first && action.type === "START_SCREENING") {
+      first = false;
+      store.writes.push(action);
+      store.records.set("case-r", { ...RECEIVED, revision: 4 });
+      throw Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+    }
+    return act(action);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const sent = startWrites(store);
+  assert.equal(sent.length, 2);
+  assert.notEqual(sent[1].actionId, sent[0].actionId, "a fresh action");
+  assert.equal(sent[1].expectedRevision, 4);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a refusal that isn't a race is given up on for this case", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  await controller.refresh();
+  await tick();
+  assert.equal(startWrites(store).length, 1, "no retry on every refresh");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a held start is sent after the admin's own pending action goes through", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "the start is held");
+  // The admin presses an action while still offline: it is held too.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.runAction("ESCALATE_CONTACT", {}));
+  assert.equal(controller.getState().retryable, true);
+  // The connection returns, but the action is still pending: no start yet.
+  await store.handlers.onConnection("online");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "waits for the pending action");
+  // Try again: the action goes through, then the held start is sent, unchanged.
+  await controller.retryLast();
+  await tick();
+  const sent = startWrites(store);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], sent[0], "the same action, id and revision alike");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a case action pressed while the start is out waits for it and pins the new revision", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const act = store.act;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  store.act = async (action) => {
+    if (action.type === "START_SCREENING") await gate;
+    return act(action);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const pressed = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  assert.equal(store.writes.filter((write) => write.type === "ESCALATE_CONTACT").length, 0, "held back");
+  release();
+  await pressed;
+  await tick();
+  const types = store.writes.map((write) => write.type);
+  assert.deepEqual(types, ["START_SCREENING", "ESCALATE_CONTACT"], "the start first");
+  assert.equal(store.writes[1].expectedRevision, 4, "the revision after the start");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a held start belongs to its case: opening another case drops it", async () => {
+  const other = { ...RECEIVED, id: "case-b", reference: "VT-BBBB-BBBB" };
+  const store = presenterStore({ cases: [RECEIVED, other], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "case A's start is held");
+  await controller.selectCase("case-b");
+  await tick();
+  await store.handlers.onConnection("offline");
+  await store.handlers.onConnection("online");
+  await tick();
+  const sent = startWrites(store);
+  assert.deepEqual(sent.map((write) => write.caseId), ["case-r", "case-b"], "A is not resent; B has its own");
+  assert.notEqual(sent[1].actionId, sent[0].actionId);
+  controller.stop();
+});
+
+test("signing out drops a held start: nothing is sent when the connection returns", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "the start is held");
+  await controller.signOut();
+  await controller.refresh();
+  await tick();
+  assert.equal(startWrites(store).length, 1, "nothing resent");
+  controller.stop();
+});
+
+test("a start skipped while a contact write is out is sent when the write settles", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const logContact = store.logContact;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  store.logContact = async (request) => {
+    await gate;
+    return logContact(request);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-alex");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 0, "a volunteer starts nothing");
+  const logged = controller.logContact("case-r", CONTACT_ENTRY);
+  await tick();
+  assert.equal(controller.getState().busy, true, "the write is out");
+  // The admin persona arrives while the write is out: the start is skipped.
+  controller.selectPerson("person-sam");
+  await tick();
+  assert.equal(startWrites(store).length, 0, "skipped while busy");
+  release();
+  await logged;
+  await tick();
+  assert.equal(startWrites(store).length, 1, "sent once the write settles");
+  assert.equal(controller.getState().savedCase.stage, "screening");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+// A store whose first START_SCREENING is held open until `release()`.
+function storeHoldingFirstStart(cases) {
+  const store = presenterStore({ cases, people: adminPeople });
+  const act = store.act;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  store.act = async (action) => {
+    if (action.type === "START_SCREENING" && !held) {
+      held = true;
+      await gate;
+    }
+    return act(action);
+  };
+  return { store, release };
+}
+
+test("a press that waited for the start is not sent for another case opened meanwhile", async () => {
+  const other = { ...RECEIVED, id: "case-b", reference: "VT-BBBB-BBBB" };
+  const { store, release } = storeHoldingFirstStart([RECEIVED, other]);
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const pressed = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  await controller.selectCase("case-b");
+  release();
+  assert.equal(await pressed, null, "a press for the case that was left sends nothing");
+  await tick();
+  assert.equal(store.writes.filter((write) => write.type === "ESCALATE_CONTACT").length, 0);
+  assert.equal(controller.getState().selectedCaseId, "case-b");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a second press while one waits for the start does nothing", async () => {
+  const { store, release } = storeHoldingFirstStart([RECEIVED]);
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const first = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  assert.equal(await controller.runAction("ESCALATE_CONTACT", {}), null, "the second press is ignored");
+  release();
+  await first;
+  await tick();
+  const sent = store.writes.filter((write) => write.type === "ESCALATE_CONTACT");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].expectedRevision, 4);
+  assert.equal(controller.getState().error, null);
   controller.stop();
 });

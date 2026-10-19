@@ -4,18 +4,22 @@ export const REFERENCE_PATTERN = /^VT-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 export const STAGES = Object.freeze([
   "draft",
   "received",
+  "screening",
   "preparation_ready",
   "preparing",
   "review_ready",
   "reviewing",
   "corrections_required",
   "review_approved",
+  "ready_to_efile",
+  "efiled",
   "closed",
 ]);
 
 export const CASE_ACTIONS = Object.freeze([
   "SAVE_ANSWERS",
   "SUBMIT",
+  "START_SCREENING",
   "VERIFY_INTAKE",
   "CLAIM_PREPARATION",
   "REQUEST_DOCUMENT",
@@ -23,7 +27,8 @@ export const CASE_ACTIONS = Object.freeze([
   "RECORD_DOCUMENT_RESPONSE",
   "VERIFY_DOCUMENT",
   "ESCALATE_CONTACT",
-  "RECORD_CONTACT",
+  // RECORD_CONTACT left the browser with the contact log (change
+  // add-contact-log, design D12); the database refuses new requests.
   "RESOLVE_FOLLOWUP",
   "SUBMIT_REVIEW",
   "CLAIM_REVIEW",
@@ -31,6 +36,8 @@ export const CASE_ACTIONS = Object.freeze([
   "RESUBMIT_REVIEW",
   "APPROVE_REVIEW",
   "RECORD_REVIEW_CONTACT",
+  "MARK_READY_TO_EFILE",
+  "MARK_EFILED",
   "REMIND",
   "CLOSE_CASE",
   // Part 4a (migration 013). No screen offers them until 4b and 4c.
@@ -90,7 +97,11 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //   { phone, spousePhone, bestContactTime, bestContactNote }, or null when
 //   there is none. A list entry carries only the
 //   scalars, intakeVersion and intakeVisited (sub-step ids, [] when none)
-//   included, and no contact. documentCards: the case_document_cards rows as
+//   included, and no contact. A presenter's list entry also carries six
+//   summaries: participants, openFollowups, followupAssigneeIds,
+//   openRequests, phone and reviewContactStatus (the latest approved
+//   review's client_contact_status: 'pending', 'completed', or null when no
+//   review has been approved). documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
 //   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,

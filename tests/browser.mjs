@@ -57,6 +57,7 @@ import {
   rebuiltBy,
   redactAddresses,
   resetSampleCases,
+  revealCaseControl,
   screenshotDir,
   showBoardTab,
   submitCaseFormUntil,
@@ -122,6 +123,15 @@ const REQUEST_MESSAGE = "Please add the fictional sample mileage record.";
 const ESCALATION_REASON =
   "The fictional client has not sent the sample yet; the office can ask about it.";
 const CONTACT_NOTE = "Simulated call: the fictional client will send the sample.";
+// The contact log phase (OpenSpec change add-contact-log). No note is a part
+// of another, so a line is found by its note alone.
+const HALF_CONTACT_NOTE = "Half a fictional note";
+const SAM_CONTACT_NOTE = "Simulated call: the fictional client asked about the sample.";
+const ALEX_TEXT_NOTE = "Simulated text: asked for the fictional mileage record.";
+const SAM_CORRECTION_NOTE = "Simulated text: asked for the fictional mileage log by Friday.";
+const INCOMING_NOTE = "Simulated call: the fictional client phoned to book a time.";
+// Every contact line starts with its New York time and an em dash.
+const CONTACT_LINE = /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} (AM|PM) — /;
 const HELP_NOTE = "Simulated help: walked the fictional client through the intake forms.";
 const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 // Internal staff text. It must never appear in a client window.
@@ -263,6 +273,22 @@ async function openTab(context, appOrigin) {
   return { page, errors, pageErrors };
 }
 
+/**
+ * Choose one button of a Log contact form's group (direction, method,
+ * purpose, outcomeVoice, outcomeWritten, withWhom) by pressing its label, as
+ * a person does: the radio itself is drawn as the label's segment.
+ */
+async function chooseSeg(root, scope, name, key) {
+  await root.locator(`label[for="field-${scope}-${name}-${key}"]`).click({ timeout: CLICK_MS });
+}
+
+/** A `datetime-local` value ("YYYY-MM-DDTHH:MM") moved back by whole hours. */
+function hoursBefore(value, hours) {
+  const moment = new Date(`${value}:00Z`);
+  moment.setUTCHours(moment.getUTCHours() - hours);
+  return moment.toISOString().slice(0, 16);
+}
+
 /** The intake form's own submit: save what is dirty and move a step on. */
 async function clickContinue(page) {
   await waitForQuiet(page);
@@ -271,6 +297,17 @@ async function clickContinue(page) {
     .first()
     .click({ timeout: CLICK_MS });
 }
+
+/** Wait until a client's history shows this exact line. */
+const waitForHistoryLine = (page, line) =>
+  waitFor(
+    page,
+    `the history line ${JSON.stringify(line)}`,
+    (wanted) =>
+      [...document.querySelectorAll(".timeline-item p")].some((entry) => entry.textContent.trim() === wanted),
+    line,
+    ARRIVAL_MS,
+  );
 
 /** Start one fictional application and read back the generated reference. */
 async function startApplication(page) {
@@ -639,6 +676,21 @@ async function runPermutation(t, roles) {
     const before = await revision();
     return async () => (await revision()) === before;
   };
+  // The contact log is not a case action: logging and editing leave the
+  // case's revision alone, so whether a press reached the server is read from
+  // the log itself — no new entry and no new version means nothing landed.
+  const contactLogUnmoved = async (caseId) => {
+    const count = async () =>
+      (
+        await one(
+          fixture,
+          "select (select count(*) from public.contact_log where case_id=$1)::int as entries, (select count(*) from public.contact_log_versions where case_id=$1)::int as versions",
+          [caseId],
+        )
+      ) ?? null;
+    const before = JSON.stringify(await count());
+    return async () => JSON.stringify(await count()) === before;
+  };
   const record = (type, outcome) => {
     if (outcome.attempts > 1 || outcome.conflicts || outcome.lost)
       evidence.retries.push({ type, ...outcome });
@@ -796,7 +848,7 @@ async function runPermutation(t, roles) {
       await fillIntakeV2ToSubmit(client, {
         atCheck: () => shoot(client, "intake-v2-review-check"),
       });
-      await act(client, "SUBMIT", { badge: "Received" });
+      await act(client, "SUBMIT", { badge: "Sent to PCDC" });
       // The same reference, on the other engine, with nothing copied by hand.
       await waitFor(
         staff,
@@ -918,7 +970,8 @@ async function runPermutation(t, roles) {
         // …and the client window is not frozen: the next office step arrives.
         // The office opens it from its own queue — an intake row, and a case
         // at `received` is claimable by nobody, so this row's way in is the
-        // only control on any office screen that reaches it.
+        // only control on any office screen that reaches it. Opening its page
+        // as an admin is what starts screening.
         await choosePersona(staff, sam);
         await waitForText(staff, OFFICE_BOARD_HEADING, RENDER_MS);
         const arrived = staff
@@ -931,14 +984,85 @@ async function runPermutation(t, roles) {
           0,
           "the way in to a new application offers a workflow action of its own",
         );
+        assert.equal(
+          (await arrived.locator(".queue-needed").innerText()).trim(),
+          "New application: open it to start screening.",
+        );
+        // The queue lists it; listing it opens nothing.
+        assert.equal(
+          (await caseById(fixture, classCase.id)).stage,
+          "received",
+          "the Follow-ups queue started screening before anyone opened the case",
+        );
         await openCaseByReference(staff, classReference);
-        await waitForText(staff, "Simulated intake checks", RENDER_MS);
+        // Sam's open starts screening, quietly: the badge moves in this window
+        // and the client's, and the client's history says what happened.
+        await waitForBadge(staff, "Screening in progress");
+        await waitForBadge(client, "Being reviewed");
+        const screening = await caseById(fixture, classCase.id);
+        assert.equal(screening.stage, "screening");
+        assert.equal(await eventCount(fixture, classCase.id, "START_SCREENING"), 1);
+        await waitForHistoryLine(client, "PCDC started reviewing your application. We may call you.");
+
+        // The same case in a second admin window: it is already at screening,
+        // so this open sends nothing, and nothing in it reports a problem.
+        const adminContext = await staffEngine.browser.newContext({ viewport: DESKTOP, locale: "en-US" });
+        try {
+          const second = await openTab(adminContext, fixture.appOrigin);
+          await loginTestUser({
+            page: second.page,
+            actor: presenter,
+            fixture,
+            heading: WORK_BOARD_HEADING,
+          });
+          await watchAlerts(second.page);
+          await choosePersona(second.page, sam);
+          await waitForText(second.page, OFFICE_BOARD_HEADING, RENDER_MS);
+          await openCaseByReference(second.page, classReference);
+          await waitForBadge(second.page, "Screening in progress");
+          await second.page
+            .locator("#field-intake-interview")
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+          await waitForQuiet(second.page);
+          assert.equal(
+            await second.page.locator(".problem-banner").count(),
+            0,
+            "the second admin window shows a problem banner",
+          );
+          assert.equal(
+            await second.page.locator("#dialog-error").count(),
+            0,
+            "the second admin window shows a dialog error",
+          );
+          const secondSaid = (await readAlerts(second.page)) ?? [];
+          assert.deepEqual(
+            secondSaid.filter((line) => REFUSAL_NOTICE.test(line)),
+            [],
+            `the second admin window was refused: ${JSON.stringify(secondSaid)}`,
+          );
+          assert.equal(
+            await eventCount(fixture, classCase.id, "START_SCREENING"),
+            1,
+            "the second admin window started screening again",
+          );
+          assert.equal((await caseById(fixture, classCase.id)).revision, screening.revision);
+          assertConsoleQuiet(second, { name: "second admin window" });
+          evidence.windowIsolation.secondAdminWindow =
+            "opened the case at screening with no banner, no dialog error and no second start";
+        } finally {
+          await adminContext.close();
+        }
+
+        await waitForQuiet(staff);
+        await staff
+          .locator("#field-intake-interview")
+          .waitFor({ state: "visible", timeout: RENDER_MS });
         for (const check of ["interview", "identity", "documents", "consent"])
           await tickBox(staff, `field-intake-${check}`);
         await actForm(staff, "VERIFY_INTAKE", {}, {
           detail: { label: "Intake checks", value: "Recorded" },
         });
-        await waitForBadge(client, "Waiting for preparation");
+        await waitForBadge(client, "Waiting for a volunteer");
         const settled = await readClientPlace(client, applicantA.userId);
         assert.deepEqual(
           settled.stored,
@@ -1006,7 +1130,7 @@ async function runPermutation(t, roles) {
       await act(staff, "CLAIM_PREPARATION", {
         detail: { label: "Preparer", value: "Alex" },
       });
-      await waitForBadge(client, "In preparation");
+      await waitForBadge(client, "Being prepared");
 
       // ---- After the claim: the phone, the best time, the draft --------
       await openCaseTab(staff, "intake");
@@ -1322,9 +1446,9 @@ async function runPermutation(t, roles) {
       );
     });
 
-    await phase("Sam records the call and resolves the task; Alex stays the preparer", async () => {
+    await phase("Sam logs a contact on the task and resolves it; Alex stays the preparer", async () => {
       await choosePersona(staff, sam);
-      // The attempt goes through the queue's Log a call drawer; the resolution
+      // The contact goes through the queue's Log contact drawer; the resolution
       // below goes through the case page's Follow-up tab, so both stay covered.
       await openBoard(staff, OFFICE_BOARD_HEADING);
       const callRow = staff
@@ -1333,18 +1457,24 @@ async function runPermutation(t, roles) {
         .first();
       await callRow.waitFor({ state: "visible", timeout: RENDER_MS });
       await waitForQuiet(staff);
+      assert.equal(
+        (await callRow.locator('[data-action="open-log-call"]').innerText()).trim(),
+        "Log contact",
+        "the queue row's button is not named Log contact",
+      );
       await callRow.locator('[data-action="open-log-call"]').click({ timeout: CLICK_MS });
       const drawer = staff.locator(".modal.office-drawer");
       await drawer.waitFor({ state: "visible", timeout: ARRIVAL_MS });
-      const contactForm = drawer
-        .locator('form:has(button[type="submit"][data-case-action="RECORD_CONTACT"])')
-        .first();
+      // The task's own Log contact form: the one shared form, linked to the task.
+      const contactForm = drawer.locator("form.contact-form[data-followup-id]").first();
       await contactForm.waitFor({ state: "visible", timeout: RENDER_MS });
+      const taskId = await contactForm.getAttribute("data-followup-id");
+      const taskScope = `contact-task-${taskId}`;
 
       // Half a note, and a change from elsewhere that rebuilds the page but not
       // the drawer: the keyboard, the text and the caret all have to survive.
       await waitForQuiet(staff);
-      const noteField = await fieldByLabel(contactForm, "Note for the office", "RECORD_CONTACT");
+      const noteField = await fieldByLabel(contactForm, "Note", "Log contact");
       await noteField.click({ timeout: CLICK_MS });
       await noteField.pressSequentially("Reached the client", { timeout: CLICK_MS });
       const typed = await noteField.evaluate((field) => {
@@ -1385,45 +1515,76 @@ async function runPermutation(t, roles) {
       );
       evidence.regressions.drawerCaret = { typed, kept };
 
+      // Phone (already chosen), No answer, to request documents, with the
+      // client, and the note.
       const attempt = record(
-        "RECORD_CONTACT",
-        await submitCaseFormUntil(
-          staff,
-          "RECORD_CONTACT",
-          { "What happened": "reached", "Note for the office": CONTACT_NOTE },
-          {
-            ready: (note) =>
-              [...document.querySelectorAll(".modal.office-drawer .attempt-list li")].some(
-                (entry) => entry.textContent.includes(note),
-              ),
-            arg: CONTACT_NOTE,
-            what: "the recorded call in the drawer's list of calls",
-            safeToRepeat: await unmovedSince(),
+        "Log contact (office task)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            await chooseSeg(contactForm, taskScope, "outcomeVoice", "no_answer");
+            await chooseSeg(contactForm, taskScope, "purpose", "request_documents");
+            await chooseSeg(contactForm, taskScope, "withWhom", "client");
+            await noteField.fill(CONTACT_NOTE, { timeout: CLICK_MS });
+            await staff.locator(`[id="field-${taskScope}-submit"]`).click({ timeout: CLICK_MS });
           },
-        ),
+          ready: (note) =>
+            [...document.querySelectorAll(".modal.office-drawer .contact-task-list li")].some(
+              (entry) => entry.textContent.includes(note),
+            ),
+          arg: CONTACT_NOTE,
+          what: "the logged contact under the drawer's Contacts so far",
+          safeToRepeat: await contactLogUnmoved(classCase.id),
+        }),
       );
-      // Recording an attempt keeps the drawer open, and the keyboard goes back
-      // to the very button that was pressed — not merely somewhere in the
-      // drawer: before the fix each re-render moved it to the first dropdown.
+      const taskLine = await staff
+        .locator(".modal.office-drawer .contact-task-list li")
+        .filter({ hasText: CONTACT_NOTE })
+        .first()
+        .innerText();
+      assert.match(taskLine, CONTACT_LINE, "the task's contact line does not start with its time");
+      assert.ok(
+        taskLine.includes(", phone — Request documents — No answer. Note: "),
+        `the task's contact line reads ${JSON.stringify(taskLine)}`,
+      );
+      assert.deepEqual(
+        await one(
+          fixture,
+          "select direction,method,purpose,outcome,with_whom,note from public.contact_log where case_id=$1 and followup_id=$2",
+          [classCase.id, taskId],
+        ),
+        {
+          direction: "outgoing",
+          method: "phone",
+          purpose: "request_documents",
+          outcome: "no_answer",
+          with_whom: "client",
+          note: CONTACT_NOTE,
+        },
+        "the drawer's contact was not stored as logged, linked to its task",
+      );
+      // Logging a contact keeps the drawer open, and the keyboard goes back to
+      // the very button that was pressed — not merely somewhere in the drawer:
+      // before the fix each re-render moved it to the first control.
       await waitForQuiet(staff);
       const afterAttempt = await staff.evaluate(() => {
         const active = document.activeElement;
         return {
-          caseAction: active?.dataset?.caseAction ?? null,
+          id: active?.id ?? null,
           inDrawer: Boolean(active?.closest?.(".modal.office-drawer")),
         };
       });
       assert.deepEqual(
         afterAttempt,
-        { caseAction: "RECORD_CONTACT", inDrawer: true },
-        "the keyboard left the Record this attempt button when the attempt landed",
+        { id: `field-${taskScope}-submit`, inDrawer: true },
+        "the keyboard left the Log contact button when the contact landed",
       );
       // Escape closes the drawer and gives the keyboard back to this row's
-      // Log a call button.
+      // Log contact button.
       await staff.keyboard.press("Escape");
       await waitFor(
         staff,
-        "the Log a call drawer to close",
+        "the Log contact drawer to close",
         () => document.querySelector(".modal") === null,
         undefined,
         RENDER_MS,
@@ -1436,7 +1597,7 @@ async function runPermutation(t, roles) {
           classCase.id,
         ),
         true,
-        "Escape did not give the keyboard back to the row's Log a call button",
+        "Escape did not give the keyboard back to the row's Log contact button",
       );
       evidence.regressions.logCallDrawer = { attempt, afterAttempt, escape: "back on the row" };
 
@@ -1592,8 +1753,24 @@ async function runPermutation(t, roles) {
       await openCaseByReference(staff, classReference);
       await openCaseTab(staff, "followup");
       await waitForText(staff, "Follow-up with the client", RENDER_MS);
-      await waitForText(staff, CONTACT_NOTE, RENDER_MS);
-      // Recording a call never resolves the task.
+      // The same contact is under the task's Contacts so far here too, and the
+      // open task holds the same Log contact form.
+      await waitFor(
+        staff,
+        "the drawer's contact under the task's Contacts so far on the Follow-up tab",
+        (note) =>
+          [...document.querySelectorAll("#case-panel-followup .contact-task-list li")].some((entry) =>
+            entry.textContent.includes(note),
+          ),
+        CONTACT_NOTE,
+        RENDER_MS,
+      );
+      assert.equal(
+        await staff.locator(`#case-panel-followup form.contact-form[data-followup-id="${taskId}"]`).count(),
+        1,
+        "the open task on the Follow-up tab has no Log contact form",
+      );
+      // Logging a contact never resolves the task.
       await waitForBadge(staff, "Open with the office");
       await shoot(staff, "office-case-followup");
       await actForm(
@@ -1606,6 +1783,416 @@ async function runPermutation(t, roles) {
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.preparer_id, alex, "the office's work moved the preparer");
       assert.equal(row.stage, "preparing");
+      // Resolving logs nothing, and a resolved task takes no more contacts.
+      assert.equal(
+        Number(
+          (
+            await one(fixture, "select count(*)::int as n from public.contact_log where case_id=$1", [
+              classCase.id,
+            ])
+          ).n,
+        ),
+        1,
+        "resolving the task logged a contact",
+      );
+      await waitFor(
+        staff,
+        "the resolved task's Log contact form to go",
+        (id) => !document.querySelector(`form.contact-form[data-followup-id="${id}"]`),
+        taskId,
+        RENDER_MS,
+      );
+    });
+
+    await phase("the contact log: two windows, a text and its edit, a correction, Copy and Copy all", async () => {
+      // Two presenter windows in one new context, as in "two presenter windows
+      // in one browser": Alex in the first, Sam in the second. Chrome grants
+      // this context the clipboard and the story reads it back. Playwright's
+      // Firefox has no clipboard permission to grant, so in both engines the
+      // page's own writeText is wrapped to note what it wrote — only once the
+      // real write has resolved.
+      const context = await staffEngine.browser.newContext({ viewport: DESKTOP, locale: "en-US" });
+      const realClipboard = roles.staff === "chrome";
+      try {
+        if (realClipboard)
+          await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+            origin: fixture.appOrigin,
+          });
+        await context.addInitScript(() => {
+          const clipboard = navigator.clipboard;
+          if (!clipboard?.writeText) return;
+          const write = clipboard.writeText.bind(clipboard);
+          clipboard.writeText = async (text) => {
+            await write(text);
+            (window.__copied ??= []).push(String(text));
+          };
+        });
+        const alexWin = await openTab(context, fixture.appOrigin);
+        await loginTestUser({ page: alexWin.page, actor: presenter, fixture, heading: WORK_BOARD_HEADING });
+        const samWin = await openTab(context, fixture.appOrigin);
+        await waitForText(samWin.page, WORK_BOARD_HEADING, ARRIVAL_MS);
+        const win1 = alexWin.page;
+        const win2 = samWin.page;
+        await watchAlerts(win1);
+        await watchAlerts(win2);
+        const NEW = "contact-new";
+        const lineOf = (page, id) => page.locator(`[id="contact-${id}-line"]`).textContent();
+        const entryId = async (note) =>
+          (
+            await one(fixture, "select id from public.contact_log where case_id=$1 and note=$2", [
+              classCase.id,
+              note,
+            ])
+          )?.id ?? null;
+        const toastSeen = (page, text) =>
+          waitFor(
+            page,
+            `the toast ${JSON.stringify(text)}`,
+            (wanted) => (window.__vitallyAlerts ?? []).some((line) => line.startsWith("toast: ") && line.includes(wanted)),
+            text,
+            RENDER_MS,
+          );
+        const outcomeGroups = (page, scope) =>
+          page.evaluate(
+            (submitId) =>
+              Object.fromEntries(
+                [...(document.getElementById(submitId)?.form?.querySelectorAll("[data-outcome-group]") ?? [])].map(
+                  (set) => [set.dataset.outcomeGroup, { hidden: set.hidden, disabled: set.disabled }],
+                ),
+              ),
+            `field-${scope}-submit`,
+          );
+        // Log one contact from the Contacts tab's form: its choices, a contact
+        // time some hours back (so every entry has its own time), and a note
+        // the new line is then found by.
+        const logContact = async (page, { choices, hoursAgo, note, what }) => {
+          const timeField = page.locator(`[id="field-${NEW}-contactedAt"]`);
+          await timeField.waitFor({ state: "visible", timeout: RENDER_MS });
+          const contactedAt = hoursBefore(await timeField.inputValue(), hoursAgo);
+          return record(
+            what,
+            await pressUntilEffect(page, {
+              press: async () => {
+                await waitForQuiet(page);
+                for (const [name, key] of choices) await chooseSeg(page, NEW, name, key);
+                await timeField.fill(contactedAt, { timeout: CLICK_MS });
+                await page.locator(`[id="field-${NEW}-note"]`).fill(note, { timeout: CLICK_MS });
+                await page.locator(`[id="field-${NEW}-submit"]`).click({ timeout: CLICK_MS });
+              },
+              ready: (wanted) =>
+                [...document.querySelectorAll("#case-panel-contacts .contact-entry .contact-line")].some((line) =>
+                  line.textContent.includes(wanted),
+                ),
+              arg: note,
+              what: `${what} in the Contacts tab`,
+              safeToRepeat: await contactLogUnmoved(classCase.id),
+            }),
+          );
+        };
+        // Save an open edit form, after `change` has changed it; done when the
+        // entry's line has `expected` and its form has closed.
+        const saveEdit = async (page, id, change, expected, what) =>
+          record(
+            what,
+            await pressUntilEffect(page, {
+              press: async () => {
+                await waitForQuiet(page);
+                await change();
+                await page.locator(`[id="field-contact-edit-${id}-submit"]`).click({ timeout: CLICK_MS });
+              },
+              ready: ([entry, wanted]) =>
+                (document.getElementById(`contact-${entry}-line`)?.textContent ?? "").includes(wanted) &&
+                !document.querySelector(`form.contact-form[data-contact-id="${entry}"]`),
+              arg: [id, expected],
+              what: `${what}: the entry reading ${JSON.stringify(expected)}`,
+              safeToRepeat: await contactLogUnmoved(classCase.id),
+            }),
+          );
+        const openEdit = async (page, id) => {
+          await clickAction(page, "toggle-contact-edit", { attributes: `[data-contact-id="${id}"]` });
+          await page
+            .locator(`form.contact-form[data-contact-id="${id}"]`)
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+        };
+
+        // Both windows on the class case's Contacts tab; a persona switch
+        // keeps the case and goes back to its Overview.
+        await choosePersona(win1, alex);
+        await openCaseByReference(win1, classReference);
+        await openCaseTab(win1, "contacts");
+        await choosePersona(win2, alex);
+        await openCaseByReference(win2, classReference);
+        await choosePersona(win2, sam);
+        await waitForCaseWorkspace(win2, classReference);
+        await openCaseTab(win2, "contacts");
+        // The office's drawer contact is here too, marked with its task.
+        const taskEntry = win1.locator("#case-panel-contacts .contact-entry").filter({ hasText: CONTACT_NOTE });
+        await taskEntry.first().waitFor({ state: "visible", timeout: RENDER_MS });
+        assert.ok(
+          (await taskEntry.first().innerText()).includes("For the follow-up: "),
+          "the office task's contact is not marked with its task in the Contacts tab",
+        );
+
+        // Alex has half a note typed when Sam logs a contact on the same case
+        // in the other window: Alex's window shows it without a reload and
+        // keeps the half note.
+        await waitForQuiet(win1);
+        const alexNote = win1.locator(`[id="field-${NEW}-note"]`);
+        await alexNote.click({ timeout: CLICK_MS });
+        await alexNote.pressSequentially(HALF_CONTACT_NOTE, { timeout: CLICK_MS });
+        await win1.evaluate(() => {
+          window.__sameDocument = true;
+        });
+        const samLogged = await logContact(win2, {
+          choices: [
+            ["outcomeVoice", "reached"],
+            ["purpose", "ask_question"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 3,
+          note: SAM_CONTACT_NOTE,
+          what: "Sam's phone call",
+        });
+        await waitFor(
+          win1,
+          "Sam's contact in Alex's Contacts tab",
+          (wanted) =>
+            [...document.querySelectorAll("#case-panel-contacts .contact-entry .contact-line")].some((line) =>
+              line.textContent.includes(wanted),
+            ),
+          SAM_CONTACT_NOTE,
+          ARRIVAL_MS,
+        );
+        await waitForQuiet(win1);
+        const alexKept = await win1.evaluate(
+          (id) => ({
+            sameDocument: window.__sameDocument === true,
+            value: document.getElementById(id)?.value ?? null,
+            focused: document.activeElement?.id === id,
+          }),
+          `field-${NEW}-note`,
+        );
+        assert.equal(alexKept.sameDocument, true, "Alex's window reloaded to show Sam's contact");
+        assert.equal(alexKept.value, HALF_CONTACT_NOTE, "Sam's contact took Alex's half-typed note");
+        const samId = await entryId(SAM_CONTACT_NOTE);
+        assert.ok(samId, "Sam's contact is not in the log");
+
+        // Alex texts the client. Phone → No answer is chosen first, then Text:
+        // the voice outcomes are hidden and disabled, so the entry is Sent.
+        await waitForQuiet(win1);
+        const revisionBefore = Number((await caseById(fixture, classCase.id)).revision);
+        await chooseSeg(win1, NEW, "outcomeVoice", "no_answer");
+        await chooseSeg(win1, NEW, "method", "text");
+        assert.deepEqual(
+          await outcomeGroups(win1, NEW),
+          { voice: { hidden: true, disabled: true }, written: { hidden: false, disabled: false } },
+          "Text did not swap the voice outcomes for the written ones",
+        );
+        const alexLogged = await logContact(win1, {
+          choices: [
+            ["method", "text"],
+            ["outcomeWritten", "sent"],
+            ["purpose", "request_documents"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 2,
+          note: ALEX_TEXT_NOTE,
+          what: "Alex's text",
+        });
+        const alexId = await entryId(ALEX_TEXT_NOTE);
+        assert.ok(alexId, "Alex's text is not in the log");
+        const sentLine = await lineOf(win1, alexId);
+        assert.match(sentLine, CONTACT_LINE);
+        assert.ok(
+          sentLine.includes("— Alex → client") &&
+            sentLine.endsWith(`, text — Request documents — Sent. Note: ${ALEX_TEXT_NOTE}`),
+          `Alex's text reads ${JSON.stringify(sentLine)}`,
+        );
+        assert.deepEqual(
+          await one(fixture, "select method,outcome,revision::int from public.contact_log where id=$1", [alexId]),
+          { method: "text", outcome: "sent", revision: 1 },
+          "the hidden No answer was sent with the text",
+        );
+        assert.equal(
+          Number((await caseById(fixture, classCase.id)).revision),
+          revisionBefore,
+          "logging a contact moved the case's revision",
+        );
+
+        // The client replies: Alex edits his entry to Client replied.
+        await openEdit(win1, alexId);
+        const replied = await saveEdit(
+          win1,
+          alexId,
+          () => chooseSeg(win1, `contact-edit-${alexId}`, "outcomeWritten", "replied"),
+          "— Client replied.",
+          "Alex's edit",
+        );
+        const editedEntry = await win1.locator(`[id="contact-${alexId}"]`).innerText();
+        assert.ok(/\bedited \d/.test(editedEntry), `the edited entry does not say edited: ${editedEntry}`);
+        assert.equal(
+          (await win1.locator(`[id="contact-${alexId}"] .contact-versions summary`).innerText()).trim(),
+          "Earlier versions (1)",
+        );
+        assert.ok(
+          (await win1.locator(`[id="contact-${alexId}"] .contact-versions li`).first().textContent()).includes(
+            "— Sent.",
+          ),
+          "the earlier version does not keep Sent",
+        );
+        // Sam's window shows the edit without a reload.
+        await waitFor(
+          win2,
+          "Alex's edit in Sam's window",
+          (id) => (document.getElementById(`contact-${id}-line`)?.textContent ?? "").includes("— Client replied."),
+          alexId,
+          ARRIVAL_MS,
+        );
+
+        // Alex opens Edit again and the window becomes Morgan's: Morgan neither
+        // sees Alex's open form nor gets an Edit on Alex's entry.
+        await openEdit(win1, alexId);
+        await choosePersona(win1, morgan);
+        await waitForCaseWorkspace(win1, classReference);
+        await openCaseTab(win1, "contacts");
+        await win1.locator(`[id="contact-${alexId}"]`).waitFor({ state: "visible", timeout: RENDER_MS });
+        assert.equal(
+          await win1.locator(`form.contact-form[data-contact-id="${alexId}"]`).count(),
+          0,
+          "Morgan sees the edit form Alex left open",
+        );
+        assert.equal(
+          await win1.locator(`[id="contact-${alexId}"] [data-action="toggle-contact-edit"]`).count(),
+          0,
+          "Morgan is offered Edit on Alex's entry",
+        );
+
+        // Sam, an admin, corrects Alex's entry; it still says Alex logged it,
+        // and Morgan's window shows the correction.
+        await openEdit(win2, alexId);
+        const corrected = await saveEdit(
+          win2,
+          alexId,
+          () =>
+            win2
+              .locator(`[id="field-contact-edit-${alexId}-note"]`)
+              .fill(SAM_CORRECTION_NOTE, { timeout: CLICK_MS }),
+          SAM_CORRECTION_NOTE,
+          "Sam's correction",
+        );
+        const correctedLine = await lineOf(win2, alexId);
+        assert.ok(correctedLine.includes("— Alex → client"), `the correction changed the logger: ${correctedLine}`);
+        assert.equal(
+          (await win2.locator(`[id="contact-${alexId}"] .contact-versions summary`).innerText()).trim(),
+          "Earlier versions (2)",
+        );
+        assert.deepEqual(
+          await one(
+            fixture,
+            "select logged_by_person_id::text as logger,revision::int,outcome from public.contact_log where id=$1",
+            [alexId],
+          ),
+          { logger: alex, revision: 3, outcome: "replied" },
+          "Sam's correction did not keep Alex as the logger",
+        );
+        await waitFor(
+          win1,
+          "Sam's correction in Morgan's window",
+          ([id, wanted]) => (document.getElementById(`contact-${id}-line`)?.textContent ?? "").includes(wanted),
+          [alexId, SAM_CORRECTION_NOTE],
+          ARRIVAL_MS,
+        );
+
+        // The client phones in: no outcome is offered, and the line starts
+        // with its time and then the client.
+        await waitForQuiet(win2);
+        await chooseSeg(win2, NEW, "direction", "incoming");
+        assert.deepEqual(
+          await outcomeGroups(win2, NEW),
+          { voice: { hidden: true, disabled: true }, written: { hidden: true, disabled: true } },
+          "an incoming contact offered an outcome",
+        );
+        const incoming = await logContact(win2, {
+          choices: [
+            ["direction", "incoming"],
+            ["purpose", "schedule_appointment"],
+            ["withWhom", "client"],
+          ],
+          hoursAgo: 1,
+          note: INCOMING_NOTE,
+          what: "the client's incoming call",
+        });
+        const incomingId = await entryId(INCOMING_NOTE);
+        const incomingLine = await lineOf(win2, incomingId);
+        assert.match(
+          incomingLine,
+          /^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} (AM|PM) — client\b/,
+          "the incoming line does not start with its time and then the client",
+        );
+        assert.ok(
+          incomingLine.endsWith(`, phone — Schedule an appointment. Note: ${INCOMING_NOTE}`),
+          `the incoming line reads ${JSON.stringify(incomingLine)}`,
+        );
+        assert.equal(
+          (await one(fixture, "select outcome from public.contact_log where id=$1", [incomingId])).outcome,
+          "reached",
+        );
+        await shootWithoutSidebar(win2, "staff-case-contacts");
+
+        // Copy: Sam's own entry's line, as the page shows it.
+        await clickAction(win2, "copy-contact", { attributes: `[data-contact-id="${samId}"]` });
+        await toastSeen(win2, "Copied.");
+        const copied = await win2.evaluate(() => window.__copied ?? []);
+        assert.deepEqual(copied, [await lineOf(win2, samId)], "Copy did not put the entry's line on the clipboard");
+        if (realClipboard)
+          assert.equal(await win2.evaluate(() => navigator.clipboard.readText()), copied[0]);
+
+        // Copy all: every line, oldest contact time first, one per line.
+        const ordered = (
+          await fixture.database.sql(
+            "select id from public.contact_log where case_id=$1 order by contacted_at, logged_at",
+            [classCase.id],
+          )
+        ).rows.map((entry) => entry.id);
+        assert.deepEqual(
+          ordered.slice(0, 3),
+          [samId, alexId, incomingId],
+          "the contact times did not land as set",
+        );
+        await clickAction(win2, "copy-all-contacts");
+        await toastSeen(win2, `Copied ${ordered.length} contacts.`);
+        const all = (await win2.evaluate(() => window.__copied ?? []))[1] ?? "";
+        const lines = all.split("\n");
+        const expected = [];
+        for (const id of ordered) expected.push(await lineOf(win2, id));
+        assert.deepEqual(lines, expected, "Copy all is not every line, oldest first");
+        for (const line of lines) assert.match(line, CONTACT_LINE);
+        // The system clipboard keeps the platform's line breaks (Windows reads
+        // back \r\n for the \n the page wrote), so only those are evened out.
+        if (realClipboard)
+          assert.equal(
+            (await win2.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n"),
+            all,
+          );
+
+        // The client sees none of it: no Contacts tab and none of the text.
+        assert.equal(await client.locator("#case-tab-contacts").count(), 0, "the client window has a Contacts tab");
+        const seen = await pageText(client);
+        for (const secret of [CONTACT_NOTE, SAM_CONTACT_NOTE, ALEX_TEXT_NOTE, SAM_CORRECTION_NOTE, INCOMING_NOTE])
+          assert.ok(!seen.includes(secret), `a contact note reached the client window: ${secret.slice(0, 24)}…`);
+
+        assertConsoleQuiet(alexWin, { name: "contact log window 1" });
+        assertConsoleQuiet(samWin, { name: "contact log window 2" });
+        evidence.story.contactLog = {
+          entries: ordered.length,
+          liveWindow: alexKept,
+          presses: { samLogged, alexLogged, replied, corrected, incoming },
+          clipboard: realClipboard ? "read back from the real clipboard" : "the page's own writeText, resolved",
+          copyAll: lines.length,
+        };
+      } finally {
+        await context.close();
+      }
     });
 
     await phase("the client sends the sample document for their own case", async () => {
@@ -1634,7 +2221,7 @@ async function runPermutation(t, roles) {
 
     await phase("Alex verifies the document and records preparation complete", async () => {
       await act(staff, "VERIFY_DOCUMENT", { badge: "Verified" });
-      await act(staff, "SUBMIT_REVIEW", { badge: "Waiting for review" });
+      await act(staff, "SUBMIT_REVIEW", { badge: "Pending review" });
       await waitForBadge(client, "Waiting for review");
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_ready");
@@ -1645,7 +2232,7 @@ async function runPermutation(t, roles) {
     await phase("Morgan reviews: a finding, Alex's resubmission, then approval", async () => {
       await choosePersona(staff, morgan);
       await act(staff, "CLAIM_REVIEW", { detail: { label: "Reviewer", value: "Morgan" } });
-      await waitForBadge(staff, "In review");
+      await waitForBadge(staff, "Review in progress");
       // Corrections are asked for in a dialog; its form is the payload.
       await clickAction(staff, "open-request-corrections");
       await actForm(
@@ -1654,7 +2241,7 @@ async function runPermutation(t, roles) {
         { "Corrections to send back to the preparer": FINDINGS },
         { badge: "Corrections requested" },
       );
-      await waitForBadge(client, "Corrections in progress");
+      await waitForBadge(client, "Being corrected");
       const duringCorrections = await pageText(client);
       assert.ok(
         !duringCorrections.includes(FINDINGS),
@@ -1667,12 +2254,12 @@ async function runPermutation(t, roles) {
         staff,
         "RESUBMIT_REVIEW",
         { "What you corrected in TaxSlayer": CORRECTION_NOTE },
-        { badge: "Waiting for review" },
+        { badge: "Pending review" },
       );
 
       await choosePersona(staff, morgan);
-      await act(staff, "CLAIM_REVIEW", { badge: "In review" });
-      await act(staff, "APPROVE_REVIEW", { badge: "Review complete" });
+      await act(staff, "CLAIM_REVIEW", { badge: "Review in progress" });
+      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" });
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_approved");
       assert.equal(row.reviewer_id, morgan);
@@ -1692,15 +2279,23 @@ async function runPermutation(t, roles) {
         { "What happened": "reached", "Note for the office": REVIEW_CONTACT_NOTE },
         { text: "The client conversation for this review is recorded." },
       );
-      await waitForBadge(client, "Review complete");
+      await waitForBadge(client, "Ready to sign");
       await waitForText(
         client,
-        "A volunteer will contact you soon to sign and file.",
+        "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.",
         RENDER_MS,
       );
       await waitForText(client, "A volunteer spoke with you about the next service step.");
       const seen = await pageText(client);
-      for (const secret of [FINDINGS, CORRECTION_NOTE, REVIEW_CONTACT_NOTE, CONTACT_NOTE])
+      for (const secret of [
+        FINDINGS,
+        CORRECTION_NOTE,
+        REVIEW_CONTACT_NOTE,
+        CONTACT_NOTE,
+        SAM_CONTACT_NOTE,
+        SAM_CORRECTION_NOTE,
+        INCOMING_NOTE,
+      ])
         assert.ok(
           !seen.includes(secret),
           `internal staff text reached the client window: ${secret.slice(0, 24)}…`,
@@ -1750,11 +2345,242 @@ async function runPermutation(t, roles) {
         }),
       );
       await waitForCaseWorkspace(staff, short.reference);
-      await act(staff, "APPROVE_REVIEW", { badge: "Review complete" }, { caseId: short.id });
+      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" }, { caseId: short.id });
       const row = await caseById(fixture, short.id);
       assert.equal(row.stage, "review_approved");
       assert.equal(await eventCount(fixture, short.id, "REQUEST_CORRECTIONS"), 0);
       evidence.story.shortPath = "claimed and approved with no correction round";
+    });
+
+    await phase("the office records signing and e-filing, and the client sees each step", async () => {
+      // The class case's reviewer has recorded the call, so the office may
+      // record the signature. The review_approved sample's call is still
+      // pending, so its row explains instead of offering the mark.
+      const approved = await caseById(fixture, classCase.id);
+      assert.equal(approved.stage, "review_approved");
+      assert.equal(await eventCount(fixture, classCase.id, "RECORD_REVIEW_CONTACT"), 1);
+      const callPending = samples.find((row) => row.fixture_key === "review_approved");
+      assert.ok(callPending, "the review_approved sample is missing");
+      // The dialogs name the client as the case page does: first and last name.
+      const clientName = [approved.answers?.tp_first_name, approved.answers?.tp_last_name]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(" ");
+      assert.ok(clientName, "the class case has no client name for the dialogs to show");
+      const queueRow = (kind, reference) =>
+        staff
+          .locator(`tr.queue-row[data-kind="${kind}"]`)
+          .filter({ has: staff.locator("button.board-reference", { hasText: reference }) })
+          .first();
+      const dialogTitled = (title) =>
+        waitFor(
+          staff,
+          `the dialog ${JSON.stringify(title)}`,
+          (wanted) => document.querySelector(".modal #modal-title")?.textContent.trim() === wanted,
+          title,
+          ARRIVAL_MS,
+        );
+      const dialogText = async () =>
+        (await staff.locator(".modal").innerText()).replace(/\s+/g, " ").trim();
+      // Tick the dialog's required box (again, if a rebuild emptied it) and
+      // press its confirm, repeating only when nothing moved on the server.
+      const confirmMark = async (type, box, ready, arg, what) =>
+        record(
+          type,
+          await pressUntilEffect(staff, {
+            press: async () => {
+              await waitForQuiet(staff);
+              if (!(await staff.locator(`#${box}`).isChecked())) await tickBox(staff, box);
+              await waitForQuiet(staff);
+              await staff
+                .locator(`.modal button[type="submit"][data-case-action="${type}"]`)
+                .click({ timeout: CLICK_MS });
+            },
+            ready,
+            arg,
+            what,
+            safeToRepeat: await unmovedSince(classCase.id),
+          }),
+        );
+      const toastSaid = (text) =>
+        waitFor(
+          staff,
+          `the toast ${JSON.stringify(text)}`,
+          (wanted) => (window.__vitallyAlerts ?? []).some((line) => line.startsWith("toast:") && line.includes(wanted)),
+          text,
+          ARRIVAL_MS,
+        );
+
+      await choosePersona(staff, sam);
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+
+      // ---- The sample whose reviewer has not called yet ------------------
+      const pendingRow = queueRow("signing", callPending.reference);
+      await pendingRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await pendingRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the reviewer's call with the client.",
+      );
+      assert.equal(
+        (await pendingRow.locator(".staff-reason").innerText()).trim(),
+        "The reviewer still needs to record the conversation with the client.",
+      );
+      assert.equal(
+        await pendingRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
+        0,
+        "Mark ready to e-file was offered before the reviewer's call",
+      );
+
+      // ---- 1–2. Mark ready to e-file, from the class case's signing row ---
+      const signingRow = queueRow("signing", classReference);
+      await waitFor(
+        staff,
+        "the class case's signing row to offer Mark ready to e-file",
+        (wanted) =>
+          [...document.querySelectorAll('tr.queue-row[data-kind="signing"]')].some(
+            (row) =>
+              row.querySelector("button.board-reference")?.textContent.trim() === wanted &&
+              Boolean(row.querySelector('[data-action="open-mark-ready-to-efile"]')),
+          ),
+        classReference,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        (await signingRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the client to sign Form 8879.",
+      );
+      const markReady = signingRow.locator('[data-action="open-mark-ready-to-efile"]');
+      assert.equal((await markReady.innerText()).trim(), "Mark ready to e-file…");
+      await waitForQuiet(staff);
+      await markReady.click({ timeout: CLICK_MS });
+      await dialogTitled("Mark ready to e-file?");
+      const readyDialog = await dialogText();
+      assert.ok(
+        readyDialog.includes(`Mark ${classReference} for ${clientName} as ready to e-file?`),
+        `the dialog does not name the client and the reference: ${readyDialog.slice(0, 200)}`,
+      );
+      // The case was read in place: still on the queue, nothing sent yet.
+      assert.equal(await staff.locator("#office-queue-title").count(), 1, "the mark left the queue");
+      assert.equal((await caseById(fixture, classCase.id)).stage, "review_approved");
+      await confirmMark(
+        "MARK_READY_TO_EFILE",
+        "field-ready-efile-confirmed",
+        (wanted) =>
+          !document.querySelector(".modal") &&
+          [...document.querySelectorAll('tr.queue-row[data-kind="efiling"]')].some(
+            (row) => row.querySelector("button.board-reference")?.textContent.trim() === wanted,
+          ),
+        classReference,
+        "the class case's row to move to E-filing",
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "ready_to_efile");
+      assert.equal(await eventCount(fixture, classCase.id, "MARK_READY_TO_EFILE"), 1);
+      await toastSaid("Marked ready to e-file. The client was told.");
+      await waitFor(
+        staff,
+        "the keyboard on the queue's title after the confirm",
+        () => document.activeElement?.id === "office-queue-title",
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(
+        (await queueRow("efiling", classReference).locator(".queue-needed").innerText()).trim(),
+        "Ready to e-file.",
+      );
+      await waitForBadge(client, "Signed");
+      await waitForText(client, "You signed Form 8879. PCDC will e-file your return next.");
+      await waitForHistoryLine(
+        client,
+        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+      );
+
+      // ---- 3. Mark e-filed, from the case page ---------------------------
+      await openCaseByReference(staff, classReference);
+      await waitForBadge(staff, "Ready to e-file");
+      await revealCaseControl(staff, '[data-action="open-mark-efiled"]');
+      await clickAction(staff, "open-mark-efiled");
+      await dialogTitled("Mark e-filed?");
+      const efiledDialog = await dialogText();
+      assert.ok(
+        efiledDialog.includes(`Mark ${classReference} for ${clientName} as e-filed?`),
+        `the dialog does not name the client and the reference: ${efiledDialog.slice(0, 200)}`,
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "ready_to_efile");
+      await confirmMark(
+        "MARK_EFILED",
+        "field-efiled-confirmed",
+        (wanted) =>
+          !document.querySelector(".modal") &&
+          [...document.querySelectorAll(".badge")].some((badge) => badge.textContent.trim() === wanted),
+        "E-filed",
+        "the case page's E-filed badge",
+      );
+      const efiled = await caseById(fixture, classCase.id);
+      assert.equal(efiled.stage, "efiled");
+      assert.equal(efiled.preparer_id, alex);
+      assert.equal(efiled.reviewer_id, morgan);
+      assert.equal(await eventCount(fixture, classCase.id, "MARK_EFILED"), 1);
+      await toastSaid("Marked e-filed. The client was told.");
+      assert.equal(
+        await staff.locator('[data-action="open-mark-efiled"], [data-action="open-mark-ready-to-efile"]').count(),
+        0,
+        "an e-filed case still offers a mark",
+      );
+
+      // ---- 4. The client's page: Filing current, E-filed, two lines ------
+      const steps = () =>
+        client.evaluate(() =>
+          [...document.querySelectorAll(".progress-steps > div")].map((step) => ({
+            status: step.className,
+            label: step.querySelector("small")?.textContent.trim() ?? null,
+          })),
+        );
+      await waitForBadge(client, "E-filed");
+      await waitFor(
+        client,
+        "the e-filed message",
+        (wanted) => document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+        "Your return was e-filed. The IRS will confirm whether it is accepted.",
+        ARRIVAL_MS,
+      );
+      assert.deepEqual(await steps(), [
+        { status: "done", label: "Intake" },
+        { status: "done", label: "Preparation" },
+        { status: "done", label: "Review" },
+        { status: "done", label: "Signing" },
+        { status: "current", label: "Filing" },
+      ]);
+      await waitForHistoryLine(
+        client,
+        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+      );
+      await waitForHistoryLine(client, "PCDC e-filed your return.");
+      await shoot(client, "progress-efiled");
+
+      // ---- 5. Once more in 简体, then back to English --------------------
+      const clientLang = (wanted) =>
+        waitFor(client, `<html lang> to be ${wanted}`, (code) => document.documentElement.lang === code, wanted, ARRIVAL_MS);
+      await waitForQuiet(client);
+      await client.locator('[data-action="set-language"][data-value="zh-Hans"]').click({ timeout: CLICK_MS });
+      await clientLang("zh-Hans");
+      await waitForBadge(client, "已电子递交");
+      assert.equal(sentence("PCDC e-filed your return.", "zh-Hans"), "PCDC 已电子递交您的报税表。");
+      await waitForHistoryLine(client, "PCDC 已电子递交您的报税表。");
+      await waitForHistoryLine(client, "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。");
+      assert.equal(
+        await client.evaluate(() => document.querySelector(".status-explanation")?.textContent.trim() ?? null),
+        "您的报税表已电子递交。国税局会确认是否接受。",
+      );
+      assert.equal(
+        await client.evaluate(() => document.querySelector(".progress-steps > div.current small")?.textContent.trim() ?? null),
+        "递交",
+      );
+      await waitForQuiet(client);
+      await client.locator('[data-action="set-language"][data-value="en"]').click({ timeout: CLICK_MS });
+      await clientLang("en");
+      await waitForBadge(client, "E-filed");
+      evidence.story.signingAndFiling =
+        "marked ready to e-file from Follow-ups and e-filed from the case page, each behind its confirmation; the client saw Signed, then E-filed, in English and 简体";
     });
 
     // -----------------------------------------------------------------------
@@ -2726,7 +3552,8 @@ async function runPermutation(t, roles) {
       await box("tp_last_name").fill("Rivera");
       await send.click({ timeout: CLICK_MS });
       await waitForCaseWorkspace(staff, assistedReference);
-      assert.equal((await caseById(fixture, assisted.id)).stage, "received");
+      // An office case is sent straight into screening.
+      assert.equal((await caseById(fixture, assisted.id)).stage, "screening");
 
       // The case pool, while the new case is still in intake with nobody
       // preparing it: its phase tab, a narrowing filter, and clearing it.
@@ -2979,7 +3806,8 @@ async function runPermutation(t, roles) {
       const kept = await caseById(fixture, classCase.id);
       assert.equal(kept.reference, classReference);
       assert.equal(kept.owner_user_id, applicantA.userId);
-      assert.equal(kept.stage, "review_approved");
+      // E-filed by the office earlier in the story; a reset leaves it there.
+      assert.equal(kept.stage, "efiled");
       // Both measurements are about what the *client* window does when the
       // change reaches it, so they wait for the sign that it has: the refused
       // save left the connection notice on screen, and the re-read that
@@ -4387,7 +5215,7 @@ async function runPermutation(t, roles) {
         await againWin.context.close();
         againWin = null;
 
-        // ---- The draft 13614-C (spec 2026-10-04 §7) ----------------------
+        // ---- The client's drafts: the Form 14446 only (hide-draft-13614c-from-clients)
         // Chrome only: Firefox may download a blob PDF instead of opening it
         // in the tab, which leaves nothing for a check to read.
         let draft = "not run: the client engine is Firefox, which may download the PDF instead of opening it";
@@ -4417,12 +5245,13 @@ async function runPermutation(t, roles) {
             Object.fromEntries(
               Object.entries(fontHits).map(([url, n]) => [url.split("/").at(-1), n - before[url]]),
             );
-          const openDraft = async (form) => {
+          // Presses a Form 14446 button and returns its tab, still open, for
+          // the check to read.
+          const press14446 = async (form) => {
             await waitForQuiet(page);
             const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
-            // The 13614-C's buttons: the Form 14446's carry data-draft.
             await page
-              .locator(`[data-action="view-draft"]:not([data-draft])[data-form="${form}"]`)
+              .locator(`[data-action="view-draft"][data-draft="14446"][data-form="${form}"]`)
               .click({ timeout: CLICK_MS });
             return await opened;
           };
@@ -4459,14 +5288,25 @@ async function runPermutation(t, roles) {
           };
 
           await jump("review.summary");
-          // English, every answer in Latin letters: no font is fetched.
-          let before = { ...fontHits };
-          let popup = await openDraft("en");
-          draft.en = await readDraft(popup);
-          await popup.close();
-          assert.equal(draft.en.head, "%PDF-");
-          assert.ok(draft.en.size > 100 * 1024, `the English draft is only ${draft.en.size} bytes`);
-          assert.deepEqual(Object.values(hitsSince(before)), [0, 0, 0], "an English draft fetched a font");
+          // A client is offered no draft 13614-C: every draft button on 9.2
+          // is the Form 14446's, and a 13614-C button forged into the page
+          // opens no tab, offers no link and raises no banner.
+          await waitForQuiet(page);
+          assert.equal(await page.locator('[data-action="view-draft"]:not([data-draft="14446"])').count(), 0, "9.2 offers a draft 13614-C");
+          await page.evaluate(() => {
+            const forged = document.createElement("button");
+            forged.type = "button"; forged.id = "forged-13614c";
+            forged.dataset.action = "view-draft"; forged.dataset.form = "en";
+            document.querySelector(".summary-tools").append(forged);
+          });
+          const forgedPopup = page.waitForEvent("popup", { timeout: 1500 }).catch(() => null);
+          await page.locator("#forged-13614c").click({ timeout: CLICK_MS });
+          assert.equal(await forgedPopup, null, "a forged 13614-C button opened a tab on a client page");
+          assert.equal(await page.locator("#draft-ready a, .problem-banner").count(), 0);
+          draft.forged = "a forged 13614-C button opened nothing";
+
+          let before;
+          let popup;
 
           // The draft Form 14446 (add-form-14446-consent): PCDC's three-page
           // form, its page 3 filled from the answers. The flattened page is
@@ -4506,26 +5346,6 @@ async function runPermutation(t, roles) {
           await box("tp_first_name").fill("美");
           await jump("review.summary");
           assert.equal(await answer("tp_first_name"), "美");
-          for (const [form, font] of [
-            ["zh-s", "NotoSansSC_400Regular.ttf"],
-            ["zh-t", "NotoSansTC_400Regular.ttf"],
-          ]) {
-            before = { ...fontHits };
-            popup = await openDraft(form);
-            draft[form] = await readDraft(popup);
-            await popup.close();
-            assert.equal(draft[form].head, "%PDF-");
-            assert.ok(draft[form].size > 100 * 1024, `the ${form} draft is only ${draft[form].size} bytes`);
-            assert.deepEqual(
-              hitsSince(before),
-              {
-                "NotoSansSC_400Regular.ttf": font === "NotoSansSC_400Regular.ttf" ? 1 : 0,
-                "NotoSansTC_400Regular.ttf": font === "NotoSansTC_400Regular.ttf" ? 1 : 0,
-                "NotoSans_400Regular.ttf": 1,
-              },
-              `the ${form} draft fetched the wrong fonts`,
-            );
-          }
 
           // The 繁體 draft 14446 with the Chinese first name: the name is
           // drawn in the downloaded 繁體 font (so that font is fetched, which
@@ -4543,10 +5363,36 @@ async function runPermutation(t, roles) {
           );
           draft.form14446["zh-t"] = { size: zh14446.size, pages: zh14446.pages, page3: "signature found; the Chinese name drawn in the 繁體 font" };
 
-          // A font whose bytes are not the pinned ones is refused.
+          // A simplified first name the 繁體 font lacks (陈, fictional; issue
+          // #81): the 繁體 14446 still builds, printed as typed, and only now
+          // is the Simplified font fetched, after TC and Latin. Then back to 美.
+          await jump("about.you");
+          await waitForQuiet(page);
+          await box("tp_first_name").fill("陈");
+          await jump("review.summary");
+          assert.equal(await answer("tp_first_name"), "陈");
+          before = { ...fontHits };
+          const simplified14446 = await open14446("zh-t");
+          assert.equal(simplified14446.head, "%PDF-");
+          assert.equal(simplified14446.pages, 3, "the 繁體 draft 14446 with 陈 is not PCDC's three pages");
+          assert.ok(simplified14446.strings.includes(signedName), `page 3 of the 繁體 14446 with 陈 does not print the signature: ${JSON.stringify(simplified14446.strings)}`);
+          assert.deepEqual(
+            hitsSince(before),
+            { "NotoSansSC_400Regular.ttf": 1, "NotoSansTC_400Regular.ttf": 1, "NotoSans_400Regular.ttf": 1 },
+            "the 繁體 draft 14446 with 陈 fetched the wrong fonts",
+          );
+          draft.form14446["zh-t simplified"] = { size: simplified14446.size, pages: simplified14446.pages, fonts: "TC, SC and Latin, each once" };
+          await jump("about.you");
+          await waitForQuiet(page);
+          await box("tp_first_name").fill("美");
+          await jump("review.summary");
+          assert.equal(await answer("tp_first_name"), "美");
+
+          // A font whose bytes are not the pinned ones is refused: the 繁體
+          // 14446, built with the Chinese name, fetches the Latin font too.
           const latin = Object.keys(DRAFT_FONT_FIXTURES).find((url) => url.endsWith("/NotoSans_400Regular.ttf"));
           wrongFont[latin] = Buffer.from("not the pinned font");
-          popup = await openDraft("zh-s");
+          popup = await press14446("zh-t");
           await tabSays(popup, DRAFT_FAILED);
           await bannerSays(DRAFT_FONT_UNCHECKED);
           assert.equal(await toastShows(DRAFT_FONT_UNCHECKED), false, "the font failure was toasted");
@@ -4556,12 +5402,13 @@ async function runPermutation(t, roles) {
           delete wrongFont[latin];
           draft.fontMismatch = DRAFT_FONT_UNCHECKED;
 
-          // The form itself refused: the tab and the problem banner say so,
-          // and the banner's Try again builds the same draft again. Chrome logs
-          // the refused request as one console error; that one line is caught
-          // here and excused by its place, and nothing else this check logs is
-          // (the retry logs nothing).
-          const formUrl = `${fixture.appOrigin}/src/forms/f13614c-2025.pdf`;
+          // The 14446's form itself refused: the tab and the problem banner
+          // say so, and the banner's Try again builds the same 14446 again.
+          // The English 14446 fetches no font (asserted above), so only the
+          // form can fail it. Chrome logs the refused request as one console
+          // error; that one line is caught here and excused by its place, and
+          // nothing else this check logs is (the retry logs nothing).
+          const formUrl = `${fixture.appOrigin}/src/forms/f14446-pcdc-en.pdf`;
           const refusedForm = /^Failed to load resource: the server responded with a status of 500\b/;
           await page.route(formUrl, (route) => route.fulfill({ status: 500, body: "refused" }));
           const from = v2Win.errors.length;
@@ -4569,8 +5416,11 @@ async function runPermutation(t, roles) {
             predicate: (message) => message.type() === "error" && refusedForm.test(message.text()),
             timeout: ARRIVAL_MS,
           });
-          popup = await openDraft("en");
+          popup = await press14446("en");
           await tabSays(popup, DRAFT_FAILED);
+          // Read on the failed tab, not while it is prepared (that would race
+          // the build).
+          assert.equal(await popup.title(), "Draft Form 14446");
           await bannerSays(DRAFT_NOT_MADE);
           assert.equal(await toastShows(DRAFT_NOT_MADE), false, "the draft failure was toasted");
           await logged;
@@ -4582,7 +5432,7 @@ async function runPermutation(t, roles) {
           await pressBanner("retry-action");
           const again = await retried;
           if (again) {
-            assert.equal((await readDraft(again)).head, "%PDF-", "Try again did not rebuild the draft");
+            assert.equal((await readDraft(again)).head, "%PDF-", "Try again did not rebuild the 14446");
             await again.close();
           } else {
             await page.locator("#draft-ready-link").waitFor({ state: "visible", timeout: ARRIVAL_MS });
@@ -4595,13 +5445,13 @@ async function runPermutation(t, roles) {
           excused.add(from);
           draft.failure = DRAFT_FAILED;
 
-          // A blocked tab: the page offers the finished draft as a link.
+          // A blocked tab: the page offers the finished 14446 as a link.
           await page.evaluate(() => {
             window.__vitallyOpen = window.open;
             window.open = () => null;
           });
           await waitForQuiet(page);
-          await page.locator('[data-action="view-draft"][data-form="zh-s"]').click({ timeout: CLICK_MS });
+          await page.locator('[data-action="view-draft"][data-draft="14446"][data-form="zh-t"]').click({ timeout: CLICK_MS });
           await waitFor(
             page,
             "the draft link",
@@ -4618,7 +5468,7 @@ async function runPermutation(t, roles) {
           });
           assert.deepEqual(draft.blocked, {
             text: "Your draft is ready: open it",
-            download: `13614-C-draft-${reference}-zh-s.pdf`,
+            download: `14446-draft-${reference}-zh-t.pdf`,
             blob: true,
           });
           // The link outlives a redraw from elsewhere, and so does the
@@ -4870,17 +5720,62 @@ async function runPermutation(t, roles) {
         assert.equal(await textOf("#alerts-title"), say("review.alerts_title", {}, "zh-Hans"));
         await shootQuiet("zh-review");
 
-        // The summary holds the Change links and the draft buttons: the
-        // screen's own form comes first.
+        // The summary holds the Change links and the draft buttons, which are
+        // the Form 14446's only: the screen's Chinese form (繁體; there is no
+        // 简体 14446) comes first.
         await railJump(page, "review.summary");
         assert.equal(
           await textOf('#intake-v2-form [data-action="change-substep"]'),
           say("summary.change", {}, "zh-Hans"),
         );
-        assert.equal(
-          await page.locator('[data-action="view-draft"]').first().getAttribute("data-form"),
-          "zh-s",
+        const firstDraft = page.locator('[data-action="view-draft"]').first();
+        assert.deepEqual(
+          { draft: await firstDraft.getAttribute("data-draft"), form: await firstDraft.getAttribute("data-form") },
+          { draft: "14446", form: "zh-t" },
+          "the 简体 summary's first draft button is not the 繁體 Form 14446",
         );
+        assert.equal(
+          await page.locator('[data-action="view-draft"]:not([data-draft="14446"])').count(),
+          0,
+          "the 简体 summary offers a draft 13614-C",
+        );
+        // Building the 繁體 14446 never loads the 繁體 map: only a 13614-C
+        // in 繁體 would. Chrome only, as every draft build in the story is;
+        // the fonts come from the packages npm installed, never the internet.
+        let hantRequestsAfter14446 = "not run: the client engine is Firefox, which may download the PDF instead of opening it";
+        if (roles.client === "chrome") {
+          const strayRequests = [];
+          await page.route("https://cdn.jsdelivr.net/**", (route) => {
+            strayRequests.push(route.request().url());
+            return route.abort();
+          });
+          for (const [url, file] of Object.entries(DRAFT_FONT_FIXTURES)) {
+            const body = await readFile(path.join(ROOT, file.path));
+            await page.route(url, (route) =>
+              route.fulfill({
+                status: 200,
+                headers: { "content-type": "font/ttf", "access-control-allow-origin": "*" },
+                body,
+              }),
+            );
+          }
+          await waitForQuiet(page);
+          const opened = page.waitForEvent("popup", { timeout: CLICK_MS });
+          await firstDraft.click({ timeout: CLICK_MS });
+          const tab = await opened;
+          await tab.waitForURL(/^blob:/, { timeout: ARRIVAL_MS });
+          const head = await tab.evaluate(async () => {
+            const bytes = new Uint8Array(await (await fetch(location.href)).arrayBuffer());
+            return String.fromCharCode(...bytes.slice(0, 5));
+          });
+          await tab.close();
+          assert.equal(head, "%PDF-", "the 繁體 Form 14446 from the 简体 summary is not a PDF");
+          assert.deepEqual(hantRequests, [], "building the 繁體 Form 14446 fetched the Traditional map");
+          assert.deepEqual(strayRequests, [], "the 繁體 Form 14446 reached for a CDN file it was not given");
+          await page.unroute("https://cdn.jsdelivr.net/**");
+          for (const url of Object.keys(DRAFT_FONT_FIXTURES)) await page.unroute(url);
+          hantRequestsAfter14446 = hantRequests.length;
+        }
 
         await continueToSubmit(page);
         await tickBox(page, "field-confirmed");
@@ -4951,6 +5846,7 @@ async function runPermutation(t, roles) {
         );
         evidence.story.chinese = {
           reference,
+          hantRequestsAfter14446,
           hantRequestsAtSwitch: 1,
           hantRequestsAfterReload: hantRequests.length,
           consoleLines: assertConsoleQuiet(zhWin, { name: "Chinese client window", allow: [] }),
@@ -5036,7 +5932,7 @@ test("no address survives the redaction every message goes through", () => {
   // And nothing else is touched: the reference, the stages and the copy this
   // file asserts on have to survive a message unchanged.
   const ordinary =
-    "VT-4UPB-2AKH Waiting for preparation · Someone else changed this case.";
+    "VT-4UPB-2AKH Pending intake / filing · Someone else changed this case.";
   assert.equal(redactAddresses(ordinary), ordinary);
   assert.equal(redactAddresses(null), null);
   assert.equal(redactAddresses(undefined), undefined);

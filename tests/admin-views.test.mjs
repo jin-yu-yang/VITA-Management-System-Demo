@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   renderAdminCase,
   closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
   adminEligibility,
 } from "../src/admin-views.mjs";
-import { decorateStaffCase } from "../src/staff-views.mjs";
+import { decorateStaffCase, renderStaffCase } from "../src/staff-views.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
@@ -120,9 +122,39 @@ const openTask = (overrides = {}) => ({
   resolutionOutcome: null,
   resolutionNote: null,
   createdAt: "2026-09-12T11:00:00.000Z",
-  attempts: [],
   ...overrides,
 });
+
+// A contact log entry, as the store maps it, with its one version.
+const contactEntry = (overrides = {}) => {
+  const entry = {
+    direction: "outgoing",
+    contactedAt: "2026-09-12T16:00:00.000Z",
+    withWhom: "client",
+    otherName: null,
+    method: "phone",
+    purpose: "request_documents",
+    outcome: "no_answer",
+    note: "Rang twice, no voicemail.",
+    ...overrides,
+  };
+  return {
+    id: "contact-1",
+    caseId: "case-a",
+    followupId: "task-1",
+    revision: 1,
+    loggedAt: entry.contactedAt,
+    editedAt: null,
+    loggedByPersonId: "sam",
+    versions: [{ version: 1, createdAt: entry.contactedAt, editedByPersonId: "sam", ...entry }],
+    ...entry,
+    ...overrides,
+  };
+};
+
+// The shared Log contact form, linked to one task.
+const linkedForm = (taskId) =>
+  new RegExp(`<form class="staff-form contact-form" data-case-id="case-a" data-followup-id="${taskId}">`);
 
 const openRequest = (overrides = {}) => ({
   id: "req-1",
@@ -142,7 +174,7 @@ const caseActions = (html) => [
 // ---------------------------------------------------------------------------
 
 test("the intake checks are offered once, as four simulated attestations", () => {
-  const arrived = officeCase({ stage: "received", intakeVerified: false });
+  const arrived = officeCase({ stage: "screening", intakeVerified: false });
   const none = renderAdminCase(arrived, { person: SAM });
   assert.match(none, /data-case-action="VERIFY_INTAKE"/);
   for (const key of ["interview", "identity", "documents", "consent"]) {
@@ -164,7 +196,9 @@ test("the intake checks are offered once, as four simulated attestations", () =>
     ],
   });
   assert.doesNotMatch(all, /data-case-action="VERIFY_INTAKE" disabled/);
-  assert.equal((all.match(/checked/g) ?? []).length, 4);
+  // Counted outside the Contacts tab, whose form draws its own defaults.
+  const outsideContacts = all.slice(0, all.indexOf('id="case-panel-contacts"'));
+  assert.equal((outsideContacts.match(/checked/g) ?? []).length, 4);
   // The payload the form's four ticked boxes build is exactly the contract's.
   assert.deepEqual(
     payloadFor("VERIFY_INTAKE", {}, {
@@ -192,6 +226,12 @@ test("the intake checks are offered once, as four simulated attestations", () =>
     person: SAM,
   });
   assert.match(draft, /The client has not sent this application yet\./);
+  // A request that has not been opened yet waits for screening.
+  const waiting = renderAdminCase(officeCase({ stage: "received", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.doesNotMatch(waiting, /data-case-action="VERIFY_INTAKE"/);
+  assert.match(waiting, /Screening starts when an admin opens the case\./);
   // And it is an office action: a preparer sees the reason, not the form.
   const forAlex = renderAdminCase(arrived, { person: ALEX });
   assert.doesNotMatch(forAlex, /data-case-action="VERIFY_INTAKE"/);
@@ -202,36 +242,24 @@ test("the intake checks are offered once, as four simulated attestations", () =>
 // Follow-up
 // ---------------------------------------------------------------------------
 
-test("the assignee records attempts and resolves separately, and nobody else can", () => {
+test("each open task has the shared form and Resolve", () => {
   const record = officeCase({
     requests: [openRequest()],
-    followups: [
-      openTask({
-        attempts: [
-          {
-            id: "att-1",
-            outcome: "no_answer",
-            note: "Rang twice, no voicemail.",
-            actorPersonId: "sam",
-            createdAt: "2026-09-12T12:00:00.000Z",
-          },
-        ],
-      }),
-    ],
+    followups: [openTask()],
+    contacts: [contactEntry()],
   });
-  const html = renderAdminCase(record, { person: SAM });
-  assert.match(html, /data-case-action="RECORD_CONTACT" data-followup-id="task-1"/);
-  assert.match(html, /data-case-action="RESOLVE_FOLLOWUP" data-followup-id="task-1"/);
+  const html = renderAdminCase(record, { person: SAM, now: Date.parse("2026-09-12T17:00:00.000Z") });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, linkedForm("task-1"));
+  assert.match(followup, /<h4>Log contact<\/h4>/);
+  assert.match(followup, /id="field-contact-task-task-1-note"/);
+  assert.doesNotMatch(html, /RECORD_CONTACT/);
+  assert.match(followup, /data-case-action="RESOLVE_FOLLOWUP" data-followup-id="task-1"/);
   // The request the task is about, its reason and the assignee the server chose.
   assert.match(html, /<h3>Mileage record<\/h3>/);
   assert.match(html, /No answer on the number we have\./);
   assert.match(html, /<span>Assigned to<\/span><strong>Sam<\/strong>/);
-  // The attempt list carries the outcome, the note, the person and the time.
-  assert.match(html, /No answer · Sam · [^<]*<small>Rang twice, no voicemail\.<\/small>/);
-  // Four outcomes for an attempt, two for a resolution, with per-task ids so
-  // two tasks can never share a box.
-  for (const value of ["no_answer", "reached", "no_further_contact", "closure_requested"])
-    assert.match(html, new RegExp(`id="field-contact-task-1-outcome"[^]*value="${value}"`));
+  // "Resolve this task" is as it was: two outcomes, per-task ids.
   const resolveForm = html.slice(html.indexOf('id="field-resolve-task-1-outcome"'));
   const resolveOptions = [...resolveForm.matchAll(/<option value="([a-z_]+)"/g)].map(
     (match) => match[1],
@@ -239,23 +267,52 @@ test("the assignee records attempts and resolves separately, and nobody else can
   assert.deepEqual(resolveOptions.slice(0, 2), ["reached", "no_further_contact"]);
   assert.ok(!resolveOptions.includes("no_answer"));
   assert.ok(!resolveOptions.includes("closure_requested"));
-  // The two steps say plainly that they are two steps.
-  assert.match(html, /Recording an attempt never resolves the task/);
+  assert.match(html, /<h4>Resolve this task<\/h4>/);
   assert.match(html, /does not verify a document, change the preparer, or close the case/);
+  // The log form comes before Resolve.
+  assert.ok(followup.indexOf("contact-form") < followup.indexOf("Resolve this task"));
   // There is no way to hand the task to somebody else.
   assert.doesNotMatch(html, /name="assignee/i);
   assert.match(html, /no way to hand it to someone else/i);
 
   // Both directions of the rule (Ruling R53).
   const forAlex = renderAdminCase(record, { person: ALEX });
-  assert.doesNotMatch(forAlex, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(forAlex, linkedForm("task-1"));
   assert.doesNotMatch(forAlex, /data-case-action="RESOLVE_FOLLOWUP"/);
   assert.match(forAlex, /Needs office follow-up access\./);
   // Holding the capability is still not holding the task.
   const forMorgan = renderAdminCase(record, { person: MORGAN_FOLLOWUP });
-  assert.doesNotMatch(forMorgan, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(forMorgan, linkedForm("task-1"));
   assert.match(forMorgan, /The office assigned this task to someone else\./);
   assert.doesNotMatch(forMorgan, /Needs office follow-up access\./);
+});
+
+test("the task lists its linked contacts", () => {
+  const record = officeCase({
+    requests: [openRequest()],
+    followups: [openTask()],
+    contacts: [contactEntry(), contactEntry({ id: "contact-2", followupId: null, note: "Not about the task." })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /<h4>Contacts so far<\/h4><ul class="contact-task-list"><li>9\/12\/2026 12:00 PM — Sam → client, phone — Request documents — No answer\. Note: Rang twice, no voicemail\.<\/li><\/ul>/);
+  assert.doesNotMatch(followup, /Not about the task/);
+  const none = renderAdminCase(officeCase({ requests: [openRequest()], followups: [openTask()] }), { person: SAM });
+  assert.match(none, /<h4>Contacts so far<\/h4><p class="muted">No contact has been logged on this task yet\.<\/p>/);
+});
+
+test("the office case has the Contacts tab with its count", () => {
+  const html = renderAdminCase(
+    officeCase({ contacts: [contactEntry({ followupId: null }), contactEntry({ id: "contact-2", followupId: null })] }),
+    { person: SAM },
+  );
+  const order = [...html.matchAll(/role="tab" id="case-tab-([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["overview", "intake", "documents", "followup", "contacts", "history"]);
+  assert.match(html, /data-value="contacts">Contacts <span class="tab-count">2<\/span><\/button>/);
+  assert.match(html, /<h2 id="contacts-title">Contacts<\/h2>/);
+  assert.match(html, /<form class="staff-form contact-form" data-case-id="case-a">/);
+  // Sam is an admin: he may edit the entries he did not log too.
+  assert.match(html, /data-action="toggle-contact-edit" data-contact-id="contact-2"/);
 });
 
 test("two open tasks get four forms that cannot be confused", () => {
@@ -271,12 +328,14 @@ test("two open tasks get four forms that cannot be confused", () => {
   // page must never share one: a namesake would take the cursor, and the rest
   // of the sentence would be typed into, and sent for, the other task.
   for (const id of [
-    "field-contact-task-1-outcome",
-    "field-contact-task-1-note",
+    "field-contact-task-task-1-direction-outgoing",
+    "field-contact-task-task-1-contactedAt",
+    "field-contact-task-task-1-note",
     "field-resolve-task-1-outcome",
     "field-resolve-task-1-note",
-    "field-contact-task-2-outcome",
-    "field-contact-task-2-note",
+    "field-contact-task-task-2-direction-outgoing",
+    "field-contact-task-task-2-contactedAt",
+    "field-contact-task-task-2-note",
     "field-resolve-task-2-outcome",
     "field-resolve-task-2-note",
   ]) {
@@ -285,20 +344,19 @@ test("two open tasks get four forms that cannot be confused", () => {
       1,
       id,
     );
-    assert.match(html, new RegExp(`<label class="field" for="${id}">`));
+    assert.match(html, new RegExp(`<label class="(field|seg)" for="${id}">`));
   }
-  // Each form names its own task on the button and in its hidden field.
-  for (const type of ["RECORD_CONTACT", "RESOLVE_FOLLOWUP"])
-    for (const taskId of ["task-1", "task-2"])
-      assert.match(
-        html,
-        new RegExp(`data-case-action="${type}" data-followup-id="${taskId}"`),
-      );
+  // Each form names its own task: the log form on itself, Resolve on its
+  // button and in its hidden field.
+  for (const taskId of ["task-1", "task-2"]) {
+    assert.match(html, linkedForm(taskId));
+    assert.match(html, new RegExp(`data-case-action="RESOLVE_FOLLOWUP" data-followup-id="${taskId}"`));
+  }
   assert.equal(
     (html.match(/<input type="hidden" name="followupId" value="task-2">/g) ?? [])
       .length,
-    2,
-    "one hidden id per form, and both belong to the second task",
+    1,
+    "one hidden id, on the second task's Resolve form",
   );
 });
 
@@ -314,7 +372,7 @@ test("a resolved task keeps its history and offers no further action", () => {
     ],
   });
   const html = renderAdminCase(record, { person: SAM });
-  assert.doesNotMatch(html, /data-case-action="RECORD_CONTACT"/);
+  assert.doesNotMatch(html, linkedForm("task-1"));
   assert.doesNotMatch(html, /data-case-action="RESOLVE_FOLLOWUP"/);
   assert.match(html, /Spoke with the client — Spoke to the client; they will bring it in\./);
   assert.match(html, /Resolved/);
@@ -329,7 +387,7 @@ test("a client response arriving while the task is open is shown beside it", () 
   assert.match(html, /The client responded; awaiting preparer verification\./);
   assert.match(html, /Resolving this task does not verify the document\./);
   // The task is still open and still both steps.
-  assert.match(html, /data-case-action="RECORD_CONTACT"/);
+  assert.match(html, linkedForm("task-1"));
   assert.match(html, /data-case-action="RESOLVE_FOLLOWUP"/);
   // While the request is still open there is nothing to say about a response.
   const waiting = renderAdminCase(
@@ -465,6 +523,172 @@ test("the close dialog asks for a reason and an explicit confirmation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Screening, Form 8879 and e-filing
+// ---------------------------------------------------------------------------
+
+const CALLED = [
+  { id: "r1", status: "approved", clientContactStatus: "completed", preparationVersion: 1 },
+];
+const WAITING = [
+  { id: "r1", status: "approved", clientContactStatus: "pending", preparationVersion: 1 },
+];
+
+test("the intake checks wait for screening; the e-file marks wait for their stages", () => {
+  const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
+  const called = [{ status: "approved", clientContactStatus: "completed" }];
+  const at = (stage, reviews = called) =>
+    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews } }, sam);
+  assert.equal(at("screening").verifyIntake.allowed, true);
+  assert.equal(at("received").verifyIntake.allowed, false);
+  assert.equal(at("review_approved").markReadyToEfile.allowed, true);
+  assert.equal(at("ready_to_efile").markReadyToEfile.allowed, false);
+  assert.equal(at("ready_to_efile").markEfiled.allowed, true);
+  assert.equal(at("efiled").markEfiled.allowed, false);
+  assert.equal(at("review_approved").markEfiled.allowed, false);
+  // A list row has no reviews, only the summary a later task adds.
+  const listRow = (status) =>
+    adminEligibility(
+      { caseRecord: { stage: "review_approved", ownerUserId: "u1", reviewContactStatus: status } },
+      sam,
+    ).markReadyToEfile.allowed;
+  assert.equal(listRow("completed"), true);
+  assert.equal(listRow("pending"), false);
+  const waiting = at("review_approved", [
+    { status: "approved", clientContactStatus: "pending" },
+  ]).markReadyToEfile;
+  assert.equal(waiting.allowed, false);
+  assert.equal(
+    waiting.reason,
+    "The reviewer still needs to record the conversation with the client.",
+  );
+  // No review at all is not a completed call.
+  assert.equal(at("review_approved", []).markReadyToEfile.allowed, false);
+  // The latest approved review decides, not an earlier one.
+  assert.equal(
+    at("review_approved", [
+      { status: "approved", clientContactStatus: "completed" },
+      { status: "approved", clientContactStatus: "pending" },
+    ]).markReadyToEfile.allowed,
+    false,
+  );
+  assert.equal(at("screening").closeCase.allowed, true);
+  for (const stage of ["review_approved", "ready_to_efile", "efiled"]) {
+    const refusal = at(stage).closeCase;
+    assert.equal(refusal.allowed, false, stage);
+    assert.equal(refusal.reason, "An approved case is not closed from here.", stage);
+  }
+  const alex = { id: "p-alex", name: "Alex", capabilities: ["prepare"] };
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "review_approved", reviews: called } }, alex)
+      .markReadyToEfile.allowed,
+    false,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "ready_to_efile" } }, alex).markEfiled.allowed,
+    false,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "ready_to_efile" } }, null).markEfiled.allowed,
+    false,
+  );
+});
+
+test("the admin page: the intake form at screening, the marks at their stages", () => {
+  const received = renderAdminCase(officeCase({ stage: "received", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.ok(!caseActions(received).includes("VERIFY_INTAKE"));
+  assert.match(received, /Screening starts when an admin opens the case\./);
+  const screening = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.ok(caseActions(screening).includes("VERIFY_INTAKE"));
+
+  const approved = renderAdminCase(officeCase({ stage: "review_approved", reviews: CALLED }), {
+    person: SAM,
+  });
+  assert.match(
+    approved,
+    /<button[^>]*data-action="open-mark-ready-to-efile"[^>]*>[^]*?Mark ready to e-file…<\/button>/,
+  );
+  assert.doesNotMatch(approved, /data-action="open-mark-efiled"/);
+  // The control opens a dialog; it is never itself a workflow action.
+  assert.ok(!caseActions(approved).some((action) => action.startsWith("MARK_")));
+
+  const signed = renderAdminCase(officeCase({ stage: "ready_to_efile", reviews: CALLED }), {
+    person: SAM,
+  });
+  assert.match(
+    signed,
+    /<button[^>]*data-action="open-mark-efiled"[^>]*>[^]*?Mark e-filed…<\/button>/,
+  );
+  assert.doesNotMatch(signed, /data-action="open-mark-ready-to-efile"/);
+
+  const pending = renderAdminCase(officeCase({ stage: "review_approved", reviews: WAITING }), {
+    person: SAM,
+  });
+  assert.doesNotMatch(pending, /data-action="open-mark-ready-to-efile"/);
+  assert.match(pending, /The reviewer still needs to record the conversation with the client\./);
+
+  const filed = renderAdminCase(officeCase({ stage: "efiled", reviews: CALLED }), { person: SAM });
+  assert.doesNotMatch(filed, /data-action="open-mark-/);
+  // Only an admin is offered either mark.
+  for (const person of [ALEX, MORGAN]) {
+    const html = renderAdminCase(officeCase({ stage: "review_approved", reviews: CALLED }), {
+      person,
+    });
+    assert.doesNotMatch(html, /data-action="open-mark-/);
+    assert.match(html, /Needs office administrator access\./);
+  }
+});
+
+test("a volunteer's case page never offers the e-file marks", () => {
+  for (const stage of ["review_approved", "ready_to_efile"]) {
+    for (const person of [ALEX, MORGAN]) {
+      const html = renderStaffCase(officeCase({ stage, reviews: CALLED }), person);
+      assert.doesNotMatch(html, /open-mark-ready-to-efile/, `${stage} ${person.name}`);
+      assert.doesNotMatch(html, /open-mark-efiled/, `${stage} ${person.name}`);
+      assert.doesNotMatch(html, /MARK_/, `${stage} ${person.name}`);
+    }
+  }
+});
+
+test("the e-file dialogs name the client and the application", () => {
+  const state = {
+    busy: false,
+    savedCase: {
+      reference: "VT-AAAA-BBBB",
+      answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+    },
+  };
+  const ready = markReadyToEfileDialogBody(state);
+  assert.match(ready, /Mei Chen/);
+  assert.match(ready, /VT-AAAA-BBBB/);
+  assert.match(ready, /data-case-action="MARK_READY_TO_EFILE"/);
+  assert.match(ready, /name="confirmed" value="true" required/);
+  assert.match(ready, /signed Form 8879/);
+  const filed = markEfiledDialogBody(state);
+  assert.match(filed, /data-case-action="MARK_EFILED"/);
+  assert.match(filed, /told their return was e-filed/);
+  assert.match(
+    markEfiledDialogBody({ savedCase: { reference: "VT-X", answers: {} } }),
+    /this client/,
+  );
+  assert.match(markReadyToEfileDialogBody({}), /this case<\/strong> for <strong>this client/);
+  assert.match(
+    markEfiledDialogBody({ busy: true, savedCase: state.savedCase }),
+    /data-case-action="MARK_EFILED" disabled/,
+  );
+  // Keeping it as it is sends nothing: the keep control is confirmBody's close
+  // control and carries no case action.
+  for (const html of [ready, filed]) {
+    assert.match(html, /Keep it as it is/);
+    assert.match(html, /data-action="close-dialog"/);
+    assert.equal((html.match(/data-case-action=/g) ?? []).length, 1, "only the confirm button sends");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Refusals, escaping, and what nobody may do
 // ---------------------------------------------------------------------------
 
@@ -494,13 +718,13 @@ test("a persona without the office roles gets explanations, not office actions",
     "VERIFY_INTAKE",
     "REMIND",
     "CLOSE_CASE",
-    "RECORD_CONTACT",
     "RESOLVE_FOLLOWUP",
     "RECORD_DOCUMENT_RESPONSE",
     "SAVE_ANSWERS",
   ])
     assert.ok(!caseActions(html).includes(type), type);
   assert.doesNotMatch(html, /data-assistance-action/);
+  assert.doesNotMatch(html, linkedForm("task-1"));
   assert.match(html, /Needs office administrator access\./);
   assert.match(html, /Needs office follow-up access\./);
   assert.match(html, /Needs office document-receipt access\./);
@@ -516,17 +740,9 @@ test("notes, reasons and titles are escaped wherever they are shown", () => {
         status: "resolved",
         resolutionOutcome: "reached",
         resolutionNote: nasty,
-        attempts: [
-          {
-            id: "att-1",
-            outcome: "no_answer",
-            note: nasty,
-            actorPersonId: "sam",
-            createdAt: "2026-09-12T12:00:00.000Z",
-          },
-        ],
       }),
     ],
+    contacts: [contactEntry({ note: nasty, withWhom: "other", otherName: nasty })],
     documents: [
       {
         id: "doc-1",
@@ -607,7 +823,7 @@ test("the persona decides which workspace a presenter is in", () => {
   const onCase = {
     ...state,
     screen: "staff-case",
-    savedCase: officeCase({ stage: "received", intakeVerified: false }),
+    savedCase: officeCase({ stage: "screening", intakeVerified: false }),
   };
   assert.match(staffScreen(onCase), /data-case-action="VERIFY_INTAKE"/);
   assert.doesNotMatch(

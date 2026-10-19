@@ -242,7 +242,7 @@ const drawerCase = {
   stage: "preparing",
   revision: 3,
   answers: {},
-  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam", attempts: [] }],
+  followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam" }],
 };
 const drawerState = (over = {}) => ({
   principal: { access: "presenter" },
@@ -276,8 +276,9 @@ test("the drawer is the modal frame at the edge, and each dialog names its place
   );
   assert.match(drawer, /class="modal office-drawer"/);
   assert.match(drawer, /OFFICE FOLLOW-UP/);
-  assert.match(drawer, /Log a call/);
-  assert.match(drawer, /data-case-action="RECORD_CONTACT"/);
+  assert.match(drawer, /<h2[^>]*>Log contact<\/h2>/);
+  assert.doesNotMatch(drawer, /Log a call|RECORD_CONTACT/);
+  assert.match(drawer, /<form class="staff-form contact-form" data-case-id="c1" data-followup-id="f1">/);
 
   const help = dialog(
     drawerState({
@@ -338,7 +339,15 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.ok(draft.indexOf('window.open("", "_blank")') < draft.indexOf("await "), "before anything is awaited");
   assert.match(draft, /await import\("\.\/vendor\/pdf-lib\.mjs"\)/);
   // Part 4d: its text is a key now (draft.preparing is "Preparing your draft…").
-  assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\)\)/);
+  assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\), kind\)/);
+  assert.match(draft, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\), kind\)/);
+  // Only staff make a 13614-C (hide-draft-13614c-from-clients): refused before any tab opens.
+  const staffGuard = draft.search(/kind !== "14446" && [^\n]*principal\?\.access !== "presenter"[^\n]*\)\s*return/);
+  assert.ok(staffGuard > 0, "viewDraft refuses a 13614-C for anyone but staff");
+  assert.ok(staffGuard < draft.indexOf('window.open("", "_blank")'), "before any tab opens");
+  assert.match(app, /kind === "14446" \? "draft14446\.tab_title" : "draft\.tab_title"/);
+  assert.equal(TEXT["draft14446.tab_title"].en, "Draft Form 14446");
+  assert.equal(TEXT["draft14446.tab_title"].zh, "14446 表草稿");
   // The blocked-tab link goes with its URL (draft-pdf.mjs createDraftOffer),
   // and is offered after the build. It is kept outside the page and drawn
   // into #draft-ready after every render, so a redraw within its minute never
@@ -368,14 +377,14 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.doesNotMatch(app, /if \(started && controller\.getState\(\)\.principal\)/);
   assert.match(app, /crypto\.subtle\.digest\("SHA-256"/);
   // Part 4d: the two failures are keys; their English is unchanged.
-  assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
+  assert.match(app, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\), kind\)/);
   assert.equal(TEXT["draft.failed"].en, "The draft could not be made. Close this tab and try again.");
   assert.equal(TEXT["draft.font_unchecked"].en, "The draft font could not be checked. Try again later.");
   assert.match(app, /case "view-draft":\s+await viewDraft\(/);
   // A draft that couldn't be built is an error (design D1).
   const viewDraftFn = app.slice(app.indexOf("async function viewDraft("), app.indexOf("// ---- leaving Add a case"));
   const draftCatch = viewDraftFn.slice(viewDraftFn.indexOf("} catch (error) {"), viewDraftFn.indexOf("// ---- leaving Add a case"));
-  assert.match(viewDraftFn, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\)\)/);
+  assert.match(viewDraftFn, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\), kind\)/);
   assert.match(viewDraftFn, /controller\.noteLocalFailure\(\s*\{\s*code: "DRAFT",\s*message: error\?\.draftFont \? "The draft font could not be checked\. Try again later\." : "The draft could not be made\. Try again\.",?\s*\},\s*\(\) => viewDraft\(form, by, kind\),?\s*\)/);
   // A built draft clears only the draft's own error, never the notice.
   assert.match(viewDraftFn, /\/\/ A draft that was built and offered[^\n]*\n\s*controller\.clearError\("DRAFT"\);/);
@@ -843,7 +852,7 @@ test("app.mjs writes no client text of its own: toasts and patched text go throu
   assert.match(app, /"draft\.failed"/);
   assert.match(app, /"draft\.font_unchecked"/);
   // The resend countdown and button, and the in-place form text, take the view language.
-  for (const key of ["signin.countdown", "signin.resend_in", "signin.resend", "draft.link", "draft.preparing", "draft.tab_title"])
+  for (const key of ["signin.countdown", "signin.resend_in", "signin.resend", "draft.link", "draft.preparing", "draft.tab_title", "draft14446.tab_title"])
     assert.match(app, new RegExp(`"${key.replace(".", "\\.")}"`), key);
   assert.match(app, /noteState\(answer\.question, answer\.value, \{[\s\S]{0,160}lang/);
   assert.match(app, /noteState\(answer\.group, draft\[ref\.q\], \{[^}]*lang/);
@@ -871,7 +880,7 @@ test("app.mjs: the switch, the saved language, other tabs, and the document's la
   assert.doesNotMatch(app, /await loadHant\(\)/, "nothing awaits the map without a timeout");
   assert.match(
     app,
-    /async function viewDraft\(form, by, kind = "13614c"\) \{[\s\S]{0,1200}if \(kind !== "14446" && form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = \(kind === "14446" \? draft14446Fields : draftFields\)\(/,
+    /async function viewDraft\(form, by, kind = "13614c"\) \{[\s\S]{0,1400}if \(kind !== "14446" && form === "zh-t"\) await loadHantWithin\(\{ hantReady, loadHant \}, HANT_START_TIMEOUT_MS\);\s*const fields = \(kind === "14446" \? draft14446Fields : draftFields\)\(/,
   );
   // Startup waits five seconds at most for a saved 繁體's map, and the draft as long.
   assert.match(app, /const HANT_START_TIMEOUT_MS = 5000;/);
@@ -1164,4 +1173,57 @@ test("the Tab trap asks trapTarget, so the dialog itself cannot be tabbed out of
   const app = appSource();
   assert.match(app, /const target = trapTarget\(focusable, document\.activeElement, event\.shiftKey\);/);
   assert.doesNotMatch(app, /document\.activeElement === first\)/);
+});
+
+// The contact log (change add-contact-log, Task 4): app.mjs has no DOM
+// harness, so its wiring is pinned at the source, like the version-2 actions.
+test("app.mjs wires the Log contact form, Copy, Copy all and Edit", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  const views = read("../src/staff-views.mjs");
+  for (const action of ["toggle-contact-edit", "copy-contact", "copy-all-contacts"]) {
+    assert.match(views, new RegExp(`"${action}"`), `the Contacts tab emits ${action}`);
+    assert.match(app, new RegExp(`case "${action}":`), `app.mjs handles ${action}`);
+  }
+  // The submit goes through the form builder, to the controller's own calls,
+  // never through a case action.
+  assert.match(app, /form\.matches\("\.contact-form"\)[^]*?submitContact\(form, by\)/);
+  assert.match(app, /contactEntryFromForm\(values\)/);
+  assert.match(app, /controller\.logContact\(caseId, entry, followupId \|\| null\)/);
+  assert.match(app, /controller\.editContact\(contactId, entry\)/);
+  // The outcome groups follow the radios after every restore and every change.
+  assert.match(app, /restoreFormDrafts\(\);\n\s*syncContactForms\(\);/);
+  assert.match(app, /set\.hidden = !on;\n\s*set\.disabled = !on;/);
+  // Copy writes the same lines the page shows.
+  assert.match(app, /navigator\.clipboard\.writeText\(one \? contactSummary\(one, options\) : contactSummaries\(contacts, options\)\)/);
+  for (const toast of [
+    "The contact is logged.", "The contact is updated.", "Copied.",
+    "Copy did not work. Select the line and copy it by hand.", "Type the name of the person you contacted.",
+  ])
+    assert.ok(app.includes(`"${toast}"`), toast);
+  assert.match(app, /`Copied \$\{n\} contacts\.`/);
+  // The old attempt is gone from the browser, notice and all.
+  assert.doesNotMatch(app, /RECORD_CONTACT/);
+});
+
+test("app.mjs opens, closes and announces the two e-file confirmations", () => {
+  const app = appSource();
+  // Both open from the case page or from a Follow-ups row. A row selects its
+  // case in place (no navigation, so screening never starts from the queue),
+  // and the dialog opens only once that case is the one loaded.
+  const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
+  assert.match(opener, /case "open-mark-ready-to-efile":\s+case "open-mark-efiled": \{/);
+  assert.match(opener, /const opener = describeFocus\(target\);/);
+  assert.match(opener, /const caseId = target\.dataset\.caseId;/);
+  assert.match(opener, /target\.dataset\.action === "open-mark-efiled" \? "mark-efiled" : "mark-ready-to-efile"/);
+  assert.match(opener, /if \(caseId\) \{\s+controller\.dismissError\(\);\s+await controller\.selectCase\(caseId, \{ navigate: false \}\);\s+if \(controller\.getState\(\)\.savedCase\?\.id !== caseId\) break;\s+\}\s+openDialog\(name, null, opener\);/);
+  // After a confirm the keyboard goes back to the opener, or, when its row has
+  // left the queue, to the case title or the queue heading, whichever screen it is.
+  assert.match(app, /if \(type === "MARK_READY_TO_EFILE" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /if \(type === "MARK_EFILED" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /MARK_READY_TO_EFILE: "Marked ready to e-file\. The client was told\."/);
+  assert.match(app, /MARK_EFILED: "Marked e-filed\. The client was told\."/);
+  // The shared modal frame places both.
+  assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
+  assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);
 });

@@ -98,7 +98,7 @@ export const TEXT = Object.freeze({
   // Traditional Chinese loads on demand: the switch's failure, and a saved 繁體 that fell back at startup
   "toast.hant_failed": { en: "Traditional Chinese couldn't load. Try again.", zh: "无法载入繁体中文，请再试一次。" },
   "toast.hant_failed_start": { en: "Traditional Chinese couldn't load. Showing Simplified Chinese.", zh: "无法载入繁体中文，暂以简体中文显示。" },
-  // The draft 13614-C (app.mjs viewDraft): the new tab's text, the fallback link and the failures
+  // The drafts (app.mjs viewDraft): the new tab's text, the fallback link and the failures; the tab's title is per form
   "draft.tab_title": { en: "Draft 13614-C", zh: "13614-C 草稿" },
   "draft.preparing": { en: "Preparing your draft…", zh: "正在准备您的草稿…" },
   "draft.link": { en: "Your draft is ready: open it", zh: "您的草稿已准备好：打开草稿" },
@@ -140,24 +140,31 @@ export const TEXT = Object.freeze({
   // The version-2 form: the select's blank option and the separator between picked choices
   "form.select_option": { en: "Select an option", zh: "请选择" },
   "form.list_separator": { en: ", ", zh: "、" },
-  // Stage names and the client's status message (domain.mjs describeStage; the English is
-  // STAGE_DESCRIPTIONS there, kept in step by tests/domain.test.mjs)
+  // Stage labels and the client's status message (domain.mjs describeStage; the English is
+  // STAGE_DESCRIPTIONS there, kept in step by tests/domain.test.mjs). The label is the
+  // client's badge; the staff name lives in domain.mjs and stays English.
   "stage.draft.label": { en: "Draft", zh: "草稿" },
   "stage.draft.client": { en: "Your application is saved and has not been sent to the office yet.", zh: "您的申请已保存，尚未发送给办公室。" },
-  "stage.received.label": { en: "Received", zh: "已收到" },
-  "stage.received.client": { en: "Your application is with the office. A volunteer will check your information and documents.", zh: "办公室已收到您的申请。志愿者会核对您的信息和文件。" },
-  "stage.preparation_ready.label": { en: "Waiting for preparation", zh: "等待志愿者接手" },
-  "stage.preparation_ready.client": { en: "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation.", zh: "模拟的登记核查已记录。您的申请正在等待志愿者开始准备报税表。" },
-  "stage.preparing.label": { en: "In preparation", zh: "准备中" },
+  "stage.received.label": { en: "Sent to PCDC", zh: "已发送给 PCDC" },
+  "stage.received.client": { en: "Your application is with PCDC. The office will review it soon and may call you.", zh: "PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。" },
+  "stage.screening.label": { en: "Being reviewed", zh: "审核中" },
+  "stage.screening.client": { en: "PCDC is reviewing your application. We may call you to confirm your information and documents.", zh: "PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。" },
+  "stage.preparation_ready.label": { en: "Waiting for a volunteer", zh: "等待志愿者" },
+  "stage.preparation_ready.client": { en: "Your application has been checked. It is waiting for a volunteer to start preparing your return.", zh: "您的申请已核对完毕，正在等待志愿者开始准备您的报税表。" },
+  "stage.preparing.label": { en: "Being prepared", zh: "准备中" },
   "stage.preparing.client": { en: "A volunteer is preparing your return.", zh: "报税志愿者正在准备您的报税表。" },
-  "stage.review_ready.label": { en: "Waiting for review", zh: "等待审核" },
-  "stage.review_ready.client": { en: "Preparation is complete in the tax software. Your return is waiting for an independent reviewer.", zh: "报税软件中的准备工作已完成。您的报税表正在等待审核志愿者检查。" },
-  "stage.reviewing.label": { en: "In review", zh: "审核中" },
+  "stage.review_ready.label": { en: "Waiting for review", zh: "等待检查" },
+  "stage.review_ready.client": { en: "Your return is prepared and is waiting for an independent reviewer.", zh: "您的报税表已准备好，正在等待审核志愿者检查。" },
+  "stage.reviewing.label": { en: "Being checked", zh: "检查中" },
   "stage.reviewing.client": { en: "An independent reviewer is checking your return.", zh: "审核志愿者正在检查您的报税表。" },
-  "stage.corrections_required.label": { en: "Corrections in progress", zh: "正在更正" },
+  "stage.corrections_required.label": { en: "Being corrected", zh: "正在更正" },
   "stage.corrections_required.client": { en: "The reviewer asked your preparer to make corrections. No action is needed from you right now.", zh: "审核志愿者已请报税志愿者进行更正。您目前无需做任何事。" },
-  "stage.review_approved.label": { en: "Review complete", zh: "审核完成" },
-  "stage.review_approved.client": { en: "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.", zh: "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。" },
+  "stage.review_approved.label": { en: "Ready to sign", zh: "等待签名" },
+  "stage.review_approved.client": { en: "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.", zh: "您的报税表已检查完毕。PCDC 会联系您签署 8879 表，签署后才能递交报税表。" },
+  "stage.ready_to_efile.label": { en: "Signed", zh: "已签名" },
+  "stage.ready_to_efile.client": { en: "You signed Form 8879. PCDC will e-file your return next.", zh: "您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。" },
+  "stage.efiled.label": { en: "E-filed", zh: "已电子递交" },
+  "stage.efiled.client": { en: "Your return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的报税表已电子递交。国税局会确认是否接受。" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },
@@ -225,7 +232,8 @@ export const TEXT = Object.freeze({
   "progress.step.intake": { en: "Intake", zh: "登记" },
   "progress.step.preparation": { en: "Preparation", zh: "准备" },
   "progress.step.review": { en: "Review", zh: "审核" },
-  "progress.step.next": { en: "Next steps", zh: "后续步骤" },
+  "progress.step.signing": { en: "Signing", zh: "签名" },
+  "progress.step.filing": { en: "Filing", zh: "递交" },
   "progress.step.done": { en: "complete", zh: "已完成" },
   "progress.step.current": { en: "in progress", zh: "进行中" },
   "progress.step.waiting": { en: "not started", zh: "未开始" },
@@ -327,7 +335,7 @@ export const TEXT = Object.freeze({
   "alert.missing": { en: "Needs an answer", zh: "需要回答" },
   "alert.invalid": { en: "Needs a change", zh: "需要修改" },
   "alert.member": { en: "Person {n}: {field}", zh: "成员 {n}：{field}" },
-  // Review & submit: the summary, its Change links and printed date, and the draft 13614-C buttons
+  // Review & submit: the summary, its Change links and printed date, and the draft Form 14446 buttons
   // (the current language's form comes first; the others are named in the screen's script)
   "summary.change": { en: "Change", zh: "修改" },
   "summary.none": { en: "Nothing answered yet.", zh: "尚未回答任何问题。" },
@@ -335,14 +343,13 @@ export const TEXT = Object.freeze({
   // The summary page's intro (gate-review-and-redesign-summary, design D6): {change} is summary.change
   "summary.intro_all": { en: "Here is a summary of everything you told us in your application.", zh: "以下是您在申请中填写的全部信息。" },
   "summary.intro_change": { en: "Before you submit, make sure you have answered everything that applies to you. To change an answer, choose **{change}** next to that part, or choose that part in the list of steps.", zh: "提交之前，请确认所有适用于您的问题都已回答。如需修改，请点击相应部分旁边的“{change}”，或在步骤列表中选择该部分。" },
-  "summary.intro_tools": { en: "With the buttons below, you can print this summary, or view and download a draft Form 13614-C or Form 14446 made from your answers.", zh: "您可以用下方的按钮打印这份汇总，或查看并下载根据您的回答生成的 13614-C 或 14446 草稿。" },
+  "summary.intro_tools": { en: "With the buttons below, you can print this summary, or view and download a draft Form 14446 made from your answers.", zh: "您可以用下方的按钮打印这份汇总，或查看并下载根据您的回答生成的 14446 表草稿。" },
   "summary.expand_all": { en: "Expand all", zh: "全部展开" },
   "summary.collapse_all": { en: "Collapse all", zh: "全部收起" },
   "summary.toggle": { en: "Show or hide {section}", zh: "显示或隐藏{section}" },
-  "draft.view": { en: "View Draft 13614-C", zh: "查看 13614-C 草稿" },
   "draft14446.view": { en: "View Draft Form 14446", zh: "查看 14446 表草稿" },
+  "draft14446.tab_title": { en: "Draft Form 14446", zh: "14446 表草稿" },
   "draft.form_en": { en: "English version", zh: "英文版" },
-  "draft.form_zh_s": { en: "简体中文版", zh: "简体中文版" },
   "draft.form_zh_t": { en: "繁體中文版", zh: "繁体中文版" },
   // The draft 13614-C's generated lines in Additional Comments (draft-form.mjs), in the form's
   // language; the English is today's, byte for byte. The member lines also use member.person,
@@ -442,6 +449,10 @@ export const SENTENCES = Object.freeze({
   "Independent review is complete. A volunteer will contact you about next steps. Signing and filing are later milestones and are not done yet.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "A volunteer spoke with you about the next service step.": "志愿者已与您沟通下一步的服务。",
+  // Migration 032: the main chain's new stages.
+  "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
+  "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+  "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",

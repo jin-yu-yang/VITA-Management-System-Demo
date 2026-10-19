@@ -23,6 +23,7 @@ import {
   esc,
   icon,
   button,
+  fieldId,
   caseButton,
   caseSubmit,
   input,
@@ -43,6 +44,19 @@ import {
 } from "./ui.mjs";
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
+import {
+  CONTACT_DIRECTIONS,
+  CONTACT_WITH,
+  CONTACT_METHODS,
+  CONTACT_PURPOSES,
+  VOICE_OUTCOMES,
+  WRITTEN_OUTCOMES,
+  outcomesFor,
+  contactTime,
+  contactSummary,
+  nyLocalInput,
+  nowInput,
+} from "./contact-log.mjs";
 
 // The two staff screens for preparers and reviewers — the work board and the
 // selected case — as pure functions. No state, no store, no timers, no DOM:
@@ -85,7 +99,8 @@ export const UNKNOWN_PERSON = "Unknown person";
 // sentence stay in `describeStage`, which is the only place they exist.
 const STAGE_WORK = Object.freeze({
   draft: { work: "Nothing yet. The client has not sent this application.", needs: null },
-  received: { work: "The office records the intake checks.", needs: null },
+  received: { work: "The office starts screening when an admin opens the case.", needs: null },
+  screening: { work: "The office is screening this application.", needs: null },
   preparation_ready: {
     work: "Waiting for a preparer to claim it.",
     needs: "prepare",
@@ -107,9 +122,11 @@ const STAGE_WORK = Object.freeze({
     needs: "prepare",
   },
   review_approved: {
-    work: "The reviewer records the conversation with the client.",
+    work: "The reviewer records the conversation with the client; the office records the client's signature.",
     needs: "review",
   },
+  ready_to_efile: { work: "The office e-files the return.", needs: null },
+  efiled: { work: "The return is e-filed. Nothing more is needed here.", needs: null },
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
 });
 const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null });
@@ -190,9 +207,14 @@ export function decorateStaffCase(caseRecord, people = []) {
     decorated.followups = caseRecord.followups.map((followup) => ({
       ...followup,
       assigneeName: nameOf(followup?.assigneeId),
-      attempts: (followup?.attempts ?? []).map((attempt) => ({
-        ...attempt,
-        actorName: nameOf(attempt?.actorPersonId),
+    }));
+  if (Array.isArray(caseRecord.contacts))
+    decorated.contacts = caseRecord.contacts.map((contact) => ({
+      ...contact,
+      loggedByName: nameOf(contact?.loggedByPersonId) ?? UNKNOWN_PERSON,
+      versions: (contact?.versions ?? []).map((version) => ({
+        ...version,
+        editedByName: nameOf(version?.editedByPersonId) ?? UNKNOWN_PERSON,
       })),
     }));
   if (Array.isArray(caseRecord.reviews))
@@ -678,6 +700,7 @@ export const CASE_TABS = Object.freeze([
   ["intake", "Intake answers"],
   ["documents", "Documents"],
   ["followup", "Follow-up"],
+  ["contacts", "Contacts"],
   ["history", "History"],
 ]);
 
@@ -708,16 +731,19 @@ export function caseTabs(panels, active = "overview", counts = {}) {
   return `<div class="case-tabs" role="tablist" aria-label="Case sections">${tabs}</div>${bodies}`;
 }
 
-// The main path through today's nine stages. Corrections are a loop back into
-// preparation, so they show on the preparation step, marked as amendment.
+// The main path through the stages after the client sends the application
+// (a draft is not on it). Corrections are a loop back into preparation, so
+// they show on the preparation step, marked as amendment.
 const LIFECYCLE = Object.freeze([
-  "draft",
   "received",
+  "screening",
   "preparation_ready",
   "preparing",
   "review_ready",
   "reviewing",
   "review_approved",
+  "ready_to_efile",
+  "efiled",
   "closed",
 ]);
 
@@ -1339,22 +1365,209 @@ function followupPanel(record) {
       ? `<ul class="followup-list">${followups
           .map(
             (followup) =>
-              `<li><div class="section-head"><h3>${esc(named(FOLLOWUP_STATUS, followup?.status, "Task"))}</h3><span class="muted small">${esc(followup?.assigneeName ?? UNKNOWN_PERSON)}</span></div><p>${esc(followup?.reason)}</p>${when(
-                (followup?.attempts ?? []).length,
-                `<ul class="attempt-list">${followup.attempts
-                  .map(
-                    (attempt) =>
-                      `<li>${esc(named(CONTACT_OUTCOME_LABELS, attempt?.outcome, "Attempt"))} · ${esc(formatTime(attempt?.createdAt))}<small>${esc(attempt?.note)}</small></li>`,
-                  )
-                  .join("")}</ul>`,
-              )}${when(
+              `<li><div class="section-head"><h3>${esc(named(FOLLOWUP_STATUS, followup?.status, "Task"))}</h3><span class="muted small">${esc(followup?.assigneeName ?? UNKNOWN_PERSON)}</span></div><p>${esc(followup?.reason)}</p><h4>Contacts so far</h4>${taskContacts(record, followup)}${when(
                 followup?.resolutionNote,
                 `<p class="field-note">Resolved: ${esc(followup.resolutionNote)}</p>`,
               )}</li>`,
           )
           .join("")}</ul>`
       : emptyLine("No office follow-up has been raised on this case.")
-  }<p class="field-note">Follow-up calls are recorded on the office screens, not here.</p></section>`;
+  }<p class="field-note">Contacts for an office task are logged on the office screens. Any other contact goes in the Contacts tab.</p></section>`;
+}
+
+// ---------------------------------------------------------------------------
+// The contact log (OpenSpec change add-contact-log, design D8 and D9)
+// ---------------------------------------------------------------------------
+
+// The logger edits their own entry, and an admin edits anyone's. Without a
+// persona there is nobody to compare, so nobody may edit.
+export const mayEditContact = (contact, person) =>
+  Boolean(person?.id) &&
+  (person.id === contact?.loggedByPersonId || Boolean(person?.capabilities?.includes("admin")));
+
+// Which outcome group a method and direction show: "voice", "written", or
+// null (in person, and every incoming contact, is "reached" with no choice).
+// app.mjs asks the same question when a radio changes, so the first draw and
+// the page after a change agree.
+export function outcomeGroup(method, direction) {
+  const outcomes = outcomesFor(method, direction);
+  if (!outcomes.length) return null;
+  return outcomes === VOICE_OUTCOMES ? "voice" : "written";
+}
+
+// The one line of an entry, or of an earlier version, which keeps the entry's
+// logger: an edit never changes who logged it.
+const lineOf = (record, entry, loggedByName = entry?.loggedByName) =>
+  contactSummary({ ...entry, loggedByName }, { answers: record?.answers ?? {} });
+const byContactTime = (a, b) =>
+  Date.parse(a?.contactedAt) - Date.parse(b?.contactedAt) ||
+  Date.parse(a?.loggedAt) - Date.parse(b?.loggedAt);
+
+// One button group: a fieldset of real radios, each label drawn as a segment.
+// The radios stay in the tab order and the accessibility tree; only the dot
+// is hidden (styles.css, .seg).
+function segGroup(legend, name, options, chosen, scope, attrs = "") {
+  return `<fieldset class="seg-group"${attrs}><legend>${esc(legend)}</legend><div class="seg-options">${options
+    .map(([key, label]) => {
+      const id = fieldId(`${name}-${key}`, scope);
+      return `<label class="seg" for="${id}"><input type="radio" id="${id}" name="${name}" value="${esc(key)}" required${chosen === key ? " checked" : ""}><span>${esc(label)}</span></label>`;
+    })
+    .join("")}</div></fieldset>`;
+}
+
+/**
+ * The only Log contact form (design D8), in the Contacts tab, inside each open
+ * task on the case page's Follow-up tab, and in the office drawer. Given
+ * `contact`, the same form edits that entry, prefilled. Field ids are scoped
+ * per form, so a draft survives a redraw and two forms never share an id.
+ * Both outcome groups are drawn; the one the method does not use is hidden
+ * and disabled, so it is neither required nor sent.
+ *
+ * @param {object} record the decorated staff case
+ * @param {object|null} person the persona
+ * @param {object} ui `{busy, now}`
+ * @param {{followupId?: string|null, contact?: object|null}} options
+ */
+export function logContactForm(record, person, ui = {}, { followupId = null, contact = null } = {}) {
+  const view = ui ?? {};
+  const scope = contact
+    ? `contact-edit-${contact.id}`
+    : followupId
+      ? `contact-task-${followupId}`
+      : "contact-new";
+  const direction = contact?.direction ?? "outgoing";
+  const method = contact?.method ?? "phone";
+  const shown = outcomeGroup(method, direction);
+  const withWhom = contact?.withWhom ?? null;
+  const busy = view.busy ? " disabled" : "";
+  const outcomes = (key, name, options) =>
+    segGroup(
+      "Outcome",
+      name,
+      options,
+      shown === key ? (contact?.outcome ?? null) : null,
+      scope,
+      ` data-outcome-group="${key}"${shown === key ? "" : " hidden disabled"}`,
+    );
+  const attrs = `data-case-id="${esc(record?.id ?? "")}"${
+    followupId ? ` data-followup-id="${esc(followupId)}"` : ""
+  }${contact ? ` data-contact-id="${esc(contact.id)}" aria-label="Edit this contact"` : ""}`;
+  const heading = contact ? "" : followupId ? "<h4>Log contact</h4>" : "<h3>Log contact</h3>";
+  const time = contact ? nyLocalInput(contact.contactedAt) : nowInput(view.now ?? Date.now());
+  const nameId = fieldId("otherName", scope);
+  // An id, so the keyboard finds the button again after the redraw a press makes.
+  const submitId = fieldId("submit", scope);
+  const buttons = contact
+    ? `<div class="contact-form-actions"><button type="submit" class="btn primary" id="${submitId}"${busy}>Save changes</button>${button(
+        "Cancel",
+        "toggle-contact-edit",
+        "secondary",
+        `data-contact-id="${esc(contact.id)}"`,
+      )}</div>`
+    : `<button type="submit" class="btn primary" id="${submitId}"${busy}>Log contact</button>`;
+  return `<form class="staff-form contact-form" ${attrs}>${heading}${segGroup(
+    "Direction",
+    "direction",
+    CONTACT_DIRECTIONS,
+    direction,
+    scope,
+  )}${segGroup("Method", "method", CONTACT_METHODS, method, scope)}${segGroup(
+    "Purpose",
+    "purpose",
+    CONTACT_PURPOSES,
+    contact?.purpose ?? null,
+    scope,
+  )}${outcomes("voice", "outcomeVoice", VOICE_OUTCOMES)}${outcomes(
+    "written",
+    "outcomeWritten",
+    WRITTEN_OUTCOMES,
+  )}${segGroup("With", "withWhom", CONTACT_WITH, withWhom, scope)}<label class="field" for="${nameId}" data-other-name${
+    withWhom === "other" ? "" : " hidden"
+  }><span>Name</span><input id="${nameId}" name="otherName" type="text" value="${esc(
+    contact?.otherName ?? "",
+  )}" maxlength="80"></label>${input(
+    "Contact time",
+    "contactedAt",
+    time,
+    "datetime-local",
+    "required",
+    scope,
+  )}${textarea("Note", "note", contact?.note ?? "", 'maxlength="1000" rows="2"', scope)}${buttons}</form>`;
+}
+
+// One entry in the Contacts tab: its line, Copy, Edit for the logger or an
+// admin, "edited", its task, and its earlier versions, read-only. The edit
+// form is drawn only for a persona who may edit, so a persona chosen while
+// somebody else's form was open never sees it (Review Focus 3).
+function contactItem(record, contact, person, view) {
+  const id = esc(contact?.id ?? "");
+  const editable = mayEditContact(contact, person);
+  const editing = editable && (view.openPanels ?? []).includes(`contact-edit:${contact?.id}`);
+  const task = contact?.followupId
+    ? (record.followups ?? []).find((followup) => followup?.id === contact.followupId)
+    : null;
+  const earlier = [...(contact?.versions ?? [])]
+    .filter((version) => Number(version?.version) < Number(contact?.revision))
+    .sort((a, b) => Number(a.version) - Number(b.version));
+  const meta = [
+    when(contact?.followupId, `<span>For the follow-up: ${esc(task?.reason ?? "an office task")}</span>`),
+    when(contact?.editedAt, `<span>edited ${esc(contactTime(contact.editedAt))}</span>`),
+  ].join("");
+  return `<li id="contact-${id}" class="contact-entry" tabindex="-1"><p class="contact-line" id="contact-${id}-line">${esc(
+    lineOf(record, contact),
+  )}</p>${when(meta, `<p class="contact-meta">${meta}</p>`)}<div class="contact-actions">${button(
+    "Copy",
+    "copy-contact",
+    "secondary",
+    `data-contact-id="${id}" aria-describedby="contact-${id}-line"`,
+  )}${when(
+    editable,
+    button("Edit", "toggle-contact-edit", "text", `data-contact-id="${id}" aria-expanded="${editing}"`),
+  )}</div>${when(editing, logContactForm(record, person, view, { contact }))}${when(
+    earlier.length,
+    `<details class="contact-versions"><summary>Earlier versions (${earlier.length})</summary><ol>${earlier
+      .map(
+        (version) =>
+          `<li>${esc(lineOf(record, version, contact.loggedByName))}<small>Saved ${esc(
+            contactTime(version.createdAt),
+          )} · ${esc(version.editedByName ?? UNKNOWN_PERSON)}</small></li>`,
+      )
+      .join("")}</ol></details>`,
+  )}</li>`;
+}
+
+/**
+ * The Contacts tab (design D9): Copy all, the Log contact form, then the
+ * entries, newest contact time first (then newest logged).
+ *
+ * @param {object} record the decorated staff case
+ * @param {object|null} person the persona
+ * @param {object} ui `{busy, now, openPanels}`
+ */
+export function contactsPanel(record, person, ui = {}) {
+  const view = ui ?? {};
+  const contacts = [...(record?.contacts ?? [])].sort((a, b) => byContactTime(b, a));
+  return `<section class="panel contacts-panel" aria-labelledby="contacts-title"><div class="section-head"><h2 id="contacts-title">Contacts</h2>${when(
+    contacts.length,
+    button("Copy all", "copy-all-contacts", "secondary"),
+  )}</div>${
+    person ? logContactForm(record, person, view) : explain({ allowed: false, reason: CHOOSE_PERSONA })
+  }${
+    contacts.length
+      ? `<ol class="contact-list">${contacts.map((contact) => contactItem(record, contact, person, view)).join("")}</ol>`
+      : emptyLine("No contacts logged yet.")
+  }</section>`;
+}
+
+// The lines of the entries linked to one task, oldest first (design D8).
+export function taskContacts(record, task) {
+  const linked = (record?.contacts ?? [])
+    .filter((contact) => task?.id && contact?.followupId === task.id)
+    .sort(byContactTime);
+  if (!linked.length) return emptyLine("No contact has been logged on this task yet.");
+  return `<ul class="contact-task-list">${linked
+    .map((contact) => `<li>${esc(lineOf(record, contact))}</li>`)
+    .join("")}</ul>`;
 }
 
 // One plain sentence per recorded action (spec section 6). The actor is added
@@ -1363,6 +1576,7 @@ function followupPanel(record) {
 export const EVENT_SENTENCES = Object.freeze({
   SAVE_ANSWERS: "saved the intake answers",
   SUBMIT: "submitted the application",
+  START_SCREENING: "started screening",
   VERIFY_INTAKE: "recorded the intake checks",
   CLAIM_PREPARATION: "claimed preparation",
   REQUEST_DOCUMENT: "asked the client for a document",
@@ -1370,6 +1584,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_DOCUMENT_RESPONSE: "recorded a document the office took in",
   VERIFY_DOCUMENT: "verified a document",
   ESCALATE_CONTACT: "asked the office to contact the client",
+  // No longer sent (the contact log replaced it), but earlier attempts are
+  // still in the history and keep their wording.
   RECORD_CONTACT: "recorded a call attempt",
   RESOLVE_FOLLOWUP: "resolved the office follow-up",
   SUBMIT_REVIEW: "recorded that preparation is complete",
@@ -1378,6 +1594,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RESUBMIT_REVIEW: "recorded that the corrections are complete",
   APPROVE_REVIEW: "approved the review",
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
+  MARK_READY_TO_EFILE: "recorded the client's Form 8879 signature",
+  MARK_EFILED: "recorded that the return was e-filed",
   REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",
@@ -1466,11 +1684,15 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
       staffShaped ? `${documentChecklist(record, rights, view)}${documentsPanel(record, rights, view)}` : elsewhere,
     ],
     ["followup", "Follow-up", staffShaped ? followupPanel(record) : elsewhere],
+    ["contacts", "Contacts", staffShaped ? contactsPanel(record, person, view) : elsewhere],
     ["history", "History", historyPanel(record, staffShaped)],
   ];
   return [
     problemNotice(view),
     caseHeader(record, person),
-    caseTabs(panels, view.caseTab, { documents: (record.requests ?? []).length }),
+    caseTabs(panels, view.caseTab, {
+      documents: (record.requests ?? []).length,
+      contacts: (record.contacts ?? []).length,
+    }),
   ].join("");
 }

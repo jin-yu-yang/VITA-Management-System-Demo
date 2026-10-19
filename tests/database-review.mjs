@@ -4,6 +4,7 @@ import {
   createDatabaseFixture,
   applyArgs,
   rejected,
+  SAMPLE_CONTACT,
 } from "./support/database-fixture.mjs";
 import { initializeWorkspace } from "../tools/admin/workspace-setup.mjs";
 const FINDINGS = "Recheck the fictional mileage entry.";
@@ -161,6 +162,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           [
             "SAVE_ANSWERS",
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "SUBMIT_REVIEW",
@@ -209,6 +211,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           c.history.map((entry) => entry.action),
           [
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "SUBMIT_REVIEW",
@@ -803,13 +806,24 @@ test("review submission waits for documents, not for office contact", async (t) 
         });
         assertPlainClientMessage(messageOf(staff, "SUBMIT_REVIEW"));
         // Sam still owns the open task after the hand-off.
-        await f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
-          outcome: "reached",
-          note: "Reached the fictional client about the office question.",
-        });
+        await f.logContact(
+          f.presenter,
+          caseId,
+          f.sam,
+          {
+            ...SAMPLE_CONTACT(),
+            outcome: "reached",
+            note: "Reached the fictional client about the office question.",
+          },
+          staff.followups[0].id,
+        );
         const contacted = await f.readStaffCase(caseId);
         assert.equal(contacted.stage, "review_ready");
-        assert.equal(contacted.followups[0].attempts.length, 1);
+        const contacts = await f.sql(
+          "select count(*)::int as n from public.contact_log where followup_id=$1",
+          [staff.followups[0].id],
+        );
+        assert.equal(contacts.rows[0].n, 1);
       },
     );
     await t.test(

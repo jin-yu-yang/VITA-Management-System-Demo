@@ -66,6 +66,8 @@ const STATE_TABLES = Object.freeze([
   "documents",
   "admin_followups",
   "contact_attempts",
+  "contact_log",
+  "contact_log_versions",
   "reviews",
   "assistance_items",
   "case_contacts",
@@ -121,6 +123,45 @@ export const assistanceArgs = ({
   p_person_id: personId,
   p_type: type,
   p_note: note,
+});
+// The contact log's two RPCs (OpenSpec change add-contact-log, design D1).
+// An entry has exactly these eight keys; SAMPLE_CONTACT is a function so each
+// call takes a fresh contact time.
+export const SAMPLE_CONTACT = () => ({
+  direction: "outgoing",
+  contactedAt: new Date().toISOString(),
+  withWhom: "client",
+  otherName: null,
+  method: "phone",
+  purpose: "go_over_return",
+  outcome: "reached",
+  note: "Asked about the fictional 1099-R.",
+});
+export const contactArgs = ({
+  actionId = randomUUID(),
+  caseId,
+  personId,
+  followupId = null,
+  entry,
+}) => ({
+  p_action_id: actionId,
+  p_case_id: caseId,
+  p_person_id: personId,
+  p_followup_id: followupId,
+  p_entry: entry,
+});
+export const editContactArgs = ({
+  actionId = randomUUID(),
+  contactId,
+  revision,
+  personId,
+  entry,
+}) => ({
+  p_action_id: actionId,
+  p_contact_id: contactId,
+  p_expected_revision: revision,
+  p_person_id: personId,
+  p_entry: entry,
 });
 export async function createDatabaseFixture({ afterInitialize } = {}) {
   const target = await assertTestTarget();
@@ -259,12 +300,37 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     if (error) throw createAppError(error);
     return data;
   };
+  // A contact log entry, linked to a follow-up task when `followupId` is given.
+  f.logContact = async (client, caseId, personId, entry, followupId = null) => {
+    const { data, error } = await client.rpc(
+      "vitally_log_contact",
+      contactArgs({ caseId, personId, followupId, entry }),
+    );
+    if (error) throw createAppError(error);
+    return data;
+  };
+  // An edit against the entry's current revision, as the caller reads it.
+  f.editContact = async (client, contactId, personId, entry) => {
+    const current = await visibleRow(client, "contact_log", contactId);
+    const { data, error } = await client.rpc(
+      "vitally_edit_contact",
+      editContactArgs({
+        contactId,
+        revision: Number(current.revision),
+        personId,
+        entry,
+      }),
+    );
+    if (error) throw createAppError(error);
+    return data;
+  };
   // An unclaimed case waiting for a preparer, built only through public actions.
   f.readyCase = async () => {
     const created = await f.draftCase(f.applicantA);
     await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
       confirmed: true,
     });
+    await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
       checks: INTAKE_CHECKS,
     });
@@ -298,6 +364,35 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     const caseId = await f.readyCase();
     await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
     await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    return caseId;
+  };
+  // A client case just submitted: stage received, no screening yet.
+  f.submittedClientCase = async () => {
+    const created = await f.draftCase(f.applicantA);
+    await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
+      confirmed: true,
+    });
+    return { caseId: created.caseId };
+  };
+  // The client's history lines for a case, oldest first (client_events.message).
+  f.clientMessages = async (caseId) =>
+    (
+      await f.sql(
+        "select message from public.client_events where case_id=$1 order by created_at, id",
+        [caseId],
+      )
+    ).rows.map((row) => row.message);
+  // A case at review_approved. With { called: true } (the default) the
+  // reviewer has also recorded the call with the client.
+  f.approvedCase = async ({ called = true } = {}) => {
+    const caseId = await f.preparedCase();
+    await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {});
+    if (called)
+      await f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", {
+        outcome: "reached",
+        note: "Told the fictional client the return is ready.",
+      });
     return caseId;
   };
   // Test-only additive people and capabilities on this run's own workspace
@@ -419,6 +514,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         answers: makeSampleAnswers(),
       });
     await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+    await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
       checks: INTAKE_CHECKS,
     });

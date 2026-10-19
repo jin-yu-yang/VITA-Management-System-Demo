@@ -6,6 +6,7 @@ import {
   referenceScreen,
   intakeScreen,
   progressScreen,
+  PROGRESS_STEPS,
   conflictForm,
   saveStatus,
 } from "../src/client-views.mjs";
@@ -333,8 +334,8 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   const html = applicationsScreen(baseState({ cases }));
   assert.ok(html.includes("VT-AB2C-DE3F"));
   assert.ok(html.includes("VT-KK44-MM55"));
-  assert.ok(html.includes(describeStage("draft").label));
-  assert.ok(html.includes(describeStage("reviewing").label));
+  assert.ok(html.includes(describeStage("draft").clientLabel));
+  assert.ok(html.includes(describeStage("reviewing").clientLabel));
   assert.ok(hasButton(html, "Start a new application"));
   assert.match(html, /data-action="start-application"/);
   assert.match(html, /data-action="open-case"[^>]*data-case-id="case-b"|data-case-id="case-b"[^>]*data-action="open-case"/);
@@ -353,6 +354,14 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   assert.ok(!missing.includes("VT-AB2C-DE3F"));
   assert.ok(!missing.includes("VT-KK44-MM55"));
   assert.ok(!/registered|email address on file/i.test(missing));
+});
+
+test("a 简体 applications list names a screening case in Chinese, never the staff name", () => {
+  const html = applicationsScreen(
+    baseState({ lang: "zh-Hans", cases: [caseRecord({ id: "case-s", stage: "screening" })] }),
+  );
+  assert.ok(html.includes("审核中"));
+  assert.ok(!html.includes("Screening in progress"));
 });
 
 test("the reference card can be copied and printed and starts the form", () => {
@@ -429,7 +438,7 @@ test("progress names the stage, shows client history and answers a document requ
     }),
   });
   const html = progressScreen(state);
-  assert.ok(html.includes(describeStage("preparing").label));
+  assert.ok(html.includes(describeStage("preparing").clientLabel));
   assert.ok(html.includes(describeStage("preparing").clientMessage));
   assert.ok(html.includes("Application received."));
   assert.ok(html.includes("2025 mileage record"));
@@ -501,7 +510,7 @@ test("review progress is plain and never carries findings", () => {
         savedCase: caseRecord({ stage, revision: 8, intakeVerified: true }),
       }),
     );
-    assert.ok(html.includes(describeStage(stage).label), stage);
+    assert.ok(html.includes(describeStage(stage).clientLabel), stage);
     assert.ok(html.includes(describeStage(stage).clientMessage), stage);
     for (const word of ["findings", "refund", "routing", "deposit", "$"])
       assert.ok(!html.toLowerCase().includes(word), `${stage} must not say ${word}`);
@@ -714,6 +723,107 @@ test("a version-2 chip counts the revealed invalid answers of visible questions"
   assert.match(text(saveStatus(v2({ ...shown, saveState: "saving" }))), /Saving/);
   assert.match(text(saveStatus(v2({ ...shown, saveState: "failed", dirty: true }))), /Not saved/);
   assert.equal(text(saveStatus(v2({ ...shown, saveState: "unsaved", dirty: true }))), "Unsaved changes");
+});
+
+const progressAt = (stage, lang = "en", overrides = {}) =>
+  progressScreen(
+    baseState({
+      screen: "progress",
+      lang,
+      savedCase: caseRecord({ stage, revision: 8, intakeVerified: true, ...overrides }),
+    }),
+  );
+
+// What the five steps of the track read, in order, as "name: status".
+const trackOf = (html) =>
+  [...html.matchAll(/<div class="(done|current|)"><span>[\s\S]*?<small>([^<]*)<\/small><em class="sr-only">([^<]*)<\/em><\/div>/g)].map(
+    ([, , name, status]) => `${name}: ${status}`,
+  );
+
+test("the client's progress has five steps", () => {
+  assert.deepEqual(
+    PROGRESS_STEPS.map(([key, stages]) => [key, stages]),
+    [
+      ["progress.step.intake", ["draft", "received", "screening"]],
+      ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
+      ["progress.step.review", ["review_ready", "reviewing"]],
+      ["progress.step.signing", ["review_approved"]],
+      ["progress.step.filing", ["ready_to_efile", "efiled"]],
+    ],
+  );
+  assert.equal(t("progress.step.signing", {}, "zh-Hans"), "签名");
+  assert.equal(t("progress.step.filing", {}, "zh-Hans"), "递交");
+  assert.equal(trackOf(progressAt("preparing")).length, 5);
+});
+
+test("at Ready to exit, intake to review are done and signing is current", () => {
+  assert.deepEqual(trackOf(progressAt("review_approved")), [
+    "Intake: complete",
+    "Preparation: complete",
+    "Review: complete",
+    "Signing: in progress",
+    "Filing: not started",
+  ]);
+  assert.deepEqual(trackOf(progressAt("screening")), [
+    "Intake: in progress",
+    "Preparation: not started",
+    "Review: not started",
+    "Signing: not started",
+    "Filing: not started",
+  ]);
+  assert.deepEqual(trackOf(progressAt("efiled")).slice(3), ["Signing: complete", "Filing: in progress"]);
+});
+
+test("the client sees their own label, never the staff name", () => {
+  const signing = progressAt("review_approved");
+  assert.ok(signing.includes("Ready to sign"));
+  assert.ok(signing.includes(describeStage("review_approved").clientMessage));
+  assert.ok(!signing.includes("Ready to exit"));
+  const screening = progressAt("screening", "zh-Hans");
+  assert.ok(screening.includes("审核中"));
+  assert.ok(!screening.includes("Screening in progress"));
+  const filed = progressAt("efiled");
+  assert.ok(filed.includes("E-filed"));
+  assert.match(
+    filed,
+    /<p class="status-explanation">Your return was e-filed\. The IRS will confirm whether it is accepted\.<\/p>/,
+  );
+  const signed = progressAt("ready_to_efile", "zh-Hans");
+  assert.ok(signed.includes("已签名"));
+  assert.ok(!signed.includes("Ready to e-file"));
+});
+
+test("a closed case shows its closed notice, not a step", () => {
+  for (const [lang, badge] of [["en", "Closed"], ["zh-Hans", "已关闭"]]) {
+    const html = progressAt("closed", lang);
+    assert.ok(!html.includes("progress-steps"), lang);
+    assert.ok(!html.includes('class="current"'), lang);
+    assert.ok(html.includes(`<i></i>${badge}</span>`), lang);
+    assert.match(
+      html,
+      new RegExp(`<p class="status-explanation">${reEsc(describeStage("closed", lang).clientMessage)}</p>`),
+      lang,
+    );
+  }
+});
+
+test("the history shows the new lines in 简体", () => {
+  const history = [
+    { id: "h1", action: "SUBMIT", message: "Application received. A volunteer will check your information and documents.", createdAt: "2026-01-02T15:04:05Z" },
+    { id: "h2", action: "START_SCREENING", message: "PCDC started reviewing your application. We may call you.", createdAt: "2026-01-03T15:04:05Z" },
+    { id: "h3", action: "MARK_READY_TO_EFILE", message: "PCDC recorded that you signed Form 8879. Your return is ready to e-file.", createdAt: "2026-01-04T15:04:05Z" },
+    { id: "h4", action: "MARK_EFILED", message: "PCDC e-filed your return.", createdAt: "2026-01-05T15:04:05Z" },
+  ];
+  const html = progressAt("efiled", "zh-Hans", { history });
+  for (const line of [
+    "PCDC 已开始审核您的申请。我们可能会致电您。",
+    "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+    "PCDC 已电子递交您的报税表。",
+    "已收到申请。志愿者会核对您的信息和文件。",
+  ])
+    assert.ok(html.includes(line), line);
+  assert.ok(!html.includes("PCDC e-filed your return."));
+  assert.ok(!html.includes("Application received."));
 });
 
 // ---------------------------------------------------------------------------
@@ -1245,7 +1355,7 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   assert.ok(intro >= 0 && intro < tools && tools < fold && fold < start && start < end, "the order");
   assert.equal(
     html.slice(intro, tools),
-    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 13614-C or Form 14446 made from your answers.</p></div>',
+    '<div class="summary-intro"><p>Here is a summary of everything you told us in your application.</p><p>Before you submit, make sure you have answered everything that applies to you. To change an answer, choose <strong>Change</strong> next to that part, or choose that part in the list of steps.</p><p>With the buttons below, you can print this summary, or view and download a draft Form 14446 made from your answers.</p></div>',
   );
   assert.equal(
     html.slice(fold, start),
@@ -1254,9 +1364,9 @@ test("review.summary: the intro, then the tools, then Expand and Collapse all, t
   // The tools, before the printed block.
   const toolbox = html.slice(tools, fold);
   assert.match(toolbox, /data-action="print-summary"[^>]*>[\s\S]*?Print<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="en"[^>]*>[\s\S]*?View Draft 13614-C<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-s"[^>]*>简体中文版<\/button>/);
-  assert.match(toolbox, /data-action="view-draft" data-form="zh-t"[^>]*>繁體中文版<\/button>/);
+  assert.match(toolbox, /data-action="view-draft" data-draft="14446" data-form="en"[^>]*>[\s\S]*?View Draft Form 14446<\/button>/);
+  assert.doesNotMatch(toolbox, /data-action="view-draft"(?![^>]*data-draft="14446")/);
+  assert.doesNotMatch(toolbox, /13614-C/);
   assert.match(toolbox, /<p id="draft-ready" class="draft-ready" aria-live="polite"><\/p>/);
   const printed = html.slice(start, end);
   assert.match(printed, /VT-GJPY-JAY9/);
@@ -1290,11 +1400,11 @@ test("the summary offers the draft Form 14446 in English and 繁體, never 简�
   assert.match(en, /data-action="view-draft" data-draft="14446" data-form="en"/);
   assert.match(en, /data-draft="14446" data-form="zh-t"/);
   assert.doesNotMatch(en, /data-draft="14446" data-form="zh-s"/);
-  assert.match(en, /view and download a draft Form 13614-C or Form 14446 made from your answers/);
-  // The spec's order: Print, then View Draft 13614-C, then View Draft Form 14446.
+  assert.match(en, /view and download a draft Form 14446 made from your answers/);
+  assert.doesNotMatch(en, /13614-C/);
+  // The spec's order: Print, then View Draft Form 14446.
   const at = (pattern) => en.search(pattern);
-  assert.ok(at(/data-action="print-summary"/) < at(/data-action="view-draft"(?![^>]*data-draft="14446")/), "Print before the 13614-C");
-  assert.ok(at(/data-action="view-draft"(?![^>]*data-draft="14446")/) < at(/data-draft="14446"/), "the 13614-C before the 14446");
+  assert.ok(at(/data-action="print-summary"/) < at(/data-draft="14446"/), "Print before the 14446");
   const hans = summary("zh-Hans");
   assert.match(hans, /data-draft="14446" data-form="zh-t"/);
   assert.doesNotMatch(hans, /data-draft="14446" data-form="zh-s"/);

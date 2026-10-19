@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture } from "./support/database-fixture.mjs";
+import { createDatabaseFixture, SAMPLE_CONTACT } from "./support/database-fixture.mjs";
 import { createStore } from "../src/supabase-store.mjs";
 
 // What a client may watch, and what it must never receive.
@@ -179,6 +179,7 @@ const assertHealthy = (...watches) => {
 async function preparedCase(f, client) {
   const created = await f.draftCase(client);
   await f.act(client, created.caseId, null, "SUBMIT", { confirmed: true });
+  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
   });
@@ -389,7 +390,7 @@ const INTERNAL = Object.freeze([
     },
   },
   {
-    table: "contact_attempts",
+    table: "contact_log",
     identity: (row) => row.id,
     commit: async (f, owner) => {
       const caseId = await preparedCase(f, owner.client);
@@ -403,17 +404,27 @@ const INTERNAL = Object.freeze([
           request.id,
         ])
       ).rows;
-      await f.act(f.presenter, caseId, f.sam, "RECORD_CONTACT", {
-        followupId: followup.id,
-        outcome: "no_answer",
-        note: "Called during office hours. No answer.",
-      });
-      const [row] = (
-        await f.sql("select id from public.contact_attempts where followup_id=$1", [
-          followup.id,
-        ])
-      ).rows;
-      return { id: row.id };
+      const { contactId } = await f.logContact(
+        f.presenter,
+        caseId,
+        f.sam,
+        {
+          ...SAMPLE_CONTACT(),
+          outcome: "no_answer",
+          note: "Called during office hours. No answer.",
+        },
+        followup.id,
+      );
+      return { id: contactId };
+    },
+  },
+  {
+    table: "contact_log_versions",
+    identity: (row) => `${row.contact_id}:${row.version}`,
+    commit: async (f, owner) => {
+      const caseId = await preparedCase(f, owner.client);
+      const { contactId } = await f.logContact(f.presenter, caseId, f.alex, SAMPLE_CONTACT());
+      return { id: `${contactId}:1` };
     },
   },
   {

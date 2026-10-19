@@ -3,13 +3,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderStaffBoard, renderStaffCase } from "../src/staff-views.mjs";
 import { renderFollowups } from "../src/office-views.mjs";
-import { renderAdminCase, attemptList } from "../src/admin-views.mjs";
+import { renderAdminCase, taskContacts } from "../src/admin-views.mjs";
 import { applicationsScreen, progressScreen } from "../src/client-views.mjs";
 import { STATES, SENTENCES } from "./empty-states.states.mjs";
 
 // Moving the empty states onto emptyState / emptyLine must not change a
 // character (change unify-empty-states, design D2). The case pool and the Log
-// a call drawer change on purpose and are tested on their own.
+// contact drawer change on purpose and are tested on their own. The case pages
+// gained the Contacts tab, and the task's list became "Contacts so far", on
+// purpose too (change add-contact-log). Follow-ups gained the Screening,
+// Signing and E-filing filter chips (change add-screening-and-efiling-stages);
+// the three queue states differ from the capture by those chips alone.
 //
 // The case pages print "Updated" with formatTime, in the machine's own time
 // zone, and the fixture was captured in New York. Node re-reads TZ when it is
@@ -17,7 +21,7 @@ import { STATES, SENTENCES } from "./empty-states.states.mjs";
 // gives the same strings on CI (UTC) and on every developer's machine.
 process.env.TZ = "America/New_York";
 const GOLDEN = JSON.parse(readFileSync(new URL("./fixtures/empty-states.json", import.meta.url), "utf8"));
-const render = { renderStaffBoard, renderStaffCase, renderFollowups, renderAdminCase, attemptList, applicationsScreen, progressScreen };
+const render = { renderStaffBoard, renderStaffCase, renderFollowups, renderAdminCase, taskContacts, applicationsScreen, progressScreen };
 
 test("every list's empty state renders exactly as it did before the helpers", () => {
   assert.deepEqual(Object.keys(GOLDEN).sort(), Object.keys(STATES).sort());

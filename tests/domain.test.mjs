@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { describeStage, phaseTab, BOARD_TABS } from "../src/domain.mjs";
+import { historyLine } from "../src/client-text.mjs";
 import {
   CASE_ACTIONS,
   ERROR_CODES,
@@ -26,7 +27,8 @@ test("every server stage has plain status copy and no workflow decision", () => 
     assert.ok(label.length > 0 && label.length <= 40, stage);
     assert.ok(clientMessage.length > 0, stage);
     // Status copy is client-facing: no internal words, no money, and no claim
-    // that a later milestone has happened.
+    // of a milestone the case has not reached. The efiled message names
+    // e-filing because the case is there.
     for (const word of [
       "findings",
       "refund",
@@ -46,24 +48,25 @@ test("every server stage has plain status copy and no workflow decision", () => 
     STAGES.length,
   );
   assert.deepEqual(Object.keys(describeStage("reviewing")).sort(), [
+    "clientLabel",
     "clientMessage",
     "label",
   ]);
-  assert.equal(describeStage("reviewing").label, "In review");
+  assert.equal(describeStage("reviewing").label, "Review in progress");
   assert.match(
     describeStage("corrections_required").clientMessage,
     /No action is needed from you right now/,
   );
-  // Approval says signing and filing come next; it does not claim they happened.
+  // Approval says Form 8879 comes next; it does not claim it was signed.
   assert.match(
     describeStage("review_approved").clientMessage,
-    /A volunteer will contact you soon to sign and file\./,
+    /PCDC will contact you to sign Form 8879, which is needed before your return can be filed\./,
   );
   // Pure: the same input answers the same way, and an edited result never
   // changes the next answer.
   const first = describeStage("preparing");
   first.label = "Changed";
-  assert.equal(describeStage("preparing").label, "In preparation");
+  assert.equal(describeStage("preparing").label, "Filing in progress (preparing)");
   assert.deepEqual(describeStage("preparing"), describeStage("preparing"));
   // Anything the server never sends falls back to neutral copy.
   for (const unknown of [
@@ -77,6 +80,7 @@ test("every server stage has plain status copy and no workflow decision", () => 
   ])
     assert.deepEqual(describeStage(unknown), {
       label: "Application",
+      clientLabel: "Application",
       clientMessage:
         "This application is with the office. Contact PCDC if you have questions.",
     });
@@ -89,17 +93,21 @@ test("shared case contracts expose readable references and frozen vocabularies",
   assert.deepEqual(STAGES, [
     "draft",
     "received",
+    "screening",
     "preparation_ready",
     "preparing",
     "review_ready",
     "reviewing",
     "corrections_required",
     "review_approved",
+    "ready_to_efile",
+    "efiled",
     "closed",
   ]);
   assert.deepEqual(CASE_ACTIONS, [
     "SAVE_ANSWERS",
     "SUBMIT",
+    "START_SCREENING",
     "VERIFY_INTAKE",
     "CLAIM_PREPARATION",
     "REQUEST_DOCUMENT",
@@ -107,7 +115,6 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "RECORD_DOCUMENT_RESPONSE",
     "VERIFY_DOCUMENT",
     "ESCALATE_CONTACT",
-    "RECORD_CONTACT",
     "RESOLVE_FOLLOWUP",
     "SUBMIT_REVIEW",
     "CLAIM_REVIEW",
@@ -115,6 +122,8 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "RESUBMIT_REVIEW",
     "APPROVE_REVIEW",
     "RECORD_REVIEW_CONTACT",
+    "MARK_READY_TO_EFILE",
+    "MARK_EFILED",
     "REMIND",
     "CLOSE_CASE",
     "UPDATE_CONTACT",
@@ -180,15 +189,16 @@ test("describeStage takes a language; English is the default and unchanged", asy
   assert.equal(english.clientMessage, "An independent reviewer is checking your return.");
   const zh = describeStage("reviewing", "zh-Hans");
   assert.match(zh.clientMessage, /\p{Script=Han}/u);
-  assert.match(zh.label, /\p{Script=Han}/u);
-  assert.deepEqual(Object.keys(zh).sort(), ["clientMessage", "label"]);
+  assert.match(zh.clientLabel, /\p{Script=Han}/u);
+  assert.equal(zh.label, "Review in progress", "staff names stay English");
+  assert.deepEqual(Object.keys(zh).sort(), ["clientLabel", "clientMessage", "label"]);
   for (const stage of [...STAGES, "nonsense", null]) {
     const text = describeStage(stage, "zh-Hans");
-    assert.match(text.label, /\p{Script=Han}/u, String(stage));
+    assert.match(text.clientLabel, /\p{Script=Han}/u, String(stage));
     assert.match(text.clientMessage, /\p{Script=Han}/u, String(stage));
     assert.deepEqual(describeStage(stage, "fr"), describeStage(stage), "an unknown language is English");
   }
-  assert.equal(new Set(STAGES.map((stage) => describeStage(stage, "zh-Hans").label)).size, STAGES.length);
+  assert.equal(new Set(STAGES.map((stage) => describeStage(stage, "zh-Hans").clientLabel)).size, STAGES.length);
   setHantMap(MAP);
   try {
     assert.equal(describeStage("reviewing", "zh-Hant").clientMessage, MAP[zh.clientMessage]);
@@ -201,7 +211,50 @@ test("the text table's English stage entries match STAGE_DESCRIPTIONS", async ()
   const { t } = await import("../src/client-text.mjs");
   for (const stage of [...STAGES, "unknown"]) {
     const english = describeStage(stage === "unknown" ? "nonsense" : stage);
-    assert.equal(t(`stage.${stage}.label`), english.label, stage);
+    assert.equal(t(`stage.${stage}.label`), english.clientLabel, stage);
     assert.equal(t(`stage.${stage}.client`), english.clientMessage, stage);
   }
+});
+
+test("each stage has a staff name, a client label and a client message", () => {
+  const STAFF = { draft: "Draft", received: "Request sent", screening: "Screening in progress", preparation_ready: "Pending intake / filing", preparing: "Filing in progress (preparing)", corrections_required: "Corrections in progress", review_ready: "Pending review", reviewing: "Review in progress", review_approved: "Ready to exit", ready_to_efile: "Ready to e-file", efiled: "E-filed", closed: "Closed" };
+  const CLIENT_EN = { draft: "Draft", received: "Sent to PCDC", screening: "Being reviewed", preparation_ready: "Waiting for a volunteer", preparing: "Being prepared", corrections_required: "Being corrected", review_ready: "Waiting for review", reviewing: "Being checked", review_approved: "Ready to sign", ready_to_efile: "Signed", efiled: "E-filed", closed: "Closed" };
+  const CLIENT_ZH = { draft: "草稿", received: "已发送给 PCDC", screening: "审核中", preparation_ready: "等待志愿者", preparing: "准备中", corrections_required: "正在更正", review_ready: "等待检查", reviewing: "检查中", review_approved: "等待签名", ready_to_efile: "已签名", efiled: "已电子递交", closed: "已关闭" };
+  const MESSAGES = {
+    received: ["Your application is with PCDC. The office will review it soon and may call you.", "PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。"],
+    screening: ["PCDC is reviewing your application. We may call you to confirm your information and documents.", "PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。"],
+    preparation_ready: ["Your application has been checked. It is waiting for a volunteer to start preparing your return.", "您的申请已核对完毕，正在等待志愿者开始准备您的报税表。"],
+    review_ready: ["Your return is prepared and is waiting for an independent reviewer.", "您的报税表已准备好，正在等待审核志愿者检查。"],
+    review_approved: ["Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.", "您的报税表已检查完毕。PCDC 会联系您签署 8879 表，签署后才能递交报税表。"],
+    ready_to_efile: ["You signed Form 8879. PCDC will e-file your return next.", "您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。"],
+    efiled: ["Your return was e-filed. The IRS will confirm whether it is accepted.", "您的报税表已电子递交。国税局会确认是否接受。"],
+  };
+  for (const stage of STAGES) {
+    assert.equal(describeStage(stage).label, STAFF[stage], stage);
+    assert.equal(describeStage(stage, "zh-Hans").label, STAFF[stage], `${stage}: staff names stay English`);
+    assert.equal(describeStage(stage).clientLabel, CLIENT_EN[stage], stage);
+    assert.equal(describeStage(stage, "zh-Hans").clientLabel, CLIENT_ZH[stage], stage);
+    assert.ok(describeStage(stage).clientMessage && describeStage(stage, "zh-Hans").clientMessage, stage);
+  }
+  for (const [stage, [en, zh]] of Object.entries(MESSAGES)) {
+    assert.equal(describeStage(stage).clientMessage, en, stage);
+    assert.equal(describeStage(stage, "zh-Hans").clientMessage, zh, stage);
+  }
+});
+
+const PHONE = /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/;
+const NEW_HISTORY = [
+  ["PCDC started reviewing your application. We may call you.", "PCDC 已开始审核您的申请。我们可能会致电您。"],
+  ["PCDC recorded that you signed Form 8879. Your return is ready to e-file.", "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。"],
+  ["PCDC e-filed your return.", "PCDC 已电子递交您的报税表。"],
+];
+
+test("no stage message or new history line names a phone number", () => {
+  for (const stage of STAGES)
+    for (const lang of ["en", "zh-Hans"]) {
+      assert.doesNotMatch(describeStage(stage, lang).clientMessage, PHONE, `${stage} ${lang}`);
+      assert.doesNotMatch(describeStage(stage, lang).clientLabel, PHONE, `${stage} ${lang}`);
+    }
+  for (const [line] of NEW_HISTORY)
+    for (const lang of ["en", "zh-Hans"]) assert.doesNotMatch(historyLine(line, lang), PHONE, `${line} ${lang}`);
 });

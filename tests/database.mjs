@@ -15,7 +15,8 @@ const CLIENT_VISIBLE_TABLES = [
 const PRESENTER_ONLY_TABLES = [
   "preparation_participants",
   "admin_followups",
-  "contact_attempts",
+  "contact_log",
+  "contact_log_versions",
   "case_events",
   "reviews",
   "assistance_items",
@@ -112,7 +113,7 @@ async function seedWorkflow(f, caseId) {
     ],
   );
   await f.sql(
-    "insert into public.contact_attempts(id,workspace_id,case_id,followup_id,actor_user_id,actor_person_id,outcome,note) values($1,$2,$3,$4,$5,$6,$7,$8)",
+    "insert into public.contact_log(id,workspace_id,case_id,followup_id,logged_by_user_id,logged_by_person_id,direction,contacted_at,with_whom,method,purpose,outcome,note) values($1,$2,$3,$4,$5,$6,'outgoing',now(),'client','phone','request_documents','no_answer',$7)",
     [
       seeded.contactId,
       f.workspaceId,
@@ -120,9 +121,12 @@ async function seedWorkflow(f, caseId) {
       seeded.followupId,
       f.presenterUserId,
       f.people.sam,
-      "no_answer",
       "Left a fictional message.",
     ],
+  );
+  await f.sql(
+    "insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,direction,contacted_at,with_whom,method,purpose,outcome,note) select id,1,workspace_id,case_id,logged_by_user_id,logged_by_person_id,logged_at,direction,contacted_at,with_whom,method,purpose,outcome,note from public.contact_log where id=$1",
+    [seeded.contactId],
   );
   await f.sql(
     "insert into public.reviews(id,workspace_id,case_id,preparation_version,reviewer_person_id) values($1,$2,$3,1,$4)",
@@ -784,10 +788,13 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
         assert.equal(followup.assignee_person_id, f.people.sam);
         assert.equal(followup.status, "open");
         assert.equal(followup.resolution_outcome, null);
-        const [contact] = await rows(f.presenter, "contact_attempts");
+        const [contact] = await rows(f.presenter, "contact_log");
         assert.equal(contact.followup_id, seeded.followupId);
         assert.equal(contact.outcome, "no_answer");
-        assert.equal(contact.actor_person_id, f.people.sam);
+        assert.equal(contact.logged_by_person_id, f.people.sam);
+        const [version] = await rows(f.presenter, "contact_log_versions");
+        assert.equal(version.contact_id, seeded.contactId);
+        assert.equal(version.version, 1);
         const [event] = await rows(f.presenter, "case_events", {
           case_id: submitted.caseId,
         });
@@ -925,14 +932,36 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
             },
             update: { status: "cancelled" },
           },
-          contact_attempts: {
+          contact_log: {
             filter: ["id", seeded.contactId],
             insert: {
               workspace_id: f.workspaceId,
               case_id: submitted.caseId,
-              followup_id: seeded.followupId,
-              actor_user_id: f.presenterUserId,
-              actor_person_id: f.people.sam,
+              logged_by_user_id: f.presenterUserId,
+              logged_by_person_id: f.people.sam,
+              direction: "outgoing",
+              contacted_at: new Date().toISOString(),
+              with_whom: "client",
+              method: "phone",
+              purpose: "other",
+              outcome: "reached",
+            },
+            update: { outcome: "reached" },
+          },
+          contact_log_versions: {
+            filter: ["contact_id", seeded.contactId],
+            insert: {
+              contact_id: seeded.contactId,
+              version: 2,
+              workspace_id: f.workspaceId,
+              case_id: submitted.caseId,
+              edited_by_user_id: f.presenterUserId,
+              edited_by_person_id: f.people.sam,
+              direction: "outgoing",
+              contacted_at: new Date().toISOString(),
+              with_whom: "client",
+              method: "phone",
+              purpose: "other",
               outcome: "reached",
             },
             update: { outcome: "reached" },

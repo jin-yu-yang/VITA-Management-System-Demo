@@ -30,7 +30,7 @@ On a client screen the error SHALL be in the screen's language.
 - **THEN** the dialog says "This checkpoint is not available." with Dismiss and no Try again, the problem banner shows nothing behind it, and no toast appears
 
 #### Scenario: A draft that couldn't be built
-- **WHEN** a client presses View Draft Form 13614-C and the draft can't be built
+- **WHEN** a client presses View Draft Form 14446 and the draft can't be built
 - **THEN** the problem banner says, in the screen's language, that the draft could not be made, with Try again and Dismiss
 - **AND** pressing Try again builds the same draft again, and the error goes once it is built
 

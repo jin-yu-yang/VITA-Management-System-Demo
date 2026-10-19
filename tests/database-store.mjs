@@ -150,6 +150,20 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       assert.equal(waiting.openFollowups, 1);
       assert.deepEqual(waiting.followupAssigneeIds, [f.sam]);
       assert.deepEqual(waiting.participants, [f.alex]);
+      // The reviewer's call with the client, for Follow-ups: none before an
+      // approval, pending after one, completed once the call is recorded.
+      assert.equal(unclaimed.reviewContactStatus, null);
+      const waitingForCall = await f.approvedCase({ called: false });
+      const called = await f.approvedCase();
+      const listed = await presenter.listCases();
+      assert.equal(
+        listed.find((row) => row.id === waitingForCall).reviewContactStatus,
+        "pending",
+      );
+      assert.equal(
+        listed.find((row) => row.id === called).reviewContactStatus,
+        "completed",
+      );
       // A client's own list carries none of it: the summaries are staff work.
       for (const row of await applicant.listCases())
         for (const field of [
@@ -157,6 +171,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
           "openFollowups",
           "followupAssigneeIds",
           "openRequests",
+          "reviewContactStatus",
         ])
           assert.ok(!(field in row), `${field} is absent for an applicant`);
     });

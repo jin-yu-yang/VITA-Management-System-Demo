@@ -8,7 +8,12 @@ import {
   decorateStaffCase,
   correctionsDialogBody,
 } from "./staff-views.mjs";
-import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
+import {
+  renderAdminCase,
+  closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+} from "./admin-views.mjs";
 import {
   renderAddCaseV2,
   renderFollowups,
@@ -256,6 +261,8 @@ export function staffScreen(state) {
         dirty: state.dirty,
         openPanels: state.openPanels,
         caseTab: state.caseTab,
+        // The Log contact form's time field starts at now (New York).
+        now: Date.now(),
       };
       return office
         ? frame(
@@ -430,6 +437,14 @@ export function dialog(state) {
     // The office screens own their own copy; this frame only places it.
     body = closeCaseDialogBody(state);
   }
+  if (state.dialog === "mark-ready-to-efile") {
+    title = "Mark ready to e-file?";
+    body = markReadyToEfileDialogBody(state);
+  }
+  if (state.dialog === "mark-efiled") {
+    title = "Mark e-filed?";
+    body = markEfiledDialogBody(state);
+  }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";
     body = correctionsDialogBody(state);
@@ -445,9 +460,9 @@ export function dialog(state) {
   if (DRAWERS.includes(state.dialog)) {
     const people = state.people ?? [];
     const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
-    const ui = { busy: state.busy, error: state.error, retryable: state.retryable };
+    const ui = { busy: state.busy, error: state.error, retryable: state.retryable, now: Date.now() };
     if (state.dialog === "log-call") {
-      title = "Log a call";
+      title = "Log contact";
       body = logCallDrawerBody({
         record: decorateStaffCase(state.savedCase, people),
         person,

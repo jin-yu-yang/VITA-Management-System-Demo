@@ -12,7 +12,6 @@ import {
   emptyLine,
 } from "./ui.mjs";
 import {
-  CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
   INTAKE_CHECK_KEYS,
   SAMPLE_DOCUMENT_FILENAME,
@@ -37,7 +36,14 @@ import {
   CONTACT_OUTCOME_LABELS,
   CHOOSE_PERSONA,
   UNKNOWN_PERSON,
+  contactsPanel,
+  logContactForm,
+  taskContacts,
 } from "./staff-views.mjs";
+
+// The task's own list lives beside the Contacts tab, in staff-views.mjs, and
+// the office drawer takes it from here as it always took the attempt list.
+export { taskContacts };
 
 // Sam's side of the workspace: the office board and the office view of one
 // case. Pure functions, exactly like `staff-views.mjs` — no state, no store, no
@@ -89,6 +95,7 @@ const DOCUMENT_STAGES = Object.freeze(["preparing", "corrections_required"]);
 // nobody owns. An approved review and a closed case are deliberately absent.
 const CLOSABLE_STAGES = Object.freeze([
   "received",
+  "screening",
   "preparation_ready",
   "preparing",
   "review_ready",
@@ -126,11 +133,13 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stopped) return stopped;
     if (stage === "draft")
       return refused("The client has not sent this application yet.");
-    if (stage !== "received")
+    if (stage !== "screening")
       return refused(
-        record.intakeVerified
-          ? "The simulated intake checks are already recorded."
-          : "The intake checks are recorded when an application arrives, before preparation.",
+        stage === "received"
+          ? "Screening starts when an admin opens the case."
+          : record.intakeVerified
+            ? "The simulated intake checks are already recorded."
+            : "The intake checks are recorded during screening, before preparation.",
       );
     return allowed;
   };
@@ -147,13 +156,37 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     const stopped = gate("admin");
     if (stopped) return stopped;
     if (stage === "closed") return refused("This case is already closed.");
-    if (stage === "review_approved")
+    if (["review_approved", "ready_to_efile", "efiled"].includes(stage))
       return refused("An approved case is not closed from here.");
     if (stage === "draft" && record.ownerUserId)
       return refused("A client's own draft is theirs to finish or leave.");
     if (stage !== "draft" && !CLOSABLE_STAGES.includes(stage))
       return refused("This case cannot be closed at this stage.");
     return allowed;
+  };
+
+  const markReadyToEfile = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (stage !== "review_approved")
+      return refused("This is recorded once the reviewer has approved the return.");
+    // The reviewer's call with the client comes first, as the database checks.
+    // A full case carries its reviews; a list row carries only reviewContactStatus.
+    const call =
+      record.reviewContactStatus ??
+      (record.reviews ?? []).findLast((review) => review?.status === "approved")
+        ?.clientContactStatus;
+    return call === "completed"
+      ? allowed
+      : refused("The reviewer still needs to record the conversation with the client.");
+  };
+
+  const markEfiled = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    return stage === "ready_to_efile"
+      ? allowed
+      : refused("This is recorded once the client has signed Form 8879.");
   };
 
   // Starting an assisted application needs no case at all.
@@ -229,6 +262,8 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     verifyIntake: verifyIntake(),
     remind: remind(),
     closeCase: closeCase(),
+    markReadyToEfile: markReadyToEfile(),
+    markEfiled: markEfiled(),
     assistedIntake: assistedIntake(),
     // One rule, two actions: the database checks the same capability, the same
     // assignment and the same open status for both.
@@ -406,51 +441,17 @@ function receiptPanel(record, person, ui) {
   )}${body}</section>`;
 }
 
-export function attemptList(task) {
-  const attempts = task?.attempts ?? [];
-  if (!attempts.length)
-    return emptyLine("No call has been recorded on this task yet.");
-  return `<ul class="attempt-list">${attempts
-    .map(
-      (attempt) =>
-        `<li>${esc(
-          named(CONTACT_OUTCOME_LABELS, attempt?.outcome, "Attempt"),
-        )} · ${esc(attempt?.actorName ?? UNKNOWN_PERSON)} · ${esc(
-          formatTime(attempt?.createdAt),
-        )}<small>${esc(attempt?.note)}</small></li>`,
-    )
-    .join("")}</ul>`;
-}
-
-// The two forms an assignee uses on an open task: record an attempt, then
-// resolve it. Shared by the case page's Follow-up tab and the office queue's
-// Log a call drawer, so the two can never ask for different things.
+// The two forms an assignee uses on an open task: the shared Log contact form,
+// linked to the task, then Resolve. Shared by the case page's Follow-up tab
+// and the office queue's Log contact drawer, so the two can never ask for
+// different things; the Contacts tab draws the same form, unlinked.
 export function followupForms(record, task, person, ui = {}) {
   const busy = ui.busy ? "disabled" : "";
   const rights = adminEligibility({ caseRecord: record, followup: task }, person);
   if (!rights.recordContact.allowed) return explain(rights.recordContact);
-  const contactScope = `contact-${task?.id ?? "task"}`;
   const resolveScope = `resolve-${task?.id ?? "task"}`;
   const hidden = `<input type="hidden" name="followupId" value="${esc(task?.id ?? "")}">`;
-  return `<form class="staff-form"><h4>Record a call</h4>${hidden}${select(
-        "What happened",
-        "outcome",
-        "",
-        outcomeOptions(CONTACT_OUTCOMES),
-        "required",
-        contactScope,
-      )}${textarea(
-        "Note for the office",
-        "note",
-        "",
-        'required maxlength="1000" rows="2"',
-        contactScope,
-      )}${caseSubmit(
-        `${icon("phone")} Record this attempt`,
-        "RECORD_CONTACT",
-        "secondary",
-        `data-followup-id="${esc(task?.id ?? "")}" ${busy}`,
-      )}<p class="field-note">Recording an attempt never resolves the task, even when you reached the client. Resolving it is the separate step below.</p></form><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
+  return `${logContactForm(record, person, ui, { followupId: task?.id ?? null })}<p class="field-note">Logging a contact never resolves the task, even when you reached the client. Resolving it is the separate step below.</p><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
         "How it ended",
         "outcome",
         "",
@@ -489,7 +490,7 @@ function followupTask(record, task, person, ui) {
   )}${detailRow(
     "Raised",
     task?.createdAt ? formatTime(task.createdAt) : "—",
-  )}${answered}<h4>Calls so far</h4>${attemptList(task)}${when(
+  )}${answered}<h4>Contacts so far</h4>${taskContacts(record, task)}${when(
     task?.resolutionNote,
     `<p class="field-note">${icon("check")} ${esc(
       named(CONTACT_OUTCOME_LABELS, task?.resolutionOutcome, "Resolved"),
@@ -520,7 +521,26 @@ function officeActionsPanel(record, rights, ui) {
     rights.remind.allowed
       ? caseButton(`${icon("clock")} Send a reminder`, "REMIND", "secondary", busy)
       : explain(rights.remind)
-  }<h3>Close this case</h3><p class="field-note">Closing cancels the pending document requests and office tasks <strong>in ViTally</strong>. It does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority.</p>${
+  }${when(
+    record.stage === "review_approved",
+    `<h3>Form 8879</h3><p class="field-note">Record that the client signed Form 8879. The client is told.</p>${
+      rights.markReadyToEfile.allowed
+        ? button(
+            `${icon("check")} Mark ready to e-file…`,
+            "open-mark-ready-to-efile",
+            "primary",
+            busy,
+          )
+        : explain(rights.markReadyToEfile)
+    }`,
+  )}${when(
+    record.stage === "ready_to_efile",
+    `<h3>E-file</h3><p class="field-note">Record that the return was e-filed. The client is told.</p>${
+      rights.markEfiled.allowed
+        ? button(`${icon("check")} Mark e-filed…`, "open-mark-efiled", "primary", busy)
+        : explain(rights.markEfiled)
+    }`,
+  )}<h3>Close this case</h3><p class="field-note">Closing cancels the pending document requests and office tasks <strong>in ViTally</strong>. It does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority.</p>${
     rights.closeCase.allowed
       ? button(
           `${icon("close")} Close this case…`,
@@ -568,6 +588,72 @@ export function closeCaseDialogBody(state = {}) {
       state.busy ? "disabled" : "",
     ),
     keep: "Keep it open",
+  });
+}
+
+const clientName = (record) =>
+  [record?.answers?.tp_first_name, record?.answers?.tp_last_name]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ") || "this client";
+
+/** The Form 8879 confirmation: the client is told it was signed. */
+export function markReadyToEfileDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> as ready to e-file?`,
+    note: {
+      icon: "shield",
+      html: "The client will be told PCDC recorded that they signed Form 8879. This can't be undone.",
+    },
+    form: {
+      fields: `<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "ready-efile",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "ready-efile",
+      )}" name="confirmed" value="true" required><span>The client signed Form 8879.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Mark ready to e-file`,
+      "MARK_READY_TO_EFILE",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+/** The e-filed confirmation: the client is told the return was e-filed. */
+export function markEfiledDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> as e-filed?`,
+    note: {
+      icon: "shield",
+      html: "The client will be told their return was e-filed. This can't be undone.",
+    },
+    form: {
+      fields: `<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "efiled",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "efiled",
+      )}" name="confirmed" value="true" required><span>The return was e-filed.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Mark e-filed`,
+      "MARK_EFILED",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
   });
 }
 
@@ -619,6 +705,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
       `${documentChecklist(record, staffRights, view)}${documentsPanel(record, staffRights, view)}`,
     ],
     ["followup", "Follow-up", adminFollowupPanel(record, person, view)],
+    ["contacts", "Contacts", contactsPanel(record, person, view)],
     ["history", "History", historyPanel(record, Array.isArray(record.internalHistory))],
   ];
   return [
@@ -627,6 +714,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
     caseTabs(panels, view.caseTab, {
       documents: (record.requests ?? []).length,
       followup: openFollowups,
+      contacts: (record.contacts ?? []).length,
     }),
   ].join("");
 }

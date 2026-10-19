@@ -21,7 +21,8 @@ import {
 // no other name.
 export const SAMPLE_DOCUMENT_FILENAME = "demo-mileage-record-2025.pdf";
 
-// A contact attempt's outcome, and the subset that may also resolve the task.
+// The review conversation's outcome, and the subset that may resolve an office
+// task. (A follow-up contact is logged in the contact log instead.)
 export const CONTACT_OUTCOMES = Object.freeze([
   "no_answer",
   "reached",
@@ -94,9 +95,8 @@ function checks(values) {
 // Closing a case is deliberate: a written reason and an explicit confirmation.
 // The flag that leaves is always the literal `true` the contract names — a form
 // can withhold the confirmation, never redefine it.
-function confirmation(values) {
-  if (!ticked(values, "confirmed"))
-    throw validation("Confirm that you want to close this case.");
+function confirmation(values, message = "Confirm that you want to close this case.") {
+  if (!ticked(values, "confirmed")) throw validation(message);
   return true;
 }
 
@@ -151,6 +151,7 @@ const BUILDERS = Object.freeze({
   // Demo attestations, never a claim that a real identity check happened, and
   // never built from a form where one of the four is still unticked.
   VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values) }),
+  START_SCREENING: () => ({}),
   CLAIM_PREPARATION: () => ({}),
   SUBMIT_REVIEW: () => ({}),
   CLAIM_REVIEW: () => ({}),
@@ -175,11 +176,6 @@ const BUILDERS = Object.freeze({
     requestId: relatedId(dataset, values, "requestId", "request"),
     reason: text(values, "reason", "A reason for the office"),
   }),
-  RECORD_CONTACT: (dataset, values) => ({
-    followupId: relatedId(dataset, values, "followupId", "task"),
-    outcome: outcome(values, CONTACT_OUTCOMES),
-    note: text(values, "note", "A note"),
-  }),
   RESOLVE_FOLLOWUP: (dataset, values) => ({
     followupId: relatedId(dataset, values, "followupId", "task"),
     outcome: outcome(values, FOLLOWUP_RESOLUTION_OUTCOMES),
@@ -194,6 +190,12 @@ const BUILDERS = Object.freeze({
   RECORD_REVIEW_CONTACT: (dataset, values) => ({
     outcome: outcome(values, CONTACT_OUTCOMES),
     note: text(values, "note", "A note"),
+  }),
+  MARK_READY_TO_EFILE: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that the client signed Form 8879."),
+  }),
+  MARK_EFILED: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that the return was e-filed."),
   }),
   CLOSE_CASE: (dataset, values) => ({
     reason: text(values, "reason", "A reason"),

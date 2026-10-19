@@ -25,9 +25,9 @@ foundation for production too; see [key decisions](#key-decisions-and-trade-offs
 | --- | --- | --- |
 | Browser app | `index.html`, `src/` | Screens, navigation, forms, live updates. Predicts permissions to hide buttons; decides nothing. |
 | Supabase Auth (GoTrue) | Supabase | Email one-time-code sign-in. Accounts exist only for approved addresses. |
-| PostgREST | Supabase | Exposes tables (read-only for browsers) and the five RPC functions over HTTP. |
+| PostgREST | Supabase | Exposes tables (read-only for browsers) and the seven RPC functions over HTTP. |
 | PostgreSQL | Supabase | Schema, row-level security, and all workflow logic in `SECURITY DEFINER` functions. |
-| Realtime | Supabase | Pushes INSERT/UPDATE events on fifteen tables, filtered by the same row-level security. |
+| Realtime | Supabase | Pushes INSERT/UPDATE events on sixteen tables, filtered by the same row-level security. |
 | `server.mjs` | Local machine | Serves the static files and `/public-config.json` locally. Any static host can replace it. |
 | `tools/admin/` | Operator's machine | Privileged tasks (migrations, roster) behind fail-closed target guards. Never in the browser. |
 
@@ -75,7 +75,7 @@ Visibility is enforced by row-level security on every table (full policies in
 | Principal | Sees |
 | --- | --- |
 | Applicant | Their own cases, and on those only: document requests, their documents, their contact details (`case_contacts`), and plain-language progress messages (`client_events`). |
-| Presenter | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, contact attempts, reviews, assistance items, materials received. |
+| Presenter | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, the contact log (`contact_log`, `contact_log_versions`), reviews, assistance items, materials received. |
 | Anonymous | Nothing. |
 
 The browser mirrors this: the applicant adapter never requests a staff table
@@ -166,7 +166,7 @@ The fixed order of checks, and which error each step produces, is in
 
 ## How live updates work
 
-Realtime sends INSERT and UPDATE events for fifteen tables. The browser uses an event only as a
+Realtime sends INSERT and UPDATE events for sixteen tables. The browser uses an event only as a
 hint: it takes the table and row id, decides what might be stale (the list, the open case, the
 assistance list), and **re-reads through the normal RLS-scoped queries**. It never trusts event
 payloads as data. Realtime applies RLS too, so a client never receives another client's event.

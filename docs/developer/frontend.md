@@ -17,10 +17,12 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
+- [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
 - [Feedback](#feedback)
 - [Live updates](#live-updates)
+- [The contact log](#the-contact-log)
 - [Sign-in](#sign-in)
 - [Window state](#window-state)
 - [Client languages](#client-languages)
@@ -184,7 +186,7 @@ for you; raw template literals do not.
 ## The version-2 intake form
 
 The form (part 4b, redesigned in part 4b2 as steps 0–9 with sub-steps on a rail tree, a Documents step and Review & submit) is built from the catalogue by the shared renderer in
-[`src/intake-form.mjs`](../../src/intake-form.mjs) and the screens in [`src/intake-views.mjs`](../../src/intake-views.mjs); document cards come from [`src/document-cards.mjs`](../../src/document-cards.mjs) and the draft 13614-C from `src/draft-form.mjs` and `src/draft-pdf.mjs`. The full design is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
+[`src/intake-form.mjs`](../../src/intake-form.mjs) and the screens in [`src/intake-views.mjs`](../../src/intake-views.mjs); document cards come from [`src/document-cards.mjs`](../../src/document-cards.mjs) and the drafts from `src/draft-form.mjs`, `src/draft-pdf.mjs` and `src/draft-virtual-consent.mjs`. The client's summary page (9.2, `summaryBody`) offers Print and the draft Form 14446 only (`draft14446Buttons`); a client never opens the 13614-C, because its shaded parts are for a certified volunteer. The full design is in [the intake screens spec](../superpowers/specs/2026-09-30-intake-screens-design.md)
 §2 (renderer, redraw rules, invalid values) and [the redesign spec](../superpowers/specs/2026-10-04-intake-redesign-design.md); this section is the map.
 
 **The renderer** is pure. `renderQuestion(question, value, { variant, lang, scope, answers,
@@ -283,8 +285,8 @@ volunteer and office pages):
   the note ("Edit best time", UPDATE_CONTACT), never a phone.
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
   anyone who passes `canSeeContact`, read-only for everyone else.
-- **The draft 13614-C** buttons (4b2's `view-draft` wiring), only for people who pass
-  `canSeeContact`, because the draft prints the phones.
+- **The draft** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
+  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a presenter (`principal.access === "presenter"`); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
 
 The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
 (`src/form-values.mjs`); `Object.fromEntries(new FormData(form))` would keep only the last box.
@@ -313,6 +315,66 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
   persona switch leave without asking. The guard also covers `open-add-case`, though that button
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
+
+## Stages and their words
+
+A case has one of twelve stages, in chain order: `draft`, `received`, `screening`,
+`preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
+`review_approved`, `ready_to_efile`, `efiled`, `closed`. The browser decides none of the moves
+(the database does, see the [state machine](database.md#the-case-state-machine)); it only names
+what it shows. `describeStage(stage, lang)` in [`domain.mjs`](../../src/domain.mjs) is the one
+place the words live. For each stage it returns three texts:
+
+| Field | Who reads it | Where it comes from |
+| --- | --- | --- |
+| `label` | Staff | `STAGE_DESCRIPTIONS`; always English (for example `screening` is "Screening in progress", `review_approved` is "Ready to exit") |
+| `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Signed") |
+| `clientMessage` | The client | The same, `stage.<stage>.client` |
+
+A stage that is not in the table gets neutral wording. A client message names no milestone the case
+has not reached, and no client text names a phone number.
+
+- **The badge.** `stageBadge(stage, lang, { audience })` in [`ui.mjs`](../../src/ui.mjs) shows
+  `label` for `audience: "staff"` (the default) and `clientLabel` for `audience: "client"`. The
+  client's screens (the applications list, the progress page and its review panel) pass
+  `"client"`; every staff, office and presenter screen leaves the default.
+- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists ten steps with staff
+  labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
+  `review_approved`, `ready_to_efile`, `efiled`, `closed`. A case in `corrections_required` shows
+  on the `preparing` step, marked as an amendment.
+- **The client's progress track** (`PROGRESS_STEPS` in `client-views.mjs`) has five steps, each
+  holding the stages that belong to it: intake (`draft`, `received`, `screening`), preparation
+  (`preparation_ready`, `preparing`, `corrections_required`), review (`review_ready`, `reviewing`),
+  signing (`review_approved`) and filing (`ready_to_efile`, `efiled`). A `closed` case shows no
+  current step.
+- **History lines.** The three lines the database writes for the new actions ("PCDC started
+  reviewing your application. We may call you.", the signing line and "PCDC e-filed your
+  return.") are entries in `SENTENCES`, so the client reads them in their own language.
+
+### Screening starts when an admin opens the case
+
+An admin opening a `received` case's page starts its screening. `startScreeningIfDue` in
+[`controller.mjs`](../../src/controller.mjs) sends `START_SCREENING` (empty payload) when all of
+these hold: the open case is at `received`, the screen is `staff-case`, the selected persona has
+the `admin` capability, and nothing else is busy or pending. It runs after a case is opened
+(`selectCase`), after a reload on a case page, after the persona changes (`selectPerson`), after a
+refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
+
+- **No refusal is shown.** A race ("another admin got there first", a stale revision) re-reads the
+  case, and one retry runs at the new revision. Any other refusal gives up on that case in this
+  window until it is opened again.
+- **An offline start is held whole** and resent unchanged on the next refresh, so the database
+  replays its receipt instead of acting twice.
+- **A case action pressed meanwhile waits** for the start (`runAction`), so it carries the revision
+  the start leaves behind.
+
+The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
+"Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
+sends `{confirmed: true}` through `payloadFor`, like any [workflow button](#events-and-actions).
+`adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
+whose reviewer has recorded a completed call with the client (the database checks the same), and
+the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows
+offer the same two marks, selecting the case in place.
 
 ## Events and actions
 
@@ -432,12 +494,39 @@ re-reads it:
 - a `workspaces` event (a sample reset, or a change to the workspace row such as its intake
   version): everything, with a notice if the open case vanished.
 
-`case_contacts` and `case_materials` events carry a case id like the other child tables, so they
-re-read the open case.
+`case_contacts`, `case_materials`, `contact_log` and `contact_log_versions` events carry a case id
+like the other child tables, so they re-read the open case. That is how a contact logged in one
+window shows in another.
 
 Connection status (`online`, `reconnecting`, `offline`) comes from the channel and shows in the
 page header and presenter panel. On reconnect, window focus and the browser's `online` event, the
 controller refreshes.
+
+## The contact log
+
+Staff log contacts (calls, texts, emails, visits) from three places that share one form. The
+database side is in [Database: the contact log](database.md#the-contact-log).
+
+- **`src/contact-log.mjs`** is pure. It holds the option lists and labels, `outcomesFor(method,
+  direction)`, `staffShortName`, and `contactSummary` / `contactSummaries`, which build the
+  one-line text the list and both Copy buttons use (so they cannot differ). Every time in the log
+  is **America/New_York**: `contactTime` formats an instant, and `nyLocalInput` / `nyLocalToIso`
+  convert to and from the `datetime-local` field's New York wall time, including daylight saving.
+  `contactEntryFromForm` builds the payload; its `contactedAt` always ends in `Z`.
+- **`logContactForm(record, person, ui, { followupId, contact })`** in `staff-views.mjs` is the only
+  form. Direction, method, purpose, who and outcome are radio groups styled as buttons; the outcome
+  group that matches the method is shown and the browser toggles them on change. With `contact` it
+  edits that entry ("Save changes"). It is rendered by:
+  - the **Contacts tab** (`contactsPanel`, in both `renderStaffCase` and `renderAdminCase`): Copy
+    all, the form, then the entries newest first with Copy, Edit and an "Earlier versions" list;
+  - the case page's **Follow-up tab** and the office queue's **Log contact** drawer, inside each
+    open task the persona may record on (`followupForms` in `admin-views.mjs`), linked to that task.
+    Each task also lists its entries under "Contacts so far" (`taskContacts`).
+- **Flow.** `app.mjs` reads the form into an entry and calls `controller.logContact(caseId, entry,
+  followupId)` or `controller.editContact(contactId, entry)`, which call the store's RPCs and
+  re-read the case. The store reads `contact_log` and `contact_log_versions` for `getCase`.
+- **Copy** writes to the system clipboard with `navigator.clipboard.writeText` (`copyContacts` in
+  `app.mjs`). A refused clipboard shows a warning toast instead. Tests that check the text read the clipboard back.
 
 ## Sign-in
 
@@ -469,7 +558,7 @@ with the switch in the client bar and saved per browser in `localStorage["vitall
 visit takes its language from `navigator.languages`. Staff and presenter screens are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
 character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
-the 繁體 draft 13614-C is made (which leaves the screen's language as it is). A saved 繁體 waits at
+a staff member makes the 繁體 draft 13614-C, which leaves the screen's language as it is (the Form 14446 never loads it). A saved 繁體 waits at
 most five seconds for it at startup, then starts in 简体 with a toast; a retry after a failed fetch
 asks for a fresh URL (`./zh-hant.mjs?r=1`, …), since some browsers cache a failed module.
 The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-screen-design.md).
@@ -537,9 +626,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1055) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1160) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (57) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

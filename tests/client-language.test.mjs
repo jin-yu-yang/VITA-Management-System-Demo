@@ -365,6 +365,20 @@ test("every history sentence in the migrations is a SENTENCES key; the request l
   assert.equal(historyLine("Something new.", "zh-Hans"), "Something new.");
 });
 
+test("the screening, 8879 and e-file history lines translate exactly", () => {
+  const lines = {
+    "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
+    "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+    "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  };
+  for (const [english, zh] of Object.entries(lines)) {
+    assert.equal(SENTENCES[english], zh, english);
+    assert.equal(historyLine(english, "zh-Hans"), zh, english);
+    assert.equal(historyLine(english, "en"), english, english);
+    assert.ok(migrationSentences().sentences.includes(english), `${english} is written by migration 032`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Errors, sign-in and notices: every sentence that can reach a client
 // ---------------------------------------------------------------------------
@@ -577,20 +591,17 @@ test("English is the default on every intake state too", () => {
   for (const state of Object.values(INTAKE_STATES)) assert.equal(render({ ...state, lang: "en" }), render(state));
 });
 
-test("the draft buttons put the current language's form first, then the other two", () => {
-  const forms = (lang) =>
-    [...client.intakeScreen(intakeState({ formSubstep: "review.summary", lang })).matchAll(/data-action="view-draft" data-form="([^"]+)"/g)].map(
-      (m) => m[1],
+test("the summary offers no draft 13614-C in any language, and the 14446's first form follows the screen", () => {
+  const page = (lang) => client.intakeScreen(intakeState({ formSubstep: "review.summary", lang }));
+  const drafts = (lang) =>
+    [...page(lang).matchAll(/data-action="view-draft"([^>]*)/g)].map((m) =>
+      /data-draft="14446"/.test(m[1]) ? /data-form="([^"]+)"/.exec(m[1])[1] : "13614-C",
     );
-  assert.deepEqual(forms("en"), ["en", "zh-s", "zh-t"]);
-  assert.deepEqual(forms("zh-Hans"), ["zh-s", "en", "zh-t"]);
-  assert.deepEqual(forms("zh-Hant"), ["zh-t", "en", "zh-s"]);
-  // The first is the main button, named from the table; the others are named in the screen's script.
-  const zh = client.intakeScreen(intakeState({ formSubstep: "review.summary", lang: "zh-Hans" }));
-  assert.match(zh, new RegExp(`data-form="zh-s"[^>]*>[\\s\\S]*?${t("draft.view", {}, "zh-Hans")}</button>`));
-  assert.match(zh, new RegExp(`data-form="en"[^>]*>${t("draft.form_en", {}, "zh-Hans")}</button>`));
-  const hant = client.intakeScreen(intakeState({ formSubstep: "review.summary", lang: "zh-Hant" }));
-  assert.match(hant, /data-form="zh-s"[^>]*>簡體中文版<\/button>/);
+  assert.deepEqual(drafts("en"), ["en", "zh-t"]);
+  assert.deepEqual(drafts("zh-Hans"), ["zh-t", "en"]);
+  assert.deepEqual(drafts("zh-Hant"), ["zh-t", "en"]);
+  assert.match(page("zh-Hans"), /14446 表草稿/);
+  assert.doesNotMatch(page("zh-Hans"), /13614-C/);
 });
 
 test("the summary's printed date is today's long date in the screen's language", () => {

@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { closeCaseDialogBody } from "../src/admin-views.mjs";
+import {
+  closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+} from "../src/admin-views.mjs";
 import { correctionsDialogBody } from "../src/staff-views.mjs";
 import { resetDialogBody, checkpointDialogBody } from "../src/presenter-views.mjs";
 import { dialog } from "../src/views.mjs";
@@ -13,7 +17,15 @@ import { STATES } from "./confirm-dialogs.states.mjs";
 const GOLDEN = JSON.parse(
   readFileSync(new URL("./fixtures/confirm-dialogs.json", import.meta.url), "utf8"),
 );
-const render = { closeCaseDialogBody, correctionsDialogBody, resetDialogBody, checkpointDialogBody, dialog };
+const render = {
+  closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+  correctionsDialogBody,
+  resetDialogBody,
+  checkpointDialogBody,
+  dialog,
+};
 
 test("every confirmation renders exactly as it did before confirmBody", () => {
   assert.deepEqual(Object.keys(GOLDEN).sort(), Object.keys(STATES).sort());

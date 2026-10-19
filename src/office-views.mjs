@@ -36,7 +36,7 @@ import {
 } from "./ui.mjs";
 import {
   adminEligibility,
-  attemptList,
+  taskContacts,
   followupForms,
   openFollowups,
   openFollowupCount,
@@ -69,13 +69,24 @@ import {
 
 export const QUEUE_KINDS = Object.freeze([
   ["intake", "Intake checks"],
+  ["screening", "Screening"],
+  ["signing", "Signing"],
+  ["efiling", "E-filing"],
   ["call", "Call the client"],
   ["help", "Help request"],
   ["unclaimed", "Unclaimed work"],
 ]);
 const KIND_VALUES = Object.freeze(QUEUE_KINDS.map(([value]) => value));
 const KIND_LABELS = Object.freeze(Object.fromEntries(QUEUE_KINDS));
-const KIND_ICONS = Object.freeze({ intake: "shield", call: "phone", help: "help", unclaimed: "user" });
+const KIND_ICONS = Object.freeze({
+  intake: "shield",
+  screening: "clock",
+  signing: "file",
+  efiling: "check",
+  call: "phone",
+  help: "help",
+  unclaimed: "user",
+});
 
 const calendarDay = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
 export function waitingDays(value, now = Date.now()) {
@@ -93,10 +104,18 @@ export function followupQueue(cases = [], assistance = [], now = Date.now()) {
   const records = Array.isArray(cases) ? cases : [];
   const rows = [];
   for (const record of records) {
-    if (record?.stage === "received" && !record?.intakeVerified)
+    // A sent application waits here until an admin opens it, which starts
+    // screening; the stage, not the intake checks, says it is still new.
+    if (record?.stage === "received")
       rows.push({ kind: "intake", record, item: null, draft: false, since: record.updatedAt });
     else if (record?.stage === "draft" && record?.ownerUserId === null)
       rows.push({ kind: "intake", record, item: null, draft: true, since: record.updatedAt });
+    else if (record?.stage === "screening")
+      rows.push({ kind: "screening", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "review_approved")
+      rows.push({ kind: "signing", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "ready_to_efile")
+      rows.push({ kind: "efiling", record, item: null, draft: false, since: record.updatedAt });
     if (isAvailableWork(record))
       rows.push({ kind: "unclaimed", record, item: null, draft: false, since: record.updatedAt });
     if (openFollowupCount(record))
@@ -155,8 +174,17 @@ function needed(row) {
     return esc(
       row.draft
         ? "The office started this one and has not sent it yet. Finish the answers and send it."
-        : stageWork(record.stage).work,
+        : "New application: open it to start screening.",
     );
+  if (kind === "screening") return esc("Finish screening.");
+  if (kind === "signing")
+    return esc(
+      // A list row carries only the reviewer's call status, never the reviews.
+      record.reviewContactStatus === "completed"
+        ? "Waiting for the client to sign Form 8879."
+        : "Waiting for the reviewer's call with the client.",
+    );
+  if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;
   if (kind === "call") {
     const n = openFollowupCount(record);
@@ -170,13 +198,25 @@ function rowAction(row, person, ui) {
   const busy = ui.busy ? "disabled" : "";
   const { kind, record, item } = row;
   const id = esc(record?.id ?? "");
-  if (kind === "intake")
+  if (kind === "intake" || kind === "screening")
     return button(
-      `${icon("arrow")} ${row.draft ? "Finish and send" : "Record intake checks"}`,
+      `${icon("arrow")} ${row.draft ? "Finish and send" : "Open"}`,
       "open-case",
       "primary",
       `data-case-id="${id}"`,
     );
+  if (kind === "signing" || kind === "efiling") {
+    // The rows are list rows: the marks open the case in place, then their
+    // confirmation (app.mjs), so nothing here sends or changes anything.
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const [decision, action, label] =
+      kind === "signing"
+        ? [rights.markReadyToEfile, "open-mark-ready-to-efile", "Mark ready to e-file…"]
+        : [rights.markEfiled, "open-mark-efiled", "Mark e-filed…"];
+    return decision.allowed
+      ? button(`${icon("check")} ${label}`, action, "primary", `data-case-id="${id}" ${busy}`)
+      : explain(decision);
+  }
   if (kind === "unclaimed") {
     const rights = adminEligibility({ caseRecord: record }, person);
     return rights.remind.allowed
@@ -184,7 +224,7 @@ function rowAction(row, person, ui) {
       : explain(rights.remind);
   }
   if (kind === "call")
-    return button(`${icon("phone")} Log a call`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
+    return button(`${icon("phone")} Log contact`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
   const rights = adminEligibility({ item }, person);
   if (item?.status === "open")
     return rights.claimAssistance.allowed
@@ -282,7 +322,7 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The two drawers: Log a call, and Resolve a help request
+// The two drawers: Log contact, and Resolve a help request
 // ---------------------------------------------------------------------------
 
 // The one announcement of a failure while a drawer is open (pitfall 8): the
@@ -299,8 +339,9 @@ const drawerError = (ui) =>
     : "";
 
 /**
- * The Log a call drawer: every open follow-up task on one case, each with the
- * same two forms the case page's Follow-up tab uses.
+ * The Log contact drawer: every open follow-up task on one case, each with its
+ * contacts so far and the same two forms the case page's Follow-up tab uses.
+ * (Its name and dialog key, `log-call`, are internal and stay.)
  *
  * @param {object} args `{record, person, ui, caseId}` — `record` is the loaded
  *   case, decorated (`decorateStaffCase`); `caseId` is the case the drawer was
@@ -316,7 +357,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   return `${head}${drawerError(ui)}${tasks
     .map(
       (task) =>
-        `<section class="drawer-task"><h3>${esc(task.reason)}</h3>${detailRow("Assigned to", task.assigneeName ?? UNKNOWN_PERSON)}<h4>Calls so far</h4>${attemptList(task)}${followupForms(record, task, person, ui)}</section>`,
+        `<section class="drawer-task"><h3>${esc(task.reason)}</h3>${detailRow("Assigned to", task.assigneeName ?? UNKNOWN_PERSON)}<h4>Contacts so far</h4>${taskContacts(record, task)}${followupForms(record, task, person, ui)}</section>`,
     )
     .join("")}`;
 }

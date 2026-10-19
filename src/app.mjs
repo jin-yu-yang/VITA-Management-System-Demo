@@ -28,7 +28,7 @@ import {
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
-import { buildDraftPdf, createDraftOffer, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
+import { buildDraftPdf, createDraftOffer, draftFontFiles, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -47,6 +47,8 @@ import { STORAGE_KEY, createLanguageRequests, isLang, loadHantWithin, viewLang }
 import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, SENTENCES } from "./client-text.mjs";
 import { createToastTimer } from "./toast.mjs";
+import { contactEntryFromForm, contactSummary, contactSummaries } from "./contact-log.mjs";
+import { decorateStaffCase, outcomeGroup } from "./staff-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -133,7 +135,7 @@ if (!config) {
   let controllerStarted = false;
   let cooldownTimer = null;
   // Where the keyboard was when a dialog opened (a `describeFocus` record), so
-  // closing it returns to that very control — the row's own Log a call button,
+  // closing it returns to that very control — the row's own Log contact button,
   // not the first one on the page.
   let focusBeforeDialog = null;
   // The dialog the last render drew. Only a dialog that has just opened takes
@@ -270,6 +272,7 @@ if (!config) {
     }
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
+    syncContactForms();
     showDraftLink();
     markPressed(state);
     tickCooldown(state);
@@ -906,7 +909,7 @@ if (!config) {
   const V2_PANELS = /^(rail-all|maybe:[a-z]+\.[a-z_]+|summary-shut:[a-z]+)$/;
 
   // `opener` is passed when the control was described before an await (the
-  // Log a call button, captured before its case is loaded); otherwise it is
+  // Log contact button, captured before its case is loaded); otherwise it is
   // whatever holds the keyboard now.
   function openDialog(name, context = null, opener = null) {
     const active = document.activeElement;
@@ -995,11 +998,12 @@ if (!config) {
   const STAFF_NOTICES = Object.freeze({
     VERIFY_INTAKE: "The simulated intake checks are recorded.",
     REMIND: "Reminder recorded. No external message sent.",
-    RECORD_CONTACT: "The attempt is recorded. The task is still open.",
     RESOLVE_FOLLOWUP: "The contact task is resolved. Nothing else changed.",
     RECORD_DOCUMENT_RESPONSE:
       "Recorded as staff-recorded, awaiting preparer verification.",
     CLOSE_CASE: "The case is closed and its pending work is cancelled.",
+    MARK_READY_TO_EFILE: "Marked ready to e-file. The client was told.",
+    MARK_EFILED: "Marked e-filed. The client was told.",
     CLAIM_PREPARATION: "This case is yours to prepare.",
     CLAIM_REVIEW: "This review is yours.",
     REQUEST_DOCUMENT: "The client was asked for this document.",
@@ -1090,6 +1094,10 @@ if (!config) {
     }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    // From a Follow-ups row the opener has left the queue (the case moved on)
+    // and there is no #case-title, so the queue's heading takes the keyboard.
+    if (type === "MARK_READY_TO_EFILE" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (type === "MARK_EFILED" && receipt) closeDialog("#case-title, #office-queue-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
@@ -1152,6 +1160,95 @@ if (!config) {
     if (sent) notify("success", ASSISTANCE_NOTICES[type], by);
   }
 
+  // ---- the contact log (OpenSpec change add-contact-log) -----------------
+  //
+  // Its own RPCs, not a case action: the form names its case, and its task or
+  // its entry, on itself (`staff-views.mjs`, logContactForm).
+
+  // Staff screens stay English; none of these reaches a client.
+  const CONTACT_TOASTS = Object.freeze({
+    logged: "The contact is logged.",
+    updated: "The contact is updated.",
+    copied: "Copied.",
+    copyFailed: "Copy did not work. Select the line and copy it by hand.",
+    otherName: "Type the name of the person you contacted.",
+  });
+  const copiedMany = (n) => (n === 1 ? CONTACT_TOASTS.copied : `Copied ${n} contacts.`);
+
+  // The one outcome group the method and direction call for is shown and
+  // enabled; the other is hidden and disabled, so `reportValidity` skips it
+  // and `FormData` leaves it out (Phone → No answer, then Text, cannot send
+  // no_answer). The Name box shows only for Other.
+  function syncContactForm(form) {
+    if (!form) return;
+    const picked = (name) => form.querySelector(`input[name="${name}"]:checked`)?.value ?? "";
+    const group = outcomeGroup(picked("method"), picked("direction"));
+    for (const set of form.querySelectorAll("[data-outcome-group]")) {
+      const on = set.dataset.outcomeGroup === group;
+      set.hidden = !on;
+      set.disabled = !on;
+    }
+    const name = form.querySelector("[data-other-name]");
+    if (name) name.hidden = picked("withWhom") !== "other";
+  }
+  function syncContactForms() {
+    for (const form of root.querySelectorAll("form.contact-form")) syncContactForm(form);
+  }
+
+  async function submitContact(form, by) {
+    const values = Object.fromEntries(new FormData(form));
+    if (values.withWhom === "other" && !String(values.otherName ?? "").trim()) {
+      notify("warning", CONTACT_TOASTS.otherName, by);
+      form.querySelector('[name="otherName"]')?.focus();
+      return;
+    }
+    // `required` and reportValidity have already refused a blank time.
+    const entry = contactEntryFromForm(values);
+    const { caseId, followupId, contactId } = form.dataset;
+    if (!contactId) {
+      await controller.logContact(caseId, entry, followupId || null);
+      // The form stays (it is the tab's, or the task's): back to its defaults.
+      clearFormDrafts(form);
+      render();
+      notify("success", CONTACT_TOASTS.logged, by);
+      return;
+    }
+    try {
+      await controller.editContact(contactId, entry);
+    } catch (error) {
+      // The newest version is on screen now; what was typed over the old one
+      // is not put back over it.
+      if (error?.code === "CONFLICT") {
+        clearFormDrafts(form);
+        render();
+      }
+      throw error;
+    }
+    clearFormDrafts(form);
+    const panel = `contact-edit:${contactId}`;
+    if (controller.getState().openPanels.includes(panel)) controller.togglePanel(panel);
+    document.getElementById(`contact-${contactId}`)?.focus();
+    notify("success", CONTACT_TOASTS.updated, by);
+  }
+
+  // Copy and Copy all: the same lines the page shows, built from the open
+  // case with its names, onto the clipboard.
+  async function copyContacts(contactId, by) {
+    const state = controller.getState();
+    const record = decorateStaffCase(state.savedCase, state.people ?? []);
+    const contacts = record?.contacts ?? [];
+    const options = { answers: record?.answers ?? {} };
+    const one = contactId ? contacts.find((contact) => contact?.id === contactId) : null;
+    if (contactId && !one) return;
+    if (!contactId && !contacts.length) return;
+    try {
+      await navigator.clipboard.writeText(one ? contactSummary(one, options) : contactSummaries(contacts, options));
+      notify("success", one ? CONTACT_TOASTS.copied : copiedMany(contacts.length), by);
+    } catch {
+      notify("info", CONTACT_TOASTS.copyFailed, by);
+    }
+  }
+
   // ---- navigation actions -----------------------------------------------
 
   // The draft 13614-C (spec 2026-10-04 §7), built here in the browser: the
@@ -1160,10 +1257,10 @@ if (!config) {
   // blockers stop it; the PDF is loaded into it when ready. pdf-lib and the
   // form load only now, and the Chinese font only when some answer needs it
   // (the same files whatever the text says).
-  function writeTab(tab, text) {
+  function writeTab(tab, text, kind = "13614c") {
     try {
       const page = tab.document;
-      page.title = t("draft.tab_title", {}, screenLang());
+      page.title = t(kind === "14446" ? "draft14446.tab_title" : "draft.tab_title", {}, screenLang());
       page.documentElement?.setAttribute("lang", screenLang());
       if (!page.body) page.documentElement?.append(page.createElement("body"));
       page.body.textContent = text;
@@ -1212,10 +1309,12 @@ if (!config) {
   }
 
   async function viewDraft(form, by, kind = "13614c") {
+    // A client's 13614-C is half finished (hide-draft-13614c-from-clients): only staff make one.
+    if (kind !== "14446" && controller.getState().principal?.access !== "presenter") return;
     const files = kind === "14446" ? FORM_14446_FILES : FORM_FILES;
     if (!Object.hasOwn(files, form)) return;
     const tab = window.open("", "_blank");
-    if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()));
+    if (tab) writeTab(tab, t("draft.preparing", {}, screenLang()), kind);
     // An earlier press's link goes: this press makes a new draft.
     draftOffers.drop();
     showDraftLink();
@@ -1237,7 +1336,7 @@ if (!config) {
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
         fetchBytes(files[form]),
-        fieldsNeedFont(fields) ? Promise.all(draftFontsFor(form).files.map(fetchCheckedFont)) : [],
+        fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor(form), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
       ]);
       const bytes = await buildDraftPdf({
         PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
@@ -1257,7 +1356,7 @@ if (!config) {
       // A draft that was built and offered: an earlier draft problem is over.
       controller.clearError("DRAFT");
     } catch (error) {
-      if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()));
+      if (tab && !tab.closed) writeTab(tab, t("draft.failed", {}, screenLang()), kind);
       if (by !== signedInUserId()) return;
       // A draft that couldn't be built is an error: the banner, with Try again.
       controller.noteLocalFailure(
@@ -1402,6 +1501,23 @@ if (!config) {
       case "open-close-case":
         openDialog("close-case");
         break;
+      case "open-mark-ready-to-efile":
+      case "open-mark-efiled": {
+        // From the case page the button carries no case id and the dialog
+        // opens at once. From a Follow-ups row it does: that case is read in
+        // place (no navigation, so screening never starts from the queue)
+        // and the dialog opens only if it is the one now loaded.
+        const opener = describeFocus(target);
+        const caseId = target.dataset.caseId;
+        const name = target.dataset.action === "open-mark-efiled" ? "mark-efiled" : "mark-ready-to-efile";
+        if (caseId) {
+          controller.dismissError();
+          await controller.selectCase(caseId, { navigate: false });
+          if (controller.getState().savedCase?.id !== caseId) break;
+        }
+        openDialog(name, null, opener);
+        break;
+      }
       case "open-log-call": {
         // Described before the await: by the time the case has loaded, the
         // page has been rebuilt and the keyboard may be anywhere.
@@ -1632,6 +1748,32 @@ if (!config) {
         // already chosen is nobody new, and what was typed stays.
         if (target.dataset.personId !== controller.getState().selectedPersonId) formDrafts.clear();
         controller.selectPerson(target.dataset.personId);
+        // An open contact edit form was the last persona's, so it closes too
+        // (the view already draws it only for its logger or an admin).
+        if (target.dataset.personId !== state.selectedPersonId)
+          for (const panel of controller.getState().openPanels)
+            if (panel.startsWith("contact-edit:")) controller.togglePanel(panel);
+        break;
+      case "toggle-contact-edit": {
+        const id = target.dataset.contactId ?? "";
+        const panel = `contact-edit:${id}`;
+        const formOf = () => root.querySelector(`form.contact-form[data-contact-id="${CSS.escape(id)}"]`);
+        const opening = !controller.getState().openPanels.includes(panel);
+        // Cancel: nothing typed into it is kept for next time.
+        if (!opening) clearFormDrafts(formOf());
+        controller.togglePanel(panel);
+        if (opening) {
+          const form = formOf();
+          (form?.querySelector("input:checked") ?? form?.querySelector("input"))?.focus();
+        }
+        else root.querySelector(`[data-action="toggle-contact-edit"][data-contact-id="${CSS.escape(id)}"]`)?.focus();
+        break;
+      }
+      case "copy-contact":
+        await copyContacts(target.dataset.contactId ?? "", by);
+        break;
+      case "copy-all-contacts":
+        await copyContacts(null, by);
         break;
       case "clear-lookup":
         controller.setLookup("");
@@ -1771,6 +1913,10 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
+    if (field.closest?.("form.contact-form") && ["direction", "method", "withWhom"].includes(field.name)) {
+      syncContactForm(field.form);
+      return;
+    }
     if (field.matches?.(V2_CONTROLS)) changeV2Field(field);
   });
 
@@ -1814,7 +1960,9 @@ if (!config) {
       const assistControl = form.querySelector(
         'button[type="submit"][data-assistance-action]',
       );
-      if (caseControl) {
+      if (form.matches(".contact-form")) {
+        await submitContact(form, by);
+      } else if (caseControl) {
         await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
         await runAssistanceAction(assistControl, form, by);

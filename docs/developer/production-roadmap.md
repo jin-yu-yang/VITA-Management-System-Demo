@@ -14,7 +14,7 @@ exists, what is missing, and where the change lands.
 | Roles (spec §6) | Client, and one "presenter" account acting as staff personas | Real per-person staff accounts and role-based visibility ([§1](#1-staff-identity)) |
 | Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted intake (steps 0–9 with sub-steps) is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
 | Documents (spec §5, §7.1) | Metadata for one fixed fictional file | Real upload, storage, scanning, retention ([§3](#3-documents)) |
-| State machine (spec §8.2) | Intake through review approval, corrections, closure | Signature, e-filing, unreachable client, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
+| State machine (spec §8.2) | Intake, screening, preparation, review, corrections, signature, e-filing, closure | Unreachable client, the IRS's answer after e-filing, amendments, waiting for documents and hold, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
 | Client portal (spec §8.3) | Status, requests, document response, progress history | Queue position, preparer/reviewer contact, print, withdraw, notifications |
 | Volunteer portal (spec §8.4) | Work board, filters, case detail, internal history | Profiles, certifications, contact details |
 | Admin dashboard (spec §8.5) | Office board, follow-ups, reminders, closure, assistance | Reassignment, workload, reports, reference materials ([§7](#7-admin-reporting-and-forms)) |
@@ -101,7 +101,7 @@ The demo's stages against the spec's state machine (spec §8.2):
 
 | Spec state | Demo | Notes |
 | --- | --- | --- |
-| Intake | `draft`, `received` | Demo adds an explicit office intake check (`VERIFY_INTAKE`) |
+| Intake | `draft`, `received`, `screening` | An admin opening a `received` case starts screening (`START_SCREENING`); the office's explicit intake check (`VERIFY_INTAKE`) then moves it on. An office-entered case starts in `screening` |
 | PendingPrepare | `preparation_ready` | |
 | InPrepare | `preparing` | |
 | Pending (missing documents) | Document requests beside `preparing` | **Design difference.** The demo keeps the preparer assigned while waiting; the spec returns the case to the pool. Decide which the site wants |
@@ -109,13 +109,16 @@ The demo's stages against the spec's state machine (spec §8.2):
 | InReview | `reviewing` | |
 | (not in spec) | `corrections_required` | Reviewer sends back to the same preparer, who resubmits a new version |
 | ReadyToExit | `review_approved` | The reviewer records a follow-up conversation with the client |
-| NeedSign, CantFindClient, Efiled | Not built | Signing and filing are explicitly out of the demo's scope |
+| NeedSign | `review_approved`, then `ready_to_efile` | `review_approved` is the wait for the client's Form 8879 signature; once the reviewer's call is recorded, an admin records the signature (`MARK_READY_TO_EFILE`) |
+| Efiled | `efiled` | An admin records the e-filing (`MARK_EFILED`); the demo has no stage after it |
+| CantFindClient | Not built | The unreachable-client loop is not modelled |
 | Cancelled | `closed` | Admin only, with a reason; no client withdrawal |
 
 To build next:
 
-- **Signature and e-filing milestones** after `review_approved`, including the unreachable-client
-  loop. Model them as new stages and actions ([database recipe](database.md#add-a-workflow-action)).
+- **The unreachable client** (CantFindClient), **the IRS's answer after e-filing** (accepted,
+  rejected, paper) and **amendments**, and the spec's Waiting for documents and Hold. Model them as
+  new stages and actions ([database recipe](database.md#add-a-workflow-action)).
 - **Client withdrawal** (spec §8.3): a client action that closes their own case.
 - **Release and reassignment** (spec §8.5, §13): an admin action to change a case's preparer or
   reviewer. The participation record must still block self-review after reassignment; the database
@@ -205,9 +208,9 @@ Before real data:
 The demo is sized for a classroom: a handful of cases per workspace.
 
 - The staff case list reads every visible case plus per-case summaries, with no pagination.
-- Child tables (`documents`, `contact_attempts`, `case_events`, `client_events`) have no index on
+- Child tables (`documents`, `contact_log`, `case_events`, `client_events`) have no index on
   `case_id`; add them before real volumes.
-- Each staff window keeps one Realtime channel over fifteen tables and re-reads on each event. With many
+- Each staff window keeps one Realtime channel over sixteen tables and re-reads on each event. With many
   staff online at once, measure and consider narrower subscriptions.
 - One account has one active membership, so one person cannot work at two sites. Revisit if PCDC
   runs several sites.
@@ -244,7 +247,7 @@ Reviewed and accepted for the demo, and worth knowing about:
    decisions for the fields the version-2 intake collects.
 5. **Document storage** (back end, database, front end).
 6. **Bilingual support** (front end, database); the intake's Chinese is part 4d of the redesign.
-7. **Workflow extensions**: withdrawal, reassignment, signature and e-filing milestones.
+7. **Workflow extensions**: withdrawal, reassignment, the unreachable client, the IRS's answer and amendments.
 8. **Admin reporting, notifications and form generation** (a new service).
 9. **Security review, accessibility audit, load testing**, then a pilot with fictional data before
    any real client.

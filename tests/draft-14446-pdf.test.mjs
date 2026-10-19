@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { inflateSync } from "node:zlib";
+import { PDFDict, PDFDocument, PDFName, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { buildDraftPdf } from "../src/draft-pdf.mjs";
+import { DRAFT_FONT_FIXTURES, buildDraftPdf, draftFontFiles, draftFontsFor } from "../src/draft-pdf.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "../src/draft-virtual-consent.mjs";
 
 // The draft Form 14446 forms (openspec change add-form-14446-consent, design D5).
@@ -118,4 +119,58 @@ test("buildDraftPdf's default, flattening build of the 14446 forms neither throw
     console.warn = warn;
   }
   assert.deepEqual(warned, []);
+});
+
+// The characters the draft's own fonts (Noto Sans, SC, TC) drew, read from
+// their ToUnicode maps: a subset holds only the glyphs that were drawn.
+function drawnCharacters(doc) {
+  const inflate = (stream) => {
+    const raw = Buffer.from(stream.contents ?? stream.getContents());
+    return stream.dict.lookup(PDFName.of("Filter")) === PDFName.of("FlateDecode") ? inflateSync(raw) : raw;
+  };
+  const found = new Set();
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || !object.lookup(PDFName.of("DescendantFonts"))) continue;
+    if (!/^\/NotoSans(SC|TC)?-Regular-\d+$/.test(String(object.get(PDFName.of("BaseFont"))))) continue;
+    const toUnicode = object.lookup(PDFName.of("ToUnicode"));
+    for (const m of inflate(toUnicode).toString("latin1").matchAll(/<[0-9A-Fa-f]{4}>\s*<([0-9A-Fa-f]{4,8})>/g))
+      found.add(String.fromCharCode(...m[1].match(/.{4}/g).map((h) => parseInt(h, 16))));
+  }
+  return found;
+}
+
+// Issue #81: Noto Sans TC has none of these 13 common simplified surnames, so
+// the 繁體 14446 used to fail ("no form field … AdditionalNotesComments").
+const SIMPLIFIED_SURNAMES = [..."张刘陈杨赵孙罗郑谢许邓冯韩"];
+
+test("the 繁體 14446 prints each simplified surname as typed, in the name and in the signature (#81)", async () => {
+  const fetchFont = (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path);
+  const formBytes = await readFile(FORM_14446_FILES["zh-t"]);
+  for (const surname of SIMPLIFIED_SURNAMES) {
+    for (const [where, answers] of [
+      ["name", { tp_first_name: "美", tp_last_name: surname, vc_tp_signature: "Mei" }],
+      ["signature", { tp_first_name: "Mei", tp_last_name: "Lin", vc_tp_signature: `${surname}美` }],
+    ]) {
+      const fields = draft14446Fields({ ...answers, vc_agree: ["yes"] }, { form: "zh-t", reference: "VT-AAAA-BBBB", today: "2026-02-03" });
+      const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), fields, { fetchFont, fontkit });
+      // A build that had to drop a character would throw: the 14446 has no
+      // Additional Comments for the notice. So a build is a build with none.
+      const bytes = await buildDraftPdf({
+        PDFLib: { PDFDocument, StandardFonts, rgb }, fontkit, formBytes, fontFiles,
+        fields, stamp: fields.stamp, fileName: fields.fileName,
+      });
+      const drawn = drawnCharacters(await PDFDocument.load(bytes));
+      assert.ok(drawn.has(surname), `${surname} in the ${where} was not drawn`);
+      assert.ok(!drawn.has("?"), `a "?" was drawn for ${surname} in the ${where}`);
+    }
+  }
+});
+
+test("a form without Additional Comments refuses, clearly, a character no font can print (#81)", async () => {
+  const fields = draft14446Fields({ tp_first_name: "𓀀", vc_agree: ["yes"] }, { form: "zh-t", reference: "VT-AAAA-BBBB", today: "2026-02-03" });
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), fields, { fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path), fontkit });
+  await assert.rejects(
+    buildDraftPdf({ PDFLib: { PDFDocument, StandardFonts, rgb }, fontkit, formBytes: await readFile(FORM_14446_FILES["zh-t"]), fontFiles, fields }),
+    /can't be printed, and this form has no Additional Comments field/,
+  );
 });
