@@ -94,8 +94,8 @@
 
 ## 7. The diagram and the docs (design D7, D8; plan Task 7)
 
-- [ ] 7.1 `docs/media/return-lifecycle.svg`: a "Screening in progress" box between Request sent and Pending intake / filing (the arrow "Opened by an admin"), plus "Filing in progress (preparing)" and "Review in progress". The controller renders it to check.
-- [ ] 7.2 `docs/developer/database.md` (the state diagram, the action catalogue, the recipe's current migration numbers, the migration table) , `docs/setup.md` (the migration table) and `docs/developer/frontend.md` (stages, client labels, the start on open). The unit count where the docs give it.
+- [x] 7.1 `docs/media/return-lifecycle.svg`: a "Screening in progress" box between Request sent and Pending intake / filing (the arrow "Opened by an admin"), plus "Filing in progress (preparing)" and "Review in progress". The controller renders it to check.
+- [x] 7.2 `docs/developer/database.md` (the state diagram, the action catalogue, the recipe's current migration numbers, the migration table) , `docs/setup.md` (the migration table) and `docs/developer/frontend.md` (stages, client labels, the start on open). The unit count where the docs give it.
 
 ## 8. The story and the checks (design D8; plan Task 8)
 
