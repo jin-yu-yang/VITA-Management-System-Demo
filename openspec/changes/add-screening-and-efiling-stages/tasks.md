@@ -83,14 +83,14 @@
 
 ## 6. The client's page (design D7; plan Task 6)
 
-- [ ] 6.1 Tests first:
+- [x] 6.1 Tests first:
   - the five-step stepper (the step keys and their stages, done/current/waiting at Ready to exit, the closed notice);
   - `REVIEW_STAGES` including `ready_to_efile` and `efiled`;
   - the applications list, banner and status panel using the client label, in English and 简体;
   - the new history lines in 简体, with an older line keeping its translation.
 
   See them fail.
-- [ ] 6.2 Implement in `src/client-views.mjs` (`PROGRESS_STEPS`, `REVIEW_STAGES`, no track for a closed case) and `src/client-text.mjs` (`progress.step.signing`, `progress.step.filing`; `progress.step.next` removed if unused). Run `npm run build:hant`. `npm test` passes.
+- [x] 6.2 Implement in `src/client-views.mjs` (`PROGRESS_STEPS`, `REVIEW_STAGES`, no track for a closed case) and `src/client-text.mjs` (`progress.step.signing`, `progress.step.filing`; `progress.step.next` removed if unused). Run `npm run build:hant`. `npm test` passes.
 
 ## 7. The diagram and the docs (design D7, D8; plan Task 7)
 
