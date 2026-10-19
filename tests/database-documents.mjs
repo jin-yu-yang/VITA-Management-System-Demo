@@ -103,6 +103,7 @@ test("document requests, receipts and verification keep the preparer in charge",
           [
             "SAVE_ANSWERS",
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "REQUEST_DOCUMENT",
@@ -114,6 +115,7 @@ test("document requests, receipts and verification keep the preparer in charge",
           staff.history.map((entry) => entry.action),
           [
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "REQUEST_DOCUMENT",
@@ -700,6 +702,7 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
           [
             "SAVE_ANSWERS",
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "REQUEST_DOCUMENT",
@@ -710,7 +713,13 @@ test("admin follow-up is assigned, recorded and resolved by its own person", asy
         // Contact work stays internal: the client sees none of it.
         assert.deepEqual(
           c.history.map((entry) => entry.action),
-          ["SUBMIT", "VERIFY_INTAKE", "CLAIM_PREPARATION", "REQUEST_DOCUMENT"],
+          [
+            "SUBMIT",
+            "START_SCREENING",
+            "VERIFY_INTAKE",
+            "CLAIM_PREPARATION",
+            "REQUEST_DOCUMENT",
+          ],
         );
         assert.deepEqual(
           c.internalHistory.find((entry) => entry.action === "ESCALATE_CONTACT")

@@ -57,6 +57,7 @@ import {
   rebuiltBy,
   redactAddresses,
   resetSampleCases,
+  revealCaseControl,
   screenshotDir,
   showBoardTab,
   submitCaseFormUntil,
@@ -296,6 +297,17 @@ async function clickContinue(page) {
     .first()
     .click({ timeout: CLICK_MS });
 }
+
+/** Wait until a client's history shows this exact line. */
+const waitForHistoryLine = (page, line) =>
+  waitFor(
+    page,
+    `the history line ${JSON.stringify(line)}`,
+    (wanted) =>
+      [...document.querySelectorAll(".timeline-item p")].some((entry) => entry.textContent.trim() === wanted),
+    line,
+    ARRIVAL_MS,
+  );
 
 /** Start one fictional application and read back the generated reference. */
 async function startApplication(page) {
@@ -836,7 +848,7 @@ async function runPermutation(t, roles) {
       await fillIntakeV2ToSubmit(client, {
         atCheck: () => shoot(client, "intake-v2-review-check"),
       });
-      await act(client, "SUBMIT", { badge: "Received" });
+      await act(client, "SUBMIT", { badge: "Sent to PCDC" });
       // The same reference, on the other engine, with nothing copied by hand.
       await waitFor(
         staff,
@@ -958,7 +970,8 @@ async function runPermutation(t, roles) {
         // …and the client window is not frozen: the next office step arrives.
         // The office opens it from its own queue — an intake row, and a case
         // at `received` is claimable by nobody, so this row's way in is the
-        // only control on any office screen that reaches it.
+        // only control on any office screen that reaches it. Opening its page
+        // as an admin is what starts screening.
         await choosePersona(staff, sam);
         await waitForText(staff, OFFICE_BOARD_HEADING, RENDER_MS);
         const arrived = staff
@@ -971,14 +984,85 @@ async function runPermutation(t, roles) {
           0,
           "the way in to a new application offers a workflow action of its own",
         );
+        assert.equal(
+          (await arrived.locator(".queue-needed").innerText()).trim(),
+          "New application: open it to start screening.",
+        );
+        // The queue lists it; listing it opens nothing.
+        assert.equal(
+          (await caseById(fixture, classCase.id)).stage,
+          "received",
+          "the Follow-ups queue started screening before anyone opened the case",
+        );
         await openCaseByReference(staff, classReference);
-        await waitForText(staff, "Simulated intake checks", RENDER_MS);
+        // Sam's open starts screening, quietly: the badge moves in this window
+        // and the client's, and the client's history says what happened.
+        await waitForBadge(staff, "Screening in progress");
+        await waitForBadge(client, "Being reviewed");
+        const screening = await caseById(fixture, classCase.id);
+        assert.equal(screening.stage, "screening");
+        assert.equal(await eventCount(fixture, classCase.id, "START_SCREENING"), 1);
+        await waitForHistoryLine(client, "PCDC started reviewing your application. We may call you.");
+
+        // The same case in a second admin window: it is already at screening,
+        // so this open sends nothing, and nothing in it reports a problem.
+        const adminContext = await staffEngine.browser.newContext({ viewport: DESKTOP, locale: "en-US" });
+        try {
+          const second = await openTab(adminContext, fixture.appOrigin);
+          await loginTestUser({
+            page: second.page,
+            actor: presenter,
+            fixture,
+            heading: WORK_BOARD_HEADING,
+          });
+          await watchAlerts(second.page);
+          await choosePersona(second.page, sam);
+          await waitForText(second.page, OFFICE_BOARD_HEADING, RENDER_MS);
+          await openCaseByReference(second.page, classReference);
+          await waitForBadge(second.page, "Screening in progress");
+          await second.page
+            .locator("#field-intake-interview")
+            .waitFor({ state: "visible", timeout: RENDER_MS });
+          await waitForQuiet(second.page);
+          assert.equal(
+            await second.page.locator(".problem-banner").count(),
+            0,
+            "the second admin window shows a problem banner",
+          );
+          assert.equal(
+            await second.page.locator("#dialog-error").count(),
+            0,
+            "the second admin window shows a dialog error",
+          );
+          const secondSaid = (await readAlerts(second.page)) ?? [];
+          assert.deepEqual(
+            secondSaid.filter((line) => REFUSAL_NOTICE.test(line)),
+            [],
+            `the second admin window was refused: ${JSON.stringify(secondSaid)}`,
+          );
+          assert.equal(
+            await eventCount(fixture, classCase.id, "START_SCREENING"),
+            1,
+            "the second admin window started screening again",
+          );
+          assert.equal((await caseById(fixture, classCase.id)).revision, screening.revision);
+          assertConsoleQuiet(second, { name: "second admin window" });
+          evidence.windowIsolation.secondAdminWindow =
+            "opened the case at screening with no banner, no dialog error and no second start";
+        } finally {
+          await adminContext.close();
+        }
+
+        await waitForQuiet(staff);
+        await staff
+          .locator("#field-intake-interview")
+          .waitFor({ state: "visible", timeout: RENDER_MS });
         for (const check of ["interview", "identity", "documents", "consent"])
           await tickBox(staff, `field-intake-${check}`);
         await actForm(staff, "VERIFY_INTAKE", {}, {
           detail: { label: "Intake checks", value: "Recorded" },
         });
-        await waitForBadge(client, "Waiting for preparation");
+        await waitForBadge(client, "Waiting for a volunteer");
         const settled = await readClientPlace(client, applicantA.userId);
         assert.deepEqual(
           settled.stored,
@@ -1046,7 +1130,7 @@ async function runPermutation(t, roles) {
       await act(staff, "CLAIM_PREPARATION", {
         detail: { label: "Preparer", value: "Alex" },
       });
-      await waitForBadge(client, "In preparation");
+      await waitForBadge(client, "Being prepared");
 
       // ---- After the claim: the phone, the best time, the draft --------
       await openCaseTab(staff, "intake");
@@ -2137,7 +2221,7 @@ async function runPermutation(t, roles) {
 
     await phase("Alex verifies the document and records preparation complete", async () => {
       await act(staff, "VERIFY_DOCUMENT", { badge: "Verified" });
-      await act(staff, "SUBMIT_REVIEW", { badge: "Waiting for review" });
+      await act(staff, "SUBMIT_REVIEW", { badge: "Pending review" });
       await waitForBadge(client, "Waiting for review");
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_ready");
@@ -2148,7 +2232,7 @@ async function runPermutation(t, roles) {
     await phase("Morgan reviews: a finding, Alex's resubmission, then approval", async () => {
       await choosePersona(staff, morgan);
       await act(staff, "CLAIM_REVIEW", { detail: { label: "Reviewer", value: "Morgan" } });
-      await waitForBadge(staff, "In review");
+      await waitForBadge(staff, "Review in progress");
       // Corrections are asked for in a dialog; its form is the payload.
       await clickAction(staff, "open-request-corrections");
       await actForm(
@@ -2157,7 +2241,7 @@ async function runPermutation(t, roles) {
         { "Corrections to send back to the preparer": FINDINGS },
         { badge: "Corrections requested" },
       );
-      await waitForBadge(client, "Corrections in progress");
+      await waitForBadge(client, "Being corrected");
       const duringCorrections = await pageText(client);
       assert.ok(
         !duringCorrections.includes(FINDINGS),
@@ -2170,12 +2254,12 @@ async function runPermutation(t, roles) {
         staff,
         "RESUBMIT_REVIEW",
         { "What you corrected in TaxSlayer": CORRECTION_NOTE },
-        { badge: "Waiting for review" },
+        { badge: "Pending review" },
       );
 
       await choosePersona(staff, morgan);
-      await act(staff, "CLAIM_REVIEW", { badge: "In review" });
-      await act(staff, "APPROVE_REVIEW", { badge: "Review complete" });
+      await act(staff, "CLAIM_REVIEW", { badge: "Review in progress" });
+      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" });
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_approved");
       assert.equal(row.reviewer_id, morgan);
@@ -2195,10 +2279,10 @@ async function runPermutation(t, roles) {
         { "What happened": "reached", "Note for the office": REVIEW_CONTACT_NOTE },
         { text: "The client conversation for this review is recorded." },
       );
-      await waitForBadge(client, "Review complete");
+      await waitForBadge(client, "Ready to sign");
       await waitForText(
         client,
-        "A volunteer will contact you soon to sign and file.",
+        "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.",
         RENDER_MS,
       );
       await waitForText(client, "A volunteer spoke with you about the next service step.");
@@ -2261,11 +2345,242 @@ async function runPermutation(t, roles) {
         }),
       );
       await waitForCaseWorkspace(staff, short.reference);
-      await act(staff, "APPROVE_REVIEW", { badge: "Review complete" }, { caseId: short.id });
+      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" }, { caseId: short.id });
       const row = await caseById(fixture, short.id);
       assert.equal(row.stage, "review_approved");
       assert.equal(await eventCount(fixture, short.id, "REQUEST_CORRECTIONS"), 0);
       evidence.story.shortPath = "claimed and approved with no correction round";
+    });
+
+    await phase("the office records signing and e-filing, and the client sees each step", async () => {
+      // The class case's reviewer has recorded the call, so the office may
+      // record the signature. The review_approved sample's call is still
+      // pending, so its row explains instead of offering the mark.
+      const approved = await caseById(fixture, classCase.id);
+      assert.equal(approved.stage, "review_approved");
+      assert.equal(await eventCount(fixture, classCase.id, "RECORD_REVIEW_CONTACT"), 1);
+      const callPending = samples.find((row) => row.fixture_key === "review_approved");
+      assert.ok(callPending, "the review_approved sample is missing");
+      // The dialogs name the client as the case page does: first and last name.
+      const clientName = [approved.answers?.tp_first_name, approved.answers?.tp_last_name]
+        .map((part) => String(part ?? "").trim())
+        .filter(Boolean)
+        .join(" ");
+      assert.ok(clientName, "the class case has no client name for the dialogs to show");
+      const queueRow = (kind, reference) =>
+        staff
+          .locator(`tr.queue-row[data-kind="${kind}"]`)
+          .filter({ has: staff.locator("button.board-reference", { hasText: reference }) })
+          .first();
+      const dialogTitled = (title) =>
+        waitFor(
+          staff,
+          `the dialog ${JSON.stringify(title)}`,
+          (wanted) => document.querySelector(".modal #modal-title")?.textContent.trim() === wanted,
+          title,
+          ARRIVAL_MS,
+        );
+      const dialogText = async () =>
+        (await staff.locator(".modal").innerText()).replace(/\s+/g, " ").trim();
+      // Tick the dialog's required box (again, if a rebuild emptied it) and
+      // press its confirm, repeating only when nothing moved on the server.
+      const confirmMark = async (type, box, ready, arg, what) =>
+        record(
+          type,
+          await pressUntilEffect(staff, {
+            press: async () => {
+              await waitForQuiet(staff);
+              if (!(await staff.locator(`#${box}`).isChecked())) await tickBox(staff, box);
+              await waitForQuiet(staff);
+              await staff
+                .locator(`.modal button[type="submit"][data-case-action="${type}"]`)
+                .click({ timeout: CLICK_MS });
+            },
+            ready,
+            arg,
+            what,
+            safeToRepeat: await unmovedSince(classCase.id),
+          }),
+        );
+      const toastSaid = (text) =>
+        waitFor(
+          staff,
+          `the toast ${JSON.stringify(text)}`,
+          (wanted) => (window.__vitallyAlerts ?? []).some((line) => line.startsWith("toast:") && line.includes(wanted)),
+          text,
+          ARRIVAL_MS,
+        );
+
+      await choosePersona(staff, sam);
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+
+      // ---- The sample whose reviewer has not called yet ------------------
+      const pendingRow = queueRow("signing", callPending.reference);
+      await pendingRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await pendingRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the reviewer's call with the client.",
+      );
+      assert.equal(
+        (await pendingRow.locator(".staff-reason").innerText()).trim(),
+        "The reviewer still needs to record the conversation with the client.",
+      );
+      assert.equal(
+        await pendingRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
+        0,
+        "Mark ready to e-file was offered before the reviewer's call",
+      );
+
+      // ---- 1–2. Mark ready to e-file, from the class case's signing row ---
+      const signingRow = queueRow("signing", classReference);
+      await waitFor(
+        staff,
+        "the class case's signing row to offer Mark ready to e-file",
+        (wanted) =>
+          [...document.querySelectorAll('tr.queue-row[data-kind="signing"]')].some(
+            (row) =>
+              row.querySelector("button.board-reference")?.textContent.trim() === wanted &&
+              Boolean(row.querySelector('[data-action="open-mark-ready-to-efile"]')),
+          ),
+        classReference,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        (await signingRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the client to sign Form 8879.",
+      );
+      const markReady = signingRow.locator('[data-action="open-mark-ready-to-efile"]');
+      assert.equal((await markReady.innerText()).trim(), "Mark ready to e-file…");
+      await waitForQuiet(staff);
+      await markReady.click({ timeout: CLICK_MS });
+      await dialogTitled("Mark ready to e-file?");
+      const readyDialog = await dialogText();
+      assert.ok(
+        readyDialog.includes(`Mark ${classReference} for ${clientName} as ready to e-file?`),
+        `the dialog does not name the client and the reference: ${readyDialog.slice(0, 200)}`,
+      );
+      // The case was read in place: still on the queue, nothing sent yet.
+      assert.equal(await staff.locator("#office-queue-title").count(), 1, "the mark left the queue");
+      assert.equal((await caseById(fixture, classCase.id)).stage, "review_approved");
+      await confirmMark(
+        "MARK_READY_TO_EFILE",
+        "field-ready-efile-confirmed",
+        (wanted) =>
+          !document.querySelector(".modal") &&
+          [...document.querySelectorAll('tr.queue-row[data-kind="efiling"]')].some(
+            (row) => row.querySelector("button.board-reference")?.textContent.trim() === wanted,
+          ),
+        classReference,
+        "the class case's row to move to E-filing",
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "ready_to_efile");
+      assert.equal(await eventCount(fixture, classCase.id, "MARK_READY_TO_EFILE"), 1);
+      await toastSaid("Marked ready to e-file. The client was told.");
+      await waitFor(
+        staff,
+        "the keyboard on the queue's title after the confirm",
+        () => document.activeElement?.id === "office-queue-title",
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(
+        (await queueRow("efiling", classReference).locator(".queue-needed").innerText()).trim(),
+        "Ready to e-file.",
+      );
+      await waitForBadge(client, "Signed");
+      await waitForText(client, "You signed Form 8879. PCDC will e-file your return next.");
+      await waitForHistoryLine(
+        client,
+        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+      );
+
+      // ---- 3. Mark e-filed, from the case page ---------------------------
+      await openCaseByReference(staff, classReference);
+      await waitForBadge(staff, "Ready to e-file");
+      await revealCaseControl(staff, '[data-action="open-mark-efiled"]');
+      await clickAction(staff, "open-mark-efiled");
+      await dialogTitled("Mark e-filed?");
+      const efiledDialog = await dialogText();
+      assert.ok(
+        efiledDialog.includes(`Mark ${classReference} for ${clientName} as e-filed?`),
+        `the dialog does not name the client and the reference: ${efiledDialog.slice(0, 200)}`,
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "ready_to_efile");
+      await confirmMark(
+        "MARK_EFILED",
+        "field-efiled-confirmed",
+        (wanted) =>
+          !document.querySelector(".modal") &&
+          [...document.querySelectorAll(".badge")].some((badge) => badge.textContent.trim() === wanted),
+        "E-filed",
+        "the case page's E-filed badge",
+      );
+      const efiled = await caseById(fixture, classCase.id);
+      assert.equal(efiled.stage, "efiled");
+      assert.equal(efiled.preparer_id, alex);
+      assert.equal(efiled.reviewer_id, morgan);
+      assert.equal(await eventCount(fixture, classCase.id, "MARK_EFILED"), 1);
+      await toastSaid("Marked e-filed. The client was told.");
+      assert.equal(
+        await staff.locator('[data-action="open-mark-efiled"], [data-action="open-mark-ready-to-efile"]').count(),
+        0,
+        "an e-filed case still offers a mark",
+      );
+
+      // ---- 4. The client's page: Filing current, E-filed, two lines ------
+      const steps = () =>
+        client.evaluate(() =>
+          [...document.querySelectorAll(".progress-steps > div")].map((step) => ({
+            status: step.className,
+            label: step.querySelector("small")?.textContent.trim() ?? null,
+          })),
+        );
+      await waitForBadge(client, "E-filed");
+      await waitFor(
+        client,
+        "the e-filed message",
+        (wanted) => document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+        "Your return was e-filed. The IRS will confirm whether it is accepted.",
+        ARRIVAL_MS,
+      );
+      assert.deepEqual(await steps(), [
+        { status: "done", label: "Intake" },
+        { status: "done", label: "Preparation" },
+        { status: "done", label: "Review" },
+        { status: "done", label: "Signing" },
+        { status: "current", label: "Filing" },
+      ]);
+      await waitForHistoryLine(
+        client,
+        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+      );
+      await waitForHistoryLine(client, "PCDC e-filed your return.");
+      await shoot(client, "progress-efiled");
+
+      // ---- 5. Once more in 简体, then back to English --------------------
+      const clientLang = (wanted) =>
+        waitFor(client, `<html lang> to be ${wanted}`, (code) => document.documentElement.lang === code, wanted, ARRIVAL_MS);
+      await waitForQuiet(client);
+      await client.locator('[data-action="set-language"][data-value="zh-Hans"]').click({ timeout: CLICK_MS });
+      await clientLang("zh-Hans");
+      await waitForBadge(client, "已电子递交");
+      assert.equal(sentence("PCDC e-filed your return.", "zh-Hans"), "PCDC 已电子递交您的报税表。");
+      await waitForHistoryLine(client, "PCDC 已电子递交您的报税表。");
+      await waitForHistoryLine(client, "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。");
+      assert.equal(
+        await client.evaluate(() => document.querySelector(".status-explanation")?.textContent.trim() ?? null),
+        "您的报税表已电子递交。国税局会确认是否接受。",
+      );
+      assert.equal(
+        await client.evaluate(() => document.querySelector(".progress-steps > div.current small")?.textContent.trim() ?? null),
+        "递交",
+      );
+      await waitForQuiet(client);
+      await client.locator('[data-action="set-language"][data-value="en"]').click({ timeout: CLICK_MS });
+      await clientLang("en");
+      await waitForBadge(client, "E-filed");
+      evidence.story.signingAndFiling =
+        "marked ready to e-file from Follow-ups and e-filed from the case page, each behind its confirmation; the client saw Signed, then E-filed, in English and 简体";
     });
 
     // -----------------------------------------------------------------------
@@ -3237,7 +3552,8 @@ async function runPermutation(t, roles) {
       await box("tp_last_name").fill("Rivera");
       await send.click({ timeout: CLICK_MS });
       await waitForCaseWorkspace(staff, assistedReference);
-      assert.equal((await caseById(fixture, assisted.id)).stage, "received");
+      // An office case is sent straight into screening.
+      assert.equal((await caseById(fixture, assisted.id)).stage, "screening");
 
       // The case pool, while the new case is still in intake with nobody
       // preparing it: its phase tab, a narrowing filter, and clearing it.
@@ -3490,7 +3806,8 @@ async function runPermutation(t, roles) {
       const kept = await caseById(fixture, classCase.id);
       assert.equal(kept.reference, classReference);
       assert.equal(kept.owner_user_id, applicantA.userId);
-      assert.equal(kept.stage, "review_approved");
+      // E-filed by the office earlier in the story; a reset leaves it there.
+      assert.equal(kept.stage, "efiled");
       // Both measurements are about what the *client* window does when the
       // change reaches it, so they wait for the sign that it has: the refused
       // save left the connection notice on screen, and the re-read that
@@ -5615,7 +5932,7 @@ test("no address survives the redaction every message goes through", () => {
   // And nothing else is touched: the reference, the stages and the copy this
   // file asserts on have to survive a message unchanged.
   const ordinary =
-    "VT-4UPB-2AKH Waiting for preparation · Someone else changed this case.";
+    "VT-4UPB-2AKH Pending intake / filing · Someone else changed this case.";
   assert.equal(redactAddresses(ordinary), ordinary);
   assert.equal(redactAddresses(null), null);
   assert.equal(redactAddresses(undefined), undefined);

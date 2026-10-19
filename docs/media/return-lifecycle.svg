@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 1320" width="1760" height="1320" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1760 1426" width="1760" height="1426" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>Tax return lifecycle</title>
   <style>
     :root {
@@ -47,7 +47,7 @@
     <g id="end"><circle class="end-o" r="10"/><circle class="end-i" r="5.5"/></g>
   </defs>
 
-  <rect class="bg" width="1760" height="1320"/>
+  <rect class="bg" width="1760" height="1426"/>
   <text class="title" x="40" y="56">Tax return lifecycle</text>
   <text class="note" x="40" y="80">Main flow (left) · other entries and exits (right)</text>
 
@@ -56,103 +56,106 @@
   <circle class="start" cx="600" cy="40" r="8"/>
   <path class="e" d="M600,48 V84"/>
   <path class="e" d="M600,134 V192"/>
+  <text class="lbl" x="600" y="165">Opened by an admin</text>
+  <path class="e" d="M600,240 V298"/>
 
   <!-- intake outcomes -->
-  <path class="e" d="M480,220 H327"/>
-  <path class="e" d="M505,246 C470,300 400,320 327,320"/>
-  <path class="e" d="M540,246 C505,380 410,420 327,420"/>
-  <path class="e" d="M135,220 H72"/><use href="#end" x="60" y="220"/>
-  <path class="e" d="M135,320 H72"/><use href="#end" x="60" y="320"/>
-  <path class="e" d="M135,420 H72"/><use href="#end" x="60" y="420"/>
+  <path class="e" d="M480,326 H327"/>
+  <path class="e" d="M505,352 C470,406 400,426 327,426"/>
+  <path class="e" d="M540,352 C505,486 410,526 327,526"/>
+  <path class="e" d="M135,326 H72"/><use href="#end" x="60" y="326"/>
+  <path class="e" d="M135,426 H72"/><use href="#end" x="60" y="426"/>
+  <path class="e" d="M135,526 H72"/><use href="#end" x="60" y="526"/>
 
   <!-- documents loop -->
-  <path class="e" d="M720,212 C850,212 945,250 945,314"/>
-  <text class="lbl" x="850" y="222">Missing document(s)</text>
-  <path class="e" d="M855,352 C760,352 690,310 668,248"/>
-  <text class="lbl" x="752" y="340">Once submitted</text>
+  <path class="e" d="M720,318 C850,318 945,356 945,420"/>
+  <text class="lbl" x="850" y="328">Missing document(s)</text>
+  <path class="e" d="M855,458 C760,458 690,416 668,354"/>
+  <text class="lbl" x="752" y="446">Once submitted</text>
 
   <!-- hold loop -->
-  <path class="e" d="M1010,364 C1090,380 1180,400 1180,454"/>
-  <text class="lbl" x="1140" y="378">Took a long time for</text>
-  <text class="lbl" x="1140" y="396">the client to respond</text>
-  <path class="e" d="M1105,494 C1010,500 955,450 948,366"/>
-  <text class="lbl" x="1010" y="522">Got in touch with the client</text>
-  <path class="e" d="M1255,480 H1298"/><use href="#end" x="1310" y="480"/>
+  <path class="e" d="M1010,470 C1090,486 1180,506 1180,560"/>
+  <text class="lbl" x="1140" y="484">Took a long time for</text>
+  <text class="lbl" x="1140" y="502">the client to respond</text>
+  <path class="e" d="M1105,600 C1010,606 955,556 948,472"/>
+  <text class="lbl" x="1010" y="628">Got in touch with the client</text>
+  <path class="e" d="M1255,586 H1298"/><use href="#end" x="1310" y="586"/>
 
   <!-- preparation & review -->
-  <path class="e" d="M600,246 V414"/>
-  <text class="lbl" x="600" y="334">All good</text>
-  <path class="e" d="M600,464 V524"/>
-  <text class="lbl" x="600" y="499">Once prepared</text>
-  <path class="e" d="M600,574 V624"/>
-  <path class="e" d="M600,674 V734"/>
-  <path class="e" d="M600,784 V844"/>
-  <text class="lbl" x="600" y="819">Once client signed</text>
+  <path class="e" d="M600,352 V520"/>
+  <text class="lbl" x="600" y="440">All good</text>
+  <path class="e" d="M600,570 V630"/>
+  <text class="lbl" x="600" y="605">Once prepared</text>
+  <path class="e" d="M600,680 V730"/>
+  <path class="e" d="M600,780 V840"/>
+  <path class="e" d="M600,890 V950"/>
+  <text class="lbl" x="600" y="925">Once client signed</text>
 
   <!-- filing method -->
-  <path class="e" d="M540,894 C540,930 330,915 330,952"/>
-  <path class="e" d="M600,894 V954"/>
-  <path class="e" d="M660,894 C660,930 870,915 870,952"/>
-  <path class="e" d="M330,1006 C330,1070 420,1090 498,1090"/>
-  <path class="e" d="M600,1004 V1064"/>
-  <path class="e" d="M870,1006 C870,1070 780,1090 702,1090"/>
+  <path class="e" d="M540,1000 C540,1036 330,1021 330,1058"/>
+  <path class="e" d="M600,1000 V1060"/>
+  <path class="e" d="M660,1000 C660,1036 870,1021 870,1058"/>
+  <path class="e" d="M330,1112 C330,1176 420,1196 498,1196"/>
+  <path class="e" d="M600,1110 V1170"/>
+  <path class="e" d="M870,1112 C870,1176 780,1196 702,1196"/>
 
   <!-- IRS outcome -->
-  <path class="e" d="M560,1114 C540,1150 460,1150 452,1174"/>
-  <path class="e" d="M640,1114 C660,1150 750,1150 758,1174"/>
-  <path class="e" d="M450,1224 V1268"/><use href="#end" x="450" y="1280"/>
+  <path class="e" d="M560,1220 C540,1256 460,1256 452,1280"/>
+  <path class="e" d="M640,1220 C660,1256 750,1256 758,1280"/>
+  <path class="e" d="M450,1330 V1374"/><use href="#end" x="450" y="1386"/>
 
   <!-- rejection loop -->
-  <path class="e" d="M840,1200 C1110,1200 1110,760 702,760"/>
-  <text class="lbl" x="1040" y="984">Once fixed</text>
+  <path class="e" d="M840,1306 C1110,1306 1110,866 702,866"/>
+  <text class="lbl" x="1040" y="1090">Once fixed</text>
 
   <!-- amendment loop -->
-  <path class="e" d="M370,1200 H287"/>
-  <path class="e" d="M190,1176 V786"/>
-  <path class="e" d="M285,760 H498"/>
+  <path class="e" d="M370,1306 H287"/>
+  <path class="e" d="M190,1282 V892"/>
+  <path class="e" d="M285,866 H498"/>
 
   <!-- ================= Nodes ================= -->
   <g class="n intake">
     <rect x="490" y="86" width="220" height="48" rx="10"/><text x="600" y="110">Request sent</text>
-    <rect x="480" y="194" width="240" height="52" rx="10"/><text x="600" y="220">Pending intake / filing</text>
-    <rect x="855" y="316" width="210" height="48" rx="10"/><text x="960" y="340">Waiting for documents</text>
-    <rect x="1105" y="456" width="150" height="48" rx="10"/><text x="1180" y="480">Hold</text>
+    <rect x="490" y="192" width="220" height="48" rx="10"/><text x="600" y="216">Screening in progress</text>
+    <rect x="480" y="300" width="240" height="52" rx="10"/><text x="600" y="326">Pending intake / filing</text>
+    <rect x="855" y="422" width="210" height="48" rx="10"/><text x="960" y="446">Waiting for documents</text>
+    <rect x="1105" y="562" width="150" height="48" rx="10"/><text x="1180" y="586">Hold</text>
   </g>
   <g class="n exit">
-    <rect x="135" y="196" width="190" height="48" rx="10"/><text x="230" y="220">Out of scope</text>
-    <rect x="135" y="296" width="190" height="48" rx="10"/><text x="230" y="320">No need to file</text>
-    <rect x="135" y="396" width="190" height="48" rx="10"/><text x="230" y="420">Duplicate</text>
+    <rect x="135" y="302" width="190" height="48" rx="10"/><text x="230" y="326">Out of scope</text>
+    <rect x="135" y="402" width="190" height="48" rx="10"/><text x="230" y="426">No need to file</text>
+    <rect x="135" y="502" width="190" height="48" rx="10"/><text x="230" y="526">Duplicate</text>
   </g>
   <g class="n work">
-    <rect x="475" y="416" width="250" height="48" rx="10"/><text x="600" y="440">Filing in process (preparing)</text>
-    <rect x="500" y="526" width="200" height="48" rx="10"/><text x="600" y="550">Pending review</text>
-    <rect x="500" y="626" width="200" height="48" rx="10"/><text x="600" y="650">Review in process</text>
-    <rect x="500" y="736" width="200" height="48" rx="10"/><text x="600" y="760">Ready to exit</text>
+    <rect x="475" y="522" width="250" height="48" rx="10"/><text x="600" y="546">Filing in progress (preparing)</text>
+    <rect x="500" y="632" width="200" height="48" rx="10"/><text x="600" y="656">Pending review</text>
+    <rect x="500" y="732" width="200" height="48" rx="10"/><text x="600" y="756">Review in progress</text>
+    <rect x="500" y="842" width="200" height="48" rx="10"/><text x="600" y="866">Ready to exit</text>
   </g>
   <g class="n file">
-    <rect x="500" y="846" width="200" height="48" rx="10"/><text x="600" y="870">Ready to e-file</text>
-    <rect x="220" y="954" width="220" height="52" rx="10"/><text x="330" y="972">Both e-filed</text><text class="sub" x="330" y="991">(1040 / PA-40)</text>
-    <rect x="500" y="956" width="200" height="48" rx="10"/><text x="600" y="980">E-filed &amp; paper</text>
-    <rect x="760" y="954" width="220" height="52" rx="10"/><text x="870" y="972">Both paper</text><text class="sub" x="870" y="991">(1040 / PA-40)</text>
-    <rect x="500" y="1066" width="200" height="48" rx="10"/><text x="600" y="1090">IRS acknowledged</text>
-    <rect x="370" y="1176" width="160" height="48" rx="10"/><text x="450" y="1200">Accepted</text>
+    <rect x="500" y="952" width="200" height="48" rx="10"/><text x="600" y="976">Ready to e-file</text>
+    <rect x="220" y="1060" width="220" height="52" rx="10"/><text x="330" y="1078">Both e-filed</text><text class="sub" x="330" y="1097">(1040 / PA-40)</text>
+    <rect x="500" y="1062" width="200" height="48" rx="10"/><text x="600" y="1086">E-filed &amp; paper</text>
+    <rect x="760" y="1060" width="220" height="52" rx="10"/><text x="870" y="1078">Both paper</text><text class="sub" x="870" y="1097">(1040 / PA-40)</text>
+    <rect x="500" y="1172" width="200" height="48" rx="10"/><text x="600" y="1196">IRS acknowledged</text>
+    <rect x="370" y="1282" width="160" height="48" rx="10"/><text x="450" y="1306">Accepted</text>
   </g>
   <g class="n exit">
-    <rect x="680" y="1176" width="160" height="48" rx="10"/><text x="760" y="1200">Rejected</text>
+    <rect x="680" y="1282" width="160" height="48" rx="10"/><text x="760" y="1306">Rejected</text>
   </g>
   <g class="n amend">
-    <rect x="95" y="1176" width="190" height="48" rx="10"/><text x="190" y="1200">Amendment needed</text>
-    <rect x="95" y="736" width="190" height="48" rx="10"/><text x="190" y="760">Amendment in progress</text>
+    <rect x="95" y="1282" width="190" height="48" rx="10"/><text x="190" y="1306">Amendment needed</text>
+    <rect x="95" y="842" width="190" height="48" rx="10"/><text x="190" y="866">Amendment in progress</text>
   </g>
 
   <!-- ================= Side panel ================= -->
-  <line class="divider" x1="1370" y1="40" x2="1370" y2="1280"/>
+  <line class="divider" x1="1370" y1="40" x2="1370" y2="1386"/>
 
   <text class="h" x="1410" y="56">Other entry points</text>
   <circle class="start" cx="1560" cy="84" r="8"/>
   <path class="e" d="M1560,92 V124"/>
   <g class="n intake">
-    <rect x="1410" y="126" width="300" height="48" rx="10"/><text x="1560" y="150">Same day in process (untracked)</text>
+    <rect x="1410" y="126" width="300" height="48" rx="10"/><text x="1560" y="150">Same day in progress (untracked)</text>
   </g>
   <circle class="start" cx="1560" cy="206" r="8"/>
   <path class="e" d="M1560,214 V246"/>

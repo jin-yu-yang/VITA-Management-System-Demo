@@ -92,6 +92,9 @@ test("every action builds exactly the payload the contract names", () => {
       { reason: "Client moved away", confirmed: "true" },
       { reason: "Client moved away", confirmed: true },
     ],
+    ["START_SCREENING", {}, {}, {}],
+    ["MARK_READY_TO_EFILE", {}, { confirmed: "true" }, { confirmed: true }],
+    ["MARK_EFILED", {}, { confirmed: "true" }, { confirmed: true }],
     [
       "UPDATE_CONTACT",
       {},
@@ -372,4 +375,20 @@ test("RECORD_CONTACT is no longer a case action the browser can build", () => {
     () => payloadFor("RECORD_CONTACT", { followupId: "t" }, { outcome: "reached", note: "n" }),
     invalid,
   );
+});
+
+test("the 8879 and e-file actions need their own confirmation sentence", () => {
+  assert.deepEqual(payloadFor("START_SCREENING", {}, {}), { type: "START_SCREENING", payload: {} });
+  for (const type of ["START_SCREENING", "MARK_READY_TO_EFILE", "MARK_EFILED"])
+    assert.ok(PAYLOAD_ACTIONS.includes(type), type);
+  const sentences = {
+    MARK_READY_TO_EFILE: "Confirm that the client signed Form 8879.",
+    MARK_EFILED: "Confirm that the return was e-filed.",
+  };
+  for (const [type, message] of Object.entries(sentences)) {
+    assert.throws(() => payloadFor(type, {}, {}), (error) => error.code === "VALIDATION" && error.message === message, type);
+    assert.throws(() => payloadFor(type, {}, { confirmed: "no" }), (error) => error.message === message, type);
+  }
+  // Closing keeps its own sentence.
+  assert.throws(() => payloadFor("CLOSE_CASE", {}, { reason: "r" }), (error) => error.message === "Confirm that you want to close this case.");
 });

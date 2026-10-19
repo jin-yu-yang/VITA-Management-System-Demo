@@ -32,13 +32,6 @@ const participantsOf = async (f, caseId) =>
     ).rows[0].count,
   );
 const draftCase = (f) => f.draftCase(f.applicantA);
-async function submittedCase(f) {
-  const created = await draftCase(f);
-  await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
-    confirmed: true,
-  });
-  return created.caseId;
-}
 
 test("case actions apply the shared check order against real Supabase", async (t) => {
   const f = await createDatabaseFixture();
@@ -108,6 +101,18 @@ test("case actions apply the shared check order against real Supabase", async (t
           (await caseRow(f, created.caseId)).intake_verified,
           false,
         );
+        const screening = await f.act(
+          f.presenter,
+          created.caseId,
+          f.sam,
+          "START_SCREENING",
+          {},
+        );
+        assert.equal(screening.revision, 5);
+        assert.equal(
+          (await f.readStaffCase(created.caseId)).stage,
+          "screening",
+        );
         const verified = await f.act(
           f.presenter,
           created.caseId,
@@ -115,7 +120,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           "VERIFY_INTAKE",
           { checks: f.intakeChecks },
         );
-        assert.equal(verified.revision, 5);
+        assert.equal(verified.revision, 6);
         assert.equal(
           (await f.readStaffCase(created.caseId)).stage,
           "preparation_ready",
@@ -127,7 +132,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           "CLAIM_PREPARATION",
           {},
         );
-        assert.equal(claimed.revision, 6);
+        assert.equal(claimed.revision, 7);
         const staff = await f.readStaffCase(created.caseId);
         assert.equal(staff.id, created.caseId);
         assert.equal(staff.reference, created.reference);
@@ -135,7 +140,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(staff.ownerUserId, f.applicantAUserId);
         assert.equal(staff.fixture, false);
         assert.equal(staff.stage, "preparing");
-        assert.equal(staff.revision, 6);
+        assert.equal(staff.revision, 7);
         assert.equal(staff.preparationVersion, 0);
         assert.equal(staff.intakeVerified, true);
         assert.equal(staff.preparerId, f.alex);
@@ -146,7 +151,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.deepEqual(staff.followups, []);
         assert.deepEqual(
           staff.history.map((entry) => entry.action),
-          ["SUBMIT", "VERIFY_INTAKE", "CLAIM_PREPARATION"],
+          ["SUBMIT", "START_SCREENING", "VERIFY_INTAKE", "CLAIM_PREPARATION"],
         );
         assert.deepEqual(
           staff.internalHistory.map((entry) => entry.action),
@@ -154,6 +159,7 @@ test("case actions apply the shared check order against real Supabase", async (t
             "SAVE_ANSWERS",
             "SAVE_ANSWERS",
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
           ],
@@ -183,7 +189,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           .from("client_events")
           .select("*")
           .eq("case_id", created.caseId);
-        assert.equal(ownProgress.length, 3);
+        assert.equal(ownProgress.length, 4);
         assert.deepEqual(
           await f.applicantA
             .from("case_events")
@@ -232,6 +238,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.deepEqual(await actions(f, "case_events", caseId), [
           "SAVE_ANSWERS",
           "SUBMIT",
+          "START_SCREENING",
           "VERIFY_INTAKE",
           "CLAIM_PREPARATION",
         ]);
@@ -274,6 +281,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.deepEqual(await actions(f, "case_events", caseId), [
           "SAVE_ANSWERS",
           "SUBMIT",
+          "START_SCREENING",
           "VERIFY_INTAKE",
           "CLAIM_PREPARATION",
         ]);
@@ -286,9 +294,10 @@ test("case actions apply the shared check order against real Supabase", async (t
         const submitted = await draftCase(f);
         const caseId = submitted.caseId;
         await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+        await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
         const verify = applyArgs({
           caseId,
-          revision: 3,
+          revision: 4,
           personId: f.sam,
           type: "VERIFY_INTAKE",
           payload: { checks: f.intakeChecks },
@@ -493,7 +502,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         );
         assert.equal(forged.error.code, "VT001");
         assert.equal(await revisionOf(f, draft.caseId), 2);
-        const received = await submittedCase(f);
+        const received = (await f.submittedClientCase()).caseId;
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await assert.rejects(
             () =>
@@ -510,6 +519,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           rejected("FORBIDDEN"),
         );
         // Positive control: the same action succeeds for an admin-capable person.
+        await f.act(f.presenter, received, f.sam, "START_SCREENING", {});
         await f.act(f.presenter, received, f.sam, "VERIFY_INTAKE", {
           checks: f.intakeChecks,
         });
@@ -562,7 +572,8 @@ test("case actions apply the shared check order against real Supabase", async (t
           confirmed: true,
         });
         const staff = await f.readStaffCase(assisted.caseId);
-        assert.equal(staff.stage, "received");
+        // The office has already screened a client it entered itself.
+        assert.equal(staff.stage, "screening");
         assert.equal(staff.ownerUserId, null);
         assert.deepEqual(
           staff.internalHistory.map((entry) => [
@@ -575,7 +586,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           ],
         );
         // A client-owned case stays the client's to answer, at any stage.
-        const owned = await submittedCase(f);
+        const owned = (await f.submittedClientCase()).caseId;
         await assert.rejects(
           () =>
             f.act(f.presenter, owned, f.sam, "SAVE_ANSWERS", {
@@ -743,6 +754,7 @@ test("case actions apply the shared check order against real Supabase", async (t
             () => f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", payload),
             rejected("VALIDATION"),
           );
+        await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
         await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
           checks: f.intakeChecks,
         });

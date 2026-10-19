@@ -365,6 +365,20 @@ test("every history sentence in the migrations is a SENTENCES key; the request l
   assert.equal(historyLine("Something new.", "zh-Hans"), "Something new.");
 });
 
+test("the screening, 8879 and e-file history lines translate exactly", () => {
+  const lines = {
+    "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
+    "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+    "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  };
+  for (const [english, zh] of Object.entries(lines)) {
+    assert.equal(SENTENCES[english], zh, english);
+    assert.equal(historyLine(english, "zh-Hans"), zh, english);
+    assert.equal(historyLine(english, "en"), english, english);
+    assert.ok(migrationSentences().sentences.includes(english), `${english} is written by migration 032`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Errors, sign-in and notices: every sentence that can reach a client
 // ---------------------------------------------------------------------------

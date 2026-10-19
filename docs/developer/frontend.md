@@ -17,6 +17,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
+- [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
 - [Feedback](#feedback)
@@ -315,6 +316,66 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
 
+## Stages and their words
+
+A case has one of twelve stages, in chain order: `draft`, `received`, `screening`,
+`preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
+`review_approved`, `ready_to_efile`, `efiled`, `closed`. The browser decides none of the moves
+(the database does, see the [state machine](database.md#the-case-state-machine)); it only names
+what it shows. `describeStage(stage, lang)` in [`domain.mjs`](../../src/domain.mjs) is the one
+place the words live. For each stage it returns three texts:
+
+| Field | Who reads it | Where it comes from |
+| --- | --- | --- |
+| `label` | Staff | `STAGE_DESCRIPTIONS`; always English (for example `screening` is "Screening in progress", `review_approved` is "Ready to exit") |
+| `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Signed") |
+| `clientMessage` | The client | The same, `stage.<stage>.client` |
+
+A stage that is not in the table gets neutral wording. A client message names no milestone the case
+has not reached, and no client text names a phone number.
+
+- **The badge.** `stageBadge(stage, lang, { audience })` in [`ui.mjs`](../../src/ui.mjs) shows
+  `label` for `audience: "staff"` (the default) and `clientLabel` for `audience: "client"`. The
+  client's screens (the applications list, the progress page and its review panel) pass
+  `"client"`; every staff, office and presenter screen leaves the default.
+- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists ten steps with staff
+  labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
+  `review_approved`, `ready_to_efile`, `efiled`, `closed`. A case in `corrections_required` shows
+  on the `preparing` step, marked as an amendment.
+- **The client's progress track** (`PROGRESS_STEPS` in `client-views.mjs`) has five steps, each
+  holding the stages that belong to it: intake (`draft`, `received`, `screening`), preparation
+  (`preparation_ready`, `preparing`, `corrections_required`), review (`review_ready`, `reviewing`),
+  signing (`review_approved`) and filing (`ready_to_efile`, `efiled`). A `closed` case shows no
+  current step.
+- **History lines.** The three lines the database writes for the new actions ("PCDC started
+  reviewing your application. We may call you.", the signing line and "PCDC e-filed your
+  return.") are entries in `SENTENCES`, so the client reads them in their own language.
+
+### Screening starts when an admin opens the case
+
+An admin opening a `received` case's page starts its screening. `startScreeningIfDue` in
+[`controller.mjs`](../../src/controller.mjs) sends `START_SCREENING` (empty payload) when all of
+these hold: the open case is at `received`, the screen is `staff-case`, the selected persona has
+the `admin` capability, and nothing else is busy or pending. It runs after a case is opened
+(`selectCase`), after a reload on a case page, after the persona changes (`selectPerson`), after a
+refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
+
+- **No refusal is shown.** A race ("another admin got there first", a stale revision) re-reads the
+  case, and one retry runs at the new revision. Any other refusal gives up on that case in this
+  window until it is opened again.
+- **An offline start is held whole** and resent unchanged on the next refresh, so the database
+  replays its receipt instead of acting twice.
+- **A case action pressed meanwhile waits** for the start (`runAction`), so it carries the revision
+  the start leaves behind.
+
+The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
+"Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
+sends `{confirmed: true}` through `payloadFor`, like any [workflow button](#events-and-actions).
+`adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
+whose reviewer has recorded a completed call with the client (the database checks the same), and
+the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows
+offer the same two marks, selecting the case in place.
+
 ## Events and actions
 
 `app.mjs` listens once on the root for `click`, `input`, `change` and `submit` (and on the document
@@ -565,9 +626,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1119) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1160) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (61) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

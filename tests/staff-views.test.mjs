@@ -20,6 +20,7 @@ import {
   correctionsDialogBody,
   problemNotice,
   historySentence,
+  stageWork,
   EVENT_SENTENCES,
   historyPanel,
   answersPanel,
@@ -324,6 +325,24 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
     preparation: 1,
     review: 1,
   });
+});
+
+test("the board's tabs are unchanged, and its search finds a case at e-filed", () => {
+  const efiled = boardCase({ id: "case-9", reference: "VT-FILE-9999", stage: "efiled", preparerId: "alex" });
+  const signing = boardCase({ id: "case-8", reference: "VT-SIGN-8888", stage: "review_approved" });
+  // None of the three new stages is on a tab, so no tab shows them.
+  for (const status of ["available", "preparation", "review"])
+    assert.deepEqual(
+      filterCases([efiled, signing], { status }, ALEX).map((c) => c.id),
+      [],
+      status,
+    );
+  assert.deepEqual(boardCounts([efiled, signing], {}, ALEX), { available: 0, preparation: 0, review: 0 });
+  // A search ignores the tab, so it reaches every stage.
+  assert.deepEqual(filterCases([efiled, signing], { search: "FILE-9999" }, ALEX).map((c) => c.id), ["case-9"]);
+  assert.deepEqual(filterCases([efiled, signing], { search: "VT-SIGN" }, ALEX).map((c) => c.id), ["case-8"]);
+  const html = renderStaffBoard([efiled], PEOPLE, { person: ALEX, filters: { search: "VT-FILE" } });
+  assert.match(html, /VT-FILE-9999/);
 });
 
 test("the board's Language cell lists every language, preferred first, and the filter matches any of them", () => {
@@ -1166,14 +1185,60 @@ test("case tabs follow the ARIA tab pattern and keep every panel in the page", (
 test("the lifecycle bar marks done, current and still-to-come steps", () => {
   const steps = (stage) =>
     [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(steps("preparing"), ["done", "done", "done", "current", "todo", "todo", "todo", "todo"]);
-  assert.deepEqual(steps("draft")[0], "current");
+  assert.deepEqual(steps("preparing"), [
+    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo",
+  ]);
+  assert.deepEqual(steps("received")[0], "current");
+  assert.deepEqual(steps("screening").slice(0, 3), ["done", "current", "todo"]);
   assert.deepEqual(steps("corrections_required")[3], "current amend");
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
-  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?In review/);
+  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?Review in progress/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
+  // A draft is not on the path: it marks nothing, and does not claim a step.
+  assert.ok(steps("draft").every((s) => s === "todo"));
+  assert.doesNotMatch(lifecycleBar("draft"), /aria-current/);
   // Closed can happen at any stage, so nothing before it is claimed as done.
-  assert.deepEqual(steps("closed"), ["todo", "todo", "todo", "todo", "todo", "todo", "todo", "current"]);
+  assert.deepEqual(steps("closed"), [
+    "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "current",
+  ]);
+});
+
+test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
+  const steps = (stage) =>
+    [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const ready = steps("ready_to_efile");
+  assert.deepEqual(ready.slice(0, 7), Array(7).fill("done"));
+  assert.equal(ready[7], "current");
+  assert.deepEqual(ready.slice(8), ["todo", "todo"]);
+  const bar = lifecycleBar("ready_to_efile");
+  assert.match(bar, /Ready to e-file/);
+  assert.match(bar, /E-filed/);
+  assert.deepEqual(steps("efiled").slice(0, 8), Array(8).fill("done"));
+  assert.equal(steps("efiled")[8], "current");
+  assert.match(lifecycleBar("efiled"), /aria-current="step"[^>]*>[\s\S]*?E-filed/);
+});
+
+test("the stage work sentences name who does the next thing", () => {
+  assert.equal(stageWork("screening").work, "The office is screening this application.");
+  assert.equal(stageWork("received").work, "The office starts screening when an admin opens the case.");
+  assert.equal(stageWork("ready_to_efile").work, "The office e-files the return.");
+  assert.equal(stageWork("efiled").work, "The return is e-filed. Nothing more is needed here.");
+  assert.equal(
+    stageWork("review_approved").work,
+    "The reviewer records the conversation with the client; the office records the client's signature.",
+  );
+  for (const stage of ["received", "screening", "ready_to_efile", "efiled"])
+    assert.equal(stageWork(stage).needs, null, stage);
+});
+
+test("the new actions have their history sentences", () => {
+  assert.equal(EVENT_SENTENCES.START_SCREENING, "started screening");
+  assert.equal(EVENT_SENTENCES.MARK_READY_TO_EFILE, "recorded the client's Form 8879 signature");
+  assert.equal(EVENT_SENTENCES.MARK_EFILED, "recorded that the return was e-filed");
+  assert.equal(
+    historySentence({ action: "MARK_EFILED", actorName: "Sam" }),
+    "Sam recorded that the return was e-filed.",
+  );
 });
 
 test("the case header names the case, its stage and its people", () => {

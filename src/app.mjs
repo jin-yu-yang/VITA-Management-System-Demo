@@ -1002,6 +1002,8 @@ if (!config) {
     RECORD_DOCUMENT_RESPONSE:
       "Recorded as staff-recorded, awaiting preparer verification.",
     CLOSE_CASE: "The case is closed and its pending work is cancelled.",
+    MARK_READY_TO_EFILE: "Marked ready to e-file. The client was told.",
+    MARK_EFILED: "Marked e-filed. The client was told.",
     CLAIM_PREPARATION: "This case is yours to prepare.",
     CLAIM_REVIEW: "This review is yours.",
     REQUEST_DOCUMENT: "The client was asked for this document.",
@@ -1092,6 +1094,10 @@ if (!config) {
     }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    // From a Follow-ups row the opener has left the queue (the case moved on)
+    // and there is no #case-title, so the queue's heading takes the keyboard.
+    if (type === "MARK_READY_TO_EFILE" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (type === "MARK_EFILED" && receipt) closeDialog("#case-title, #office-queue-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
@@ -1495,6 +1501,23 @@ if (!config) {
       case "open-close-case":
         openDialog("close-case");
         break;
+      case "open-mark-ready-to-efile":
+      case "open-mark-efiled": {
+        // From the case page the button carries no case id and the dialog
+        // opens at once. From a Follow-ups row it does: that case is read in
+        // place (no navigation, so screening never starts from the queue)
+        // and the dialog opens only if it is the one now loaded.
+        const opener = describeFocus(target);
+        const caseId = target.dataset.caseId;
+        const name = target.dataset.action === "open-mark-efiled" ? "mark-efiled" : "mark-ready-to-efile";
+        if (caseId) {
+          controller.dismissError();
+          await controller.selectCase(caseId, { navigate: false });
+          if (controller.getState().savedCase?.id !== caseId) break;
+        }
+        openDialog(name, null, opener);
+        break;
+      }
       case "open-log-call": {
         // Described before the await: by the time the case has loaded, the
         // page has been rebuilt and the keyboard may be anywhere.

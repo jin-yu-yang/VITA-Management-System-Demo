@@ -68,6 +68,7 @@ const caseCount = async (f) =>
 // everything a closure has to cancel, keep, or leave alone.
 async function pendingCase(f) {
   const { itemId, caseId } = await f.seedAssistance();
+  await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
   });
@@ -568,7 +569,14 @@ test("reminders record a simulated nudge on available work", async (t) => {
         assert.ok(reminded.lastRemindedAt > after.lastRemindedAt);
         assert.deepEqual(
           reminded.internalHistory.map((entry) => entry.action),
-          ["SAVE_ANSWERS", "SUBMIT", "VERIFY_INTAKE", "REMIND", "REMIND"],
+          [
+            "SAVE_ANSWERS",
+            "SUBMIT",
+            "START_SCREENING",
+            "VERIFY_INTAKE",
+            "REMIND",
+            "REMIND",
+          ],
         );
         assert.deepEqual(reminded.history, before.history);
       },
@@ -577,7 +585,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
       const caseId = await f.readyCase();
       const remind = applyArgs({
         caseId,
-        revision: 4,
+        revision: 5,
         personId: f.sam,
         type: "REMIND",
       });
@@ -587,10 +595,10 @@ test("reminders record a simulated nudge on available work", async (t) => {
       assert.equal(replay.error, null);
       assert.deepEqual(replay.data, first.data);
       const staff = await f.readStaffCase(caseId);
-      assert.equal(staff.revision, 5);
+      assert.equal(staff.revision, 6);
       assert.deepEqual(
         staff.internalHistory.map((entry) => entry.action),
-        ["SAVE_ANSWERS", "SUBMIT", "VERIFY_INTAKE", "REMIND"],
+        ["SAVE_ANSWERS", "SUBMIT", "START_SCREENING", "VERIFY_INTAKE", "REMIND"],
       );
     });
     await t.test("work nobody is waiting for takes no reminder", async () => {
@@ -601,7 +609,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
       await refuseAction(
         f,
         f.presenter,
-        { ...remind, caseId: claimed, revision: 5 },
+        { ...remind, caseId: claimed, revision: 6 },
         "VT004",
       );
       // Intake that has not been verified is not on anyone's queue yet.
@@ -634,7 +642,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
     });
     await t.test("only an admin presenter may remind", async () => {
       const caseId = await f.readyCase();
-      const remind = { caseId, revision: 4, type: "REMIND", payload: {} };
+      const remind = { caseId, revision: 5, type: "REMIND", payload: {} };
       for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
         await refuseAction(f, f.presenter, { ...remind, personId }, "VT001");
       // A presenter-only action stays out of the client's reach either way.
@@ -660,7 +668,7 @@ test("reminders record a simulated nudge on available work", async (t) => {
         );
       const before = await f.readStaffCase(caseId);
       assert.equal(before.lastRemindedAt, null);
-      assert.equal(before.revision, 4);
+      assert.equal(before.revision, 5);
       await f.act(f.presenter, caseId, f.sam, "REMIND", {});
       assert.ok((await f.readStaffCase(caseId)).lastRemindedAt);
     });
@@ -867,7 +875,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
         const caseId = await f.readyCase();
         const close = {
           caseId,
-          revision: 4,
+          revision: 5,
           personId: f.sam,
           type: "CLOSE_CASE",
         };
@@ -902,7 +910,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
       async () => {
         const caseId = await f.readyCase();
         const payload = { reason: CLOSURE_REASON, confirmed: true };
-        const close = { caseId, revision: 4, type: "CLOSE_CASE", payload };
+        const close = { caseId, revision: 5, type: "CLOSE_CASE", payload };
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await refuseAction(f, f.presenter, { ...close, personId }, "VT001");
         await refuseAction(f, f.applicantA, { ...close }, "VT001");

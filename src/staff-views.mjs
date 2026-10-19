@@ -99,7 +99,8 @@ export const UNKNOWN_PERSON = "Unknown person";
 // sentence stay in `describeStage`, which is the only place they exist.
 const STAGE_WORK = Object.freeze({
   draft: { work: "Nothing yet. The client has not sent this application.", needs: null },
-  received: { work: "The office records the intake checks.", needs: null },
+  received: { work: "The office starts screening when an admin opens the case.", needs: null },
+  screening: { work: "The office is screening this application.", needs: null },
   preparation_ready: {
     work: "Waiting for a preparer to claim it.",
     needs: "prepare",
@@ -121,9 +122,11 @@ const STAGE_WORK = Object.freeze({
     needs: "prepare",
   },
   review_approved: {
-    work: "The reviewer records the conversation with the client.",
+    work: "The reviewer records the conversation with the client; the office records the client's signature.",
     needs: "review",
   },
+  ready_to_efile: { work: "The office e-files the return.", needs: null },
+  efiled: { work: "The return is e-filed. Nothing more is needed here.", needs: null },
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
 });
 const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null });
@@ -728,16 +731,19 @@ export function caseTabs(panels, active = "overview", counts = {}) {
   return `<div class="case-tabs" role="tablist" aria-label="Case sections">${tabs}</div>${bodies}`;
 }
 
-// The main path through today's nine stages. Corrections are a loop back into
-// preparation, so they show on the preparation step, marked as amendment.
+// The main path through the stages after the client sends the application
+// (a draft is not on it). Corrections are a loop back into preparation, so
+// they show on the preparation step, marked as amendment.
 const LIFECYCLE = Object.freeze([
-  "draft",
   "received",
+  "screening",
   "preparation_ready",
   "preparing",
   "review_ready",
   "reviewing",
   "review_approved",
+  "ready_to_efile",
+  "efiled",
   "closed",
 ]);
 
@@ -1570,6 +1576,7 @@ export function taskContacts(record, task) {
 export const EVENT_SENTENCES = Object.freeze({
   SAVE_ANSWERS: "saved the intake answers",
   SUBMIT: "submitted the application",
+  START_SCREENING: "started screening",
   VERIFY_INTAKE: "recorded the intake checks",
   CLAIM_PREPARATION: "claimed preparation",
   REQUEST_DOCUMENT: "asked the client for a document",
@@ -1587,6 +1594,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RESUBMIT_REVIEW: "recorded that the corrections are complete",
   APPROVE_REVIEW: "approved the review",
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
+  MARK_READY_TO_EFILE: "recorded the client's Form 8879 signature",
+  MARK_EFILED: "recorded that the return was e-filed",
   REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",

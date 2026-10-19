@@ -258,7 +258,8 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
       });
       await f.act(f.presenter, caseId, f.sam, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];
-      assert.equal(row.stage, "received");
+      // The office has already screened a client it entered itself.
+      assert.equal(row.stage, "screening");
       assert.ok(Number.isInteger(Number(row.client_number)) && Number(row.client_number) > 0);
     });
   } finally {

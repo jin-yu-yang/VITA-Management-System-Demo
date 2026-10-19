@@ -1,0 +1,252 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  createDatabaseFixture,
+  applyArgs,
+  rejected,
+} from "./support/database-fixture.mjs";
+
+// Migration 032: the main chain's three new stages (screening, ready_to_efile,
+// efiled) and the three admin-only actions that move a case into them.
+const SCREENING_LINE =
+  "PCDC started reviewing your application. We may call you.";
+const SIGNED_LINE =
+  "PCDC recorded that you signed Form 8879. Your return is ready to e-file.";
+const EFILED_LINE = "PCDC e-filed your return.";
+const CALL_NOTE = "Told the fictional client the return is ready.";
+const CLOSURE = {
+  reason: "The fictional client asked us to stop.",
+  confirmed: true,
+};
+const CONFIRMED = { confirmed: true };
+
+test("the main chain's new stages against real Supabase", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const stageOf = async (caseId) => (await f.readStaffCase(caseId)).stage;
+
+    await t.test(
+      "an admin starts screening; the history tells the client",
+      async () => {
+        const { caseId } = await f.submittedClientCase();
+        assert.equal(await stageOf(caseId), "received");
+        await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
+        assert.equal(await stageOf(caseId), "screening");
+        assert.ok((await f.clientMessages(caseId)).includes(SCREENING_LINE));
+        const staff = await f.readStaffCase(caseId);
+        assert.equal(staff.internalHistory.at(-1).action, "START_SCREENING");
+        assert.equal(staff.internalHistory.at(-1).actorPersonId, f.sam);
+        assert.deepEqual(staff.internalHistory.at(-1).detail, {});
+      },
+    );
+
+    await t.test("START_SCREENING refusals, in check order", async () => {
+      const { caseId } = await f.submittedClientCase();
+      for (const personId of [f.alex, f.morgan, null])
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, personId, "START_SCREENING", {}),
+          rejected("FORBIDDEN"),
+        );
+      // The client cannot start the office's screening either.
+      await assert.rejects(
+        () => f.act(f.applicantA, caseId, null, "START_SCREENING", {}),
+        rejected("FORBIDDEN"),
+      );
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "START_SCREENING", { x: 1 }),
+        rejected("VALIDATION"),
+      );
+      await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "START_SCREENING", {}),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+
+    await t.test("VERIFY_INTAKE waits for screening", async () => {
+      const { caseId } = await f.submittedClientCase();
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+            checks: f.intakeChecks,
+          }),
+        rejected("INVALID_TRANSITION"),
+      );
+      assert.equal(await stageOf(caseId), "received");
+      // Positive control: the same checks succeed once screening has started.
+      await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
+      await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+        checks: f.intakeChecks,
+      });
+      assert.equal(await stageOf(caseId), "preparation_ready");
+    });
+
+    await t.test(
+      "an office case lands in screening with a client number",
+      async () => {
+        const created = await f.draftCase(f.presenter, {
+          mode: "assisted",
+          personId: f.sam,
+        });
+        await f.act(f.presenter, created.caseId, f.sam, "SUBMIT", {
+          confirmed: true,
+        });
+        assert.equal(await stageOf(created.caseId), "screening");
+        const [row] = (
+          await f.sql("select client_number from public.cases where id=$1", [
+            created.caseId,
+          ])
+        ).rows;
+        assert.ok(Number(row.client_number) > 0, "a client number is assigned");
+        assert.ok(
+          (await f.clientMessages(created.caseId)).includes(SCREENING_LINE),
+        );
+        // It has already been screened, so the office goes straight to the checks.
+        await assert.rejects(
+          () => f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {}),
+          rejected("INVALID_TRANSITION"),
+        );
+        await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
+          checks: f.intakeChecks,
+        });
+        assert.equal(await stageOf(created.caseId), "preparation_ready");
+      },
+    );
+
+    await t.test(
+      "a client case still lands in received with the old line",
+      async () => {
+        const { caseId } = await f.submittedClientCase();
+        assert.equal(await stageOf(caseId), "received");
+        const messages = await f.clientMessages(caseId);
+        assert.ok(
+          messages.includes(
+            "Application received. A volunteer will check your information and documents.",
+          ),
+        );
+        assert.ok(!messages.includes(SCREENING_LINE));
+      },
+    );
+
+    await t.test("signing and e-filing, admin only, confirmed only", async () => {
+      const caseId = await f.approvedCase();
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED),
+        rejected("INVALID_TRANSITION"),
+      );
+      for (const personId of [f.alex, f.morgan, null])
+        await assert.rejects(
+          () =>
+            f.act(f.presenter, caseId, personId, "MARK_READY_TO_EFILE", CONFIRMED),
+          rejected("FORBIDDEN"),
+        );
+      for (const payload of [
+        {},
+        { confirmed: false },
+        { confirmed: "true" },
+        { confirmed: true, x: 1 },
+      ])
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", payload),
+          rejected("VALIDATION"),
+        );
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+      assert.equal(await stageOf(caseId), "ready_to_efile");
+      assert.ok((await f.clientMessages(caseId)).includes(SIGNED_LINE));
+      for (const personId of [f.alex, f.morgan, null])
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, personId, "MARK_EFILED", CONFIRMED),
+          rejected("FORBIDDEN"),
+        );
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", {}),
+        rejected("VALIDATION"),
+      );
+      await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED);
+      assert.equal(await stageOf(caseId), "efiled");
+      assert.ok((await f.clientMessages(caseId)).includes(EFILED_LINE));
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED),
+        rejected("INVALID_TRANSITION"),
+      );
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+
+    await t.test("ready to e-file waits for the reviewer's call", async () => {
+      const caseId = await f.approvedCase({ called: false });
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED),
+        rejected("INVALID_TRANSITION"),
+      );
+      assert.equal(await stageOf(caseId), "review_approved");
+      await f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", {
+        outcome: "reached",
+        note: CALL_NOTE,
+      });
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+      assert.equal(await stageOf(caseId), "ready_to_efile");
+    });
+
+    await t.test(
+      "closing: allowed during screening, refused after review",
+      async () => {
+        const { caseId: screening } = await f.submittedClientCase();
+        await f.act(f.presenter, screening, f.sam, "START_SCREENING", {});
+        await f.act(f.presenter, screening, f.sam, "CLOSE_CASE", CLOSURE);
+        assert.equal(await stageOf(screening), "closed");
+
+        const caseId = await f.approvedCase();
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", CLOSURE),
+          rejected("INVALID_TRANSITION"),
+        );
+        await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", CLOSURE),
+          rejected("INVALID_TRANSITION"),
+        );
+        await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED);
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", CLOSURE),
+          rejected("INVALID_TRANSITION"),
+        );
+        assert.equal(await stageOf(caseId), "efiled");
+      },
+    );
+
+    await t.test("a rejected action commits nothing", async () => {
+      const caseId = await f.approvedCase({ called: false });
+      const { revision } = await f.readStaffCase(caseId);
+      const before = await f.stateSnapshot();
+      const history = await f.clientMessages(caseId);
+      // Refused for the stage (MARK_EFILED) and for the missing call
+      // (MARK_READY_TO_EFILE): both are INVALID_TRANSITION, VT004.
+      for (const type of ["MARK_EFILED", "MARK_READY_TO_EFILE"]) {
+        const actionId = crypto.randomUUID();
+        const { error } = await f.presenter.rpc(
+          "vitally_apply_action",
+          applyArgs({
+            actionId,
+            caseId,
+            revision,
+            personId: f.sam,
+            type,
+            payload: CONFIRMED,
+          }),
+        );
+        assert.equal(error?.code, "VT004", type);
+        assert.equal(await f.receiptsFor(actionId), 0, `${type} receipt`);
+      }
+      assert.deepEqual(await f.stateSnapshot(), before);
+      assert.equal((await f.readStaffCase(caseId)).revision, revision);
+      assert.deepEqual(await f.clientMessages(caseId), history);
+    });
+  } finally {
+    await f.close();
+  }
+});

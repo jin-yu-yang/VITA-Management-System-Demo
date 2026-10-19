@@ -11,7 +11,9 @@ import { STATES, SENTENCES } from "./empty-states.states.mjs";
 // character (change unify-empty-states, design D2). The case pool and the Log
 // contact drawer change on purpose and are tested on their own. The case pages
 // gained the Contacts tab, and the task's list became "Contacts so far", on
-// purpose too (change add-contact-log).
+// purpose too (change add-contact-log). Follow-ups gained the Screening,
+// Signing and E-filing filter chips (change add-screening-and-efiling-stages);
+// the three queue states differ from the capture by those chips alone.
 //
 // The case pages print "Updated" with formatTime, in the machine's own time
 // zone, and the fixture was captured in New York. Node re-reads TZ when it is

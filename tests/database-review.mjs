@@ -162,6 +162,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           [
             "SAVE_ANSWERS",
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "SUBMIT_REVIEW",
@@ -210,6 +211,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           c.history.map((entry) => entry.action),
           [
             "SUBMIT",
+            "START_SCREENING",
             "VERIFY_INTAKE",
             "CLAIM_PREPARATION",
             "SUBMIT_REVIEW",

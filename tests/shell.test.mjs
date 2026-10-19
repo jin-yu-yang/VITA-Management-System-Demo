@@ -1205,3 +1205,25 @@ test("app.mjs wires the Log contact form, Copy, Copy all and Edit", () => {
   // The old attempt is gone from the browser, notice and all.
   assert.doesNotMatch(app, /RECORD_CONTACT/);
 });
+
+test("app.mjs opens, closes and announces the two e-file confirmations", () => {
+  const app = appSource();
+  // Both open from the case page or from a Follow-ups row. A row selects its
+  // case in place (no navigation, so screening never starts from the queue),
+  // and the dialog opens only once that case is the one loaded.
+  const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
+  assert.match(opener, /case "open-mark-ready-to-efile":\s+case "open-mark-efiled": \{/);
+  assert.match(opener, /const opener = describeFocus\(target\);/);
+  assert.match(opener, /const caseId = target\.dataset\.caseId;/);
+  assert.match(opener, /target\.dataset\.action === "open-mark-efiled" \? "mark-efiled" : "mark-ready-to-efile"/);
+  assert.match(opener, /if \(caseId\) \{\s+controller\.dismissError\(\);\s+await controller\.selectCase\(caseId, \{ navigate: false \}\);\s+if \(controller\.getState\(\)\.savedCase\?\.id !== caseId\) break;\s+\}\s+openDialog\(name, null, opener\);/);
+  // After a confirm the keyboard goes back to the opener, or, when its row has
+  // left the queue, to the case title or the queue heading, whichever screen it is.
+  assert.match(app, /if \(type === "MARK_READY_TO_EFILE" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /if \(type === "MARK_EFILED" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /MARK_READY_TO_EFILE: "Marked ready to e-file\. The client was told\."/);
+  assert.match(app, /MARK_EFILED: "Marked e-filed\. The client was told\."/);
+  // The shared modal frame places both.
+  assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
+  assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);
+});
