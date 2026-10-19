@@ -137,3 +137,313 @@ alter table public.cases drop constraint if exists cases_signing_plan_check;
 alter table public.cases add constraint cases_signing_plan_check check(signing_plan is null or signing_plan in ('appointment','same_day','portal','go_over_first'));
 alter table public.cases drop constraint if exists cases_signing_appointment;
 alter table public.cases add constraint cases_signing_appointment check((signing_plan is not distinct from 'appointment')=(signing_appointment_at is not null));
+
+-- ---------------------------------------------------------------------------
+-- 5. Payload validation (D3, D4). Every failure is VT007 VALIDATION, raised by
+-- check_payload. The checkers answer true or false and never raise, so a
+-- malformed payload (a number where an object belongs) is a refusal, not a
+-- server error. The date window and the appointment rule need the case and
+-- belong to the handlers.
+
+-- A date key: a string `YYYY-MM-DD` that is a real calendar date, else null.
+create or replace function vitally_private.payload_date(p jsonb,key text) returns date
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(p->key)='string' and p->>key ~ '^\d{4}-\d{2}-\d{2}$' then
+  return (p->>key)::date;
+ end if;
+ return null;
+exception when others then
+ return null;
+end;
+$$;
+
+-- A wall-clock minute: a string `YYYY-MM-DDTHH:MM` that is a real time, else
+-- null. The hour is bound to 00-23, because the cast would accept 24:00.
+create or replace function vitally_private.payload_minute(p jsonb,key text) returns timestamp
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(p->key)='string' and p->>key ~ '^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$' then
+  return (p->>key)::timestamp;
+ end if;
+ return null;
+exception when others then
+ return null;
+end;
+$$;
+
+-- One Exit Form group (D3). `p_local` adds the `type` key a local entry carries.
+create or replace function vitally_private.check_exit_group(g jsonb,p_local boolean) returns boolean
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(g) is distinct from 'object' then
+  return false;
+ end if;
+ if p_local then
+  if not vitally_private.payload_keys(g)<@array['amount','debitOn','method','oweBy','refundBy','result','type']
+   or jsonb_typeof(g->'type') is distinct from 'string' or g->>'type' not in ('NPT','BIRT','EET','SIT','PAIBWTR') then
+   return false;
+  end if;
+ elsif not vitally_private.payload_keys(g)<@array['amount','debitOn','method','oweBy','refundBy','result'] then
+  return false;
+ end if;
+ if jsonb_typeof(g->'method') is distinct from 'string' or g->>'method' not in ('efile','paper')
+  or jsonb_typeof(g->'result') is distinct from 'string' or g->>'result' not in ('refund','owe','none') then
+  return false;
+ end if;
+ if g->>'result'='none' then
+  return not (g ? 'amount' or g ? 'refundBy' or g ? 'oweBy' or g ? 'debitOn');
+ end if;
+ if jsonb_typeof(g->'amount') is distinct from 'string' or g->>'amount' !~ '^(0|[1-9][0-9]{0,5})(\.[0-9]{1,2})?$' then
+  return false;
+ end if;
+ if g->>'result'='refund' then
+  return jsonb_typeof(g->'refundBy')='string' and g->>'refundBy' in ('direct_deposit','check')
+   and not (g ? 'oweBy' or g ? 'debitOn');
+ end if;
+ if jsonb_typeof(g->'oweBy') is distinct from 'string' or g->>'oweBy' not in ('direct_debit','mail_check') or g ? 'refundBy' then
+  return false;
+ end if;
+ if g->>'oweBy'='direct_debit' then
+  return vitally_private.payload_date(g,'debitOn') is not null;
+ end if;
+ return not g ? 'debitOn';
+end;
+$$;
+
+-- The Exit Form (D3): federal and state are a group or null, local is at most
+-- one entry per type. It has no key for, and so refuses, any banking detail.
+create or replace function vitally_private.check_exit_form(p jsonb) returns boolean
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(p) is distinct from 'object' or vitally_private.payload_keys(p)<>array['federal','local','state'] then
+  return false;
+ end if;
+ if (jsonb_typeof(p->'federal') is distinct from 'null' and not vitally_private.check_exit_group(p->'federal',false))
+  or (jsonb_typeof(p->'state') is distinct from 'null' and not vitally_private.check_exit_group(p->'state',false)) then
+  return false;
+ end if;
+ if jsonb_typeof(p->'local') is distinct from 'array' or jsonb_array_length(p->'local')>5 then
+  return false;
+ end if;
+ if exists(select 1 from jsonb_array_elements(p->'local') e where not vitally_private.check_exit_group(e,true)) then
+  return false;
+ end if;
+ return (select count(distinct e->>'type') from jsonb_array_elements(p->'local') e)=jsonb_array_length(p->'local');
+end;
+$$;
+
+-- The preparer's questionnaire, SUBMIT_REVIEW's and RESUBMIT_REVIEW's.
+create or replace function vitally_private.check_preparer_questionnaire(q jsonb) returns boolean
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(q) is distinct from 'object' then
+  return false;
+ end if;
+ if not (vitally_private.payload_keys(q)<@array['confirmedBy','confirmedByName','confirmedMethod','readyForReviewOn','shadedPartsCompleted','stateForgivenessSet']
+   and vitally_private.payload_keys(q)@>array['confirmedBy','confirmedMethod','readyForReviewOn','shadedPartsCompleted','stateForgivenessSet']) then
+  return false;
+ end if;
+ if jsonb_typeof(q->'confirmedBy') is distinct from 'string' or q->>'confirmedBy' not in ('client','spouse','other')
+  or jsonb_typeof(q->'confirmedMethod') is distinct from 'string' or q->>'confirmedMethod' not in ('phone','in_person','text','email','video')
+  or q->'shadedPartsCompleted' is distinct from 'true'::jsonb or q->'stateForgivenessSet' is distinct from 'true'::jsonb
+  or vitally_private.payload_date(q,'readyForReviewOn') is null then
+  return false;
+ end if;
+ if q->>'confirmedBy'='other' then
+  return vitally_private.payload_text(q,'confirmedByName',120) and length(btrim(q->>'confirmedByName'))<=120;
+ end if;
+ return not q ? 'confirmedByName';
+end;
+$$;
+
+-- The reviewer's questionnaire, APPROVE_REVIEW's.
+create or replace function vitally_private.check_reviewer_questionnaire(q jsonb) returns boolean
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ if jsonb_typeof(q) is distinct from 'object' then
+  return false;
+ end if;
+ if not (vitally_private.payload_keys(q)<@array['completedOn','exitForm','paForgiveness','remarks','signAppointmentAt','signMethod','wentOver','wentOverHow','wentOverOn']
+   and vitally_private.payload_keys(q)@>array['completedOn','exitForm','paForgiveness','signMethod','wentOver']) then
+  return false;
+ end if;
+ if vitally_private.payload_date(q,'completedOn') is null
+  or jsonb_typeof(q->'paForgiveness') is distinct from 'string' or q->>'paForgiveness' not in ('eligible','not_eligible')
+  or jsonb_typeof(q->'wentOver') is distinct from 'boolean'
+  or jsonb_typeof(q->'signMethod') is distinct from 'string' or q->>'signMethod' not in ('portal','in_person') then
+  return false;
+ end if;
+ if q->'wentOver'='true'::jsonb then
+  if vitally_private.payload_date(q,'wentOverOn') is null then
+   return false;
+  end if;
+  if q ? 'wentOverHow' and (jsonb_typeof(q->'wentOverHow') is distinct from 'string' or q->>'wentOverHow' not in ('in_person','phone','video','other')) then
+   return false;
+  end if;
+ elsif q ? 'wentOverOn' or q ? 'wentOverHow' then
+  return false;
+ end if;
+ if q ? 'signAppointmentAt' and vitally_private.payload_minute(q,'signAppointmentAt') is null then
+  return false;
+ end if;
+ if q ? 'remarks' and not vitally_private.payload_text(q,'remarks',2000) then
+  return false;
+ end if;
+ return vitally_private.check_exit_form(q->'exitForm');
+end;
+$$;
+
+revoke all on function vitally_private.payload_date(jsonb,text) from public,anon,authenticated,service_role;
+revoke all on function vitally_private.payload_minute(jsonb,text) from public,anon,authenticated,service_role;
+revoke all on function vitally_private.check_exit_group(jsonb,boolean) from public,anon,authenticated,service_role;
+revoke all on function vitally_private.check_exit_form(jsonb) from public,anon,authenticated,service_role;
+revoke all on function vitally_private.check_preparer_questionnaire(jsonb) from public,anon,authenticated,service_role;
+revoke all on function vitally_private.check_reviewer_questionnaire(jsonb) from public,anon,authenticated,service_role;
+
+-- ---------------------------------------------------------------------------
+-- check_payload, verbatim from 032 with SUBMIT_REVIEW and APPROVE_REVIEW out of
+-- the empty-payload group, and a questionnaire for each of the three review
+-- hand-offs.
+create or replace function vitally_private.check_payload(p_type text,p_payload jsonb) returns void
+language plpgsql immutable security definer set search_path='' as $$
+begin
+ case p_type
+  when 'SAVE_ANSWERS' then
+   -- The per-key answer checks are check_related's: they depend on the case's version.
+   if vitally_private.payload_keys(p_payload) not in (array['answers'], array['answers','visited'])
+    or jsonb_typeof(p_payload->'answers')<>'object'
+    or (p_payload ? 'visited' and (jsonb_typeof(p_payload->'visited')<>'array'
+     or jsonb_array_length(p_payload->'visited')>64
+     or exists(select 1 from jsonb_array_elements(p_payload->'visited') v
+      where jsonb_typeof(v)<>'string' or (v#>>'{}') !~ '^[a-z]+\.[a-z_]+$'))) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'SUBMIT' then
+   if vitally_private.payload_keys(p_payload)<>array['confirmed'] or p_payload->'confirmed'<>'true'::jsonb then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'VERIFY_INTAKE' then
+   if vitally_private.payload_keys(p_payload)<>array['checks'] or jsonb_typeof(p_payload->'checks')<>'object'
+    or vitally_private.payload_keys(p_payload->'checks')<>array['consent','documents','identity','interview']
+    or exists(select 1 from jsonb_each(p_payload->'checks') c where c.value<>'true'::jsonb) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'CLAIM_PREPARATION','REMIND','CLAIM_REVIEW','START_SCREENING' then -- 033
+   if vitally_private.payload_keys(p_payload)<>array[]::text[] then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'REQUEST_DOCUMENT' then
+   if vitally_private.payload_keys(p_payload)<>array['message','title']
+    or not vitally_private.payload_text(p_payload,'title',120)
+    or not vitally_private.payload_text(p_payload,'message',2000) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'RESPOND_DOCUMENT','RECORD_DOCUMENT_RESPONSE' then
+   -- One simulated document exists in this demo; its name is fixed.
+   if vitally_private.payload_keys(p_payload)<>array['filename','requestId']
+    or vitally_private.payload_uuid(p_payload,'requestId') is null
+    or p_payload->>'filename'<>'demo-mileage-record-2025.pdf' then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'VERIFY_DOCUMENT' then
+   if vitally_private.payload_keys(p_payload)<>array['requestId']
+    or vitally_private.payload_uuid(p_payload,'requestId') is null then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'ESCALATE_CONTACT' then
+   -- The assignee is derived from workspace setup, so any assignee-shaped
+   -- extra field is rejected rather than ignored.
+   if vitally_private.payload_keys(p_payload)<>array['reason','requestId']
+    or vitally_private.payload_uuid(p_payload,'requestId') is null
+    or not vitally_private.payload_text(p_payload,'reason',1000) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'RECORD_CONTACT','RESOLVE_FOLLOWUP' then
+   -- Resolution accepts only the two conclusive outcomes.
+   if vitally_private.payload_keys(p_payload)<>array['followupId','note','outcome']
+    or vitally_private.payload_uuid(p_payload,'followupId') is null
+    or not vitally_private.payload_text(p_payload,'note',1000)
+    or (p_type='RECORD_CONTACT' and p_payload->>'outcome' not in ('no_answer','reached','no_further_contact','closure_requested'))
+    or (p_type='RESOLVE_FOLLOWUP' and p_payload->>'outcome' not in ('reached','no_further_contact')) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'REQUEST_CORRECTIONS' then
+   -- The findings are the whole request body: internal text with content.
+   if vitally_private.payload_keys(p_payload)<>array['findings']
+    or not vitally_private.payload_text(p_payload,'findings',2000) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'SUBMIT_REVIEW' then -- 033
+   if vitally_private.payload_keys(p_payload)<>array['questionnaire'] -- 033
+    or not coalesce(vitally_private.check_preparer_questionnaire(p_payload->'questionnaire'),false) then -- 033
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 033
+   end if; -- 033
+  when 'APPROVE_REVIEW' then -- 033
+   if vitally_private.payload_keys(p_payload)<>array['questionnaire'] -- 033
+    or not coalesce(vitally_private.check_reviewer_questionnaire(p_payload->'questionnaire'),false) then -- 033
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 033
+   end if; -- 033
+  when 'RESUBMIT_REVIEW' then
+   if vitally_private.payload_keys(p_payload)<>array['questionnaire','resolution'] -- 033
+    or not coalesce(vitally_private.check_preparer_questionnaire(p_payload->'questionnaire'),false) -- 033
+    or not vitally_private.payload_text(p_payload,'resolution',2000) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'RECORD_REVIEW_CONTACT' then
+   -- A contact attempt records what happened, never a payment detail.
+   if vitally_private.payload_keys(p_payload)<>array['note','outcome']
+    or not vitally_private.payload_text(p_payload,'note',1000)
+    or p_payload->>'outcome' not in ('no_answer','reached','no_further_contact','closure_requested') then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'UPDATE_CONTACT' then
+   -- Best time and note only, at least one of them. A phone is changed
+   -- through the form (SAVE_ANSWERS), never here. Each value's type check
+   -- reads the catalogue, so it is act_update_contact's.
+   if cardinality(vitally_private.payload_keys(p_payload))=0
+    or not (vitally_private.payload_keys(p_payload)<@array['bestContactNote','bestContactTime']) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'RECORD_MATERIALS' then
+   -- The whole set now received: known items, each at most once.
+   if vitally_private.payload_keys(p_payload)<>array['received'] or jsonb_typeof(p_payload->'received')<>'array' then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+   if exists(select 1 from jsonb_array_elements(p_payload->'received') e
+     where jsonb_typeof(e)<>'string' or (e#>>'{}')<>all(vitally_private.materials_items())) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+   if (select count(distinct e) from jsonb_array_elements_text(p_payload->'received') e)<>jsonb_array_length(p_payload->'received') then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'SET_DOCUMENT_CARD' then
+   if vitally_private.payload_keys(p_payload)<>array['slotId','status']
+    or jsonb_typeof(p_payload->'slotId')<>'string'
+    or (p_payload->>'slotId') !~ '^[a-z0-9_]+\.(tp|sp|household|hh\.[0-9a-f]{32})$'
+    or coalesce(p_payload->>'status','') not in ('later','none','not_done') then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'SET_DOCUMENT_GROUP' then
+   if vitally_private.payload_keys(p_payload)<>array['group','slotId']
+    or jsonb_typeof(p_payload->'slotId')<>'string'
+    or (p_payload->>'slotId') !~ '^[a-z0-9_]+\.(tp|sp|household|hh\.[0-9a-f]{32})$'
+    or coalesce(p_payload->>'group','') not in ('needed','maybe') then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'CLOSE_CASE' then
+   -- Closing is deliberate: a written reason and an explicit confirmation.
+   if vitally_private.payload_keys(p_payload)<>array['confirmed','reason']
+    or p_payload->'confirmed'<>'true'::jsonb
+    or not vitally_private.payload_text(p_payload,'reason',1000) then
+    raise sqlstate 'VT007' using message='VALIDATION';
+   end if;
+  when 'MARK_READY_TO_EFILE','MARK_EFILED' then -- 032
+   if vitally_private.payload_keys(p_payload)<>array['confirmed'] -- 032
+    or p_payload->'confirmed'<>'true'::jsonb then -- 032
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 032
+   end if; -- 032
+  else raise sqlstate 'VT007' using message='VALIDATION';
+ end case;
+end;
+$$;

@@ -153,7 +153,7 @@ test("the signing plan is the client's to read", async () => {
     - every other branch verbatim, including 032's `MARK_READY_TO_EFILE`/`MARK_EFILED`.
   - The helpers get `revoke all … from public, anon, authenticated, service_role`, as in `023`.
 
-- [ ] **Step 1: Write the failing tests.** Add `PREPARER` and `REVIEWER` constants (valid payloads, dates `new Date().toISOString().slice(0, 10)`) and change `REVIEW_PAYLOADS` to use them. Then add one table-driven test per checker. Each entry asserts `rejected("VALIDATION")`, with the stage and revision unchanged after it:
+- [x] **Step 1: Write the failing tests.** Add `PREPARER` and `REVIEWER` constants (valid payloads, dates `new Date().toISOString().slice(0, 10)`) and change `REVIEW_PAYLOADS` to use them. Then add one table-driven test per checker. Each entry asserts `rejected("VALIDATION")`, with the stage and revision unchanged after it:
 
 ```js
 const BAD_PREPARER = {

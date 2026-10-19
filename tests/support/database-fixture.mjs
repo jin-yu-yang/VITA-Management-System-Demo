@@ -88,6 +88,24 @@ const options = {
   },
 };
 // An assert.rejects predicate for one mapped domain code.
+// Valid questionnaires for SUBMIT_REVIEW / RESUBMIT_REVIEW and APPROVE_REVIEW (fictional).
+const TODAY = () => new Date().toISOString().slice(0, 10);
+export const PREPARER = Object.freeze({
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: TODAY(),
+});
+export const REVIEWER = Object.freeze({
+  completedOn: TODAY(),
+  paForgiveness: "eligible",
+  wentOver: true,
+  wentOverOn: TODAY(),
+  wentOverHow: "phone",
+  signMethod: "portal",
+  exitForm: Object.freeze({ federal: null, state: null, local: [] }),
+});
 export const rejected = (code) => (error) => error.code === code;
 // Fully specified immutable arguments for a direct vitally_apply_action call,
 // so replays and races reuse one envelope and a payload can omit the related
@@ -363,7 +381,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   f.preparedCase = async () => {
     const caseId = await f.readyCase();
     await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
     return caseId;
   };
   // A client case just submitted: stage received, no screening yet.
@@ -387,7 +405,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   f.approvedCase = async ({ called = true } = {}) => {
     const caseId = await f.preparedCase();
     await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
-    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {});
+    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
     if (called)
       await f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", {
         outcome: "reached",

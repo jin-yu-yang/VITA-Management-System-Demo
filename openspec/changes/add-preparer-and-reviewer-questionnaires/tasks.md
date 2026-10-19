@@ -23,7 +23,7 @@
 
 ## 3. Database: validation and the three handlers
 
-- [ ] 3.1 Write failing tests for `check_payload` and `check_exit_form`:
+- [x] 3.1 Write failing tests for `check_payload` and `check_exit_form`:
   - every required answer missing;
   - every conditional rule;
   - unknown keys;
@@ -33,7 +33,7 @@
   - more than five Local entries;
   - an account number or routing number in any group (refused; design D3);
   - the old empty payloads.
-- [ ] 3.2 Implement `vitally_private.check_exit_form` and the new `check_payload` branches for `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` (design D3, D4). Copy `check_payload` from 032 and every other branch verbatim (D12).
+- [x] 3.2 Implement `vitally_private.check_exit_form` and the new `check_payload` branches for `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` (design D3, D4). Copy `check_payload` from 032 and every other branch verbatim (D12).
 - [ ] 3.3 Write failing tests for the handlers:
   - a valid submit or resubmit stores one row at the new version;
   - a refused one changes stage, revision, version and receipts not at all;

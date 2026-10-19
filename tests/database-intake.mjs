@@ -4,6 +4,7 @@ import {
   createDatabaseFixture,
   applyArgs,
   rejected,
+  PREPARER,
 } from "./support/database-fixture.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
@@ -893,7 +894,7 @@ test("contact and materials actions", async (t) => {
         update(caseId, { bestContactNote: "Not yet" }, f.presenter, f.morgan),
         rejected("FORBIDDEN"),
       );
-      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
       await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
       await update(caseId, { bestContactTime: ["weekend"] }, f.presenter, f.morgan);
       assert.deepEqual((await contactRow(f, caseId)).best_contact_time, ["weekend"]);

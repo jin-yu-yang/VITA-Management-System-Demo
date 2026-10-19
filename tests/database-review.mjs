@@ -6,6 +6,8 @@ import {
   applyArgs,
   rejected,
   SAMPLE_CONTACT,
+  PREPARER,
+  REVIEWER,
 } from "./support/database-fixture.mjs";
 import { initializeWorkspace } from "../tools/admin/workspace-setup.mjs";
 const FINDINGS = "Recheck the fictional mileage entry.";
@@ -24,11 +26,11 @@ const MONEY_WORDS = [
 ];
 // One valid payload per review action, so a sweep can ask for each of them.
 const REVIEW_PAYLOADS = Object.freeze({
-  SUBMIT_REVIEW: {},
+  SUBMIT_REVIEW: { questionnaire: PREPARER },
   CLAIM_REVIEW: {},
   REQUEST_CORRECTIONS: { findings: FINDINGS },
-  RESUBMIT_REVIEW: { resolution: RESOLUTION },
-  APPROVE_REVIEW: {},
+  RESUBMIT_REVIEW: { questionnaire: PREPARER, resolution: RESOLUTION },
+  APPROVE_REVIEW: { questionnaire: REVIEWER },
   RECORD_REVIEW_CONTACT: { outcome: "reached", note: CONTACT_NOTE },
 });
 // The person each action would belong to on a case Alex prepared and Morgan
@@ -111,10 +113,11 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           findings: "Recheck the fictional mileage entry.",
         });
         await assert.rejects(
-          f.act(f.presenter, id, f.morgan, "APPROVE_REVIEW", {}),
+          f.act(f.presenter, id, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER }),
           (error) => error.code === "INVALID_TRANSITION",
         );
         await f.act(f.presenter, id, f.alex, "RESUBMIT_REVIEW", {
+          questionnaire: PREPARER,
           resolution: "Corrected and rechecked in external software.",
         });
         await assert.rejects(
@@ -122,7 +125,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           (error) => error.code === "INELIGIBLE",
         );
         await f.act(f.presenter, id, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, id, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, id, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         const c = await f.readStaffCase(id);
         assert.equal(c.stage, "review_approved");
         assert.equal(c.preparationVersion, 2);
@@ -250,7 +253,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         assert.equal(staff.reviews[0].status, "active");
         assert.equal(staff.reviews[0].preparationVersion, 1);
         assert.equal(staff.reviews[0].decidedAt, null);
-        await f.act(f.presenter, direct, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, direct, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         staff = await f.readStaffCase(direct);
         assert.equal(staff.stage, "review_approved");
         assert.equal(staff.preparationVersion, 1);
@@ -261,6 +264,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         // A different reviewer may take the resubmitted version.
         const redo = await correctedCase(f, f.morgan);
         await f.act(f.presenter, redo, f.alex, "RESUBMIT_REVIEW", {
+          questionnaire: PREPARER,
           resolution: RESOLUTION,
         });
         staff = await f.readStaffCase(redo);
@@ -268,7 +272,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         assert.equal(staff.reviewerId, null);
         assert.equal(staff.preparationVersion, 2);
         await f.act(f.presenter, redo, riley, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, redo, riley, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, redo, riley, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         staff = await f.readStaffCase(redo);
         assert.equal(staff.stage, "review_approved");
         assert.equal(staff.reviewerId, riley);
@@ -299,7 +303,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         // and holds `prepare` only, so the refusal is SELF_REVIEW, not INELIGIBLE.
         const caseyCase = await f.readyCase();
         await f.act(f.presenter, caseyCase, casey, "CLAIM_PREPARATION", {});
-        await f.act(f.presenter, caseyCase, casey, "SUBMIT_REVIEW", {});
+        await f.act(f.presenter, caseyCase, casey, "SUBMIT_REVIEW", { questionnaire: PREPARER });
         await assert.rejects(
           () => f.act(f.presenter, caseyCase, casey, "CLAIM_REVIEW", {}),
           rejected("SELF_REVIEW"),
@@ -343,12 +347,12 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
             revision: stale,
             personId: f.morgan,
             type: "APPROVE_REVIEW",
-            payload: {},
+            payload: { questionnaire: REVIEWER },
           }),
         );
         assert.equal(conflict?.code, "VT003");
         await assert.rejects(
-          () => f.act(f.presenter, held, f.morgan, "APPROVE_REVIEW", {}),
+          () => f.act(f.presenter, held, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER }),
           rejected("INVALID_TRANSITION"),
         );
         // Corrections leave preparation alone and hand the case back.
@@ -362,6 +366,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         // The answered attempt stays as history, and version 2 needs a claim
         // of its own: nothing carries the old attempt forward.
         await f.act(f.presenter, held, f.alex, "RESUBMIT_REVIEW", {
+          questionnaire: PREPARER,
           resolution: RESOLUTION,
         });
         const resubmitted = await f.readStaffCase(held);
@@ -392,7 +397,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
             [held],
           );
         }
-        await f.act(f.presenter, held, riley, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, held, riley, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         assert.equal((await f.readStaffCase(held)).stage, "review_approved");
       },
     );
@@ -450,7 +455,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         );
         const caseId = await f.preparedCase();
         await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         const approved = await f.readStaffCase(caseId);
         const clientEvents = approved.history.length;
         // A rejected payload records nothing.
@@ -583,7 +588,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         // A request to close stays a contact record: closure is its own action.
         const closing = await f.preparedCase();
         await f.act(f.presenter, closing, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, closing, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, closing, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         await f.act(f.presenter, closing, f.morgan, "RECORD_REVIEW_CONTACT", {
           outcome: "closure_requested",
           note: "The client asked about closing the fictional case.",
@@ -663,12 +668,12 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         const attempts = [
           [
             f.presenter,
-            { caseId, revision, personId: riley, type: "APPROVE_REVIEW" },
+            { caseId, revision, personId: riley, type: "APPROVE_REVIEW", payload: { questionnaire: REVIEWER } },
             "VT001",
           ],
           [
             f.applicantB,
-            { caseId, revision, personId: f.morgan, type: "APPROVE_REVIEW" },
+            { caseId, revision, personId: f.morgan, type: "APPROVE_REVIEW", payload: { questionnaire: REVIEWER } },
             "VT002",
           ],
           [
@@ -678,6 +683,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
               revision: revision - 1,
               personId: f.morgan,
               type: "APPROVE_REVIEW",
+              payload: { questionnaire: REVIEWER },
             },
             "VT003",
           ],
@@ -688,12 +694,12 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           ],
           [
             f.presenter,
-            { caseId, revision, personId: f.alex, type: "APPROVE_REVIEW" },
+            { caseId, revision, personId: f.alex, type: "APPROVE_REVIEW", payload: { questionnaire: REVIEWER } },
             "VT005",
           ],
           [
             f.presenter,
-            { caseId, revision, personId: f.sam, type: "APPROVE_REVIEW" },
+            { caseId, revision, personId: f.sam, type: "APPROVE_REVIEW", payload: { questionnaire: REVIEWER } },
             "VT006",
           ],
           [
@@ -787,7 +793,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         // The office task is deliberately left open.
         assert.equal(held.followups.length, 1);
         assert.equal(held.followups[0].status, "open");
-        await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+        await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
         const staff = await f.readStaffCase(caseId);
         assert.equal(staff.stage, "review_ready");
         assert.equal(staff.preparationVersion, 1);
@@ -843,12 +849,12 @@ test("review submission waits for documents, not for office contact", async (t) 
         // this case's preparer is told a document is still open; everybody
         // else is refused for the qualification or the assignment they lack.
         await assert.rejects(
-          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
+          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
           rejected("INVALID_TRANSITION"),
         );
         for (const personId of [f.sam, f.morgan])
           await assert.rejects(
-            () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
+            () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
             rejected("INELIGIBLE"),
           );
         await f.act(f.applicantA, caseId, null, "RESPOND_DOCUMENT", {
@@ -856,7 +862,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         });
         // A received but unverified document is still a blocker.
         await assert.rejects(
-          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
+          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
           rejected("INVALID_TRANSITION"),
         );
         await f.act(f.presenter, caseId, f.alex, "VERIFY_DOCUMENT", {});
@@ -864,7 +870,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         // as before: the blocker never changed what they are told.
         for (const personId of [f.sam, f.morgan])
           await assert.rejects(
-            () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
+            () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
             rejected("INELIGIBLE"),
           );
         // An unverified intake could never reach this stage, and is refused
@@ -874,12 +880,12 @@ test("review submission waits for documents, not for office contact", async (t) 
         ]);
         try {
           await assert.rejects(
-            () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
+            () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
             rejected("INVALID_TRANSITION"),
           );
           for (const personId of [f.sam, f.morgan])
             await assert.rejects(
-              () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", {}),
+              () => f.act(f.presenter, caseId, personId, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
               rejected("INELIGIBLE"),
             );
         } finally {
@@ -894,7 +900,7 @@ test("review submission waits for documents, not for office contact", async (t) 
             () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", payload),
             rejected("VALIDATION"),
           );
-        await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+        await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
         assert.equal((await f.readStaffCase(caseId)).stage, "review_ready");
       },
     );
@@ -917,6 +923,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         await assert.rejects(
           () =>
             f.act(f.presenter, caseId, f.alex, "RESUBMIT_REVIEW", {
+              questionnaire: PREPARER,
               resolution: RESOLUTION,
             }),
           rejected("INVALID_TRANSITION"),
@@ -927,6 +934,7 @@ test("review submission waits for documents, not for office contact", async (t) 
           await assert.rejects(
             () =>
               f.act(f.presenter, caseId, personId, "RESUBMIT_REVIEW", {
+                questionnaire: PREPARER,
                 resolution: RESOLUTION,
               }),
             rejected("INELIGIBLE"),
@@ -937,9 +945,11 @@ test("review submission waits for documents, not for office contact", async (t) 
         await f.act(f.presenter, caseId, f.alex, "VERIFY_DOCUMENT", {});
         for (const payload of [
           {},
-          { resolution: "   " },
-          { resolution: "x".repeat(2001) },
-          { resolution: RESOLUTION, extra: 1 },
+          { questionnaire: PREPARER },
+          { questionnaire: PREPARER, resolution: "   " },
+          { questionnaire: PREPARER, resolution: "x".repeat(2001) },
+          { questionnaire: PREPARER, resolution: RESOLUTION, extra: 1 },
+          { resolution: RESOLUTION },
           { findings: RESOLUTION },
         ])
           await assert.rejects(
@@ -952,6 +962,7 @@ test("review submission waits for documents, not for office contact", async (t) 
           await assert.rejects(
             () =>
               f.act(f.presenter, caseId, personId, "RESUBMIT_REVIEW", {
+                questionnaire: PREPARER,
                 resolution: RESOLUTION,
               }),
             rejected("INELIGIBLE"),
@@ -966,6 +977,7 @@ test("review submission waits for documents, not for office contact", async (t) 
           )
         ).rows[0].id;
         await f.act(f.presenter, caseId, f.alex, "RESUBMIT_REVIEW", {
+          questionnaire: PREPARER,
           resolution: RESOLUTION,
         });
         const staff = await f.readStaffCase(caseId);
@@ -1042,7 +1054,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         // An approved return is never closed by the office.
         const approved = await f.preparedCase();
         await f.act(f.presenter, approved, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, approved, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, approved, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         await assert.rejects(
           () =>
             f.act(f.presenter, approved, f.sam, "CLOSE_CASE", {
@@ -1090,10 +1102,10 @@ test("a reassigned case excludes its former preparer from review", async (t) => 
         assert.deepEqual([...moved.participants].sort(), [f.alex, casey].sort());
         // Only the current preparer submits.
         await assert.rejects(
-          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {}),
+          () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
           rejected("FORBIDDEN"),
         );
-        await f.act(f.presenter, caseId, casey, "SUBMIT_REVIEW", {});
+        await f.act(f.presenter, caseId, casey, "SUBMIT_REVIEW", { questionnaire: PREPARER });
         assert.equal((await f.readStaffCase(caseId)).stage, "review_ready");
         // Alex holds `review` and never prepared the *current* version, but the
         // participation record is permanent, so the claim is a self-review.
@@ -1105,7 +1117,7 @@ test("a reassigned case excludes its former preparer from review", async (t) => 
         // Independence is checked before assignment, so Alex sees SELF_REVIEW
         // rather than the FORBIDDEN another reviewer would see.
         await assert.rejects(
-          () => f.act(f.presenter, caseId, f.alex, "APPROVE_REVIEW", {}),
+          () => f.act(f.presenter, caseId, f.alex, "APPROVE_REVIEW", { questionnaire: REVIEWER }),
           rejected("SELF_REVIEW"),
         );
         await assert.rejects(
@@ -1115,7 +1127,7 @@ test("a reassigned case excludes its former preparer from review", async (t) => 
             }),
           rejected("SELF_REVIEW"),
         );
-        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {});
+        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
         const staff = await f.readStaffCase(caseId);
         assert.equal(staff.stage, "review_approved");
         assert.equal(staff.reviews[0].reviewerId, f.morgan);
@@ -1178,7 +1190,7 @@ test("a reassigned case excludes its former preparer from review", async (t) => 
         ]);
         for (const [type, payload] of [
           ["REQUEST_DOCUMENT", f.sampleRequest],
-          ["SUBMIT_REVIEW", {}],
+          ["SUBMIT_REVIEW", { questionnaire: PREPARER }],
         ])
           await assert.rejects(
             () => f.act(f.presenter, caseId, casey, type, payload),
@@ -1364,6 +1376,209 @@ test("the signing plan is the client's to read", async () => {
     assert.equal(own.data[0].signing_plan, "appointment");
     assert.equal(own.data[0].signing_appointment_at, "2026-02-12T10:00:00");
     await set("portal", null);
+  } finally {
+    await f.close();
+  }
+});
+
+// Validation of the two questionnaires (design D3, D4). Each bad payload is
+// refused as VALIDATION and leaves the stage and revision alone.
+const without = (object, key) => {
+  const copy = { ...object };
+  delete copy[key];
+  return copy;
+};
+const exit = (parts) => ({
+  ...REVIEWER,
+  exitForm: { federal: null, state: null, local: [], ...parts },
+});
+const sit = { type: "SIT", method: "paper", result: "none" };
+const BAD_PREPARER = {
+  "missing method": without(PREPARER, "confirmedMethod"),
+  "unticked shaded": { ...PREPARER, shadedPartsCompleted: false },
+  "unticked forgiveness": { ...PREPARER, stateForgivenessSet: false },
+  "other without name": { ...PREPARER, confirmedBy: "other" },
+  "name without other": { ...PREPARER, confirmedByName: "Pat Example" },
+  "whitespace other name": { ...PREPARER, confirmedBy: "other", confirmedByName: "   " },
+  "impossible date": { ...PREPARER, readyForReviewOn: "2026-02-30" },
+  "extra key": { ...PREPARER, note: "x" },
+};
+const BAD_REVIEWER = {
+  "yes without date": without({ ...REVIEWER, wentOver: true }, "wentOverOn"),
+  "no with date": { ...REVIEWER, wentOver: false },
+  "no with how": { ...without(REVIEWER, "wentOverOn"), wentOver: false },
+  "appointment seconds": {
+    ...REVIEWER,
+    signMethod: "in_person",
+    signAppointmentAt: "2026-11-02T14:30:15",
+  },
+  "whitespace remarks refused": { ...REVIEWER, remarks: "   " },
+  "refund without amount": exit({
+    federal: { method: "efile", result: "refund", refundBy: "check" },
+  }),
+  "none with amount": exit({
+    federal: { method: "paper", result: "none", amount: "1" },
+  }),
+  "debit without date": exit({
+    state: { method: "efile", result: "owe", amount: "45.50", oweBy: "direct_debit" },
+  }),
+  "amount three decimals": exit({
+    federal: { method: "efile", result: "owe", amount: "1.005", oweBy: "mail_check" },
+  }),
+  "duplicate local": exit({ local: [sit, sit] }),
+  "unknown local type": exit({ local: [{ ...sit, type: "XYZ" }] }),
+  "banking detail": exit({
+    federal: {
+      method: "efile",
+      result: "refund",
+      amount: "10",
+      refundBy: "direct_deposit",
+      accountNumber: "000123",
+    },
+  }),
+  "routing number": exit({
+    federal: {
+      method: "efile",
+      result: "refund",
+      amount: "10",
+      refundBy: "direct_deposit",
+      routingNumber: "000000000",
+    },
+  }),
+  "old empty payload": null,
+};
+const GOOD_REVIEWER = {
+  "no groups": REVIEWER,
+  "NPT owe by mail check plus BIRT paper none": exit({
+    local: [
+      { type: "NPT", method: "efile", result: "owe", amount: "120.00", oweBy: "mail_check" },
+      { type: "BIRT", method: "paper", result: "none" },
+    ],
+  }),
+  "amount zero": exit({
+    federal: { method: "efile", result: "refund", amount: "0", refundBy: "check" },
+  }),
+  "amount maximum": exit({
+    state: { method: "paper", result: "owe", amount: "999999.99", oweBy: "mail_check" },
+  }),
+  "debit with date": exit({
+    state: {
+      method: "efile",
+      result: "owe",
+      amount: "45.50",
+      oweBy: "direct_debit",
+      debitOn: "2026-04-15",
+    },
+  }),
+  "in person with appointment": {
+    ...REVIEWER,
+    signMethod: "in_person",
+    signAppointmentAt: "2026-11-02T14:30",
+    remarks: "Fictional remark.",
+  },
+  "went over no, without how": {
+    ...without(without(REVIEWER, "wentOverOn"), "wentOverHow"),
+    wentOver: false,
+  },
+};
+
+test("questionnaire payloads are validated by the database", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const unchanged = async (caseId, run) => {
+      const before = await f.readStaffCase(caseId);
+      await run();
+      const after = await f.readStaffCase(caseId);
+      assert.equal(after.stage, before.stage);
+      assert.equal(after.revision, before.revision);
+    };
+    await t.test("the preparer questionnaire", async () => {
+      const caseId = await f.readyCase();
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      for (const [name, questionnaire] of [
+        ...Object.entries(BAD_PREPARER),
+        ["old empty payload", null],
+      ])
+        await unchanged(caseId, () =>
+          assert.rejects(
+            () =>
+              f.act(
+                f.presenter,
+                caseId,
+                f.alex,
+                "SUBMIT_REVIEW",
+                questionnaire === null ? {} : { questionnaire },
+              ),
+            rejected("VALIDATION"),
+            name,
+          ),
+        );
+      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {
+        questionnaire: { ...PREPARER, confirmedBy: "other", confirmedByName: "Pat Example" },
+      });
+    });
+    await t.test("the reviewer questionnaire", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      for (const [name, questionnaire] of Object.entries(BAD_REVIEWER))
+        await unchanged(caseId, () =>
+          assert.rejects(
+            () =>
+              f.act(
+                f.presenter,
+                caseId,
+                f.morgan,
+                "APPROVE_REVIEW",
+                questionnaire === null ? {} : { questionnaire },
+              ),
+            rejected("VALIDATION"),
+            name,
+          ),
+        );
+      // Cases like these pass the payload check (the handler is Task 4's), so
+      // ask check_payload itself.
+      for (const [name, questionnaire] of Object.entries(GOOD_REVIEWER))
+        await f.sql(
+          "select vitally_private.check_payload('APPROVE_REVIEW',$1::jsonb)",
+          [JSON.stringify({ questionnaire })],
+        ).catch((error) => assert.fail(`${name}: ${error.message}`));
+    });
+    await t.test("a resubmission needs both a questionnaire and a resolution", async () => {
+      const caseId = await correctedCase(f, f.morgan);
+      for (const payload of [
+        { resolution: RESOLUTION },
+        { questionnaire: PREPARER },
+        { questionnaire: { ...PREPARER, shadedPartsCompleted: false }, resolution: RESOLUTION },
+      ])
+        await unchanged(caseId, () =>
+          assert.rejects(
+            () => f.act(f.presenter, caseId, f.alex, "RESUBMIT_REVIEW", payload),
+            rejected("VALIDATION"),
+          ),
+        );
+    });
+    await t.test("the 032 branches survived the copy", async () => {
+      for (const [type, payload] of [
+        ["START_SCREENING", {}],
+        ["MARK_READY_TO_EFILE", { confirmed: true }],
+        ["MARK_EFILED", { confirmed: true }],
+      ])
+        await f.sql("select vitally_private.check_payload($1,$2::jsonb)", [
+          type,
+          JSON.stringify(payload),
+        ]);
+      for (const [type, payload] of [
+        ["START_SCREENING", { x: 1 }],
+        ["MARK_READY_TO_EFILE", {}],
+      ])
+        await assert.rejects(
+          () =>
+            f.sql("select vitally_private.check_payload($1,$2::jsonb)", [
+              type,
+              JSON.stringify(payload),
+            ]),
+          rejected("VALIDATION"),
+        );
+    });
   } finally {
     await f.close();
   }
