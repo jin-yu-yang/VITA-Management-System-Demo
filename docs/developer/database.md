@@ -323,10 +323,10 @@ the stage that can block a transition: `SUBMIT_REVIEW` and `RESUBMIT_REVIEW` ref
 document request is `open` or `awaiting_verification`. An open admin follow-up never blocks
 preparation.
 
-`efiled` is the end of the demo's main chain. After it, the IRS's answer, amendments and the
-client-not-reachable states are not built; see the
-[roadmap](production-roadmap.md#4-workflow-coverage). Three admin-only actions make the stages
-around review:
+`efiled` is the end of the demo's main chain. After it, the IRS's answer, amendments, the
+unreachable client, and waiting for documents and hold are not built; see the
+[roadmap](production-roadmap.md#4-workflow-coverage). Three admin-only actions and one submit rule shape
+the new stages:
 
 - A client's `SUBMIT` lands in `received`; an office-entered case's `SUBMIT` (no owner) lands in
   `screening`, because the office has already screened a client it entered itself.

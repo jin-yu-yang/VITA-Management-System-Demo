@@ -117,8 +117,8 @@ what the test suite actually proved.
     resubmits with a note describing what was corrected in TaxSlayer; Morgan re-claims the fresh
     submission and approves it. (Short branch: Morgan claims and approves directly, with no
     corrections — the second sample case in the story takes exactly this path.)
-11. **Morgan records the client conversation.** The client's screen updates to "Review complete"
-    and a plain description of the next step. The story asserts, at this exact point, that none of
+11. **Morgan records the client conversation.** The client's screen updates to "Ready to sign"
+    with the message that PCDC will contact them to sign Form 8879, which is needed before the return can be filed. The story asserts, at this exact point, that none of
     the reviewer's findings, the preparer's resolution note, the office's contact notes, or any
     `$`/refund/routing/deposit language appear anywhere in the client's window.
 

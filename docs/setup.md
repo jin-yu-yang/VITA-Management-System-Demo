@@ -521,7 +521,7 @@ digests, and the migrator now refuses with `MIGRATION_CHANGED`: recreate that st
   handler, one from the shared commit path). Anything that waits on a Realtime update should match
   the case's revision number, not merely the fact that an update arrived.
 - **Internal findings, resolutions, and office notes never reach a client screen.** The browser
-  story asserts this directly at the point where the client's own screen says "Review complete."
+  story asserts this directly at the point where the client's own screen says "Ready to sign."
 
 ## 6. Classroom and hosted setup (pending)
 

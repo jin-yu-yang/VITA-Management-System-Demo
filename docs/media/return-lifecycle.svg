@@ -155,7 +155,7 @@
   <circle class="start" cx="1560" cy="84" r="8"/>
   <path class="e" d="M1560,92 V124"/>
   <g class="n intake">
-    <rect x="1410" y="126" width="300" height="48" rx="10"/><text x="1560" y="150">Same day in process (untracked)</text>
+    <rect x="1410" y="126" width="300" height="48" rx="10"/><text x="1560" y="150">Same day in progress (untracked)</text>
   </g>
   <circle class="start" cx="1560" cy="206" r="8"/>
   <path class="e" d="M1560,214 V246"/>
