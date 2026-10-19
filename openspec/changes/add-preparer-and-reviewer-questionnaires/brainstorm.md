@@ -5,9 +5,10 @@ is the approved design as agreed, kept in its own words. The last part, "Found i
 not part of the approval. It lists what reading the code showed and the calls Claude made because of it. Each
 call is marked so it can be checked.
 
-**Do not apply until Jinyu's lifecycle chain (#73) is merged.** This change edits `SUBMIT_REVIEW`,
-`RESUBMIT_REVIEW` and `APPROVE_REVIEW`, the stage functions the chain also edits. Propose now, then run
-`/opsx:update` for the chain's stage names before apply.
+**Updated on 2026-10-19 for main after #91 and #88.** The lifecycle chain's part 1 (#91,
+`add-screening-and-efiling-stages`) and the contact log (#88, `add-contact-log`) have merged. The section
+"Update after #91 and #88" at the end records what Hailey asked for in that update. Where it differs from the
+approved design above, it wins. One question in it is still open for Hailey (design, Open Questions Q1).
 
 ---
 
@@ -176,3 +177,38 @@ Read on origin/main at 9992aab. The plan builds on these facts.
 - **Call 2:** the Exit Form stores only the payment method (direct deposit / check / direct debit / mail
   check), the amounts and the dates. It never stores account or routing numbers. This revises ruling R28,
   and the PR calls that out. (design D3)
+
+---
+
+## Update after #91 and #88 (2026-10-19, `/opsx:update`)
+
+Asked for by Hailey once #91 merged. Main at 71e84d1 was merged into the branch.
+
+- **Stages.** The artifacts use #91's stored keys, which did not change, and its staff names: Filing in
+  progress (preparing) `preparing`, Corrections in progress `corrections_required`, Pending review
+  `review_ready`, Review in progress `reviewing`, Ready to exit `review_approved`. #91 meets the old
+  apply gate (plan Task 1).
+- **Migration number.** Exactly one after main's newest migration, with no gap: `033` today. If #90
+  (`add-staff-identity`) or anything else merges first and takes 033, the migration is renumbered to the new
+  next number when main is merged in.
+- **Shared functions.** Every function this change redefines is copied from its newest definition (032 for
+  the ones #91 redefined) and changed only where this change needs to. design.md lists each one and its source.
+- **Contact log prefill (built now; #88 merged first).** If the case's contact log has an entry with purpose
+  "go over tax return" and outcome reached, in either direction, the reviewer form prefills "went over the
+  return with the client" = Yes, with the date and method of the latest such entry. (This replaces call 6 and
+  the brainstorm's "only once `add-call-log` exists".)
+- **#91's Mark ready to e-file gate.** It requires the reviewer's call to be completed. An approval whose
+  questionnaire says Yes completes it (D10), so the gate is met. For No, Claude proposes a rule and Hailey
+  decides (design, Open Questions Q1).
+- **Follow-ups.** The new column on `admin_followups` is reconciled with #91's Follow-ups rows and #88's
+  task-linked contacts (design D5).
+- **Layout.** The reviewer form sits inline in "Your next step", above the Approve button, never in a dialog.
+  The Exit Form's Federal, State and Local groups are collapsible.
+- **Client text (revises "no client text changes").** The client's Ready to exit message gets four variants
+  (tracked in #85), in English and 简体, built on #91's wording:
+  - in person with an appointment (date and time);
+  - same day, on site;
+  - the Customer Portal;
+  - not yet gone over with the client.
+
+  Then `npm run build:hant`.

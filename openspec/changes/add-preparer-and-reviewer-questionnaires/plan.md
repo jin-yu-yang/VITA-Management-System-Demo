@@ -2,26 +2,43 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` each carry a questionnaire. The database validates and stores it, staff see the answers on the case page, and an approval with "did not go over the return" opens an office follow-up.
+**Goal:** `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` each carry a questionnaire. The database validates and stores it, and staff see the answers on the case page. An approval with "did not go over the return" opens an office follow-up, and the client's Ready to exit message says how and when they will sign.
 
 **Architecture:**
 - The questionnaire travels inside the existing action payload, so `vitally_apply_action` checks it, stores it and moves the stage in one transaction (design D1).
 - Answers go into two new presenter-only tables (design D2). The Exit Form groups go in one checked `jsonb` column (D3).
-- `admin_followups` gains a `kind`, so a follow-up need not name a document request (D5).
-- The browser builds the payload from flat form names, mirrors the database's rules, and renders the forms with CSS-only show/hide (D4, D7).
+- `admin_followups` gains a `purpose` in the contact log's words, so a follow-up need not name a document request (D5).
+- The browser builds the payload from flat form names, mirrors the database's rules, and renders the forms inline with CSS-only show/hide (D4, D7). It prefills "went over the return" from the contact log (D9).
+- The approval stores a client-readable signing plan on the case, and the client's status panel shows its variant (D11).
 
 **Tech Stack:** PostgreSQL / Supabase (plpgsql, RLS, realtime), plain ES modules (`src/*.mjs`), `node:test`, Playwright (`tests/browser.mjs`).
 
-**Spec:** `openspec/changes/add-preparer-and-reviewer-questionnaires/`. Read `design.md` (D1–D9) and `specs/review-and-corrections/spec.md` and `specs/office-follow-up/spec.md` with this plan. `brainstorm.md` holds the approved design.
+**Spec:** `openspec/changes/add-preparer-and-reviewer-questionnaires/`. Read `design.md` (D1–D12 and Open Questions) with this plan, and these four delta specs:
+- `specs/review-and-corrections/spec.md`;
+- `specs/office-follow-up/spec.md`;
+- `specs/case-lifecycle/spec.md`;
+- `specs/staff-case-work/spec.md`.
+
+`brainstorm.md` holds the approved design and, in its last section, this update's instructions.
 
 ## Global Constraints
 
-- **Do not start until Jinyu's lifecycle chain (#73) is merged, and `/opsx:update` has renamed the stages in this plan.** Stage names below are today's: `preparing`, `review_ready`, `reviewing`, `corrections_required`, `review_approved`.
-- **Migrations are hand-written and final once applied.** Add one new file, `supabase/migrations/031_review_questionnaires.sql`, numbered after the last migration on `main` (renumber at Task 1). Never edit an existing migration. Every statement can be applied again (`if not exists`, `create or replace`, drop-then-add).
-- **Copy each re-created function from its *latest* definition.** After #73 that is the chain's migration, not `006`/`017`/`019`/`021`. Change only what this plan names, and keep every client message string as it is.
+- **Do not start until Hailey has ruled on design Q1** (tasks 1.3). Task 4a is written from that ruling.
+- **Stages** use #91's stored keys with its staff names: `preparing` Filing in progress (preparing), `corrections_required` Corrections in progress, `review_ready` Pending review, `reviewing` Review in progress, `review_approved` Ready to exit, `ready_to_efile` Ready to e-file.
+- **Migrations are hand-written and final once applied.**
+  - Add one new file, `supabase/migrations/033_review_questionnaires.sql`. It is numbered exactly one after main's newest migration, never skipping a number.
+  - If #90 or anything else merges first and takes 033, renumber when main is merged in (Task 1), so the sequence stays without gaps.
+  - Never edit an existing migration. Every statement can be applied again (`if not exists`, `create or replace`, drop-then-add).
+- **Copy each re-created function verbatim from its newest definition** (design D12), and mark every changed line `-- 033`, as 032 does:
+  - `check_payload` from 032;
+  - `act_submit_review` and `act_resubmit_review` from 006;
+  - `act_approve_review` from 021;
+  - `apply_fixture_scenario` from 031.
+
+  `vitally_apply_action` and `check_operation_authority` (newest 032) are **not** redefined. Keep every client message string as it is.
 - **Fictional data only** in fixtures and tests.
-- **Staff screens are English. No change** to `src/client-text.mjs`, `src/zh-hant.mjs` or the intake catalogue.
-- **No client message, `client_events` row or client screen may mention any answer, amount or payment method.** The existing `MONEY_WORDS` checks stay green.
+- **Staff screens are English.** The only client text is the four Ready to exit variants (D11), in `src/client-text.mjs` (English and 简体), then `npm run build:hant`, committing `src/zh-hant.mjs`. The intake catalogue is unchanged.
+- **No client message, `client_events` row, `cases` column or client screen may mention any answer, amount or payment method.** The client reads only `cases.signing_plan` and `cases.signing_appointment_at`. The existing `MONEY_WORDS` checks stay green.
 - **Every validation failure is `raise sqlstate 'VT007' using message='VALIDATION'`.**
 - **Payload keys are exactly these** (database and browser):
   - Preparer `questionnaire`: `confirmedBy` (`client`|`spouse`|`other`), `confirmedByName` (only with `other`, 1–120 chars after trim), `confirmedMethod` (`phone`|`in_person`|`text`|`email`|`video`), `shadedPartsCompleted` (`true`), `stateForgivenessSet` (`true`), `readyForReviewOn` (`YYYY-MM-DD`).
@@ -30,43 +47,59 @@
 - **The Exit Form stores only payment methods, amounts and the debit date, never an account number, routing number or other banking detail** (design D3). This revises ruling R28, and the PR description must say so.
 - **An approval with a questionnaire never leaves the review-contact step pending** (design D10). `RECORD_REVIEW_CONTACT` is kept unchanged.
 - **The Exit Form shape is design D3, exactly.** The amount pattern is `^(0|[1-9][0-9]{0,5})(\.[0-9]{1,2})?$`. Local types are `NPT`, `BIRT`, `EET`, `SIT`, `PAIBWTR`.
+- **Follow-up purposes** are `request_documents` and `go_over_return`, the contact log's keys (D5). Follow-ups' row kinds (`call`, `signing`, …) are a separate thing and are not changed.
+- **The reviewer form is inline in "Your next step", directly above Approve, never in a dialog.** The Exit Form groups are collapsible `<details>` (D7).
 - **Fixed strings:**
   - follow-up reason: `Go over the return with the client: the reviewer did not.`;
-  - follow-up label: `Go over the return with the client`;
-  - empty answers: `No questionnaire was recorded for this version.`
-- **Checks to run:** `npm test`; `npm run db:migrate:test` then `npm run test:database`; `npm run test:browser`; `npx openspec validate --all`. `build:hant -- --check` and `test:auth-browser` are not needed: no client text or sign-in changes.
+  - follow-up title: `Go over the return with the client`;
+  - empty answers: `No questionnaire was recorded for this version.`;
+  - the four Ready to exit variants: design D11, exactly.
+- **Checks to run:**
+  - `npm test`;
+  - `npm run db:migrate:test` then `npm run test:database`;
+  - `npm run test:browser`;
+  - `npm run build:hant -- --check`;
+  - `npx openspec validate --all`, and `npm run build:intake` leaves nothing to commit.
+
+  `test:auth-browser` is not needed: no sign-in changes.
+- **Tracking:** the PR says "Part of #85" and never Fixes/Closes/Resolves.
 
 ## Review Focus
 
 1. **An answer that is hidden but still filled in** (3 = No after a date was typed; Portal after an appointment was typed) must not be sent. Otherwise the database refuses a valid approval. Tests: Task 6 `drops hidden went-over answers` and `drops the appointment when not in person`.
 2. **A whitespace-only "other" name or remarks** must count as empty, in the builder and in the database. Tests: Task 6 `blank other name is refused`; Task 3 `whitespace remarks refused`.
-3. **An Exit Form entry with only an amount typed** (no method or result) must give a clear sentence, not be silently dropped or sent half-built. Test: Task 6 `half-filled Local entry names the entry`.
+3. **An Exit Form entry with only an amount typed** (no method or result) must give a clear sentence, not be silently dropped or sent half-built, and its `<details>` must be open when the form is shown again. Tests: Task 6 `half-filled Local entry names the entry`; Task 7 `a filled group stays open`.
 4. **A resubmit on a case whose earlier version has no questionnaire** (reviewed before this change) must open the form blank with today's date, not crash. Test: Task 7 `resubmit with no earlier questionnaire`.
 5. **A `go_over_return` task in every follow-up view** (queue row, drawer, case panel, count) must never read `task.requestId` as if it were set. Test: Task 8 `follow-up with no request renders`.
+6. **The prefill's date is New York's,** not the browser's or UTC. A go-over call at 10:30 PM New York time on 10/14 is 10/15 in UTC. Test: Task 6 `goOverPrefill uses the New York date`.
+7. **The appointment is wall-clock time.** A client browser in another zone must show the time the reviewer typed. Test: Task 8a `appointment text ignores the time zone` (run with `TZ=Asia/Shanghai`).
+8. **#91's gate:** a Yes approval reaches Ready to e-file with no `RECORD_REVIEW_CONTACT`. Test: Task 4 `yes meets the ready-to-e-file gate`.
 
 ---
 
 ### Task 1: Gate and renumber
 
-**Files:** none changed except, possibly, this change's artifacts (through `/opsx:update`).
+**Files:** none changed except, possibly, this change's artifacts and the migration's name.
 
-- [ ] **Step 1:** Run `gh pr list --state merged --search "lifecycle"` and `git log origin/main --oneline -20`, and confirm #73's chain is in `main`. If it is not, stop and tell the user.
-- [ ] **Step 2:** Run `/opsx:update add-preparer-and-reviewer-questionnaires` with the chain's stage names, and the file names of the chain's latest handler definitions. Check whether `add-call-log` has merged; if it has, the update adds the 3a/3b prefill (design D9).
-- [ ] **Step 3:** Run `git merge origin/main`, then `ls supabase/migrations | tail -1`. Use the next number for the migration in Task 2 if it is not 031.
-- [ ] **Step 4:** Tick tasks 1.1 and 1.2 in `tasks.md` and commit: `git commit -am "Questionnaires: rebase onto the lifecycle chain"`.
+- [x] **Step 1:** #91 is merged into `main`, and main (71e84d1) is merged into this branch. `/opsx:update` brought the artifacts up to date (tasks 1.1, 1.2).
+- [ ] **Step 2:** Confirm Hailey's ruling on design Q1 is written into design.md, `specs/office-follow-up/spec.md` and Task 4a (tasks 1.3). If it is not, stop and tell the user.
+- [ ] **Step 3:** Run `git fetch origin && git merge origin/main`, then `ls supabase/migrations | tail -1`. The migration is one after that number. If it is no longer 033, rename it everywhere in this plan, in design.md and in tasks.md.
+- [ ] **Step 4:** For every function in design D12, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1`. If any newest definition is no longer the file D12 names, update D12 and copy from the new one.
+- [ ] **Step 5:** Tick task 1.4 in `tasks.md` and commit: `git commit -am "Questionnaires: main merged; migration numbered after main's newest"`.
 
-### Task 2: Tables, RLS and the follow-up kind
+### Task 2: Tables, RLS, the follow-up purpose and the signing plan
 
 **Files:**
-- Create: `supabase/migrations/031_review_questionnaires.sql`. Sections 1–3 of the file; the header names design D2/D5 and the R28 departure.
+- Create: `supabase/migrations/033_review_questionnaires.sql`, sections 1–4. The header names design D2/D5/D11, the R28 departure, and the D12 table of copied functions.
 - Test: `tests/database-review.mjs` (new `test(...)` blocks at the end), `tests/database-realtime.mjs`.
 
 **Interfaces:**
 - Produces:
   - `public.preparer_questionnaires`. Columns: `id uuid pk`, `workspace_id`, `case_id`, `preparation_version bigint check (>=1)`, `submitted_by_person_id`, `confirmed_by`, `confirmed_by_name`, `confirmed_method`, `shaded_parts_completed boolean check (= true)`, `state_forgiveness_set boolean check (= true)`, `ready_for_review_on date`, `created_at timestamptz default now()`. Unique (`case_id`, `preparation_version`). Check `(confirmed_by = 'other') = (confirmed_by_name is not null)`.
   - `public.reviewer_questionnaires`. Columns: `id uuid pk`, `workspace_id`, `case_id`, `review_id uuid unique`, `answered_by_person_id`, `completed_on date`, `pa_forgiveness`, `went_over boolean`, `went_over_on date`, `went_over_how`, `sign_method`, `sign_appointment_at timestamp`, `exit_form jsonb not null`, `remarks`, `created_at`. FK (`workspace_id`, `case_id`, `review_id`) → `reviews(workspace_id, case_id, id)`. Checks: `went_over = (went_over_on is not null)`; `went_over or went_over_how is null`; `sign_appointment_at is null or date_trunc('minute', sign_appointment_at) = sign_appointment_at`.
-  - `admin_followups.kind text not null default 'document' check (kind in ('document','go_over_return'))`, `request_id` nullable, and constraint `admin_followups_kind_request check ((kind = 'document') = (request_id is not null))`.
-  - Both tables get `presenter_<table>` select policies copied from `presenter_case_materials` (013), the same revoke/grant lines, and the 013 realtime `do $$` block.
+  - `admin_followups.purpose text not null default 'request_documents' check (purpose in ('request_documents','go_over_return'))`, `request_id` nullable, and constraint `admin_followups_purpose_request check ((purpose = 'request_documents') = (request_id is not null))`.
+  - `cases.signing_plan text check (signing_plan in ('appointment','same_day','portal','go_over_first'))`, `cases.signing_appointment_at timestamp`, and constraint `cases_signing_appointment check ((signing_plan = 'appointment') = (signing_appointment_at is not null))`. Both are null by default. No RLS change: `visible_cases` already lets the client read its own row.
+  - Both new tables get `presenter_<table>` select policies copied from `presenter_case_materials` (013), the same revoke/grant lines, and the 013 realtime `do $$` block.
 
 - [ ] **Step 1: Write the failing database tests**
 
@@ -82,22 +115,26 @@ test("questionnaire table checks", async () => {
   await assert.rejects(() => insertReviewer({ went_over: true, went_over_on: null }));
   await assert.rejects(() => insertReviewer({ went_over: false, went_over_how: "phone" }));
 });
-test("follow-ups have a kind", async () => {
-  // existing escalation → kind 'document' with request_id
-  // insert kind 'go_over_return' with a request_id → rejects; kind 'document' with none → rejects
+test("follow-ups have a purpose", async () => {
+  // existing escalation → purpose 'request_documents' with request_id
+  // insert purpose 'go_over_return' with a request_id → rejects; 'request_documents' with none → rejects
+});
+test("the signing plan is the client's to read", async () => {
+  // set signing_plan 'appointment' with no time → rejects; 'portal' with a time → rejects
+  // the applicant who owns the case reads signing_plan and signing_appointment_at on their own row
 });
 ```
 
-  Use whatever the fixture offers for reading as a principal (`tests/support/database-fixture.mjs`). If no `selectAs`-style helper exists, add one there. Add both table names to the realtime publication assertions in `tests/database-realtime.mjs`, in the style of the `reviews` case at line 420.
-- [ ] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL (relation does not exist).
-- [ ] **Step 3:** Write sections 1–3 of the migration, as in Interfaces.
+  Use whatever the fixture offers for reading as a principal (`tests/support/database-fixture.mjs`). If no `selectAs`-style helper exists, add one there. Add both table names to the realtime publication assertions in `tests/database-realtime.mjs`, in the style of the `reviews` case.
+- [ ] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL (relation or column does not exist).
+- [ ] **Step 3:** Write sections 1–4 of the migration, as in Interfaces.
 - [ ] **Step 4:** Run `npm run db:migrate:test` and then `npm run test:database`. Expected: the new tests pass, and the rest stay green.
-- [ ] **Step 5:** Commit: `git add supabase/migrations/031_review_questionnaires.sql tests/ && git commit -m "Questionnaires: staff-only tables and the follow-up kind"`.
+- [ ] **Step 5:** Commit: `git add supabase/migrations/033_review_questionnaires.sql tests/ && git commit -m "Questionnaires: staff-only tables, the follow-up purpose and the signing plan"`.
 
 ### Task 3: Payload validation
 
 **Files:**
-- Modify: `supabase/migrations/031_review_questionnaires.sql`, section 4.
+- Modify: `supabase/migrations/033_review_questionnaires.sql`, section 5.
 - Test: `tests/database-review.mjs`.
 
 **Interfaces:**
@@ -106,12 +143,14 @@ test("follow-ups have a kind", async () => {
   - `vitally_private.payload_minute(p jsonb, key text) returns timestamp`, the same for `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$`.
   - `vitally_private.check_exit_form(p jsonb) returns boolean`, immutable, design D3.
   - `vitally_private.check_preparer_questionnaire(q jsonb) returns boolean` and `vitally_private.check_reviewer_questionnaire(q jsonb) returns boolean`, both immutable. They check keys, enums, dates and the conditional rules in Global Constraints. They do **not** check the date window or the appointment rule.
-  - `check_payload`, re-created from its latest definition with:
-    - `SUBMIT_REVIEW` removed from the empty-payload branch, and `APPROVE_REVIEW` too;
-    - new branches: `SUBMIT_REVIEW` (keys `['questionnaire']`), `RESUBMIT_REVIEW` (keys `['questionnaire','resolution']`, plus the existing resolution check) and `APPROVE_REVIEW` (keys `['questionnaire']`), each calling its checker.
+  - `check_payload`, re-created verbatim **from 032** with:
+    - `SUBMIT_REVIEW` and `APPROVE_REVIEW` removed from the empty-payload group, which keeps `CLAIM_PREPARATION`, `REMIND`, `CLAIM_REVIEW` and `START_SCREENING`;
+    - new branches `SUBMIT_REVIEW` (keys `['questionnaire']`) and `APPROVE_REVIEW` (keys `['questionnaire']`), each calling its checker;
+    - the `RESUBMIT_REVIEW` branch: keys `['questionnaire','resolution']`, plus the existing resolution check;
+    - every other branch verbatim, including 032's `MARK_READY_TO_EFILE`/`MARK_EFILED`.
   - The helpers get `revoke all … from public, anon, authenticated, service_role`, as in `023`.
 
-- [ ] **Step 1: Write the failing tests.** Add `PREPARER` and `REVIEWER` constants (valid payloads, dates `new Date().toISOString().slice(0, 10)`) and change `REVIEW_PAYLOADS` to use them. Then add one table-driven test per checker, each entry asserting `rejected("VALIDATION")`, with the stage and revision unchanged after it:
+- [ ] **Step 1: Write the failing tests.** Add `PREPARER` and `REVIEWER` constants (valid payloads, dates `new Date().toISOString().slice(0, 10)`) and change `REVIEW_PAYLOADS` to use them. Then add one table-driven test per checker. Each entry asserts `rejected("VALIDATION")`, with the stage and revision unchanged after it:
 
 ```js
 const BAD_PREPARER = {
@@ -140,31 +179,33 @@ const BAD_REVIEWER = {
 };
 ```
 
-  Also add accepted cases: no Exit Form groups; NPT owe 120.00 by mail check plus BIRT paper none; amount `0`; amount `999999.99`.
+  Also add accepted cases: no Exit Form groups; NPT owe 120.00 by mail check plus BIRT paper none; amount `0`; amount `999999.99`. Add one check that `START_SCREENING` still takes `{}` and `MARK_READY_TO_EFILE` still takes `{confirmed: true}`, so the 032 branches survived the copy.
 - [ ] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL, because today's empty-payload rule rejects the valid payloads.
-- [ ] **Step 3:** Implement section 4 as in Interfaces.
+- [ ] **Step 3:** Implement section 5 as in Interfaces.
 - [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: the validation tests pass. The handler-storage tests from Task 4 don't exist yet. Existing review tests pass, now with the new payloads.
 - [ ] **Step 5:** Commit: `git commit -am "Questionnaires: the database checks each payload"`.
 
-### Task 4: The three handlers and the go-over follow-up
+### Task 4: The three handlers, the go-over follow-up and the signing plan
 
 **Files:**
-- Modify: `supabase/migrations/031_review_questionnaires.sql`, section 5.
-- Test: `tests/database-review.mjs`.
+- Modify: `supabase/migrations/033_review_questionnaires.sql`, section 6.
+- Test: `tests/database-review.mjs`, `tests/database-stages.mjs`, `tests/database-contacts.mjs`, `tests/support/database-fixture.mjs` (`approvedCase`).
 
 **Interfaces:**
 - Consumes: Task 3's helpers and payload keys.
 - Produces:
   - `vitally_private.check_taxslayer_date(p_case public.cases, d date) returns void`. It raises VALIDATION unless `make_date(coalesce(case.season, workspace.current_season), 1, 1) <= d <= current_date + 1`.
-  - `act_submit_review` / `act_resubmit_review` keep their checks in today's order. After `hand_to_review` returns `v_version`, they call `check_taxslayer_date` and insert one `preparer_questionnaires` row at `v_version`.
-  - `act_approve_review`, after `lock_active_review`:
+  - `act_submit_review` / `act_resubmit_review`, copied from 006, keep their checks in today's order. After `hand_to_review` returns `v_version`, they call `check_taxslayer_date` and insert one `preparer_questionnaires` row at `v_version`.
+  - `act_approve_review`, copied from 021. After `lock_active_review`, it:
     - checks `completedOn` and `wentOverOn` with `check_taxslayer_date`;
     - applies the appointment rule against `p_case.answers->>'service'` (required when `signMethod = 'in_person'` and service ≠ `same_day`, absent otherwise);
     - inserts the reviewer row;
-    - when `wentOver` is false, finds the office person exactly as `act_escalate_contact` does and inserts an `admin_followups` row (`kind 'go_over_return'`, `request_id null`, the fixed reason, `created_by_person_id` = the reviewer);
-    - updates the review to `status 'approved'`, `decided_at now()`, `client_contact_status 'completed'`, `client_contacted_at now()`, and `client_contact_outcome` `'reached'` on yes or null on no (design D10), in place of today's `client_contact_status 'pending'`.
-  - `act_record_review_contact` is not re-created. Its existing pending check refuses it after such an approval.
-  - The returned `detail` of each handler gains nothing. Answers never go into history.
+    - when `wentOver` is false, finds the office person exactly as `act_escalate_contact` (004) does, and inserts an `admin_followups` row (`purpose 'go_over_return'`, `request_id null`, the fixed reason, `created_by_person_id` = the reviewer);
+    - updates the review to `status 'approved'`, `decided_at now()`, `client_contact_status 'completed'`, `client_contacted_at now()`, and `client_contact_outcome` `'reached'` on yes or null on no (design D10), in place of today's `client_contact_status 'pending'`;
+    - sets `cases.stage = 'review_approved'` and, in the same update, `signing_plan` and `signing_appointment_at` by D11's order: `go_over_first` when not gone over; else `portal`; else `same_day` for a same-day case; else `appointment` with the appointment.
+  - `act_record_review_contact` and `act_mark_ready_to_efile` are not re-created. The pending check in `act_record_review_contact` refuses it after such an approval. #91's gate accepts a Yes approval because the step is `completed`.
+  - The returned `detail` of each handler gains nothing. Answers never go into history, and the approval's client message (021) is unchanged.
+  - Test support: `f.approvedCase()` approves with a valid reviewer questionnaire (Yes). `f.approvedCase({ called: false })` becomes `f.legacyApprovedCase()`: it inserts an approved review with `client_contact_status 'pending'` and no questionnaire, directly through `f.sql`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -176,48 +217,58 @@ test("ready date before the season is refused", …) // `${season - 1}-12-31` �
 test("drop-off in person needs an appointment", …) // answers.service 'drop_off'
 test("same-day in person refuses an appointment", …) // and accepts none
 test("online may sign in person", …)
-test("approval with no opens one go-over follow-up", …) // kind, request_id null, assignee = workspace default, reason text
+test("approval with no opens one go-over follow-up", …) // purpose, request_id null, assignee = workspace default, reason text
 test("approval with yes opens none", …)
 test("no office person refuses the approval", …)  // set default_followup_person_id null; review stays 'active'
 test("another volunteer cannot submit", …)        // FORBIDDEN, no row
-test("the office works a go-over follow-up", …)   // RECORD_CONTACT reached, RESOLVE_FOLLOWUP reached; stage unchanged; non-assignee FORBIDDEN
+test("the office works a go-over follow-up", …)   // vitally_log_contact linked to the task, reached; RESOLVE_FOLLOWUP reached; stage unchanged; a non-assignee's linked contact FORBIDDEN
 test("yes completes the review-contact step", …)  // status completed, outcome 'reached', contacted_at set
 test("no completes it with no outcome", …)        // status completed, outcome null, contacted_at set, one go-over follow-up
+test("yes meets the ready-to-e-file gate", …)     // MARK_READY_TO_EFILE {confirmed:true} accepted with no RECORD_REVIEW_CONTACT
 test("recording a conversation after a questionnaire approval is refused", …) // RECORD_REVIEW_CONTACT → INVALID_TRANSITION
-test("a legacy pending approval can still be recorded", …) // legacyApprovedCase(f): insert an approved review with client_contact_status 'pending' via f.sql, then RECORD_REVIEW_CONTACT reached → completed
-test("closing the case cancels the go-over follow-up", …)
+test("a legacy pending approval can still be recorded", …) // legacyApprovedCase(f), then RECORD_REVIEW_CONTACT reached → completed
+test("the signing plan follows the answers", …)   // four approvals → appointment (time copied), same_day, portal, go_over_first (no + portal); no time except appointment
 test("client messages carry no answer", …)        // assertPlainClientMessage on each new history line; Exit Form amounts absent
 ```
 
-  Set `service` on a test case by updating `cases.answers` through `f.sql`, or through the fixture's answer helper if one exists. Move the existing `RECORD_REVIEW_CONTACT` tests (and its stage sweep in `refusedByStage`) onto `legacyApprovedCase(f)`, since a questionnaire approval no longer leaves the step pending.
+  Set `service` on a test case by updating `cases.answers` through `f.sql`, or through the fixture's answer helper if one exists. Move the existing `RECORD_REVIEW_CONTACT` tests (and their stage sweep in `refusedByStage`) onto `legacyApprovedCase(f)`, since a questionnaire approval no longer leaves the step pending. In `tests/database-stages.mjs`, "ready to e-file waits for the reviewer's call" uses `legacyApprovedCase` and keeps its shape. Every other `approvedCase` caller gets a Yes approval.
 - [ ] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL (no rows stored).
-- [ ] **Step 3:** Implement section 5 as in Interfaces, copying each handler from its latest definition.
-- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes.
+- [ ] **Step 3:** Implement section 6 as in Interfaces, copying each handler from the definition named above.
+- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes, including #91's stage suite and #88's contact suite.
 - [ ] **Step 5:** Commit: `git commit -am "Questionnaires: hand-offs store answers; no go-over opens an office task"`.
+
+### Task 4a: A No approval and Mark ready to e-file (design Q1)
+
+**Blocked on Hailey's ruling.** `/opsx:update` writes this task (files, interfaces, tests and steps) from the ruling, before apply starts (tasks 1.3). If the task still reads like this at apply, stop and ask the user.
 
 ### Task 5: Fixtures
 
 **Files:**
-- Modify: `supabase/migrations/031_review_questionnaires.sql`, section 6: `apply_fixture_scenario` from its latest definition.
+- Modify: `supabase/migrations/033_review_questionnaires.sql`, section 7: `apply_fixture_scenario`, copied verbatim **from 031**. #88's contact-log delete and the seeded log entry stay.
 - Test: `tests/database-fixtures.mjs`.
 
 **Interfaces:**
 - Produces:
   - Two new `delete` lines, placed before the `reviews` delete.
+  - The scenario's `update public.cases set stage=…` also sets `signing_plan` and `signing_appointment_at`: `portal` and null for `review_approved`, null and null for every other scenario.
   - Fictional preparer rows: client / phone, both confirmations true, `current_date`. They go in for `review_ready` (version 1), `corrections_required` (version 1) and `review_approved` (version 1, client / in person; version 2, client / phone).
   - One reviewer row on the `review_approved` approved attempt: `completed_on current_date`, eligible, `went_over` true with `current_date` and phone, portal, an Exit Form with a Federal refund of `412.00` by direct deposit and Local NPT `paper`/`none`, and no remarks.
-  - That attempt's contact step is seeded `completed`, with outcome `reached` and `client_contacted_at now()-interval '1 hour'`, in place of `pending` (design D10).
+  - That attempt's contact step is seeded `completed`, with outcome `reached` and `client_contacted_at now()-interval '1 hour'`, in place of 031's `pending` (design D8, D10). Update the comment above it.
 
-- [ ] **Step 1: Write the failing tests:** `seeded approved sample has answers` (two preparer rows and one reviewer row) and `checkpoint reset leaves no stale answers` (reset to `ready_for_review` leaves exactly one preparer row, version 1, and no reviewer row).
+- [ ] **Step 1: Write the failing tests:**
+  - `seeded approved sample has answers`: two preparer rows, one reviewer row, the plan `portal`, and its step completed;
+  - `checkpoint reset leaves no stale answers`: a reset to `ready_for_review` leaves exactly one preparer row (version 1), no reviewer row and no signing plan.
+
+  Update any fixture test that expects the approved sample's step to be `pending`.
 - [ ] **Step 2:** Run `npm run test:database`. Expected: FAIL.
-- [ ] **Step 3:** Implement section 6.
+- [ ] **Step 3:** Implement section 7.
 - [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: PASS.
 - [ ] **Step 5:** Commit: `git commit -am "Questionnaires: samples carry fictional answers"`.
 
-### Task 6: Payload builders
+### Task 6: Payload builders and the contact-log prefill
 
 **Files:**
-- Create: `src/questionnaires.mjs`, which holds the vocabulary and pure helpers shared by the builders and the views.
+- Create: `src/questionnaires.mjs`, which holds the vocabulary and pure helpers shared by the builders and the views. It may import `src/contact-log.mjs` for the New York clock, never `src/staff-views.mjs`.
 - Modify: `src/case-actions.mjs` (`BUILDERS`), `src/contracts.mjs` (shape notes).
 - Test: `tests/case-actions.test.mjs`, new `tests/questionnaires.test.mjs`.
 
@@ -227,6 +278,7 @@ test("client messages carry no answer", …)        // assertPlainClientMessage 
   - `todayIso(now = Date.now()): string`, the local date as `YYYY-MM-DD`.
   - `signDefault(service): "in_person" | "portal" | ""`.
   - `needsAppointment(service, signMethod): boolean`.
+  - `goOverPrefill(contacts): { wentOver: "yes", wentOverOn, wentOverHow } | null` (design D9). It considers entries with `purpose === "go_over_return"` and `outcome === "reached"`, in either direction. It takes the one with the latest `contactedAt`. The date is the America/New_York date. The method maps `in_person`/`phone`/`video` as themselves and `text`/`email` to `other`.
   - `preparerQuestionnaire(values): object`, which throws `{code: "VALIDATION"}` with a sentence.
   - `reviewerQuestionnaire(values, service): object`, the same.
   - `exitFormFrom(values): {federal, state, local}`.
@@ -272,13 +324,17 @@ test("half-filled Local entry names the entry", …)       // local.SIT.amount "
 test("refund carries amount and refundBy only", …)       // stray oweBy/debitOn from a hidden branch dropped
 test("amount accepts 0 and 999999.99, refuses 1.005 and -1", …)
 test("changedAnswers marks a changed method", …)
+test("goOverPrefill takes the latest reached go-over", …) // 10/12 phone and 10/15 in person → 2026-10-15, in_person
+test("goOverPrefill ignores other purposes and outcomes", …) // reached request_documents + no_answer go_over → null
+test("goOverPrefill counts an incoming email as other", …)
+test("goOverPrefill uses the New York date", …)          // contactedAt 2026-10-15T02:30:00Z → 2026-10-14
 test("SUBMIT_REVIEW payload is { questionnaire }", …)    // replaces the old `{}` expectation
 ```
 
 - [ ] **Step 2:** Run `npm test`. Expected: FAIL (module not found).
 - [ ] **Step 3:** Implement `src/questionnaires.mjs` and the three builders. Hidden branches are dropped by rule: `wentOver*` only when yes; the appointment only when `needsAppointment`; in a group, only the fields its result calls for. A group with every field blank is `null` (or left out of `local`).
 - [ ] **Step 4:** Run `npm test`. Expected: PASS.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: payload builders and shared vocabulary"`.
+- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: payload builders, shared vocabulary and the contact-log prefill"`.
 
 ### Task 7: Store, forms and the case page
 
@@ -293,72 +349,116 @@ test("SUBMIT_REVIEW payload is { questionnaire }", …)    // replaces the old `
     - `STAFF_TABLES` gains both table names;
     - `mapStaffCase({…, preparerQuestionnaires = [], reviewerQuestionnaires = []})` maps them with `camelRow` into `record.preparerQuestionnaires` and `record.reviewerQuestionnaires`;
     - the staff read loads both with `relatedRows`;
-    - `mapFollowup` adds `kind: row.kind ?? "document"`.
+    - `mapFollowup` adds `purpose: row.purpose ?? "request_documents"`;
+    - `mapCase` adds `signingPlan` and `signingAppointmentAt` (both adapters; the client needs them in Task 8a).
   - In `src/staff-views.mjs`:
     - `preparerForm(record, previous, ui)`;
-    - `reviewerForm(record, ui)`;
+    - `reviewerForm(record, ui)`. It starts from `goOverPrefill(record.contacts)` and `signDefault(answers.service)`, and ends with the Approve `caseSubmit`;
     - `preparerAnswers(q)` and `reviewerAnswers(q)`, which render detail rows;
     - `submissionComparison(previous, current)`;
-    - `contactStepLine(attempt, questionnaire)`, the D10 line for `review_approved` and the panel's "Client conversation" row. It returns null when there is no questionnaire, so the legacy path renders as today.
+    - `contactStepLine(attempt, questionnaire)`: the D10 line at Ready to exit, and the panel's "Client conversation" row. It returns null when there is no questionnaire, so the legacy path renders as today.
 
     All are internal to the file, built from `input`/`select`/`textarea`/`caseSubmit` in `src/ui.mjs`. Radios and checkboxes follow the existing staff-form markup (VERIFY_INTAKE's checks are the model).
   - CSS: `.q-when-yes`, `.q-when-in-person` and `.q-group`:
     - `.q-when-yes` is `display:none` unless `.staff-form:has(input[name=wentOver][value=yes]:checked)`;
     - `.q-when-in-person` the same, for `signMethod=in_person`;
-    - `.q-group` is a `<details>` per Exit Form entry.
+    - `.q-group` is a `<details>` per Exit Form entry (Federal, State, and each Local type). It has no `open` attribute unless the entry holds a value from a refused submit.
 
 - [ ] **Step 1: Write the failing tests**:
-  - Store: the staff case carries both arrays; the applicant adapter's tables still exclude them. In `tests/database-store.mjs`, add both names to `STAFF_SECTIONS`.
+  - Store: the staff case carries both arrays; the applicant adapter's tables still exclude them; both adapters map the two signing fields. In `tests/database-store.mjs`, add both names to `STAFF_SECTIONS`.
   - Views:
 
 ```js
-test("preparing shows the preparer form with today's date", …)    // ui.now fixed; readyForReviewOn value = todayIso(ui.now)
+test("Filing in progress shows the preparer form inline with today's date", …) // ui.now fixed; readyForReviewOn = todayIso(ui.now); no dialog markup
 test("resubmit is prefilled from the latest submission", …)        // client / in_person checked, both boxes checked, date = today
 test("resubmit with no earlier questionnaire", …)                  // blank choices, today's date, no throw
+test("the reviewer form sits above Approve", …)                    // in nextStep: the form's fields come before the APPROVE_REVIEW button; "Ask the preparer for corrections" (open-request-corrections) still follows it
 test("reviewer form defaults signing from service", …)             // online → portal checked; drop_off → neither
+test("reviewer form prefills going over from the contact log", …)  // a reached go-over contact → yes, date and how checked
 test("same-day reviewer form has no appointment block", …)
-test("reviewing shows previous and current with changes marked", …) // a "Changed" mark on the method row only
+test("Exit Form groups are collapsed details", …)                  // seven <details class="q-group"> (federal, state, five local), none open
+test("a filled group stays open", …)                               // ui values with local.SIT.amount → that <details> open
+test("Review in progress shows previous and current with changes marked", …) // a "Changed" mark on the method row only
 test("review panel shows answers per version", …)                  // preparer rows for v1 and v2; reviewer rows incl. Exit Form and remarks
 test("no questionnaire recorded line", …)                          // exact string
 test("approved with yes offers no conversation form", …)          // no RECORD_REVIEW_CONTACT control; "The reviewer went over the return with the client on <date>."
 test("approved with no says the office takes over", …)            // no RECORD_REVIEW_CONTACT control; "The office will go over the return with the client."
 test("legacy pending approval still shows the conversation form", …) // approved attempt with no reviewer questionnaire, status pending
-test("Local entries one per type", …)                              // five .q-group entries named local.NPT … local.PAIBWTR
 ```
 
 - [ ] **Step 2:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 3:** Implement the store changes, the forms in `nextStep` (`preparing` → `preparerForm`; `corrections_required` → the resolution textarea plus `preparerForm` prefilled; `reviewing` → `submissionComparison` when version > 1, then `reviewerForm`), the panel rows, and the CSS. The approve and request-corrections buttons keep their current wording. The approve control becomes a `caseSubmit` in the reviewer form, carrying `data-service`.
-- [ ] **Step 4:** Run `npm test`. Expected: PASS. Then `npm run test:database`. Expected: the store suite passes.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: forms, comparison and answers on the case page"`.
+- [ ] **Step 3:** Implement the store changes, the forms in `nextStep`, the panel rows and the CSS:
+  - `preparing` → `preparerForm`;
+  - `corrections_required` → the resolution textarea, then `preparerForm` prefilled;
+  - `reviewing` → `submissionComparison` when the version is above 1, then `reviewerForm` ending in "Approve this review". "Ask the preparer for corrections" stays beside it in `.next-step-actions` and still opens its dialog, followed by today's field note.
 
-### Task 8: Office views for a follow-up with no request
+  Both buttons keep their current wording. The approve control becomes a `caseSubmit` inside the reviewer form and carries `data-service`.
+- [ ] **Step 4:** Run `npm test`. Expected: PASS. Then `npm run test:database`. Expected: the store suite passes.
+- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: inline forms, comparison and answers on the case page"`.
+
+### Task 8: Office views for a follow-up with no request, and the task's purpose
 
 **Files:**
-- Modify: `src/admin-views.mjs` (`followupTask`, around line 474), `src/office-views.mjs` (`followupQueue`, the drawer near line 312).
-- Test: `tests/admin-views.test.mjs`, `tests/office-views.test.mjs`.
+- Modify: `src/admin-views.mjs` (`followupTask`, `followupForms`), `src/staff-views.mjs` (`logContactForm`), and `src/office-views.mjs` (the drawer) only if the audit finds a request read.
+- Test: `tests/admin-views.test.mjs`, `tests/office-views.test.mjs`, `tests/staff-views.test.mjs`.
 
 **Interfaces:**
-- Consumes: `followup.kind` and `followup.requestId` (null for `go_over_return`) from Task 7.
+- Consumes: `followup.purpose` and `followup.requestId` (null for `go_over_return`) from Task 7.
+- Produces:
+  - `followupTask` titles a `go_over_return` task "Go over the return with the client" and shows no document line. A `request_documents` task keeps its request's title.
+  - `logContactForm(record, person, ui, { followupId, contact, purpose })`: a new option `purpose` preselects that purpose on a new entry. `followupForms` passes `task.purpose`. The Contacts tab passes none, so nothing is chosen there.
+  - Follow-ups (`followupQueue`) is unchanged: a go-over task is counted in the case's `call` row like any open task.
 
 - [ ] **Step 1: Audit.** Run `grep -n "requestId\|request_id" src/admin-views.mjs src/office-views.mjs src/staff-views.mjs` and list every read that belongs to a follow-up.
-- [ ] **Step 2: Write the failing test** `follow-up with no request renders`, with a case holding one open `{kind: "go_over_return", requestId: null, reason: "Go over the return with the client: the reviewer did not."}`:
-  - the queue lists it, with the open count at 1;
-  - the drawer shows the label `Go over the return with the client` and no document line;
-  - the case panel shows the same, with the call and resolve forms.
+- [ ] **Step 2: Write the failing tests:**
+  - `follow-up with no request renders`, on a case holding one open `{purpose: "go_over_return", requestId: null, reason: "Go over the return with the client: the reviewer did not."}`:
+    - the queue lists its `call` row, with the open count at 1;
+    - the drawer shows the reason and no document line;
+    - the case panel shows the title `Go over the return with the client`, with the Log contact and resolve forms.
+  - `a task's Log contact form starts with its purpose`: `go_over_return` is checked inside a go-over task, `request_documents` inside a document task, and nothing in the Contacts tab.
 - [ ] **Step 3:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 4:** Implement: branch on `kind === "go_over_return"` wherever the audit found a request read.
+- [ ] **Step 4:** Implement: branch on `purpose === "go_over_return"` wherever the audit found a request read, and thread `purpose` into `logContactForm`.
 - [ ] **Step 5:** Run `npm test`. Expected: PASS.
-- [ ] **Step 6:** Commit: `git commit -am "Questionnaires: office views show a go-over follow-up"`.
+- [ ] **Step 6:** Commit: `git commit -am "Questionnaires: go-over follow-ups in the office views; a task's contact starts with its purpose"`.
+
+### Task 8a: The client's Ready to exit variants
+
+**Files:**
+- Modify: `src/domain.mjs` (`describeStage`), `src/client-views.mjs` (its call sites), `src/client-text.mjs`, and `src/zh-hant.mjs` (generated).
+- Test: `tests/domain.test.mjs`, `tests/client-views.test.mjs`.
+
+**Interfaces:**
+- Produces:
+  - Client text keys `stage.review_approved.client.appointment`, `.same_day`, `.portal` and `.go_over_first`, with the English and 简体 of design D11, exactly. The appointment text takes a `{when}` parameter.
+  - `signingWhen(isoMinute, lang): string`. It reads the `YYYY-MM-DDTHH:MM` parts and builds `new Date(Date.UTC(...))`. It formats with `Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" })`, where `locale` is `en-US`, `zh-CN` or `zh-Hant` for the screen's language.
+  - `describeStage(stage, lang, record)`: at `review_approved` with `record.signingPlan` set, `clientMessage` is that variant, in English too. Without a plan, or at any other stage, the result is as today. The status panel and the review panel in `src/client-views.mjs` pass the record.
+
+- [ ] **Step 1: Write the failing tests:**
+
+```js
+test("each Ready to exit variant in English and 简体", …)         // the four plans × en/zh; exact strings from design D11
+test("appointment text", …)                                        // 2026-11-02T14:30 → "…on Monday, November 2 at 2:30 PM to sign…" and "…请于 11月2日星期一 下午2:30 到 PCDC…"
+test("appointment text ignores the time zone", …)                  // same output with process.env.TZ = "Asia/Shanghai" and "America/Los_Angeles" (spawn a child node if TZ must be set before start)
+test("no plan keeps today's message", …)                           // legacy approval
+test("other stages ignore the plan", …)                            // ready_to_efile with a plan → its own message
+test("no variant names a phone number or a money word", …)         // #91's phone check and MONEY_WORDS over every variant, en/zh/hant
+test("the status panel shows the variant", …)                      // client-views: a review_approved record with signingPlan 'portal'
+```
+
+- [ ] **Step 2:** Run `npm test`. Expected: FAIL.
+- [ ] **Step 3:** Add the 简体 and English texts to `src/client-text.mjs`, then implement `signingWhen` and `describeStage`. Run `npm run build:hant` and check the 繁體 of the four keys by eye.
+- [ ] **Step 4:** Run `npm test` and `npm run build:hant -- --check`. Expected: PASS.
+- [ ] **Step 5:** Commit, including `src/zh-hant.mjs`: `git commit -am "Questionnaires: the client's Ready to exit message says how and when to sign"`.
 
 ### Task 9: Story and full checks
 
 **Files:**
-- Modify: `tests/browser.mjs`, around lines 1637–1753: the `act(staff, "SUBMIT_REVIEW" | "RESUBMIT_REVIEW" | "APPROVE_REVIEW", …)` calls.
+- Modify: `tests/browser.mjs`: the `act(staff, "SUBMIT_REVIEW" | "RESUBMIT_REVIEW" | "APPROVE_REVIEW", …)` calls, the "Record this conversation" press after approval, and any Mark ready to e-file step that #91 added after it.
 - Modify: `openspec/changes/add-preparer-and-reviewer-questionnaires/tasks.md` (ticks).
 
-- [ ] **Step 1:** Add `fillPreparer(page, answers)` and `fillReviewer(page, answers)` beside the story's other form helpers. Use them before each of the three presses (fictional answers). On resubmit, assert the prefill: the method is already chosen and the date is today.
-- [ ] **Step 2:** Add one path in which the reviewer answers "no", approves, and an office persona finds "Go over the return with the client" in Follow-ups. Assert the client window still passes the `MONEY_WORDS` check.
-- [ ] **Step 2a:** Drop the story's "Record this conversation" press after its approval (around `tests/browser.mjs:1683–1701`). Assert instead that the reviewer's next step shows no `RECORD_REVIEW_CONTACT` control and reads the D10 line. Remove the wait for the client message "A volunteer spoke with you about the next service step.", but keep the internal-text and `MONEY_WORDS` checks on the client window.
+- [ ] **Step 1:** Add `fillPreparer(page, answers)` and `fillReviewer(page, answers)` beside the story's other form helpers. Use them before each of the three presses (fictional answers). On resubmit, assert the prefill: the method is already chosen and the date is today. On approve, assert that the reviewer form is above the Approve button and that no dialog opened. Open one Exit Form group to fill it.
+- [ ] **Step 2:** Add one path in which the reviewer answers "no" and approves. An office persona then finds the case's "Call the client" row in Follow-ups, opens its drawer, sees the go-over task, and logs a contact whose purpose is already "Go over tax return". The client window shows the Go over first message and still passes the `MONEY_WORDS` check.
+- [ ] **Step 2a:** Drop the story's "Record this conversation" press after its approval. Assert instead that the reviewer's next step shows no `RECORD_REVIEW_CONTACT` control and reads the D10 line. Remove the wait for the client message "A volunteer spoke with you about the next service step.", but keep the internal-text and `MONEY_WORDS` checks on the client window. Where #91's story marks the case ready to e-file, it now does so straight after a Yes approval. The client window shows the variant the approval chose.
 - [ ] **Step 3:** Run `npm run test:browser`. Expected: all pass (about 11–16 minutes).
-- [ ] **Step 4:** Run `npm test`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.
+- [ ] **Step 4:** Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.
 - [ ] **Step 5:** Tick every task in `tasks.md`, then commit: `git commit -am "Questionnaires: the story fills both questionnaires"`.
