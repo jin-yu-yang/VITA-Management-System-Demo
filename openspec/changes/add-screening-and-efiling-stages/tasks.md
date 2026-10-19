@@ -1,6 +1,6 @@
 ## 1. The database: migration 032 (design D1, D2, D3; plan Task 1)
 
-- [ ] 1.1 Write `supabase/migrations/032_screening_and_efiling_stages.sql`:
+- [x] 1.1 Write `supabase/migrations/032_screening_and_efiling_stages.sql`:
   - **The `CHECK`:** `cases_stage_check` replaced with the twelve stages.
   - **`check_operation_authority`** (copied verbatim from 018): `START_SCREENING`, `MARK_READY_TO_EFILE` and `MARK_EFILED` join its admin-only group.
   - **`check_payload`** (copied verbatim from 017): `START_SCREENING` takes an empty payload, and both `MARK_*` take exactly `{"confirmed": true}`.
@@ -11,7 +11,7 @@
   - **No `begin;` or `commit;`** in the file: the migrator wraps every file in its own transaction.
 
   The controller dry-runs it in `begin … rollback` and applies 031 and 032 after the user's OK.
-- [ ] 1.2 Database tests:
+- [x] 1.2 Database tests:
   - **Existing tests:** the builders in `tests/support/database-fixture.mjs` and every site that goes from `SUBMIT` to `VERIFY_INTAKE` gain `START_SCREENING`; history-action lists gain it.
   - **New tests:**
     - each new action's success;
@@ -28,7 +28,7 @@
 
 ## 2. Stages, labels and text (design D1, D7; plan Task 2)
 
-- [ ] 2.1 Tests first:
+- [x] 2.1 Tests first:
   - `STAGES` and `CASE_ACTIONS` gain the new values (`tests/domain.test.mjs`, `tests/case-actions.test.mjs`);
   - `describeStage` returns `label` (staff, English), `clientLabel` and `clientMessage` for every stage, in English and 简体;
   - `stageBadge(stage, lang, { audience: "client" })` shows the client label;
@@ -37,11 +37,11 @@
   - no new client text names a phone number.
 
   See them fail.
-- [ ] 2.2 Implement in `src/contracts.mjs`, `src/domain.mjs`, `src/ui.mjs`, `src/case-actions.mjs` (the three payload builders), `src/client-text.mjs` and the three client badges in `src/client-views.mjs` (`audience: "client"`), with exactly the brainstorm Q10/Q11 text. Run `npm run build:hant`. `npm test` passes.
+- [x] 2.2 Implement in `src/contracts.mjs`, `src/domain.mjs`, `src/ui.mjs`, `src/case-actions.mjs` (the three payload builders), `src/client-text.mjs` and the three client badges in `src/client-views.mjs` (`audience: "client"`), with exactly the brainstorm Q10/Q11 text. Run `npm run build:hant`. `npm test` passes.
 
 ## 3. Screening starts on an admin's open (design D4; plan Task 3)
 
-- [ ] 3.1 Tests first (`tests/controller.test.mjs`):
+- [x] 3.1 Tests first (`tests/controller.test.mjs`):
   - an admin persona opening a `received` case's page sends `START_SCREENING` once (the envelope, with the persona);
   - a reload on that page (a restored session, through `load()`) sends it;
   - selecting the case in place from a list (`navigate: false`) sends nothing;
@@ -54,7 +54,7 @@
   - `busy` stays false.
 
   See them fail.
-- [ ] 3.2 Implement `startScreeningIfDue()` in `src/controller.mjs`, called after `selectCase`, `load()`, `selectPerson` and `refresh`, only on the staff case page and only when no action of the admin's own is in flight. `npm test` passes.
+- [x] 3.2 Implement `startScreeningIfDue()` in `src/controller.mjs`, called after `selectCase`, `load()`, `selectPerson` and `refresh`, only on the staff case page and only when no action of the admin's own is in flight. `npm test` passes.
 
 ## 4. The case pages and the confirmations (design D5; plan Task 4)
 
