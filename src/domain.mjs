@@ -106,15 +106,26 @@ export function signingWhen(isoMinute, lang = "en") {
   if (!match) return "";
   const [year, month, day, hour, minute] = match.slice(1).map(Number);
   const locale = SIGNING_LOCALES[isLang(lang) ? lang : "en"];
-  return new Intl.DateTimeFormat(locale, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(year, month - 1, day, hour, minute)));
+  // Only the words come from Intl (weekday, English month, AM/PM); the shape is
+  // ours, because ICU versions differ on spacing (e.g. "11月2日 星期一" vs
+  // "11月2日星期一"). UTC, so the browser's zone never moves the time.
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "UTC",
+    })
+      .formatToParts(new Date(Date.UTC(year, month - 1, day, hour, minute)))
+      .map((part) => [part.type, part.value]),
+  );
+  const clock = `${hour % 12 || 12}:${String(minute).padStart(2, "0")}`;
+  return locale === "en-US"
+    ? `${parts.weekday}, ${parts.month} ${day} at ${clock} ${parts.dayPeriod}`
+    : `${month}月${day}日${parts.weekday} ${parts.dayPeriod}${clock}`;
 }
 
 // At Ready to exit, the case's signing plan says how and when the client signs

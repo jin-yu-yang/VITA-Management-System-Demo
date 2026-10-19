@@ -302,9 +302,18 @@ test("wording review strings", () => {
 test("appointment text", () => {
   assert.equal(signingWhen("2026-11-02T14:30", "en"), "Monday, November 2 at 2:30 PM");
   assert.equal(signingWhen("2026-11-02T14:30:00", "zh-Hans"), "11月2日星期一 下午2:30");
-  assert.equal(signingWhen("2026-11-02T14:30:00", "zh-Hant"), "11月2日 星期一 下午2:30");
+  assert.equal(signingWhen("2026-11-02T14:30:00", "zh-Hant"), "11月2日星期一 下午2:30");
   const hant = describeStage("review_approved", "zh-Hant", planRecord("appointment")).clientMessage;
-  assert.ok(hant.includes("11月2日 星期一 下午2:30"));
+  assert.ok(hant.includes("11月2日星期一 下午2:30"));
+});
+
+// The shape is assembled from formatToParts, so it cannot drift with the ICU
+// version (Node 24.13's ICU 77 put a space after 日 in zh-Hant; 24.21's ICU 78 does not).
+test("appointment text around midnight and noon", () => {
+  assert.equal(signingWhen("2026-11-02T00:05", "en"), "Monday, November 2 at 12:05 AM");
+  assert.equal(signingWhen("2026-11-02T12:00", "en"), "Monday, November 2 at 12:00 PM");
+  assert.equal(signingWhen("2026-11-02T09:07", "zh-Hans"), "11月2日星期一 上午9:07");
+  assert.equal(signingWhen("2026-11-02T00:05", "zh-Hant"), "11月2日星期一 上午12:05");
 });
 
 test("appointment text ignores the time zone", () => {

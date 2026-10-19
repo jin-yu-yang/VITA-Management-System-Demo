@@ -88,7 +88,7 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 
 | Check | Why | Result |
 |---|---|---|
-| `npm test` | always | 1221/1221 at 7648054; 1223/1223 at d1a9e08; **1224/1224 after the date change** (PR #92 follow-up) |
+| `npm test` | always | 1221/1221 at 7648054; 1223/1223 at d1a9e08; **1224/1224 after the date change; **1225/1225 after the ICU fix, on both Node 24.13.0 (ICU 77.1) and CI's Node 24.21.0 (ICU 78.3)** |
 | `npm run db:migrate:test` + `npm run test:database` | migration 033, RPCs, RLS, fixtures | applied; 320/320 (re-run by the controller at 7648054) |
 | `npm run test:browser` | views, `app.mjs`, CSS and the story changed | 63/63, 915 s (fix-wave run at 294b513; Task 9 run 63/63, 920 s). Both ran in the worktree on D:, with no OneDrive problem. |
 | `npm run build:hant -- --check` | client text in Chinese changed | exit 0 |
@@ -115,6 +115,15 @@ date's helper now also formats:
 
 A new view test pins all four, and the "Changed" test now expects `10/17/2026`. The story asserts none of these strings
 (checked with a grep of `tests/browser.mjs`), so `test:browser` was not re-run. `npm test` is 1224/1224.
+
+**CI failure on PR #92 (ICU).** `tests/domain.test.mjs` "appointment text" failed on CI. Its Node 24.21.0 (ICU 78)
+formats `zh-Hant` as "11月2日星期一 下午2:30", where local ICU 77 gave "11月2日 星期一 下午2:30".
+- `signingWhen` now takes only the words from `formatToParts` (weekday, English month, 上午/下午) and assembles
+  the shape itself. 简体 and 繁體 both read "11月2日星期一 下午2:30" (design D11 updated).
+- A new test covers midnight, noon and a morning time.
+- `npx -y node@24.21.0 --test tests/*.test.mjs` passes 1225/1225, and so does the local `npm test`.
+- `build:hant -- --check` is clean and `openspec validate --all` passes 8/8.
+- The story asserts no Chinese appointment text, so it was not re-run.
 
 ---
 

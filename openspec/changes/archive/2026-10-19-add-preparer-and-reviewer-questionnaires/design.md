@@ -374,13 +374,17 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
     | `go_over_first` | Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。 |
     | none (before this change) | #91's message, unchanged | #91's message, unchanged |
 
-  - **`{when}`** is the appointment's wall-clock date and time, formatted for the screen's language with
-    `Intl.DateTimeFormat`, with options `{ weekday: "long", month: "long", day: "numeric", hour: "numeric",
-    minute: "2-digit", hour12: true, timeZone: "UTC" }`: no year and no time zone. The parts are read as
-    written and formatted in UTC, so the browser's zone can never move the time. The locales are `en-US`,
-    `zh-CN` and `zh-Hant`. Checked on Node 24, they give "Monday, November 2 at 2:30 PM", "11月2日星期一 下午2:30"
-    and "11月2日 星期一 下午2:30". `hour12: true` is needed, or `zh-CN` gives "14:30". The exact output is
-    pinned in tests.
+  - **`{when}`** is the appointment's wall-clock date and time in the screen's language, with no year and no
+    time zone. The parts are read as written and formatted in UTC, so the browser's zone can never move the
+    time.
+    - **The words come from Intl.** `Intl.DateTimeFormat(...).formatToParts` (locales `en-US`, `zh-CN`,
+      `zh-Hant`; `weekday: "long"`, `month: "long"`, `hour12: true`, `timeZone: "UTC"`) supplies only the
+      weekday, the English month name and the AM/PM text (上午/下午).
+    - **The shape is assembled in code:** "Monday, November 2 at 2:30 PM" in English, and "11月2日星期一 下午2:30"
+      in both 简体 and 繁體 (no space after 日, one space before 上午/下午).
+    - **Why not ICU's own pattern.** Its spacing differs between ICU versions: Node 24.13 (ICU 77) gave
+      "11月2日 星期一 下午2:30" for `zh-Hant`, and Node 24.21 (ICU 78, used by CI) gives "11月2日星期一 下午2:30".
+      Tests pin the exact output and pass on both versions.
   - Client text keys: `stage.review_approved.client.appointment`, `.same_day`, `.portal`, `.go_over_first`,
     in `src/client-text.mjs` (English and 简体), then `npm run build:hant` and commit `src/zh-hant.mjs`.
   - The approval's client history line ("Your return has been checked by the reviewer. A volunteer will contact
