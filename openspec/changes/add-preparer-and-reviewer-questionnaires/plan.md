@@ -104,7 +104,7 @@
   - `cases.signing_plan text check (signing_plan in ('appointment','same_day','portal','go_over_first'))`, `cases.signing_appointment_at timestamp`, and constraint `cases_signing_appointment check ((signing_plan = 'appointment') = (signing_appointment_at is not null))`. Both are null by default. No RLS change: `visible_cases` already lets the client read its own row.
   - Both new tables get `presenter_<table>` select policies copied from `presenter_case_materials` (013), the same revoke/grant lines, and the 013 realtime `do $$` block.
 
-- [ ] **Step 1: Write the failing database tests**
+- [x] **Step 1: Write the failing database tests**
 
 ```js
 test("questionnaire tables are staff-only", async () => {
@@ -129,10 +129,10 @@ test("the signing plan is the client's to read", async () => {
 ```
 
   Use whatever the fixture offers for reading as a principal (`tests/support/database-fixture.mjs`). If no `selectAs`-style helper exists, add one there. Add both table names to the realtime publication assertions in `tests/database-realtime.mjs`, in the style of the `reviews` case.
-- [ ] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL (relation or column does not exist).
-- [ ] **Step 3:** Write sections 1–4 of the migration, as in Interfaces.
-- [ ] **Step 4:** Run `npm run db:migrate:test` and then `npm run test:database`. Expected: the new tests pass, and the rest stay green.
-- [ ] **Step 5:** Commit: `git add supabase/migrations/033_review_questionnaires.sql tests/ && git commit -m "Questionnaires: staff-only tables, the follow-up purpose and the signing plan"`.
+- [x] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL (relation or column does not exist).
+- [x] **Step 3:** Write sections 1–4 of the migration, as in Interfaces.
+- [x] **Step 4:** Run `npm run db:migrate:test` and then `npm run test:database`. Expected: the new tests pass, and the rest stay green.
+- [x] **Step 5:** Commit: `git add supabase/migrations/033_review_questionnaires.sql tests/ && git commit -m "Questionnaires: staff-only tables, the follow-up purpose and the signing plan"`.
 
 ### Task 3: Payload validation
 

@@ -7,19 +7,19 @@
 
 ## 2. Database: tables, follow-up purpose and signing plan
 
-- [ ] 2.1 Write failing database tests in `tests/database-review.mjs` for the two tables:
+- [x] 2.1 Write failing database tests in `tests/database-review.mjs` for the two tables:
   - an applicant reads no row from either;
   - a presenter reads them;
   - the table checks (`other` needs a name; 3a with yes; 3b only with yes) reject bad rows.
-- [ ] 2.2 New migration `033_review_questionnaires.sql`, part 1 (design D2):
+- [x] 2.2 New migration `033_review_questionnaires.sql`, part 1 (design D2):
   - `preparer_questionnaires` and `reviewer_questionnaires`;
   - presenter-only RLS, grants, realtime publication (the `case_materials` pattern in `013`).
-- [ ] 2.3 Write failing tests, then migrate `admin_followups` (design D5):
+- [x] 2.3 Write failing tests, then migrate `admin_followups` (design D5):
   - `purpose` with the `request_documents` default;
   - `request_id` nullable;
   - the purpose/request check;
   - existing rows read `request_documents`.
-- [ ] 2.4 Write failing tests, then add `cases.signing_plan` and `cases.signing_appointment_at` with their check (design D11). An applicant reads them on their own case.
+- [x] 2.4 Write failing tests, then add `cases.signing_plan` and `cases.signing_appointment_at` with their check (design D11). An applicant reads them on their own case.
 
 ## 3. Database: validation and the three handlers
 

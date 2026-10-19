@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import {
   createDatabaseFixture,
   applyArgs,
@@ -1198,6 +1199,171 @@ test("a reassigned case excludes its former preparer from review", async (t) => 
         assert.equal((await f.readStaffCase(caseId)).requests.length, 1);
       },
     );
+  } finally {
+    await f.close();
+  }
+});
+
+// Migration 033: the questionnaire tables, the follow-up purpose and the
+// signing plan (OpenSpec change add-preparer-and-reviewer-questionnaires).
+const EXIT_FORM = { federal: null, state: null, local: [] };
+const insertPreparer = (f, caseId, overrides = {}) => {
+  const row = {
+    workspace_id: f.workspaceId,
+    case_id: caseId,
+    preparation_version: 1,
+    submitted_by_person_id: f.alex,
+    confirmed_by: "client",
+    confirmed_by_name: null,
+    confirmed_method: "phone",
+    shaded_parts_completed: true,
+    state_forgiveness_set: true,
+    ready_for_review_on: "2026-02-10",
+    ...overrides,
+  };
+  const keys = Object.keys(row);
+  return f.sql(
+    `insert into public.preparer_questionnaires(${keys.join(",")}) values(${keys.map((_, i) => `$${i + 1}`).join(",")}) returning id`,
+    keys.map((key) => row[key]),
+  );
+};
+const insertReviewer = (f, caseId, reviewId, overrides = {}) => {
+  const row = {
+    workspace_id: f.workspaceId,
+    case_id: caseId,
+    review_id: reviewId,
+    answered_by_person_id: f.morgan,
+    completed_on: "2026-02-11",
+    pa_forgiveness: "eligible",
+    went_over: false,
+    went_over_on: null,
+    went_over_how: null,
+    sign_method: "portal",
+    sign_appointment_at: null,
+    exit_form: JSON.stringify(EXIT_FORM),
+    remarks: null,
+    ...overrides,
+  };
+  const keys = Object.keys(row);
+  return f.sql(
+    `insert into public.reviewer_questionnaires(${keys.join(",")}) values(${keys.map((_, i) => `$${i + 1}`).join(",")}) returning id`,
+    keys.map((key) => row[key]),
+  );
+};
+const claimedReview = async (f) => {
+  const caseId = await f.preparedCase();
+  await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+  const [review] = (
+    await f.sql("select id from public.reviews where case_id=$1", [caseId])
+  ).rows;
+  return { caseId, reviewId: review.id };
+};
+
+test("questionnaire tables are staff-only", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const { caseId, reviewId } = await claimedReview(f);
+    await insertPreparer(f, caseId);
+    await insertReviewer(f, caseId, reviewId);
+    for (const table of ["preparer_questionnaires", "reviewer_questionnaires"]) {
+      const applicant = await f.applicantA.from(table).select("*").eq("case_id", caseId);
+      assert.equal(applicant.error, null, table);
+      assert.deepEqual(applicant.data, [], table);
+      const staff = await f.presenter.from(table).select("*").eq("case_id", caseId);
+      assert.equal(staff.error, null, table);
+      assert.equal(staff.data.length, 1, table);
+      for (const client of [f.applicantA, f.presenter])
+        assert.ok(
+          (await client.from(table).insert({ workspace_id: f.workspaceId, case_id: caseId })).error,
+          `${table} insert`,
+        );
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test("questionnaire table checks", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const { caseId, reviewId } = await claimedReview(f);
+    await assert.rejects(() => insertPreparer(f, caseId, { confirmed_by: "other", confirmed_by_name: null }));
+    await assert.rejects(() => insertPreparer(f, caseId, { confirmed_by: "client", confirmed_by_name: "Pat" }));
+    await assert.rejects(() => insertPreparer(f, caseId, { shaded_parts_completed: false }));
+    await assert.rejects(() => insertPreparer(f, caseId, { state_forgiveness_set: false }));
+    await assert.rejects(() => insertPreparer(f, caseId, { preparation_version: 0 }));
+    await insertPreparer(f, caseId, { confirmed_by: "other", confirmed_by_name: "Pat Rivera" });
+    await assert.rejects(() => insertPreparer(f, caseId), "one row per version");
+    await assert.rejects(() => insertReviewer(f, caseId, reviewId, { went_over: true, went_over_on: null }));
+    await assert.rejects(() => insertReviewer(f, caseId, reviewId, { went_over: false, went_over_on: "2026-02-11" }));
+    await assert.rejects(() => insertReviewer(f, caseId, reviewId, { went_over: false, went_over_how: "phone" }));
+    await assert.rejects(() =>
+      insertReviewer(f, caseId, reviewId, { sign_method: "in_person", sign_appointment_at: "2026-02-12 10:00:30" }),
+    );
+    await assert.rejects(() => insertReviewer(f, caseId, randomUUID()), "review must exist");
+    await assert.rejects(() => insertReviewer(f, caseId, reviewId, { exit_form: null }));
+    await insertReviewer(f, caseId, reviewId, {
+      went_over: true,
+      went_over_on: "2026-02-11",
+      went_over_how: "phone",
+      sign_method: "in_person",
+      sign_appointment_at: "2026-02-12 10:00:00",
+    });
+    await assert.rejects(() => insertReviewer(f, caseId, reviewId), "one row per review");
+  } finally {
+    await f.close();
+  }
+});
+
+test("follow-ups have a purpose", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await f.readyCase();
+    await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+    await f.act(f.presenter, caseId, f.alex, "REQUEST_DOCUMENT", f.sampleRequest);
+    await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", { reason: ESCALATION_REASON });
+    const [existing] = (
+      await f.sql("select purpose, request_id from public.admin_followups where case_id=$1", [caseId])
+    ).rows;
+    assert.equal(existing.purpose, "request_documents");
+    assert.ok(existing.request_id);
+    const insert = (purpose, requestId) =>
+      f.sql(
+        "insert into public.admin_followups(workspace_id,case_id,request_id,purpose,assignee_person_id,reason,created_by_person_id) values($1,$2,$3,$4,$5,'Reason.',$5)",
+        [f.workspaceId, caseId, requestId, purpose, f.sam],
+      );
+    await assert.rejects(() => insert("go_over_return", existing.request_id));
+    await assert.rejects(() => insert("request_documents", null));
+    await assert.rejects(() => insert("other", existing.request_id));
+    await insert("go_over_return", null);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the signing plan is the client's to read", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await f.preparedCase();
+    const set = (plan, at) =>
+      f.sql("update public.cases set signing_plan=$2, signing_appointment_at=$3 where id=$1", [caseId, plan, at]);
+    const [before] = (
+      await f.sql("select signing_plan, signing_appointment_at from public.cases where id=$1", [caseId])
+    ).rows;
+    assert.deepEqual(before, { signing_plan: null, signing_appointment_at: null });
+    await assert.rejects(() => set("appointment", null));
+    await assert.rejects(() => set("portal", "2026-02-12 10:00:00"));
+    await assert.rejects(() => set("later", null));
+    await set("appointment", "2026-02-12 10:00:00");
+    const own = await f.applicantA
+      .from("cases")
+      .select("signing_plan, signing_appointment_at")
+      .eq("id", caseId);
+    assert.equal(own.error, null);
+    assert.equal(own.data.length, 1);
+    assert.equal(own.data[0].signing_plan, "appointment");
+    assert.equal(own.data[0].signing_appointment_at, "2026-02-12T10:00:00");
+    await set("portal", null);
   } finally {
     await f.close();
   }

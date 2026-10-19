@@ -440,6 +440,40 @@ const INTERNAL = Object.freeze([
     },
   },
   {
+    table: "preparer_questionnaires",
+    identity: (row) => row.id,
+    commit: async (f) => {
+      const caseId = await f.preparedCase();
+      const [row] = (
+        await f.sql(
+          `insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
+           values($1,$2,1,$3,'client','phone',true,true,'2026-02-10') returning id`,
+          [f.workspaceId, caseId, f.alex],
+        )
+      ).rows;
+      return { id: row.id };
+    },
+  },
+  {
+    table: "reviewer_questionnaires",
+    identity: (row) => row.id,
+    commit: async (f) => {
+      const caseId = await f.preparedCase();
+      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      const [review] = (
+        await f.sql("select id from public.reviews where case_id=$1", [caseId])
+      ).rows;
+      const [row] = (
+        await f.sql(
+          `insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on,pa_forgiveness,went_over,sign_method,exit_form)
+           values($1,$2,$3,$4,'2026-02-11','eligible',false,'portal','{"federal":null,"state":null,"local":[]}') returning id`,
+          [f.workspaceId, caseId, review.id, f.morgan],
+        )
+      ).rows;
+      return { id: row.id };
+    },
+  },
+  {
     // Assistance items are staff work the client never sees (Ruling R12), and
     // migration 007 publishes the table. No action creates one in this scope,
     // so the row is written through the privileged connection exactly as
