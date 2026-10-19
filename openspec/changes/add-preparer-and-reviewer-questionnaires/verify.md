@@ -4,7 +4,7 @@
 > A failed check sends the work back to the artifact it names, and verify runs again.
 
 **Change**: `add-preparer-and-reviewer-questionnaires`
-**Verified at**: `2026-10-19 14:45`
+**Verified at**: `2026-10-19 14:45`, updated after Hailey's localhost check (d1a9e08)
 **Verifier**: Claude (controller session; the openspec-verify-change skill is not installed, so the checks
 were run by hand, as CLAUDE.md §2 step 6 says)
 
@@ -71,7 +71,7 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 
 **Drift warnings** (non-blocking):
 
-- **Exit Form "Clear this section".** The final review found that an optional Exit Form group could not be emptied once a radio was picked, and each group now has a "Clear this section" control (ledger ruling). D7 and the spec don't mention it. The spec is silent, not contradicted. Record it in the retrospective; an `/opsx:update` can add a sentence to D7 if Hailey wants it kept in the design.
+- ~~**Exit Form "Clear this section".**~~ Resolved in d1a9e08: the requirement "The reviewer questionnaire records the Exit Form results" now says each group has the button, with the scenario "A group chosen by mistake can be cleared", and D7 describes it.
 - **Class name.** plan.md names the group class `.q-group`. The code uses `q-exit-group`, because `q-group` was already the client intake's class and the new CSS restyled a client screen (ledger ruling). No spec names a class.
 - **Builder season window.** D4 says the browser mirrors the database's rules. The builders check date format and real dates, not the D6 season window, so a wrong-year date is refused by the database with the generic "Please check the information and try again." (ledger ruling: deferred).
 
@@ -82,13 +82,13 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 - [x] Nothing unstaged in the worktree (`git status --short` is empty)
 - [ ] Every related commit pushed. The branch was pushed at 668d929 (planning) as a backup. The apply commits are local; Hailey asked to stop before the retrospective, archive and PR.
 
-**Commit range**: `4472ecd..7648054` (apply, final-review fixes and the docs count).
+**Commit range**: `4472ecd..d1a9e08` (apply, final-review fixes, docs counts, and the post-localhost minors).
 
-**Checks run, at 294b513 / 7648054, all in this D: worktree:**
+**Checks run, all in this D: worktree** (at 294b513 / 7648054, and again for unit tests at d1a9e08):
 
 | Check | Why | Result |
 |---|---|---|
-| `npm test` | always | 1221/1221 (re-run by the controller at 7648054) |
+| `npm test` | always | 1221/1221 at 7648054; **1223/1223 at d1a9e08** (two new tests) |
 | `npm run db:migrate:test` + `npm run test:database` | migration 033, RPCs, RLS, fixtures | applied; 320/320 (re-run by the controller at 7648054) |
 | `npm run test:browser` | views, `app.mjs`, CSS and the story changed | 63/63, 915 s (fix-wave run at 294b513; Task 9 run 63/63, 920 s). Both ran in the worktree on D:, with no OneDrive problem. |
 | `npm run build:hant -- --check` | client text in Chinese changed | exit 0 |
@@ -97,6 +97,14 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 | `npm run test:auth-browser` | — | not run: nothing touches sign-in |
 
 7648054 changed only two numbers in `docs/developer/README.md` after the browser run.
+
+**After Hailey's localhost check (d1a9e08):**
+- The went-over date now reads MM/DD/YYYY. This view change is not covered by the story: no story step asserts that date.
+- Two tests pin that "Ready for review on" is marked Changed only when the date differs. That was already the behaviour, so no code changed.
+- The spec and design now describe "Clear this section".
+- No SQL changed, so the database suite was not re-run (320/320 at 7648054 still stands).
+- The story doesn't assert the went-over date's text, so `test:browser` was not re-run (63/63 at 294b513 still stands).
+- `openspec validate` for the change: valid.
 
 ---
 
@@ -130,8 +138,8 @@ Two coverage notes from the ledger, for the retrospective:
 ## Overall Decision
 
 - [ ] ✅ PASS
-- [x] ⚠️ PASS WITH WARNINGS. The three §4 drift warnings and the two §7 coverage notes; the apply commits are not
-  pushed yet.
+- [x] ⚠️ PASS WITH WARNINGS. Two §4 notes remain (the class name differs from the plan, and the builders don't
+  repeat the season-date check) and the two §7 coverage notes; the apply commits are not pushed yet.
 - [ ] ❌ FAIL
 
 **Next step**: stop for Hailey's review (she asked for no retrospective, archive or PR yet). After that: the
