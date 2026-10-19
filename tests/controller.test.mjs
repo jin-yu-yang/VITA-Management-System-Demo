@@ -5592,9 +5592,21 @@ test("a volunteer persona starts nothing; switching to an admin starts it", asyn
   controller.stop();
 });
 
-test("another admin got there first: no error, the case is re-read", async () => {
+test("another admin got there first: no error, the case is re-read, nothing is sent twice", async () => {
   const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
-  store.failNext = Object.assign(new Error("INVALID_TRANSITION"), { code: "INVALID_TRANSITION" });
+  // The other admin's start lands first: the case is already at screening
+  // (revision 4) when ours is refused.
+  const act = store.act;
+  let first = true;
+  store.act = async (action) => {
+    if (first && action.type === "START_SCREENING") {
+      first = false;
+      store.writes.push(action);
+      store.records.set("case-r", { ...RECEIVED, stage: "screening", revision: 4 });
+      throw Object.assign(new Error("INVALID_TRANSITION"), { code: "INVALID_TRANSITION" });
+    }
+    return act(action);
+  };
   const { controller } = build({ store });
   await controller.start();
   controller.selectPerson("person-sam");
@@ -5603,7 +5615,8 @@ test("another admin got there first: no error, the case is re-read", async () =>
   const state = controller.getState();
   assert.equal(state.error, null);
   assert.equal(state.retryable, false);
-  assert.ok(store.calls.filter((c) => c === "getCase:case-r").length >= 2, "re-read");
+  assert.equal(state.savedCase.stage, "screening", "the case was re-read");
+  assert.equal(startWrites(store).length, 1, "no second start");
   controller.stop();
 });
 
@@ -5616,6 +5629,7 @@ test("offline on open: nothing shows, and a refresh sends the same start again",
   await controller.selectCase("case-r");
   await tick();
   assert.equal(controller.getState().error, null);
+  assert.equal(controller.getState().connection, "offline", "the offline notice shows");
   assert.equal(controller.getState().retryable, false, "no Try again for a start");
   const first = startWrites(store)[0].actionId;
   await controller.refresh();
@@ -5677,9 +5691,11 @@ test("the connection's return sends the held start, unchanged", async () => {
   controller.selectPerson("person-sam");
   await controller.selectCase("case-r");
   await tick();
+  assert.equal(controller.getState().connection, "offline", "the offline notice shows");
   await store.handlers.onConnection("offline");
   await store.handlers.onConnection("online");
   await tick();
+  assert.equal(controller.getState().connection, "online");
   const sent = startWrites(store);
   assert.equal(sent.length, 2);
   assert.deepEqual(sent[1], sent[0], "the same action, id and revision alike");
@@ -5726,5 +5742,98 @@ test("a refusal that isn't a race is given up on for this case", async () => {
   await tick();
   assert.equal(startWrites(store).length, 1, "no retry on every refresh");
   assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a held start is sent after the admin's own pending action goes through", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "the start is held");
+  // The admin presses an action while still offline: it is held too.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.runAction("ESCALATE_CONTACT", {}));
+  assert.equal(controller.getState().retryable, true);
+  // The connection returns, but the action is still pending: no start yet.
+  await store.handlers.onConnection("online");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "waits for the pending action");
+  // Try again: the action goes through, then the held start is sent, unchanged.
+  await controller.retryLast();
+  await tick();
+  const sent = startWrites(store);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], sent[0], "the same action, id and revision alike");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a case action pressed while the start is out waits for it and pins the new revision", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const act = store.act;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  store.act = async (action) => {
+    if (action.type === "START_SCREENING") await gate;
+    return act(action);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const pressed = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  assert.equal(store.writes.filter((write) => write.type === "ESCALATE_CONTACT").length, 0, "held back");
+  release();
+  await pressed;
+  await tick();
+  const types = store.writes.map((write) => write.type);
+  assert.deepEqual(types, ["START_SCREENING", "ESCALATE_CONTACT"], "the start first");
+  assert.equal(store.writes[1].expectedRevision, 4, "the revision after the start");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a held start belongs to its case: opening another case drops it", async () => {
+  const other = { ...RECEIVED, id: "case-b", reference: "VT-BBBB-BBBB" };
+  const store = presenterStore({ cases: [RECEIVED, other], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "case A's start is held");
+  await controller.selectCase("case-b");
+  await tick();
+  await store.handlers.onConnection("offline");
+  await store.handlers.onConnection("online");
+  await tick();
+  const sent = startWrites(store);
+  assert.deepEqual(sent.map((write) => write.caseId), ["case-r", "case-b"], "A is not resent; B has its own");
+  assert.notEqual(sent[1].actionId, sent[0].actionId);
+  controller.stop();
+});
+
+test("signing out drops a held start: nothing is sent when the connection returns", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1, "the start is held");
+  await controller.signOut();
+  await controller.refresh();
+  await tick();
+  assert.equal(startWrites(store).length, 1, "nothing resent");
   controller.stop();
 });

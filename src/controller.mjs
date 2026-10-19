@@ -356,6 +356,9 @@ export function createController({
   // The screening start for the open case, if one is due or held:
   // `{ action, inFlight, gaveUp }` (`startScreeningIfDue`).
   let screeningStart = null;
+  // The start being sent now, `{ caseId, promise }`, so a case action can wait
+  // for it (`runAction`).
+  let screeningInFlight = null;
   // What the save state was before an edit made a version-2 draft dirty
   // ("idle" or "saved"), so an undo can put it back.
   let stateBeforeEdit = "idle";
@@ -1400,6 +1403,19 @@ export function createController({
     if (screeningStart.inFlight || screeningStart.gaveUp) return;
     const held = screeningStart;
     held.inFlight = true;
+    const run = sendScreeningStart(held, afterRace);
+    // A case action pressed meanwhile waits for this (`runAction`), so it pins
+    // the revision the start leaves behind.
+    const flight = { caseId: held.action.caseId, promise: run };
+    screeningInFlight = flight;
+    try {
+      await run;
+    } finally {
+      if (screeningInFlight === flight) screeningInFlight = null;
+    }
+  }
+
+  async function sendScreeningStart(held, afterRace) {
     let raced = false;
     try {
       await store.act(held.action);
@@ -2026,6 +2042,9 @@ export function createController({
       if (typed) keepLaterEdits(action, typed);
       state.busy = false;
       show();
+      // A start held while this action was out (the gate in
+      // `startScreeningIfDue` skips it while busy) is sent now.
+      void startScreeningIfDue();
       return receipt;
     } catch (error) {
       state.busy = false;
@@ -2063,6 +2082,7 @@ export function createController({
           await loadSelected().catch(() => {});
       }
       show();
+      if (!pendingAction) void startScreeningIfDue();
       throw error;
     }
   }
@@ -2294,6 +2314,12 @@ export function createController({
       throw refuse("VALIDATION", "This step is not available.");
     if (!state.savedCase)
       throw refuse("NOT_FOUND", "Open an application first.");
+    // A start sent by this window's open is still out: the press waits for it
+    // (it re-reads the case), so it pins the new revision and meets no conflict.
+    if (screeningInFlight?.caseId === state.savedCase.id) {
+      await screeningInFlight.promise.catch(() => {});
+      if (!state.savedCase) throw refuse("NOT_FOUND", "Open an application first.");
+    }
     const action = {
       actionId: newActionId(),
       caseId: state.savedCase.id,
