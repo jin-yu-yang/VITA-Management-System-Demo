@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
+import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
@@ -1442,6 +1442,22 @@ if (!config) {
         if (leaveAddCaseFirst("open-cases", target)) break;
         EXITS["open-cases"]();
         break;
+      case "clear-exit-group": {
+        // An Exit Form group is emptied in place: every field unticked or
+        // blank, and no draft left to put them back (design D7).
+        const group = target.closest("details.q-exit-group");
+        if (!group) break;
+        const fields = [...group.querySelectorAll("input")];
+        for (const field of fields) {
+          if (isCheckable(field)) field.checked = false;
+          else field.value = "";
+        }
+        forgetDrafts(
+          formDrafts,
+          fields.map((field) => field.id).filter(Boolean),
+        );
+        break;
+      }
       case "clear-pool-filters":
         controller.clearBoardFilters(POOL_FILTER_KEYS);
         // "Clear filters" goes once nothing is narrowed; the keyboard goes to

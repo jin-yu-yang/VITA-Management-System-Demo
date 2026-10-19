@@ -1381,7 +1381,7 @@ function preparerForm(record, previous, ui = {}) {
 // volunteer typed in is reopened after a redraw by app.mjs (groupsToOpen).
 function exitGroup(title, prefix) {
   const scope = "rev";
-  return `<details class="q-exit-group"><summary>${esc(title)}</summary><div class="q-exit-group-body">${radios(
+  return `<details class="q-exit-group" data-exit-group="${esc(prefix)}"><summary>${esc(title)}</summary><div class="q-exit-group-body">${radios(
     "How it was filed",
     scope,
     `${prefix}.method`,
@@ -1400,7 +1400,7 @@ function exitGroup(title, prefix) {
     `${prefix}.oweBy`,
     OWE_BY,
     "",
-  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, "", "date", "", scope)}</div></details>`;
+  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, "", "date", "", scope)}<button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${esc(prefix)}">Clear this section</button></div></details>`;
 }
 
 /**
@@ -1412,7 +1412,7 @@ function reviewerForm(record, ui = {}) {
   const scope = "rev";
   const service = record.answers?.service;
   const prefill = goOverPrefill(record.contacts) ?? {};
-    const appointment =
+  const appointment =
     service === "same_day"
       ? ""
       : `<div class="q-when-in-person">${input(

@@ -2589,9 +2589,8 @@ async function runPermutation(t, roles) {
     await phase("the office records signing and e-filing, and the client sees each step", async () => {
       // The class case's approval settled the reviewer's call itself, so the
       // office never records one; its go-over task holds the signature back
-      // until it is resolved. The review_approved sample is an approval from
-      // before the questionnaires, with its call still pending, so its row
-      // explains instead of offering the mark.
+      // until it is resolved. The review_approved sample is seeded as a
+      // questionnaire Yes approval, so its row offers the mark.
       const approved = await caseById(fixture, classCase.id);
       assert.equal(approved.stage, "review_approved");
       assert.equal(await eventCount(fixture, classCase.id, "RECORD_REVIEW_CONTACT"), 0);

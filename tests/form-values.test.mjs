@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkDrafts, formValuesWithLists, groupsToOpen, restoreDraft, textDraft } from "../src/form-values.mjs";
+import { checkDrafts, forgetDrafts, formValuesWithLists, groupsToOpen, restoreDraft, textDraft } from "../src/form-values.mjs";
 
 // A form is only read through `new FormData(form)` and `querySelectorAll`, so
 // a tiny stand-in with a real FormData is enough (node has no DOM).
@@ -181,4 +181,15 @@ test("a drafted field opens its Exit Form group, and only that group", () => {
   assert.deepEqual(groupsToOpen(groups, new Map([["local.NPT.amount", { checked: true }]])), [2]);
   assert.deepEqual(groupsToOpen(groups, new Map()), []);
   assert.deepEqual(groupsToOpen(groups, new Map([["local.SIT.amount", ""], ["f-amount", { value: "" }]])), []);
+});
+
+test("forgetDrafts drops only the cleared group's drafts", () => {
+  const drafts = new Map([
+    ["field-rev-federal.amount", "10.00"],
+    ["field-rev-federal.method-efile", { checked: true }],
+    ["field-rev-state.amount", "5.00"],
+  ]);
+  forgetDrafts(drafts, ["field-rev-federal.amount", "field-rev-federal.method-efile", "field-rev-federal.result-refund"]);
+  assert.deepEqual([...drafts.keys()], ["field-rev-state.amount"]);
+  assert.deepEqual(groupsToOpen([["field-rev-federal.amount"], ["field-rev-state.amount"]], drafts), [1]);
 });

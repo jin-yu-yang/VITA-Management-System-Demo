@@ -301,6 +301,10 @@ revoke all on function vitally_private.check_exit_form(jsonb) from public,anon,a
 revoke all on function vitally_private.check_preparer_questionnaire(jsonb) from public,anon,authenticated,service_role;
 revoke all on function vitally_private.check_reviewer_questionnaire(jsonb) from public,anon,authenticated,service_role;
 
+-- The stored Exit Form always has D3's shape (Local is a list).
+alter table public.reviewer_questionnaires drop constraint if exists reviewer_questionnaires_exit_form; -- 033
+alter table public.reviewer_questionnaires add constraint reviewer_questionnaires_exit_form check(vitally_private.check_exit_form(exit_form)); -- 033
+
 -- ---------------------------------------------------------------------------
 -- check_payload, verbatim from 032 with SUBMIT_REVIEW and APPROVE_REVIEW out of
 -- the empty-payload group, and a questionnaire for each of the three review
@@ -595,8 +599,8 @@ begin
  if v_status is distinct from 'completed' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- if exists(select 1 from public.admin_followups
-   where workspace_id=p_case.workspace_id and case_id=p_case.id
+ if exists(select 1 from public.admin_followups -- 033
+   where workspace_id=p_case.workspace_id and case_id=p_case.id -- 033
     and purpose='go_over_return' and status='open') then -- 033
   raise sqlstate 'VT004' using message='INVALID_TRANSITION'; -- 033
  end if; -- 033
@@ -754,7 +758,7 @@ begin
     pa_forgiveness,went_over,went_over_on,went_over_how,sign_method,sign_appointment_at,exit_form,remarks) -- 033
   values(p_case.workspace_id,p_case.id,v_review,v_morgan,current_date, -- 033
    'eligible',true,current_date,'phone','portal',null, -- 033
-   '{"federal":{"method":"efile","result":"refund","amount":"412.00","refundBy":"direct_deposit"},"state":null,"local":{"type":"NPT","method":"paper","result":"none"}}'::jsonb, -- 033
+   '{"federal":{"method":"efile","result":"refund","amount":"412.00","refundBy":"direct_deposit"},"state":null,"local":[{"type":"NPT","method":"paper","result":"none"}]}'::jsonb, -- 033
    null); -- 033
  end if; -- 033
 

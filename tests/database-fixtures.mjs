@@ -347,11 +347,15 @@ test("the seeded workspace tells one coherent story", async (t) => {
       assert.equal(rev[0].went_over_how, "phone");
       assert.equal(rev[0].exit_form.federal.amount, "412.00");
       assert.equal(rev[0].exit_form.federal.refundBy, "direct_deposit");
-      assert.deepEqual(rev[0].exit_form.local, {
-        type: "NPT",
-        method: "paper",
-        result: "none",
-      });
+      assert.deepEqual(rev[0].exit_form.local, [
+        { type: "NPT", method: "paper", result: "none" },
+      ]);
+      for (const row of rev)
+        assert.equal(
+          (await f.sql("select vitally_private.check_exit_form($1::jsonb) as ok", [JSON.stringify(row.exit_form)]))
+            .rows[0].ok,
+          true,
+        );
       assert.equal(rev[0].exit_form.state, null);
       const [row] = (
         await f.sql("select signing_plan,signing_appointment_at from public.cases where id=$1", [

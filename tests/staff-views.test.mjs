@@ -2511,6 +2511,39 @@ test("Exit Form groups are collapsed details", () => {
   assert.match(html, /name="state\.result"/);
 });
 
+test("every Exit Form group has a Clear control", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const keys = ["federal", "state", "local.NPT", "local.BIRT", "local.EET", "local.SIT", "local.PAIBWTR"];
+  for (const key of keys)
+    assert.match(
+      html,
+      new RegExp(`<button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${key.replace(".", "\.")}">Clear this section</button>`),
+    );
+  assert.equal((html.match(/data-action="clear-exit-group"/g) ?? []).length, 7);
+});
+
+test("the seeded Ready to exit sample's answers render", () => {
+  // The sample's shape: Federal refund and a Local NPT entry in a list.
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviews: [reviewRow({ status: "approved", clientContactStatus: "completed", clientContactOutcome: "reached" })],
+    preparerQuestionnaires: [prepQ()],
+    reviewerQuestionnaires: [
+      revQ({
+        exitForm: {
+          federal: { method: "efile", result: "refund", amount: "412.00", refundBy: "direct_deposit" },
+          state: null,
+          local: [{ type: "NPT", method: "paper", result: "none" }],
+        },
+      }),
+    ],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.match(html, /<span>Exit Form, Federal<\/span><strong>E-file, refund 412\.00 by direct deposit<\/strong>/);
+  assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
+});
+
 test("Review in progress shows previous and current with changes marked", () => {
   const html = stepFor(
     {
