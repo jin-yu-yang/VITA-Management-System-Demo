@@ -176,9 +176,17 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
       record.reviewContactStatus ??
       (record.reviews ?? []).findLast((review) => review?.status === "approved")
         ?.clientContactStatus;
-    return call === "completed"
-      ? allowed
-      : refused("The reviewer still needs to record the conversation with the client.");
+    if (call !== "completed")
+      return refused("The reviewer still needs to record the conversation with the client.");
+    // D13: then the office's go-over with the client, until that task is resolved.
+    const goOverOpen =
+      record.goOverOpen ??
+      (record.followups ?? []).some(
+        (f) => f?.purpose === "go_over_return" && f?.status === "open",
+      );
+    return goOverOpen
+      ? refused("The office still needs to go over the return with the client.")
+      : allowed;
   };
 
   const markEfiled = () => {

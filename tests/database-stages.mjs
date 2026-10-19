@@ -192,6 +192,43 @@ test("the main chain's new stages against real Supabase", async (t) => {
       assert.equal(await stageOf(caseId), "ready_to_efile");
     });
 
+    await t.test("ready to e-file waits for the office's go-over", async () => {
+      const caseId = await f.approvedCase({ wentOver: false });
+      const { revision } = await f.readStaffCase(caseId);
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED),
+        rejected("INVALID_TRANSITION"),
+      );
+      assert.equal(await stageOf(caseId), "review_approved");
+      assert.equal((await f.readStaffCase(caseId)).revision, revision); // nothing recorded, no client line
+    });
+    for (const outcome of ["reached", "no_further_contact"])
+      await t.test(
+        `the wait ends when the go-over is resolved: ${outcome}`,
+        async () => {
+          const caseId = await f.approvedCase({ wentOver: false });
+          const [task] = (
+            await f.sql(
+              "select id, assignee_person_id from public.admin_followups where case_id=$1 and purpose='go_over_return' and status='open'",
+              [caseId],
+            )
+          ).rows;
+          await f.act(f.presenter, caseId, task.assignee_person_id, "RESOLVE_FOLLOWUP", {
+            followupId: task.id,
+            outcome,
+            note: "Fictional: went over the return by phone.",
+          });
+          await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+          assert.equal(await stageOf(caseId), "ready_to_efile");
+        },
+      );
+    await t.test("a yes approval is not held up", async () => {
+      const caseId = await f.approvedCase();
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+      assert.equal(await stageOf(caseId), "ready_to_efile");
+    });
+
     await t.test(
       "closing: allowed during screening, refused after review",
       async () => {

@@ -153,6 +153,7 @@ export const mapFollowup = (row) => ({
   id: row.id,
   requestId: row.request_id,
   assigneeId: row.assignee_person_id,
+  purpose: row.purpose ?? "request_documents",
   status: row.status,
   reason: row.reason,
   resolutionOutcome: row.resolution_outcome,
@@ -405,7 +406,7 @@ export function createStore(client) {
       const followups = await read(
         client
           .from("admin_followups")
-          .select("case_id,assignee_person_id")
+          .select("case_id,assignee_person_id,purpose")
           .in("case_id", ids)
           .eq("status", "open"),
       );
@@ -441,6 +442,8 @@ export function createStore(client) {
           ...record,
           participants: forCase(participants, record.id).map((row) => row.person_id),
           openFollowups: open.length,
+          // D13: Mark ready to e-file waits while the office's go-over is open.
+          goOverOpen: open.some((row) => row.purpose === "go_over_return"),
           // Who owes this client a call, without the tasks themselves: the
           // board names people, and the case screen holds the work.
           followupAssigneeIds: [

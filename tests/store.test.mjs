@@ -4,6 +4,7 @@ import {
   createStore,
   mapCase,
   mapAssistance,
+  mapFollowup,
   SUBSCRIBED_TABLES,
 } from "../src/supabase-store.mjs";
 
@@ -539,12 +540,13 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly six summary fields.
+  // The Case scalars, unchanged, plus exactly seven summary fields.
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
       ...Object.keys(mapCase(CASE_ROW)),
       "followupAssigneeIds",
+      "goOverOpen",
       "openFollowups",
       "openRequests",
       "participants",
@@ -845,6 +847,7 @@ test("a presenter case read adds exactly the staff sections", async () => {
       id: "followup-1",
       requestId: "request-1",
       assigneeId: "person-sam",
+      purpose: "request_documents",
       status: "open",
       reason: "No response to the document request.",
       resolutionOutcome: null,
@@ -855,6 +858,25 @@ test("a presenter case read adds exactly the staff sections", async () => {
     },
   ]);
   assert.equal(found.internalHistory[0].action, "VERIFY_INTAKE");
+});
+
+test("a list row says whether the office's go-over is open (D13)", async () => {
+  const task = (purpose) => ({ ...RELATED_ROWS.admin_followups[0], purpose });
+  const goOverOf = async (admin_followups) => {
+    const client = fakeClient({ access: "presenter", rows: { admin_followups } });
+    const [row] = await createStore(client).listCases();
+    const read = client.reads.find((entry) => entry.table === "admin_followups");
+    assert.match(String(read.columns), /purpose/);
+    return row.goOverOpen;
+  };
+  assert.equal(await goOverOf([task("go_over_return")]), true);
+  assert.equal(await goOverOf([task("request_documents")]), false);
+  assert.equal(await goOverOf([]), false);
+});
+
+test("a follow-up row with no purpose reads as a document request", () => {
+  assert.equal(mapFollowup({ id: "f" }).purpose, "request_documents");
+  assert.equal(mapFollowup({ id: "f", purpose: "go_over_return" }).purpose, "go_over_return");
 });
 
 test("the staff case carries its contacts with their versions", async () => {

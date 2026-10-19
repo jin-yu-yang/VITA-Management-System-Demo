@@ -56,7 +56,7 @@
   - the D11 signing plan.
 
   Leave `act_record_review_contact` unchanged (`act_mark_ready_to_efile` is 3.5's). Keep each client message as it is. Move #91's `approvedCase` helper and its gate test to a questionnaire approval, and add `legacyApprovedCase`.
-- [ ] 3.5 Mark ready to e-file waits for the office's go-over (design D13, plan Task 4a). Write failing tests in `tests/database-stages.mjs` first:
+- [x] 3.5 Mark ready to e-file waits for the office's go-over (design D13, plan Task 4a). Write failing tests in `tests/database-stages.mjs` first:
   - refused with `INVALID_TRANSITION` while the go-over follow-up is open, and nothing recorded;
   - allowed after it is resolved with `reached`;
   - allowed after it is resolved with `no_further_contact`;
@@ -111,7 +111,7 @@
   - then `npm run build:hant` and commit `src/zh-hant.mjs`.
 
   Tests in `tests/domain.test.mjs` and `tests/client-views.test.mjs`: each variant in English and 简体, the pinned appointment text, a non-UTC time zone, the legacy message, and #91's phone-number check over every variant.
-- [ ] 5.8 The admin's side of the D13 wait (plan Task 4a):
+- [x] 5.8 The admin's side of the D13 wait (plan Task 4a):
   - the store's list read selects `purpose` and gives each row `goOverOpen`;
   - `adminEligibility.markReadyToEfile` refuses with "The office still needs to go over the return with the client.";
   - the Follow-ups `signing` row reads "Waiting for the office to go over the return with the client.".

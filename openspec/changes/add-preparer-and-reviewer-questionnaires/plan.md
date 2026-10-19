@@ -278,7 +278,7 @@ Hailey's ruling on Q1 (2026-10-19). While the case has an open `go_over_return` 
 
     `rowAction` already shows `explain(decision)` in place of the button.
 
-- [ ] **Step 1: Write the failing database tests** in `tests/database-stages.mjs`, beside "ready to e-file waits for the reviewer's call":
+- [x] **Step 1: Write the failing database tests** in `tests/database-stages.mjs`, beside "ready to e-file waits for the reviewer's call":
 
 ```js
 await t.test("ready to e-file waits for the office's go-over", async () => {
@@ -309,17 +309,17 @@ await t.test("a yes approval is not held up", async () => {
 ```
 
   Use the suite's existing helpers for the stage and revision; add `revisionOf` or `goOverTask` only if they don't exist. The resolving persona is the task's assignee (the workspace's default follow-up person).
-- [ ] **Step 2: Write the failing browser-side tests:**
+- [x] **Step 2: Write the failing browser-side tests:**
   - `tests/store.test.mjs`: a list row gets `goOverOpen` true for an open `go_over_return` task, false for an open `request_documents` task only, false with none.
   - `tests/admin-views.test.mjs`:
     - `markReadyToEfile` is refused with the exact sentence on a full case with an open go-over task, and on a list row with `goOverOpen: true`;
     - it is allowed once that task is `resolved` (outcome `reached`, and again `no_further_contact`);
     - a legacy pending call still gives #91's sentence.
   - `tests/office-views.test.mjs`: the `signing` row reads "Waiting for the office to go over the return with the client." and shows the explanation, not the button, while `goOverOpen`. It reads "Waiting for the client to sign Form 8879." with **Mark ready to e-file…** once it is false.
-- [ ] **Step 3:** Run `npm run test:database` and `npm test`. Expected: the new tests FAIL.
-- [ ] **Step 4:** Implement section 6a and the three browser changes, as in Interfaces.
-- [ ] **Step 5:** Run `npm run db:migrate:test && npm run test:database`, then `npm test`. Expected: PASS, including #91's existing gate tests.
-- [ ] **Step 6:** Tick tasks 3.5 and 5.8, and commit: `git commit -am "Questionnaires: Mark ready to e-file waits for the office's go-over"`.
+- [x] **Step 3:** Run `npm run test:database` and `npm test`. Expected: the new tests FAIL.
+- [x] **Step 4:** Implement section 6a and the three browser changes, as in Interfaces.
+- [x] **Step 5:** Run `npm run db:migrate:test && npm run test:database`, then `npm test`. Expected: PASS, including #91's existing gate tests.
+- [x] **Step 6:** Tick tasks 3.5 and 5.8, and commit: `git commit -am "Questionnaires: Mark ready to e-file waits for the office's go-over"`.
 
 ### Task 5: Fixtures
 

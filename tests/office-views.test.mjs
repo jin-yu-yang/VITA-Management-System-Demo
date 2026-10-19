@@ -175,6 +175,15 @@ test("Follow-ups shows new applications, screening, signing and e-filing", () =>
     assert.match(waiting, /Waiting for the reviewer&#39;s call with the client\./); // esc() writes ' as &#39;
     assert.doesNotMatch(waiting, /Waiting for the client to sign Form 8879\./);
   }
+  // D13: the reviewer's call is done but the office has not gone over the return.
+  const over = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: true }], [], ui);
+  assert.doesNotMatch(over, /open-mark-ready-to-efile/);
+  assert.match(over, /Waiting for the office to go over the return with the client\./);
+  assert.match(over, /The office still needs to go over the return with the client\./);
+  assert.doesNotMatch(over, /Waiting for the client to sign Form 8879\./);
+  const overDone = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: false }], [], ui);
+  assert.match(overDone, /Waiting for the client to sign Form 8879\./);
+  assert.match(overDone, /open-mark-ready-to-efile/);
   // Only an administrator is offered the marks.
   const forAlex = renderFollowups([rec("C", "review_approved"), rec("D", "ready_to_efile")], [], { ...ui, person: ALEX });
   assert.doesNotMatch(forAlex, /open-mark-/);

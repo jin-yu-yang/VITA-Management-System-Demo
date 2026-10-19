@@ -402,10 +402,15 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     ).rows.map((row) => row.message);
   // A case at review_approved, approved with a valid Yes questionnaire: the
   // review-contact step is completed by the approval itself (design D10).
-  f.approvedCase = async () => {
+  // `wentOver: false` approves with "no" (portal signing), which opens the
+  // office's go-over follow-up (design D5).
+  f.approvedCase = async ({ wentOver = true } = {}) => {
     const caseId = await f.preparedCase();
     await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
-    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
+    const { wentOverOn, wentOverHow, ...rest } = REVIEWER;
+    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+      questionnaire: wentOver ? REVIEWER : { ...rest, wentOver: false },
+    });
     return caseId;
   };
   // A case at review_approved as an approval from before the questionnaires

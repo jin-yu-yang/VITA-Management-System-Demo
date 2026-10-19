@@ -536,8 +536,8 @@ const WAITING = [
 test("the intake checks wait for screening; the e-file marks wait for their stages", () => {
   const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
   const called = [{ status: "approved", clientContactStatus: "completed" }];
-  const at = (stage, reviews = called) =>
-    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews } }, sam);
+  const at = (stage, reviews = called, followups = []) =>
+    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews, followups } }, sam);
   assert.equal(at("screening").verifyIntake.allowed, true);
   assert.equal(at("received").verifyIntake.allowed, false);
   assert.equal(at("review_approved").markReadyToEfile.allowed, true);
@@ -570,6 +570,31 @@ test("the intake checks wait for screening; the e-file marks wait for their stag
       { status: "approved", clientContactStatus: "pending" },
     ]).markReadyToEfile.allowed,
     false,
+  );
+  // D13: then the office's go-over, until that task is resolved, whatever the outcome.
+  const GO_OVER = "The office still needs to go over the return with the client.";
+  const withTask = (task) => at("review_approved", called, [task]).markReadyToEfile;
+  assert.equal(withTask({ purpose: "go_over_return", status: "open" }).reason, GO_OVER);
+  assert.equal(withTask({ purpose: "request_documents", status: "open" }).allowed, true);
+  for (const resolutionOutcome of ["reached", "no_further_contact"])
+    assert.equal(
+      withTask({ purpose: "go_over_return", status: "resolved", resolutionOutcome }).allowed,
+      true,
+      resolutionOutcome,
+    );
+  const overRow = (goOverOpen) =>
+    adminEligibility(
+      { caseRecord: { stage: "review_approved", ownerUserId: "u1", reviewContactStatus: "completed", goOverOpen } },
+      sam,
+    ).markReadyToEfile;
+  assert.equal(overRow(true).reason, GO_OVER);
+  assert.equal(overRow(false).allowed, true);
+  // The reviewer's call stays first: a legacy pending call still gives its own sentence.
+  assert.equal(
+    at("review_approved", [{ status: "approved", clientContactStatus: "pending" }], [
+      { purpose: "go_over_return", status: "open" },
+    ]).markReadyToEfile.reason,
+    "The reviewer still needs to record the conversation with the client.",
   );
   assert.equal(at("screening").closeCase.allowed, true);
   for (const stage of ["review_approved", "ready_to_efile", "efiled"]) {

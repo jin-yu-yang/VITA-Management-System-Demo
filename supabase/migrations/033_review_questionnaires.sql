@@ -577,3 +577,30 @@ begin
   'message','Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.');
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 6a. act_mark_ready_to_efile, verbatim from 032 (D13): signing waits for the
+-- office's go-over while the case has an open go_over_return follow-up, whatever
+-- outcome later resolves it. The client message is 032's.
+create or replace function vitally_private.act_mark_ready_to_efile(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_status text;
+begin
+ if p_case.stage<>'review_approved' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ select client_contact_status into v_status from public.reviews
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='approved'
+  order by created_at desc limit 1;
+ if v_status is distinct from 'completed' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ if exists(select 1 from public.admin_followups
+   where workspace_id=p_case.workspace_id and case_id=p_case.id
+    and purpose='go_over_return' and status='open') then -- 033
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION'; -- 033
+ end if; -- 033
+ update public.cases set stage='ready_to_efile' where id=p_case.id;
+ return jsonb_build_object('detail','{}'::jsonb,
+  'message','PCDC recorded that you signed Form 8879. Your return is ready to e-file.');
+end; $$;
