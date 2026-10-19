@@ -517,6 +517,7 @@ test("legacy pending approval still shows the conversation form", …) // approv
 
 ```js
 test("each Ready to exit variant in English and 简体", …)         // the four plans × en/zh; exact strings from design D11
+test("wording review strings", …)                                // go_over_first en: "…go over your return together. After that, you will sign Form 8879. …"; portal zh ends "…递交报税表。（门户为英文页面，可用浏览器翻译）"
 test("appointment text", …)                                        // 2026-11-02T14:30 → "…on Monday, November 2 at 2:30 PM to sign…" and "…请于 11月2日星期一 下午2:30 到 PCDC…"
 test("appointment text ignores the time zone", …)                  // same output with process.env.TZ = "Asia/Shanghai" and "America/Los_Angeles" (spawn a child node if TZ must be set before start)
 test("no plan keeps today's message", …)                           // legacy approval
