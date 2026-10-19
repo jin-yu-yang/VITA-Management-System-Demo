@@ -58,7 +58,7 @@
 
 ## 4. The case pages and the confirmations (design D5; plan Task 4)
 
-- [ ] 4.1 Tests first:
+- [x] 4.1 Tests first:
   - **`adminEligibility`:** `verifyIntake` at `screening` only, plus `markReadyToEfile` (which also waits for the reviewer's recorded call) and `markEfiled`;
   - **`CLOSABLE_STAGES`** includes `screening`;
   - **the admin page:** the intake-check form shows at `screening` only, with the Request sent sentence, and the office panel shows the Mark buttons at their stages;
@@ -68,7 +68,7 @@
   - **app.mjs pins:** the `open-mark-…` handlers, `closeDialog` after the receipt, and `STAFF_NOTICES`.
 
   See them fail.
-- [ ] 4.2 Implement in `src/admin-views.mjs`, `src/staff-views.mjs`, `src/views.mjs` (`dialog()` branches), `src/app.mjs` and `src/styles.css` if needed. `npm test` passes.
+- [x] 4.2 Implement in `src/admin-views.mjs`, `src/staff-views.mjs`, `src/views.mjs` (`dialog()` branches), `src/app.mjs` and `src/styles.css` if needed. `npm test` passes.
 
 ## 5. The lists (design D6; plan Task 5)
 
