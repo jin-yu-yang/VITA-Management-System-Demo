@@ -183,10 +183,10 @@ const BAD_REVIEWER = {
 ```
 
   Also add accepted cases: no Exit Form groups; NPT owe 120.00 by mail check plus BIRT paper none; amount `0`; amount `999999.99`. Add one check that `START_SCREENING` still takes `{}` and `MARK_READY_TO_EFILE` still takes `{confirmed: true}`, so the 032 branches survived the copy.
-- [ ] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL, because today's empty-payload rule rejects the valid payloads.
-- [ ] **Step 3:** Implement section 5 as in Interfaces.
-- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: the validation tests pass. The handler-storage tests from Task 4 don't exist yet. Existing review tests pass, now with the new payloads.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: the database checks each payload"`.
+- [x] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL, because today's empty-payload rule rejects the valid payloads.
+- [x] **Step 3:** Implement section 5 as in Interfaces.
+- [x] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: the validation tests pass. The handler-storage tests from Task 4 don't exist yet. Existing review tests pass, now with the new payloads.
+- [x] **Step 5:** Commit: `git commit -am "Questionnaires: the database checks each payload"`.
 
 ### Task 4: The three handlers, the go-over follow-up and the signing plan
 
