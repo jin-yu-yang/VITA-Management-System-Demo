@@ -99,13 +99,13 @@
 
 ## 8. The story and the checks (design D8; plan Task 8)
 
-- [ ] 8.1 `tests/browser.mjs`:
+- [x] 8.1 `tests/browser.mjs`:
   - **The client case:** Sam's open moves it to Screening in progress, and the client sees "Being reviewed" and the history line.
   - **The office case:** at `screening` right after Submit; the pool's Intake tab still shows it.
   - **A second admin window** opening a screening case shows no error.
   - **A new step:** an approved case is marked ready to e-file (from Follow-ups) and e-filed (from the case page), through both dialogs. The client's stepper and history follow, in English and 简体.
   - Existing badge texts and stage assertions follow the new names.
-- [ ] 8.2 Checks:
+- [x] 8.2 Checks:
   - `npm test`;
   - `npm run build:hant -- --check`;
   - `npm run build:intake` (nothing to commit);
