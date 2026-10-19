@@ -371,9 +371,10 @@ refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
 The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
 "Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
 sends `{confirmed: true}` through `payloadFor`, like any [workflow button](#events-and-actions).
-`staffEligibility` allows the first only for an admin on a `review_approved` case whose reviewer has
-recorded a completed call with the client (the database checks the same), and the second only for
-an admin on a `ready_to_efile` case.
+`adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
+whose reviewer has recorded a completed call with the client (the database checks the same), and
+the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows
+offer the same two marks, selecting the case in place.
 
 ## Events and actions
 
@@ -627,7 +628,7 @@ the keyboard stays on the pressed one.
 | --- | --- | --- |
 | Unit (1159) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (61) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

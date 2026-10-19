@@ -351,7 +351,7 @@ shorthands in the table:
 | Action | Who (step 4) | Allowed when (step 6) | Also requires (step 7) | Effect | Client message |
 | --- | --- | --- | --- | --- | --- |
 | `SAVE_ANSWERS` | Applicant owner, or presenter + `admin` person on an assisted case | `draft` | Every key and value passes `check_intake_value` against `intake_fields`; one bad value refuses the whole save | Merges answers; the four contact fields go to `case_contacts` instead, and a `null` clears a key | No |
-| `SUBMIT` | Same as above | `draft` | No required, visible question missing (`intake_missing`, contact fields read from `case_contacts`); no screening | → `received` (a client's own case) or `screening` (an office-entered case, no owner); assigns the client number (010) | Yes |
+| `SUBMIT` | Same as above | `draft` | No required, visible question missing (`intake_missing`, contact fields read from `case_contacts`); no eligibility screening | → `received` (a client's own case) or `screening` (an office-entered case, no owner); assigns the client number (010) | Yes |
 | `START_SCREENING` | Presenter + `admin` person | `received` | | → `screening` | Yes |
 | `VERIFY_INTAKE` | Presenter + `admin` person | `screening` | | → `preparation_ready`, `intake_verified` | Yes |
 | `CLAIM_PREPARATION` | Presenter + any person | `preparation_ready`, no preparer | `prepare` | → `preparing`; sets preparer; records participation | Yes |
