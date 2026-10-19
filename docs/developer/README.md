@@ -96,15 +96,15 @@ src/
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
 supabase/
-  migrations/001-031       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-032       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
   build.mjs                Rebuilds src/vendor/supabase.mjs.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1119.
-  database*.mjs            Database tests against the local stack: 272.
+  *.test.mjs               Unit tests (no network): 1159.
+  database*.mjs            Database tests against the local stack: 282.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
   browser.mjs              The full demonstration story, two browsers, both directions: 57.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
@@ -150,7 +150,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Person / persona | A staff member record in `people` (Alex, Morgan, Sam) with capabilities. In the demo, a presenter account can act as any of them. |
 | Capability | What a person may do: `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. |
 | Case | One client's tax-return application, with a readable reference such as `VT-ABCD-2345`. |
-| Stage | Where a case is in the workflow: `draft` through `review_approved`, or `closed`. |
+| Stage | Where a case is in the workflow: `draft` through `efiled` (with `screening` after `received` and `ready_to_efile` before `efiled`), or `closed`. |
 | Revision | A counter on each case (and assistance item) that moves on every accepted action. |
 | Action | A named workflow step (`CLAIM_PREPARATION`, `APPROVE_REVIEW`, ...) sent to the database as an envelope. |
 | Receipt | The stored result of an accepted action, keyed by its action id, returned again on replay. |
