@@ -177,7 +177,7 @@ test("the main chain's new stages against real Supabase", async (t) => {
     });
 
     await t.test("ready to e-file waits for the reviewer's call", async () => {
-      const caseId = await f.approvedCase({ called: false });
+      const caseId = await f.legacyApprovedCase();
       await assert.rejects(
         () =>
           f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED),
@@ -220,7 +220,7 @@ test("the main chain's new stages against real Supabase", async (t) => {
     );
 
     await t.test("a rejected action commits nothing", async () => {
-      const caseId = await f.approvedCase({ called: false });
+      const caseId = await f.legacyApprovedCase();
       const { revision } = await f.readStaffCase(caseId);
       const before = await f.stateSnapshot();
       const history = await f.clientMessages(caseId);

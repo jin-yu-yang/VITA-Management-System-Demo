@@ -150,11 +150,11 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         assert.equal(c.reviews[1].findings, null);
         assert.equal(c.reviews[1].resolution, null);
         assert.ok(c.reviews[1].decidedAt);
-        // Approval opens the contact task and nothing else.
-        assert.equal(c.reviews[1].clientContactStatus, "pending");
-        assert.equal(c.reviews[1].clientContactOutcome, null);
+        // Approval with a Yes questionnaire settles the contact step (D10).
+        assert.equal(c.reviews[1].clientContactStatus, "completed");
+        assert.equal(c.reviews[1].clientContactOutcome, "reached");
         assert.equal(c.reviews[1].clientContactNote, null);
-        assert.equal(c.reviews[1].clientContactedAt, null);
+        assert.ok(c.reviews[1].clientContactedAt);
         // Preparation is untouched by every review decision, and the approving
         // reviewer stays on the case.
         assert.equal(c.reviewerId, f.morgan);
@@ -259,7 +259,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
         assert.equal(staff.preparationVersion, 1);
         assert.equal(staff.reviews.length, 1);
         assert.equal(staff.reviews[0].status, "approved");
-        assert.equal(staff.reviews[0].clientContactStatus, "pending");
+        assert.equal(staff.reviews[0].clientContactStatus, "completed");
         assert.equal(staff.reviewerId, f.morgan);
         // A different reviewer may take the resubmitted version.
         const redo = await correctedCase(f, f.morgan);
@@ -438,7 +438,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
       },
     );
     await t.test(
-      "review contact is recorded by the assigned reviewer without banking fields",
+      "a legacy review contact is recorded by the assigned reviewer without banking fields",
       async () => {
         // Contact belongs to an approved review only.
         const reviewing = await reviewingCase(f, f.morgan);
@@ -453,9 +453,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
             ),
           rejected("INVALID_TRANSITION"),
         );
-        const caseId = await f.preparedCase();
-        await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
+        const caseId = await f.legacyApprovedCase();
         const approved = await f.readStaffCase(caseId);
         const clientEvents = approved.history.length;
         // A rejected payload records nothing.
@@ -586,9 +584,7 @@ test("independent review corrects, re-reviews and approves a prepared case", asy
           rejected("SELF_REVIEW"),
         );
         // A request to close stays a contact record: closure is its own action.
-        const closing = await f.preparedCase();
-        await f.act(f.presenter, closing, f.morgan, "CLAIM_REVIEW", {});
-        await f.act(f.presenter, closing, f.morgan, "APPROVE_REVIEW", { questionnaire: REVIEWER });
+        const closing = await f.legacyApprovedCase();
         await f.act(f.presenter, closing, f.morgan, "RECORD_REVIEW_CONTACT", {
           outcome: "closure_requested",
           note: "The client asked about closing the fictional case.",
@@ -1223,7 +1219,7 @@ const insertPreparer = (f, caseId, overrides = {}) => {
   const row = {
     workspace_id: f.workspaceId,
     case_id: caseId,
-    preparation_version: 1,
+    preparation_version: 2, // the handler already stored version 1
     submitted_by_person_id: f.alex,
     confirmed_by: "client",
     confirmed_by_name: null,
@@ -1275,7 +1271,6 @@ test("questionnaire tables are staff-only", async () => {
   const f = await createDatabaseFixture();
   try {
     const { caseId, reviewId } = await claimedReview(f);
-    await insertPreparer(f, caseId);
     await insertReviewer(f, caseId, reviewId);
     for (const table of ["preparer_questionnaires", "reviewer_questionnaires"]) {
       const applicant = await f.applicantA.from(table).select("*").eq("case_id", caseId);
@@ -1578,6 +1573,271 @@ test("questionnaire payloads are validated by the database", async (t) => {
             ]),
           rejected("VALIDATION"),
         );
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+// The handlers store the answers (design D5, D6, D10, D11, D12).
+const setService = (f, caseId, service) =>
+  f.sql("update public.cases set answers=answers||$2::jsonb where id=$1", [
+    caseId,
+    JSON.stringify({ service }),
+  ]);
+const rowsFor = async (f, table, caseId) =>
+  (await f.sql(`select * from public.${table} where case_id=$1 order by created_at`, [caseId])).rows;
+const goOver = async (f, caseId) =>
+  (await f.sql("select * from public.admin_followups where case_id=$1 and purpose='go_over_return'", [caseId])).rows;
+const NO = { ...without(without(REVIEWER, "wentOverOn"), "wentOverHow"), wentOver: false };
+const plan = async (f, caseId) =>
+  (await f.sql("select signing_plan, to_char(signing_appointment_at,'YYYY-MM-DD\"T\"HH24:MI') as signing_appointment_at from public.cases where id=$1", [caseId])).rows[0];
+const dayBefore = (year) => `${year - 1}-12-31`;
+const defaultFollowup = async (f) =>
+  (await f.sql("select default_followup_person_id d from public.workspaces where id=$1", [f.workspaceId])).rows[0].d;
+
+test("the three handlers store the answers", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const season = async (caseId) =>
+      Number(
+        (
+          await f.sql(
+            "select coalesce(c.season,w.current_season) as s from public.cases c join public.workspaces w on w.id=c.workspace_id where c.id=$1",
+            [caseId],
+          )
+        ).rows[0].s,
+      );
+    const receiptCount = async (caseId) =>
+      (await f.sql("select count(*)::int n from public.action_receipts where workspace_id=$1", [f.workspaceId])).rows[0].n;
+    await t.test("a valid submit stores one questionnaire at the new version", async () => {
+      const caseId = await f.readyCase();
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
+      const rows = await rowsFor(f, "preparer_questionnaires", caseId);
+      assert.equal(rows.length, 1);
+      assert.equal(Number(rows[0].preparation_version), 1);
+      assert.equal(rows[0].confirmed_method, "phone");
+      assert.equal(rows[0].confirmed_by, "client");
+      assert.equal(rows[0].submitted_by_person_id, f.alex);
+    });
+    await t.test("resubmit keeps both submissions", async () => {
+      const caseId = await correctedCase(f, f.morgan);
+      await f.act(f.presenter, caseId, f.alex, "RESUBMIT_REVIEW", {
+        questionnaire: { ...PREPARER, confirmedBy: "other", confirmedByName: "  Pat Example ", confirmedMethod: "video" },
+        resolution: RESOLUTION,
+      });
+      const rows = await rowsFor(f, "preparer_questionnaires", caseId);
+      assert.deepEqual(rows.map((r) => Number(r.preparation_version)), [1, 2]);
+      assert.equal(rows[0].confirmed_method, "phone");
+      assert.equal(rows[1].confirmed_method, "video");
+      assert.equal(rows[1].confirmed_by_name, "Pat Example");
+    });
+    await t.test("a refused submit changes nothing", async () => {
+      const caseId = await f.readyCase();
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      const before = await f.readStaffCase(caseId);
+      const receipts = await receiptCount(caseId);
+      const early = dayBefore(await season(caseId));
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: { ...PREPARER, readyForReviewOn: early } }),
+        rejected("VALIDATION"),
+      );
+      const after = await f.readStaffCase(caseId);
+      assert.equal(after.stage, "preparing");
+      assert.equal(after.revision, before.revision);
+      assert.equal(after.preparationVersion, before.preparationVersion);
+      assert.equal(await receiptCount(caseId), receipts);
+      assert.equal((await rowsFor(f, "preparer_questionnaires", caseId)).length, 0);
+    });
+    await t.test("ready date before the season is refused", async () => {
+      const caseId = await correctedCase(f, f.morgan);
+      const early = { ...PREPARER, readyForReviewOn: dayBefore(await season(caseId)) };
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.alex, "RESUBMIT_REVIEW", { questionnaire: early, resolution: RESOLUTION }),
+        rejected("VALIDATION"),
+      );
+      const reviewing = await reviewingCase(f, f.morgan);
+      const before = dayBefore(await season(reviewing));
+      for (const key of ["completedOn", "wentOverOn"])
+        await assert.rejects(
+          () => f.act(f.presenter, reviewing, f.morgan, "APPROVE_REVIEW", { questionnaire: { ...REVIEWER, [key]: before } }),
+          rejected("VALIDATION"),
+          key,
+        );
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", reviewing)).length, 0);
+    });
+    await t.test("drop-off in person needs an appointment", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await setService(f, caseId, "drop_off");
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: { ...REVIEWER, signMethod: "in_person" } }),
+        rejected("VALIDATION"),
+      );
+      assert.equal((await f.readStaffCase(caseId)).stage, "reviewing");
+    });
+    await t.test("same-day in person refuses an appointment, and accepts none", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await setService(f, caseId, "same_day");
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+            questionnaire: { ...REVIEWER, signMethod: "in_person", signAppointmentAt: "2026-11-02T14:30" },
+          }),
+        rejected("VALIDATION"),
+      );
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: { ...REVIEWER, signMethod: "in_person" } });
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", caseId))[0].sign_appointment_at, null);
+    });
+    await t.test("online may sign in person", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await setService(f, caseId, "online");
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+        questionnaire: { ...REVIEWER, signMethod: "in_person", signAppointmentAt: "2026-11-02T14:30" },
+      });
+      assert.equal((await plan(f, caseId)).signing_plan, "appointment");
+    });
+    await t.test("a portal signing refuses an appointment", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await assert.rejects(
+        () =>
+          f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+            questionnaire: { ...REVIEWER, signMethod: "portal", signAppointmentAt: "2026-11-02T14:30" },
+          }),
+        rejected("VALIDATION"),
+      );
+    });
+    await t.test("approval with no opens one go-over follow-up", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: NO });
+      const tasks = await goOver(f, caseId);
+      assert.equal(tasks.length, 1);
+      assert.equal(tasks[0].request_id, null);
+      assert.equal(tasks[0].status, "open");
+      assert.equal(tasks[0].reason, "Go over the return with the client: the reviewer did not.");
+      assert.equal(tasks[0].created_by_person_id, f.morgan);
+      assert.equal(tasks[0].assignee_person_id, await defaultFollowup(f));
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", caseId))[0].went_over, false);
+    });
+    await t.test("approval with yes opens none", async () => {
+      const caseId = await f.approvedCase();
+      assert.equal((await goOver(f, caseId)).length, 0);
+    });
+    await t.test("no office person refuses the approval", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      const original = await defaultFollowup(f);
+      await f.sql("update public.workspaces set default_followup_person_id=null where id=$1", [f.workspaceId]);
+      try {
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: NO }),
+          rejected("VALIDATION"),
+        );
+      } finally {
+        await f.sql("update public.workspaces set default_followup_person_id=$2 where id=$1", [f.workspaceId, original]);
+      }
+      const staff = await f.readStaffCase(caseId);
+      assert.equal(staff.stage, "reviewing");
+      assert.equal(staff.reviews[0].status, "active");
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", caseId)).length, 0);
+      assert.equal((await goOver(f, caseId)).length, 0);
+    });
+    await t.test("another volunteer cannot submit", async () => {
+      const caseId = await f.readyCase();
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      const { dana } = await f.enrich({ addPeople: [{ key: "dana", name: "Dana", capabilities: ["prepare"] }] });
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, dana, "SUBMIT_REVIEW", { questionnaire: PREPARER }),
+        rejected("FORBIDDEN"),
+      );
+      assert.equal((await rowsFor(f, "preparer_questionnaires", caseId)).length, 0);
+    });
+    await t.test("the office works a go-over follow-up", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: NO });
+      const [task] = await goOver(f, caseId);
+      const before = (await f.readStaffCase(caseId)).stage;
+      const { contactId } = await f.logContact(f.presenter, caseId, f.sam, SAMPLE_CONTACT(), task.id);
+      const [logged] = (await f.sql("select followup_id, outcome from public.contact_log where id=$1", [contactId])).rows;
+      assert.equal(logged.followup_id, task.id);
+      assert.equal(logged.outcome, "reached");
+      await assert.rejects(
+        () => f.logContact(f.presenter, caseId, f.alex, SAMPLE_CONTACT(), task.id),
+        rejected("FORBIDDEN"),
+      );
+      await f.act(f.presenter, caseId, f.sam, "RESOLVE_FOLLOWUP", {
+        followupId: task.id,
+        outcome: "reached",
+        note: "Went over the fictional return.",
+      });
+      assert.equal((await goOver(f, caseId))[0].status, "resolved");
+      assert.equal((await f.readStaffCase(caseId)).stage, before);
+    });
+    await t.test("yes completes the review-contact step", async () => {
+      const caseId = await f.approvedCase();
+      const [r] = (await f.sql("select * from public.reviews where case_id=$1 and status='approved'", [caseId])).rows;
+      assert.equal(r.client_contact_status, "completed");
+      assert.equal(r.client_contact_outcome, "reached");
+      assert.ok(r.client_contacted_at);
+    });
+    await t.test("no completes it with no outcome", async () => {
+      const caseId = await reviewingCase(f, f.morgan);
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: NO });
+      const [r] = (await f.sql("select * from public.reviews where case_id=$1 and status='approved'", [caseId])).rows;
+      assert.equal(r.client_contact_status, "completed");
+      assert.equal(r.client_contact_outcome, null);
+      assert.ok(r.client_contacted_at);
+      assert.equal((await goOver(f, caseId)).length, 1);
+    });
+    await t.test("yes meets the ready-to-e-file gate", async () => {
+      const caseId = await f.approvedCase();
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", { confirmed: true });
+      assert.equal((await f.readStaffCase(caseId)).stage, "ready_to_efile");
+    });
+    await t.test("recording a conversation after a questionnaire approval is refused", async () => {
+      const caseId = await f.approvedCase();
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", REVIEW_PAYLOADS.RECORD_REVIEW_CONTACT),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+    await t.test("a legacy pending approval can still be recorded", async () => {
+      const caseId = await f.legacyApprovedCase();
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", caseId)).length, 0);
+      await f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", REVIEW_PAYLOADS.RECORD_REVIEW_CONTACT);
+      const [r] = (await f.sql("select client_contact_status s from public.reviews where case_id=$1", [caseId])).rows;
+      assert.equal(r.s, "completed");
+    });
+    await t.test("the signing plan follows the answers", async () => {
+      const approve = async (service, questionnaire) => {
+        const caseId = await reviewingCase(f, f.morgan);
+        await setService(f, caseId, service);
+        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire });
+        return plan(f, caseId);
+      };
+      const appt = await approve("drop_off", { ...REVIEWER, signMethod: "in_person", signAppointmentAt: "2026-11-02T14:30" });
+      assert.equal(appt.signing_plan, "appointment");
+      assert.equal(appt.signing_appointment_at, "2026-11-02T14:30");
+      const same = await approve("same_day", { ...REVIEWER, signMethod: "in_person" });
+      assert.deepEqual(same, { signing_plan: "same_day", signing_appointment_at: null });
+      const portal = await approve("online", REVIEWER);
+      assert.deepEqual(portal, { signing_plan: "portal", signing_appointment_at: null });
+      const first = await approve("online", NO);
+      assert.deepEqual(first, { signing_plan: "go_over_first", signing_appointment_at: null });
+    });
+    await t.test("client messages carry no answer", async () => {
+      const q = {
+        ...REVIEWER,
+        remarks: "Fictional remark about the refund.",
+        exitForm: { federal: { method: "efile", result: "refund", amount: "123.45", refundBy: "check" }, state: null, local: [] },
+      };
+      const caseId = await reviewingCase(f, f.morgan);
+      await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire: q });
+      for (const m of await f.clientMessages(caseId)) {
+        assertPlainClientMessage(m);
+        assert.ok(!m.includes("123.45") && !m.includes("remark"));
+      }
+      const events = await f.sql("select detail::text d from public.case_events where case_id=$1", [caseId]);
+      for (const e of events.rows) assert.ok(!e.d.includes("123.45"), "no amount in history");
     });
   } finally {
     await f.close();

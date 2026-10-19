@@ -447,3 +447,133 @@ begin
  end case;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 6. The three handlers (D5, D6, D10, D11, D12). Each is copied verbatim from
+-- its newest definition; only the lines marked `-- 033` differ. The payload
+-- shape was checked by check_payload already; these checks need the case.
+
+-- D6: a TaxSlayer date runs from 1 January of the case's season (the
+-- workspace's current season when the case has none) to the day after the
+-- server's date, which absorbs time zones.
+create or replace function vitally_private.check_taxslayer_date(p_case public.cases,d date) returns void -- 033
+language plpgsql stable security definer set search_path='' as $$ -- 033
+declare v_season int; -- 033
+begin -- 033
+ select coalesce(p_case.season,w.current_season) into v_season from public.workspaces w where w.id=p_case.workspace_id; -- 033
+ if d is null or v_season is null or d<make_date(v_season,1,1) or d>current_date+1 then -- 033
+  raise sqlstate 'VT007' using message='VALIDATION'; -- 033
+ end if; -- 033
+end; -- 033
+$$; -- 033
+revoke all on function vitally_private.check_taxslayer_date(public.cases,date) from public,anon,authenticated,service_role;
+
+create or replace function vitally_private.act_submit_review(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_version bigint;
+ v_q jsonb=p_payload->'questionnaire'; -- 033
+begin
+ if p_case.stage<>'preparing' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_preparer(p_case,p_person);
+ -- Readiness: recorded intake, then no document still waiting on anybody.
+ if not p_case.intake_verified then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_documents_settled(p_case);
+ v_version=vitally_private.hand_to_review(p_case);
+ perform vitally_private.check_taxslayer_date(p_case,vitally_private.payload_date(v_q,'readyForReviewOn')); -- 033
+ insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,confirmed_by,confirmed_by_name,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on) -- 033
+ values(p_case.workspace_id,p_case.id,v_version,p_person.id,v_q->>'confirmedBy',btrim(v_q->>'confirmedByName'),v_q->>'confirmedMethod',true,true,vitally_private.payload_date(v_q,'readyForReviewOn')); -- 033
+ -- The milestone is a manual one in external tax software; the client is told
+ -- what happened in plain language, with no amounts and no findings.
+ return jsonb_build_object('detail',jsonb_build_object('preparationVersion',v_version),
+  'message','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.');
+end;
+$$;
+
+create or replace function vitally_private.act_resubmit_review(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_review public.reviews;
+ v_version bigint;
+ v_q jsonb=p_payload->'questionnaire'; -- 033
+begin
+ if p_case.stage<>'corrections_required' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_preparer(p_case,p_person);
+ -- Readiness, after the assignment, exactly as the first hand-off orders it.
+ perform vitally_private.require_documents_settled(p_case);
+ select * into v_review from public.reviews
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='corrections_requested'
+  order by preparation_version desc,created_at desc limit 1 for update;
+ if not found then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.reviews set resolution=p_payload->>'resolution' where id=v_review.id;
+ v_version=vitally_private.hand_to_review(p_case);
+ perform vitally_private.check_taxslayer_date(p_case,vitally_private.payload_date(v_q,'readyForReviewOn')); -- 033
+ insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,confirmed_by,confirmed_by_name,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on) -- 033
+ values(p_case.workspace_id,p_case.id,v_version,p_person.id,v_q->>'confirmedBy',btrim(v_q->>'confirmedByName'),v_q->>'confirmedMethod',true,true,vitally_private.payload_date(v_q,'readyForReviewOn')); -- 033
+ return jsonb_build_object('detail',jsonb_build_object('reviewId',v_review.id,'preparationVersion',v_version),
+  'message','Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.');
+end;
+$$;
+
+-- Approval: the reviewer's answers are stored, a "no" opens the office's
+-- go-over task (D5), the review-contact step is settled (D10) and the signing
+-- plan is recorded for the client (D11). The client message is 021's.
+create or replace function vitally_private.act_approve_review(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_review public.reviews;
+ v_q jsonb=p_payload->'questionnaire'; -- 033
+ v_went_over boolean=(p_payload->'questionnaire'->>'wentOver')::boolean; -- 033
+ v_in_person boolean=p_payload->'questionnaire'->>'signMethod'='in_person'; -- 033
+ v_same_day boolean=coalesce(p_case.answers->>'service'='same_day',false); -- 033
+ v_appointment timestamp=vitally_private.payload_minute(p_payload->'questionnaire','signAppointmentAt'); -- 033
+ v_assignee public.people; -- 033
+ v_plan text; -- 033
+begin
+ if p_case.stage<>'reviewing' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ perform vitally_private.require_case_reviewer(p_case,p_person);
+ v_review=vitally_private.lock_active_review(p_case,p_person);
+ perform vitally_private.check_taxslayer_date(p_case,vitally_private.payload_date(v_q,'completedOn')); -- 033
+ if v_went_over then -- 033
+  perform vitally_private.check_taxslayer_date(p_case,vitally_private.payload_date(v_q,'wentOverOn')); -- 033
+ end if; -- 033
+ -- D6: an appointment is required for an in-person signing that is not the same day, and absent otherwise.
+ if (v_in_person and not v_same_day)<>(v_appointment is not null) then -- 033
+  raise sqlstate 'VT007' using message='VALIDATION'; -- 033
+ end if; -- 033
+ insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on,pa_forgiveness,went_over,went_over_on,went_over_how,sign_method,sign_appointment_at,exit_form,remarks) -- 033
+ values(p_case.workspace_id,p_case.id,v_review.id,p_person.id,vitally_private.payload_date(v_q,'completedOn'),v_q->>'paForgiveness',v_went_over, -- 033
+  vitally_private.payload_date(v_q,'wentOverOn'),v_q->>'wentOverHow',v_q->>'signMethod',v_appointment,v_q->'exitForm',btrim(v_q->>'remarks')); -- 033
+ if not v_went_over then -- 033
+  -- D5: the office takes the conversation over. The assignee is the workspace's
+  -- configured follow-up person, found as act_escalate_contact (004) finds them.
+  select p.* into v_assignee from public.people p -- 033
+   join public.workspaces w on w.id=p.workspace_id and w.default_followup_person_id=p.id -- 033
+   where w.id=p_case.workspace_id; -- 033
+  if not found or not ('followup'=any(v_assignee.capabilities)) then -- 033
+   raise sqlstate 'VT007' using message='VALIDATION'; -- 033
+  end if; -- 033
+  insert into public.admin_followups(workspace_id,case_id,request_id,purpose,assignee_person_id,reason,created_by_person_id) -- 033
+  values(p_case.workspace_id,p_case.id,null,'go_over_return',v_assignee.id,'Go over the return with the client: the reviewer did not.',p_person.id); -- 033
+ end if; -- 033
+ -- D10: the contact step is settled at approval, never left pending.
+ update public.reviews set status='approved',decided_at=now(),client_contact_status='completed', -- 033
+  client_contacted_at=now(),client_contact_outcome=case when v_went_over then 'reached' else null end -- 033
+  where id=v_review.id;
+ -- D11: the plan the client reads, in the design's order.
+ v_plan=case when not v_went_over then 'go_over_first' when not v_in_person then 'portal' -- 033
+  when v_same_day then 'same_day' else 'appointment' end; -- 033
+ -- The approving reviewer stays on the case: the contact task is theirs.
+ update public.cases set stage='review_approved',signing_plan=v_plan, -- 033
+  signing_appointment_at=case when v_plan='appointment' then v_appointment else null end where id=p_case.id; -- 033
+ return jsonb_build_object('detail',jsonb_build_object('reviewId',v_review.id,'preparationVersion',v_review.preparation_version),
+  'message','Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.');
+end;
+$$;

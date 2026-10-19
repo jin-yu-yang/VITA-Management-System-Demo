@@ -34,7 +34,7 @@
   - an account number or routing number in any group (refused; design D3);
   - the old empty payloads.
 - [x] 3.2 Implement `vitally_private.check_exit_form` and the new `check_payload` branches for `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` (design D3, D4). Copy `check_payload` from 032 and every other branch verbatim (D12).
-- [ ] 3.3 Write failing tests for the handlers:
+- [x] 3.3 Write failing tests for the handlers:
   - a valid submit or resubmit stores one row at the new version;
   - a refused one changes stage, revision, version and receipts not at all;
   - the date window (D6);
@@ -48,7 +48,7 @@
   - a yes approval meets #91's Mark ready to e-file gate at once;
   - the signing plan for each of the four cases, with the appointment copied only for `appointment` (D11);
   - the office logs a contact on a go-over task (`vitally_log_contact`) and resolves it; a non-assignee is refused.
-- [ ] 3.4 Re-create `act_submit_review`, `act_resubmit_review` (both from 006) and `act_approve_review` (from 021), with only these added:
+- [x] 3.4 Re-create `act_submit_review`, `act_resubmit_review` (both from 006) and `act_approve_review` (from 021), with only these added:
   - the questionnaire insert;
   - the date and appointment checks;
   - the D5 follow-up;

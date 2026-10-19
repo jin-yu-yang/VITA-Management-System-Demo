@@ -153,7 +153,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       // The reviewer's call with the client, for Follow-ups: none before an
       // approval, pending after one, completed once the call is recorded.
       assert.equal(unclaimed.reviewContactStatus, null);
-      const waitingForCall = await f.approvedCase({ called: false });
+      const waitingForCall = await f.legacyApprovedCase();
       const called = await f.approvedCase();
       const listed = await presenter.listCases();
       assert.equal(

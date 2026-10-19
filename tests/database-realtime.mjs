@@ -444,12 +444,9 @@ const INTERNAL = Object.freeze([
     identity: (row) => row.id,
     commit: async (f) => {
       const caseId = await f.preparedCase();
+      // SUBMIT_REVIEW stored the row.
       const [row] = (
-        await f.sql(
-          `insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
-           values($1,$2,1,$3,'client','phone',true,true,'2026-02-10') returning id`,
-          [f.workspaceId, caseId, f.alex],
-        )
+        await f.sql("select id from public.preparer_questionnaires where case_id=$1", [caseId])
       ).rows;
       return { id: row.id };
     },

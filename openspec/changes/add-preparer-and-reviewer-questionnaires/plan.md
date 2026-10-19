@@ -210,7 +210,7 @@ const BAD_REVIEWER = {
   - The returned `detail` of each handler gains nothing. Answers never go into history, and the approval's client message (021) is unchanged.
   - Test support: `f.approvedCase()` approves with a valid reviewer questionnaire (Yes). `f.approvedCase({ called: false })` becomes `f.legacyApprovedCase()`: it inserts an approved review with `client_contact_status 'pending'` and no questionnaire, directly through `f.sql`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 test("a valid submit stores one questionnaire at the new version", …) // version 1 row, confirmed_method 'phone'
@@ -235,10 +235,10 @@ test("client messages carry no answer", …)        // assertPlainClientMessage 
 ```
 
   Set `service` on a test case by updating `cases.answers` through `f.sql`, or through the fixture's answer helper if one exists. Move the existing `RECORD_REVIEW_CONTACT` tests (and their stage sweep in `refusedByStage`) onto `legacyApprovedCase(f)`, since a questionnaire approval no longer leaves the step pending. In `tests/database-stages.mjs`, "ready to e-file waits for the reviewer's call" uses `legacyApprovedCase` and keeps its shape. Every other `approvedCase` caller gets a Yes approval.
-- [ ] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL (no rows stored).
-- [ ] **Step 3:** Implement section 6 as in Interfaces, copying each handler from the definition named above.
-- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes, including #91's stage suite and #88's contact suite.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: hand-offs store answers; no go-over opens an office task"`.
+- [x] **Step 2:** Run `npm run db:migrate:test && npm run test:database`. Expected: the new tests FAIL (no rows stored).
+- [x] **Step 3:** Implement section 6 as in Interfaces, copying each handler from the definition named above.
+- [x] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes, including #91's stage suite and #88's contact suite.
+- [x] **Step 5:** Commit: `git commit -am "Questionnaires: hand-offs store answers; no go-over opens an office task"`.
 
 ### Task 4a: Mark ready to e-file waits for the office's go-over (design D13)
 
