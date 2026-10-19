@@ -3,7 +3,7 @@
 - [x] 1.1 #91 (lifecycle chain, part 1) is merged into `main`. `/opsx:update` renamed the stages in every artifact and pointed the migration at the newest definitions (design D12). #88 (contact log) is merged too, so the update added the contact-log prefill (design D9).
 - [x] 1.2 Merge `main` into this branch (71e84d1). The migration is `033`, one after main's newest.
 - [x] 1.3 Hailey ruled on design Q1 on 2026-10-19 (accepted Claude's proposal). `/opsx:update` wrote it into design D13, the `case-lifecycle` delta spec and plan Task 4a.
-- [ ] 1.4 Just before apply, merge `main` again. If anything took `033`, renumber to the next free number with no gap. Re-run the D12 lookup and recopy any function whose newest definition moved.
+- [x] 1.4 Just before apply, merge `main` again. If anything took `033`, renumber to the next free number with no gap. Re-run the D12 lookup and recopy any function whose newest definition moved.
 
 ## 2. Database: tables, follow-up purpose and signing plan
 

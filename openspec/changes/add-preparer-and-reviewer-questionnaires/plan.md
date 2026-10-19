@@ -86,9 +86,9 @@
 
 - [x] **Step 1:** #91 is merged into `main`, and main (71e84d1) is merged into this branch. `/opsx:update` brought the artifacts up to date (tasks 1.1, 1.2).
 - [x] **Step 2:** Hailey's ruling on design Q1 is written into design D13, the `case-lifecycle` delta spec and Task 4a (tasks 1.3).
-- [ ] **Step 3:** Run `git fetch origin && git merge origin/main`, then `ls supabase/migrations | tail -1`. The migration is one after that number. If it is no longer 033, rename it everywhere in this plan, in design.md and in tasks.md.
-- [ ] **Step 4:** For every function in design D12, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1`. If any newest definition is no longer the file D12 names, update D12 and copy from the new one.
-- [ ] **Step 5:** Tick task 1.4 in `tasks.md` and commit: `git commit -am "Questionnaires: main merged; migration numbered after main's newest"`.
+- [x] **Step 3:** Run `git fetch origin && git merge origin/main`, then `ls supabase/migrations | tail -1`. The migration is one after that number. If it is no longer 033, rename it everywhere in this plan, in design.md and in tasks.md.
+- [x] **Step 4:** For every function in design D12, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1`. If any newest definition is no longer the file D12 names, update D12 and copy from the new one.
+- [x] **Step 5:** Tick task 1.4 in `tasks.md` and commit: `git commit -am "Questionnaires: main merged; migration numbered after main's newest"`.
 
 ### Task 2: Tables, RLS, the follow-up purpose and the signing plan
 
