@@ -8,7 +8,12 @@ import {
   decorateStaffCase,
   correctionsDialogBody,
 } from "./staff-views.mjs";
-import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
+import {
+  renderAdminCase,
+  closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+} from "./admin-views.mjs";
 import {
   renderAddCaseV2,
   renderFollowups,
@@ -431,6 +436,14 @@ export function dialog(state) {
     title = "Close this case?";
     // The office screens own their own copy; this frame only places it.
     body = closeCaseDialogBody(state);
+  }
+  if (state.dialog === "mark-ready-to-efile") {
+    title = "Mark ready to e-file?";
+    body = markReadyToEfileDialogBody(state);
+  }
+  if (state.dialog === "mark-efiled") {
+    title = "Mark e-filed?";
+    body = markEfiledDialogBody(state);
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

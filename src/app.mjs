@@ -1002,6 +1002,8 @@ if (!config) {
     RECORD_DOCUMENT_RESPONSE:
       "Recorded as staff-recorded, awaiting preparer verification.",
     CLOSE_CASE: "The case is closed and its pending work is cancelled.",
+    MARK_READY_TO_EFILE: "Marked ready to e-file. The client was told.",
+    MARK_EFILED: "Marked e-filed. The client was told.",
     CLAIM_PREPARATION: "This case is yours to prepare.",
     CLAIM_REVIEW: "This review is yours.",
     REQUEST_DOCUMENT: "The client was asked for this document.",
@@ -1092,6 +1094,8 @@ if (!config) {
     }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
     if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    if (type === "MARK_READY_TO_EFILE" && receipt) closeDialog("#case-title");
+    if (type === "MARK_EFILED" && receipt) closeDialog("#case-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
@@ -1494,6 +1498,12 @@ if (!config) {
         break;
       case "open-close-case":
         openDialog("close-case");
+        break;
+      case "open-mark-ready-to-efile":
+        openDialog("mark-ready-to-efile");
+        break;
+      case "open-mark-efiled":
+        openDialog("mark-efiled");
         break;
       case "open-log-call": {
         // Described before the await: by the time the case has loaded, the

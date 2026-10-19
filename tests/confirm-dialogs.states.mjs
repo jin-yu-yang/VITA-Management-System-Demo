@@ -13,6 +13,16 @@ const six = Array.from({ length: 6 }, (_, i) => ({
 export const STATES = Object.freeze({
   closeIdle: ["closeCaseDialogBody", { savedCase: { reference: "VT-TEST-0001" } }],
   closeBusy: ["closeCaseDialogBody", { savedCase: { reference: "VT-TEST-0001" }, busy: true }],
+  readyToEfile: [
+    "markReadyToEfileDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0002",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
+  efiledNameless: ["markEfiledDialogBody", { savedCase: { reference: "VT-TEST-0003", answers: {} } }],
   corrections: ["correctionsDialogBody", {}],
   correctionsRetry: [
     "correctionsDialogBody",

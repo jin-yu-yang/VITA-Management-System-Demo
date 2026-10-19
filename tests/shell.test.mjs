@@ -1205,3 +1205,16 @@ test("app.mjs wires the Log contact form, Copy, Copy all and Edit", () => {
   // The old attempt is gone from the browser, notice and all.
   assert.doesNotMatch(app, /RECORD_CONTACT/);
 });
+
+test("app.mjs opens, closes and announces the two e-file confirmations", () => {
+  const app = appSource();
+  assert.match(app, /case "open-mark-ready-to-efile":\s+openDialog\("mark-ready-to-efile"\);/);
+  assert.match(app, /case "open-mark-efiled":\s+openDialog\("mark-efiled"\);/);
+  assert.match(app, /if \(type === "MARK_READY_TO_EFILE" && receipt\) closeDialog\("#case-title"\);/);
+  assert.match(app, /if \(type === "MARK_EFILED" && receipt\) closeDialog\("#case-title"\);/);
+  assert.match(app, /MARK_READY_TO_EFILE: "Marked ready to e-file\. The client was told\."/);
+  assert.match(app, /MARK_EFILED: "Marked e-filed\. The client was told\."/);
+  // The shared modal frame places both.
+  assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
+  assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);
+});

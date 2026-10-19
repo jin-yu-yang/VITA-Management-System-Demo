@@ -95,6 +95,7 @@ const DOCUMENT_STAGES = Object.freeze(["preparing", "corrections_required"]);
 // nobody owns. An approved review and a closed case are deliberately absent.
 const CLOSABLE_STAGES = Object.freeze([
   "received",
+  "screening",
   "preparation_ready",
   "preparing",
   "review_ready",
@@ -132,11 +133,13 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stopped) return stopped;
     if (stage === "draft")
       return refused("The client has not sent this application yet.");
-    if (stage !== "received")
+    if (stage !== "screening")
       return refused(
-        record.intakeVerified
-          ? "The simulated intake checks are already recorded."
-          : "The intake checks are recorded when an application arrives, before preparation.",
+        stage === "received"
+          ? "Screening starts when an admin opens the case."
+          : record.intakeVerified
+            ? "The simulated intake checks are already recorded."
+            : "The intake checks are recorded during screening, before preparation.",
       );
     return allowed;
   };
@@ -153,13 +156,37 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     const stopped = gate("admin");
     if (stopped) return stopped;
     if (stage === "closed") return refused("This case is already closed.");
-    if (stage === "review_approved")
+    if (["review_approved", "ready_to_efile", "efiled"].includes(stage))
       return refused("An approved case is not closed from here.");
     if (stage === "draft" && record.ownerUserId)
       return refused("A client's own draft is theirs to finish or leave.");
     if (stage !== "draft" && !CLOSABLE_STAGES.includes(stage))
       return refused("This case cannot be closed at this stage.");
     return allowed;
+  };
+
+  const markReadyToEfile = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (stage !== "review_approved")
+      return refused("This is recorded once the reviewer has approved the return.");
+    // The reviewer's call with the client comes first, as the database checks.
+    // A full case carries its reviews; a list row carries only reviewContactStatus.
+    const call =
+      record.reviewContactStatus ??
+      (record.reviews ?? []).findLast((review) => review?.status === "approved")
+        ?.clientContactStatus;
+    return call === "completed"
+      ? allowed
+      : refused("The reviewer still needs to record the conversation with the client.");
+  };
+
+  const markEfiled = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    return stage === "ready_to_efile"
+      ? allowed
+      : refused("This is recorded once the client has signed Form 8879.");
   };
 
   // Starting an assisted application needs no case at all.
@@ -235,6 +262,8 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     verifyIntake: verifyIntake(),
     remind: remind(),
     closeCase: closeCase(),
+    markReadyToEfile: markReadyToEfile(),
+    markEfiled: markEfiled(),
     assistedIntake: assistedIntake(),
     // One rule, two actions: the database checks the same capability, the same
     // assignment and the same open status for both.
@@ -492,7 +521,26 @@ function officeActionsPanel(record, rights, ui) {
     rights.remind.allowed
       ? caseButton(`${icon("clock")} Send a reminder`, "REMIND", "secondary", busy)
       : explain(rights.remind)
-  }<h3>Close this case</h3><p class="field-note">Closing cancels the pending document requests and office tasks <strong>in ViTally</strong>. It does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority.</p>${
+  }${when(
+    record.stage === "review_approved",
+    `<h3>Form 8879</h3><p class="field-note">Record that the client signed Form 8879. The client is told.</p>${
+      rights.markReadyToEfile.allowed
+        ? button(
+            `${icon("check")} Mark ready to e-file…`,
+            "open-mark-ready-to-efile",
+            "primary",
+            busy,
+          )
+        : explain(rights.markReadyToEfile)
+    }`,
+  )}${when(
+    record.stage === "ready_to_efile",
+    `<h3>E-file</h3><p class="field-note">Record that the return was e-filed. The client is told.</p>${
+      rights.markEfiled.allowed
+        ? button(`${icon("check")} Mark e-filed…`, "open-mark-efiled", "primary", busy)
+        : explain(rights.markEfiled)
+    }`,
+  )}<h3>Close this case</h3><p class="field-note">Closing cancels the pending document requests and office tasks <strong>in ViTally</strong>. It does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority.</p>${
     rights.closeCase.allowed
       ? button(
           `${icon("close")} Close this case…`,
@@ -540,6 +588,72 @@ export function closeCaseDialogBody(state = {}) {
       state.busy ? "disabled" : "",
     ),
     keep: "Keep it open",
+  });
+}
+
+const clientName = (record) =>
+  [record?.answers?.tp_first_name, record?.answers?.tp_last_name]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ") || "this client";
+
+/** The Form 8879 confirmation: the client is told it was signed. */
+export function markReadyToEfileDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> as ready to e-file?`,
+    note: {
+      icon: "shield",
+      html: "The client will be told PCDC recorded that they signed Form 8879. This can't be undone.",
+    },
+    form: {
+      fields: `<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "ready-efile",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "ready-efile",
+      )}" name="confirmed" value="true" required><span>The client signed Form 8879.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Mark ready to e-file`,
+      "MARK_READY_TO_EFILE",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+/** The e-filed confirmation: the client is told the return was e-filed. */
+export function markEfiledDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> as e-filed?`,
+    note: {
+      icon: "shield",
+      html: "The client will be told their return was e-filed. This can't be undone.",
+    },
+    form: {
+      fields: `<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "efiled",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "efiled",
+      )}" name="confirmed" value="true" required><span>The return was e-filed.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Mark e-filed`,
+      "MARK_EFILED",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
   });
 }
 
