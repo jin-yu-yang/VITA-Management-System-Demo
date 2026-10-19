@@ -1323,6 +1323,13 @@ function preparationPanel(record) {
 const optionLabel = (list, value) => list.find(([v]) => v === value)?.[1] ?? "";
 const NO_QUESTIONNAIRE = "No questionnaire was recorded for this version.";
 
+// A stored calendar date ("2026-10-16") as staff read dates: "10/16/2026".
+// Split, never new Date(…), which shifts a date by the time zone.
+const staffDate = (value) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ""));
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : String(value ?? "");
+};
+
 // The row with the highest `key`, or null.
 const latestBy = (rows, key) =>
   (rows ?? []).reduce((best, row) => (!best || Number(row?.[key]) > Number(best[key]) ? row : best), null);
@@ -1510,7 +1517,7 @@ function reviewerAnswers(q) {
   )}${detailRow(
     "Went over the return with the client",
     q.wentOver
-      ? `Yes, on ${q.wentOverOn}${q.wentOverHow ? ` (${optionLabel(WENT_OVER_HOW, q.wentOverHow).toLowerCase()})` : ""}`
+      ? `Yes, on ${staffDate(q.wentOverOn)}${q.wentOverHow ? ` (${optionLabel(WENT_OVER_HOW, q.wentOverHow).toLowerCase()})` : ""}`
       : "No",
   )}${detailRow(
     "Form 8879 signing",
@@ -1547,7 +1554,7 @@ function submissionComparison(previous, current, version) {
 function contactStepLine(attempt, questionnaire) {
   if (!attempt || !questionnaire) return null;
   return questionnaire.wentOver
-    ? `The reviewer went over the return with the client on ${questionnaire.wentOverOn}.`
+    ? `The reviewer went over the return with the client on ${staffDate(questionnaire.wentOverOn)}.`
     : "The office will go over the return with the client.";
 }
 

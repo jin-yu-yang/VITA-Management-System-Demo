@@ -227,6 +227,12 @@ test("local entries come in catalogue order, each with its type", () => {
   ]);
 });
 
+test("changedAnswers marks the ready-for-review date only when it differs", () => {
+  const before = { confirmedBy: "client", confirmedMethod: "phone", shadedPartsCompleted: true, stateForgivenessSet: true, readyForReviewOn: "2026-10-10" };
+  assert.equal(changedAnswers(before, { ...before }).has("readyForReviewOn"), false);
+  assert.equal(changedAnswers(before, { ...before, readyForReviewOn: "2026-10-17" }).has("readyForReviewOn"), true);
+});
+
 test("changedAnswers marks a changed method", () => {
   const before = preparerQuestionnaire(PREPARER_FORM);
   const after = preparerQuestionnaire({ ...PREPARER_FORM, confirmedMethod: "video" });

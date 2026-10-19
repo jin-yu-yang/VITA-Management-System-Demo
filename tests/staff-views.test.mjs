@@ -2544,6 +2544,22 @@ test("the seeded Ready to exit sample's answers render", () => {
   assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
 });
 
+test("the ready-for-review date is marked Changed only when it differs", () => {
+  const compare = (nextDate) =>
+    stepFor(
+      {
+        ...REVIEWING,
+        preparationVersion: 2,
+        reviews: [reviewRow({ preparationVersion: 2 })],
+        preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, readyForReviewOn: nextDate })],
+      },
+      MORGAN,
+    );
+  const dateRow = /<th scope="row">Ready for review in TaxSlayer on<\/th>[^]*?<\/tr>/;
+  assert.doesNotMatch(compare("2026-10-10").match(dateRow)[0], /Changed/);
+  assert.match(compare("2026-10-17").match(dateRow)[0], /<td>2026-10-17 <mark class="q-changed">Changed<\/mark>/);
+});
+
 test("Review in progress shows previous and current with changes marked", () => {
   const html = stepFor(
     {
@@ -2579,7 +2595,8 @@ test("review panel shows answers per version", () => {
   assert.match(html, /<span>Exit Form, Federal<\/span><strong>E-file, refund 120\.00 by direct deposit<\/strong>/);
   assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
   assert.match(html, /<span>Remarks<\/span><strong>Looks right\.<\/strong>/);
-  assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 2026-10-16\.<\/strong>/);
+  assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 10\/16\/2026\.<\/strong>/);
+  assert.match(html, /<span>Went over the return with the client<\/span><strong>Yes, on 10\/16\/2026/);
 });
 
 test("no questionnaire recorded line", () => {
@@ -2600,7 +2617,7 @@ const approvedStep = (record) => nextStep(record, staffEligibility(record, MORGA
 test("approved with yes offers no conversation form", () => {
   const html = approvedStep(approvedWith(revQ()));
   assert.doesNotMatch(html, /RECORD_REVIEW_CONTACT/);
-  assert.match(html, /The reviewer went over the return with the client on 2026-10-16\./);
+  assert.match(html, /The reviewer went over the return with the client on 10\/16\/2026\./);
 });
 
 test("approved with no says the office takes over", () => {

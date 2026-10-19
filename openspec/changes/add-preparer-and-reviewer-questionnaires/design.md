@@ -259,7 +259,10 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
   PAIBWTR) are each a `<details>` element, closed by default and each optional. A Local entry per type, rather
   than an "Add" button, makes uniqueness per type hold by construction, with no dynamic form state in the
   controller. An entry counts as filled once any field in it has a value. A filled entry is rendered open
-  after a refused submit, so the volunteer sees the field the sentence names.
+  after a refused submit, so the volunteer sees the field the sentence names. Each group has a "Clear this section"
+  button (`type="button"`) that empties its fields and their drafts. A radio cannot be unchecked by clicking it again,
+  so without the button one stray click would make an optional group half-filled and block approval (added after the
+  final review).
 - **Note:** the two confirmations stay ticked in the prefill because they are the same declaration again. The
   preparer can untick and re-tick them, and the database still requires both to be true.
 

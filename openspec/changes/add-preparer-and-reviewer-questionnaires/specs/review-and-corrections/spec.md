@@ -126,7 +126,7 @@ The reviewer form SHALL preselect answer 4 from the case's intake answer `servic
 ### Requirement: The reviewer questionnaire records the Exit Form results
 The reviewer questionnaire SHALL hold three optional Exit Form groups: Federal, State, and Local (the form's "Other Tax"). Federal and State SHALL appear at most once each. Local SHALL accept up to five entries, at most one per type. A group that is present SHALL have a filing method (`efile` or `paper`) and a result (`refund`, `owe` or `none`).
 
-In the form, Federal, State and each Local type SHALL be a collapsible group, closed until the reviewer opens it. A group the reviewer filled in SHALL stay open when the form is shown again after a refusal.
+In the form, Federal, State and each Local type SHALL be a collapsible group, closed until the reviewer opens it. A group the reviewer filled in SHALL stay open when the form is shown again after a refusal. Each group SHALL have a "Clear this section" button that empties every field in that group, so a group filled in by mistake can be left out again.
 
 A refund or an amount owed SHALL carry an amount from 0.00 to 999,999.99 with at most two decimal places. A result of `none` SHALL carry no amount. A refund SHALL say direct deposit or check. An amount owed SHALL say direct debit, with a debit date, or mail check.
 
@@ -141,6 +141,10 @@ The Exit Form SHALL store only the payment method (direct deposit, check, direct
 #### Scenario: The groups start closed
 - **WHEN** the reviewer opens the approval form
 - **THEN** Federal, State, and the Local groups NPT, BIRT, EET, SIT and PAIBWTR are each collapsed, and each opens on its own
+
+#### Scenario: A group chosen by mistake can be cleared
+- **WHEN** the reviewer picks "Paper" in the Local EET group by mistake and presses its "Clear this section" button
+- **THEN** every field in that group is empty again, and approving with no other Exit Form group is accepted
 
 #### Scenario: A refund needs its amount and how it is paid
 - **WHEN** the Federal group says e-file and refund with no amount
