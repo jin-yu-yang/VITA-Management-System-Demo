@@ -73,7 +73,7 @@
 
 - [x] 4.1 Write failing tests in `tests/questionnaires.test.mjs` and `tests/case-actions.test.mjs`, then build the three payloads from their forms. The builders apply the same rules as the database, each with a clear sentence (design D4).
 - [x] 4.2 The contact-log prefill `goOverPrefill(contacts)` (design D9), with tests for the latest entry, either direction, the method mapping and the New York date.
-- [ ] 4.3 `src/supabase-store.mjs`:
+- [x] 4.3 `src/supabase-store.mjs`:
   - load both tables for staff only (`STAFF_TABLES`, `mapStaffCase`), never for the applicant adapter;
   - `mapFollowup` passes `purpose`;
   - `mapCase` passes `signingPlan` and `signingAppointmentAt`, for both adapters;
@@ -82,13 +82,13 @@
 
 ## 5. Browser: forms and the case page
 
-- [ ] 5.1 Preparer form, inline in "Your next step" (design D7). It shows at Filing in progress, and at Corrections in progress after the resolution textarea. It has:
+- [x] 5.1 Preparer form, inline in "Your next step" (design D7). It shows at Filing in progress, and at Corrections in progress after the resolution textarea. It has:
   - the four answers;
   - today's date;
   - the prefill from the latest submission on resubmit.
 
   View tests in `tests/staff-views.test.mjs`.
-- [ ] 5.2 Reviewer form, inline in "Your next step" at Review in progress, directly above Approve (design D7). It has:
+- [x] 5.2 Reviewer form, inline in "Your next step" at Review in progress, directly above Approve (design D7). It has:
   - answers 1–5 with their show/hide rules;
   - the contact-log prefill (D9);
   - the sign-8879 default from `service`;
@@ -96,9 +96,9 @@
   - Remarks.
 
   View tests.
-- [ ] 5.3 The previous preparer submission next to the current one, with changed answers marked, at Review in progress (design D7). View tests.
-- [ ] 5.4 At Ready to exit, "Your next step" shows the D10 line and no "Record this conversation" form after a questionnaire approval. A legacy pending approval still shows the form. View tests.
-- [ ] 5.5 The review panel: each version's preparer answers and each approved attempt's reviewer answers, and "No questionnaire was recorded for this version." when there is none. View tests.
+- [x] 5.3 The previous preparer submission next to the current one, with changed answers marked, at Review in progress (design D7). View tests.
+- [x] 5.4 At Ready to exit, "Your next step" shows the D10 line and no "Record this conversation" form after a questionnaire approval. A legacy pending approval still shows the form. View tests.
+- [x] 5.5 The review panel: each version's preparer answers and each approved attempt's reviewer answers, and "No questionnaire was recorded for this version." when there is none. View tests.
 - [ ] 5.6 A follow-up with no request in `src/admin-views.mjs` and `src/office-views.mjs`:
   - `followupTask` titles a go-over task "Go over the return with the client", with no document line;
   - the task's Log contact form starts with the task's purpose chosen (D5).
@@ -117,7 +117,7 @@
   - the Follow-ups `signing` row reads "Waiting for the office to go over the return with the client.".
 
   Tests in `tests/store.test.mjs`, `tests/admin-views.test.mjs` and `tests/office-views.test.mjs`: open → refused, resolved with each outcome → offered.
-- [ ] 5.9 Styles for the forms, the collapsible groups and the comparison in `src/styles.css`, reusing existing staff-form classes.
+- [x] 5.9 Styles for the forms, the collapsible groups and the comparison in `src/styles.css`, reusing existing staff-form classes.
 - [ ] 5.10 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 6. Story and full checks

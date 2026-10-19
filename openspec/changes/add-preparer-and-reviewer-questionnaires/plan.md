@@ -444,7 +444,7 @@ test("SUBMIT_REVIEW payload is { questionnaire }", …)    // replaces the old `
     - `.q-when-in-person` the same, for `signMethod=in_person`;
     - `.q-group` is a `<details>` per Exit Form entry (Federal, State, and each Local type). It has no `open` attribute unless the entry holds a value from a refused submit.
 
-- [ ] **Step 1: Write the failing tests**:
+- [x] **Step 1: Write the failing tests**:
   - Store: the staff case carries both arrays; the applicant adapter's tables still exclude them; both adapters map the two signing fields. In `tests/database-store.mjs`, add both names to `STAFF_SECTIONS`.
   - Views:
 
@@ -466,15 +466,15 @@ test("approved with no says the office takes over", …)            // no RECORD
 test("legacy pending approval still shows the conversation form", …) // approved attempt with no reviewer questionnaire, status pending
 ```
 
-- [ ] **Step 2:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 3:** Implement the store changes, the forms in `nextStep`, the panel rows and the CSS:
+- [x] **Step 2:** Run `npm test`. Expected: FAIL.
+- [x] **Step 3:** Implement the store changes, the forms in `nextStep`, the panel rows and the CSS:
   - `preparing` → `preparerForm`;
   - `corrections_required` → the resolution textarea, then `preparerForm` prefilled;
   - `reviewing` → `submissionComparison` when the version is above 1, then `reviewerForm` ending in "Approve this review". "Ask the preparer for corrections" stays beside it in `.next-step-actions` and still opens its dialog, followed by today's field note.
 
   Both buttons keep their current wording. The approve control becomes a `caseSubmit` inside the reviewer form and carries `data-service`.
-- [ ] **Step 4:** Run `npm test`. Expected: PASS. Then `npm run test:database`. Expected: the store suite passes.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: inline forms, comparison and answers on the case page"`.
+- [x] **Step 4:** Run `npm test`. Expected: PASS. Then `npm run test:database`. Expected: the store suite passes.
+- [x] **Step 5:** Commit: `git commit -am "Questionnaires: inline forms, comparison and answers on the case page"`.
 
 ### Task 8: Office views for a follow-up with no request, and the task's purpose
 

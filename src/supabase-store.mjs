@@ -94,6 +94,10 @@ export const mapCase = (row) => ({
   intakeVersion: Number(row.intake_version),
   // The sub-steps the client has opened (migration 017); [] before it.
   intakeVisited: Array.isArray(row.intake_visited) ? [...row.intake_visited] : [],
+  // How the client will sign Form 8879 and the appointment's wall-clock time
+  // (migration 033); null until a questionnaire approval sets them.
+  signingPlan: row.signing_plan ?? null,
+  signingAppointmentAt: row.signing_appointment_at ?? null,
 });
 
 // The case's contact details (migration 011), or null when it has no row: a
@@ -265,6 +269,8 @@ export const mapStaffCase = ({
   contacts = [],
   cards = [],
   materials = [],
+  preparerQuestionnaires = [],
+  reviewerQuestionnaires = [],
 }) => ({
   ...mapClientCase({ row, requests, documents, history, contacts, cards }),
   participants: participants.map((participant) => participant.person_id),
@@ -273,6 +279,8 @@ export const mapStaffCase = ({
   contacts: contactLog.map((entry) => mapContactEntry(entry, contactVersions)),
   materials: materials.map(mapMaterial),
   internalHistory: internalHistory.map(camelRow),
+  preparerQuestionnaires: preparerQuestionnaires.map(camelRow),
+  reviewerQuestionnaires: reviewerQuestionnaires.map(camelRow),
 });
 
 export function createStore(client) {
@@ -541,6 +549,9 @@ export function createStore(client) {
             .order("item"),
         ),
         internalHistory: await relatedRows("case_events", id),
+        // Staff only: the applicant path above never names these tables.
+        preparerQuestionnaires: await relatedRows("preparer_questionnaires", id),
+        reviewerQuestionnaires: await relatedRows("reviewer_questionnaires", id),
       });
     },
 

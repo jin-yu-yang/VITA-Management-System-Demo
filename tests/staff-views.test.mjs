@@ -2371,3 +2371,219 @@ test("switching method after picking an outcome sends only the shown group", () 
   assert.equal(outcomeGroup("phone", "incoming"), null);
   assert.equal(outcomeGroup("in_person", "outgoing"), null);
 });
+
+// ---------------------------------------------------------------------------
+// The preparer and reviewer questionnaires (add-preparer-and-reviewer-questionnaires, Task 7)
+// ---------------------------------------------------------------------------
+
+const NOON = new Date(2026, 9, 19, 12, 0, 0).getTime(); // 2026-10-19 in the browser's zone
+const prepQ = (over = {}) => ({
+  id: "pq-1",
+  caseId: "case-a",
+  preparationVersion: 1,
+  confirmedBy: "client",
+  confirmedByName: null,
+  confirmedMethod: "in_person",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: "2026-10-10",
+  ...over,
+});
+const revQ = (over = {}) => ({
+  id: "rq-1",
+  caseId: "case-a",
+  reviewId: "review-1",
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: true,
+  wentOverOn: "2026-10-16",
+  wentOverHow: "phone",
+  signMethod: "portal",
+  signAppointmentAt: null,
+  exitForm: {
+    federal: { method: "efile", result: "refund", amount: "120.00", refundBy: "direct_deposit" },
+    state: null,
+    local: [{ type: "NPT", method: "paper", result: "none" }],
+  },
+  remarks: "Looks right.",
+  ...over,
+});
+const reviewRow = (over = {}) => ({
+  id: "review-1",
+  preparationVersion: 1,
+  reviewerId: "morgan",
+  status: "active",
+  findings: null,
+  resolution: null,
+  clientContactStatus: null,
+  createdAt: "2026-09-12T16:00:00.000Z",
+  decidedAt: null,
+  ...over,
+});
+const stepFor = (overrides, person, ui = {}) => {
+  const record = staffCase(overrides);
+  return nextStep(record, staffEligibility(record, person), { now: NOON, ...ui });
+};
+const REVIEWING = { stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"], preparationVersion: 1, reviews: [reviewRow()] };
+const checkedOf = (html, name) =>
+  [...html.matchAll(new RegExp(`<input[^>]*name="${name.replaceAll(".", "\\.")}"[^>]*>`, "g"))]
+    .filter((m) => / checked/.test(m[0]))
+    .map((m) => /value="([^"]*)"/.exec(m[0])[1]);
+
+test("Filing in progress shows the preparer form inline with today's date", () => {
+  const html = stepFor({ stage: "preparing" }, ALEX);
+  assert.match(html, /<form class="staff-form q-form">[\s\S]*name="confirmedBy"[\s\S]*data-case-action="SUBMIT_REVIEW"/);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+  assert.doesNotMatch(html, /<dialog|role="dialog"|aria-modal/);
+  assert.deepEqual(checkedOf(html, "confirmedBy"), []);
+});
+
+test("resubmit is prefilled from the latest submission", () => {
+  const html = stepFor(
+    {
+      stage: "corrections_required",
+      preparationVersion: 1,
+      preparerQuestionnaires: [prepQ({ readyForReviewOn: "2026-10-10" })],
+      reviews: [{ id: "r1", status: "corrections_requested", findings: "Fix it.", preparationVersion: 1 }],
+    },
+    ALEX,
+  );
+  assert.deepEqual(checkedOf(html, "confirmedBy"), ["client"]);
+  assert.deepEqual(checkedOf(html, "confirmedMethod"), ["in_person"]);
+  assert.deepEqual(checkedOf(html, "shadedPartsCompleted"), ["yes"]);
+  assert.deepEqual(checkedOf(html, "stateForgivenessSet"), ["yes"]);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+  assert.match(html, /name="resolution"[\s\S]*name="confirmedBy"[\s\S]*data-case-action="RESUBMIT_REVIEW"/);
+});
+
+test("resubmit with no earlier questionnaire", () => {
+  const html = stepFor(
+    { stage: "corrections_required", reviews: [{ id: "r1", status: "corrections_requested", findings: "Fix it.", preparationVersion: 1 }] },
+    ALEX,
+  );
+  assert.deepEqual(checkedOf(html, "confirmedBy"), []);
+  assert.deepEqual(checkedOf(html, "shadedPartsCompleted"), []);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+});
+
+test("the reviewer form sits above Approve", () => {
+  const html = stepFor({ ...REVIEWING, answers: { service: "online" } }, MORGAN);
+  const at = (needle) => html.indexOf(needle);
+  assert.ok(at('name="completedOn"') > 0);
+  assert.ok(at('name="completedOn"') < at('name="remarks"'));
+  assert.ok(at('name="remarks"') < at('data-case-action="APPROVE_REVIEW"'));
+  assert.ok(at('data-case-action="APPROVE_REVIEW"') < at('data-action="open-request-corrections"'));
+  assert.match(html, /data-case-action="APPROVE_REVIEW"[^>]*data-service="online"/);
+  assert.match(html, /Approve this review/);
+  assert.match(html, /Ask the preparer for corrections/);
+  assert.doesNotMatch(html, /<dialog|aria-modal/);
+});
+
+test("reviewer form defaults signing from service", () => {
+  const sign = (service) => checkedOf(stepFor({ ...REVIEWING, answers: { service } }, MORGAN), "signMethod");
+  assert.deepEqual(sign("online"), ["portal"]);
+  assert.deepEqual(sign("drop_off"), []);
+  assert.deepEqual(sign("same_day"), ["in_person"]);
+});
+
+test("reviewer form prefills going over from the contact log", () => {
+  const html = stepFor({ ...REVIEWING, contacts: [contactEntry()] }, MORGAN);
+  assert.deepEqual(checkedOf(html, "wentOver"), ["yes"]);
+  assert.deepEqual(checkedOf(html, "wentOverHow"), ["phone"]);
+  assert.match(html, /name="wentOverOn" type="date" value="2026-10-17"/);
+  const none = stepFor(REVIEWING, MORGAN);
+  assert.deepEqual(checkedOf(none, "wentOver"), []);
+  assert.match(none, /name="wentOverOn" type="date" value=""/);
+});
+
+test("same-day reviewer form has no appointment block", () => {
+  assert.doesNotMatch(stepFor({ ...REVIEWING, answers: { service: "same_day" } }, MORGAN), /signAppointmentAt|q-when-in-person/);
+  assert.match(stepFor({ ...REVIEWING, answers: { service: "drop_off" } }, MORGAN), /name="signAppointmentAt" type="datetime-local"/);
+});
+
+test("Exit Form groups are collapsed details", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const groups = html.match(/<details class="q-group"[^>]*>/g);
+  assert.equal(groups.length, 7);
+  assert.ok(groups.every((tag) => !/ open/.test(tag)));
+  for (const type of ["NPT", "BIRT", "EET", "SIT", "PAIBWTR"]) assert.match(html, new RegExp(`name="local\\.${type}\\.amount"`));
+  assert.match(html, /name="federal\.method"/);
+  assert.match(html, /name="state\.result"/);
+});
+
+test("a filled group stays open", () => {
+  const html = stepFor(REVIEWING, MORGAN, { formValues: { "local.SIT.amount": "50.00", "federal.method": "" } });
+  const groups = html.match(/<details class="q-group"[^>]*><summary>[^<]*<\/summary>/g);
+  const open = groups.filter((tag) => / open>/.test(tag));
+  assert.equal(open.length, 1);
+  assert.match(open[0], /Local: SIT/);
+});
+
+test("Review in progress shows previous and current with changes marked", () => {
+  const html = stepFor(
+    {
+      ...REVIEWING,
+      preparationVersion: 2,
+      reviews: [reviewRow({ preparationVersion: 2 })],
+      preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, confirmedMethod: "phone" })],
+    },
+    MORGAN,
+  );
+  assert.equal((html.match(/Changed<\/mark>/g) ?? []).length, 1);
+  assert.match(html, /<th scope="row">How it was confirmed<\/th><td>In person<\/td><td>Phone <mark class="q-changed">Changed<\/mark>/);
+  assert.ok(html.indexOf("q-compare") < html.indexOf('name="completedOn"'));
+  // The first version has nothing to compare.
+  assert.doesNotMatch(stepFor({ ...REVIEWING, preparerQuestionnaires: [prepQ()] }, MORGAN), /q-compare/);
+});
+
+test("review panel shows answers per version", () => {
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 2,
+    reviews: [
+      reviewRow({ id: "review-0", preparationVersion: 1, status: "corrections_requested", findings: "Fix it." }),
+      reviewRow({ id: "review-1", preparationVersion: 2, status: "approved", decidedAt: "2026-09-13T16:00:00.000Z", clientContactStatus: "completed", clientContactOutcome: "reached", clientContactedAt: "2026-09-13T16:00:00.000Z" }),
+    ],
+    preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, confirmedMethod: "phone" })],
+    reviewerQuestionnaires: [revQ()],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.equal((html.match(/<h4>Preparer's answers<\/h4>/g) ?? []).length, 2);
+  assert.match(html, /<span>How it was confirmed<\/span><strong>In person<\/strong>/);
+  assert.match(html, /<span>How it was confirmed<\/span><strong>Phone<\/strong>/);
+  assert.match(html, /<span>Exit Form, Federal<\/span><strong>E-file, refund 120\.00 by direct deposit<\/strong>/);
+  assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
+  assert.match(html, /<span>Remarks<\/span><strong>Looks right\.<\/strong>/);
+  assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 2026-10-16\.<\/strong>/);
+});
+
+test("no questionnaire recorded line", () => {
+  const html = renderStaffCase(staffCase({ stage: "review_ready", preparationVersion: 1, reviews: [reviewRow({ status: "approved" })] }), MORGAN);
+  assert.match(html, /<p class="muted">No questionnaire was recorded for this version\.<\/p>/);
+});
+
+const approvedWith = (q) =>
+  staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [reviewRow({ status: "approved", clientContactStatus: q ? "completed" : "pending" })],
+    reviewerQuestionnaires: q ? [q] : [],
+  });
+const approvedStep = (record) => nextStep(record, staffEligibility(record, MORGAN), {});
+
+test("approved with yes offers no conversation form", () => {
+  const html = approvedStep(approvedWith(revQ()));
+  assert.doesNotMatch(html, /RECORD_REVIEW_CONTACT/);
+  assert.match(html, /The reviewer went over the return with the client on 2026-10-16\./);
+});
+
+test("approved with no says the office takes over", () => {
+  const html = approvedStep(approvedWith(revQ({ wentOver: false, wentOverOn: null, wentOverHow: null })));
+  assert.doesNotMatch(html, /RECORD_REVIEW_CONTACT/);
+  assert.match(html, /The office will go over the return with the client\./);
+});
+
+test("legacy pending approval still shows the conversation form", () => {
+  assert.match(approvedStep(approvedWith(null)), /data-case-action="RECORD_REVIEW_CONTACT"/);
+});

@@ -521,6 +521,8 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       updatedAt: "2026-09-12T16:30:00.000Z",
       intakeVersion: 2,
       intakeVisited: ["about.you", "before.ready"],
+      signingPlan: null,
+      signingAppointmentAt: null,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -733,6 +735,8 @@ test("an applicant case read asks for no staff table at all", async () => {
     "reviewerId",
     "revision",
     "season",
+    "signingAppointmentAt",
+    "signingPlan",
     "stage",
     "updatedAt",
     "workspaceId",
@@ -805,6 +809,8 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "documents",
       "memberships",
       "preparation_participants",
+      "preparer_questionnaires",
+      "reviewer_questionnaires",
       "reviews",
     ],
   );
@@ -1411,4 +1417,34 @@ test("both principals read the card rows by named columns and map them", async (
   }
   const empty = fakeClient({ access: "applicant", rows: { case_document_cards: [] } });
   assert.deepEqual((await createStore(empty).getCase("case-1")).documentCards, []);
+});
+
+test("mapCase carries the signing plan and appointment, null until approval", () => {
+  const plain = mapCase(CASE_ROW);
+  assert.equal(plain.signingPlan, null);
+  assert.equal(plain.signingAppointmentAt, null);
+  const planned = mapCase({ ...CASE_ROW, signing_plan: "appointment", signing_appointment_at: "2026-11-02T14:30:00" });
+  assert.equal(planned.signingPlan, "appointment");
+  assert.equal(planned.signingAppointmentAt, "2026-11-02T14:30:00");
+});
+
+test("a staff case read carries both questionnaire tables, an applicant read neither", async () => {
+  const rows = {
+    preparer_questionnaires: [
+      { id: "pq-1", case_id: "case-1", preparation_version: 1, confirmed_by: "client", confirmed_method: "phone", ready_for_review_on: "2026-10-16" },
+    ],
+    reviewer_questionnaires: [
+      { id: "rq-1", case_id: "case-1", review_id: "review-1", completed_on: "2026-10-17", went_over: true, exit_form: { federal: null, state: null, local: [] } },
+    ],
+  };
+  const staff = await createStore(fakeClient({ access: "presenter", rows })).getCase("case-1");
+  assert.deepEqual(staff.preparerQuestionnaires, [
+    { id: "pq-1", caseId: "case-1", preparationVersion: 1, confirmedBy: "client", confirmedMethod: "phone", readyForReviewOn: "2026-10-16" },
+  ]);
+  assert.equal(staff.reviewerQuestionnaires[0].reviewId, "review-1");
+  assert.deepEqual(staff.reviewerQuestionnaires[0].exitForm, { federal: null, state: null, local: [] });
+  const client = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(client).getCase("case-1");
+  assert.ok(!("preparerQuestionnaires" in applicant));
+  assert.ok(!client.reads.some((read) => read.table.endsWith("_questionnaires")));
 });

@@ -430,6 +430,10 @@ if (!config) {
     if (caseId !== null) draftsCase = caseId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
+    // A collapsed Exit Form group holding something typed is opened again, so
+    // the field a refusal names is in view (design D7).
+    for (const group of root.querySelectorAll("details.q-group:not([open])"))
+      if ([...group.querySelectorAll("[id]")].some((field) => formDrafts.has(field.id))) group.open = true;
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back
