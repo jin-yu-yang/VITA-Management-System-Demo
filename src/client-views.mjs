@@ -284,11 +284,12 @@ export function intakeScreen(state) {
 // Progress
 // ---------------------------------------------------------------------------
 
-const PROGRESS_STEPS = Object.freeze([
-  ["progress.step.intake", ["draft", "received"]],
-  ["progress.step.preparation", ["preparation_ready", "preparing"]],
-  ["progress.step.review", ["review_ready", "reviewing", "corrections_required"]],
-  ["progress.step.next", ["review_approved", "closed"]],
+export const PROGRESS_STEPS = Object.freeze([
+  ["progress.step.intake", ["draft", "received", "screening"]],
+  ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
+  ["progress.step.review", ["review_ready", "reviewing"]],
+  ["progress.step.signing", ["review_approved"]],
+  ["progress.step.filing", ["ready_to_efile", "efiled"]],
 ]);
 
 const REVIEW_STAGES = Object.freeze([
@@ -296,10 +297,14 @@ const REVIEW_STAGES = Object.freeze([
   "reviewing",
   "corrections_required",
   "review_approved",
+  "ready_to_efile",
+  "efiled",
 ]);
 
 function progressTrack(stage, lang = "en") {
   const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+  // A closed case has no current step: its notice says what happened instead.
+  if (current < 0) return "";
   return `<div class="progress-steps">${PROGRESS_STEPS.map(([label], index) => {
     const status = index < current ? "done" : index === current ? "current" : "";
     const state = index < current ? "progress.step.done" : index === current ? "progress.step.current" : "progress.step.waiting";
