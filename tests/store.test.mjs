@@ -21,6 +21,8 @@ const STAFF_ONLY_TABLES = [
   "assistance_items",
   "action_receipts",
   "case_materials",
+  "preparer_questionnaires",
+  "reviewer_questionnaires",
 ];
 
 const CASE_ROW = Object.freeze({
@@ -1269,6 +1271,8 @@ test("a subscription watches only the tables its principal may read", async () =
     "assistance_items",
     "reviews",
     "case_materials",
+    "preparer_questionnaires",
+    "reviewer_questionnaires",
   ]);
   // The applicant's channel never names a staff-only table.
   for (const staffTable of STAFF_ONLY_TABLES)
