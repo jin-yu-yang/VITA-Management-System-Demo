@@ -161,6 +161,11 @@ export const TEXT = Object.freeze({
   "stage.corrections_required.client": { en: "The reviewer asked your preparer to make corrections. No action is needed from you right now.", zh: "审核志愿者已请报税志愿者进行更正。您目前无需做任何事。" },
   "stage.review_approved.label": { en: "Ready to sign", zh: "等待签名" },
   "stage.review_approved.client": { en: "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.", zh: "您的报税表已检查完毕。PCDC 会联系您签署 8879 表，签署后才能递交报税表。" },
+  // Ready to exit, by how the client will sign Form 8879 (design D11; domain.mjs describeStage picks one by the case's signing plan)
+  "stage.review_approved.client.appointment": { en: "Your return has been checked. Please come to PCDC on {when} to sign Form 8879. It is needed before your return can be filed.", zh: "您的报税表已检查完毕。请于 {when} 到 PCDC 签署 8879 表，签署后才能递交报税表。" },
+  "stage.review_approved.client.same_day": { en: "Your return has been checked. Please sign Form 8879 with a volunteer before you leave today. It is needed before your return can be filed.", zh: "您的报税表已检查完毕。请在今天离开前与志愿者一起签署 8879 表，签署后才能递交报税表。" },
+  "stage.review_approved.client.portal": { en: "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed.", zh: "您的报税表已检查完毕。请在 TaxSlayer 客户门户（Customer Portal）以电子方式签署 8879 表，签署后才能递交报税表。（门户为英文页面，可用浏览器翻译）" },
+  "stage.review_approved.client.go_over_first": { en: "Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed.", zh: "您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。" },
   "stage.ready_to_efile.label": { en: "Signed", zh: "已签名" },
   "stage.ready_to_efile.client": { en: "You signed Form 8879. PCDC will e-file your return next.", zh: "您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。" },
   "stage.efiled.label": { en: "E-filed", zh: "已电子递交" },

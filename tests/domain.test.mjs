@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeStage, phaseTab, BOARD_TABS } from "../src/domain.mjs";
+import { describeStage, phaseTab, BOARD_TABS, signingWhen } from "../src/domain.mjs";
+import { spawnSync } from "node:child_process";
 import { historyLine } from "../src/client-text.mjs";
 import {
   CASE_ACTIONS,
@@ -257,4 +258,91 @@ test("no stage message or new history line names a phone number", () => {
     }
   for (const [line] of NEW_HISTORY)
     for (const lang of ["en", "zh-Hans"]) assert.doesNotMatch(historyLine(line, lang), PHONE, `${line} ${lang}`);
+});
+
+// ---- Ready to exit variants (design D11) ----
+const READY = "Your return has been checked. ";
+const VARIANTS = {
+  appointment: {
+    en: `${READY}Please come to PCDC on Monday, November 2 at 2:30 PM to sign Form 8879. It is needed before your return can be filed.`,
+    "zh-Hans": "您的报税表已检查完毕。请于 11月2日星期一 下午2:30 到 PCDC 签署 8879 表，签署后才能递交报税表。",
+  },
+  same_day: {
+    en: `${READY}Please sign Form 8879 with a volunteer before you leave today. It is needed before your return can be filed.`,
+    "zh-Hans": "您的报税表已检查完毕。请在今天离开前与志愿者一起签署 8879 表，签署后才能递交报税表。",
+  },
+  portal: {
+    en: `${READY}Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed.`,
+    "zh-Hans": "您的报税表已检查完毕。请在 TaxSlayer 客户门户（Customer Portal）以电子方式签署 8879 表，签署后才能递交报税表。（门户为英文页面，可用浏览器翻译）",
+  },
+  go_over_first: {
+    en: `${READY}PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed.`,
+    "zh-Hans": "您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。",
+  },
+};
+const planRecord = (signingPlan) => ({
+  stage: "review_approved",
+  signingPlan,
+  signingAppointmentAt: signingPlan === "appointment" ? "2026-11-02T14:30:00" : null,
+});
+
+test("each Ready to exit variant in English and 简体", () => {
+  for (const [plan, texts] of Object.entries(VARIANTS))
+    for (const [lang, text] of Object.entries(texts))
+      assert.equal(describeStage("review_approved", lang, planRecord(plan)).clientMessage, text, `${plan} ${lang}`);
+});
+
+test("wording review strings", () => {
+  const goOver = describeStage("review_approved", "en", planRecord("go_over_first")).clientMessage;
+  assert.ok(goOver.includes("go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed."));
+  const portal = describeStage("review_approved", "zh-Hans", planRecord("portal")).clientMessage;
+  assert.ok(portal.endsWith("递交报税表。（门户为英文页面，可用浏览器翻译）"));
+});
+
+test("appointment text", () => {
+  assert.equal(signingWhen("2026-11-02T14:30", "en"), "Monday, November 2 at 2:30 PM");
+  assert.equal(signingWhen("2026-11-02T14:30:00", "zh-Hans"), "11月2日星期一 下午2:30");
+  assert.equal(signingWhen("2026-11-02T14:30:00", "zh-Hant"), "11月2日 星期一 下午2:30");
+  const hant = describeStage("review_approved", "zh-Hant", planRecord("appointment")).clientMessage;
+  assert.ok(hant.includes("11月2日 星期一 下午2:30"));
+});
+
+test("appointment text ignores the time zone", () => {
+  const script = `import { describeStage } from ${JSON.stringify(new URL("../src/domain.mjs", import.meta.url).href)};
+    const r = { stage: "review_approved", signingPlan: "appointment", signingAppointmentAt: "2026-11-02T14:30:00" };
+    console.log(JSON.stringify(["en", "zh-Hans", "zh-Hant"].map((l) => describeStage("review_approved", l, r).clientMessage)));`;
+  const outputs = ["Asia/Shanghai", "America/Los_Angeles", "UTC"].map((TZ) => {
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { env: { ...process.env, TZ }, encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    return run.stdout;
+  });
+  assert.equal(outputs[0], outputs[1]);
+  assert.equal(outputs[0], outputs[2]);
+  assert.ok(JSON.parse(outputs[0])[0].includes("Monday, November 2 at 2:30 PM"));
+});
+
+test("no plan keeps today's message", () => {
+  for (const record of [undefined, null, { stage: "review_approved", signingPlan: null }, { stage: "review_approved" }])
+    for (const lang of ["en", "zh-Hans"]) {
+      const bare = describeStage("review_approved", lang);
+      assert.deepEqual(describeStage("review_approved", lang, record), bare);
+    }
+});
+
+test("other stages ignore the plan", () => {
+  for (const lang of ["en", "zh-Hans"])
+    assert.deepEqual(
+      describeStage("ready_to_efile", lang, planRecord("portal")),
+      describeStage("ready_to_efile", lang),
+    );
+});
+
+test("no variant names a phone number or a money word", () => {
+  const MONEY_WORDS = ["$", "refund", "bank", "routing", "deposit", "account number", "direct debit", "退税", "银行", "存款"];
+  for (const plan of Object.keys(VARIANTS))
+    for (const lang of ["en", "zh-Hans", "zh-Hant"]) {
+      const text = describeStage("review_approved", lang, planRecord(plan)).clientMessage;
+      assert.ok(!/\d{3}[-.\s)]*\d{3,4}/.test(text), `${plan} ${lang} has a phone-like number`);
+      for (const word of MONEY_WORDS) assert.ok(!text.toLowerCase().includes(word), `${plan} ${lang} says ${word}`);
+    }
 });

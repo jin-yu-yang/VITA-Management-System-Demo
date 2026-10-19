@@ -1822,3 +1822,14 @@ test("the client's applications while they load, and when they couldn't", () => 
   assert.match(failed, /无法载入您的申请。/);
   assert.match(applicationsScreen(baseState({ cases: [] })), /No applications yet/, "no lists means loaded");
 });
+
+test("the status panel shows the variant", () => {
+  const record = caseRecord({ stage: "review_approved", revision: 8, intakeVerified: true, signingPlan: "portal", signingAppointmentAt: null });
+  const html = progressScreen(baseState({ screen: "progress", savedCase: record }));
+  const message = describeStage("review_approved", "en", record).clientMessage;
+  assert.ok(message.includes("TaxSlayer Customer Portal"));
+  // shown in the status panel and in the review panel
+  assert.equal(html.split(message).length - 1, 2);
+  const legacy = progressScreen(baseState({ screen: "progress", savedCase: { ...record, signingPlan: null } }));
+  assert.ok(!legacy.includes("Customer Portal"));
+});

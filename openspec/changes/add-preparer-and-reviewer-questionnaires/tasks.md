@@ -104,7 +104,7 @@
   - the task's Log contact form starts with the task's purpose chosen (D5).
 
   Tests in `tests/admin-views.test.mjs`, `tests/office-views.test.mjs` and `tests/staff-views.test.mjs`. Audit every `requestId` read on a follow-up.
-- [ ] 5.7 The Ready to exit variants (design D11):
+- [x] 5.7 The Ready to exit variants (design D11):
   - `describeStage(stage, lang, record)`;
   - the four keys in `src/client-text.mjs` (English and 简体);
   - `{when}` formatting;
@@ -118,7 +118,7 @@
 
   Tests in `tests/store.test.mjs`, `tests/admin-views.test.mjs` and `tests/office-views.test.mjs`: open → refused, resolved with each outcome → offered.
 - [x] 5.9 Styles for the forms, the collapsible groups and the comparison in `src/styles.css`, reusing existing staff-form classes.
-- [ ] 5.10 Run `npm test` and `npm run build:hant -- --check`.
+- [x] 5.10 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 6. Story and full checks
 

@@ -513,7 +513,7 @@ test("legacy pending approval still shows the conversation form", …) // approv
   - `signingWhen(isoMinute, lang): string`. It reads the `YYYY-MM-DDTHH:MM` parts and builds `new Date(Date.UTC(...))`. It formats with `Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" })`, where `locale` is `en-US`, `zh-CN` or `zh-Hant` for the screen's language.
   - `describeStage(stage, lang, record)`: at `review_approved` with `record.signingPlan` set, `clientMessage` is that variant, in English too. Without a plan, or at any other stage, the result is as today. The status panel and the review panel in `src/client-views.mjs` pass the record.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```js
 test("each Ready to exit variant in English and 简体", …)         // the four plans × en/zh; exact strings from design D11
@@ -526,10 +526,10 @@ test("no variant names a phone number or a money word", …)         // #91's ph
 test("the status panel shows the variant", …)                      // client-views: a review_approved record with signingPlan 'portal'
 ```
 
-- [ ] **Step 2:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 3:** Add the 简体 and English texts to `src/client-text.mjs`, then implement `signingWhen` and `describeStage`. Run `npm run build:hant` and check the 繁體 of the four keys by eye.
-- [ ] **Step 4:** Run `npm test` and `npm run build:hant -- --check`. Expected: PASS.
-- [ ] **Step 5:** Commit, including `src/zh-hant.mjs`: `git commit -am "Questionnaires: the client's Ready to exit message says how and when to sign"`.
+- [x] **Step 2:** Run `npm test`. Expected: FAIL.
+- [x] **Step 3:** Add the 简体 and English texts to `src/client-text.mjs`, then implement `signingWhen` and `describeStage`. Run `npm run build:hant` and check the 繁體 of the four keys by eye.
+- [x] **Step 4:** Run `npm test` and `npm run build:hant -- --check`. Expected: PASS.
+- [x] **Step 5:** Commit, including `src/zh-hant.mjs`: `git commit -am "Questionnaires: the client's Ready to exit message says how and when to sign"`.
 
 ### Task 9: Story and full checks
 
