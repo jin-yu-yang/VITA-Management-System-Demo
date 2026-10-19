@@ -109,6 +109,8 @@ The database SHALL refuse either move without that confirmation. Neither move SH
 
 Mark ready to e-file SHALL wait for the reviewer's conversation with the client. While the approved review's conversation is not yet recorded as completed, the database SHALL refuse the move as not available. The admin SHALL see "The reviewer still needs to record the conversation with the client." instead of the button, on the case page and on the Follow-ups row.
 
+Mark ready to e-file SHALL also wait for the office to go over the return with the client. While the case has an open follow-up with purpose `go_over_return` (capability `office-follow-up`), the database SHALL refuse the move as not available, and nothing SHALL be recorded. The admin SHALL see "The office still needs to go over the return with the client." instead of the button, on the case page and on the Follow-ups row, and the Follow-ups row SHALL read "Waiting for the office to go over the return with the client.". The wait SHALL end when that follow-up is resolved, whatever the outcome, and when it is cancelled.
+
 #### Scenario: Marking a case e-filed
 - **WHEN** an admin presses Mark e-filed… for Mei Chen's case, ticks the confirmation and confirms
 - **THEN** the dialog had named "Mei Chen" and the application ID, the case is E-filed, and the client's history gains "PCDC e-filed your return."
@@ -116,6 +118,18 @@ Mark ready to e-file SHALL wait for the reviewer's conversation with the client.
 #### Scenario: The reviewer's call comes first
 - **WHEN** a case is at Ready to exit and its reviewer has not yet recorded the conversation with the client
 - **THEN** the admin sees "The reviewer still needs to record the conversation with the client." instead of Mark ready to e-file…, its Follow-ups row reads "Waiting for the reviewer's call with the client.", and the database refuses the move as not available
+
+#### Scenario: The office's go-over comes first
+- **WHEN** a reviewer approved with "no" to going over the return, and the go-over follow-up is still open
+- **THEN** the admin sees "The office still needs to go over the return with the client." instead of Mark ready to e-file…, its Follow-ups row reads "Waiting for the office to go over the return with the client.", and the database refuses the confirmed move as not available, leaving the case at Ready to exit
+
+#### Scenario: Resolved after reaching the client
+- **WHEN** the office resolves the go-over follow-up with outcome reached
+- **THEN** the admin is offered Mark ready to e-file…, its Follow-ups row reads "Waiting for the client to sign Form 8879.", and the database accepts the confirmed move
+
+#### Scenario: Resolved with no further contact
+- **WHEN** the office resolves the go-over follow-up with outcome no further contact
+- **THEN** the admin is offered Mark ready to e-file…, and the database accepts the confirmed move
 
 #### Scenario: Keeping it as it is
 - **WHEN** the admin closes the dialog without confirming
@@ -206,6 +220,17 @@ The client's status panel SHALL show the message for their case's stage, in thei
 | Ready to e-file | You signed Form 8879. PCDC will e-file your return next. | 您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。 |
 | E-filed | Your return was e-filed. The IRS will confirm whether it is accepted. | 您的报税表已电子递交。国税局会确认是否接受。 |
 
+At Ready to exit, the message above SHALL be shown only for a case approved without a reviewer questionnaire (before the questionnaires existed). A case approved with one SHALL show the variant for the signing plan the approval chose (capability `review-and-corrections`):
+
+| Signing plan | Chosen when | English | 简体 |
+|---|---|---|---|
+| Appointment | in person, and the visit was not same-day | Your return has been checked. Please come to PCDC on {when} to sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。请于 {when} 到 PCDC 签署 8879 表，签署后才能递交报税表。 |
+| Same day | in person, on a same-day visit | Your return has been checked. Please sign Form 8879 with a volunteer before you leave today. It is needed before your return can be filed. | 您的报税表已检查完毕。请在今天离开前与志愿者一起签署 8879 表，签署后才能递交报税表。 |
+| Customer Portal | e-sign in the TaxSlayer Customer Portal | Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed. | 您的报税表已检查完毕。请在 TaxSlayer 客户门户（Customer Portal）以电子方式签署 8879 表，签署后才能递交报税表。（门户为英文页面，可用浏览器翻译） |
+| Go over first | the reviewer did not go over the return with the client, whatever the signing method | Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。 |
+
+`{when}` SHALL be the appointment's date and time as the reviewer entered it, in the screen's language, with the weekday and no year. It SHALL never be shifted by the viewer's time zone. The variant SHALL be fixed at approval. The client SHALL read only the signing plan and the appointment, never an answer of either questionnaire.
+
 Draft, Filing in progress, Corrections in progress, Review in progress and Closed SHALL keep today's messages.
 
 Each new move SHALL add one line to the client's history, in their language:
@@ -223,5 +248,29 @@ Earlier history lines SHALL keep their words and translations. No client message
 - **THEN** its history shows "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。"
 
 #### Scenario: No phone number
-- **WHEN** a client reads any new stage message or history line, in any language
+- **WHEN** a client reads any new stage message or history line, in any language, including each Ready to exit variant with an appointment
 - **THEN** none of them contains a phone number
+
+#### Scenario: An appointment to sign
+- **WHEN** the reviewer approves a drop-off case with in person and an appointment of 2026-11-02 14:30, and the client opens their progress page in English
+- **THEN** the status panel reads "Your return has been checked. Please come to PCDC on Monday, November 2 at 2:30 PM to sign Form 8879. It is needed before your return can be filed."
+
+#### Scenario: The same appointment in 简体
+- **WHEN** that client opens the page in 简体, in a browser set to any time zone
+- **THEN** the status panel reads "您的报税表已检查完毕。请于 11月2日星期一 下午2:30 到 PCDC 签署 8879 表，签署后才能递交报税表。"
+
+#### Scenario: Signing on site the same day
+- **WHEN** the reviewer approves a same-day case with in person
+- **THEN** the client's status panel shows the Same day message
+
+#### Scenario: Signing in the Customer Portal
+- **WHEN** the reviewer approves a case with the Customer Portal and yes
+- **THEN** the client's status panel shows the Customer Portal message
+
+#### Scenario: Not yet gone over
+- **WHEN** the reviewer approves with "no" to going over the return and the Customer Portal
+- **THEN** the client's status panel shows the Go over first message, not the Customer Portal one
+
+#### Scenario: A case approved before this change
+- **WHEN** a client opens a case that was approved before the questionnaires existed
+- **THEN** the status panel shows "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed."
