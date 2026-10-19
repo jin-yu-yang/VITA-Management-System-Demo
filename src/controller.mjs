@@ -353,6 +353,9 @@ export function createController({
   // The envelope of the last action whose outcome is unknown. Kept as the very
   // object that was sent, because retrying a copy would be a second action.
   let pendingAction = null;
+  // The screening start for the open case, if one is due or held:
+  // `{ action, inFlight, gaveUp }` (`startScreeningIfDue`).
+  let screeningStart = null;
   // What the save state was before an edit made a version-2 draft dirty
   // ("idle" or "saved"), so an undo can put it back.
   let stateBeforeEdit = "idle";
@@ -787,6 +790,9 @@ export function createController({
     }
     persistSession();
     show();
+    // Also what the reconnect, the focus and the online event come through: a
+    // held offline start is sent again here, unchanged.
+    void startScreeningIfDue();
   }
 
   function clearSelection() {
@@ -810,6 +816,7 @@ export function createController({
     // simulated upload failure on one request, means nothing on another.
     state.openPanels = [];
     pendingAction = null;
+    screeningStart = null;
     state.retryable = false;
   }
 
@@ -1003,6 +1010,8 @@ export function createController({
     noteUnloaded();
     persistSession();
     show();
+    // A reload on a case page: the people and the restored persona are in.
+    void startScreeningIfDue();
   }
 
   async function start() {
@@ -1248,6 +1257,7 @@ export function createController({
     state.caseTab = "overview";
     persistSession();
     show();
+    void startScreeningIfDue();
   }
 
   // The work board's filters, one choice at a time. They are this window's
@@ -1352,6 +1362,72 @@ export function createController({
     // Opening a case is a screen change; reading the same case again in place
     // (`navigate: false`, which is how a board control gets its case) is not.
     show(move);
+    void startScreeningIfDue();
+  }
+
+  // Screening starts when an admin first opens a Request sent case's page
+  // (design D4). An open is not a press: nothing is disabled, and no refusal is
+  // shown. A race ("another admin got there first", a stale revision) is
+  // answered by re-reading the case. Any other refusal gives up on this case in
+  // this window. An offline start is held whole and resent unchanged, as
+  // dispatch's pendingAction is, so its receipt answers the replay. The store
+  // turns VT003 into CONFLICT and VT004 into INVALID_TRANSITION (contracts.mjs).
+  const SCREENING_RACES = Object.freeze(["INVALID_TRANSITION", "CONFLICT"]);
+
+  function actingAdmin() {
+    if (state.principal?.access !== "presenter") return false;
+    const person = (state.people ?? []).find((entry) => entry?.id === state.selectedPersonId);
+    return Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
+  }
+
+  async function startScreeningIfDue({ afterRace = false } = {}) {
+    const record = state.savedCase;
+    if (!record || record.stage !== "received" || state.screen !== "staff-case" || !actingAdmin()) return;
+    if (state.busy || pendingAction) return;
+    if (screeningStart?.action.caseId !== record.id)
+      screeningStart = {
+        action: {
+          actionId: newActionId(),
+          caseId: record.id,
+          expectedRevision: Number(record.revision),
+          personId: state.selectedPersonId,
+          type: "START_SCREENING",
+          payload: {},
+        },
+        inFlight: false,
+        gaveUp: false,
+      };
+    if (screeningStart.inFlight || screeningStart.gaveUp) return;
+    const held = screeningStart;
+    held.inFlight = true;
+    let raced = false;
+    try {
+      await store.act(held.action);
+      noteConnected();
+      if (screeningStart === held) screeningStart = null;
+    } catch (error) {
+      held.inFlight = false;
+      if (UNKNOWN_OUTCOME.includes(error?.code)) {
+        // Held whole for the next refresh; nothing is shown for it.
+        if (error?.code === "OFFLINE") state.connection = "offline";
+        show();
+        return;
+      }
+      if (SCREENING_RACES.includes(error?.code)) {
+        raced = true;
+        if (screeningStart === held) screeningStart = null;
+      } else held.gaveUp = true;
+    }
+    try {
+      await loadSelected();
+    } catch {
+      /* the next refresh reads it */
+    }
+    show();
+    // The case changed but is still at Request sent: try once more at the new
+    // revision. A second race in a row waits for the next open or refresh.
+    if (raced && !afterRace && state.savedCase?.stage === "received")
+      await startScreeningIfDue({ afterRace: true });
   }
 
   // Explicit and idempotent: the pending action id lives in window state until
