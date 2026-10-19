@@ -380,7 +380,7 @@ await t.test("a yes approval is not held up", async () => {
   - `RESUBMIT_REVIEW` adds `questionnaire` next to `resolution`;
   - `APPROVE_REVIEW: (d, v) => ({ questionnaire: reviewerQuestionnaire(v, d.service) })`. The approve button carries `data-service`.
 
-- [ ] **Step 1: Write the failing tests** in `tests/questionnaires.test.mjs` and `tests/case-actions.test.mjs`:
+- [x] **Step 1: Write the failing tests** in `tests/questionnaires.test.mjs` and `tests/case-actions.test.mjs`:
 
 ```js
 test("signDefault follows service", () => {
@@ -411,10 +411,10 @@ test("goOverPrefill uses the New York date", …)          // contactedAt 2026-1
 test("SUBMIT_REVIEW payload is { questionnaire }", …)    // replaces the old `{}` expectation
 ```
 
-- [ ] **Step 2:** Run `npm test`. Expected: FAIL (module not found).
-- [ ] **Step 3:** Implement `src/questionnaires.mjs` and the three builders. Hidden branches are dropped by rule: `wentOver*` only when yes; the appointment only when `needsAppointment`; in a group, only the fields its result calls for. A group with every field blank is `null` (or left out of `local`).
-- [ ] **Step 4:** Run `npm test`. Expected: PASS.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: payload builders, shared vocabulary and the contact-log prefill"`.
+- [x] **Step 2:** Run `npm test`. Expected: FAIL (module not found).
+- [x] **Step 3:** Implement `src/questionnaires.mjs` and the three builders. Hidden branches are dropped by rule: `wentOver*` only when yes; the appointment only when `needsAppointment`; in a group, only the fields its result calls for. A group with every field blank is `null` (or left out of `local`).
+- [x] **Step 4:** Run `npm test`. Expected: PASS.
+- [x] **Step 5:** Commit: `git commit -am "Questionnaires: payload builders, shared vocabulary and the contact-log prefill"`.
 
 ### Task 7: Store, forms and the case page
 

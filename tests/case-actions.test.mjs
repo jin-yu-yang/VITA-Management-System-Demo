@@ -15,6 +15,34 @@ import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 
 const invalid = (error) => error.code === "VALIDATION";
 
+const PREPARER_FORM = {
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: "yes",
+  stateForgivenessSet: "yes",
+  readyForReviewOn: "2026-10-16",
+};
+const PREPARER_QUESTIONNAIRE = {
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: "2026-10-16",
+};
+const REVIEWER_FORM = {
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: "no",
+  signMethod: "portal",
+};
+const REVIEWER_QUESTIONNAIRE = {
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: false,
+  signMethod: "portal",
+  exitForm: { federal: null, state: null, local: [] },
+};
+
 test("every action builds exactly the payload the contract names", () => {
   const cases = [
     ["SUBMIT", {}, {}, { confirmed: true }],
@@ -33,9 +61,19 @@ test("every action builds exactly the payload the contract names", () => {
       },
     ],
     ["CLAIM_PREPARATION", {}, {}, {}],
-    ["SUBMIT_REVIEW", {}, {}, {}],
+    [
+      "SUBMIT_REVIEW",
+      {},
+      PREPARER_FORM,
+      { questionnaire: PREPARER_QUESTIONNAIRE },
+    ],
     ["CLAIM_REVIEW", {}, {}, {}],
-    ["APPROVE_REVIEW", {}, {}, {}],
+    [
+      "APPROVE_REVIEW",
+      { service: "online" },
+      REVIEWER_FORM,
+      { questionnaire: REVIEWER_QUESTIONNAIRE },
+    ],
     ["REMIND", {}, {}, {}],
     [
       "REQUEST_DOCUMENT",
@@ -77,8 +115,8 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "RESUBMIT_REVIEW",
       {},
-      { resolution: "Household size corrected" },
-      { resolution: "Household size corrected" },
+      { ...PREPARER_FORM, resolution: "Household size corrected" },
+      { questionnaire: PREPARER_QUESTIONNAIRE, resolution: "Household size corrected" },
     ],
     [
       "RECORD_REVIEW_CONTACT",
@@ -176,6 +214,11 @@ test("a missing required field refuses before anything is sent", () => {
     ["REQUEST_CORRECTIONS", {}, {}],
     ["REQUEST_CORRECTIONS", {}, { findings: "\n\t " }],
     ["RESUBMIT_REVIEW", {}, {}],
+    ["RESUBMIT_REVIEW", {}, { resolution: "Fixed" }],
+    ["RESUBMIT_REVIEW", {}, { ...PREPARER_FORM }],
+    ["SUBMIT_REVIEW", {}, {}],
+    ["APPROVE_REVIEW", {}, {}],
+    ["APPROVE_REVIEW", { service: "drop_off" }, { ...REVIEWER_FORM, signMethod: "in_person" }],
     ["RECORD_REVIEW_CONTACT", {}, { note: "A note" }],
     ["RECORD_REVIEW_CONTACT", {}, { outcome: "reached" }],
     ["CLOSE_CASE", {}, {}],

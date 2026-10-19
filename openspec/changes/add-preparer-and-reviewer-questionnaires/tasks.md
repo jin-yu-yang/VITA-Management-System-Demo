@@ -71,14 +71,14 @@
 
 ## 4. Browser: payloads, prefill and the store
 
-- [ ] 4.1 Write failing tests in `tests/questionnaires.test.mjs` and `tests/case-actions.test.mjs`, then build the three payloads from their forms. The builders apply the same rules as the database, each with a clear sentence (design D4).
-- [ ] 4.2 The contact-log prefill `goOverPrefill(contacts)` (design D9), with tests for the latest entry, either direction, the method mapping and the New York date.
+- [x] 4.1 Write failing tests in `tests/questionnaires.test.mjs` and `tests/case-actions.test.mjs`, then build the three payloads from their forms. The builders apply the same rules as the database, each with a clear sentence (design D4).
+- [x] 4.2 The contact-log prefill `goOverPrefill(contacts)` (design D9), with tests for the latest entry, either direction, the method mapping and the New York date.
 - [ ] 4.3 `src/supabase-store.mjs`:
   - load both tables for staff only (`STAFF_TABLES`, `mapStaffCase`), never for the applicant adapter;
   - `mapFollowup` passes `purpose`;
   - `mapCase` passes `signingPlan` and `signingAppointmentAt`, for both adapters;
   - tests in `tests/store.test.mjs`.
-- [ ] 4.4 Update the shape notes in `src/contracts.mjs`.
+- [x] 4.4 Update the shape notes in `src/contracts.mjs`.
 
 ## 5. Browser: forms and the case page
 
