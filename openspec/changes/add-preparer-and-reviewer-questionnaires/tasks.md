@@ -122,10 +122,10 @@
 
 ## 6. Story and full checks
 
-- [ ] 6.1 Update `tests/browser.mjs`:
+- [x] 6.1 Update `tests/browser.mjs`:
   - the story fills the preparer form on submit and on resubmit, and the reviewer form on approve;
   - add one path that answers no, finds the task in Follow-ups, sees Mark ready to e-file wait, resolves the task, and then sees Mark ready to e-file offered;
   - remove the story's "Record this conversation" press after approval, and assert that no such form is offered (D10);
   - the client window shows the variant the approval chose.
-- [ ] 6.2 Run `npm run test:browser`.
-- [ ] 6.3 Run `npx openspec validate --all`, and confirm that `npm run build:intake` leaves nothing to commit.
+- [x] 6.2 Run `npm run test:browser`.
+- [x] 6.3 Run `npx openspec validate --all`, and confirm that `npm run build:intake` leaves nothing to commit.

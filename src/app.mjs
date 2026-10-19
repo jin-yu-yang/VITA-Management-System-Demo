@@ -637,7 +637,12 @@ if (!config) {
     // `shown` is the count of recorded errors when the press began: the
     // error itself is cloned by getState, so it cannot be compared.
     if (state.errorCount !== shown) return;
-    const known = typeof error?.message === "string" && Object.hasOwn(SENTENCES, error.message);
+    // The payload builders' own VALIDATION sentences (case-actions.mjs,
+    // questionnaires.mjs) are fixed, staff-facing text that names what to fix;
+    // a refused form must show them rather than "Something went wrong."
+    const known =
+      typeof error?.message === "string" &&
+      (Object.hasOwn(SENTENCES, error.message) || error.code === "VALIDATION");
     controller.noteLocalFailure({ code: error?.code ?? "SERVER_ERROR", message: known ? error.message : "Something went wrong." });
   }
 
