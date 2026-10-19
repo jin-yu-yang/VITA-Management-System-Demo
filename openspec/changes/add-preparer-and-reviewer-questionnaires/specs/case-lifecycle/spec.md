@@ -67,3 +67,43 @@ Earlier history lines SHALL keep their words and translations. No client message
 #### Scenario: A case approved before this change
 - **WHEN** a client opens a case that was approved before the questionnaires existed
 - **THEN** the status panel shows "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed."
+
+### Requirement: Admins record signing and e-filing, with a confirmation
+At Ready to exit, an admin SHALL be offered **Mark ready to e-file**. At Ready to e-file, an admin SHALL be offered **Mark e-filed**. Both SHALL be offered on the case page and on that case's Follow-ups row. Each SHALL open a confirmation dialog that:
+- names the client (their first and last name from the application, or "this client" when both are empty) and the application ID;
+- says what the client will be told;
+- requires a confirmation box to be ticked before the move is sent.
+
+The database SHALL refuse either move without that confirmation. Neither move SHALL have an undo. Volunteers SHALL see neither button.
+
+Mark ready to e-file SHALL wait for the reviewer's conversation with the client. While the approved review's conversation is not yet recorded as completed, the database SHALL refuse the move as not available. The admin SHALL see "The reviewer still needs to record the conversation with the client." instead of the button, on the case page and on the Follow-ups row.
+
+Mark ready to e-file SHALL also wait for the office to go over the return with the client. While the case has an open follow-up with purpose `go_over_return` (capability `office-follow-up`), the database SHALL refuse the move as not available, and nothing SHALL be recorded. The admin SHALL see "The office still needs to go over the return with the client." instead of the button, on the case page and on the Follow-ups row, and the Follow-ups row SHALL read "Waiting for the office to go over the return with the client.". The wait SHALL end when that follow-up is resolved, whatever the outcome, and when it is cancelled.
+
+#### Scenario: Marking a case e-filed
+- **WHEN** an admin presses Mark e-filed… for Mei Chen's case, ticks the confirmation and confirms
+- **THEN** the dialog had named "Mei Chen" and the application ID, the case is E-filed, and the client's history gains "PCDC e-filed your return."
+
+#### Scenario: The reviewer's call comes first
+- **WHEN** a case is at Ready to exit and its reviewer has not yet recorded the conversation with the client
+- **THEN** the admin sees "The reviewer still needs to record the conversation with the client." instead of Mark ready to e-file…, its Follow-ups row reads "Waiting for the reviewer's call with the client.", and the database refuses the move as not available
+
+#### Scenario: The office's go-over comes first
+- **WHEN** a reviewer approved with "no" to going over the return, and the go-over follow-up is still open
+- **THEN** the admin sees "The office still needs to go over the return with the client." instead of Mark ready to e-file…, its Follow-ups row reads "Waiting for the office to go over the return with the client.", and the database refuses the confirmed move as not available, leaving the case at Ready to exit
+
+#### Scenario: Resolved after reaching the client
+- **WHEN** the office resolves the go-over follow-up with outcome reached
+- **THEN** the admin is offered Mark ready to e-file…, its Follow-ups row reads "Waiting for the client to sign Form 8879.", and the database accepts the confirmed move
+
+#### Scenario: Resolved with no further contact
+- **WHEN** the office resolves the go-over follow-up with outcome no further contact
+- **THEN** the admin is offered Mark ready to e-file…, and the database accepts the confirmed move
+
+#### Scenario: Keeping it as it is
+- **WHEN** the admin closes the dialog without confirming
+- **THEN** the case stays at Ready to e-file and nothing is sent
+
+#### Scenario: From Follow-ups
+- **WHEN** an admin presses Mark ready to e-file… on a Follow-ups row
+- **THEN** the same confirmation opens without leaving Follow-ups

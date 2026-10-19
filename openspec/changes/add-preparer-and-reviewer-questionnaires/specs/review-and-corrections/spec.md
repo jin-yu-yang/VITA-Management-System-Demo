@@ -183,7 +183,7 @@ An approval answered "yes" SHALL meet Mark ready to e-file's wait for the review
 
 #### Scenario: No hands the step to the office
 - **WHEN** the reviewer approves with "no"
-- **THEN** the review's contact step is completed with no outcome, the case has an open office follow-up, and "Your next step" says the office will go over the return with the client
+- **THEN** the review's contact step is completed with no outcome, the case has an open office follow-up, and "Your next step" says the office will go over the return with the client, and Mark ready to e-file waits for that follow-up (capability `case-lifecycle`)
 
 #### Scenario: Recording a conversation after a questionnaire approval is refused
 - **WHEN** the reviewer sends `RECORD_REVIEW_CONTACT` on a case approved with a questionnaire

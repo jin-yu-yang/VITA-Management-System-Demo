@@ -13,7 +13,7 @@
 
 **Tech Stack:** PostgreSQL / Supabase (plpgsql, RLS, realtime), plain ES modules (`src/*.mjs`), `node:test`, Playwright (`tests/browser.mjs`).
 
-**Spec:** `openspec/changes/add-preparer-and-reviewer-questionnaires/`. Read `design.md` (D1–D12 and Open Questions) with this plan, and these four delta specs:
+**Spec:** `openspec/changes/add-preparer-and-reviewer-questionnaires/`. Read `design.md` (D1–D13) with this plan, and these four delta specs:
 - `specs/review-and-corrections/spec.md`;
 - `specs/office-follow-up/spec.md`;
 - `specs/case-lifecycle/spec.md`;
@@ -23,7 +23,7 @@
 
 ## Global Constraints
 
-- **Do not start until Hailey has ruled on design Q1** (tasks 1.3). Task 4a is written from that ruling.
+- **Design Q1 is ruled** (2026-10-19, design D13): Mark ready to e-file waits while the case has an open `go_over_return` follow-up, until it is resolved with any outcome. Task 4a builds it.
 - **Stages** use #91's stored keys with its staff names: `preparing` Filing in progress (preparing), `corrections_required` Corrections in progress, `review_ready` Pending review, `reviewing` Review in progress, `review_approved` Ready to exit, `ready_to_efile` Ready to e-file.
 - **Migrations are hand-written and final once applied.**
   - Add one new file, `supabase/migrations/033_review_questionnaires.sql`. It is numbered exactly one after main's newest migration, never skipping a number.
@@ -33,7 +33,8 @@
   - `check_payload` from 032;
   - `act_submit_review` and `act_resubmit_review` from 006;
   - `act_approve_review` from 021;
-  - `apply_fixture_scenario` from 031.
+  - `apply_fixture_scenario` from 031;
+  - `act_mark_ready_to_efile` from 032 (Task 4a).
 
   `vitally_apply_action` and `check_operation_authority` (newest 032) are **not** redefined. Keep every client message string as it is.
 - **Fictional data only** in fixtures and tests.
@@ -52,6 +53,7 @@
 - **Fixed strings:**
   - follow-up reason: `Go over the return with the client: the reviewer did not.`;
   - follow-up title: `Go over the return with the client`;
+  - the D13 wait: `The office still needs to go over the return with the client.` (the admin's explanation) and `Waiting for the office to go over the return with the client.` (the Follow-ups `signing` row);
   - empty answers: `No questionnaire was recorded for this version.`;
   - the four Ready to exit variants: design D11, exactly.
 - **Checks to run:**
@@ -74,6 +76,7 @@
 6. **The prefill's date is New York's,** not the browser's or UTC. A go-over call at 10:30 PM New York time on 10/14 is 10/15 in UTC. Test: Task 6 `goOverPrefill uses the New York date`.
 7. **The appointment is wall-clock time.** A client browser in another zone must show the time the reviewer typed. Test: Task 8a `appointment text ignores the time zone` (run with `TZ=Asia/Shanghai`).
 8. **#91's gate:** a Yes approval reaches Ready to e-file with no `RECORD_REVIEW_CONTACT`. Test: Task 4 `yes meets the ready-to-e-file gate`.
+9. **The D13 wait ends on any resolution,** not only "reached", and a Yes approval is never held up by it. Tests: Task 4a `the wait ends when the go-over is resolved: reached / no_further_contact` and `a yes approval is not held up`.
 
 ---
 
@@ -82,7 +85,7 @@
 **Files:** none changed except, possibly, this change's artifacts and the migration's name.
 
 - [x] **Step 1:** #91 is merged into `main`, and main (71e84d1) is merged into this branch. `/opsx:update` brought the artifacts up to date (tasks 1.1, 1.2).
-- [ ] **Step 2:** Confirm Hailey's ruling on design Q1 is written into design.md, `specs/office-follow-up/spec.md` and Task 4a (tasks 1.3). If it is not, stop and tell the user.
+- [x] **Step 2:** Hailey's ruling on design Q1 is written into design D13, the `case-lifecycle` delta spec and Task 4a (tasks 1.3).
 - [ ] **Step 3:** Run `git fetch origin && git merge origin/main`, then `ls supabase/migrations | tail -1`. The migration is one after that number. If it is no longer 033, rename it everywhere in this plan, in design.md and in tasks.md.
 - [ ] **Step 4:** For every function in design D12, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1`. If any newest definition is no longer the file D12 names, update D12 and copy from the new one.
 - [ ] **Step 5:** Tick task 1.4 in `tasks.md` and commit: `git commit -am "Questionnaires: main merged; migration numbered after main's newest"`.
@@ -203,7 +206,7 @@ const BAD_REVIEWER = {
     - when `wentOver` is false, finds the office person exactly as `act_escalate_contact` (004) does, and inserts an `admin_followups` row (`purpose 'go_over_return'`, `request_id null`, the fixed reason, `created_by_person_id` = the reviewer);
     - updates the review to `status 'approved'`, `decided_at now()`, `client_contact_status 'completed'`, `client_contacted_at now()`, and `client_contact_outcome` `'reached'` on yes or null on no (design D10), in place of today's `client_contact_status 'pending'`;
     - sets `cases.stage = 'review_approved'` and, in the same update, `signing_plan` and `signing_appointment_at` by D11's order: `go_over_first` when not gone over; else `portal`; else `same_day` for a same-day case; else `appointment` with the appointment.
-  - `act_record_review_contact` and `act_mark_ready_to_efile` are not re-created. The pending check in `act_record_review_contact` refuses it after such an approval. #91's gate accepts a Yes approval because the step is `completed`.
+  - `act_record_review_contact` is not re-created. Its pending check refuses it after such an approval. #91's gate accepts a Yes approval because the step is `completed`. (`act_mark_ready_to_efile` gains the D13 wait in Task 4a.)
   - The returned `detail` of each handler gains nothing. Answers never go into history, and the approval's client message (021) is unchanged.
   - Test support: `f.approvedCase()` approves with a valid reviewer questionnaire (Yes). `f.approvedCase({ called: false })` becomes `f.legacyApprovedCase()`: it inserts an approved review with `client_contact_status 'pending'` and no questionnaire, directly through `f.sql`.
 
@@ -237,9 +240,86 @@ test("client messages carry no answer", …)        // assertPlainClientMessage 
 - [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: everything passes, including #91's stage suite and #88's contact suite.
 - [ ] **Step 5:** Commit: `git commit -am "Questionnaires: hand-offs store answers; no go-over opens an office task"`.
 
-### Task 4a: A No approval and Mark ready to e-file (design Q1)
+### Task 4a: Mark ready to e-file waits for the office's go-over (design D13)
 
-**Blocked on Hailey's ruling.** `/opsx:update` writes this task (files, interfaces, tests and steps) from the ruling, before apply starts (tasks 1.3). If the task still reads like this at apply, stop and ask the user.
+Hailey's ruling on Q1 (2026-10-19). While the case has an open `go_over_return` follow-up, Mark ready to e-file is refused. The wait ends when that follow-up is resolved, whatever the outcome.
+
+**Files:**
+- Modify: `supabase/migrations/033_review_questionnaires.sql`, section 6a: `act_mark_ready_to_efile`, copied verbatim **from 032**.
+- Modify: `src/supabase-store.mjs` (the list read), `src/admin-views.mjs` (`adminEligibility.markReadyToEfile`), `src/office-views.mjs` (`needed`, the `signing` row).
+- Test: `tests/database-stages.mjs`, `tests/store.test.mjs`, `tests/admin-views.test.mjs`, `tests/office-views.test.mjs`.
+
+**Interfaces:**
+- Consumes: Task 2's `admin_followups.purpose`, and Task 4's go-over follow-up and `f.approvedCase()`.
+- Produces:
+  - `act_mark_ready_to_efile`, 032's body with one added check after the contact-step check, marked `-- 033`:
+
+```sql
+ if exists(select 1 from public.admin_followups
+   where workspace_id=p_case.workspace_id and case_id=p_case.id
+    and purpose='go_over_return' and status='open') then -- 033
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION'; -- 033
+ end if; -- 033
+```
+
+    Its client message, its stage check and 032's contact-step check stay as they are.
+  - Test support: `f.approvedCase({ wentOver: false })` approves with "no" (and the Customer Portal), which opens the go-over follow-up. Its default stays a Yes approval.
+  - Store, list rows: the grouped read of open `admin_followups` selects `case_id,assignee_person_id,purpose`. Each row gains `goOverOpen: open.some((row) => row.purpose === "go_over_return")`. `openFollowups` and `followupAssigneeIds` are unchanged.
+  - `adminEligibility.markReadyToEfile`, after the reviewer's-call check:
+    - a list row reads `record.goOverOpen`;
+    - a full case reads `(record.followups ?? []).some((f) => f?.purpose === "go_over_return" && f?.status === "open")`;
+    - when true it returns `refused("The office still needs to go over the return with the client.")`.
+
+    #91's "The reviewer still needs to record the conversation with the client." keeps priority, because it comes first.
+  - Follow-ups `needed()` for `signing`:
+    - "Waiting for the reviewer's call with the client." when `reviewContactStatus` is not `completed`;
+    - otherwise "Waiting for the office to go over the return with the client." when `goOverOpen`;
+    - otherwise "Waiting for the client to sign Form 8879.".
+
+    `rowAction` already shows `explain(decision)` in place of the button.
+
+- [ ] **Step 1: Write the failing database tests** in `tests/database-stages.mjs`, beside "ready to e-file waits for the reviewer's call":
+
+```js
+await t.test("ready to e-file waits for the office's go-over", async () => {
+  const caseId = await f.approvedCase({ wentOver: false });
+  const revision = await revisionOf(caseId);
+  await assert.rejects(
+    () => f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED),
+    rejected("INVALID_TRANSITION"),
+  );
+  assert.equal(await stageOf(caseId), "review_approved");
+  assert.equal(await revisionOf(caseId), revision); // nothing recorded, no client line
+});
+for (const outcome of ["reached", "no_further_contact"])
+  await t.test(`the wait ends when the go-over is resolved: ${outcome}`, async () => {
+    const caseId = await f.approvedCase({ wentOver: false });
+    const task = await goOverTask(caseId); // the open go_over_return row, via f.sql
+    await f.act(f.presenter, caseId, task.assignee, "RESOLVE_FOLLOWUP", {
+      followupId: task.id, outcome, note: "Fictional: went over the return by phone.",
+    });
+    await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+    assert.equal(await stageOf(caseId), "ready_to_efile");
+  });
+await t.test("a yes approval is not held up", async () => {
+  const caseId = await f.approvedCase(); // yes: no follow-up
+  await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", CONFIRMED);
+  assert.equal(await stageOf(caseId), "ready_to_efile");
+});
+```
+
+  Use the suite's existing helpers for the stage and revision; add `revisionOf` or `goOverTask` only if they don't exist. The resolving persona is the task's assignee (the workspace's default follow-up person).
+- [ ] **Step 2: Write the failing browser-side tests:**
+  - `tests/store.test.mjs`: a list row gets `goOverOpen` true for an open `go_over_return` task, false for an open `request_documents` task only, false with none.
+  - `tests/admin-views.test.mjs`:
+    - `markReadyToEfile` is refused with the exact sentence on a full case with an open go-over task, and on a list row with `goOverOpen: true`;
+    - it is allowed once that task is `resolved` (outcome `reached`, and again `no_further_contact`);
+    - a legacy pending call still gives #91's sentence.
+  - `tests/office-views.test.mjs`: the `signing` row reads "Waiting for the office to go over the return with the client." and shows the explanation, not the button, while `goOverOpen`. It reads "Waiting for the client to sign Form 8879." with **Mark ready to e-file…** once it is false.
+- [ ] **Step 3:** Run `npm run test:database` and `npm test`. Expected: the new tests FAIL.
+- [ ] **Step 4:** Implement section 6a and the three browser changes, as in Interfaces.
+- [ ] **Step 5:** Run `npm run db:migrate:test && npm run test:database`, then `npm test`. Expected: PASS, including #91's existing gate tests.
+- [ ] **Step 6:** Tick tasks 3.5 and 5.8, and commit: `git commit -am "Questionnaires: Mark ready to e-file waits for the office's go-over"`.
 
 ### Task 5: Fixtures
 
@@ -457,7 +537,7 @@ test("the status panel shows the variant", …)                      // client-v
 - Modify: `openspec/changes/add-preparer-and-reviewer-questionnaires/tasks.md` (ticks).
 
 - [ ] **Step 1:** Add `fillPreparer(page, answers)` and `fillReviewer(page, answers)` beside the story's other form helpers. Use them before each of the three presses (fictional answers). On resubmit, assert the prefill: the method is already chosen and the date is today. On approve, assert that the reviewer form is above the Approve button and that no dialog opened. Open one Exit Form group to fill it.
-- [ ] **Step 2:** Add one path in which the reviewer answers "no" and approves. An office persona then finds the case's "Call the client" row in Follow-ups, opens its drawer, sees the go-over task, and logs a contact whose purpose is already "Go over tax return". The client window shows the Go over first message and still passes the `MONEY_WORDS` check.
+- [ ] **Step 2:** Add one path in which the reviewer answers "no" and approves. An office persona then finds the case's "Call the client" row in Follow-ups, opens its drawer, sees the go-over task, and logs a contact whose purpose is already "Go over tax return". Before the task is resolved, the case's `signing` row reads "Waiting for the office to go over the return with the client." with no Mark button. After the office resolves it, **Mark ready to e-file…** is offered (D13). The client window shows the Go over first message and still passes the `MONEY_WORDS` check.
 - [ ] **Step 2a:** Drop the story's "Record this conversation" press after its approval. Assert instead that the reviewer's next step shows no `RECORD_REVIEW_CONTACT` control and reads the D10 line. Remove the wait for the client message "A volunteer spoke with you about the next service step.", but keep the internal-text and `MONEY_WORDS` checks on the client window. Where #91's story marks the case ready to e-file, it now does so straight after a Yes approval. The client window shows the variant the approval chose.
 - [ ] **Step 3:** Run `npm run test:browser`. Expected: all pass (about 11–16 minutes).
 - [ ] **Step 4:** Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.

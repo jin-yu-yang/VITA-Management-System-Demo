@@ -34,7 +34,7 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
 - From: office follow-ups exist only for an unanswered document request.
 - To: an approval that says the return was not gone over also opens an office follow-up to go over it with the client. The office works it in Follow-ups like any task: it logs contacts on it in the contact log and resolves it with the existing resolve action.
 - Impact: `admin_followups` gains a `purpose` with the contact log's own words (`request_documents`, `go_over_return`), and `request_id` becomes optional. Existing rows become `request_documents`. A contact logged on a task starts with the task's purpose chosen.
-- **Open (Q1, Hailey decides):** whether Mark ready to e-file must wait while that follow-up is open. design.md gives Claude's proposal.
+- Mark ready to e-file waits while that follow-up is open. The wait ends when it is resolved, whatever the outcome (Hailey's ruling on Q1; design D13).
 
 **The reviewer's contact step after approval**
 
@@ -79,7 +79,9 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
 
 ### Modified Capabilities
 
-- `case-lifecycle`: the client's Ready to exit message gets four variants, chosen at approval ("Clients are told at each new step").
+- `case-lifecycle`:
+  - the client's Ready to exit message gets four variants, chosen at approval ("Clients are told at each new step");
+  - Mark ready to e-file also waits while the case has an open go-over follow-up ("Admins record signing and e-filing, with a confirmation").
 - `staff-case-work`: a contact logged on a follow-up task starts with the task's purpose chosen ("Office follow-up contacts are logged in the contact log").
 
 ## Impact
@@ -89,7 +91,7 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
   - `admin_followups.purpose`, and `request_id` made nullable;
   - `cases.signing_plan` and `cases.signing_appointment_at`, which the client reads;
   - new `check_payload` branches for the three actions;
-  - new versions of `act_submit_review`, `act_resubmit_review` and `act_approve_review`;
+  - new versions of `act_submit_review`, `act_resubmit_review`, `act_approve_review` and `act_mark_ready_to_efile`;
   - fixtures (`apply_fixture_scenario`) that seed fictional answers.
 
   design.md lists every redefined function and the migration it is copied from.
@@ -107,4 +109,5 @@ A preparer sends a return to review, and a reviewer approves it, by pressing one
   - `tests/database-review.mjs`, `tests/database-stages.mjs`, `tests/database-contacts.mjs`, and the fixture and realtime database suites;
   - `tests/browser.mjs` (the story fills the forms).
 - **Unchanged:** the intake catalogue, the approval's client history line, and the `RECORD_REVIEW_CONTACT` action itself.
+- **The client can now read `cases.signing_plan` and `cases.signing_appointment_at`** on their own case. The PR description must call this out (design D11).
 - **Revises ruling R28:** the review workflow now stores refund and owed amounts, payment methods and debit dates, staff-only, for the Exit Form. It never stores account or routing numbers. The PR must call this out (design D3).

@@ -8,7 +8,7 @@ call is marked so it can be checked.
 **Updated on 2026-10-19 for main after #91 and #88.** The lifecycle chain's part 1 (#91,
 `add-screening-and-efiling-stages`) and the contact log (#88, `add-contact-log`) have merged. The section
 "Update after #91 and #88" at the end records what Hailey asked for in that update. Where it differs from the
-approved design above, it wins. One question in it is still open for Hailey (design, Open Questions Q1).
+approved design above, it wins. Its one open question, Q1, was ruled on 2026-10-19 (design D13).
 
 ---
 
@@ -212,3 +212,14 @@ Asked for by Hailey once #91 merged. Main at 71e84d1 was merged into the branch.
   - not yet gone over with the client.
 
   Then `npm run build:hant`.
+
+### Q1 ruled by Hailey (2026-10-19)
+
+Claude's proposal is accepted:
+- Mark ready to e-file waits while the case has an open "go over the return" follow-up.
+- The database refuses the move, and the admin sees "The office still needs to go over the return with the
+  client."
+- The Follow-ups signing row reads "Waiting for the office to go over the return with the client."
+- The wait ends when that follow-up is resolved, whatever the outcome.
+
+design D13 has the decision.

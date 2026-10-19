@@ -2,7 +2,7 @@
 
 - [x] 1.1 #91 (lifecycle chain, part 1) is merged into `main`. `/opsx:update` renamed the stages in every artifact and pointed the migration at the newest definitions (design D12). #88 (contact log) is merged too, so the update added the contact-log prefill (design D9).
 - [x] 1.2 Merge `main` into this branch (71e84d1). The migration is `033`, one after main's newest.
-- [ ] 1.3 Hailey rules on design Q1 (a No approval and Mark ready to e-file). Run `/opsx:update` to write the ruling into `office-follow-up`, design and plan Task 4a.
+- [x] 1.3 Hailey ruled on design Q1 on 2026-10-19 (accepted Claude's proposal). `/opsx:update` wrote it into design D13, the `case-lifecycle` delta spec and plan Task 4a.
 - [ ] 1.4 Just before apply, merge `main` again. If anything took `033`, renumber to the next free number with no gap. Re-run the D12 lookup and recopy any function whose newest definition moved.
 
 ## 2. Database: tables, follow-up purpose and signing plan
@@ -55,12 +55,19 @@
   - the D10 contact-step completion;
   - the D11 signing plan.
 
-  Leave `act_record_review_contact` and `act_mark_ready_to_efile` unchanged. Keep each client message as it is. Move #91's `approvedCase` helper and its gate test to a questionnaire approval, and add `legacyApprovedCase`.
-- [ ] 3.5 Update `apply_fixture_scenario`, copied from 031 (design D8), and its tests in `tests/database-fixtures.mjs`:
+  Leave `act_record_review_contact` unchanged (`act_mark_ready_to_efile` is 3.5's). Keep each client message as it is. Move #91's `approvedCase` helper and its gate test to a questionnaire approval, and add `legacyApprovedCase`.
+- [ ] 3.5 Mark ready to e-file waits for the office's go-over (design D13, plan Task 4a). Write failing tests in `tests/database-stages.mjs` first:
+  - refused with `INVALID_TRANSITION` while the go-over follow-up is open, and nothing recorded;
+  - allowed after it is resolved with `reached`;
+  - allowed after it is resolved with `no_further_contact`;
+  - a Yes approval is not held up.
+
+  Then re-create `act_mark_ready_to_efile` from 032, with only the wait added.
+- [ ] 3.6 Update `apply_fixture_scenario`, copied from 031 (design D8), and its tests in `tests/database-fixtures.mjs`:
   - clear both tables and the signing plan;
   - seed the fictional answers;
   - seed the approved sample's contact step as completed (D10) and its plan as `portal`.
-- [ ] 3.6 Run `npm run db:migrate:test`, then `npm run test:database`.
+- [ ] 3.7 Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 4. Browser: payloads, prefill and the store
 
@@ -104,14 +111,20 @@
   - then `npm run build:hant` and commit `src/zh-hant.mjs`.
 
   Tests in `tests/domain.test.mjs` and `tests/client-views.test.mjs`: each variant in English and 简体, the pinned appointment text, a non-UTC time zone, the legacy message, and #91's phone-number check over every variant.
-- [ ] 5.8 Styles for the forms, the collapsible groups and the comparison in `src/styles.css`, reusing existing staff-form classes.
-- [ ] 5.9 Run `npm test` and `npm run build:hant -- --check`.
+- [ ] 5.8 The admin's side of the D13 wait (plan Task 4a):
+  - the store's list read selects `purpose` and gives each row `goOverOpen`;
+  - `adminEligibility.markReadyToEfile` refuses with "The office still needs to go over the return with the client.";
+  - the Follow-ups `signing` row reads "Waiting for the office to go over the return with the client.".
+
+  Tests in `tests/store.test.mjs`, `tests/admin-views.test.mjs` and `tests/office-views.test.mjs`: open → refused, resolved with each outcome → offered.
+- [ ] 5.9 Styles for the forms, the collapsible groups and the comparison in `src/styles.css`, reusing existing staff-form classes.
+- [ ] 5.10 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 6. Story and full checks
 
 - [ ] 6.1 Update `tests/browser.mjs`:
   - the story fills the preparer form on submit and on resubmit, and the reviewer form on approve;
-  - add one path that answers no and finds the task in Follow-ups;
+  - add one path that answers no, finds the task in Follow-ups, sees Mark ready to e-file wait, resolves the task, and then sees Mark ready to e-file offered;
   - remove the story's "Record this conversation" press after approval, and assert that no such form is offered (D10);
   - the client window shows the variant the approval chose.
 - [ ] 6.2 Run `npm run test:browser`.

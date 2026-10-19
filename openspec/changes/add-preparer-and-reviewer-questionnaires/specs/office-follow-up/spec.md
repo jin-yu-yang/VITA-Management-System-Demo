@@ -41,7 +41,7 @@ A `request_documents` follow-up SHALL name its document request, and a `go_over_
 ### Requirement: The office works a go-over follow-up like any other
 The office SHALL see a case with an open `go_over_return` follow-up in Follow-ups as a "Call the client" row with its open-task count and **Log contact**, like any case with an open task. The office SHALL also see the task in the Log contact drawer and on the case page's Follow-up tab, titled "Go over the return with the client", with no document line.
 
-The assignee SHALL log contacts on it in the contact log, linked to the task, and close it with `RESOLVE_FOLLOWUP`, under the same rules as a document follow-up. Closing the case SHALL cancel it like any other open follow-up.
+The assignee SHALL log contacts on it in the contact log, linked to the task, and close it with `RESOLVE_FOLLOWUP`, under the same rules as a document follow-up. Closing the case SHALL cancel it like any other open follow-up. While it is open, Mark ready to e-file SHALL wait for it (capability `case-lifecycle`).
 
 #### Scenario: The queue lists the task
 - **WHEN** an office persona opens Follow-ups after an approval answered no
@@ -53,7 +53,7 @@ The assignee SHALL log contacts on it in the contact log, linked to the task, an
 
 #### Scenario: The office logs and resolves it
 - **WHEN** the assignee logs a reached phone call linked to the task, then resolves the follow-up with outcome reached
-- **THEN** the entry is listed under the task's "Contacts so far", the follow-up is resolved, and the case's stage and review attempt are unchanged
+- **THEN** the entry is listed under the task's "Contacts so far", the follow-up is resolved, the case's stage and review attempt are unchanged, and an admin is now offered Mark ready to e-file… (capability `case-lifecycle`)
 
 #### Scenario: Only the assignee works it
 - **WHEN** an office persona who is not the assignee sends a contact linked to the follow-up

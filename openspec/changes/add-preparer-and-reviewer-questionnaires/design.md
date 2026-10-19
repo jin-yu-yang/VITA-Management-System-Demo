@@ -200,7 +200,7 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
   - `mapFollowup` passes `purpose`.
   - **Follow-ups (#91):** a go-over task needs no new row kind. The case already gets its `call` row ("Call the
     client", the open-task count, **Log contact**) because it has an open task. It also keeps #91's `signing`
-    row, which reads as Q1 decides.
+    row, which reads as D13 says while the go-over task is open.
   - **The drawer and the Follow-up tab:** `followupTask` titles a `go_over_return` task "Go over the return with
     the client", with no document line, and never reads `requestId` for it. The drawer's section heading is
     the task's reason, as for every task.
@@ -320,9 +320,8 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
   - **Yes satisfies it.** The step is `completed` at approval, so `act_mark_ready_to_efile` (032) accepts the
     move, and `adminEligibility.markReadyToEfile` and the Follow-ups `signing` row read "Waiting for the client
     to sign Form 8879." with **Mark ready to e-file…**, unchanged.
-  - **No also satisfies it as 032 stands**, because the step is `completed` with no outcome. An admin could then
-    mark the case ready to e-file while the office has not yet gone over the return. Hailey decides whether that
-    is acceptable (Q1). This design adds nothing for No until then.
+  - **No would satisfy it too as 032 stands**, because the step is `completed` with no outcome. D13, Hailey's
+    ruling on Q1, adds the wait that stops this.
   - **A legacy pending approval** still shows #91's "The reviewer still needs to record the conversation with the
     client.".
 - **Browser:** at Ready to exit, "Your next step" stops reading `clientContactStatus` alone when the approved
@@ -386,8 +385,13 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
 - **Reason:** Hailey asked for the four variants (tracked in #85). The client needs to know whether to come in,
   stay, or use the portal. The client may read neither questionnaire, so the case carries only the plan and the
   appointment, the two facts the message needs.
-- **What the client can now read:** how they will sign, and their appointment. No amount, payment method,
-  Exit Form field or other answer reaches the client. The `MONEY_WORDS` checks stay.
+- **What the client can now read:** `cases.signing_plan` and `cases.signing_appointment_at`, through the
+  existing `visible_cases` policy on their own case. That is how they will sign and their appointment, nothing
+  more. No amount, payment method, Exit Form field or other answer reaches the client. The `MONEY_WORDS` checks
+  stay.
+- **The PR description must call this out.** It must say that the client can now read `signing_plan` and
+  `signing_appointment_at` on their own case, which no earlier column on `cases` exposed. It sits beside the
+  R28 revision (D3).
 - **Trade-off:** the variant is fixed at approval. On `go_over_first`, it still reads correctly after the office
   goes over the return, because signing is still to come. It changes when the case moves to Ready to e-file.
 - **Alternatives considered:**
@@ -410,15 +414,55 @@ as 032 did.
 | `vitally_private.act_resubmit_review` | 006 (its only definition) | the same |
 | `vitally_private.act_approve_review` | 021 (#91 did not redefine it) | the date and appointment checks, the reviewer insert, the D5 follow-up, the D10 contact step, the D11 signing plan; its client message is unchanged |
 | `vitally_private.apply_fixture_scenario` | **031** (#88's, newest; #91 did not redefine it) | the D8 deletes, seeds and case columns; #88's contact-log lines kept |
+| `vitally_private.act_mark_ready_to_efile` | **032** (its only definition) | the D13 wait on an open go-over follow-up, after 032's contact-step check; its client message is unchanged |
+
+Checked on 2026-10-19 against main at 71e84d1, with `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql`.
+These are every definition there is:
+
+| Function | Defined in |
+|---|---|
+| `act_submit_review` | 006 |
+| `act_resubmit_review` | 006 |
+| `act_approve_review` | 006, 021 |
+| `apply_fixture_scenario` | 009, 019, 031 |
+| `check_payload` | 003, 004, 005, 006, 011, 013, 017, 032 |
+| `act_mark_ready_to_efile` | 032 |
 
 **Not redefined:**
 - `public.vitally_apply_action` (newest 032) and `vitally_private.check_operation_authority` (newest 032): no
   action type is added or regrouped.
-- `act_mark_ready_to_efile` (032): unchanged until Q1 is decided. If Hailey accepts the proposal, it is copied
-  from 032 too.
 - `check_authority` (018), `check_related` (023), `act_escalate_contact`, `lock_open_followup` and
   `act_resolve_followup` (004), `act_record_review_contact` and `hand_to_review` (006), `act_close_case` (032),
   `fixture_history` (023), and #88's `vitally_log_contact` and `act_record_contact` (031).
+
+### D13: Mark ready to e-file waits for the office's go-over (Hailey's ruling on Q1, 2026-10-19)
+
+- **Choice:** while the case has an open `go_over_return` follow-up, Mark ready to e-file is refused.
+  - **Database:** `act_mark_ready_to_efile` is copied from 032. After 032's contact-step check, it raises
+    `INVALID_TRANSITION` when an `admin_followups` row on the case has `purpose = 'go_over_return'` and
+    `status = 'open'`. This is the same refusal 032 uses for its own wait, so nothing is recorded and the client is
+    told nothing.
+  - **The admin's explanation:**
+    - `adminEligibility.markReadyToEfile` refuses with "The office still needs to go over the return with the
+      client." on the case page and in the Follow-ups row's action column;
+    - the Follow-ups `signing` row's description reads "Waiting for the office to go over the return with the
+      client.".
+
+    #91's pending-call wording keeps priority for a legacy approval, which can have no go-over task.
+  - **The list row:** Follow-ups reads list rows, which carry no follow-ups. The store's existing grouped read of
+    open `admin_followups` also selects `purpose`, and each row gains `goOverOpen` (a boolean). A full case reads
+    its own `followups`.
+  - **When the wait ends:** when the task is resolved with `RESOLVE_FOLLOWUP`, whatever the outcome (`reached`
+    or `no_further_contact`). Mark ready to e-file is then offered as after a Yes. A cancelled task also ends it.
+    `act_close_case` cancels tasks, but it cannot reach a case at Ready to exit today.
+- **Reason (Claude's proposal, accepted):**
+  - It has the same shape as #91's own wait: whoever is to contact the client finishes before the 8879 is
+    recorded.
+  - It adds no state; the open task is the fact.
+  - It ends on any outcome, so a case whose client asks for no further contact is not stranded at Ready to exit
+    while closing there is still refused (until lifecycle change 3).
+- **Alternatives considered:** no wait (the `signing` row would invite marking a case nobody went over); leaving
+  the reviewer's step pending on No (contradicts D10); ending the wait only on "reached" (can strand a case).
 
 Any function that turns out to need a change during apply follows the same rule. It is copied from its newest
 definition, and this table is updated.
@@ -482,36 +526,9 @@ definition, and this table is updated.
 
 ## Open Questions
 
-- **Q1. A No approval and Mark ready to e-file.** Owner: Hailey, before apply. It affects
-  `act_mark_ready_to_efile`, `adminEligibility.markReadyToEfile`, the Follow-ups `signing` row, and one
-  requirement in `office-follow-up`.
+None open.
 
-  **The problem.** D10 completes the review-contact step on No as well as on Yes, so #91's gate passes at once.
-  An admin would be offered Mark ready to e-file while the office has not yet gone over the return with the
-  client.
-
-  **Claude's proposal:** Mark ready to e-file waits while the case has an open `go_over_return` follow-up.
-  - **Database:** `act_mark_ready_to_efile` is copied from 032. After 032's contact-step check, it refuses with
-    `INVALID_TRANSITION` while an `admin_followups` row on the case has `purpose = 'go_over_return'` and
-    `status = 'open'`.
-  - **Browser:**
-    - `adminEligibility.markReadyToEfile` refuses with "The office still needs to go over the return with the
-      client.";
-    - the Follow-ups `signing` row reads "Waiting for the office to go over the return with the client.", with
-      that explanation in place of the button;
-    - list rows gain one summary, `goOverOpen`, from the existing grouped read of `admin_followups`.
-  - **When the wait ends:** when the task is resolved, whatever the outcome, or cancelled.
-
-  **Why:**
-  - It is the same shape as #91's own rule: whoever is to contact the client finishes before the 8879 is
-    recorded. Going over the return comes before signing in the VITA process, and the go-over task is that step.
-  - It ends on any resolution, not only on "reached", because #91 refuses closing at Ready to exit until change
-    3. A case whose client asks for no further contact would otherwise be stuck there with no way out.
-  - It adds no state. The open task is already the fact.
-
-  **Alternatives:**
-  - No gate: leave it to the admin. That is simpler, but the `signing` row would invite marking a case nobody
-    went over.
-  - Leave the step pending on No. This contradicts Hailey's D10 ruling: the reviewer would be asked again.
-  - End the wait only on a "reached" resolution. This is stricter, but it can strand a case at Ready to exit
-    until change 3.
+- **Q1. A No approval and Mark ready to e-file. Closed on 2026-10-19.** Hailey accepted Claude's proposal: Mark
+  ready to e-file waits while the case has an open `go_over_return` follow-up, and the wait ends when that
+  follow-up is resolved, whatever the outcome. D13 has the decision, and `case-lifecycle`'s "Admins record signing
+  and e-filing, with a confirmation" has the requirement.
