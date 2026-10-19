@@ -2427,6 +2427,8 @@ export function createController({
         noteFailure(error);
       }
       show();
+      // A start skipped while this was out (busy) is sent now.
+      void startScreeningIfDue();
       return request;
     } catch (error) {
       state.busy = false;
@@ -2438,6 +2440,7 @@ export function createController({
       );
       if (error?.code === "CONFLICT") await loadAssistance().catch(() => {});
       show();
+      void startScreeningIfDue();
       throw error;
     }
   }
@@ -2463,6 +2466,8 @@ export function createController({
         noteFailure(error);
       }
       show();
+      // A start skipped while this was out (busy) is sent now.
+      void startScreeningIfDue();
       return request;
     } catch (error) {
       state.busy = false;
@@ -2472,6 +2477,7 @@ export function createController({
       );
       if (error?.code === "CONFLICT") await loadSelected().catch(() => {});
       show();
+      void startScreeningIfDue();
       throw error;
     }
   }

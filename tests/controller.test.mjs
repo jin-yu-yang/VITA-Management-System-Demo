@@ -5838,6 +5838,39 @@ test("signing out drops a held start: nothing is sent when the connection return
   controller.stop();
 });
 
+test("a start skipped while a contact write is out is sent when the write settles", async () => {
+  const store = presenterStore({ cases: [RECEIVED], people: adminPeople });
+  const logContact = store.logContact;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  store.logContact = async (request) => {
+    await gate;
+    return logContact(request);
+  };
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-alex");
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 0, "a volunteer starts nothing");
+  const logged = controller.logContact("case-r", CONTACT_ENTRY);
+  await tick();
+  assert.equal(controller.getState().busy, true, "the write is out");
+  // The admin persona arrives while the write is out: the start is skipped.
+  controller.selectPerson("person-sam");
+  await tick();
+  assert.equal(startWrites(store).length, 0, "skipped while busy");
+  release();
+  await logged;
+  await tick();
+  assert.equal(startWrites(store).length, 1, "sent once the write settles");
+  assert.equal(controller.getState().savedCase.stage, "screening");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
 // A store whose first START_SCREENING is held open until `release()`.
 function storeHoldingFirstStart(cases) {
   const store = presenterStore({ cases, people: adminPeople });
