@@ -441,6 +441,10 @@ export const SENTENCES = Object.freeze({
   "Independent review is complete. A volunteer will contact you about next steps. Signing and filing are later milestones and are not done yet.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "A volunteer spoke with you about the next service step.": "志愿者已与您沟通下一步的服务。",
+  // Migration 032: the main chain's new stages.
+  "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
+  "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+  "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",

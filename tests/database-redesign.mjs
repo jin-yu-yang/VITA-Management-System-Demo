@@ -108,6 +108,7 @@ async function submittedCase(f) {
 // A submitted version-2 case Alex prepares and Morgan reviews.
 async function claimedCase(f) {
   const caseId = await submittedCase(f);
+  await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", { checks: f.intakeChecks });
   await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
   await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});

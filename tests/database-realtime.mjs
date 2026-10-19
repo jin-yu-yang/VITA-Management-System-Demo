@@ -179,6 +179,7 @@ const assertHealthy = (...watches) => {
 async function preparedCase(f, client) {
   const created = await f.draftCase(client);
   await f.act(client, created.caseId, null, "SUBMIT", { confirmed: true });
+  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
   });
