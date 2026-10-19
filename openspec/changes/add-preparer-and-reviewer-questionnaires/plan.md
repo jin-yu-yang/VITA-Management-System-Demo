@@ -335,15 +335,15 @@ await t.test("a yes approval is not held up", async () => {
   - One reviewer row on the `review_approved` approved attempt: `completed_on current_date`, eligible, `went_over` true with `current_date` and phone, portal, an Exit Form with a Federal refund of `412.00` by direct deposit and Local NPT `paper`/`none`, and no remarks.
   - That attempt's contact step is seeded `completed`, with outcome `reached` and `client_contacted_at now()-interval '1 hour'`, in place of 031's `pending` (design D8, D10). Update the comment above it.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `seeded approved sample has answers`: two preparer rows, one reviewer row, the plan `portal`, and its step completed;
   - `checkpoint reset leaves no stale answers`: a reset to `ready_for_review` leaves exactly one preparer row (version 1), no reviewer row and no signing plan.
 
   Update any fixture test that expects the approved sample's step to be `pending`.
-- [ ] **Step 2:** Run `npm run test:database`. Expected: FAIL.
-- [ ] **Step 3:** Implement section 7.
-- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: PASS.
-- [ ] **Step 5:** Commit: `git commit -am "Questionnaires: samples carry fictional answers"`.
+- [x] **Step 2:** Run `npm run test:database`. Expected: FAIL.
+- [x] **Step 3:** Implement section 7.
+- [x] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: PASS.
+- [x] **Step 5:** Commit: `git commit -am "Questionnaires: samples carry fictional answers"`.
 
 ### Task 6: Payload builders and the contact-log prefill
 

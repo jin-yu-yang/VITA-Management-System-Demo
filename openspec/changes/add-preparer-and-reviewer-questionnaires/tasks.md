@@ -63,11 +63,11 @@
   - a Yes approval is not held up.
 
   Then re-create `act_mark_ready_to_efile` from 032, with only the wait added.
-- [ ] 3.6 Update `apply_fixture_scenario`, copied from 031 (design D8), and its tests in `tests/database-fixtures.mjs`:
+- [x] 3.6 Update `apply_fixture_scenario`, copied from 031 (design D8), and its tests in `tests/database-fixtures.mjs`:
   - clear both tables and the signing plan;
   - seed the fictional answers;
   - seed the approved sample's contact step as completed (D10) and its plan as `portal`.
-- [ ] 3.7 Run `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 3.7 Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 4. Browser: payloads, prefill and the store
 

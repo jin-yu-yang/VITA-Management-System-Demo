@@ -604,3 +604,177 @@ begin
  return jsonb_build_object('detail','{}'::jsonb,
   'message','PCDC recorded that you signed Form 8879. Your return is ready to e-file.');
 end; $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. apply_fixture_scenario, verbatim from 031 (D8, D12): it also clears the
+-- two questionnaire tables, seeds fictional answers for the review scenarios,
+-- sets the sample's signing plan, and seeds the approved sample's contact step
+-- as reached (so it is at once eligible for Mark ready to e-file). Changed lines
+-- end `-- 033`.
+
+create or replace function vitally_private.apply_fixture_scenario(p_case public.cases,p_scenario text,p_actor uuid)
+returns int language plpgsql security definer set search_path='' as $$
+declare v_alex uuid;
+ v_morgan uuid;
+ v_sam uuid;
+ v_request uuid;
+ v_followup uuid;
+ v_contact uuid;
+ v_total int;
+ v_stage text;
+ v_version bigint=0;
+ v_preparer uuid;
+ v_reviewer uuid;
+ v_review uuid; -- 033
+begin
+ if p_scenario is null or not (p_scenario=any(vitally_private.fixture_keys())) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ select id into v_alex from public.people where workspace_id=p_case.workspace_id and person_key='alex';
+ select id into v_morgan from public.people where workspace_id=p_case.workspace_id and person_key='morgan';
+ select id into v_sam from public.people where workspace_id=p_case.workspace_id and person_key='sam';
+ -- The permanent people are the shared initializer's; a workspace without them
+ -- is not set up, and seeding half a scenario would be worse than refusing.
+ if v_alex is null or v_morgan is null or v_sam is null or p_actor is null then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ -- Everything this case currently holds, and only this case. Receipts are not
+ -- in the list: they are historical scalars and outlive their targets.
+ delete from public.contact_attempts where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.contact_log where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.admin_followups where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.documents where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.document_requests where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.preparation_participants where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.reviewer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id; -- 033
+ delete from public.preparer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id; -- 033
+ delete from public.reviews where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.case_events where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.client_events where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ -- A sample's materials and document-card marks are office work on the sample,
+ -- so a checkpoint clears them with the rest. `case_contacts` stays: it is the
+ -- sample's own contact details, not scenario work.
+ delete from public.case_materials where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.case_document_cards where workspace_id=p_case.workspace_id and case_id=p_case.id;
+
+ -- Preparation has been claimed in every scenario but the first, and claiming
+ -- is the participation threshold (contracts, "Authority and participation").
+ if p_scenario<>'preparation_ready' then
+  v_preparer=v_alex;
+  insert into public.preparation_participants(workspace_id,case_id,person_id)
+  values(p_case.workspace_id,p_case.id,v_alex);
+ end if;
+
+ -- One open request in the two document scenarios; a verified one, with the
+ -- office's recorded receipt of the client's paper, in the review scenarios.
+ if p_scenario in ('waiting_documents','admin_followup') then
+  insert into public.document_requests(workspace_id,case_id,title,message,status,requested_by_person_id)
+  values(p_case.workspace_id,p_case.id,'Mileage record','Please add the fictional sample.','open',v_alex)
+  returning id into v_request;
+ elsif p_scenario='review_ready' then
+  insert into public.document_requests(workspace_id,case_id,title,message,status,requested_by_person_id)
+  values(p_case.workspace_id,p_case.id,'Mileage record','Please add the fictional sample.','verified',v_alex)
+  returning id into v_request;
+  -- Recorded by the office rather than uploaded: a fixture case has no client
+  -- session behind it, and the staff receipt is the path that exists for that.
+  insert into public.documents(workspace_id,case_id,request_id,filename,source,submitted_by_user_id,submitted_by_person_id)
+  values(p_case.workspace_id,p_case.id,v_request,'demo-mileage-record-2025.pdf','staff_recorded',p_actor,v_sam);
+ end if;
+
+ -- The office's contact task, with one unanswered call already logged on it.
+ -- Logging a contact never resolves the task, so it is still open.
+ if p_scenario='admin_followup' then
+  insert into public.admin_followups(workspace_id,case_id,request_id,assignee_person_id,status,reason,created_by_person_id)
+  values(p_case.workspace_id,p_case.id,v_request,v_sam,'open','No response to the document request.',v_alex)
+  returning id into v_followup;
+  insert into public.contact_log(workspace_id,case_id,followup_id,logged_by_user_id,logged_by_person_id,
+    direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+  values(p_case.workspace_id,p_case.id,v_followup,p_actor,v_sam,
+    'outgoing',now(),'client',null,'phone','request_documents','no_answer',
+    'Called during office hours. No answer, so a message was left.')
+  returning id into v_contact;
+  insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
+    direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+  select l.id,1,l.workspace_id,l.case_id,l.logged_by_user_id,l.logged_by_person_id,l.logged_at,
+    l.direction,l.contacted_at,l.with_whom,l.other_name,l.method,l.purpose,l.outcome,l.note
+  from public.contact_log l where l.id=v_contact;
+ end if;
+
+ -- Review attempts. Findings and resolutions are internal staff text and live
+ -- only here; no client-readable row carries a word of them.
+ if p_scenario='corrections_required' then
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,findings,decided_at,created_at)
+  values(p_case.workspace_id,p_case.id,1,v_morgan,'corrections_requested',
+   'Check the household size against the intake answers, and confirm the filing status before this comes back.',
+   now()-interval '2 hours',now()-interval '4 hours');
+ elsif p_scenario='review_approved' then
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,findings,resolution,decided_at,created_at)
+  values(p_case.workspace_id,p_case.id,1,v_morgan,'corrections_requested',
+   'Check the household size against the intake answers, and confirm the filing status before this comes back.',
+   'Corrected the household size and re-checked the filing status in the tax software.',
+   now()-interval '6 hours',now()-interval '8 hours');
+  -- Approved, with the client conversation the approval opens already done:
+  -- the reviewer went over the return, so the contact step is reached and the
+  -- case can be marked ready to e-file at once (D8, D10).
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,decided_at,client_contact_status,client_contact_outcome,client_contacted_at,created_at) -- 033
+  values(p_case.workspace_id,p_case.id,2,v_morgan,'approved',now()-interval '1 hour','completed','reached',now()-interval '1 hour',now()-interval '3 hours') -- 033
+  returning id into v_review; -- 033
+ end if;
+
+ -- Stage, versions and assignments. The approving reviewer stays on the case:
+ -- the client contact task is theirs (Ruling R28).
+ v_stage=case p_scenario
+  when 'preparation_ready' then 'preparation_ready'
+  when 'waiting_documents' then 'preparing'
+  when 'admin_followup' then 'preparing'
+  when 'review_ready' then 'review_ready'
+  when 'corrections_required' then 'corrections_required'
+  when 'review_approved' then 'review_approved'
+ end;
+ if p_scenario='review_ready' or p_scenario='corrections_required' then v_version=1;
+ end if;
+ if p_scenario='review_approved' then
+  v_version=2;
+  v_reviewer=v_morgan;
+ end if;
+
+ -- Fictional questionnaire answers (D8): each version the sample reached has
+ -- its preparer's hand-off, and the approved attempt has the reviewer's answers.
+ if p_scenario in ('review_ready','corrections_required','review_approved') then -- 033
+  insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id, -- 033
+    confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on) -- 033
+  values(p_case.workspace_id,p_case.id,1,v_alex,'client', -- 033
+   case when p_scenario='review_approved' then 'in_person' else 'phone' end,true,true,current_date); -- 033
+ end if; -- 033
+ if p_scenario='review_approved' then -- 033
+  insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id, -- 033
+    confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on) -- 033
+  values(p_case.workspace_id,p_case.id,2,v_alex,'client','phone',true,true,current_date); -- 033
+  insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on, -- 033
+    pa_forgiveness,went_over,went_over_on,went_over_how,sign_method,sign_appointment_at,exit_form,remarks) -- 033
+  values(p_case.workspace_id,p_case.id,v_review,v_morgan,current_date, -- 033
+   'eligible',true,current_date,'phone','portal',null, -- 033
+   '{"federal":{"method":"efile","result":"refund","amount":"412.00","refundBy":"direct_deposit"},"state":null,"local":{"type":"NPT","method":"paper","result":"none"}}'::jsonb, -- 033
+   null); -- 033
+ end if; -- 033
+
+ -- The history, spaced an hour apart so the most recent entry is the newest
+ -- and the timeline reads in the order the work happened.
+ select max(h.seq) into v_total from vitally_private.fixture_history(p_scenario) h;
+ insert into public.case_events(workspace_id,case_id,actor_user_id,actor_person_id,action,detail,created_at)
+ select p_case.workspace_id,p_case.id,null,pp.id,h.action,h.detail,now()-make_interval(hours=>v_total-h.seq+1)
+ from vitally_private.fixture_history(p_scenario) h
+ left join public.people pp on pp.workspace_id=p_case.workspace_id and pp.person_key=h.person_key;
+ insert into public.client_events(workspace_id,case_id,action,message,created_at)
+ select p_case.workspace_id,p_case.id,h.action,h.message,now()-make_interval(hours=>v_total-h.seq+1)
+ from vitally_private.fixture_history(p_scenario) h
+ where h.message is not null;
+
+ update public.cases set stage=v_stage,intake_verified=true,preparation_version=v_version,
+  preparer_id=v_preparer,reviewer_id=v_reviewer,last_reminded_at=null,last_reminded_by_person_id=null,
+  signing_plan=case when p_scenario='review_approved' then 'portal' end,signing_appointment_at=null, -- 033
+  updated_at=now()
+  where id=p_case.id;
+ return v_total;
+end;
+$$;
