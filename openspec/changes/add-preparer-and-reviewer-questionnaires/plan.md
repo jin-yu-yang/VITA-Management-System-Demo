@@ -489,17 +489,17 @@ test("legacy pending approval still shows the conversation form", …) // approv
   - `logContactForm(record, person, ui, { followupId, contact, purpose })`: a new option `purpose` preselects that purpose on a new entry. `followupForms` passes `task.purpose`. The Contacts tab passes none, so nothing is chosen there.
   - Follow-ups (`followupQueue`) is unchanged: a go-over task is counted in the case's `call` row like any open task.
 
-- [ ] **Step 1: Audit.** Run `grep -n "requestId\|request_id" src/admin-views.mjs src/office-views.mjs src/staff-views.mjs` and list every read that belongs to a follow-up.
-- [ ] **Step 2: Write the failing tests:**
+- [x] **Step 1: Audit.** Run `grep -n "requestId\|request_id" src/admin-views.mjs src/office-views.mjs src/staff-views.mjs` and list every read that belongs to a follow-up.
+- [x] **Step 2: Write the failing tests:**
   - `follow-up with no request renders`, on a case holding one open `{purpose: "go_over_return", requestId: null, reason: "Go over the return with the client: the reviewer did not."}`:
     - the queue lists its `call` row, with the open count at 1;
     - the drawer shows the reason and no document line;
     - the case panel shows the title `Go over the return with the client`, with the Log contact and resolve forms.
   - `a task's Log contact form starts with its purpose`: `go_over_return` is checked inside a go-over task, `request_documents` inside a document task, and nothing in the Contacts tab.
-- [ ] **Step 3:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 4:** Implement: branch on `purpose === "go_over_return"` wherever the audit found a request read, and thread `purpose` into `logContactForm`.
-- [ ] **Step 5:** Run `npm test`. Expected: PASS.
-- [ ] **Step 6:** Commit: `git commit -am "Questionnaires: go-over follow-ups in the office views; a task's contact starts with its purpose"`.
+- [x] **Step 3:** Run `npm test`. Expected: FAIL.
+- [x] **Step 4:** Implement: branch on `purpose === "go_over_return"` wherever the audit found a request read, and thread `purpose` into `logContactForm`.
+- [x] **Step 5:** Run `npm test`. Expected: PASS.
+- [x] **Step 6:** Commit: `git commit -am "Questionnaires: go-over follow-ups in the office views; a task's contact starts with its purpose"`.
 
 ### Task 8a: The client's Ready to exit variants
 

@@ -2579,3 +2579,11 @@ test("approved with no says the office takes over", () => {
 test("legacy pending approval still shows the conversation form", () => {
   assert.match(approvedStep(approvedWith(null)), /data-case-action="RECORD_REVIEW_CONTACT"/);
 });
+
+test("logContactForm: purpose preselects on a new entry, never overrides an edit", () => {
+  const checked = (html) => [...html.matchAll(/name="purpose" value="([a-z_]+)" required checked/g)].map((m) => m[1]);
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {}, { followupId: "t", purpose: "go_over_return" })), ["go_over_return"]);
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {})), []);
+  const entry = staffCase({ contacts: [contactEntry({ purpose: "ask_question" })] }).contacts[0];
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {}, { contact: entry, purpose: "go_over_return" })), ["ask_question"]);
+});

@@ -99,7 +99,7 @@
 - [x] 5.3 The previous preparer submission next to the current one, with changed answers marked, at Review in progress (design D7). View tests.
 - [x] 5.4 At Ready to exit, "Your next step" shows the D10 line and no "Record this conversation" form after a questionnaire approval. A legacy pending approval still shows the form. View tests.
 - [x] 5.5 The review panel: each version's preparer answers and each approved attempt's reviewer answers, and "No questionnaire was recorded for this version." when there is none. View tests.
-- [ ] 5.6 A follow-up with no request in `src/admin-views.mjs` and `src/office-views.mjs`:
+- [x] 5.6 A follow-up with no request in `src/admin-views.mjs` and `src/office-views.mjs`:
   - `followupTask` titles a go-over task "Go over the return with the client", with no document line;
   - the task's Log contact form starts with the task's purpose chosen (D5).
 

@@ -1066,3 +1066,32 @@ test("an office draft continues in Add a case, and a client's own case is read-o
   assert.match(owned, /<span>How it started<\/span><strong>The client&#39;s own application/);
   assert.match(owned, /What the client told us/);
 });
+
+test("follow-up with no request renders", () => {
+  const goOver = openTask({
+    id: "task-go",
+    purpose: "go_over_return",
+    requestId: null,
+    reason: "Go over the return with the client: the reviewer did not.",
+  });
+  const html = renderAdminCase(officeCase({ requests: [openRequest()], followups: [goOver] }), { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /<h3>Go over the return with the client<\/h3>/);
+  assert.match(followup, /Go over the return with the client: the reviewer did not\./);
+  assert.doesNotMatch(followup, /Contact the client|awaiting preparer verification/);
+  assert.match(followup, linkedForm("task-go"));
+  assert.match(followup, /<h4>Resolve this task<\/h4>/);
+  assert.match(followup, /name="purpose" value="go_over_return" required checked/);
+});
+
+test("a task's Log contact form starts with its purpose; the Contacts tab chooses none", () => {
+  const record = officeCase({
+    requests: [openRequest()],
+    followups: [openTask({ id: "task-d", purpose: "request_documents" })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /name="purpose" value="request_documents" required checked/);
+  const contacts = html.slice(html.indexOf('id="case-panel-contacts"'));
+  assert.doesNotMatch(contacts, /name="purpose"[^>]* checked/);
+});

@@ -412,7 +412,8 @@ const unsettledRequests = (record) =>
 
 const openFollowupFor = (record, requestId) =>
   (record?.followups ?? []).find(
-    (followup) => followup?.requestId === requestId && followup?.status === "open",
+    (followup) =>
+      requestId != null && followup?.requestId === requestId && followup?.status === "open",
   );
 
 // A refusal, said plainly, where the button would have been.
@@ -1699,9 +1700,15 @@ function segGroup(legend, name, options, chosen, scope, attrs = "") {
  * @param {object} record the decorated staff case
  * @param {object|null} person the persona
  * @param {object} ui `{busy, now}`
- * @param {{followupId?: string|null, contact?: object|null}} options
+ * `purpose` preselects a purpose on a new entry (the task's own); an edit keeps its entry's.
+ * @param {{followupId?: string|null, contact?: object|null, purpose?: string|null}} options
  */
-export function logContactForm(record, person, ui = {}, { followupId = null, contact = null } = {}) {
+export function logContactForm(
+  record,
+  person,
+  ui = {},
+  { followupId = null, contact = null, purpose = null } = {},
+) {
   const view = ui ?? {};
   const scope = contact
     ? `contact-edit-${contact.id}`
@@ -1748,7 +1755,7 @@ export function logContactForm(record, person, ui = {}, { followupId = null, con
     "Purpose",
     "purpose",
     CONTACT_PURPOSES,
-    contact?.purpose ?? null,
+    contact ? (contact.purpose ?? null) : purpose,
     scope,
   )}${outcomes("voice", "outcomeVoice", VOICE_OUTCOMES)}${outcomes(
     "written",
