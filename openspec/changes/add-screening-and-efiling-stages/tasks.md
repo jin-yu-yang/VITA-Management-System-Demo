@@ -72,14 +72,14 @@
 
 ## 5. The lists (design D6; plan Task 5)
 
-- [ ] 5.1 Tests first:
+- [x] 5.1 Tests first:
   - **the case list:** a presenter row's `reviewContactStatus` (the latest approved review's call status), in `tests/store.test.mjs` and the database store test;
   - **Follow-ups**, from list-shaped rows: the Request sent and Screening in progress rows (with Open), and the signing and e-filing rows (with the Mark buttons carrying `data-case-id`, or the call-pending sentence); the new kinds' icons and pill styles;
   - **the case pool:** the new tabs and `poolPhase` for every stage, with the stage filter listing all twelve;
   - **the work board:** unchanged tabs, and its search reaches a case at `efiled`.
 
   See them fail.
-- [ ] 5.2 Implement in `src/supabase-store.mjs` (`listCases`' new summary) and `src/contracts.mjs` (its comment), `src/office-views.mjs`, `src/styles.css` (the new pills), `src/pool-views.mjs`, `src/staff-views.mjs` (if any) and `src/app.mjs` (the queue's Mark buttons select the case in place, as Log contact does). `npm test` passes.
+- [x] 5.2 Implement in `src/supabase-store.mjs` (`listCases`' new summary) and `src/contracts.mjs` (its comment), `src/office-views.mjs`, `src/styles.css` (the new pills), `src/pool-views.mjs`, `src/staff-views.mjs` (if any) and `src/app.mjs` (the queue's Mark buttons select the case in place, as Log contact does). `npm test` passes.
 
 ## 6. The client's page (design D7; plan Task 6)
 
