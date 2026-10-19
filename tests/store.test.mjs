@@ -537,7 +537,7 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly five summary fields.
+  // The Case scalars, unchanged, plus exactly six summary fields.
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
@@ -547,6 +547,7 @@ test("a presenter list carries the summaries a work board reads", async () => {
       "openRequests",
       "participants",
       "phone",
+      "reviewContactStatus",
     ].toSorted(),
   );
   assert.deepEqual(row.participants, ["person-alex"]);
@@ -556,14 +557,18 @@ test("a presenter list carries the summaries a work board reads", async () => {
   // The client's phone for the list's masked column (D5), and nothing else
   // of the contact row.
   assert.equal(row.phone, "2155550100");
-  // Four grouped reads, each scoped to the cases this list actually holds,
+  // Five grouped reads, each scoped to the cases this list actually holds,
   // and each asking only for the columns the board needs.
   const summaries = client.reads.filter((read) =>
-    ["preparation_participants", "admin_followups", "document_requests", "case_contacts"].includes(
-      read.table,
-    ),
+    [
+      "preparation_participants",
+      "admin_followups",
+      "document_requests",
+      "case_contacts",
+      "reviews",
+    ].includes(read.table),
   );
-  assert.equal(summaries.length, 4);
+  assert.equal(summaries.length, 5);
   for (const read of summaries) assert.deepEqual(read.within, ["case_id", ["case-1"]]);
   assert.ok(!summaries.some((read) => read.columns === "*"), "no whole rows");
   // Only the open work is counted: a resolved task is not a task.
@@ -576,6 +581,46 @@ test("a presenter list carries the summaries a work board reads", async () => {
   const phoneRead = summaries.find((read) => read.table === "case_contacts");
   assert.equal(phoneRead.columns, "case_id,phone");
   assert.deepEqual(phoneRead.filters, []);
+  // The reviewer's call is read from the approved reviews alone, and only
+  // the status column (no note, outcome or findings) reaches a list.
+  const approvalRead = summaries.find((read) => read.table === "reviews");
+  assert.equal(approvalRead.columns, "case_id,client_contact_status,created_at");
+  assert.deepEqual(approvalRead.filters, [["status", "approved"]]);
+  assert.deepEqual(approvalRead.orders, ["created_at"]);
+  // This case has only an active review, so no call status yet.
+  assert.equal(row.reviewContactStatus, null);
+});
+
+test("a listed case carries its latest approved review's call status", async () => {
+  const review = (id, caseId, status, contact, createdAt) => ({
+    ...RELATED_ROWS.reviews[0],
+    id,
+    case_id: caseId,
+    status,
+    client_contact_status: contact,
+    created_at: createdAt,
+  });
+  const rows = {
+    cases: [
+      CASE_ROW,
+      { ...CASE_ROW, id: "case-2", reference: "VT-WXYZ-6789" },
+      { ...CASE_ROW, id: "case-3", reference: "VT-QRST-1234" },
+    ],
+    reviews: [
+      // case-1: an older approval whose call is pending, then a newer one
+      // that is completed. The newer wins (the read is ordered by created_at).
+      review("r-1", "case-1", "approved", "pending", "2026-09-05T00:00:00Z"),
+      review("r-2", "case-1", "approved", "completed", "2026-09-08T00:00:00Z"),
+      // case-2: approved, call still pending.
+      review("r-3", "case-2", "approved", "pending", "2026-09-06T00:00:00Z"),
+      // case-3: only an active review, so no approval at all.
+      review("r-4", "case-3", "active", null, "2026-09-07T00:00:00Z"),
+    ],
+  };
+  const client = fakeClient({ access: "presenter", rows });
+  const list = await createStore(client).listCases();
+  const byId = Object.fromEntries(list.map((row) => [row.id, row.reviewContactStatus]));
+  assert.deepEqual(byId, { "case-1": "completed", "case-2": "pending", "case-3": null });
 });
 
 test("a listed case with no contact row has no phone", async () => {

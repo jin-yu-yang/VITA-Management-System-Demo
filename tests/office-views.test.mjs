@@ -113,10 +113,90 @@ test("an intake row opens the case and carries no workflow action", () => {
   assert.match(html, /<tr class="queue-row" data-kind="intake">/);
   const a = rowOf(html, "a");
   assert.match(a, /<button class="board-reference" data-action="open-case" data-case-id="a">VT-AAAA<\/button>/);
-  assert.match(a, /data-action="open-case" data-case-id="a"[^>]*>[^]*Record intake checks/);
+  assert.match(a, /<button type="button" class="btn primary" data-action="open-case" data-case-id="a">[^]*? Open<\/button>/);
+  assert.doesNotMatch(a, /Record intake checks/);
+  assert.match(a, /New application: open it to start screening\./);
   assert.deepEqual(actions(a), []);
   assert.match(rowOf(html, "b"), /Finish and send/);
   assert.match(html, /<h2 id="office-queue-title" tabindex="-1">Office queue<\/h2>/);
+});
+
+test("Follow-ups shows new applications, screening, signing and e-filing", () => {
+  const rec = (id, stage, reviewContactStatus = "completed") => ({
+    id,
+    reference: `VT-${id}`,
+    stage,
+    ownerUserId: "u",
+    reviewContactStatus,
+    updatedAt: "2026-10-18T10:00:00Z",
+  });
+  const now = Date.parse("2026-10-18T12:00:00Z");
+  const rows = followupQueue(
+    [rec("A", "received"), rec("B", "screening"), rec("C", "review_approved"), rec("D", "ready_to_efile"), rec("E", "efiled")],
+    [],
+    now,
+  );
+  const kinds = Object.fromEntries(rows.map((row) => [row.record.id, row.kind]));
+  assert.deepEqual(kinds, { A: "intake", B: "screening", C: "signing", D: "efiling" });
+  // A received case whose intake checks were already recorded still waits
+  // for screening to start, so it stays a row.
+  const verified = followupQueue([{ ...rec("V", "received"), intakeVerified: true }], [], now);
+  assert.deepEqual(verified.map((row) => row.kind), ["intake"]);
+
+  const ui = { person: sam, filters: {}, busy: false, now };
+  const html = renderFollowups(
+    [rec("A", "received"), rec("B", "screening"), rec("C", "review_approved"), rec("D", "ready_to_efile")],
+    [],
+    ui,
+  );
+  assert.match(rowOf(html, "A"), /New application: open it to start screening\./);
+  assert.match(rowOf(html, "B"), /Finish screening\./);
+  assert.match(rowOf(html, "B"), /data-action="open-case" data-case-id="B">[^]*? Open<\/button>/);
+  assert.match(rowOf(html, "C"), /Waiting for the client to sign Form 8879\./);
+  assert.match(rowOf(html, "D"), /Ready to e-file\./);
+  assert.match(
+    rowOf(html, "C"),
+    /<button type="button" class="btn primary" data-action="open-mark-ready-to-efile" data-case-id="C" >[^]*? Mark ready to e-file…<\/button>/,
+  );
+  assert.match(
+    rowOf(html, "D"),
+    /<button type="button" class="btn primary" data-action="open-mark-efiled" data-case-id="D" >[^]*? Mark e-filed…<\/button>/,
+  );
+  // Neither row offers the other's mark, and none carries a workflow action.
+  assert.doesNotMatch(rowOf(html, "C"), /open-mark-efiled/);
+  assert.doesNotMatch(rowOf(html, "D"), /open-mark-ready-to-efile/);
+  assert.deepEqual(actions(html), []);
+  // The reviewer hasn't recorded the call yet: the row explains instead of
+  // offering the mark, and says what it is waiting for.
+  for (const pending of ["pending", null]) {
+    const waiting = renderFollowups([rec("F", "review_approved", pending)], [], ui);
+    assert.doesNotMatch(waiting, /open-mark-ready-to-efile/);
+    assert.match(waiting, /The reviewer still needs to record the conversation with the client\./);
+    assert.match(waiting, /Waiting for the reviewer&#39;s call with the client\./); // esc() writes ' as &#39;
+    assert.doesNotMatch(waiting, /Waiting for the client to sign Form 8879\./);
+  }
+  // Only an administrator is offered the marks.
+  const forAlex = renderFollowups([rec("C", "review_approved"), rec("D", "ready_to_efile")], [], { ...ui, person: ALEX });
+  assert.doesNotMatch(forAlex, /open-mark-/);
+  assert.match(forAlex, /Needs office administrator access\./);
+  // The new kinds have their own icon and pill class, filter chips and counts.
+  for (const kind of ["screening", "signing", "efiling"]) {
+    assert.match(html, new RegExp(`<span class="kind-pill ${kind}">`));
+    assert.match(html, new RegExp(`data-filter="officeKind" data-value="${kind}" aria-pressed="false"`));
+  }
+  assert.match(html, /<span class="kind-pill screening"><svg[^]*?<\/svg> Screening<\/span>/);
+  assert.match(html, /Screening <span class="tab-count">1<\/span>/);
+  assert.match(html, /Signing <span class="tab-count">1<\/span>/);
+  assert.match(html, /E-filing <span class="tab-count">1<\/span>/);
+  assert.match(html, /Intake checks <span class="tab-count">1<\/span>/);
+  // Choosing a new kind narrows to it.
+  const signing = renderFollowups(
+    [rec("A", "received"), rec("C", "review_approved")],
+    [],
+    { ...ui, filters: { officeKind: "signing" } },
+  );
+  assert.match(signing, /data-kind="signing"/);
+  assert.doesNotMatch(signing, /data-kind="intake"/);
 });
 
 test("an unclaimed row offers a reminder to the office and a reason to everyone else", () => {
@@ -172,7 +252,7 @@ test("the task-type toggles narrow the rows and show counts", () => {
   assert.match(html, /role="group" aria-label="Task type"/);
   assert.equal(
     [...html.matchAll(/data-action="set-board-filter" data-filter="officeKind"/g)].length,
-    5,
+    8,
   );
   assert.match(html, /data-filter="officeKind" data-value="all" aria-pressed="true"/);
   const calls = page(cases, [], sam, { officeKind: "call" });

@@ -327,6 +327,24 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
   });
 });
 
+test("the board's tabs are unchanged, and its search finds a case at e-filed", () => {
+  const efiled = boardCase({ id: "case-9", reference: "VT-FILE-9999", stage: "efiled", preparerId: "alex" });
+  const signing = boardCase({ id: "case-8", reference: "VT-SIGN-8888", stage: "review_approved" });
+  // None of the three new stages is on a tab, so no tab shows them.
+  for (const status of ["available", "preparation", "review"])
+    assert.deepEqual(
+      filterCases([efiled, signing], { status }, ALEX).map((c) => c.id),
+      [],
+      status,
+    );
+  assert.deepEqual(boardCounts([efiled, signing], {}, ALEX), { available: 0, preparation: 0, review: 0 });
+  // A search ignores the tab, so it reaches every stage.
+  assert.deepEqual(filterCases([efiled, signing], { search: "FILE-9999" }, ALEX).map((c) => c.id), ["case-9"]);
+  assert.deepEqual(filterCases([efiled, signing], { search: "VT-SIGN" }, ALEX).map((c) => c.id), ["case-8"]);
+  const html = renderStaffBoard([efiled], PEOPLE, { person: ALEX, filters: { search: "VT-FILE" } });
+  assert.match(html, /VT-FILE-9999/);
+});
+
 test("the board's Language cell lists every language, preferred first, and the filter matches any of them", () => {
   const both = boardCase({ id: "b", reference: "VT-BOTH", answers: { language: "cantonese", language_also: ["mandarin"] } });
   const mand = boardCase({ id: "m", reference: "VT-MAND", answers: { language: "mandarin" } });

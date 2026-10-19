@@ -382,10 +382,10 @@ export function createStore(client) {
     // A client's list is their own cases and nothing more. A presenter's list
     // is a work board, and a board that cannot say who is already on a case,
     // what is waiting on a client, or who owes somebody a call is only a list
-    // of references. Those three answers, and the client's phone for the
-    // masked column, come from four grouped reads over the same RLS-scoped
-    // tables the case screen uses — not from the rows themselves, which carry
-    // no related record at all (Ruling R56).
+    // of references. Those three answers, the client's phone for the masked
+    // column and the reviewer's call status come from five grouped reads over
+    // the same RLS-scoped tables the case screen uses — not from the rows
+    // themselves, which carry no related record at all (Ruling R56).
     async listCases() {
       const staff = (await access()) === "presenter";
       const cases = (
@@ -422,6 +422,16 @@ export function createStore(client) {
           .select("case_id,phone")
           .in("case_id", ids),
       );
+      // The reviewer's call with the client, for Follow-ups' Mark ready to
+      // e-file (brainstorm Q12): the latest approved review's status alone.
+      const approvals = await read(
+        client
+          .from("reviews")
+          .select("case_id,client_contact_status,created_at")
+          .in("case_id", ids)
+          .eq("status", "approved")
+          .order("created_at"),
+      );
       const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
       return cases.map((record) => {
         const open = forCase(followups, record.id);
@@ -436,6 +446,9 @@ export function createStore(client) {
           ],
           openRequests: forCase(requests, record.id).length,
           phone: forCase(contacts, record.id)[0]?.phone ?? null,
+          // "pending", "completed", or null when no review has been approved.
+          reviewContactStatus:
+            forCase(approvals, record.id).at(-1)?.client_contact_status ?? null,
         };
       });
     },

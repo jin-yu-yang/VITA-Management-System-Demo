@@ -1,3 +1,4 @@
+import { STAGES } from "./contracts.mjs";
 import { phaseTab, describeStage } from "./domain.mjs";
 import { clientLanguages, languageOptions, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
 import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell, loadingLine, unloadedLine, emptyState } from "./ui.mjs";
@@ -9,35 +10,29 @@ export const POOL_TABS = Object.freeze([
   ["available", "Available"],
   ["preparation", "Waiting for preparation"],
   ["review", "Waiting for review"],
-  ["done", "Done"],
+  ["signing", "Waiting on client"],
+  ["filing", "Filing"],
   ["closed", "Closed"],
 ]);
 const TAB_VALUES = Object.freeze(POOL_TABS.map(([value]) => value));
-export const POOL_STAGES = Object.freeze([
-  "draft", "received", "preparation_ready", "preparing", "corrections_required",
-  "review_ready", "reviewing", "review_approved", "closed",
-]);
+export const POOL_STAGES = STAGES;
 export const DEFAULT_POOL_FILTERS = Object.freeze({
   poolPhase: "all", poolStage: "all", poolLanguage: "all",
   poolService: "all", poolPreparer: "all", poolReviewer: "all",
 });
 export const POOL_FILTER_KEYS = Object.freeze(Object.keys(DEFAULT_POOL_FILTERS));
 
-// The office's phases on today's nine stages. The three middle ones are the
+// The office's phases on the twelve stages. The three middle ones are the
 // volunteer board's own tabs (`phaseTab`), so a case never sits on one tab
-// for a volunteer and another for the office. Part 3 replaces both.
+// for a volunteer and another for the office. An approved return waits on the
+// client (Form 8879); once signed, it is the office's to file.
 export function poolPhase(record) {
-  switch (record?.stage) {
-    case "draft":
-    case "received":
-      return "intake";
-    case "review_approved":
-      return "done";
-    case "closed":
-      return "closed";
-    default:
-      return phaseTab(record);
-  }
+  const stage = record?.stage;
+  if (["draft", "received", "screening"].includes(stage)) return "intake";
+  if (stage === "review_approved") return "signing";
+  if (stage === "ready_to_efile" || stage === "efiled") return "filing";
+  if (stage === "closed") return "closed";
+  return phaseTab(record);
 }
 
 export function poolFilters(filters) {

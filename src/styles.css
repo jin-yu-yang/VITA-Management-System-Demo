@@ -3367,7 +3367,8 @@ textarea::placeholder {
   height: 14px;
   flex: none;
 }
-.kind-pill.intake {
+.kind-pill.intake,
+.kind-pill.screening {
   background: var(--vt-stage-intake-bg);
   color: var(--vt-stage-intake);
 }
@@ -3379,7 +3380,9 @@ textarea::placeholder {
   background: var(--vt-primary-soft);
   color: var(--vt-primary-hover);
 }
-.kind-pill.unclaimed {
+.kind-pill.unclaimed,
+.kind-pill.signing,
+.kind-pill.efiling {
   background: var(--vt-background);
   border-color: var(--vt-line);
   color: var(--vt-muted);

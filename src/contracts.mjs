@@ -97,7 +97,11 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //   { phone, spousePhone, bestContactTime, bestContactNote }, or null when
 //   there is none. A list entry carries only the
 //   scalars, intakeVersion and intakeVisited (sub-step ids, [] when none)
-//   included, and no contact. documentCards: the case_document_cards rows as
+//   included, and no contact. A presenter's list entry also carries six
+//   summaries: participants, openFollowups, followupAssigneeIds,
+//   openRequests, phone and reviewContactStatus (the latest approved
+//   review's client_contact_status: 'pending', 'completed', or null when no
+//   review has been approved). documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
 //   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,
