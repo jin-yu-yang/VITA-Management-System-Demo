@@ -2557,7 +2557,7 @@ test("the ready-for-review date is marked Changed only when it differs", () => {
     );
   const dateRow = /<th scope="row">Ready for review in TaxSlayer on<\/th>[^]*?<\/tr>/;
   assert.doesNotMatch(compare("2026-10-10").match(dateRow)[0], /Changed/);
-  assert.match(compare("2026-10-17").match(dateRow)[0], /<td>2026-10-17 <mark class="q-changed">Changed<\/mark>/);
+  assert.match(compare("2026-10-17").match(dateRow)[0], /<td>10\/17\/2026 <mark class="q-changed">Changed<\/mark>/);
 });
 
 test("Review in progress shows previous and current with changes marked", () => {
@@ -2575,6 +2575,33 @@ test("Review in progress shows previous and current with changes marked", () => 
   assert.ok(html.indexOf("q-compare") < html.indexOf('name="completedOn"'));
   // The first version has nothing to compare.
   assert.doesNotMatch(stepFor({ ...REVIEWING, preparerQuestionnaires: [prepQ()] }, MORGAN), /q-compare/);
+});
+
+test("questionnaire dates on staff screens read MM/DD/YYYY", () => {
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [reviewRow({ id: "review-1", status: "approved", clientContactStatus: "completed", clientContactOutcome: "reached" })],
+    preparerQuestionnaires: [prepQ()],
+    reviewerQuestionnaires: [
+      revQ({
+        signMethod: "in_person",
+        signAppointmentAt: "2026-11-02T14:30:00",
+        exitForm: {
+          federal: null,
+          state: { method: "efile", result: "owe", amount: "45.50", oweBy: "direct_debit", debitOn: "2027-04-15" },
+          local: [],
+        },
+      }),
+    ],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.match(html, /<span>Ready for review in TaxSlayer on<\/span><strong>10\/10\/2026<\/strong>/);
+  assert.match(html, /<span>Completed in TaxSlayer on<\/span><strong>10\/17\/2026<\/strong>/);
+  assert.match(html, /<span>Exit Form, State<\/span><strong>E-file, owes 45\.50 by direct debit on 04\/15\/2027<\/strong>/);
+  assert.match(html, /<span>Form 8879 signing<\/span><strong>In person, appointment 11\/02\/2026 14:30<\/strong>/);
+  assert.doesNotMatch(html, /20\d\d-\d\d-\d\d<\/strong>/);
 });
 
 test("review panel shows answers per version", () => {

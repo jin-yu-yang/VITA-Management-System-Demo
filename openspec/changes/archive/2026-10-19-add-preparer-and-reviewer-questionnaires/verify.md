@@ -88,7 +88,7 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 
 | Check | Why | Result |
 |---|---|---|
-| `npm test` | always | 1221/1221 at 7648054; **1223/1223 at d1a9e08** (two new tests) |
+| `npm test` | always | 1221/1221 at 7648054; 1223/1223 at d1a9e08; **1224/1224 after the date change** (PR #92 follow-up) |
 | `npm run db:migrate:test` + `npm run test:database` | migration 033, RPCs, RLS, fixtures | applied; 320/320 (re-run by the controller at 7648054) |
 | `npm run test:browser` | views, `app.mjs`, CSS and the story changed | 63/63, 915 s (fix-wave run at 294b513; Task 9 run 63/63, 920 s). Both ran in the worktree on D:, with no OneDrive problem. |
 | `npm run build:hant -- --check` | client text in Chinese changed | exit 0 |
@@ -105,6 +105,16 @@ All four are expected to sync at archive (CLAUDE.md §2 step 8, after main is me
 - No SQL changed, so the database suite was not re-run (320/320 at 7648054 still stands).
 - The story doesn't assert the went-over date's text, so `test:browser` was not re-run (63/63 at 294b513 still stands).
 - `openspec validate` for the change: valid.
+
+**After the PR opened (#92), Hailey asked for every questionnaire date on staff screens as MM/DD/YYYY.** The went-over
+date's helper now also formats:
+- ready for review (in the panel and the comparison);
+- completed on;
+- the Exit Form debit date;
+- the appointment's date part (its time stays as entered, `14:30`).
+
+A new view test pins all four, and the "Changed" test now expects `10/17/2026`. The story asserts none of these strings
+(checked with a grep of `tests/browser.mjs`), so `test:browser` was not re-run. `npm test` is 1224/1224.
 
 ---
 

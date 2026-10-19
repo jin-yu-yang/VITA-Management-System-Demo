@@ -1478,7 +1478,7 @@ function preparerRows(q) {
     [["confirmedMethod"], "How it was confirmed", optionLabel(CONFIRMED_METHODS, q.confirmedMethod)],
     [["shadedPartsCompleted"], "Shaded parts of the 13614-C completed", yesNo(q.shadedPartsCompleted)],
     [["stateForgivenessSet"], "State Forgiveness set to Y", yesNo(q.stateForgivenessSet)],
-    [["readyForReviewOn"], "Ready for review in TaxSlayer on", q.readyForReviewOn],
+    [["readyForReviewOn"], "Ready for review in TaxSlayer on", staffDate(q.readyForReviewOn)],
   ];
 }
 
@@ -1498,7 +1498,7 @@ function exitLine(group) {
     parts.push(`refund ${group.amount} by ${optionLabel(REFUND_BY, group.refundBy).toLowerCase()}`);
   else {
     const how = optionLabel(OWE_BY, group.oweBy).toLowerCase();
-    parts.push(`owes ${group.amount} by ${how}${group.debitOn ? ` on ${group.debitOn}` : ""}`);
+    parts.push(`owes ${group.amount} by ${how}${group.debitOn ? ` on ${staffDate(group.debitOn)}` : ""}`);
   }
   return parts.join(", ");
 }
@@ -1511,7 +1511,7 @@ function reviewerAnswers(q) {
     ["State", exitLine(exit.state)],
     ...(exit.local ?? []).map((entry) => [`Local: ${entry.type}`, exitLine(entry)]),
   ].filter(([, line]) => line);
-  return `${detailRow("Completed in TaxSlayer on", q.completedOn)}${detailRow(
+  return `${detailRow("Completed in TaxSlayer on", staffDate(q.completedOn))}${detailRow(
     "PA forgiveness",
     optionLabel(PA_FORGIVENESS, q.paForgiveness),
   )}${detailRow(
@@ -1521,7 +1521,7 @@ function reviewerAnswers(q) {
       : "No",
   )}${detailRow(
     "Form 8879 signing",
-    `${optionLabel(SIGN_METHODS, q.signMethod)}${q.signAppointmentAt ? `, appointment ${String(q.signAppointmentAt).replace("T", " ").slice(0, 16)}` : ""}`,
+    `${optionLabel(SIGN_METHODS, q.signMethod)}${q.signAppointmentAt ? `, appointment ${staffDate(String(q.signAppointmentAt).slice(0, 10))} ${String(q.signAppointmentAt).slice(11, 16)}` : ""}`,
   )}${
     entries.length
       ? entries.map(([label, line]) => detailRow(`Exit Form, ${label}`, line)).join("")
