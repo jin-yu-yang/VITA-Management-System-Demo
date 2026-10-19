@@ -1170,7 +1170,7 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   assert.deepEqual(steps("draft")[0], "current");
   assert.deepEqual(steps("corrections_required")[3], "current amend");
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
-  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?In review/);
+  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?Review in progress/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
   // Closed can happen at any stage, so nothing before it is claimed as done.
   assert.deepEqual(steps("closed"), ["todo", "todo", "todo", "todo", "todo", "todo", "todo", "current"]);

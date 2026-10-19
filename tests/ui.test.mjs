@@ -439,7 +439,18 @@ test("stage badges carry the design's family and keep their words", () => {
   assert.equal(family("review_approved"), "filing");
   assert.equal(family("closed"), "neutral");
   assert.equal(family("nonsense"), "neutral");
-  assert.match(stageBadge("review_approved"), /Review complete/);
+  assert.match(stageBadge("review_approved"), /Ready to exit/);
+  assert.equal(family("screening"), "intake");
+  assert.equal(family("ready_to_efile"), "filing");
+  assert.equal(family("efiled"), "filing");
+});
+
+test("a stage badge shows the staff name, or the client's label for a client", () => {
+  assert.match(stageBadge("screening"), /Screening in progress/);
+  assert.match(stageBadge("screening", "zh-Hans", { audience: "client" }), /审核中/);
+  assert.doesNotMatch(stageBadge("screening", "zh-Hans", { audience: "client" }), /Screening in progress/);
+  assert.match(stageBadge("review_approved", "en", { audience: "client" }), /Ready to sign/);
+  for (const stage of ["screening", "ready_to_efile", "efiled"]) assert.doesNotMatch(stageBadge(stage), /class="badge neutral"/, stage);
 });
 
 test("arrow keys, Home and End move between tabs and wrap around", () => {
@@ -507,7 +518,8 @@ test("times and days follow the language; English is the default", async () => {
 });
 
 test("badges and client-number labels follow the language", () => {
-  assert.match(stageBadge("reviewing", "zh-Hans"), /<i><\/i>\p{Script=Han}/u);
+  assert.match(stageBadge("reviewing", "zh-Hans", { audience: "client" }), /<i><\/i>\p{Script=Han}/u);
+  assert.match(stageBadge("reviewing", "zh-Hans"), /<i><\/i>Review in progress/, "staff names stay English");
   assert.equal(stageBadge("reviewing", "en"), stageBadge("reviewing"));
   assert.equal(clientNumberLabel({ clientNumber: null, stage: "draft" }, "zh-Hans"), "尚无客户编号");
   assert.equal(clientNumberLabel({ clientNumber: null, stage: "closed" }, "zh-Hans"), "从未发送");

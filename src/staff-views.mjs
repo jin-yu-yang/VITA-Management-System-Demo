@@ -1570,6 +1570,7 @@ export function taskContacts(record, task) {
 export const EVENT_SENTENCES = Object.freeze({
   SAVE_ANSWERS: "saved the intake answers",
   SUBMIT: "submitted the application",
+  START_SCREENING: "started screening",
   VERIFY_INTAKE: "recorded the intake checks",
   CLAIM_PREPARATION: "claimed preparation",
   REQUEST_DOCUMENT: "asked the client for a document",
@@ -1587,6 +1588,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RESUBMIT_REVIEW: "recorded that the corrections are complete",
   APPROVE_REVIEW: "approved the review",
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
+  MARK_READY_TO_EFILE: "recorded that the client signed Form 8879",
+  MARK_EFILED: "recorded that the return was e-filed",
   REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",

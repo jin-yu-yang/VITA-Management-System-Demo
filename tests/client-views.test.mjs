@@ -333,8 +333,8 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   const html = applicationsScreen(baseState({ cases }));
   assert.ok(html.includes("VT-AB2C-DE3F"));
   assert.ok(html.includes("VT-KK44-MM55"));
-  assert.ok(html.includes(describeStage("draft").label));
-  assert.ok(html.includes(describeStage("reviewing").label));
+  assert.ok(html.includes(describeStage("draft").clientLabel));
+  assert.ok(html.includes(describeStage("reviewing").clientLabel));
   assert.ok(hasButton(html, "Start a new application"));
   assert.match(html, /data-action="start-application"/);
   assert.match(html, /data-action="open-case"[^>]*data-case-id="case-b"|data-case-id="case-b"[^>]*data-action="open-case"/);
@@ -353,6 +353,14 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   assert.ok(!missing.includes("VT-AB2C-DE3F"));
   assert.ok(!missing.includes("VT-KK44-MM55"));
   assert.ok(!/registered|email address on file/i.test(missing));
+});
+
+test("a 简体 applications list names a screening case in Chinese, never the staff name", () => {
+  const html = applicationsScreen(
+    baseState({ lang: "zh-Hans", cases: [caseRecord({ id: "case-s", stage: "screening" })] }),
+  );
+  assert.ok(html.includes("审核中"));
+  assert.ok(!html.includes("Screening in progress"));
 });
 
 test("the reference card can be copied and printed and starts the form", () => {
@@ -429,7 +437,7 @@ test("progress names the stage, shows client history and answers a document requ
     }),
   });
   const html = progressScreen(state);
-  assert.ok(html.includes(describeStage("preparing").label));
+  assert.ok(html.includes(describeStage("preparing").clientLabel));
   assert.ok(html.includes(describeStage("preparing").clientMessage));
   assert.ok(html.includes("Application received."));
   assert.ok(html.includes("2025 mileage record"));
@@ -501,7 +509,7 @@ test("review progress is plain and never carries findings", () => {
         savedCase: caseRecord({ stage, revision: 8, intakeVerified: true }),
       }),
     );
-    assert.ok(html.includes(describeStage(stage).label), stage);
+    assert.ok(html.includes(describeStage(stage).clientLabel), stage);
     assert.ok(html.includes(describeStage(stage).clientMessage), stage);
     for (const word of ["findings", "refund", "routing", "deposit", "$"])
       assert.ok(!html.toLowerCase().includes(word), `${stage} must not say ${word}`);
