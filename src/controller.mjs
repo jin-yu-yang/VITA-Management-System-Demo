@@ -359,6 +359,8 @@ export function createController({
   // The start being sent now, `{ caseId, promise }`, so a case action can wait
   // for it (`runAction`).
   let screeningInFlight = null;
+  // A case action is waiting for that start; a second press does nothing.
+  let pressWaitingOnStart = false;
   // What the save state was before an edit made a version-2 draft dirty
   // ("idle" or "saved"), so an undo can put it back.
   let stateBeforeEdit = "idle";
@@ -2316,9 +2318,20 @@ export function createController({
       throw refuse("NOT_FOUND", "Open an application first.");
     // A start sent by this window's open is still out: the press waits for it
     // (it re-reads the case), so it pins the new revision and meets no conflict.
+    // A second press meanwhile does nothing, as a second click while a
+    // dispatch is in flight does nothing; and if the case is left meanwhile,
+    // the press was for the old opening and nothing is sent (as `cardAction`
+    // treats a press whose opening has changed).
     if (screeningInFlight?.caseId === state.savedCase.id) {
-      await screeningInFlight.promise.catch(() => {});
-      if (!state.savedCase) throw refuse("NOT_FOUND", "Open an application first.");
+      if (pressWaitingOnStart) return null;
+      const caseId = state.savedCase.id;
+      pressWaitingOnStart = true;
+      try {
+        await screeningInFlight.promise.catch(() => {});
+      } finally {
+        pressWaitingOnStart = false;
+      }
+      if (state.savedCase?.id !== caseId) return null;
     }
     const action = {
       actionId: newActionId(),

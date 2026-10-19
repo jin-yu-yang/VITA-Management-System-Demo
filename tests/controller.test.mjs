@@ -5837,3 +5837,62 @@ test("signing out drops a held start: nothing is sent when the connection return
   assert.equal(startWrites(store).length, 1, "nothing resent");
   controller.stop();
 });
+
+// A store whose first START_SCREENING is held open until `release()`.
+function storeHoldingFirstStart(cases) {
+  const store = presenterStore({ cases, people: adminPeople });
+  const act = store.act;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  store.act = async (action) => {
+    if (action.type === "START_SCREENING" && !held) {
+      held = true;
+      await gate;
+    }
+    return act(action);
+  };
+  return { store, release };
+}
+
+test("a press that waited for the start is not sent for another case opened meanwhile", async () => {
+  const other = { ...RECEIVED, id: "case-b", reference: "VT-BBBB-BBBB" };
+  const { store, release } = storeHoldingFirstStart([RECEIVED, other]);
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const pressed = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  await controller.selectCase("case-b");
+  release();
+  assert.equal(await pressed, null, "a press for the case that was left sends nothing");
+  await tick();
+  assert.equal(store.writes.filter((write) => write.type === "ESCALATE_CONTACT").length, 0);
+  assert.equal(controller.getState().selectedCaseId, "case-b");
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("a second press while one waits for the start does nothing", async () => {
+  const { store, release } = storeHoldingFirstStart([RECEIVED]);
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("person-sam");
+  await controller.selectCase("case-r");
+  await tick();
+  const first = controller.runAction("ESCALATE_CONTACT", {});
+  await tick();
+  assert.equal(await controller.runAction("ESCALATE_CONTACT", {}), null, "the second press is ignored");
+  release();
+  await first;
+  await tick();
+  const sent = store.writes.filter((write) => write.type === "ESCALATE_CONTACT");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].expectedRevision, 4);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
