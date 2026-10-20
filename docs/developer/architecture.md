@@ -210,6 +210,7 @@ reload. Details in [Front end: sign-in](frontend.md#sign-in) and
 | Email one-time-code sign-in and sessions | Document upload: one fixed fictional file name, no file storage |
 | Shared state across browsers, live updates | Reminders: a timestamp, no message is sent |
 | Every permission, eligibility and independence rule | TaxSlayer milestones: recorded by hand, no integration |
-| Concurrency, idempotency, audit history | Client phone calls: outcomes are recorded, calls happen elsewhere |
+| Concurrency, idempotency, audit history | — |
+| Screening checks: a volunteer ticks what they confirmed | — |
 | Row-level privacy between clients | Client phone calls: outcomes are recorded, calls happen elsewhere |
 | Intake answer checks, in the browser and again in the database | Materials received: staff tick what they were shown; nothing is stored |
