@@ -20,9 +20,9 @@ At Ready to exit, the message above SHALL be shown only for a case approved with
 | Appointment | in person, and the visit was not same-day | Your return has been checked. Please come to PCDC on {when} to sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。请于 {when} 到 PCDC 签署 8879 表，签署后才能递交报税表。 |
 | Same day | in person, on a same-day visit | Your return has been checked. Please sign Form 8879 with a volunteer before you leave today. It is needed before your return can be filed. | 您的报税表已检查完毕。请在今天离开前与志愿者一起签署 8879 表，签署后才能递交报税表。 |
 | Customer Portal | e-sign in the TaxSlayer Customer Portal | Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed. | 您的报税表已检查完毕。请在 TaxSlayer 客户门户（Customer Portal）以电子方式签署 8879 表，签署后才能递交报税表。（门户为英文页面，可用浏览器翻译） |
-| Go over first | the reviewer did not go over the return with the client, whatever the signing method | Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。 |
+| Go over first | the reviewer did not go over the return with the client, whatever the signing method, until the office resolves its go-over follow-up | Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed. | 您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署 8879 表，签署后才能递交报税表。 |
 
-`{when}` SHALL be the appointment's date and time as the reviewer entered it, in the screen's language, with the weekday and no year. It SHALL never be shifted by the viewer's time zone. The variant SHALL be fixed at approval. The client SHALL read only the signing plan and the appointment, never an answer of either questionnaire.
+`{when}` SHALL be the appointment's date and time as the reviewer entered it, in the screen's language, with the weekday and no year. It SHALL never be shifted by the viewer's time zone. The variant SHALL be set at approval and SHALL change only once: when the office resolves the go-over follow-up of a Go over first case, with either outcome, the client SHALL from then on see the variant for the reviewer's signing method (Appointment with the stored date and time, Same day, or Customer Portal), chosen by the same rules as at approval. The client SHALL read only the signing plan and the appointment, never an answer of either questionnaire.
 
 Draft, Filing in progress, Corrections in progress, Review in progress and Closed SHALL keep today's messages.
 
@@ -63,6 +63,12 @@ Earlier history lines SHALL keep their words and translations. No client message
 #### Scenario: Not yet gone over
 - **WHEN** the reviewer approves with "no" to going over the return and the Customer Portal
 - **THEN** the client's status panel shows the Go over first message, not the Customer Portal one
+
+#### Scenario: After the go-over is resolved the client sees the signing variant
+- **WHEN** the reviewer approved with "no" to going over the return and the Customer Portal, and the office then resolves the go-over follow-up, with either outcome
+- **THEN** the client's status panel shows the Customer Portal message instead of the Go over first message, while the case is still at Ready to exit
+- **AND WHEN** the reviewer had chosen in person with an appointment on a drop-off case
+- **THEN** after the resolve the client sees the Appointment message with that appointment's date and time
 
 #### Scenario: A case approved before this change
 - **WHEN** a client opens a case that was approved before the questionnaires existed

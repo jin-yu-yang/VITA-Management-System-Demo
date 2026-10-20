@@ -71,8 +71,8 @@
   with a questionnaire settles the contact step (D10), and the action itself is unchanged.
 - Importing TaxSlayer data, the intake catalogue, the stage model, and the approval's client history line.
 - Editing answers after the action. A questionnaire is answered once per hand-off.
-- Changing the Ready to exit variant after approval. For example, it does not change when the office goes over
-  the return (D11).
+- Changing the Ready to exit variant after approval, except once: resolving the office's go-over task switches
+  Go over first to the signing variant (D11, added after Jinyu's review on #92).
 
 ## Decisions
 
@@ -399,15 +399,22 @@ LocalGroup = Group + { "type": "NPT"|"BIRT"|"EET"|"SIT"|"PAIBWTR" }
 - **The PR description must call this out.** It must say that the client can now read `signing_plan` and
   `signing_appointment_at` on their own case, which no earlier column on `cases` exposed. It sits beside the
   R28 revision (D3).
-- **Trade-off:** the variant is fixed at approval. On `go_over_first`, it still reads correctly after the office
-  goes over the return, because signing is still to come. It changes when the case moves to Ready to e-file.
+- **After the go-over (added after Jinyu's review on #92):**
+  - `go_over_first` lasts only until the office resolves the go-over task, with either outcome.
+  - `act_resolve_followup` then sets the plan to the reviewer's signing method, by the same rules as approval:
+    `portal`; `same_day` for a same-day case; otherwise `appointment`, with the stored time. An in-person,
+    not-same-day answer always carries an appointment (D6, enforced whether or not the reviewer went over the
+    return), so no "arrange signing" variant is needed.
+  - It is done in the database, so the client sees the change through the column it already reads.
+  - This replaces the earlier trade-off, which left the message unchanged until Mark ready to e-file. Jinyu's
+    review showed the client was still being told the return would be gone over after the office had done it.
 - **Alternatives considered:**
   - Varying the approval's history line instead. Rejected: the status panel is where #91 tells the client what
     happens next, and a history line is a record of the past.
   - A client-readable view on `reviewer_questionnaires`. Rejected: one RLS mistake there would show amounts to
     the client. Two narrow columns cannot.
-  - Updating the variant when the go-over task is resolved. Rejected for now: it needs `act_resolve_followup`
-    redefined for a message that already reads correctly.
+  - Computing the post-go-over variant in the browser from the follow-up's status. Rejected: the client cannot
+    read `admin_followups`, and the database already holds the plan the client reads.
 
 ### D12: Shared functions this migration redefines, and where each is copied from
 
@@ -421,6 +428,7 @@ as 032 did.
 | `vitally_private.act_resubmit_review` | 006 (its only definition) | the same |
 | `vitally_private.act_approve_review` | 021 (#91 did not redefine it) | the date and appointment checks, the reviewer insert, the D5 follow-up, the D10 contact step, the D11 signing plan; its client message is unchanged |
 | `vitally_private.apply_fixture_scenario` | **031** (#88's, newest; #91 did not redefine it) | the D8 deletes, seeds and case columns; #88's contact-log lines kept |
+| `vitally_private.act_resolve_followup` | **004** (its only definition) | resolving a `go_over_return` task switches a `go_over_first` plan to the reviewer's signing method (D11) |
 | `vitally_private.act_mark_ready_to_efile` | **032** (its only definition) | the D13 wait on an open go-over follow-up, after 032's contact-step check; its client message is unchanged |
 
 Checked on 2026-10-19 against main at 71e84d1, with `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql`.
@@ -434,12 +442,12 @@ These are every definition there is:
 | `apply_fixture_scenario` | 009, 019, 031 |
 | `check_payload` | 003, 004, 005, 006, 011, 013, 017, 032 |
 | `act_mark_ready_to_efile` | 032 |
+| `act_resolve_followup` | 004 |
 
 **Not redefined:**
 - `public.vitally_apply_action` (newest 032) and `vitally_private.check_operation_authority` (newest 032): no
   action type is added or regrouped.
-- `check_authority` (018), `check_related` (023), `act_escalate_contact`, `lock_open_followup` and
-  `act_resolve_followup` (004), `act_record_review_contact` and `hand_to_review` (006), `act_close_case` (032),
+- `check_authority` (018), `check_related` (023), `act_escalate_contact` and `lock_open_followup` (004), `act_record_review_contact` and `hand_to_review` (006), `act_close_case` (032),
   `fixture_history` (023), and #88's `vitally_log_contact` and `act_record_contact` (031).
 
 ### D13: Mark ready to e-file waits for the office's go-over (Hailey's ruling on Q1, 2026-10-19)

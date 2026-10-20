@@ -2765,6 +2765,17 @@ async function runPermutation(t, roles) {
         ),
       );
       assert.equal((await caseById(fixture, classCase.id)).stage, "review_approved");
+      // Once the office has gone over the return, the client is told how to sign
+      // (the reviewer chose the portal), not that the return will be gone over.
+      assert.equal(
+        (await one(fixture, "select signing_plan from public.cases where id=$1", [classCase.id])).signing_plan,
+        "portal",
+      );
+      await waitForText(
+        client,
+        "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed.",
+        ARRIVAL_MS,
+      );
 
       // ---- 1–2. Mark ready to e-file, from the class case's signing row ---
       const signingRow = queueRow("signing", classReference);

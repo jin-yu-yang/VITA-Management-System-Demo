@@ -154,6 +154,35 @@ Two coverage notes from the ledger, for the retrospective:
 
 ---
 
+## Review round: Jinyu's CHANGES_REQUESTED on PR #92 (2026-10-20)
+
+**Finding.** With a "No" approval, the client kept reading "PCDC will contact you to go over your return together"
+after the office had resolved the go-over follow-up. It only changed at Mark ready to e-file. The spec never said what
+the client sees after the go-over.
+
+**Fix:**
+- `033` redefines `act_resolve_followup`, verbatim from 004 with `-- 033` lines.
+- Resolving a `go_over_return` task, with either outcome, turns a `go_over_first` plan into the reviewer's signing
+  method: `portal`; `same_day`; or `appointment` with the stored time.
+- A "No" approval cannot leave an in-person, not-same-day appointment empty: D6's rule applies whatever the go-over
+  answer. So no "arrange signing" variant was added.
+- 033 was confirmed absent from `origin/main` (71e84d1) and from any hosted project before it was edited.
+- **Specs:** `case-lifecycle` (canonical and the archived delta) gets the rule and the scenario "After the go-over is
+  resolved the client sees the signing variant". `office-follow-up` gets the cross-reference.
+- **Design:** D11 and D12 in the archived design are updated. `docs/developer/database.md` now records the new
+  definition.
+
+**Checks** (in the D: worktree):
+
+| Check | Result |
+|---|---|
+| `npm test` | 1225/1225 |
+| `npm run db:migrate:test` + `npm run test:database` | applied; 321/321 (new test "after the go-over is resolved the client sees the signing variant") |
+| `npm run test:browser` | 63/63 (about 20 min); the story now asserts that the client sees the Customer Portal message after the resolve |
+| `npx openspec validate --all` | 8/8 for everything on the branch |
+
+---
+
 ## Overall Decision
 
 - [ ] ✅ PASS

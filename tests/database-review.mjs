@@ -1824,6 +1824,40 @@ test("the three handlers store the answers", async (t) => {
       const first = await approve("online", NO);
       assert.deepEqual(first, { signing_plan: "go_over_first", signing_appointment_at: null });
     });
+    await t.test("after the go-over is resolved the client sees the signing variant", async () => {
+      // A "no" approval reads go_over_first until the office resolves its
+      // go-over task, with either outcome; then the reviewer's signing method.
+      const resolveGoOver = async (service, questionnaire, outcome) => {
+        const caseId = await reviewingCase(f, f.morgan);
+        await setService(f, caseId, service);
+        await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", { questionnaire });
+        assert.equal((await plan(f, caseId)).signing_plan, "go_over_first");
+        const [task] = (
+          await f.sql(
+            "select id, assignee_person_id from public.admin_followups where case_id=$1 and purpose='go_over_return' and status='open'",
+            [caseId],
+          )
+        ).rows;
+        await f.act(f.presenter, caseId, task.assignee_person_id, "RESOLVE_FOLLOWUP", {
+          followupId: task.id,
+          outcome,
+          note: "Fictional: went over the return by phone.",
+        });
+        return plan(f, caseId);
+      };
+      assert.deepEqual(await resolveGoOver("online", NO, "reached"), {
+        signing_plan: "portal",
+        signing_appointment_at: null,
+      });
+      assert.deepEqual(
+        await resolveGoOver("drop_off", { ...NO, signMethod: "in_person", signAppointmentAt: "2026-11-02T14:30" }, "no_further_contact"),
+        { signing_plan: "appointment", signing_appointment_at: "2026-11-02T14:30" },
+      );
+      assert.deepEqual(await resolveGoOver("same_day", { ...NO, signMethod: "in_person" }, "reached"), {
+        signing_plan: "same_day",
+        signing_appointment_at: null,
+      });
+    });
     await t.test("client messages carry no answer", async () => {
       const q = {
         ...REVIEWER,

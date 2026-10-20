@@ -103,7 +103,7 @@ version of a function, use the **last** file that defines it:
 | Function | Current definition |
 | --- | --- |
 | `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `032_screening_and_efiling_stages.sql` |
-| `vitally_private.check_payload`, `act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile` | `033_review_questionnaires.sql` |
+| `vitally_private.check_payload`, `act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_authority` | `018_document_card_authority.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
@@ -365,7 +365,7 @@ shorthands in the table:
 | `VERIFY_DOCUMENT` | Presenter + person | `preparing`, `corrections_required` | Current preparer; request `awaiting_verification` | Request → `verified` | Yes |
 | `ESCALATE_CONTACT` | Presenter + person | `preparing`, `corrections_required` | Current preparer; request `open`; no open task | Follow-up assigned to the workspace's default follow-up person | No |
 | `RECORD_CONTACT` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Refused since 031 (`VALIDATION`); contacts are logged with `vitally_log_contact` | No |
-| `RESOLVE_FOLLOWUP` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Task → `resolved` | No |
+| `RESOLVE_FOLLOWUP` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Task → `resolved`; (033) a `go_over_return` task also turns the case's `go_over_first` signing plan into the reviewer's signing method | No |
 | `SUBMIT_REVIEW` | Presenter + person | `preparing` | Current preparer; intake verified; no unsettled request | Version + 1; → `review_ready`; active review superseded | Yes |
 | `CLAIM_REVIEW` | Presenter + person | `review_ready`, no reviewer | Not a participant (`SELF_REVIEW`); `review` | → `reviewing`; sets reviewer; new `active` review | Yes |
 | `REQUEST_CORRECTIONS` | Presenter + person | `reviewing` | Current reviewer; review at current version | Review → `corrections_requested` with findings; → `corrections_required`; reviewer cleared | Yes (no findings) |

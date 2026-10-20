@@ -4,6 +4,13 @@
 > Commit range: `71e84d1..a15152a` (merge base with main to the last verify update; the retrospective and archive
 > commits follow)
 > Worktree: `.claude/worktrees/add-preparer-and-reviewer-questionnaires` (on D:, outside OneDrive)
+>
+> **Update 2026-10-20:** the D11 trade-off ("the variant is fixed at approval") in §1/§5 was superseded by Jinyu's
+> review on PR #92. After a "No" approval, the client was still told the return would be gone over once the office had
+> done it. Resolving the go-over task now switches the client's message to the signing variant (033
+> `act_resolve_followup`). See verify.md, "Review round: Jinyu's CHANGES_REQUESTED on PR #92". Lesson for §6: a
+> client-facing message tied to a task must say what happens when the task ends, and the spec should have a scenario
+> for it.
 
 ---
 
