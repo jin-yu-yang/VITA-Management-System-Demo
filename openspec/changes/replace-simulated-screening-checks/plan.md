@@ -193,13 +193,13 @@ test("old VERIFY_INTAKE event renders", …)                 // history entry {a
 **Interfaces:**
 - Produces: a new table entry, the D4 English sentence mapped to the D4 简体. The old "Simulated intake checks are recorded. …" entry stays.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `new screening line translated`: the D4 English maps to the D4 简体, and the 繁體 is generated;
   - `old simulated line keeps its 简体`: the old entry is still present.
-- [ ] **Step 2:** Run `node --test tests/client-language.test.mjs`. Expected: FAIL.
-- [ ] **Step 3:** Add the entry, run `npm run build:hant`, and check the generated 繁體 by eye.
-- [ ] **Step 4:** Run `npm test` and `npm run build:hant -- --check`. Expected: PASS.
-- [ ] **Step 5:** Tick tasks 3.4 and 3.5, then commit, including `src/zh-hant.mjs`: `git commit -am "Screening checks: the client's history line"`.
+- [x] **Step 2:** Run `node --test tests/client-language.test.mjs`. Expected: FAIL.
+- [x] **Step 3:** Add the entry, run `npm run build:hant`, and check the generated 繁體 by eye.
+- [x] **Step 4:** Run `npm test` and `npm run build:hant -- --check`. Expected: PASS.
+- [x] **Step 5:** Tick tasks 3.4 and 3.5, then commit, including `src/zh-hant.mjs`: `git commit -am "Screening checks: the client's history line"`.
 
 ### Task 7: Story, docs and full checks
 

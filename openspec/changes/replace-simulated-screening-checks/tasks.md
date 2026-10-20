@@ -37,8 +37,8 @@
   - `src/contracts.mjs` notes.
 
   Update the tests that assert the old strings.
-- [ ] 3.4 Client text: add the D4 sentence to `src/client-text.mjs`, in English and 简体, and keep the old sentence's entry. Run `npm run build:hant` and commit `src/zh-hant.mjs`. Update `tests/client-language.test.mjs` for the new line, keeping the old one.
-- [ ] 3.5 Run `npm test` and `npm run build:hant -- --check`.
+- [x] 3.4 Client text: add the D4 sentence to `src/client-text.mjs`, in English and 简体, and keep the old sentence's entry. Run `npm run build:hant` and commit `src/zh-hant.mjs`. Update `tests/client-language.test.mjs` for the new line, keeping the old one.
+- [x] 3.5 Run `npm test` and `npm run build:hant -- --check`.
 
 ## 4. Story, docs and full checks
 

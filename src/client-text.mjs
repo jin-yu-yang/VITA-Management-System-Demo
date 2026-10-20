@@ -441,6 +441,8 @@ export const SENTENCES = Object.freeze({
   // the request line ("A volunteer requested a document: …") is historyLine's
   "Application received. A volunteer will check your information and documents.": "已收到申请。志愿者会核对您的信息和文件。",
   "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation.": "模拟的登记核查已记录。您的申请正在等待志愿者开始准备报税表。",
+  // Migration 034: the real screening checks replace the simulated line above (kept for old rows).
+  "PCDC finished screening your application. A volunteer will start preparing your return next.": "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。",
   "A volunteer has started preparing your return.": "志愿者已开始准备您的报税表。",
   "Your document was received and is waiting for a volunteer to verify it.": "已收到您的文件，正在等待志愿者核实。",
   "A sample document was recorded by staff and is awaiting verification.": "工作人员已登记一份示例文件，正在等待核实。",
