@@ -20,6 +20,8 @@ export const CASE_ACTIONS = Object.freeze([
   "SAVE_ANSWERS",
   "SUBMIT",
   "START_SCREENING",
+  // VERIFY_INTAKE carries { checks }: phone, documents and in_scope, all true,
+  // plus identity when the case is an online one.
   "VERIFY_INTAKE",
   "CLAIM_PREPARATION",
   "REQUEST_DOCUMENT",

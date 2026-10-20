@@ -5,6 +5,7 @@ import {
   applyArgs,
   rejected,
   SAMPLE_CONTACT,
+  screeningChecks,
 } from "./support/database-fixture.mjs";
 import { RPC_SIGNATURES } from "./support/rpc-signatures.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
@@ -174,9 +175,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           (entry) => entry.action === "VERIFY_INTAKE",
         );
         assert.equal(intake.actorPersonId, f.sam);
-        // Demo attestations are labelled simulated, never a real identity check.
         assert.deepEqual(intake.detail, {
-          simulated: true,
           checks: { ...f.intakeChecks },
         });
         assert.deepEqual(
@@ -738,15 +737,8 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal((await caseRow(f, caseId)).stage, "received");
         for (const payload of [
           {},
-          { checks: { interview: true, identity: true, documents: true } },
-          {
-            checks: {
-              interview: true,
-              identity: true,
-              documents: true,
-              consent: false,
-            },
-          },
+          { checks: { phone: true, documents: true } },
+          { checks: { ...f.intakeChecks, documents: false } },
           { checks: { ...f.intakeChecks, extra: true } },
           { checks: f.intakeChecks, extra: 1 },
         ])
@@ -946,6 +938,117 @@ test("installed entry points deny anonymous callers and serve members", async (t
         }
       },
     );
+  } finally {
+    await f.close();
+  }
+});
+
+// Screening checks (design D2, D6): the set follows the case's service.
+const setService = (f, caseId, service) =>
+  f.sql("update public.cases set answers=answers||$2::jsonb where id=$1", [
+    caseId,
+    JSON.stringify({ service }),
+  ]);
+const screeningCase = async (f, service) => {
+  const created = await draftCase(f);
+  await f.act(f.applicantA, created.caseId, null, "SAVE_ANSWERS", {
+    answers: makeSampleAnswers(),
+  });
+  if (service !== "drop_off") await setService(f, created.caseId, service);
+  await f.act(f.applicantA, created.caseId, null, "SUBMIT", { confirmed: true });
+  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
+  return created.caseId;
+};
+const refusedAndUnchanged = async (f, caseId, payload) => {
+  const before = await revisionOf(f, caseId);
+  await assert.rejects(
+    () => f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", payload),
+    rejected("VALIDATION"),
+  );
+  assert.equal((await caseRow(f, caseId)).stage, "screening");
+  assert.equal(await revisionOf(f, caseId), before);
+};
+
+test("screening checks: the set follows the service", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const dropOff = await screeningCase(f, "drop_off");
+    await f.act(f.presenter, dropOff, f.sam, "VERIFY_INTAKE", {
+      checks: screeningChecks("drop_off"),
+    });
+    const row = await caseRow(f, dropOff);
+    assert.equal(row.stage, "preparation_ready");
+    assert.equal(row.intake_verified, true);
+    const staff = await f.readStaffCase(dropOff);
+    const event = staff.internalHistory.find((e) => e.action === "VERIFY_INTAKE");
+    assert.deepEqual(event.detail, {
+      checks: { phone: true, documents: true, in_scope: true },
+    });
+    assert.ok(!("simulated" in event.detail));
+    const message = (
+      await f.sql(
+        "select message from public.client_events where case_id=$1 and action='VERIFY_INTAKE'",
+        [dropOff],
+      )
+    ).rows[0].message;
+    assert.equal(
+      message,
+      "PCDC finished screening your application. A volunteer will start preparing your return next.",
+    );
+    const online = await screeningCase(f, "online");
+    await refusedAndUnchanged(f, online, { checks: screeningChecks("drop_off") });
+    await f.act(f.presenter, online, f.sam, "VERIFY_INTAKE", {
+      checks: screeningChecks("online"),
+    });
+    assert.equal((await caseRow(f, online)).stage, "preparation_ready");
+  } finally {
+    await f.close();
+  }
+});
+
+test("old four-key payload refused", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await screeningCase(f, "drop_off");
+    await refusedAndUnchanged(f, caseId, {
+      checks: { interview: true, identity: true, documents: true, consent: true },
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+test("identity refused without online service", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const dropOff = await screeningCase(f, "drop_off");
+    await refusedAndUnchanged(f, dropOff, { checks: screeningChecks("online") });
+    const noService = await screeningCase(f, "drop_off");
+    await f.sql("update public.cases set answers=answers-'service' where id=$1", [noService]);
+    await refusedAndUnchanged(f, noService, { checks: screeningChecks("online") });
+    // Positive control: without a service answer the three checks do record.
+    await f.act(f.presenter, noService, f.sam, "VERIFY_INTAKE", {
+      checks: screeningChecks("drop_off"),
+    });
+    assert.equal((await caseRow(f, noService)).stage, "preparation_ready");
+  } finally {
+    await f.close();
+  }
+});
+
+test("missing, extra or false checks refused", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await screeningCase(f, "drop_off");
+    const good = screeningChecks("drop_off");
+    const { in_scope: _omitted, ...missing } = good;
+    for (const checks of [
+      missing,
+      { ...good, note: "x" },
+      { ...good, documents: false },
+    ])
+      await refusedAndUnchanged(f, caseId, { checks });
+    await refusedAndUnchanged(f, caseId, { checks: good, extra: 1 });
   } finally {
     await f.close();
   }

@@ -379,6 +379,25 @@ test("the screening, 8879 and e-file history lines translate exactly", () => {
   }
 });
 
+test("new screening line translated", () => {
+  const english = "PCDC finished screening your application. A volunteer will start preparing your return next.";
+  const zh = "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。";
+  assert.equal(SENTENCES[english], zh);
+  assert.equal(historyLine(english, "zh-Hans"), zh);
+  assert.equal(historyLine(english, "en"), english);
+  assert.ok(migrationSentences().sentences.includes(english), "migration 034 writes it");
+  const hant = historyLine(english, "zh-Hant");
+  assert.notEqual(hant, zh);
+  assert.ok(hant.includes("已完成"), hant);
+});
+
+test("old simulated line keeps its 简体", () => {
+  assert.equal(
+    SENTENCES["Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation."],
+    "模拟的登记核查已记录。您的申请正在等待志愿者开始准备报税表。",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Errors, sign-in and notices: every sentence that can reach a client
 // ---------------------------------------------------------------------------

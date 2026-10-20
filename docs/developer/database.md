@@ -61,6 +61,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `031_contact_log.sql` | Hand-written: the contact log (`contact_log`, `contact_log_versions`), its two functions `vitally_log_contact` and `vitally_edit_contact`, the one-time move of the old call attempts, `RECORD_CONTACT` refusing new requests, and the fixture change |
 | `032_screening_and_efiling_stages.sql` | Hand-written: the `screening`, `ready_to_efile` and `efiled` stages, `START_SCREENING`, `MARK_READY_TO_EFILE` and `MARK_EFILED`, `VERIFY_INTAKE` from `screening`, an office submit landing in `screening`, and `CLOSE_CASE` from `screening` |
 | `033_review_questionnaires.sql` | Hand-written: `preparer_questionnaires` and `reviewer_questionnaires` (staff-only), `admin_followups.purpose` and a nullable `request_id`, `cases.signing_plan` and `signing_appointment_at`; `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` take a questionnaire; an approval settles the contact step and, when the reviewer did not go over the return, opens a `go_over_return` task for the office; `MARK_READY_TO_EFILE` waits for an open go-over task; the sample cases seed questionnaires |
+| `034_screening_checks.sql` | Hand-written: `VERIFY_INTAKE` records the real screening checks, `phone`, `documents` and `in_scope`, plus `identity` only when the case's `service` answer is `online` (a replayed old four-key payload is refused); the client's history line is "PCDC finished screening your application. A volunteer will start preparing your return next."; `check_payload`, `act_verify_intake` and `fixture_history` replaced, and the sample cases record the new checks |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -103,7 +104,8 @@ version of a function, use the **last** file that defines it:
 | Function | Current definition |
 | --- | --- |
 | `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `032_screening_and_efiling_stages.sql` |
-| `vitally_private.check_payload`, `act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
+| `vitally_private.check_payload`, `act_verify_intake` | `034_screening_checks.sql` |
+| `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_authority` | `018_document_card_authority.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
@@ -111,13 +113,14 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.initialize_workspace` | `001_identity_and_cases.sql` |
 | `public.vitally_create_case` (answers must be `{}`), `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_update_contact` | `023_remove_intake_v1.sql` |
-| `vitally_private.act_submit`, `act_verify_intake`, `act_close_case`, `act_start_screening`, `act_mark_efiled` | `032_screening_and_efiling_stages.sql` |
+| `vitally_private.act_submit`, `act_close_case`, `act_start_screening`, `act_mark_efiled` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
 | `vitally_private.fixture_answers_v2`, `fixture_contact_v2` | `019_fixtures_v2.sql` |
 | `vitally_private.apply_fixture_scenario` | `033_review_questionnaires.sql` |
-| `vitally_private.seed_fixtures`, `fixture_history` | `023_remove_intake_v1.sql` |
+| `vitally_private.fixture_history` | `034_screening_checks.sql` |
+| `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
 To list every function with its file and line:
@@ -389,7 +392,7 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | --- | --- |
 | `SAVE_ANSWERS` | `{answers: {<catalogue id>: value \| null}}`, contact fields included; a draft may add `visited: string[]` (sub-step ids, at most 64) |
 | `SUBMIT` | `{confirmed: true}` |
-| `VERIFY_INTAKE` | `{checks: {interview: true, identity: true, documents: true, consent: true}}` |
+| `VERIFY_INTAKE` | `{checks: {phone: true, documents: true, in_scope: true}}`, plus `identity: true` exactly when the case's `answers.service` is `online`; any other set is a `VALIDATION` error (034). The browser builds the set with `screeningCheckKeys(service)` |
 | `START_SCREENING`, `CLAIM_PREPARATION`, `CLAIM_REVIEW`, `REMIND` | `{}` |
 | `SUBMIT_REVIEW`, `APPROVE_REVIEW` | `{questionnaire}` (the preparer's or the reviewer's, see design D2 and D3) |
 | `MARK_READY_TO_EFILE`, `MARK_EFILED` | `{confirmed: true}` |
@@ -584,7 +587,7 @@ Example: a reviewer can "release" a review they claimed by mistake.
 2. **Migration `NNN_release_review.sql`:**
    - `create or replace vitally_private.check_operation_authority` (current definition: 032) with
      the new type in the right authority group.
-   - `create or replace vitally_private.check_payload` (current definition: 032) with the payload
+   - `create or replace vitally_private.check_payload` (current definition: 034) with the payload
      shape.
    - A new `vitally_private.act_release_review(p_member, p_case, p_person, p_payload)`: stage check
      first (`VT004`), then `require_case_reviewer`, then the change. Return

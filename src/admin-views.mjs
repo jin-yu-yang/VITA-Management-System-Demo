@@ -13,7 +13,8 @@ import {
 } from "./ui.mjs";
 import {
   FOLLOWUP_RESOLUTION_OUTCOMES,
-  INTAKE_CHECK_KEYS,
+  SCREENING_CHECK_LABELS,
+  screeningCheckKeys,
   SAMPLE_DOCUMENT_FILENAME,
 } from "./case-actions.mjs";
 import {
@@ -63,9 +64,10 @@ export { taskContacts };
 // from `staff-views.mjs` rather than written again, so one case cannot describe
 // itself two ways (Ruling R55).
 //
-// Nothing here claims a real identity check, a sent message, a signature or a
-// filing. The intake checks are simulated attestations, a reminder records a
-// nudge and sends nothing, and closure closes ViTally's own workflow only.
+// Nothing here claims a signature or a filing, or sends a message. The screening
+// checks record what a volunteer confirmed, including a real identity check for
+// an online client; a reminder records a nudge and sends nothing, and closure
+// closes ViTally's own workflow only.
 
 export const OFFICE_NOTE =
   "ViTally records office work only. It sends no email, no letter and no text message.";
@@ -138,7 +140,7 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
         stage === "received"
           ? "Screening starts when an admin opens the case."
           : record.intakeVerified
-            ? "The simulated intake checks are already recorded."
+            ? "The screening checks are already recorded."
             : "The intake checks are recorded during screening, before preparation.",
       );
     return allowed;
@@ -346,38 +348,32 @@ export const remindedNote = (record) =>
 // The office view of one case
 // ---------------------------------------------------------------------------
 
-const INTAKE_CHECK_LABELS = Object.freeze({
-  interview: "A volunteer sat down with the client (simulated).",
-  identity: "Identity documents were looked at (simulated).",
-  documents: "The income documents on the list were seen (simulated).",
-  consent: "The consent forms were explained and signed (simulated).",
-});
-
 function intakeChecksPanel(record, rights, ui) {
   const ticked = (key) => (ui.openPanels ?? []).includes(`intake-check-${key}`);
-  const all = INTAKE_CHECK_KEYS.every(ticked);
+  const keys = screeningCheckKeys(record.answers?.service);
+  const all = keys.every(ticked);
   const body = rights.verifyIntake.allowed
-    ? `<form class="staff-form">${INTAKE_CHECK_KEYS.map(
+    ? `<form class="staff-form">${keys.map(
         (key) =>
           `<label class="checkbox-row small" for="${fieldId(key, "intake")}"><input type="checkbox" id="${fieldId(
             key,
             "intake",
           )}" name="${key}" value="true" ${ticked(key) ? "checked" : ""} data-action="toggle-intake-check" data-check="${key}"><span>${esc(
-            INTAKE_CHECK_LABELS[key],
+            SCREENING_CHECK_LABELS[key],
           )}</span></label>`,
       ).join("")}${caseSubmit(
-        `${icon("shield")} Record the simulated intake checks`,
+        `${icon("shield")} Record the screening checks`,
         "VERIFY_INTAKE",
         "primary",
-        !all || ui.busy ? "disabled" : "",
+        `data-service="${esc(record.answers?.service ?? "")}" ${!all || ui.busy ? "disabled" : ""}`,
       )}${when(
         !all,
-        '<p class="field-note">Tick all four before recording them.</p>',
+        '<p class="field-note">Tick every check before recording them.</p>',
       )}</form>`
     : explain(rights.verifyIntake);
-  return `<section class="panel" aria-labelledby="checks-title"><div class="section-head"><h2 id="checks-title">Simulated intake checks</h2><span class="badge ${
+  return `<section class="panel" aria-labelledby="checks-title"><div class="section-head"><h2 id="checks-title">Screening checks</h2><span class="badge ${
     record.intakeVerified ? "green" : "blue"
-  }"><i></i>${record.intakeVerified ? "Recorded" : "Not recorded yet"}</span></div><p class="field-note">These are demo attestations for a course prototype. Ticking them records flags in ViTally; it is not an interview, an identity check, a document check or a consent signature, and it asserts that none of those happened.</p>${body}</section>`;
+  }"><i></i>${record.intakeVerified ? "Recorded" : "Not recorded yet"}</span></div>${body}</section>`;
 }
 
 // An office draft is entered on the Add a case page, not here.
@@ -673,8 +669,8 @@ export function markEfiledDialogBody(state = {}) {
 }
 
 /**
- * One case, as the office sees it: what the client answered, the simulated
- * intake checks, documents taken in at the desk, the contact tasks, and the two
+ * One case, as the office sees it: what the client answered, the screening
+ * checks, documents taken in at the desk, the contact tasks, and the two
  * office decisions, alongside the preparer and reviewer tabs, read-only, in
  * the same tabbed case page the preparer and reviewer use.
  *

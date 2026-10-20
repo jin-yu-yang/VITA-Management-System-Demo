@@ -6,6 +6,7 @@ import {
   SAMPLE_DOCUMENT_FILENAME,
   CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
+  screeningCheckKeys,
 } from "../src/case-actions.mjs";
 import { CASE_ACTIONS } from "../src/contracts.mjs";
 import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
@@ -48,17 +49,10 @@ test("every action builds exactly the payload the contract names", () => {
     ["SUBMIT", {}, {}, { confirmed: true }],
     [
       "VERIFY_INTAKE",
-      {},
-      // Four ticked checkboxes, exactly as a form reports them.
-      { interview: "true", identity: "true", documents: "true", consent: "true" },
-      {
-        checks: {
-          interview: true,
-          identity: true,
-          documents: true,
-          consent: true,
-        },
-      },
+      { service: "drop_off" },
+      // Three ticked checkboxes, exactly as a form reports them.
+      { phone: "true", documents: "true", in_scope: "true" },
+      { checks: { phone: true, documents: true, in_scope: true } },
     ],
     ["CLAIM_PREPARATION", {}, {}, {}],
     [
@@ -224,22 +218,19 @@ test("a missing required field refuses before anything is sent", () => {
     ["CLOSE_CASE", {}, {}],
     ["CLOSE_CASE", {}, { reason: "Client moved away" }],
     ["CLOSE_CASE", {}, { confirmed: "true" }],
-    // Three of the four attestations is not an attestation.
-    ["VERIFY_INTAKE", {}, {}],
+    // Two of the three checks is not a screening.
+    ["VERIFY_INTAKE", { service: "drop_off" }, {}],
+    ["VERIFY_INTAKE", { service: "drop_off" }, { phone: "true", documents: "true" }],
     [
       "VERIFY_INTAKE",
-      {},
-      { interview: "true", identity: "true", documents: "true" },
+      { service: "drop_off" },
+      { phone: "true", documents: "true", in_scope: "false" },
     ],
+    // An online case also needs identity.
     [
       "VERIFY_INTAKE",
-      {},
-      {
-        interview: "true",
-        identity: "true",
-        documents: "true",
-        consent: "false",
-      },
+      { service: "online" },
+      { phone: "true", documents: "true", in_scope: "true" },
     ],
   ];
   for (const [type, dataset, values] of missing)
@@ -301,27 +292,26 @@ test("a form value never overrides the file name or the confirmation flag", () =
   }).payload;
   assert.deepEqual(Object.keys(closure).toSorted(), ["confirmed", "reason"]);
   assert.equal(closure.confirmed, true);
-  // The same for the intake checks: a "false" checkbox value is not a tick, and
-  // no extra field can join the four the database accepts.
+  // The same for the screening checks: a "no" checkbox value is not a tick, and
+  // no extra field can join the keys the database accepts.
   assert.throws(
     () =>
-      payloadFor("VERIFY_INTAKE", {}, {
-        interview: "true",
-        identity: "true",
+      payloadFor("VERIFY_INTAKE", { service: "online" }, {
+        phone: "true",
         documents: "true",
-        consent: "no",
+        in_scope: "true",
+        identity: "no",
       }),
     invalid,
   );
   assert.deepEqual(
-    payloadFor("VERIFY_INTAKE", {}, {
-      interview: "true",
-      identity: "true",
+    payloadFor("VERIFY_INTAKE", { service: "drop_off" }, {
+      phone: "true",
       documents: "true",
-      consent: "true",
+      in_scope: "true",
       smuggled: "true",
     }).payload,
-    { checks: { interview: true, identity: true, documents: true, consent: true } },
+    { checks: { phone: true, documents: true, in_scope: true } },
   );
 });
 
@@ -434,4 +424,41 @@ test("the 8879 and e-file actions need their own confirmation sentence", () => {
   }
   // Closing keeps its own sentence.
   assert.throws(() => payloadFor("CLOSE_CASE", {}, { reason: "r" }), (error) => error.message === "Confirm that you want to close this case.");
+});
+
+test("screeningCheckKeys by service", () => {
+  assert.deepEqual(screeningCheckKeys("drop_off"), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("same_day"), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("online"), ["phone", "documents", "in_scope", "identity"]);
+  assert.ok(Object.isFrozen(screeningCheckKeys("online")));
+});
+
+test("screeningCheckKeys: unknown service", () => {
+  assert.deepEqual(screeningCheckKeys(undefined), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("x"), ["phone", "documents", "in_scope"]);
+});
+
+test("drops identity unless online", () => {
+  const all = { phone: "true", documents: "true", in_scope: "true", identity: "true", interview: "true" };
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", { service: "drop_off" }, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true },
+  });
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", {}, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true },
+  });
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", { service: "online" }, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true, identity: true },
+  });
+});
+
+test("VERIFY_INTAKE needs every shown check", () => {
+  assert.throws(
+    () =>
+      payloadFor("VERIFY_INTAKE", { service: "online" }, {
+        phone: "true",
+        documents: "true",
+        in_scope: "true",
+      }),
+    (error) => error.code === "VALIDATION" && error.message === "Tick every check before recording them.",
+  );
 });

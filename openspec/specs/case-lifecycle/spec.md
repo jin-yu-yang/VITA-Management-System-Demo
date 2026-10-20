@@ -240,8 +240,9 @@ Each new move SHALL add one line to the client's history, in their language:
 | Start screening, and the office's submit | PCDC started reviewing your application. We may call you. | PCDC 已开始审核您的申请。我们可能会致电您。 |
 | Mark ready to e-file | PCDC recorded that you signed Form 8879. Your return is ready to e-file. | PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。 |
 | Mark e-filed | PCDC e-filed your return. | PCDC 已电子递交您的报税表。 |
+| The screening checks | PCDC finished screening your application. A volunteer will start preparing your return next. | PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。 |
 
-Earlier history lines SHALL keep their words and translations. No client message or history line SHALL name a phone number.
+Earlier history lines SHALL keep their words and translations. The screening checks' line SHALL replace "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation." for every new record; lines already stored SHALL keep that sentence and its translation. No client message or history line SHALL name a phone number.
 
 #### Scenario: A history line in 简体
 - **WHEN** a client reading in 简体 opens a case an admin marked ready to e-file
@@ -280,3 +281,55 @@ Earlier history lines SHALL keep their words and translations. No client message
 #### Scenario: A case approved before this change
 - **WHEN** a client opens a case that was approved before the questionnaires existed
 - **THEN** the status panel shows "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed."
+
+#### Scenario: The screening checks' line
+- **WHEN** an admin records the screening checks and the client opens their history in English, then in 简体
+- **THEN** it shows "PCDC finished screening your application. A volunteer will start preparing your return next." and "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。", and no history line says "Simulated"
+
+#### Scenario: An old line keeps its words
+- **WHEN** a client reading in 简体 opens a case whose checks were recorded before this change
+- **THEN** its history still shows "模拟的登记核查已记录。…" for that line
+
+### Requirement: The office records the screening checks
+At Screening in progress, an admin SHALL record the screening checks before the case moves to Pending intake / filing. The panel SHALL be titled "Screening checks" and SHALL show these checks, each a box to tick, with these words:
+
+| Key | Check | Shown |
+|---|---|---|
+| `phone` | The client can be reached at the phone number on the application. | every case |
+| `documents` | The basic documents are present (photo ID, Social Security or ITIN cards, the income documents on the list). | every case |
+| `in_scope` | The return is within VITA scope. | every case |
+| `identity` | Identity confirmed: the client's face matches their photo ID (in person or on video), checked by a certified volunteer. | only when the intake answer `service` is `online` |
+
+The button SHALL read "Record the screening checks" and SHALL stay disabled, with the hint "Tick every check before recording them.", until every check shown is ticked. No text in the panel or its notice, and no history line recorded after this change, SHALL call the checks simulated.
+
+The database SHALL accept `VERIFY_INTAKE` only with exactly the checks shown for the case, each `true`: `phone`, `documents` and `in_scope`, plus `identity` if and only if the case's `service` is `online`. It SHALL refuse a missing, extra or false check, the removed `interview` and `consent` checks, and `identity` on a case that is not online, with `VALIDATION`, and nothing SHALL change. The stored record SHALL be the checks themselves, with no simulated flag. Records stored before this change SHALL keep their four checks and still render in the case's history.
+
+#### Scenario: A drop-off case shows three checks
+- **WHEN** an admin opens a drop-off case at Screening in progress
+- **THEN** the Screening checks panel shows the phone, documents and VITA-scope checks, and no identity check
+
+#### Scenario: An online case shows four checks
+- **WHEN** an admin opens an online case at Screening in progress
+- **THEN** the panel shows the identity check as well
+
+#### Scenario: The button waits for every check
+- **WHEN** the admin has ticked two of the three checks on a drop-off case
+- **THEN** "Record the screening checks" is disabled and the hint reads "Tick every check before recording them."
+- **AND WHEN** the third is ticked and the admin records them
+- **THEN** the case moves to Pending intake / filing and the notice reads "The screening checks are recorded."
+
+#### Scenario: The database refuses a wrong set
+- **WHEN** `VERIFY_INTAKE` is sent with a missing check, an extra key, a `false` check, the old `interview` or `consent` keys, or `identity` on a drop-off case
+- **THEN** each is refused with `VALIDATION`, and the case stays at Screening in progress
+
+#### Scenario: An online case needs identity
+- **WHEN** `VERIFY_INTAKE` is sent for an online case with only phone, documents and in_scope
+- **THEN** it is refused with `VALIDATION`
+
+#### Scenario: An old record still renders
+- **WHEN** staff open a case whose checks were recorded with the four simulated checks
+- **THEN** its history reads "… recorded the screening checks" for that event, and nothing fails to render
+
+#### Scenario: The online sample
+- **WHEN** the samples are seeded
+- **THEN** the `review_ready` sample's recorded checks include identity, and every other sample's are phone, documents and in_scope
