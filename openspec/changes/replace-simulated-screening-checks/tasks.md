@@ -5,7 +5,7 @@
 
 ## 2. Database
 
-- [ ] 2.1 Write failing database tests for `VERIFY_INTAKE`:
+- [x] 2.1 Write failing database tests for `VERIFY_INTAKE`:
   - three checks accepted on a drop-off case, and four on an online case;
   - refused with `VALIDATION`, and nothing changed, for each of these:
     - a missing check;
@@ -16,11 +16,11 @@
     - no `identity` on an online case;
   - the stored detail is `{checks}`, with no `simulated` flag;
   - the client line is the D4 sentence.
-- [ ] 2.2 New migration `034_screening_checks.sql`:
+- [x] 2.2 New migration `034_screening_checks.sql`:
   - `check_payload` copied from 033, with only `VERIFY_INTAKE`'s branch changed (design D2, D6);
   - `act_verify_intake` copied from 032, adding the identity-iff-online check, the detail and the message.
 - [ ] 2.3 `fixture_history` copied from 023, with only its six `VERIFY_INTAKE` rows changed (design D5). Fixture tests: `review_ready`'s checks include identity; the other samples have three.
-- [ ] 2.4 Move every database test that sends the old four checks to the new sets: `tests/support/database-fixture.mjs` (`CHECKS` and the `VERIFY_INTAKE` calls), and the `actions`, `assistance`, `documents`, `intake`, `realtime`, `redesign`, `review` and `stages` suites. Run `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 2.4 Move every database test that sends the old four checks to the new sets: `tests/support/database-fixture.mjs` (`CHECKS` and the `VERIFY_INTAKE` calls), and the `actions`, `assistance`, `documents`, `intake`, `realtime`, `redesign`, `review` and `stages` suites. Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 3. Browser
 

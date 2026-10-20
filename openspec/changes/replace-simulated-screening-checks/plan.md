@@ -85,7 +85,7 @@
     - return `detail = {checks: p_payload->'checks'}` (no `simulated`) and the D4 message.
   - **Test support:** the fixture exports `screeningChecks(service)`, which returns `{phone, documents, in_scope}` all true, plus `identity: true` when service is `online`. Its `VERIFY_INTAKE` calls read the case's `answers->>'service'` and use it.
 
-- [ ] **Step 1: Write the failing tests** in `tests/database-actions.mjs`:
+- [x] **Step 1: Write the failing tests** in `tests/database-actions.mjs`:
 
 ```js
 test("screening checks: the set follows the service", async () => {
@@ -99,11 +99,11 @@ test("identity refused without online service", …)     // drop-off + identity 
 test("missing, extra or false checks refused", …)      // drop in_scope; add note:"x"; documents:false → each VALIDATION, nothing changed
 ```
 
-- [ ] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL, because today's branch accepts only the four old keys.
-- [ ] **Step 3:** Write 034 sections 1–2 per Interfaces. Copy `check_payload` from 033 and `act_verify_intake` from 032, marking every changed line `-- 034`.
-- [ ] **Step 4:** Sweep the callers: `grep -rn "INTAKE_CHECKS\|interview: true\|\"interview\"" tests/` and replace each old payload with `screeningChecks(service)` (or the fixture helper's own call). Update any assertion on the old message or on `detail.simulated`.
-- [ ] **Step 5:** Run `npm run db:migrate:test`, then `npm run test:database`. Expected: everything passes.
-- [ ] **Step 6:** Tick tasks 2.1, 2.2 and 2.4, then commit: `git commit -am "Screening checks: the database records the real checks (034)"`.
+- [x] **Step 2:** Run `npm run test:database`. Expected: the new tests FAIL, because today's branch accepts only the four old keys.
+- [x] **Step 3:** Write 034 sections 1–2 per Interfaces. Copy `check_payload` from 033 and `act_verify_intake` from 032, marking every changed line `-- 034`.
+- [x] **Step 4:** Sweep the callers: `grep -rn "INTAKE_CHECKS\|interview: true\|\"interview\"" tests/` and replace each old payload with `screeningChecks(service)` (or the fixture helper's own call). Update any assertion on the old message or on `detail.simulated`.
+- [x] **Step 5:** Run `npm run db:migrate:test`, then `npm run test:database`. Expected: everything passes.
+- [x] **Step 6:** Tick tasks 2.1, 2.2 and 2.4, then commit: `git commit -am "Screening checks: the database records the real checks (034)"`.
 
 ### Task 3: Fixtures
 

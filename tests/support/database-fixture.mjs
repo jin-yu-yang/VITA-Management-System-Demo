@@ -11,12 +11,15 @@ import { extendTestWorkspace } from "./workspace-overrides.mjs";
 // and these tests share one snake_case → camelCase mapping (Ruling R32). A
 // second copy here could drift from the shapes the application actually shows.
 import { createStore, camelRow } from "../../src/supabase-store.mjs";
-const INTAKE_CHECKS = Object.freeze({
-  interview: true,
-  identity: true,
+// The screening checks the office records (design D2): three for every case,
+// and identity only for an online one.
+export const screeningChecks = (service) => ({
+  phone: true,
   documents: true,
-  consent: true,
+  in_scope: true,
+  ...(service === "online" ? { identity: true } : {}),
 });
+const INTAKE_CHECKS = Object.freeze(screeningChecks("drop_off"));
 // The one fictional document request and the single simulated file the demo
 // accepts (contracts.mjs payload table, Ruling R18).
 const SAMPLE_REQUEST = Object.freeze({
@@ -250,6 +253,12 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     return created;
   };
   f.intakeChecks = INTAKE_CHECKS;
+  // The checks that suit one case: its service answer decides the set.
+  f.checksFor = async (caseId) =>
+    screeningChecks(
+      (await f.sql("select answers->>'service' as service from public.cases where id=$1", [caseId]))
+        .rows[0]?.service,
+    );
   // A row the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
   const visibleRow = async (client, table, id) => {
     const { data, error } = await client.from(table).select("*").eq("id", id);
@@ -350,7 +359,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     });
     await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(created.caseId),
     });
     return created.caseId;
   };
@@ -364,7 +373,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       confirmed: true,
     });
     await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(created.caseId),
     });
     await f.act(f.presenter, created.caseId, f.alex, "CLAIM_PREPARATION", {});
     await f.act(
@@ -547,7 +556,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
     await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(caseId),
     });
     await f.act(f.presenter, caseId, preparerId, "CLAIM_PREPARATION", {});
     return caseId;
