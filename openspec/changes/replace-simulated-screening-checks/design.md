@@ -151,5 +151,4 @@ function, and recopy any whose newest definition moved.
 
 ## Open Questions
 
-- **The client sentence (D4).** Owner: Hailey, at review of these artifacts. It affects `src/client-text.mjs`, 034's
-  message and the fixtures.
+None. The client sentence (D4) was approved by Hailey as drafted, in English and 简体, on 2026-10-20.

@@ -15,7 +15,7 @@
 
 ## Global Constraints
 
-- **Gate:** don't start until Hailey has approved the client sentence (design D4; tasks 1.1).
+- **Gate:** met. Hailey approved the client sentence (design D4) as drafted on 2026-10-20.
 - **Migration:**
   - One new file, `supabase/migrations/034_screening_checks.sql`, one after the newest migration, with no gaps (renumber per tasks 1.2).
   - Never edit 001–033.
@@ -67,8 +67,8 @@
 
 **Files:** none, except this change's artifacts if D4 changes.
 
-- [ ] **Step 1:** Confirm Hailey approved D4's sentence (tasks 1.1). If she changed it, update design D4, `specs/case-lifecycle/spec.md` and Global Constraints first.
-- [ ] **Step 2:** Run `ls supabase/migrations | tail -1`. The new file is that number plus one; it is 034 if the last is 033. For each function in design D6, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1` and confirm the source file. Tick tasks 1.1–1.2.
+- [x] **Step 1:** Confirm Hailey approved D4's sentence (tasks 1.1). If she changed it, update design D4, `specs/case-lifecycle/spec.md` and Global Constraints first.
+- [x] **Step 2:** Run `ls supabase/migrations | tail -1`. The new file is that number plus one; it is 034 if the last is 033. For each function in design D6, run `grep -l "function [a-z_.]*\b<name>(" supabase/migrations/*.sql | tail -1` and confirm the source file. Tick tasks 1.1–1.2.
 
 ### Task 2: Database — payload, handler, and the test sweep
 

@@ -1,7 +1,7 @@
 ## 1. Gate before apply
 
-- [ ] 1.1 Hailey approves the client sentence (design D4), or replaces it. If she changes it, update design D4, the delta spec and plan.md first.
-- [ ] 1.2 Just before apply, check the migration list. 034 is one after the newest migration. If anything took 034, renumber with no gap. Re-run the D6 lookup and recopy any function whose newest definition moved.
+- [x] 1.1 Hailey approves the client sentence (design D4), or replaces it. If she changes it, update design D4, the delta spec and plan.md first.
+- [x] 1.2 Just before apply, check the migration list. 034 is one after the newest migration. If anything took 034, renumber with no gap. Re-run the D6 lookup and recopy any function whose newest definition moved.
 
 ## 2. Database
 
