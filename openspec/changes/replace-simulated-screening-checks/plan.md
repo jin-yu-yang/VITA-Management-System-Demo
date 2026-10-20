@@ -114,14 +114,14 @@ test("missing, extra or false checks refused", …)      // drop in_scope; add n
 **Interfaces:**
 - Produces: the six `VERIFY_INTAKE` rows are rewritten. Each has detail `{"checks":{"phone":true,"documents":true,"in_scope":true}}`, plus `"identity":true` on `review_ready`, and the D4 sentence. No other row changes.
 
-- [ ] **Step 1: Write the failing test** `fixture checks by service`. Seed the samples, then for each sample read its `VERIFY_INTAKE` event's `detail.checks`:
+- [x] **Step 1: Write the failing test** `fixture checks by service`. Seed the samples, then for each sample read its `VERIFY_INTAKE` event's `detail.checks`:
   - `review_ready` has four keys, including `identity`;
   - the other five have exactly `phone`, `documents` and `in_scope`;
   - every client line equals the D4 sentence.
-- [ ] **Step 2:** Run `npm run test:database`. Expected: FAIL.
-- [ ] **Step 3:** Write section 3.
-- [ ] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: PASS.
-- [ ] **Step 5:** Tick task 2.3, then commit: `git commit -am "Screening checks: samples record the new checks"`.
+- [x] **Step 2:** Run `npm run test:database`. Expected: FAIL.
+- [x] **Step 3:** Write section 3.
+- [x] **Step 4:** Run `npm run db:migrate:test && npm run test:database`. Expected: PASS.
+- [x] **Step 5:** Tick task 2.3, then commit: `git commit -am "Screening checks: samples record the new checks"`.
 
 ### Task 4: The check list and the builder
 

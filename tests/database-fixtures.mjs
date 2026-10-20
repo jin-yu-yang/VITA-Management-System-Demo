@@ -241,7 +241,8 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   }
   // History: one entry per recorded step, oldest first, plus the single marker
   // that says where these records came from. Every detail is labelled
-  // simulated, and a seeded step names no acting account.
+  // simulated (034: a screening-checks entry records real checks, so it is not),
+  // and a seeded step names no acting account.
   const internal = await rowsFor(f, "case_events", caseId);
   const markers = internal.filter((entry) =>
     ["FIXTURE_SEEDED", "CHECKPOINT"].includes(entry.action),
@@ -252,7 +253,9 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   assert.equal(markers.length, 1, `${key} one origin marker`);
   assert.equal(steps.length, expected.events, `${key} internal history`);
   for (const entry of internal)
-    assert.equal(entry.detail.simulated, true, `${key} ${entry.action} simulated`);
+    if (entry.action === "VERIFY_INTAKE")
+      assert.equal(entry.detail.simulated, undefined, `${key} VERIFY_INTAKE is not simulated`);
+    else assert.equal(entry.detail.simulated, true, `${key} ${entry.action} simulated`);
   for (const entry of steps)
     assert.equal(entry.actor_user_id, null, `${key} ${entry.action} actor user`);
   const times = internal.map((entry) => new Date(entry.created_at).getTime());
@@ -537,6 +540,47 @@ test("the seeded workspace tells one coherent story", async (t) => {
       );
       assert.deepEqual(Object.values(winner.data.fixtureCaseIds).sort(), state.caseIds);
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("fixture checks by service", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    await f.seedFixtures();
+    const byKey = await fixtureByKey(f);
+    const SENTENCE =
+      "PCDC finished screening your application. A volunteer will start preparing your return next.";
+    for (const key of f.fixtureKeys) {
+      const [event] = (
+        await f.sql(
+          "select detail from public.case_events where case_id=$1 and action='VERIFY_INTAKE'",
+          [byKey[key].id],
+        )
+      ).rows;
+      assert.ok(event, `${key} has a VERIFY_INTAKE event`);
+      assert.deepEqual(
+        Object.keys(event.detail.checks).sort(),
+        key === "review_ready"
+          ? ["documents", "identity", "in_scope", "phone"]
+          : ["documents", "in_scope", "phone"],
+        `${key} check keys`,
+      );
+      for (const value of Object.values(event.detail.checks))
+        assert.equal(value, true, `${key} checks are ticked`);
+      const lines = (
+        await f.sql(
+          "select message from public.client_events where case_id=$1 and message like 'PCDC finished%' or case_id=$1 and message like 'Simulated intake%'",
+          [byKey[key].id],
+        )
+      ).rows;
+      assert.deepEqual(
+        lines.map((row) => row.message),
+        [SENTENCE],
+        `${key} client line`,
+      );
+    }
   } finally {
     await f.close();
   }
