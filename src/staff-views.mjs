@@ -1864,7 +1864,7 @@ export const EVENT_SENTENCES = Object.freeze({
   SAVE_ANSWERS: "saved the intake answers",
   SUBMIT: "submitted the application",
   START_SCREENING: "started screening",
-  VERIFY_INTAKE: "recorded the intake checks",
+  VERIFY_INTAKE: "recorded the screening checks",
   CLAIM_PREPARATION: "claimed preparation",
   REQUEST_DOCUMENT: "asked the client for a document",
   RESPOND_DOCUMENT: "sent a requested document",

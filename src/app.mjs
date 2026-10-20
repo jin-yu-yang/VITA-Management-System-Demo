@@ -1006,7 +1006,7 @@ if (!config) {
   // already shows the new state; this is the confirmation that it was this
   // click that changed it.
   const STAFF_NOTICES = Object.freeze({
-    VERIFY_INTAKE: "The simulated intake checks are recorded.",
+    VERIFY_INTAKE: "The screening checks are recorded.",
     REMIND: "Reminder recorded. No external message sent.",
     RESOLVE_FOLLOWUP: "The contact task is resolved. Nothing else changed.",
     RECORD_DOCUMENT_RESPONSE:

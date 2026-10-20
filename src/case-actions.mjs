@@ -35,17 +35,23 @@ export const FOLLOWUP_RESOLUTION_OUTCOMES = Object.freeze([
   "no_further_contact",
 ]);
 
-// The four simulated intake attestations. They are demo flags: ticking them
-// records that a volunteer said the step happened in the story, and asserts
-// nothing about a real interview, identity check, document check or consent
-// signature. The database accepts the payload only with all four set to true,
-// so a form that offers three of them offers nothing at all.
-export const INTAKE_CHECK_KEYS = Object.freeze([
-  "interview",
-  "identity",
-  "documents",
-  "consent",
-]);
+// The office's screening checks: what a volunteer really confirms before the
+// case goes to preparation. The database accepts exactly these keys, all true.
+// Identity is asked only for an online case; any other service, or none, gets
+// the three.
+const BASE_SCREENING_KEYS = Object.freeze(["phone", "documents", "in_scope"]);
+const ONLINE_SCREENING_KEYS = Object.freeze([...BASE_SCREENING_KEYS, "identity"]);
+export const screeningCheckKeys = (service) =>
+  service === "online" ? ONLINE_SCREENING_KEYS : BASE_SCREENING_KEYS;
+
+export const SCREENING_CHECK_LABELS = Object.freeze({
+  phone: "The client can be reached at the phone number on the application.",
+  documents:
+    "The basic documents are present (photo ID, Social Security or ITIN cards, the income documents on the list).",
+  in_scope: "The return is within VITA scope.",
+  identity:
+    "Identity confirmed: the client's face matches their photo ID (in person or on video), checked by a certified volunteer.",
+});
 
 function validation(message) {
   return Object.assign(new Error(message), { code: "VALIDATION" });
@@ -80,14 +86,14 @@ function outcome(values, allowed) {
 const TICKED = Object.freeze([true, "true", "on"]);
 const ticked = (values, key) => TICKED.includes(values?.[key]);
 
-// All four attestations, or none: the payload the database accepts has exactly
-// the four keys, all true, so a partly-filled form cannot build a smaller one
-// and cannot silently promote itself into a complete one either.
-function checks(values) {
+// Every shown check, or none: the payload has exactly the keys the service
+// calls for, all true. A tick left over from a hidden check (identity on a
+// case that is not online) is never sent.
+function checks(values, service) {
   const result = {};
-  for (const key of INTAKE_CHECK_KEYS) {
+  for (const key of screeningCheckKeys(service)) {
     if (!ticked(values, key))
-      throw validation("Tick all four simulated intake checks first.");
+      throw validation("Tick every check before recording them.");
     result[key] = true;
   }
   return result;
@@ -149,9 +155,9 @@ function materialsReceived(values) {
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
   SUBMIT: () => ({ confirmed: true }),
-  // Demo attestations, never a claim that a real identity check happened, and
-  // never built from a form where one of the four is still unticked.
-  VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values) }),
+  // The submit control carries `data-service`, like the approve button: it
+  // decides whether identity is one of the checks.
+  VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values, dataset?.service) }),
   START_SCREENING: () => ({}),
   CLAIM_PREPARATION: () => ({}),
   SUBMIT_REVIEW: (dataset, values) => ({ questionnaire: preparerQuestionnaire(values) }),

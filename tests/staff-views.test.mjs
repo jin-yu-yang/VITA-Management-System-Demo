@@ -2664,3 +2664,21 @@ test("logContactForm: purpose preselects on a new entry, never overrides an edit
   const entry = staffCase({ contacts: [contactEntry({ purpose: "ask_question" })] }).contacts[0];
   assert.deepEqual(checked(logContactForm(staffCase(), SAM, {}, { contact: entry, purpose: "go_over_return" })), ["ask_question"]);
 });
+
+test("old VERIFY_INTAKE event renders", () => {
+  const html = renderStaffCase(
+    staffCase({
+      internalHistory: [
+        {
+          id: "e1",
+          action: "VERIFY_INTAKE",
+          detail: { simulated: true, checks: { interview: true, identity: true, documents: true, consent: true } },
+          createdAt: "2026-09-12T17:00:00.000Z",
+        },
+      ],
+    }),
+    ALEX,
+  );
+  assert.match(html, /recorded the screening checks/i);
+  assert.doesNotMatch(html, /simulat/i);
+});

@@ -173,55 +173,52 @@ const caseActions = (html) => [
 // Intake checks
 // ---------------------------------------------------------------------------
 
-test("the intake checks are offered once, as four simulated attestations", () => {
+const LABELS = {
+  phone: "The client can be reached at the phone number on the application.",
+  documents:
+    "The basic documents are present (photo ID, Social Security or ITIN cards, the income documents on the list).",
+  in_scope: "The return is within VITA scope.",
+  identity:
+    "Identity confirmed: the client's face matches their photo ID (in person or on video), checked by a certified volunteer.",
+};
+const screeningPanel = (html) => {
+  const start = html.indexOf('<section class="panel" aria-labelledby="checks-title">');
+  return html.slice(start, html.indexOf("</section>", start));
+};
+const onlineCase = (overrides = {}) =>
+  officeCase({
+    stage: "screening",
+    intakeVerified: false,
+    answers: { service: "online", language: "Cantonese", firstName: "Mei" },
+    ...overrides,
+  });
+
+test("screening checks panel: drop-off shows three", () => {
   const arrived = officeCase({ stage: "screening", intakeVerified: false });
   const none = renderAdminCase(arrived, { person: SAM });
   assert.match(none, /data-case-action="VERIFY_INTAKE"/);
-  for (const key of ["interview", "identity", "documents", "consent"]) {
-    assert.match(none, new RegExp(`id="field-intake-${key}"`));
-    assert.match(none, new RegExp(`name="${key}" value="true"`));
+  const panel = screeningPanel(none);
+  assert.match(panel, /<h2 id="checks-title">Screening checks<\/h2>/);
+  for (const key of ["phone", "documents", "in_scope"]) {
+    assert.match(panel, new RegExp(`id="field-intake-${key}"`));
+    assert.match(panel, new RegExp(`name="${key}" value="true"`));
+    assert.ok(panel.includes(`<span>${LABELS[key].replace("'", "&#39;")}</span>`) || panel.includes(`<span>${LABELS[key]}</span>`), key);
   }
-  // Nothing is claimed about a real check.
-  assert.match(none, /simulated/i);
-  assert.match(none, /it is not an interview, an identity check/i);
-  // Without all four ticked the button is disabled.
-  assert.match(none, /data-case-action="VERIFY_INTAKE" disabled>/);
-  const all = renderAdminCase(arrived, {
-    person: SAM,
-    openPanels: [
-      "intake-check-interview",
-      "intake-check-identity",
-      "intake-check-documents",
-      "intake-check-consent",
-    ],
-  });
-  assert.doesNotMatch(all, /data-case-action="VERIFY_INTAKE" disabled/);
-  // Counted outside the Contacts tab, whose form draws its own defaults.
-  const outsideContacts = all.slice(0, all.indexOf('id="case-panel-contacts"'));
-  assert.equal((outsideContacts.match(/checked/g) ?? []).length, 4);
-  // The payload the form's four ticked boxes build is exactly the contract's.
+  assert.doesNotMatch(panel, /field-intake-identity/);
+  assert.match(panel, /Record the screening checks/);
+  // The payload the form's ticked boxes build is exactly the contract's.
   assert.deepEqual(
-    payloadFor("VERIFY_INTAKE", {}, {
-      interview: "true",
-      identity: "true",
+    payloadFor("VERIFY_INTAKE", { service: "drop_off" }, {
+      phone: "true",
       documents: "true",
-      consent: "true",
+      in_scope: "true",
     }).payload,
-    { checks: { interview: true, identity: true, documents: true, consent: true } },
-  );
-  assert.throws(
-    () =>
-      payloadFor("VERIFY_INTAKE", {}, {
-        interview: "true",
-        identity: "true",
-        documents: "true",
-      }),
-    (error) => error.code === "VALIDATION",
+    { checks: { phone: true, documents: true, in_scope: true } },
   );
   // At every other stage it is explained rather than offered.
   const already = renderAdminCase(officeCase(), { person: SAM });
   assert.doesNotMatch(already, /data-case-action="VERIFY_INTAKE"/);
-  assert.match(already, /The simulated intake checks are already recorded\./);
+  assert.match(already, /The screening checks are already recorded\./);
   const draft = renderAdminCase(officeCase({ stage: "draft", intakeVerified: false }), {
     person: SAM,
   });
@@ -241,6 +238,45 @@ test("the intake checks are offered once, as four simulated attestations", () =>
 // ---------------------------------------------------------------------------
 // Follow-up
 // ---------------------------------------------------------------------------
+
+test("screening checks panel: online shows identity", () => {
+  const panel = screeningPanel(renderAdminCase(onlineCase(), { person: SAM }));
+  for (const key of ["phone", "documents", "in_scope", "identity"])
+    assert.match(panel, new RegExp(`id="field-intake-${key}"`));
+  assert.ok(panel.includes("Identity confirmed: the client&#39;s face matches") || panel.includes("Identity confirmed: the client's face matches"));
+  assert.match(panel, /data-case-action="VERIFY_INTAKE"[^>]*data-service="online"/);
+});
+
+test("the button waits for every shown check", () => {
+  const two = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents"],
+  });
+  assert.match(screeningPanel(two), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+  assert.match(screeningPanel(two), /Tick every check before recording them\./);
+  const three = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents", "intake-check-in_scope"],
+  });
+  assert.doesNotMatch(screeningPanel(three), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+  assert.doesNotMatch(screeningPanel(three), /Tick every check/);
+  assert.equal((screeningPanel(three).match(/checked/g) ?? []).length, 3);
+  // An online case still waits for identity.
+  const online = renderAdminCase(onlineCase(), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents", "intake-check-in_scope"],
+  });
+  assert.match(screeningPanel(online), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+});
+
+test("no simulated wording in the panel", () => {
+  for (const record of [
+    officeCase({ stage: "screening", intakeVerified: false }),
+    onlineCase(),
+    officeCase(),
+  ])
+    assert.doesNotMatch(screeningPanel(renderAdminCase(record, { person: SAM })), /simulat/i);
+});
 
 test("each open task has the shared form and Resolve", () => {
   const record = officeCase({
@@ -874,7 +910,7 @@ test("the office case page uses the same header and five tabs", () => {
   assert.match(html, /<h2 id="case-title" tabindex="-1">/);
   assert.match(html, /<ol class="lifecycle"/);
   assert.match(html, /id="case-tab-followup" aria-controls="case-panel-followup" aria-selected="true"/);
-  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*How this case reached the office[\s\S]*Simulated intake checks[\s\S]*Case details/);
+  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*How this case reached the office[\s\S]*Screening checks[\s\S]*Case details/);
   // "Stage" used to appear twice on Overview: once in the origin section and
   // once in Case details. Only the Case details row is left.
   assert.equal((html.match(/<span>Stage<\/span>/g) ?? []).length, 1);

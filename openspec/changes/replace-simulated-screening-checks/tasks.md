@@ -24,14 +24,14 @@
 
 ## 3. Browser
 
-- [ ] 3.1 `src/case-actions.mjs`: `screeningCheckKeys(service)` replaces `INTAKE_CHECK_KEYS`. The `VERIFY_INTAKE` builder reads `dataset.service` and refuses with "Tick every check before recording them." Write the tests in `tests/case-actions.test.mjs` first.
-- [ ] 3.2 `src/admin-views.mjs`:
+- [x] 3.1 `src/case-actions.mjs`: `screeningCheckKeys(service)` replaces `INTAKE_CHECK_KEYS`. The `VERIFY_INTAKE` builder reads `dataset.service` and refuses with "Tick every check before recording them." Write the tests in `tests/case-actions.test.mjs` first.
+- [x] 3.2 `src/admin-views.mjs`:
   - the Screening checks panel (D1 labels, D3 wording; no disclaimer);
   - the button carries `data-service`;
   - the refusal "The screening checks are already recorded.".
 
   View tests in `tests/admin-views.test.mjs`: three or four checks by service; the button disabled until every shown check is ticked; no "simulated" in the panel.
-- [ ] 3.3 Other wording:
+- [x] 3.3 Other wording:
   - the toast "The screening checks are recorded." (`src/app.mjs`);
   - `EVENT_SENTENCES.VERIFY_INTAKE` "recorded the screening checks" (`src/staff-views.mjs`);
   - `src/contracts.mjs` notes.

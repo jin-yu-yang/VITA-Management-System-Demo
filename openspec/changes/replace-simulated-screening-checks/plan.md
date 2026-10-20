@@ -135,7 +135,7 @@ test("missing, extra or false checks refused", …)      // drop in_scope; add n
   - `SCREENING_CHECK_LABELS: Readonly<Record<string,string>>` holds the four exact labels (Global Constraints).
   - The `VERIFY_INTAKE` builder is `(dataset, values) => ({ checks })` over `screeningCheckKeys(dataset.service)`. Each key must be ticked; otherwise it throws `{code:"VALIDATION"}` with "Tick every check before recording them.". Keys not in the list are never sent.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```js
 test("screeningCheckKeys by service", () => {
@@ -149,10 +149,10 @@ test("VERIFY_INTAKE needs every shown check", …) // online, identity unticked 
 ```
 
   Replace the old four-check tests.
-- [ ] **Step 2:** Run `node --test tests/case-actions.test.mjs`. Expected: FAIL.
-- [ ] **Step 3:** Implement the code per Interfaces. Update the `src/contracts.mjs` note for `VERIFY_INTAKE`.
-- [ ] **Step 4:** Run `npm test`. Expected: only the admin-views and story-related unit tests fail; Task 5 fixes those.
-- [ ] **Step 5:** Tick task 3.1, then commit: `git commit -am "Screening checks: one list for the panel and the payload"`.
+- [x] **Step 2:** Run `node --test tests/case-actions.test.mjs`. Expected: FAIL.
+- [x] **Step 3:** Implement the code per Interfaces. Update the `src/contracts.mjs` note for `VERIFY_INTAKE`.
+- [x] **Step 4:** Run `npm test`. Expected: only the admin-views and story-related unit tests fail; Task 5 fixes those.
+- [x] **Step 5:** Tick task 3.1, then commit: `git commit -am "Screening checks: one list for the panel and the payload"`.
 
 ### Task 5: The panel and the staff wording
 
@@ -168,7 +168,7 @@ test("VERIFY_INTAKE needs every shown check", …) // online, identity unticked 
   - The button is disabled until every shown key is ticked in `ui.openPanels`.
   - The section title, button and hint are the exact Global Constraints strings, and the disclaimer paragraph is removed.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
 
 ```js
 test("screening checks panel: drop-off shows three", …)   // three labels, exact text; no identity; title "Screening checks"
@@ -179,10 +179,10 @@ test("old VERIFY_INTAKE event renders", …)                 // history entry {a
 ```
 
   Update the existing tests that assert "Simulated intake checks", "Record the simulated intake checks" or "Tick all four", and the already-recorded refusal.
-- [ ] **Step 2:** Run `npm test`. Expected: FAIL.
-- [ ] **Step 3:** Implement the code per Interfaces, the toast and the history sentence.
-- [ ] **Step 4:** Run `npm test`. Expected: PASS.
-- [ ] **Step 5:** Tick tasks 3.2 and 3.3, then commit: `git commit -am "Screening checks: the panel and staff wording"`.
+- [x] **Step 2:** Run `npm test`. Expected: FAIL.
+- [x] **Step 3:** Implement the code per Interfaces, the toast and the history sentence.
+- [x] **Step 4:** Run `npm test`. Expected: PASS.
+- [x] **Step 5:** Tick tasks 3.2 and 3.3, then commit: `git commit -am "Screening checks: the panel and staff wording"`.
 
 ### Task 6: The client's line
 
