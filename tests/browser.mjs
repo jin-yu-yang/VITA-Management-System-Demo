@@ -74,7 +74,7 @@ import {
   watchAlerts,
 } from "./support/story-pages.mjs";
 import { REFERENCE_PATTERN, SQLSTATE_ERROR_CODES } from "../src/contracts.mjs";
-import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
+import { SAMPLE_DOCUMENT_FILENAME, screeningCheckKeys } from "../src/case-actions.mjs";
 import { DRAFT_FONT_FIXTURES } from "../src/draft-pdf.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
 import { CONTACT_NOT_SHOWN } from "../src/staff-views.mjs";
@@ -95,7 +95,7 @@ import HANT from "../src/zh-hant.mjs";
 //     other window, and the one-time-code *verification* each sign-in performs.
 //   * **Simulated:** the code *send* only (`/auth/v1/otp` is intercepted by the
 //     Task 5A fixture so automation never asks a mail server for anything), and
-//     the demo's own simulated intake checks, document upload and time jumps,
+//     the demo's own simulated document upload and time jumps,
 //     which the application labels as simulated on screen.
 //
 // Two denials cannot be expressed by any screen — an applicant sending a staff
@@ -368,7 +368,31 @@ async function startApplication(page) {
 }
 
 /**
- * The Form 14446 consent at 0.4 (openspec change add-form-14446-consent):
+ * The office's "Screening checks" panel on an open case: asserts its title, its
+ * button and, while a box is unticked, its disabled button and hint; then ticks
+ * the checks the case's own service asks for. The service is read from the
+ * panel (data-service on the button), so the story never hard-codes it. No
+ * story case is an online one, so identity here is covered by the unit and
+ * database tests, not the browser story.
+ */
+async function tickScreeningChecks(page) {
+  const button = page.locator('[data-case-action="VERIFY_INTAKE"]');
+  await button.waitFor({ state: "visible", timeout: RENDER_MS });
+  assert.equal((await page.locator("#checks-title").innerText()).trim(), "Screening checks");
+  assert.equal((await button.innerText()).trim(), "Record the screening checks");
+  assert.equal(await button.isDisabled(), true, "the screening checks could be recorded before any box was ticked");
+  const panel = page.locator("section.panel", { has: page.locator("#checks-title") });
+  assert.equal(
+    (await panel.locator(".field-note").innerText()).trim(),
+    "Tick every check before recording them.",
+  );
+  const service = (await button.getAttribute("data-service")) || undefined;
+  for (const check of screeningCheckKeys(service)) await tickBox(page, `field-intake-${check}`);
+  assert.equal(await panel.locator(".field-note").count(), 0, "the hint stayed after every check was ticked");
+}
+
+/**
+ * The Form 14446 consent at 0.4(openspec change add-form-14446-consent):
  * until it is ticked, every place after "Before you start" is locked. Jump to
  * 0.4, tick the box, and wait until About you is a link on the rail again.
  * Found by ids and data attributes only, so it works in every language.
@@ -1098,7 +1122,7 @@ async function runPermutation(t, roles) {
           await openCaseByReference(second.page, classReference);
           await waitForBadge(second.page, "Screening in progress");
           await second.page
-            .locator("#field-intake-interview")
+            .locator("#field-intake-phone")
             .waitFor({ state: "visible", timeout: RENDER_MS });
           await waitForQuiet(second.page);
           assert.equal(
@@ -1131,11 +1155,7 @@ async function runPermutation(t, roles) {
         }
 
         await waitForQuiet(staff);
-        await staff
-          .locator("#field-intake-interview")
-          .waitFor({ state: "visible", timeout: RENDER_MS });
-        for (const check of ["interview", "identity", "documents", "consent"])
-          await tickBox(staff, `field-intake-${check}`);
+        await tickScreeningChecks(staff);
         await actForm(staff, "VERIFY_INTAKE", {}, {
           detail: { label: "Intake checks", value: "Recorded" },
         });
@@ -3082,7 +3102,8 @@ async function runPermutation(t, roles) {
           personId: sam,
           type: "VERIFY_INTAKE",
           payload: {
-            checks: { interview: true, identity: true, documents: true, consent: true },
+            // The class case is not an online one, so the three checks.
+            checks: { phone: true, documents: true, in_scope: true },
           },
         }),
       );
@@ -3963,8 +3984,7 @@ async function runPermutation(t, roles) {
       // Back to the case from the pool's own row.
       await openCaseByReference(staff, assistedReference);
 
-      for (const check of ["interview", "identity", "documents", "consent"])
-        await tickBox(staff, `field-intake-${check}`);
+      await tickScreeningChecks(staff);
       await actForm(
         staff,
         "VERIFY_INTAKE",

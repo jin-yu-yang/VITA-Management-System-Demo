@@ -42,10 +42,10 @@
 
 ## 4. Story, docs and full checks
 
-- [ ] 4.1 `tests/browser.mjs`:
+- [x] 4.1 `tests/browser.mjs`:
   - the intake-check ticks use the new keys per case (around lines 1100–1140 and 3955), and the direct payload near 3074;
   - assert the panel's new title, button and hint;
   - assert the identity check on an online case, if the story has one; otherwise rely on the unit and database tests and say so in verify.md.
-- [ ] 4.2 Docs: update `docs/demo-script.md`, `docs/developer/database.md`, `docs/developer/architecture.md` and `docs/setup.md` where they describe the panel, the checks, the payload or the migration list (034 row). Leave the historical mentions in `docs/spec.md`, `docs/proposal.md` and the roadmap.
-- [ ] 4.3 Run `npm run test:browser`.
-- [ ] 4.4 Run `npx openspec validate --all`, and confirm that `npm run build:intake` leaves nothing to commit.
+- [x] 4.2 Docs: update `docs/demo-script.md`, `docs/developer/database.md`, `docs/developer/architecture.md` and `docs/setup.md` where they describe the panel, the checks, the payload or the migration list (034 row). Leave the historical mentions in `docs/spec.md`, `docs/proposal.md` and the roadmap.
+- [x] 4.3 Run `npm run test:browser`.
+- [x] 4.4 Run `npx openspec validate --all`, and confirm that `npm run build:intake` leaves nothing to commit.

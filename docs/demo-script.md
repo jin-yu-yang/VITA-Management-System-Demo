@@ -32,7 +32,8 @@ what that suite already verified, not a hoped-for behavior.
 | Documents | The "sample mileage record" is a fixed fictional filename, never a real upload | — |
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
-| Intake/document checks | Recorded as demo attestations ("Simulated intake checks are recorded…") | — |
+| Document upload and checks of the sample file | Recorded by hand against one fixed file name | — |
+| Screening checks | Real: a volunteer ticks what they confirmed (phone, documents, scope, and for an online case, identity) and the office records it | — |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
 Say this plainly during a presentation: **"The documents, reminders, and tax-preparation steps you
@@ -105,7 +106,7 @@ what the test suite actually proved.
    hand.
 4. **The office records intake readiness.** Sam opens the *newly arrived* case from the office
    board's **"Intake checks needed"** section (a case that has been submitted but not yet checked
-   appears here, and nowhere else on the office board) and records the simulated intake checks.
+   appears here, and nowhere else on the office board) and records the screening checks (the volunteer ticks each check before the button turns on).
    Meanwhile, the client window is shown to be unaffected by staff persona switches and page
    reloads: its selected case, screen, form step, and open panels stay exactly where the person
    left them, while the shared update it is actually waiting for (the case moving into
@@ -141,7 +142,7 @@ have email, or is standing at the desk?":
 2. Submitting creates a new case with **no client account attached** — it stays reachable only
    through the office board, not through anyone's "My applications" list, until (if ever) a real
    account is linked to it.
-3. Sam records the simulated intake checks. Alex claims preparation and requests a document.
+3. Sam records the screening checks. Alex claims preparation and requests a document.
 4. **Sam records that the office physically received the sample document** ("Record sample
    document received") — labeled explicitly as staff-recorded, distinct from a client's own
    upload, and it still leaves verification pending.
@@ -160,7 +161,7 @@ have email, or is standing at the desk?":
   document the office recorded on their behalf.
 - **A seeded history row names the person the scenario says did that step, and no account at
   all.** Every `case_events` row the scenario itself writes carries `actor_user_id = null` —
-  nobody performed it — and the scenario's own `actor_person_id`: Sam on the intake checks and the
+  nobody performed it — and the scenario's own `actor_person_id`: Sam on the screening checks and the
   recorded call, Alex on claiming preparation and the document request, Morgan on the review
   steps, and nobody at all on the client's own submission
   (`009_fixtures_and_realtime.sql:114-160`, `286-289`). The one exception is the single

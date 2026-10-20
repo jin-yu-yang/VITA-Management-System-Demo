@@ -207,8 +207,8 @@ test("old VERIFY_INTAKE event renders", …)                 // history entry {a
 - Modify: `tests/browser.mjs`: the intake-check ticks around lines 1100–1140 and 3955, and the direct payload near 3074.
 - Modify: `docs/demo-script.md`, `docs/developer/database.md`, `docs/developer/architecture.md`, `docs/setup.md` (034 row, migration count).
 
-- [ ] **Step 1:** In the story, tick `screeningCheckKeys(<that case's service>)` instead of the four old keys. Send the new payload in the direct call near 3074. Assert the title "Screening checks", the button "Record the screening checks", and the hint while a box is unticked. If no story case is online, note in verify.md that identity is covered by Tasks 2, 4 and 5.
-- [ ] **Step 2:** Update the docs where they describe the panel, the checks, the payload or the migration list. Leave the historical mentions in `docs/spec.md`, `docs/proposal.md` and the roadmap.
-- [ ] **Step 3:** Run `npm run test:browser`. Expected: all pass (about 15–20 minutes).
-- [ ] **Step 4:** Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.
-- [ ] **Step 5:** Tick tasks 4.1–4.4, then commit: `git commit -am "Screening checks: the story and docs"`.
+- [x] **Step 1:** In the story, tick `screeningCheckKeys(<that case's service>)` instead of the four old keys. Send the new payload in the direct call near 3074. Assert the title "Screening checks", the button "Record the screening checks", and the hint while a box is unticked. If no story case is online, note in verify.md that identity is covered by Tasks 2, 4 and 5.
+- [x] **Step 2:** Update the docs where they describe the panel, the checks, the payload or the migration list. Leave the historical mentions in `docs/spec.md`, `docs/proposal.md` and the roadmap.
+- [x] **Step 3:** Run `npm run test:browser`. Expected: all pass (about 15–20 minutes).
+- [x] **Step 4:** Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all` and `npm run build:intake`, then `git status --short`. Expected: all pass, and the intake build leaves nothing to commit.
+- [x] **Step 5:** Tick tasks 4.1–4.4, then commit: `git commit -am "Screening checks: the story and docs"`.
