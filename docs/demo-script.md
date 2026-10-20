@@ -32,8 +32,7 @@ what that suite already verified, not a hoped-for behavior.
 | Documents | The "sample mileage record" is a fixed fictional filename, never a real upload | — |
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
-| Document upload and checks of the sample file | Recorded by hand against one fixed file name | — |
-| Screening checks | Real: a volunteer ticks what they confirmed (phone, documents, scope, and for an online case, identity) and the office records it | — |
+| Screening checks | — | A volunteer ticks what they confirmed (phone, documents, scope, and identity for an online client); the office records it |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
 Say this plainly during a presentation: **"The documents, reminders, and tax-preparation steps you
@@ -105,7 +104,7 @@ what the test suite actually proved.
    (`VT-XXXX-XXXX`) appears on the staff board in the other window/engine — nothing is copied by
    hand.
 4. **The office records intake readiness.** Sam opens the *newly arrived* case from the office
-   board's Follow-ups queue (its **"Intake checks"** kind) (a case that has been submitted but not yet checked
+   board's Follow-ups queue (its **"Intake checks"** kind; a case that has been submitted but not yet checked
    appears here, and nowhere else on the office board) and records the screening checks (the volunteer ticks each check before the button turns on).
    Meanwhile, the client window is shown to be unaffected by staff persona switches and page
    reloads: its selected case, screen, form step, and open panels stay exactly where the person

@@ -3,7 +3,7 @@
 --
 --   * D2: VERIFY_INTAKE records three checks (phone, documents, in_scope),
 --     and a fourth (identity) only for an online case.
---   * D6: the database refuses a payload whose set does not follow the case's
+--   * D2: the database refuses a payload whose set does not follow the case's
 --     `service` answer, and a replayed old four-key payload.
 --
 -- Later sections redefine these shared functions. Each is copied verbatim
@@ -13,6 +13,7 @@
 --   |--------------------------------------------|-------------|------------------|
 --   | vitally_private.check_payload              | 033         | the VERIFY_INTAKE branch: the new key sets. Every other branch is verbatim. |
 --   | vitally_private.act_verify_intake          | 032         | the set must follow the service; the detail drops `simulated`; the client message is the approved D4 sentence |
+--   | vitally_private.fixture_history            | 023         | only the six VERIFY_INTAKE sample rows (D5) |
 --
 -- `vitally_apply_action` and `check_operation_authority` are not redefined.
 --
@@ -185,9 +186,9 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. fixture_history, verbatim from 023 with only the six VERIFY_INTAKE rows changed (D5).
--- fixture_history, verbatim from 021 without the version-1 "screening" key in
--- the six sample SUBMIT details, so a seeded sample's history matches a
--- version-2 case played through.
+-- (023's own note, kept as it was: it is 021's function without the version-1
+-- "screening" key in the six sample SUBMIT details, so a seeded sample's
+-- history matches a version-2 case played through.)
 create or replace function vitally_private.fixture_history(p_key text)
 returns table(seq int,action text,person_key text,detail jsonb,message text)
 language sql immutable security definer set search_path='' as $$

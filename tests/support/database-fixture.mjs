@@ -252,6 +252,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     // The receipt is the create's (revision 1); the case is one ahead, at 2.
     return created;
   };
+  // The drop-off set only; use f.checksFor(caseId) for an arbitrary case.
   f.intakeChecks = INTAKE_CHECKS;
   // The checks that suit one case: its service answer decides the set.
   f.checksFor = async (caseId) =>

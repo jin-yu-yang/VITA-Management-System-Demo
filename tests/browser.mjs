@@ -392,7 +392,7 @@ async function tickScreeningChecks(page) {
 }
 
 /**
- * The Form 14446 consent at 0.4(openspec change add-form-14446-consent):
+ * The Form 14446 consent at 0.4 (openspec change add-form-14446-consent):
  * until it is ticked, every place after "Before you start" is locked. Jump to
  * 0.4, tick the box, and wait until About you is a link on the rail again.
  * Found by ids and data attributes only, so it works in every language.
