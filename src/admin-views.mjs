@@ -64,9 +64,10 @@ export { taskContacts };
 // from `staff-views.mjs` rather than written again, so one case cannot describe
 // itself two ways (Ruling R55).
 //
-// Nothing here claims a real identity check, a sent message, a signature or a
-// filing. The screening checks record what a volunteer confirmed, a reminder records a
-// nudge and sends nothing, and closure closes ViTally's own workflow only.
+// Nothing here claims a signature or a filing, or sends a message. The screening
+// checks record what a volunteer confirmed, including a real identity check for
+// an online client; a reminder records a nudge and sends nothing, and closure
+// closes ViTally's own workflow only.
 
 export const OFFICE_NOTE =
   "ViTally records office work only. It sends no email, no letter and no text message.";

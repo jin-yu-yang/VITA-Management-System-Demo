@@ -105,7 +105,7 @@ what the test suite actually proved.
    (`VT-XXXX-XXXX`) appears on the staff board in the other window/engine — nothing is copied by
    hand.
 4. **The office records intake readiness.** Sam opens the *newly arrived* case from the office
-   board's **"Intake checks needed"** section (a case that has been submitted but not yet checked
+   board's Follow-ups queue (its **"Intake checks"** kind) (a case that has been submitted but not yet checked
    appears here, and nowhere else on the office board) and records the screening checks (the volunteer ticks each check before the button turns on).
    Meanwhile, the client window is shown to be unaffected by staff persona switches and page
    reloads: its selected case, screen, form step, and open panels stay exactly where the person
