@@ -16,6 +16,7 @@ import {
   findQuestion,
   isAnswered,
 } from "./intake-catalogue.mjs";
+import { preparerQuestionnaire, reviewerQuestionnaire } from "./questionnaires.mjs";
 
 // The one fictional file the demo ever sends (Ruling R18); the database accepts
 // no other name.
@@ -153,9 +154,12 @@ const BUILDERS = Object.freeze({
   VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values) }),
   START_SCREENING: () => ({}),
   CLAIM_PREPARATION: () => ({}),
-  SUBMIT_REVIEW: () => ({}),
+  SUBMIT_REVIEW: (dataset, values) => ({ questionnaire: preparerQuestionnaire(values) }),
   CLAIM_REVIEW: () => ({}),
-  APPROVE_REVIEW: () => ({}),
+  // The approve button carries `data-service`: the appointment rule needs it.
+  APPROVE_REVIEW: (dataset, values) => ({
+    questionnaire: reviewerQuestionnaire(values, dataset?.service),
+  }),
   REMIND: () => ({}),
   REQUEST_DOCUMENT: (dataset, values) => ({
     title: text(values, "title", "A short title"),
@@ -185,6 +189,7 @@ const BUILDERS = Object.freeze({
     findings: text(values, "findings", "The corrections to make"),
   }),
   RESUBMIT_REVIEW: (dataset, values) => ({
+    questionnaire: preparerQuestionnaire(values),
     resolution: text(values, "resolution", "What was corrected"),
   }),
   RECORD_REVIEW_CONTACT: (dataset, values) => ({

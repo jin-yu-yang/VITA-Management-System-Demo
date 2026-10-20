@@ -175,6 +175,15 @@ test("Follow-ups shows new applications, screening, signing and e-filing", () =>
     assert.match(waiting, /Waiting for the reviewer&#39;s call with the client\./); // esc() writes ' as &#39;
     assert.doesNotMatch(waiting, /Waiting for the client to sign Form 8879\./);
   }
+  // D13: the reviewer's call is done but the office has not gone over the return.
+  const over = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: true }], [], ui);
+  assert.doesNotMatch(over, /open-mark-ready-to-efile/);
+  assert.match(over, /Waiting for the office to go over the return with the client\./);
+  assert.match(over, /The office still needs to go over the return with the client\./);
+  assert.doesNotMatch(over, /Waiting for the client to sign Form 8879\./);
+  const overDone = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: false }], [], ui);
+  assert.match(overDone, /Waiting for the client to sign Form 8879\./);
+  assert.match(overDone, /open-mark-ready-to-efile/);
   // Only an administrator is offered the marks.
   const forAlex = renderFollowups([rec("C", "review_approved"), rec("D", "ready_to_efile")], [], { ...ui, person: ALEX });
   assert.doesNotMatch(forAlex, /open-mark-/);
@@ -928,4 +937,47 @@ test("Follow-ups while the cases or help requests load, and when they couldn't",
     /Nothing is waiting on the office right now\./,
     "ready by default",
   );
+});
+
+// A go-over task has no request (design D5): no view may read one.
+const goOver = (over = {}) =>
+  task({
+    id: "g1",
+    purpose: "go_over_return",
+    requestId: null,
+    reason: "Go over the return with the client: the reviewer did not.",
+    ...over,
+  });
+
+test("follow-up with no request renders", () => {
+  const record = kase({
+    id: "c1",
+    reference: "VT-CALL",
+    stage: "preparing",
+    preparerId: "p-alex",
+    followups: [goOver()],
+    openFollowups: 1,
+    contacts: [],
+  });
+  const html = page([record]);
+  assert.match(rowOf(html, "c1"), /data-kind="call"/);
+  assert.match(rowOf(html, "c1"), /1 open/);
+  assert.equal(followupQueue([record], [], NOW).filter((row) => row.kind === "call").length, 1);
+  const drawer = logCallDrawerBody({ record, person: sam, ui: { now: NOW }, caseId: "c1" });
+  assert.match(drawer, /Go over the return with the client: the reviewer did not\./);
+  assert.doesNotMatch(drawer, /undefined|null/);
+  assert.doesNotMatch(drawer, /awaiting preparer verification|Request documents<\/h3>/);
+});
+
+test("a task's Log contact form starts with its purpose", () => {
+  const drawer = logCallDrawerBody({ record: called([goOver()]), person: sam, ui: {}, caseId: "c1" });
+  assert.match(drawer, /name="purpose" value="go_over_return" required checked/);
+  assert.doesNotMatch(drawer, /name="purpose" value="request_documents" required checked/);
+  const docs = logCallDrawerBody({
+    record: called([task({ purpose: "request_documents" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(docs, /name="purpose" value="request_documents" required checked/);
 });

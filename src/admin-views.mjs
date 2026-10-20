@@ -176,9 +176,17 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
       record.reviewContactStatus ??
       (record.reviews ?? []).findLast((review) => review?.status === "approved")
         ?.clientContactStatus;
-    return call === "completed"
-      ? allowed
-      : refused("The reviewer still needs to record the conversation with the client.");
+    if (call !== "completed")
+      return refused("The reviewer still needs to record the conversation with the client.");
+    // D13: then the office's go-over with the client, until that task is resolved.
+    const goOverOpen =
+      record.goOverOpen ??
+      (record.followups ?? []).some(
+        (f) => f?.purpose === "go_over_return" && f?.status === "open",
+      );
+    return goOverOpen
+      ? refused("The office still needs to go over the return with the client.")
+      : allowed;
   };
 
   const markEfiled = () => {
@@ -451,7 +459,10 @@ export function followupForms(record, task, person, ui = {}) {
   if (!rights.recordContact.allowed) return explain(rights.recordContact);
   const resolveScope = `resolve-${task?.id ?? "task"}`;
   const hidden = `<input type="hidden" name="followupId" value="${esc(task?.id ?? "")}">`;
-  return `${logContactForm(record, person, ui, { followupId: task?.id ?? null })}<p class="field-note">Logging a contact never resolves the task, even when you reached the client. Resolving it is the separate step below.</p><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
+  return `${logContactForm(record, person, ui, {
+    followupId: task?.id ?? null,
+    purpose: task?.purpose ?? null,
+  })}<p class="field-note">Logging a contact never resolves the task, even when you reached the client. Resolving it is the separate step below.</p><form class="staff-form"><h4>Resolve this task</h4>${hidden}${select(
         "How it ended",
         "outcome",
         "",
@@ -472,8 +483,12 @@ export function followupForms(record, task, person, ui = {}) {
       )}<p class="field-note">Resolving closes the office's contact task only. It does not verify a document, change the preparer, or close the case.</p></form>`;
 }
 
+const GO_OVER_TITLE = "Go over the return with the client";
+
 function followupTask(record, task, person, ui) {
-  const request = requestById(record, task?.requestId);
+  // A go-over task has no request (design D5): never look one up for it.
+  const goOver = task?.purpose === "go_over_return";
+  const request = goOver ? null : requestById(record, task?.requestId);
   const answered = when(
     task?.status === "open" && request?.status === "awaiting_verification",
     `<p class="field-note" role="status">${icon(
@@ -481,7 +496,7 @@ function followupTask(record, task, person, ui) {
     )} The client responded; awaiting preparer verification. Resolving this task does not verify the document.</p>`,
   );
   return `<li><div class="section-head"><h3>${esc(
-    request?.title ?? "Contact the client",
+    goOver ? GO_OVER_TITLE : (request?.title ?? "Contact the client"),
   )}</h3><span class="badge ${task?.status === "open" ? "amber" : "green"}"><i></i>${esc(
     named(FOLLOWUP_STATUS, task?.status, "Task"),
   )}</span></div><p>${esc(task?.reason)}</p>${detailRow(

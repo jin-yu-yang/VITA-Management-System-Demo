@@ -95,15 +95,61 @@ const UNKNOWN_STAGE = Object.freeze({
 // name stays English in every language; the client's label and message come
 // from the client text table (stage.<stage>.label / .client), and English, the
 // default, is this table.
-export function describeStage(stage, lang = "en") {
+const SIGNING_PLANS = Object.freeze(["appointment", "same_day", "portal", "go_over_first"]);
+const SIGNING_LOCALES = Object.freeze({ en: "en-US", "zh-Hans": "zh-CN", "zh-Hant": "zh-Hant" });
+
+// The appointment is a wall-clock time at the site, stored without a zone
+// ("YYYY-MM-DDTHH:MM", maybe with ":SS"). The parts are read as written and
+// formatted in UTC, so the browser's zone can never move the time.
+export function signingWhen(isoMinute, lang = "en") {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(isoMinute ?? ""));
+  if (!match) return "";
+  const [year, month, day, hour, minute] = match.slice(1).map(Number);
+  const locale = SIGNING_LOCALES[isLang(lang) ? lang : "en"];
+  // Only the words come from Intl (weekday, English month, AM/PM); the shape is
+  // ours, because ICU versions differ on spacing (e.g. "11月2日 星期一" vs
+  // "11月2日星期一"). UTC, so the browser's zone never moves the time.
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "UTC",
+    })
+      .formatToParts(new Date(Date.UTC(year, month - 1, day, hour, minute)))
+      .map((part) => [part.type, part.value]),
+  );
+  const clock = `${hour % 12 || 12}:${String(minute).padStart(2, "0")}`;
+  return locale === "en-US"
+    ? `${parts.weekday}, ${parts.month} ${day} at ${clock} ${parts.dayPeriod}`
+    : `${month}月${day}日${parts.weekday} ${parts.dayPeriod}${clock}`;
+}
+
+// At Ready to exit, the case's signing plan says how and when the client signs
+// Form 8879 (design D11); without a plan the stage's own message stands.
+function signingMessage(stage, lang, record) {
+  const plan = record?.signingPlan;
+  if (stage !== "review_approved" || !SIGNING_PLANS.includes(plan)) return null;
+  const when = plan === "appointment" ? signingWhen(record.signingAppointmentAt, lang) : "";
+  if (plan === "appointment" && !when) return null;
+  return t(`stage.review_approved.client.${plan}`, { when }, lang);
+}
+
+export function describeStage(stage, lang = "en", record = null) {
   const known = Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "");
   const base = known ? STAGE_DESCRIPTIONS[stage] : UNKNOWN_STAGE;
-  if (!isLang(lang) || lang === "en") return { ...base };
+  const variant = signingMessage(stage, lang, record);
+  if (!isLang(lang) || lang === "en") {
+    return variant ? { ...base, clientMessage: variant } : { ...base };
+  }
   const key = known ? stage : "unknown";
   return {
     label: base.label,
     clientLabel: t(`stage.${key}.label`, {}, lang),
-    clientMessage: t(`stage.${key}.client`, {}, lang),
+    clientMessage: variant ?? t(`stage.${key}.client`, {}, lang),
   };
 }
 

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
+import {
+  createDatabaseFixture,
+  rejected,
+  PREPARER,
+} from "./support/database-fixture.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import { missingToSubmit, isVisible } from "../src/intake-catalogue.mjs";
 import { RULE_TYPES } from "../src/document-cards.mjs";
@@ -111,7 +115,7 @@ async function claimedCase(f) {
   await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", { checks: f.intakeChecks });
   await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-  await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+  await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
   await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
   return caseId;
 }

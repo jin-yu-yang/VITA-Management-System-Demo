@@ -5,7 +5,14 @@ import { createStore, SUBSCRIBED_TABLES } from "../src/supabase-store.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
 
 // The staff sections an applicant's Case must not even carry as keys.
-const STAFF_SECTIONS = ["participants", "followups", "reviews", "internalHistory"];
+const STAFF_SECTIONS = [
+  "participants",
+  "followups",
+  "reviews",
+  "internalHistory",
+  "preparerQuestionnaires",
+  "reviewerQuestionnaires",
+];
 // How long Realtime gets to connect and to deliver one change. A timeout is a
 // failure: silence must never read as success.
 const REALTIME_DEADLINE_MS = 15_000;
@@ -153,7 +160,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       // The reviewer's call with the client, for Follow-ups: none before an
       // approval, pending after one, completed once the call is recorded.
       assert.equal(unclaimed.reviewContactStatus, null);
-      const waitingForCall = await f.approvedCase({ called: false });
+      const waitingForCall = await f.legacyApprovedCase();
       const called = await f.approvedCase();
       const listed = await presenter.listCases();
       assert.equal(

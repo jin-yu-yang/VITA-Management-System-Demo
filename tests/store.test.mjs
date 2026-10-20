@@ -4,6 +4,7 @@ import {
   createStore,
   mapCase,
   mapAssistance,
+  mapFollowup,
   SUBSCRIBED_TABLES,
 } from "../src/supabase-store.mjs";
 
@@ -21,6 +22,8 @@ const STAFF_ONLY_TABLES = [
   "assistance_items",
   "action_receipts",
   "case_materials",
+  "preparer_questionnaires",
+  "reviewer_questionnaires",
 ];
 
 const CASE_ROW = Object.freeze({
@@ -518,6 +521,8 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       updatedAt: "2026-09-12T16:30:00.000Z",
       intakeVersion: 2,
       intakeVisited: ["about.you", "before.ready"],
+      signingPlan: null,
+      signingAppointmentAt: null,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -537,12 +542,13 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly six summary fields.
+  // The Case scalars, unchanged, plus exactly seven summary fields.
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
       ...Object.keys(mapCase(CASE_ROW)),
       "followupAssigneeIds",
+      "goOverOpen",
       "openFollowups",
       "openRequests",
       "participants",
@@ -729,6 +735,8 @@ test("an applicant case read asks for no staff table at all", async () => {
     "reviewerId",
     "revision",
     "season",
+    "signingAppointmentAt",
+    "signingPlan",
     "stage",
     "updatedAt",
     "workspaceId",
@@ -801,6 +809,8 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "documents",
       "memberships",
       "preparation_participants",
+      "preparer_questionnaires",
+      "reviewer_questionnaires",
       "reviews",
     ],
   );
@@ -843,6 +853,7 @@ test("a presenter case read adds exactly the staff sections", async () => {
       id: "followup-1",
       requestId: "request-1",
       assigneeId: "person-sam",
+      purpose: "request_documents",
       status: "open",
       reason: "No response to the document request.",
       resolutionOutcome: null,
@@ -853,6 +864,25 @@ test("a presenter case read adds exactly the staff sections", async () => {
     },
   ]);
   assert.equal(found.internalHistory[0].action, "VERIFY_INTAKE");
+});
+
+test("a list row says whether the office's go-over is open (D13)", async () => {
+  const task = (purpose) => ({ ...RELATED_ROWS.admin_followups[0], purpose });
+  const goOverOf = async (admin_followups) => {
+    const client = fakeClient({ access: "presenter", rows: { admin_followups } });
+    const [row] = await createStore(client).listCases();
+    const read = client.reads.find((entry) => entry.table === "admin_followups");
+    assert.match(String(read.columns), /purpose/);
+    return row.goOverOpen;
+  };
+  assert.equal(await goOverOf([task("go_over_return")]), true);
+  assert.equal(await goOverOf([task("request_documents")]), false);
+  assert.equal(await goOverOf([]), false);
+});
+
+test("a follow-up row with no purpose reads as a document request", () => {
+  assert.equal(mapFollowup({ id: "f" }).purpose, "request_documents");
+  assert.equal(mapFollowup({ id: "f", purpose: "go_over_return" }).purpose, "go_over_return");
 });
 
 test("the staff case carries its contacts with their versions", async () => {
@@ -1269,6 +1299,8 @@ test("a subscription watches only the tables its principal may read", async () =
     "assistance_items",
     "reviews",
     "case_materials",
+    "preparer_questionnaires",
+    "reviewer_questionnaires",
   ]);
   // The applicant's channel never names a staff-only table.
   for (const staffTable of STAFF_ONLY_TABLES)
@@ -1385,4 +1417,34 @@ test("both principals read the card rows by named columns and map them", async (
   }
   const empty = fakeClient({ access: "applicant", rows: { case_document_cards: [] } });
   assert.deepEqual((await createStore(empty).getCase("case-1")).documentCards, []);
+});
+
+test("mapCase carries the signing plan and appointment, null until approval", () => {
+  const plain = mapCase(CASE_ROW);
+  assert.equal(plain.signingPlan, null);
+  assert.equal(plain.signingAppointmentAt, null);
+  const planned = mapCase({ ...CASE_ROW, signing_plan: "appointment", signing_appointment_at: "2026-11-02T14:30:00" });
+  assert.equal(planned.signingPlan, "appointment");
+  assert.equal(planned.signingAppointmentAt, "2026-11-02T14:30:00");
+});
+
+test("a staff case read carries both questionnaire tables, an applicant read neither", async () => {
+  const rows = {
+    preparer_questionnaires: [
+      { id: "pq-1", case_id: "case-1", preparation_version: 1, confirmed_by: "client", confirmed_method: "phone", ready_for_review_on: "2026-10-16" },
+    ],
+    reviewer_questionnaires: [
+      { id: "rq-1", case_id: "case-1", review_id: "review-1", completed_on: "2026-10-17", went_over: true, exit_form: { federal: null, state: null, local: [] } },
+    ],
+  };
+  const staff = await createStore(fakeClient({ access: "presenter", rows })).getCase("case-1");
+  assert.deepEqual(staff.preparerQuestionnaires, [
+    { id: "pq-1", caseId: "case-1", preparationVersion: 1, confirmedBy: "client", confirmedMethod: "phone", readyForReviewOn: "2026-10-16" },
+  ]);
+  assert.equal(staff.reviewerQuestionnaires[0].reviewId, "review-1");
+  assert.deepEqual(staff.reviewerQuestionnaires[0].exitForm, { federal: null, state: null, local: [] });
+  const client = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(client).getCase("case-1");
+  assert.ok(!("preparerQuestionnaires" in applicant));
+  assert.ok(!client.reads.some((read) => read.table.endsWith("_questionnaires")));
 });

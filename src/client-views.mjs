@@ -332,9 +332,10 @@ function documentRequest(request, state, lang = "en") {
   )}<small class="block">${say("progress.checks_first")}</small></div>`;
 }
 
-function reviewProgress(stage, lang = "en") {
+function reviewProgress(record, lang = "en") {
+  const stage = record.stage;
   if (!REVIEW_STAGES.includes(stage)) return "";
-  const described = describeStage(stage, lang);
+  const described = describeStage(stage, lang, record);
   return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang, { audience: "client" })}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
 }
 
@@ -343,7 +344,7 @@ export function progressScreen(state) {
   if (!record) return applicationsScreen(state);
   const lang = viewLang(state);
   const say = (key) => esc(t(key, {}, lang));
-  const described = describeStage(record.stage, lang);
+  const described = describeStage(record.stage, lang, record);
   const answers = record.answers ?? {};
   const open = (record.requests ?? []).filter(
     (request) => request.status === "open",
@@ -363,7 +364,7 @@ export function progressScreen(state) {
           `<div class="document-row">${icon("file")}<div><strong>${esc(document.filename)}</strong><small>${say("progress.sent_waiting")}</small></div><span class="document-check pending">${icon("clock")}</span></div>`,
       )
       .join("")}</section>`,
-  )}${reviewProgress(record.stage, lang)}<section class="panel history-panel"><div class="section-head"><h2>${say("progress.history")}</h2><span class="muted small">${say("progress.history_note")}</span></div>${
+  )}${reviewProgress(record, lang)}<section class="panel history-panel"><div class="section-head"><h2>${say("progress.history")}</h2><span class="muted small">${say("progress.history_note")}</span></div>${
     history.length
       ? `<div class="timeline">${history
           .map(

@@ -101,13 +101,32 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //   summaries: participants, openFollowups, followupAssigneeIds,
 //   openRequests, phone and reviewContactStatus (the latest approved
 //   review's client_contact_status: 'pending', 'completed', or null when no
-//   review has been approved). documentCards: the case_document_cards rows as
+//   review has been approved). A list entry's goOverOpen is true while a
+//   go_over_return follow-up is open (D13). documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
 //   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,
 // internalHistory and materials: [{ item, receivedAt, recordedByPersonId }].
 // These are never loaded by the applicant adapter.
 // Action: { actionId, caseId, expectedRevision, personId, type, payload }
+//   SUBMIT_REVIEW and APPROVE_REVIEW payloads are { questionnaire };
+//   RESUBMIT_REVIEW's is { questionnaire, resolution }.
+//   Preparer questionnaire: { confirmedBy: client|spouse|other,
+//   confirmedByName (only with other, 1-120 trimmed), confirmedMethod:
+//   phone|in_person|text|email|video, shadedPartsCompleted: true,
+//   stateForgivenessSet: true, readyForReviewOn: 'YYYY-MM-DD' }.
+//   Reviewer questionnaire: { completedOn, paForgiveness: eligible|
+//   not_eligible, wentOver: boolean, wentOverOn (only and required with
+//   wentOver true), wentOverHow (only with true, optional: in_person|phone|
+//   video|other), signMethod: portal|in_person, signAppointmentAt
+//   ('YYYY-MM-DDTHH:MM' site wall time; only when in person and the service
+//   is not same_day), exitForm, remarks (optional, 1-2000 trimmed) }.
+//   exitForm: { federal: Group|null, state: Group|null, local: [Group +
+//   type: NPT|BIRT|EET|SIT|PAIBWTR] } (all three keys always present).
+//   Group: { method: efile|paper, result: refund|owe|none, amount: decimal
+//   string 0-999999.99 (refund, owe), refundBy: direct_deposit|check
+//   (refund), oweBy: direct_debit|mail_check (owe), debitOn: 'YYYY-MM-DD'
+//   (direct_debit) }. No account or routing number is ever stored.
 // Receipt: { actionId, caseId, reference, revision }
 // AppError: Error with a code from ERROR_CODES (auth errors mapped separately).
 // Controller state: {savedCase, draftAnswers, editBaseRevision,

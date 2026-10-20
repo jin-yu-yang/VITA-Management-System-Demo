@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
+import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
@@ -430,6 +430,11 @@ if (!config) {
     if (caseId !== null) draftsCase = caseId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
+    // A collapsed Exit Form group holding something typed is opened again, so
+    // the field a refusal names is in view (design D7).
+    const exitGroups = [...root.querySelectorAll("details.q-exit-group:not([open])")];
+    const ids = exitGroups.map((group) => [...group.querySelectorAll("[id]")].map((field) => field.id));
+    for (const index of groupsToOpen(ids, formDrafts)) exitGroups[index].open = true;
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back
@@ -632,7 +637,12 @@ if (!config) {
     // `shown` is the count of recorded errors when the press began: the
     // error itself is cloned by getState, so it cannot be compared.
     if (state.errorCount !== shown) return;
-    const known = typeof error?.message === "string" && Object.hasOwn(SENTENCES, error.message);
+    // The payload builders' own VALIDATION sentences (case-actions.mjs,
+    // questionnaires.mjs) are fixed, staff-facing text that names what to fix;
+    // a refused form must show them rather than "Something went wrong."
+    const known =
+      typeof error?.message === "string" &&
+      (Object.hasOwn(SENTENCES, error.message) || error.code === "VALIDATION");
     controller.noteLocalFailure({ code: error?.code ?? "SERVER_ERROR", message: known ? error.message : "Something went wrong." });
   }
 
@@ -1432,6 +1442,22 @@ if (!config) {
         if (leaveAddCaseFirst("open-cases", target)) break;
         EXITS["open-cases"]();
         break;
+      case "clear-exit-group": {
+        // An Exit Form group is emptied in place: every field unticked or
+        // blank, and no draft left to put them back (design D7).
+        const group = target.closest("details.q-exit-group");
+        if (!group) break;
+        const fields = [...group.querySelectorAll("input")];
+        for (const field of fields) {
+          if (isCheckable(field)) field.checked = false;
+          else field.value = "";
+        }
+        forgetDrafts(
+          formDrafts,
+          fields.map((field) => field.id).filter(Boolean),
+        );
+        break;
+      }
       case "clear-pool-filters":
         controller.clearBoardFilters(POOL_FILTER_KEYS);
         // "Clear filters" goes once nothing is narrowed; the keyboard goes to

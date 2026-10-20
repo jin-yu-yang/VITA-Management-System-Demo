@@ -87,3 +87,23 @@ export function restoreDraft(field, draft) {
   }
   if (!field.value) field.value = draft;
 }
+
+/**
+ * Forget the drafts of the given field ids (a cleared Exit Form group), so a
+ * redraw does not put them back and the group reads as empty.
+ */
+export function forgetDrafts(drafts, ids) {
+  for (const id of ids) drafts.delete(id);
+}
+
+/**
+ * Which collapsible groups a redraw must open again: those with a field that
+ * holds a draft. `groups` is one list of field ids per group, in order;
+ * `drafts` is app.mjs's draft map. An empty string, null or an edit back to
+ * empty is no draft. Returns the indexes of the groups to open.
+ */
+export function groupsToOpen(groups, drafts) {
+  const held = (draft) =>
+    draft !== null && draft !== undefined && draft !== "" && !(typeof draft === "object" && draft.value === "");
+  return groups.flatMap((ids, index) => (ids.some((id) => held(drafts.get(id))) ? [index] : []));
+}

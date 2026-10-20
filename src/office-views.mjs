@@ -180,9 +180,11 @@ function needed(row) {
   if (kind === "signing")
     return esc(
       // A list row carries only the reviewer's call status, never the reviews.
-      record.reviewContactStatus === "completed"
-        ? "Waiting for the client to sign Form 8879."
-        : "Waiting for the reviewer's call with the client.",
+      record.reviewContactStatus !== "completed"
+        ? "Waiting for the reviewer's call with the client."
+        : record.goOverOpen
+          ? "Waiting for the office to go over the return with the client."
+          : "Waiting for the client to sign Form 8879.",
     );
   if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;

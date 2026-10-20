@@ -78,6 +78,7 @@ import { SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { DRAFT_FONT_FIXTURES } from "../src/draft-pdf.mjs";
 import { cardsFor } from "../src/document-cards.mjs";
 import { CONTACT_NOT_SHOWN } from "../src/staff-views.mjs";
+import { todayIso } from "../src/questionnaires.mjs";
 import { findSubstep } from "../src/intake-catalogue.mjs";
 import { t as say, sentence } from "../src/client-text.mjs";
 import { describeStage } from "../src/domain.mjs";
@@ -137,7 +138,6 @@ const RESOLUTION_NOTE = "Simulated call ended; the office task is done.";
 // Internal staff text. It must never appear in a client window.
 const FINDINGS = "Internal only: recheck the simulated mileage total before approval.";
 const CORRECTION_NOTE = "Recorded the corrected simulated total in TaxSlayer.";
-const REVIEW_CONTACT_NOTE = "Told the fictional client the review is complete.";
 const EDITED_BEST_TIME_NOTE = "Text first; a fictional call after 6 pm is fine.";
 const OFFLINE_CITY = "Riverbend";
 const MINE_CITY = "Keepmine City";
@@ -280,6 +280,56 @@ async function openTab(context, appOrigin) {
  */
 async function chooseSeg(root, scope, name, key) {
   await root.locator(`label[for="field-${scope}-${name}-${key}"]`).click({ timeout: CLICK_MS });
+}
+
+// The questionnaires' inline forms in "Your next step" (design D7). Each field
+// is found by the id the page gives it, and every fill is safe to repeat: a
+// press that has to be repeated fills the same answers again.
+const radioId = (scope, name, value) => `[id="field-${scope}-${name}-${value}"]`;
+const fieldIdOf = (scope, name) => `[id="field-${scope}-${name}"]`;
+
+/** Answer the preparer questionnaire. Leave a key out to leave the field as the page shows it. */
+async function fillPreparer(page, answers) {
+  await waitForQuiet(page);
+  const { confirmedBy, confirmedByName, confirmedMethod, shaded, state, readyForReviewOn } = answers;
+  if (confirmedBy) await page.locator(radioId("prep", "confirmedBy", confirmedBy)).check({ timeout: CLICK_MS });
+  if (confirmedByName !== undefined)
+    await page.locator(fieldIdOf("prep", "confirmedByName")).fill(confirmedByName, { timeout: CLICK_MS });
+  if (confirmedMethod)
+    await page.locator(radioId("prep", "confirmedMethod", confirmedMethod)).check({ timeout: CLICK_MS });
+  if (shaded) await page.locator(fieldIdOf("prep", "shadedPartsCompleted")).check({ timeout: CLICK_MS });
+  if (state) await page.locator(fieldIdOf("prep", "stateForgivenessSet")).check({ timeout: CLICK_MS });
+  if (readyForReviewOn)
+    await page.locator(fieldIdOf("prep", "readyForReviewOn")).fill(readyForReviewOn, { timeout: CLICK_MS });
+}
+
+/**
+ * Answer the reviewer questionnaire. `exit` maps a group ("federal", "state",
+ * "local.SIT", ...) to its answers; a group is opened to be typed in, as a
+ * person does, and its method/result/refundBy/oweBy are radios.
+ */
+async function fillReviewer(page, answers) {
+  await waitForQuiet(page);
+  const { completedOn, paForgiveness, wentOver, wentOverOn, wentOverHow, signMethod, signAppointmentAt, exit, remarks } = answers;
+  if (completedOn) await page.locator(fieldIdOf("rev", "completedOn")).fill(completedOn, { timeout: CLICK_MS });
+  if (paForgiveness) await page.locator(radioId("rev", "paForgiveness", paForgiveness)).check({ timeout: CLICK_MS });
+  if (wentOver) await page.locator(radioId("rev", "wentOver", wentOver)).check({ timeout: CLICK_MS });
+  if (wentOverOn) await page.locator(fieldIdOf("rev", "wentOverOn")).fill(wentOverOn, { timeout: CLICK_MS });
+  if (wentOverHow) await page.locator(radioId("rev", "wentOverHow", wentOverHow)).check({ timeout: CLICK_MS });
+  if (signMethod) await page.locator(radioId("rev", "signMethod", signMethod)).check({ timeout: CLICK_MS });
+  if (signAppointmentAt)
+    await page.locator(fieldIdOf("rev", "signAppointmentAt")).fill(signAppointmentAt, { timeout: CLICK_MS });
+  for (const [prefix, group] of Object.entries(exit ?? {})) {
+    const details = page.locator("details.q-exit-group").filter({ has: page.locator(fieldIdOf("rev", `${prefix}.amount`)) });
+    if (!(await details.evaluate((element) => element.open)))
+      await details.locator("summary").click({ timeout: CLICK_MS });
+    for (const [key, value] of Object.entries(group)) {
+      if (["amount", "debitOn"].includes(key))
+        await page.locator(fieldIdOf("rev", `${prefix}.${key}`)).fill(value, { timeout: CLICK_MS });
+      else await page.locator(radioId("rev", `${prefix}.${key}`, value)).check({ timeout: CLICK_MS });
+    }
+  }
+  if (remarks !== undefined) await page.locator(fieldIdOf("rev", "remarks")).fill(remarks, { timeout: CLICK_MS });
 }
 
 /** A `datetime-local` value ("YYYY-MM-DDTHH:MM") moved back by whole hours. */
@@ -713,6 +763,33 @@ async function runPermutation(t, roles) {
         attributes,
         safeToRepeat: await unmovedSince(caseId),
       }),
+    );
+
+  // A press that first fills an inline questionnaire form (the fill is done
+  // again on a repeat) and then presses the form's own submit button.
+  const actQuestionnaire = async (page, type, fill, expect, { caseId } = {}) =>
+    record(
+      type,
+      await pressUntilEffect(page, {
+        press: async () => {
+          await waitForQuiet(page);
+          await revealCaseControl(page, `button[type="submit"][data-case-action="${type}"]`);
+          await fill();
+          await waitForQuiet(page);
+          await page.locator(`button[type="submit"][data-case-action="${type}"]`).first().click({ timeout: CLICK_MS });
+        },
+        ...expectation(expect),
+        safeToRepeat: await unmovedSince(caseId),
+      }),
+    );
+  // What the page told the person since `before` notices were recorded.
+  const noticeSaid = (page, text, before = 0) =>
+    waitFor(
+      page,
+      `a notice saying ${JSON.stringify(text)}`,
+      ([wanted, from]) => (window.__vitallyAlerts ?? []).slice(from).some((line) => line.includes(wanted)),
+      [text, before],
+      ARRIVAL_MS,
     );
 
   const tag = `${roles.client}-client-${roles.staff}-staff`;
@@ -2221,10 +2298,35 @@ async function runPermutation(t, roles) {
 
     await phase("Alex verifies the document and records preparation complete", async () => {
       await act(staff, "VERIFY_DOCUMENT", { badge: "Verified" });
-      await act(staff, "SUBMIT_REVIEW", { badge: "Pending review" });
+      const today = todayIso();
+      await actQuestionnaire(
+        staff,
+        "SUBMIT_REVIEW",
+        () =>
+          fillPreparer(staff, {
+            confirmedBy: "other",
+            confirmedByName: "Pat Example",
+            confirmedMethod: "phone",
+            shaded: true,
+            state: true,
+            readyForReviewOn: today,
+          }),
+        { badge: "Pending review" },
+      );
       await waitForBadge(client, "Waiting for review");
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_ready");
+      const firstQuestionnaire = await one(
+        fixture,
+        "select confirmed_by, confirmed_by_name, confirmed_method, ready_for_review_on::text as ready_on from public.preparer_questionnaires where case_id=$1 and preparation_version=1",
+        [classCase.id],
+      );
+      assert.deepEqual(firstQuestionnaire, {
+        confirmed_by: "other",
+        confirmed_by_name: "Pat Example",
+        confirmed_method: "phone",
+        ready_on: today,
+      });
       assert.equal(row.preparer_id, alex);
       assert.equal(row.reviewer_id, null);
     });
@@ -2250,19 +2352,125 @@ async function runPermutation(t, roles) {
 
       await choosePersona(staff, alex);
       await waitForText(staff, "Corrections the reviewer asked for", RENDER_MS);
-      await actForm(
+      // The resubmit form starts from the earlier answers; only the TaxSlayer
+      // date is reset to today.
+      await staff.locator(radioId("prep", "confirmedBy", "other")).waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(await staff.locator(radioId("prep", "confirmedBy", "other")).isChecked(), true);
+      assert.equal(await staff.locator(fieldIdOf("prep", "confirmedByName")).inputValue(), "Pat Example");
+      assert.equal(await staff.locator(radioId("prep", "confirmedMethod", "phone")).isChecked(), true);
+      assert.equal(await staff.locator(fieldIdOf("prep", "shadedPartsCompleted")).isChecked(), true);
+      assert.equal(await staff.locator(fieldIdOf("prep", "stateForgivenessSet")).isChecked(), true);
+      assert.equal(await staff.locator(fieldIdOf("prep", "readyForReviewOn")).inputValue(), todayIso());
+      await actQuestionnaire(
         staff,
         "RESUBMIT_REVIEW",
-        { "What you corrected in TaxSlayer": CORRECTION_NOTE },
+        async () => {
+          await staff
+            .locator('[id="field-resubmit-resolution"]')
+            .fill(CORRECTION_NOTE, { timeout: CLICK_MS });
+          await fillPreparer(staff, { confirmedMethod: "email" });
+        },
         { badge: "Pending review" },
+      );
+      assert.equal(
+        (
+          await one(
+            fixture,
+            "select confirmed_method from public.preparer_questionnaires where case_id=$1 and preparation_version=2",
+            [classCase.id],
+          )
+        )?.confirmed_method,
+        "email",
+        "the resubmission did not store its own questionnaire",
       );
 
       await choosePersona(staff, morgan);
       await act(staff, "CLAIM_REVIEW", { badge: "Review in progress" });
-      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" });
+      // The reviewer form is in "Your next step", above Approve, never in a
+      // dialog. Local SIT gets an amount and nothing else: the approval is
+      // refused with a sentence naming it, and that group is open again.
+      const approveButton = staff.locator('button[type="submit"][data-case-action="APPROVE_REVIEW"]');
+      await approveButton.waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForQuiet(staff);
+      const placement = await staff.evaluate(() => {
+        const button = document.querySelector('button[type="submit"][data-case-action="APPROVE_REVIEW"]');
+        const last = document.querySelector('[id="field-rev-remarks"]');
+        const first = document.querySelector('[id="field-rev-completedOn"]');
+        return {
+          sameForm: Boolean(button?.form) && button.form === last?.form && button.form === first?.form,
+          above: last.getBoundingClientRect().bottom <= button.getBoundingClientRect().top,
+          modals: document.querySelectorAll(".modal").length,
+        };
+      });
+      assert.deepEqual(placement, { sameForm: true, above: true, modals: 0 }, "the reviewer form is not inline above Approve");
+      const noticesBefore = ((await readAlerts(staff)) ?? []).length;
+      await fillReviewer(staff, {
+        paForgiveness: "eligible",
+        wentOver: "no",
+        signMethod: "portal",
+        exit: { "local.SIT": { amount: "45.00" } },
+      });
+      await waitForQuiet(staff);
+      await approveButton.click({ timeout: CLICK_MS });
+      await noticeSaid(staff, "choose E-file or Paper", noticesBefore);
+      await waitForQuiet(staff);
+      assert.equal(
+        await staff.locator('details.q-exit-group:has([id="field-rev-local.SIT.amount"])').evaluate((element) => element.open),
+        true,
+        "the Local SIT group is closed again after the refusal that names it",
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "reviewing");
+      assert.equal(await staff.locator(".modal").count(), 0, "a dialog opened for the refused approval");
+
+      // Now the half-filled entry is finished, a Federal one is added, and the
+      // reviewer answers No to having gone over the return.
+      await actQuestionnaire(
+        staff,
+        "APPROVE_REVIEW",
+        () =>
+          fillReviewer(staff, {
+            completedOn: todayIso(),
+            paForgiveness: "eligible",
+            wentOver: "no",
+            signMethod: "portal",
+            exit: {
+              federal: { method: "efile", result: "refund", amount: "120.00", refundBy: "direct_deposit" },
+              "local.SIT": { method: "efile", result: "owe", amount: "45.00", oweBy: "mail_check" },
+            },
+            remarks: "Fictional remarks for the exit form.",
+          }),
+        { badge: "Ready to exit" },
+      );
+      assert.equal(await staff.locator(".modal").count(), 0, "a dialog opened for the approval");
       const row = await caseById(fixture, classCase.id);
       assert.equal(row.stage, "review_approved");
+      assert.equal(
+        (await one(fixture, "select signing_plan from public.cases where id=$1", [classCase.id])).signing_plan,
+        "go_over_first",
+      );
       assert.equal(row.reviewer_id, morgan);
+      const answered = await one(
+        fixture,
+        "select went_over, sign_method, exit_form from public.reviewer_questionnaires where case_id=$1",
+        [classCase.id],
+      );
+      assert.equal(answered.went_over, false);
+      assert.equal(answered.sign_method, "portal");
+      assert.equal(answered.exit_form.federal.amount, "120.00");
+      assert.equal(answered.exit_form.local.find((entry) => entry.type === "SIT")?.result, "owe");
+      assert.equal(answered.exit_form.state, null);
+      const goOver = await one(
+        fixture,
+        "select status, reason, assignee_person_id, request_id from public.admin_followups where case_id=$1 and purpose='go_over_return'",
+        [classCase.id],
+      );
+      assert.equal(goOver.status, "open");
+      assert.equal(goOver.reason, "Go over the return with the client: the reviewer did not.");
+      assert.equal(goOver.assignee_person_id, sam);
+      assert.equal(goOver.request_id, null);
+      // The reviewer's next step reads the go-over line and has no call to record.
+      await waitForText(staff, "The office will go over the return with the client.", RENDER_MS);
+      assert.equal(await caseActionCount(staff, "RECORD_REVIEW_CONTACT"), 0, "an approval left the review-contact step pending");
       assert.equal(row.preparer_id, alex);
       evidence.story.reviewVersions = await eventCount(
         fixture,
@@ -2272,25 +2480,17 @@ async function runPermutation(t, roles) {
       assert.equal(evidence.story.reviewVersions, 1);
     });
 
-    await phase("Morgan records the client conversation and the client sees the next step", async () => {
-      await actForm(
-        staff,
-        "RECORD_REVIEW_CONTACT",
-        { "What happened": "reached", "Note for the office": REVIEW_CONTACT_NOTE },
-        { text: "The client conversation for this review is recorded." },
-      );
+    await phase("the client sees the next step: the office will go over the return first", async () => {
       await waitForBadge(client, "Ready to sign");
       await waitForText(
         client,
-        "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.",
+        "Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed.",
         RENDER_MS,
       );
-      await waitForText(client, "A volunteer spoke with you about the next service step.");
       const seen = await pageText(client);
       for (const secret of [
         FINDINGS,
         CORRECTION_NOTE,
-        REVIEW_CONTACT_NOTE,
         CONTACT_NOTE,
         SAM_CONTACT_NOTE,
         SAM_CORRECTION_NOTE,
@@ -2345,20 +2545,55 @@ async function runPermutation(t, roles) {
         }),
       );
       await waitForCaseWorkspace(staff, short.reference);
-      await act(staff, "APPROVE_REVIEW", { badge: "Ready to exit" }, { caseId: short.id });
+      // This reviewer did go over the return, so the client signs in the portal
+      // and the office has nothing to go over: no call is left to record.
+      await actQuestionnaire(
+        staff,
+        "APPROVE_REVIEW",
+        () =>
+          fillReviewer(staff, {
+            completedOn: todayIso(),
+            paForgiveness: "not_eligible",
+            wentOver: "yes",
+            wentOverOn: todayIso(),
+            wentOverHow: "phone",
+            signMethod: "portal",
+          }),
+        { badge: "Ready to exit" },
+        { caseId: short.id },
+      );
       const row = await caseById(fixture, short.id);
       assert.equal(row.stage, "review_approved");
+      assert.equal(
+        (await one(fixture, "select signing_plan from public.cases where id=$1", [short.id])).signing_plan,
+        "portal",
+      );
+      assert.equal(await eventCount(fixture, short.id, "RECORD_REVIEW_CONTACT"), 0);
+      assert.equal(
+        Number(
+          (
+            await one(
+              fixture,
+              "select count(*)::int as n from public.admin_followups where case_id=$1 and purpose='go_over_return'",
+              [short.id],
+            )
+          ).n,
+        ),
+        0,
+        "a Yes approval raised a go-over task",
+      );
       assert.equal(await eventCount(fixture, short.id, "REQUEST_CORRECTIONS"), 0);
       evidence.story.shortPath = "claimed and approved with no correction round";
     });
 
     await phase("the office records signing and e-filing, and the client sees each step", async () => {
-      // The class case's reviewer has recorded the call, so the office may
-      // record the signature. The review_approved sample's call is still
-      // pending, so its row explains instead of offering the mark.
+      // The class case's approval settled the reviewer's call itself, so the
+      // office never records one; its go-over task holds the signature back
+      // until it is resolved. The review_approved sample is seeded as a
+      // questionnaire Yes approval, so its row offers the mark.
       const approved = await caseById(fixture, classCase.id);
       assert.equal(approved.stage, "review_approved");
-      assert.equal(await eventCount(fixture, classCase.id, "RECORD_REVIEW_CONTACT"), 1);
+      assert.equal(await eventCount(fixture, classCase.id, "RECORD_REVIEW_CONTACT"), 0);
       const callPending = samples.find((row) => row.fixture_key === "review_approved");
       assert.ok(callPending, "the review_approved sample is missing");
       // The dialogs name the client as the case page does: first and last name.
@@ -2414,21 +2649,132 @@ async function runPermutation(t, roles) {
       await choosePersona(staff, sam);
       await openBoard(staff, OFFICE_BOARD_HEADING);
 
-      // ---- The sample whose reviewer has not called yet ------------------
+      // ---- The review_approved sample: its call is settled, nothing to go over
       const pendingRow = queueRow("signing", callPending.reference);
       await pendingRow.waitFor({ state: "visible", timeout: RENDER_MS });
       assert.equal(
         (await pendingRow.locator(".queue-needed").innerText()).trim(),
-        "Waiting for the reviewer's call with the client.",
-      );
-      assert.equal(
-        (await pendingRow.locator(".staff-reason").innerText()).trim(),
-        "The reviewer still needs to record the conversation with the client.",
+        "Waiting for the client to sign Form 8879.",
       );
       assert.equal(
         await pendingRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
+        1,
+        "the approved sample does not offer Mark ready to e-file",
+      );
+
+      // ---- A Yes approval is not held up: the short case may be marked now --
+      const shortCase = samples.find((row) => row.fixture_key === "review_ready");
+      const shortRow = queueRow("signing", shortCase.reference);
+      await shortRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await shortRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the client to sign Form 8879.",
+      );
+      assert.equal(
+        await shortRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
+        1,
+        "a Yes approval's signing row does not offer Mark ready to e-file",
+      );
+
+      // ---- The class case waits for the office to go over the return -------
+      const heldRow = queueRow("signing", classReference);
+      await heldRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await heldRow.locator(".queue-needed").innerText()).trim(),
+        "Waiting for the office to go over the return with the client.",
+      );
+      assert.equal(
+        await heldRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
         0,
-        "Mark ready to e-file was offered before the reviewer's call",
+        "Mark ready to e-file was offered before the office went over the return",
+      );
+      // Its Call the client row opens the go-over task, whose contact form
+      // starts with the purpose already chosen.
+      const goOverRow = staff
+        .locator('tr.queue-row[data-kind="call"]')
+        .filter({ hasText: classReference })
+        .first();
+      await goOverRow.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.match(await goOverRow.locator(".kind-pill").innerText(), /Call the client/);
+      await waitForQuiet(staff);
+      await goOverRow.locator('[data-action="open-log-call"]').click({ timeout: CLICK_MS });
+      const goOverDrawer = staff.locator(".modal.office-drawer");
+      await goOverDrawer.waitFor({ state: "visible", timeout: ARRIVAL_MS });
+      const goOverForm = goOverDrawer.locator("form.contact-form[data-followup-id]").first();
+      await goOverForm.waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.ok(
+        (await goOverDrawer.innerText()).includes("Go over the return with the client"),
+        "the drawer does not show the go-over task",
+      );
+      const goOverTaskId = await goOverForm.getAttribute("data-followup-id");
+      const goOverScope = `contact-task-${goOverTaskId}`;
+      assert.equal(
+        await staff.locator(`[id="field-${goOverScope}-purpose-go_over_return"]`).isChecked(),
+        true,
+        "the go-over task's contact does not start with Go over tax return",
+      );
+      const GO_OVER_NOTE = "Went over the fictional return with the client.";
+      record(
+        "Log contact (go-over task)",
+        await pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            await chooseSeg(goOverForm, goOverScope, "outcomeVoice", "reached");
+            await chooseSeg(goOverForm, goOverScope, "withWhom", "client");
+            await (await fieldByLabel(goOverForm, "Note", "Log contact")).fill(GO_OVER_NOTE, { timeout: CLICK_MS });
+            await staff.locator(`[id="field-${goOverScope}-submit"]`).click({ timeout: CLICK_MS });
+          },
+          ready: (note) =>
+            [...document.querySelectorAll(".modal.office-drawer .contact-task-list li")].some((entry) =>
+              entry.textContent.includes(note),
+            ),
+          arg: GO_OVER_NOTE,
+          what: "the go-over contact under the drawer's Contacts so far",
+          safeToRepeat: await contactLogUnmoved(classCase.id),
+        }),
+      );
+      assert.equal(
+        (
+          await one(fixture, "select purpose from public.contact_log where case_id=$1 and note=$2", [
+            classCase.id,
+            GO_OVER_NOTE,
+          ])
+        )?.purpose,
+        "go_over_return",
+      );
+      // Logging a contact never resolves the task: the signing row still waits.
+      assert.equal(
+        await one(fixture, "select status from public.admin_followups where id=$1", [goOverTaskId]).then(
+          (task) => task.status,
+        ),
+        "open",
+      );
+      record(
+        "RESOLVE_FOLLOWUP (go-over task)",
+        await submitCaseFormUntil(
+          staff,
+          "RESOLVE_FOLLOWUP",
+          { "How it ended": "reached", "What the office concluded": "Went over the fictional return." },
+          {
+            ready: () => document.querySelector(".modal") === null,
+            what: "the go-over drawer to close after the task is resolved",
+            safeToRepeat: async () =>
+              (await one(fixture, "select status from public.admin_followups where id=$1", [goOverTaskId])).status ===
+              "open",
+          },
+        ),
+      );
+      assert.equal((await caseById(fixture, classCase.id)).stage, "review_approved");
+      // Once the office has gone over the return, the client is told how to sign
+      // (the reviewer chose the portal), not that the return will be gone over.
+      assert.equal(
+        (await one(fixture, "select signing_plan from public.cases where id=$1", [classCase.id])).signing_plan,
+        "portal",
+      );
+      await waitForText(
+        client,
+        "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed.",
+        ARRIVAL_MS,
       );
 
       // ---- 1–2. Mark ready to e-file, from the class case's signing row ---

@@ -45,6 +45,22 @@ import {
 import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 import {
+  CONFIRMED_BY,
+  CONFIRMED_METHODS,
+  WENT_OVER_HOW,
+  SIGN_METHODS,
+  PA_FORGIVENESS,
+  FILING_METHODS,
+  RESULTS,
+  REFUND_BY,
+  OWE_BY,
+  LOCAL_TYPES,
+  todayIso,
+  signDefault,
+  goOverPrefill,
+  changedAnswers,
+} from "./questionnaires.mjs";
+import {
   CONTACT_DIRECTIONS,
   CONTACT_WITH,
   CONTACT_METHODS,
@@ -396,7 +412,8 @@ const unsettledRequests = (record) =>
 
 const openFollowupFor = (record, requestId) =>
   (record?.followups ?? []).find(
-    (followup) => followup?.requestId === requestId && followup?.status === "open",
+    (followup) =>
+      requestId != null && followup?.requestId === requestId && followup?.status === "open",
   );
 
 // A refusal, said plainly, where the button would have been.
@@ -1192,12 +1209,12 @@ export function nextStep(record, rights, ui = {}) {
       break;
     case "preparing":
       body = rights.preparationWork.allowed
-        ? `${blocked}${caseButton(
+        ? `${blocked}<form class="staff-form q-form">${preparerForm(record, null, ui)}${caseSubmit(
             `${icon("check")} Record that preparation is complete in TaxSlayer`,
             "SUBMIT_REVIEW",
             "primary",
             blockers.length || ui.busy ? "disabled" : "",
-          )}`
+          )}</form>`
         : explain(rights.preparationWork);
       break;
     case "corrections_required":
@@ -1206,13 +1223,13 @@ export function nextStep(record, rights, ui = {}) {
         `<div class="notice amber" role="note">${icon("help")}<div><h3>Corrections the reviewer asked for</h3><p>${esc(corrections?.findings)}</p><small>${esc(corrections?.reviewerName ?? "")} · version ${esc(corrections?.preparationVersion)} · ${esc(formatTime(corrections?.decidedAt))}</small></div></div>`,
       )}${
         rights.preparationWork.allowed
-          ? `${blocked}<form class="staff-form">${textarea(
+          ? `${blocked}<form class="staff-form q-form">${textarea(
               "What you corrected in TaxSlayer",
               "resolution",
               "",
               'required maxlength="2000" rows="3"',
               "resubmit",
-            )}${caseSubmit(
+            )}${preparerForm(record, latestBy(record.preparerQuestionnaires, "preparationVersion"), ui)}${caseSubmit(
               `${icon("check")} Record that the corrections are complete in TaxSlayer`,
               "RESUBMIT_REVIEW",
               "primary",
@@ -1226,24 +1243,37 @@ export function nextStep(record, rights, ui = {}) {
         ? caseButton(`${icon("check")} Claim review`, "CLAIM_REVIEW", "primary", busy)
         : explain(rights.claimReview);
       break;
-    case "reviewing":
+    case "reviewing": {
+      const version = Number(record.preparationVersion) || 0;
+      const questionnaires = record.preparerQuestionnaires ?? [];
+      const current = questionnaires.find((q) => Number(q?.preparationVersion) === version) ?? null;
+      const previous = latestBy(
+        questionnaires.filter((q) => Number(q?.preparationVersion) < version),
+        "preparationVersion",
+      );
       body = rights.reviewDecision.allowed
-        ? `<div class="next-step-actions">${caseButton(
+        ? `${when(version > 1, submissionComparison(previous, current, version))}<form class="staff-form q-form">${reviewerForm(
+            record,
+            ui,
+          )}<div class="next-step-actions">${caseSubmit(
             `${icon("check")} Approve this review`,
             "APPROVE_REVIEW",
             "primary",
-            busy,
+            `data-service="${esc(record.answers?.service ?? "")}" ${busy}`,
           )}${button(
             `${icon("back")} Ask the preparer for corrections`,
             "open-request-corrections",
             "secondary",
             busy,
-          )}</div><p class="field-note">Approving records the result of the external review; it is not signing or filing, and it is not an acceptance by any tax authority.</p>`
+          )}</div></form><p class="field-note">Approving records the result of the external review; it is not signing or filing, and it is not an acceptance by any tax authority.</p>`
         : explain(rights.reviewDecision);
       break;
-    case "review_approved":
-      body =
-        approved?.clientContactStatus === "pending"
+    }
+    case "review_approved": {
+      const line = contactStepLine(approved, reviewerQuestionnaireOf(record, approved));
+      body = line
+        ? `<p class="muted">${esc(line)}</p>`
+        : approved?.clientContactStatus === "pending"
           ? rights.reviewContact.allowed
             ? `<form class="staff-form">${select(
                 "What happened",
@@ -1267,6 +1297,7 @@ export function nextStep(record, rights, ui = {}) {
             : explain(rights.reviewContact)
           : `<p class="muted">The client conversation for this review is recorded. Nothing further is needed here.</p>`;
       break;
+    }
     default:
       body = "";
   }
@@ -1285,8 +1316,254 @@ function preparationPanel(record) {
   )}</section>`;
 }
 
+// ---------------------------------------------------------------------------
+// The preparer and reviewer questionnaires (design D7, D9, D10)
+// ---------------------------------------------------------------------------
+
+const optionLabel = (list, value) => list.find(([v]) => v === value)?.[1] ?? "";
+const NO_QUESTIONNAIRE = "No questionnaire was recorded for this version.";
+
+// A stored calendar date ("2026-10-16") as staff read dates: "10/16/2026".
+// Split, never new Date(…), which shifts a date by the time zone.
+const staffDate = (value) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ""));
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : String(value ?? "");
+};
+
+// The row with the highest `key`, or null.
+const latestBy = (rows, key) =>
+  (rows ?? []).reduce((best, row) => (!best || Number(row?.[key]) > Number(best[key]) ? row : best), null);
+
+const reviewerQuestionnaireOf = (record, attempt) =>
+  attempt ? ((record.reviewerQuestionnaires ?? []).find((q) => q?.reviewId === attempt.id) ?? null) : null;
+
+const radio = (scope, name, value, label, checked) => {
+  const id = `field-${scope}-${name}-${value}`;
+  return `<label class="checkbox-row small" for="${esc(id)}"><input type="radio" id="${esc(id)}" name="${esc(name)}" value="${esc(value)}"${checked ? " checked" : ""}><span>${esc(label)}</span></label>`;
+};
+
+const radios = (legend, scope, name, options, chosen) =>
+  `<fieldset class="check-group"><legend>${esc(legend)}</legend>${options
+    .map(([value, label]) => radio(scope, name, value, label, chosen === value))
+    .join("")}</fieldset>`;
+
+/**
+ * The preparer questionnaire's fields, without a form or a button around
+ * them. `previous` is the latest earlier submission (a resubmit starts from
+ * it, with the TaxSlayer date reset to today) or null for a blank form.
+ */
+function preparerForm(record, previous, ui = {}) {
+  const scope = "prep";
+  const was = previous ?? {};
+  return `${radios("Who confirmed the intake information with the preparer?", scope, "confirmedBy", CONFIRMED_BY, was.confirmedBy)}${input(
+    "Name, if someone else confirmed it",
+    "confirmedByName",
+    was.confirmedBy === "other" ? (was.confirmedByName ?? "") : "",
+    "text",
+    'maxlength="120"',
+    scope,
+  )}${radios("How did they confirm it?", scope, "confirmedMethod", CONFIRMED_METHODS, was.confirmedMethod)}${tickBox({
+    id: fieldId("shadedPartsCompleted", scope),
+    name: "shadedPartsCompleted",
+    value: "yes",
+    label: "I have completed the shaded parts of the 13614-C.",
+    checked: was.shadedPartsCompleted === true,
+  })}${tickBox({
+    id: fieldId("stateForgivenessSet", scope),
+    name: "stateForgivenessSet",
+    value: "yes",
+    label: "Filing – PA State return: State Forgiveness set to Y.",
+    checked: was.stateForgivenessSet === true,
+  })}${input(
+    "Date the return was marked ready to review in TaxSlayer (TSO)",
+    "readyForReviewOn",
+    todayIso(ui.now ?? Date.now()),
+    "date",
+    "",
+    scope,
+  )}`;
+}
+
+// One Exit Form entry as a collapsible group, closed until opened. A group the
+// volunteer typed in is reopened after a redraw by app.mjs (groupsToOpen).
+function exitGroup(title, prefix) {
+  const scope = "rev";
+  return `<details class="q-exit-group" data-exit-group="${esc(prefix)}"><summary>${esc(title)}</summary><div class="q-exit-group-body">${radios(
+    "How it was filed",
+    scope,
+    `${prefix}.method`,
+    FILING_METHODS,
+    "",
+  )}${radios("Result", scope, `${prefix}.result`, RESULTS, "")}${input(
+    "Amount (refund or owe)",
+    `${prefix}.amount`,
+    "",
+    "text",
+    'inputmode="decimal" maxlength="9" placeholder="0.00"',
+    scope,
+  )}${radios("If a refund, paid by", scope, `${prefix}.refundBy`, REFUND_BY, "")}${radios(
+    "If owed, paid by",
+    scope,
+    `${prefix}.oweBy`,
+    OWE_BY,
+    "",
+  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, "", "date", "", scope)}<button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${esc(prefix)}">Clear this section</button></div></details>`;
+}
+
+/**
+ * The reviewer questionnaire's fields, ending where the Approve button goes.
+ * Going over the return starts from the contact log (D9) and the signing
+ * choice from the client's service (D6).
+ */
+function reviewerForm(record, ui = {}) {
+  const scope = "rev";
+  const service = record.answers?.service;
+  const prefill = goOverPrefill(record.contacts) ?? {};
+  const appointment =
+    service === "same_day"
+      ? ""
+      : `<div class="q-when-in-person">${input(
+          "Appointment to sign (date and time)",
+          "signAppointmentAt",
+          "",
+          "datetime-local",
+          "",
+          scope,
+        )}</div>`;
+  return `<h3>Before you approve</h3>${input(
+    "Date the return was marked completed in TaxSlayer (TSO)",
+    "completedOn",
+    todayIso(ui.now ?? Date.now()),
+    "date",
+    "",
+    scope,
+  )}${radios("PA forgiveness (Schedule SP)", scope, "paForgiveness", PA_FORGIVENESS, "")}${radios(
+    "Did you go over the return with the taxpayer/spouse?",
+    scope,
+    "wentOver",
+    [
+      ["yes", "Yes"],
+      ["no", "No"],
+    ],
+    prefill.wentOver ?? "",
+  )}<div class="q-when-yes">${input(
+    "Date you went over it",
+    "wentOverOn",
+    prefill.wentOverOn ?? "",
+    "date",
+    "",
+    scope,
+  )}${radios("How", scope, "wentOverHow", WENT_OVER_HOW, prefill.wentOverHow ?? "")}</div>${radios(
+    "How will the client sign Form 8879?",
+    scope,
+    "signMethod",
+    SIGN_METHODS,
+    signDefault(service),
+  )}${appointment}<h4>Exit Form (optional)</h4>${exitGroup("Federal", "federal")}${exitGroup("State", "state")}${LOCAL_TYPES.map(
+    ([type, label]) => exitGroup(`Local: ${label}`, `local.${type}`),
+  ).join("")}${textarea("Remarks (optional)", "remarks", "", 'maxlength="2000" rows="3"', scope)}`;
+}
+
+const yesNo = (value) => (value ? "Yes" : "No");
+
+// [keys the row compares, label, text]
+function preparerRows(q) {
+  const who = optionLabel(CONFIRMED_BY, q.confirmedBy);
+  return [
+    [
+      ["confirmedBy", "confirmedByName"],
+      "Confirmed the intake",
+      q.confirmedBy === "other" && q.confirmedByName ? `${who}: ${q.confirmedByName}` : who,
+    ],
+    [["confirmedMethod"], "How it was confirmed", optionLabel(CONFIRMED_METHODS, q.confirmedMethod)],
+    [["shadedPartsCompleted"], "Shaded parts of the 13614-C completed", yesNo(q.shadedPartsCompleted)],
+    [["stateForgivenessSet"], "State Forgiveness set to Y", yesNo(q.stateForgivenessSet)],
+    [["readyForReviewOn"], "Ready for review in TaxSlayer on", staffDate(q.readyForReviewOn)],
+  ];
+}
+
+function preparerAnswers(q) {
+  if (!q) return emptyLine(NO_QUESTIONNAIRE);
+  return preparerRows(q)
+    .map(([, label, text]) => detailRow(label, text))
+    .join("");
+}
+
+// "E-file, refund 120.00 by direct deposit"
+function exitLine(group) {
+  if (!group) return "";
+  const parts = [optionLabel(FILING_METHODS, group.method)];
+  if (group.result === "none") parts.push("no refund or amount owed");
+  else if (group.result === "refund")
+    parts.push(`refund ${group.amount} by ${optionLabel(REFUND_BY, group.refundBy).toLowerCase()}`);
+  else {
+    const how = optionLabel(OWE_BY, group.oweBy).toLowerCase();
+    parts.push(`owes ${group.amount} by ${how}${group.debitOn ? ` on ${staffDate(group.debitOn)}` : ""}`);
+  }
+  return parts.join(", ");
+}
+
+function reviewerAnswers(q) {
+  if (!q) return emptyLine(NO_QUESTIONNAIRE);
+  const exit = q.exitForm ?? {};
+  const entries = [
+    ["Federal", exitLine(exit.federal)],
+    ["State", exitLine(exit.state)],
+    ...(exit.local ?? []).map((entry) => [`Local: ${entry.type}`, exitLine(entry)]),
+  ].filter(([, line]) => line);
+  return `${detailRow("Completed in TaxSlayer on", staffDate(q.completedOn))}${detailRow(
+    "PA forgiveness",
+    optionLabel(PA_FORGIVENESS, q.paForgiveness),
+  )}${detailRow(
+    "Went over the return with the client",
+    q.wentOver
+      ? `Yes, on ${staffDate(q.wentOverOn)}${q.wentOverHow ? ` (${optionLabel(WENT_OVER_HOW, q.wentOverHow).toLowerCase()})` : ""}`
+      : "No",
+  )}${detailRow(
+    "Form 8879 signing",
+    `${optionLabel(SIGN_METHODS, q.signMethod)}${q.signAppointmentAt ? `, appointment ${staffDate(String(q.signAppointmentAt).slice(0, 10))} ${String(q.signAppointmentAt).slice(11, 16)}` : ""}`,
+  )}${
+    entries.length
+      ? entries.map(([label, line]) => detailRow(`Exit Form, ${label}`, line)).join("")
+      : detailRow("Exit Form", "Nothing recorded")
+  }${when(q.remarks, detailRow("Remarks", q.remarks))}`;
+}
+
+/** The previous and current preparer submissions side by side; a changed answer is marked. */
+function submissionComparison(previous, current, version) {
+  const changed = previous && current ? changedAnswers(previous, current) : new Set();
+  const left = previous ? preparerRows(previous) : null;
+  const right = current ? preparerRows(current) : null;
+  const rows = (right ?? left ?? []).map(([keys, label], index) => {
+    const mark = keys.some((key) => changed.has(key)) ? ' <mark class="q-changed">Changed</mark>' : "";
+    return `<tr><th scope="row">${esc(label)}</th><td>${esc(left?.[index]?.[2] ?? "—")}</td><td>${esc(right?.[index]?.[2] ?? "—")}${mark}</td></tr>`;
+  });
+  const missing = (q, word) =>
+    q ? "" : `<p class="field-note">${esc(`${word} submission: ${NO_QUESTIONNAIRE}`)}</p>`;
+  return `<div class="q-compare"><h3>The preparer's answers, previous and current</h3>${missing(previous, "Previous")}${missing(current, "Current")}${
+    rows.length
+      ? `<table><thead><tr><th scope="col">Answer</th><th scope="col">Previous submission</th><th scope="col">Version ${esc(version)}</th></tr></thead><tbody>${rows.join("")}</tbody></table>`
+      : ""
+  }</div>`;
+}
+
+/**
+ * The review-contact step's line once the approval carries a questionnaire
+ * (D10), or null for an approval from before the questionnaires.
+ */
+function contactStepLine(attempt, questionnaire) {
+  if (!attempt || !questionnaire) return null;
+  return questionnaire.wentOver
+    ? `The reviewer went over the return with the client on ${staffDate(questionnaire.wentOverOn)}.`
+    : "The office will go over the return with the client.";
+}
+
 function reviewAttempts(record) {
   const attempts = record.reviews ?? [];
+  const preparerFor = (attempt) =>
+    (record.preparerQuestionnaires ?? []).find(
+      (q) => Number(q?.preparationVersion) === Number(attempt?.preparationVersion),
+    ) ?? null;
   if (!attempts.length)
     return emptyLine("No review attempt has been opened on this case yet.");
   return `<ol class="review-list">${attempts
@@ -1299,16 +1576,20 @@ function reviewAttempts(record) {
           attempt?.resolution,
           detailRow("What the preparer corrected", attempt?.resolution),
         )}${when(
-          attempt?.clientContactStatus,
+          attempt?.clientContactStatus || reviewerQuestionnaireOf(record, attempt),
           detailRow(
             "Client conversation",
-            attempt?.clientContactStatus === "completed"
-              ? `${named(CONTACT_OUTCOME_LABELS, attempt?.clientContactOutcome, "Recorded")} · ${formatTime(attempt?.clientContactedAt)}`
-              : "Still to record",
+            contactStepLine(attempt, reviewerQuestionnaireOf(record, attempt)) ??
+              (attempt?.clientContactStatus === "completed"
+                ? `${named(CONTACT_OUTCOME_LABELS, attempt?.clientContactOutcome, "Recorded")} · ${formatTime(attempt?.clientContactedAt)}`
+                : "Still to record"),
           ),
         )}${when(
           attempt?.clientContactNote,
           detailRow("Conversation note", attempt?.clientContactNote),
+        )}<h4>Preparer's answers</h4>${preparerAnswers(preparerFor(attempt))}${when(
+          attempt?.status === "approved",
+          `<h4>Reviewer's answers</h4>${reviewerAnswers(reviewerQuestionnaireOf(record, attempt))}`,
         )}<small>Opened ${esc(formatTime(attempt?.createdAt))}${when(attempt?.decidedAt, ` · decided ${esc(formatTime(attempt?.decidedAt))}`)}</small></li>`,
     )
     .join("")}</ol>`;
@@ -1426,9 +1707,15 @@ function segGroup(legend, name, options, chosen, scope, attrs = "") {
  * @param {object} record the decorated staff case
  * @param {object|null} person the persona
  * @param {object} ui `{busy, now}`
- * @param {{followupId?: string|null, contact?: object|null}} options
+ * `purpose` preselects a purpose on a new entry (the task's own); an edit keeps its entry's.
+ * @param {{followupId?: string|null, contact?: object|null, purpose?: string|null}} options
  */
-export function logContactForm(record, person, ui = {}, { followupId = null, contact = null } = {}) {
+export function logContactForm(
+  record,
+  person,
+  ui = {},
+  { followupId = null, contact = null, purpose = null } = {},
+) {
   const view = ui ?? {};
   const scope = contact
     ? `contact-edit-${contact.id}`
@@ -1475,7 +1762,7 @@ export function logContactForm(record, person, ui = {}, { followupId = null, con
     "Purpose",
     "purpose",
     CONTACT_PURPOSES,
-    contact?.purpose ?? null,
+    contact ? (contact.purpose ?? null) : purpose,
     scope,
   )}${outcomes("voice", "outcomeVoice", VOICE_OUTCOMES)}${outcomes(
     "written",

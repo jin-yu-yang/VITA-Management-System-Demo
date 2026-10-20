@@ -80,12 +80,16 @@ or a time jump is hidden from the audience.
    follow-up never reassigns or removes the preparer.
 3. **Switch to the client window** for that same case (or narrate "the client would now send their
    document") and, if time allows, respond with the sample document.
-4. **Switch to Alex**, verify the document, and record preparation complete.
-5. **Switch to Morgan**, claim the review, and approve it directly (the short path — no
-   corrections needed for this pass).
-6. **Record the client conversation** and switch back to the client window: it now reads "Review
-   complete" and the next service step — nothing about a refund amount, routing number, or
-   deposit, and nothing from the reviewer's internal findings.
+4. **Switch to Alex**, verify the document, and fill in the preparer questionnaire on the case
+   page to send the return to review.
+5. **Switch to Morgan**, claim the review, fill in the reviewer questionnaire (it sits above
+   **Approve**) and approve (the short path — no corrections needed for this pass). There is no
+   separate "record the conversation" step: the approval settles it. If you answer **No** to
+   "went over the return with the client", the office gets a go-over task in Follow-ups, and
+   **Mark ready to e-file** waits for it.
+6. **Switch back to the client window**: it now reads "Ready to exit" with how and when to
+   sign — nothing about a refund amount, routing number, or deposit, and nothing from the
+   reviewer's internal findings.
 
 ## The full story, as the browser test runs it
 
@@ -115,10 +119,14 @@ what the test suite actually proved.
 10. **Morgan reviews.** Extended branch: Morgan requests corrections with a specific finding; the
     client sees "Corrections in progress" but never the finding text itself; Alex resolves and
     resubmits with a note describing what was corrected in TaxSlayer; Morgan re-claims the fresh
-    submission and approves it. (Short branch: Morgan claims and approves directly, with no
-    corrections — the second sample case in the story takes exactly this path.)
-11. **Morgan records the client conversation.** The client's screen updates to "Ready to sign"
-    with the message that PCDC will contact them to sign Form 8879, which is needed before the return can be filed. The story asserts, at this exact point, that none of
+    submission and approves it. Each hand-off carries a questionnaire filled in inline on the case
+    page: the preparer's when sending the return to review, and the reviewer's above **Approve**.
+    (Short branch: Morgan claims and approves directly, with no corrections — the second sample
+    case in the story takes exactly this path.)
+11. **The approval settles the client conversation.** There is no "Record this conversation" step
+    after a questionnaire approval. If Morgan answered **No** to going over the return, the office
+    has a go-over task in Follow-ups, and **Mark ready to e-file** waits until it is resolved. The
+    client's screen updates to "Ready to exit" with how and when to sign Form 8879, which is needed before the return can be filed. The story asserts, at this exact point, that none of
     the reviewer's findings, the preparer's resolution note, the office's contact notes, or any
     `$`/refund/routing/deposit language appear anywhere in the client's window.
 

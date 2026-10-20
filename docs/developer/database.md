@@ -60,6 +60,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `030_fixture_answers_14446.sql` | Hand-written: the sample cases' Form 14446 answers |
 | `031_contact_log.sql` | Hand-written: the contact log (`contact_log`, `contact_log_versions`), its two functions `vitally_log_contact` and `vitally_edit_contact`, the one-time move of the old call attempts, `RECORD_CONTACT` refusing new requests, and the fixture change |
 | `032_screening_and_efiling_stages.sql` | Hand-written: the `screening`, `ready_to_efile` and `efiled` stages, `START_SCREENING`, `MARK_READY_TO_EFILE` and `MARK_EFILED`, `VERIFY_INTAKE` from `screening`, an office submit landing in `screening`, and `CLOSE_CASE` from `screening` |
+| `033_review_questionnaires.sql` | Hand-written: `preparer_questionnaires` and `reviewer_questionnaires` (staff-only), `admin_followups.purpose` and a nullable `request_id`, `cases.signing_plan` and `signing_appointment_at`; `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` take a questionnaire; an approval settles the contact step and, when the reviewer did not go over the return, opens a `go_over_return` task for the office; `MARK_READY_TO_EFILE` waits for an open go-over task; the sample cases seed questionnaires |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -101,7 +102,8 @@ version of a function, use the **last** file that defines it:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action`, `vitally_private.check_operation_authority`, `check_payload` | `032_screening_and_efiling_stages.sql` |
+| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `032_screening_and_efiling_stages.sql` |
+| `vitally_private.check_payload`, `act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_authority` | `018_document_card_authority.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
@@ -109,13 +111,13 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.initialize_workspace` | `001_identity_and_cases.sql` |
 | `public.vitally_create_case` (answers must be `{}`), `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_update_contact` | `023_remove_intake_v1.sql` |
-| `vitally_private.act_submit`, `act_verify_intake`, `act_close_case`, `act_start_screening`, `act_mark_ready_to_efile`, `act_mark_efiled` | `032_screening_and_efiling_stages.sql` |
+| `vitally_private.act_submit`, `act_verify_intake`, `act_close_case`, `act_start_screening`, `act_mark_efiled` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
-| `vitally_private.apply_fixture_scenario`, `fixture_answers_v2`, `fixture_contact_v2` | `019_fixtures_v2.sql` |
+| `vitally_private.fixture_answers_v2`, `fixture_contact_v2` | `019_fixtures_v2.sql` |
+| `vitally_private.apply_fixture_scenario` | `033_review_questionnaires.sql` |
 | `vitally_private.seed_fixtures`, `fixture_history` | `023_remove_intake_v1.sql` |
-| `vitally_private.act_approve_review` | `021_review_approved_message.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
 To list every function with its file and line:
@@ -168,12 +170,12 @@ erDiagram
 | `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it; default 2 since 020, and only 2 since 023) |
 | `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
 | `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
-| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends) |
+| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign Form 8879) |
 | `action_receipts` | One row per accepted or in-flight action | Unique `(workspace_id, actor_user_id, action_id)`; `request_digest` (SHA-256 of the envelope); `receipt` (the stored result). No foreign key to the target, so receipts outlive deleted cases |
 | `preparation_participants` | Who ever prepared a case | Primary key `(case_id, person_id)`. Written on a preparation claim and never removed. Blocks self-review |
 | `document_requests` | A preparer asking for a document | `status`: `open` → `awaiting_verification` → `verified`, or `cancelled` on closure |
 | `documents` | A received document (metadata only) | `source` is `client` (no person) or `staff_recorded` (a person); `filename` only, **no file storage** |
-| `admin_followups` | An office task to contact a client about a request | `status`: `open`, `resolved`, `cancelled`; at most one open task per request; resolution outcome `reached` or `no_further_contact` |
+| `admin_followups` | An office task to contact a client: about a document request, or (033) to go over the return with the client | `purpose` (`request_documents` or `go_over_return`, the contact log's keys); `request_id` is set for `request_documents` and null for `go_over_return`; `status`: `open`, `resolved`, `cancelled`; at most one open task per request; resolution outcome `reached` or `no_further_contact` |
 | `contact_attempts` | Old call attempts on a follow-up | Empty since 031 moved its rows into `contact_log`; kept until a later cleanup. Nothing reads or writes it |
 | `contact_log` | The current version of each logged contact | One row per entry on any case: `direction`, `contacted_at` (an instant), `with_whom` (+ `other_name`), `method`, `purpose`, `outcome`, `note`, `followup_id` (null unless logged from a task), `logged_by_*`, `logged_at`, its own `revision`, `edited_at`. The outcome must fit the method. Staff-only; written only by the two contact functions; published to Realtime |
 | `contact_log_versions` | Every version of every entry | Primary key `(contact_id, version)`; version 1 is written with the entry, each edit appends the next. Never updated or deleted by a function, so history cannot be rewritten. Staff-only; published to Realtime |
@@ -217,6 +219,7 @@ grants at all.
 | `case_materials` | Nothing | On visible cases |
 | `case_events`, `preparation_participants`, `admin_followups`, `contact_log`, `contact_log_versions`, `reviews` | Nothing | On visible cases |
 | `contact_attempts` | Nothing | On visible cases (empty) |
+| `preparer_questionnaires`, `reviewer_questionnaires` | Nothing | Presenters only, on visible cases |
 | `assistance_items` | Nothing | All unlinked items, and items on visible cases |
 | `people` | Nothing | Everyone in the workspace |
 | `memberships` | Own active membership | Own active membership |
@@ -333,8 +336,9 @@ the new stages:
 - `START_SCREENING` moves `received` to `screening`. The browser sends it when an admin opens the
   case's page ([Front end](frontend.md#screening-starts-when-an-admin-opens-the-case)).
 - `MARK_READY_TO_EFILE` (the client signed Form 8879) and `MARK_EFILED` follow `review_approved`.
-  `MARK_READY_TO_EFILE` refuses until the reviewer has recorded a completed call with the client
-  (`client_contact_status` `completed` on the approved review).
+  `MARK_READY_TO_EFILE` refuses until the approved review's contact step is `completed`
+  (`client_contact_status`), and (033) while the case has an open `go_over_return` follow-up,
+  whatever outcome later resolves it.
 
 ## Action catalogue
 
@@ -361,14 +365,14 @@ shorthands in the table:
 | `VERIFY_DOCUMENT` | Presenter + person | `preparing`, `corrections_required` | Current preparer; request `awaiting_verification` | Request → `verified` | Yes |
 | `ESCALATE_CONTACT` | Presenter + person | `preparing`, `corrections_required` | Current preparer; request `open`; no open task | Follow-up assigned to the workspace's default follow-up person | No |
 | `RECORD_CONTACT` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Refused since 031 (`VALIDATION`); contacts are logged with `vitally_log_contact` | No |
-| `RESOLVE_FOLLOWUP` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Task → `resolved` | No |
+| `RESOLVE_FOLLOWUP` | Presenter + `followup` person | (any; task must be open) | Assignee; task `open` | Task → `resolved`; (033) a `go_over_return` task also turns the case's `go_over_first` signing plan into the reviewer's signing method | No |
 | `SUBMIT_REVIEW` | Presenter + person | `preparing` | Current preparer; intake verified; no unsettled request | Version + 1; → `review_ready`; active review superseded | Yes |
 | `CLAIM_REVIEW` | Presenter + person | `review_ready`, no reviewer | Not a participant (`SELF_REVIEW`); `review` | → `reviewing`; sets reviewer; new `active` review | Yes |
 | `REQUEST_CORRECTIONS` | Presenter + person | `reviewing` | Current reviewer; review at current version | Review → `corrections_requested` with findings; → `corrections_required`; reviewer cleared | Yes (no findings) |
 | `RESUBMIT_REVIEW` | Presenter + person | `corrections_required` | Current preparer; no unsettled request | Resolution saved; version + 1; → `review_ready` | Yes |
-| `APPROVE_REVIEW` | Presenter + person | `reviewing` | Current reviewer; review at current version | Review → `approved`, contact `pending`; → `review_approved` | Yes |
+| `APPROVE_REVIEW` | Presenter + person | `reviewing` | Current reviewer; review at current version | Questionnaire saved; review → `approved` with the contact step completed (outcome `reached` when the reviewer went over the return, none when not); signing plan saved; → `review_approved`; a `go_over_return` task for the office when the reviewer did not | Yes |
 | `RECORD_REVIEW_CONTACT` | Presenter + person | `review_approved` | Current reviewer; contact `pending` | Outcome saved; `reached` or `no_further_contact` completes it | Only when completed |
-| `MARK_READY_TO_EFILE` | Presenter + `admin` person | `review_approved` | The reviewer's contact with the client is recorded as `completed` on the approved review (else `INVALID_TRANSITION`): it waits for that call | → `ready_to_efile` | Yes |
+| `MARK_READY_TO_EFILE` | Presenter + `admin` person | `review_approved` | The approved review's contact step is `completed`, and no `go_over_return` follow-up is open (else `INVALID_TRANSITION`): it waits for the contact step and for the office's go-over | → `ready_to_efile` | Yes |
 | `MARK_EFILED` | Presenter + `admin` person | `ready_to_efile` | | → `efiled` | Yes |
 | `REMIND` | Presenter + `admin` person | `preparation_ready` with no preparer, or `review_ready` with no reviewer | | Sets `last_reminded_at` (no message is sent) | No |
 | `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required` (`screening` included), or an assisted `draft` | | → `closed`; cancels open requests and tasks | Yes |
@@ -386,7 +390,8 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | `SAVE_ANSWERS` | `{answers: {<catalogue id>: value \| null}}`, contact fields included; a draft may add `visited: string[]` (sub-step ids, at most 64) |
 | `SUBMIT` | `{confirmed: true}` |
 | `VERIFY_INTAKE` | `{checks: {interview: true, identity: true, documents: true, consent: true}}` |
-| `START_SCREENING`, `CLAIM_PREPARATION`, `SUBMIT_REVIEW`, `CLAIM_REVIEW`, `APPROVE_REVIEW`, `REMIND` | `{}` |
+| `START_SCREENING`, `CLAIM_PREPARATION`, `CLAIM_REVIEW`, `REMIND` | `{}` |
+| `SUBMIT_REVIEW`, `APPROVE_REVIEW` | `{questionnaire}` (the preparer's or the reviewer's, see design D2 and D3) |
 | `MARK_READY_TO_EFILE`, `MARK_EFILED` | `{confirmed: true}` |
 | `REQUEST_DOCUMENT` | `{title (≤120), message (≤2000)}` |
 | `RESPOND_DOCUMENT`, `RECORD_DOCUMENT_RESPONSE` | `{requestId, filename: "demo-mileage-record-2025.pdf"}` |
@@ -399,7 +404,7 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | `SET_DOCUMENT_CARD` | `{slotId, status: "later" \| "none" \| "not_done"}` |
 | `SET_DOCUMENT_GROUP` | `{slotId, group: "needed" \| "maybe"}` |
 | `REQUEST_CORRECTIONS` | `{findings (≤2000)}` |
-| `RESUBMIT_REVIEW` | `{resolution (≤2000)}` |
+| `RESUBMIT_REVIEW` | `{questionnaire, resolution (≤2000)}` |
 | `RECORD_REVIEW_CONTACT` | `{outcome, note (≤1000)}` |
 | `CLOSE_CASE` | `{confirmed: true, reason (≤1000)}` |
 

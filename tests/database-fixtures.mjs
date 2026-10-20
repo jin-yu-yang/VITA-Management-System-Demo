@@ -235,7 +235,7 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
     );
     assert.equal(
       review.client_contact_status,
-      review.status === "approved" ? "pending" : null,
+      review.status === "approved" ? "completed" : null,
       `${key} client contact`,
     );
   }
@@ -323,6 +323,54 @@ test("the seeded workspace tells one coherent story", async (t) => {
       assert.deepEqual(Object.keys(byKey).sort(), [...f.fixtureKeys].sort());
       for (const key of f.fixtureKeys)
         await assertScenario(f, byKey[key].id, key, { revision: seededRevision(key) });
+    });
+
+    await t.test("seeded approved sample has answers", async () => {
+      const approved = (await fixtureByKey(f)).review_approved;
+      const prep = await rowsFor(
+        f,
+        "preparer_questionnaires",
+        approved.id,
+        "preparation_version",
+      );
+      assert.deepEqual(
+        prep.map((r) => [Number(r.preparation_version), r.confirmed_by, r.confirmed_method]),
+        [
+          [1, "client", "in_person"],
+          [2, "client", "phone"],
+        ],
+      );
+      const rev = await rowsFor(f, "reviewer_questionnaires", approved.id);
+      assert.equal(rev.length, 1);
+      assert.equal(rev[0].sign_method, "portal");
+      assert.equal(rev[0].went_over, true);
+      assert.equal(rev[0].went_over_how, "phone");
+      assert.equal(rev[0].exit_form.federal.amount, "412.00");
+      assert.equal(rev[0].exit_form.federal.refundBy, "direct_deposit");
+      assert.deepEqual(rev[0].exit_form.local, [
+        { type: "NPT", method: "paper", result: "none" },
+      ]);
+      for (const row of rev)
+        assert.equal(
+          (await f.sql("select vitally_private.check_exit_form($1::jsonb) as ok", [JSON.stringify(row.exit_form)]))
+            .rows[0].ok,
+          true,
+        );
+      assert.equal(rev[0].exit_form.state, null);
+      const [row] = (
+        await f.sql("select signing_plan,signing_appointment_at from public.cases where id=$1", [
+          approved.id,
+        ])
+      ).rows;
+      assert.equal(row.signing_plan, "portal");
+      assert.equal(row.signing_appointment_at, null);
+      const [review] = await rowsFor(f, "reviews", approved.id, "created_at,id").then((r) =>
+        r.filter((x) => x.status === "approved"),
+      );
+      assert.equal(review.client_contact_status, "completed");
+      assert.equal(review.client_contact_outcome, "reached");
+      assert.ok(review.client_contacted_at);
+      assert.equal(rev[0].review_id, review.id);
     });
 
     await t.test("every case carries a readable reference, answers and times", async () => {
@@ -598,6 +646,35 @@ test("receipts outlive the fixtures they targeted", async (t) => {
       assert.equal(wrong.error.code, "VT007");
       assert.deepEqual(await f.readFixtureState(), state);
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("checkpoint reset leaves no stale answers", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    await f.seedFixtures();
+    {
+      const approved = (await fixtureByKey(f)).review_approved;
+      const answered = await loadCheckpoint(
+        f.presenter,
+        approved.id,
+        approved.revision,
+        "ready_for_review",
+      );
+      assert.equal(answered.error, null);
+      const prep = await rowsFor(f, "preparer_questionnaires", approved.id);
+      assert.deepEqual(
+        prep.map((r) => Number(r.preparation_version)),
+        [1],
+      );
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", approved.id)).length, 0);
+      const [row] = (
+        await f.sql("select signing_plan from public.cases where id=$1", [approved.id])
+      ).rows;
+      assert.equal(row.signing_plan, null);
+    }
   } finally {
     await f.close();
   }

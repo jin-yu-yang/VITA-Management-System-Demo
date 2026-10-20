@@ -536,8 +536,8 @@ const WAITING = [
 test("the intake checks wait for screening; the e-file marks wait for their stages", () => {
   const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
   const called = [{ status: "approved", clientContactStatus: "completed" }];
-  const at = (stage, reviews = called) =>
-    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews } }, sam);
+  const at = (stage, reviews = called, followups = []) =>
+    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews, followups } }, sam);
   assert.equal(at("screening").verifyIntake.allowed, true);
   assert.equal(at("received").verifyIntake.allowed, false);
   assert.equal(at("review_approved").markReadyToEfile.allowed, true);
@@ -570,6 +570,31 @@ test("the intake checks wait for screening; the e-file marks wait for their stag
       { status: "approved", clientContactStatus: "pending" },
     ]).markReadyToEfile.allowed,
     false,
+  );
+  // D13: then the office's go-over, until that task is resolved, whatever the outcome.
+  const GO_OVER = "The office still needs to go over the return with the client.";
+  const withTask = (task) => at("review_approved", called, [task]).markReadyToEfile;
+  assert.equal(withTask({ purpose: "go_over_return", status: "open" }).reason, GO_OVER);
+  assert.equal(withTask({ purpose: "request_documents", status: "open" }).allowed, true);
+  for (const resolutionOutcome of ["reached", "no_further_contact"])
+    assert.equal(
+      withTask({ purpose: "go_over_return", status: "resolved", resolutionOutcome }).allowed,
+      true,
+      resolutionOutcome,
+    );
+  const overRow = (goOverOpen) =>
+    adminEligibility(
+      { caseRecord: { stage: "review_approved", ownerUserId: "u1", reviewContactStatus: "completed", goOverOpen } },
+      sam,
+    ).markReadyToEfile;
+  assert.equal(overRow(true).reason, GO_OVER);
+  assert.equal(overRow(false).allowed, true);
+  // The reviewer's call stays first: a legacy pending call still gives its own sentence.
+  assert.equal(
+    at("review_approved", [{ status: "approved", clientContactStatus: "pending" }], [
+      { purpose: "go_over_return", status: "open" },
+    ]).markReadyToEfile.reason,
+    "The reviewer still needs to record the conversation with the client.",
   );
   assert.equal(at("screening").closeCase.allowed, true);
   for (const stage of ["review_approved", "ready_to_efile", "efiled"]) {
@@ -1040,4 +1065,33 @@ test("an office draft continues in Add a case, and a client's own case is read-o
   assert.doesNotMatch(owned, /continue-add-case/);
   assert.match(owned, /<span>How it started<\/span><strong>The client&#39;s own application/);
   assert.match(owned, /What the client told us/);
+});
+
+test("follow-up with no request renders", () => {
+  const goOver = openTask({
+    id: "task-go",
+    purpose: "go_over_return",
+    requestId: null,
+    reason: "Go over the return with the client: the reviewer did not.",
+  });
+  const html = renderAdminCase(officeCase({ requests: [openRequest()], followups: [goOver] }), { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /<h3>Go over the return with the client<\/h3>/);
+  assert.match(followup, /Go over the return with the client: the reviewer did not\./);
+  assert.doesNotMatch(followup, /Contact the client|awaiting preparer verification/);
+  assert.match(followup, linkedForm("task-go"));
+  assert.match(followup, /<h4>Resolve this task<\/h4>/);
+  assert.match(followup, /name="purpose" value="go_over_return" required checked/);
+});
+
+test("a task's Log contact form starts with its purpose; the Contacts tab chooses none", () => {
+  const record = officeCase({
+    requests: [openRequest()],
+    followups: [openTask({ id: "task-d", purpose: "request_documents" })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /name="purpose" value="request_documents" required checked/);
+  const contacts = html.slice(html.indexOf('id="case-panel-contacts"'));
+  assert.doesNotMatch(contacts, /name="purpose"[^>]* checked/);
 });

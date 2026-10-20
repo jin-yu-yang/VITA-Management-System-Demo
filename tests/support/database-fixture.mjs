@@ -88,6 +88,24 @@ const options = {
   },
 };
 // An assert.rejects predicate for one mapped domain code.
+// Valid questionnaires for SUBMIT_REVIEW / RESUBMIT_REVIEW and APPROVE_REVIEW (fictional).
+const TODAY = () => new Date().toISOString().slice(0, 10);
+export const PREPARER = Object.freeze({
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: TODAY(),
+});
+export const REVIEWER = Object.freeze({
+  completedOn: TODAY(),
+  paForgiveness: "eligible",
+  wentOver: true,
+  wentOverOn: TODAY(),
+  wentOverHow: "phone",
+  signMethod: "portal",
+  exitForm: Object.freeze({ federal: null, state: null, local: [] }),
+});
 export const rejected = (code) => (error) => error.code === code;
 // Fully specified immutable arguments for a direct vitally_apply_action call,
 // so replays and races reuse one envelope and a payload can omit the related
@@ -363,7 +381,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   f.preparedCase = async () => {
     const caseId = await f.readyCase();
     await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
     return caseId;
   };
   // A client case just submitted: stage received, no screening yet.
@@ -382,17 +400,30 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         [caseId],
       )
     ).rows.map((row) => row.message);
-  // A case at review_approved. With { called: true } (the default) the
-  // reviewer has also recorded the call with the client.
-  f.approvedCase = async ({ called = true } = {}) => {
+  // A case at review_approved, approved with a valid Yes questionnaire: the
+  // review-contact step is completed by the approval itself (design D10).
+  // `wentOver: false` approves with "no" (portal signing), which opens the
+  // office's go-over follow-up (design D5).
+  f.approvedCase = async ({ wentOver = true } = {}) => {
     const caseId = await f.preparedCase();
     await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
-    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {});
-    if (called)
-      await f.act(f.presenter, caseId, f.morgan, "RECORD_REVIEW_CONTACT", {
-        outcome: "reached",
-        note: "Told the fictional client the return is ready.",
-      });
+    const { wentOverOn, wentOverHow, ...rest } = REVIEWER;
+    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+      questionnaire: wentOver ? REVIEWER : { ...rest, wentOver: false },
+    });
+    return caseId;
+  };
+  // A case at review_approved as an approval from before the questionnaires
+  // left it: the review is approved with its contact step pending and no
+  // questionnaire. No action produces this any more, so it is inserted directly.
+  f.legacyApprovedCase = async () => {
+    const caseId = await f.preparedCase();
+    await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+    await f.sql(
+      "update public.reviews set status='approved',decided_at=now(),client_contact_status='pending' where case_id=$1 and status='active'",
+      [caseId],
+    );
+    await f.sql("update public.cases set stage='review_approved' where id=$1", [caseId]);
     return caseId;
   };
   // Test-only additive people and capabilities on this run's own workspace
