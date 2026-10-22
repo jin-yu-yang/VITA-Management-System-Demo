@@ -1,7 +1,7 @@
 ## 1. Gate before apply
 
-- [ ] 1.1 Hailey reviews the planning artifacts and approves them. The PCDC questions and the group's wording review stay open and don't block apply (brainstorm, Open questions).
-- [ ] 1.2 Just before apply, check the migration list. 035 must be one after the newest migration; if anything took 035, renumber with no gap. Re-check each function's newest definition (design D14) and recopy any that moved.
+- [x] 1.1 Hailey reviews the planning artifacts and approves them. The PCDC questions and the group's wording review stay open and don't block apply (brainstorm, Open questions).
+- [x] 1.2 Just before apply, check the migration list. 035 must be one after the newest migration; if anything took 035, renumber with no gap. Re-check each function's newest definition (design D14) and recopy any that moved.
 
 ## 2. Database: schema and Mark e-filed
 
