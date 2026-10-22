@@ -41,23 +41,23 @@
 
   Then implement `act_return_to_signing` (D6), and the second-filing branch of `act_mark_efiled` (D3).
 - [x] 3.4 `act_close_case` (from 032): allow `rejected`, refuse `accepted` (D7). `check_operation_authority` (from 032): the two new actions are admin-only. `vitally_apply_action` (from 032): two dispatch lines. Tests: Close from Rejected; Close refused at Accepted; volunteers refused for both new actions.
-- [ ] 3.5 Privacy tests: a client session reads its case's method and result columns, but no row of `filing_attempts`, `filing_returns` or `filing_notes`; no realtime change carries them; no stored event message contains a reject code or a fix note; an update or delete of a `filing_notes` row is refused, by the service role too.
+- [x] 3.5 Privacy tests: a client session reads its case's method and result columns, but no row of `filing_attempts`, `filing_returns` or `filing_notes`; no realtime change carries them; no stored event message contains a reject code or a fix note; an update or delete of a `filing_notes` row is refused, by the service role too.
 
 ## 4. Database: samples
 
-- [ ] 4.1 `fixture_keys` (from 009) gains `rejected` and `accepted`. `apply_fixture_scenario` (from 033) and `fixture_history` (from 034) build them (D13). Each has a fictional client and intake answers, following the newest sample pattern. `rejected`: federal accepted, state rejected, with a fictional code and fix note. `accepted`: both e-filed and both accepted.
-- [ ] 4.2 Fixture tests for both samples, and update tests that count samples. Update `tests/support/database-fixture.mjs` where needed. Run `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 4.1 `fixture_keys` (from 009) gains `rejected` and `accepted`. `apply_fixture_scenario` (from 033) and `fixture_history` (from 034) build them (D13). Each has a fictional client and intake answers, following the newest sample pattern. `rejected`: federal accepted, state rejected, with a fictional code and fix note. `accepted`: both e-filed and both accepted.
+- [x] 4.2 Fixture tests for both samples, and update tests that count samples. Update `tests/support/database-fixture.mjs` where needed. Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 5. Browser: contracts, domain, builders
 
-- [ ] 5.1 `src/contracts.mjs`: the new stages in `STAGES`, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING` in `CASE_ACTIONS`, and notes. Tests first.
-- [ ] 5.2 `src/domain.mjs`: the stage table and `describeStage(stage, lang, record)` with the per-method staff names and client labels, and the pre-change fallback (D8). Tests in `tests/domain.test.mjs`.
-- [ ] 5.3 `src/case-actions.mjs`: builders for the `MARK_EFILED` methods (first and second filing), `RECORD_FILING_RESULT` (results, dates, codes, fix note) and `RETURN_TO_SIGNING`, with staff-English refusals. Tests in `tests/case-actions.test.mjs` first.
-- [ ] 5.4 `src/supabase-store.mjs`: load `filing_attempts`, `filing_returns` and `filing_notes` with `relatedRows` for staff, and the four `cases` columns for everyone. Tests in the store suite.
+- [x] 5.1 `src/contracts.mjs`: the new stages in `STAGES`, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING` in `CASE_ACTIONS`, and notes. Tests first.
+- [x] 5.2 `src/domain.mjs`: the stage table and `describeStage(stage, lang, record)` with the per-method staff names and client labels, and the pre-change fallback (D8). Tests in `tests/domain.test.mjs`.
+- [x] 5.3 `src/case-actions.mjs`: builders for the `MARK_EFILED` methods (first and second filing), `RECORD_FILING_RESULT` (results, dates, codes, fix note) and `RETURN_TO_SIGNING`, with staff-English refusals. Tests in `tests/case-actions.test.mjs` first.
+- [x] 5.4 `src/supabase-store.mjs`: load `filing_attempts`, `filing_returns` and `filing_notes` with `relatedRows` for staff, and the four `cases` columns for everyone. Tests in the store suite.
 
 ## 6. Browser: staff screens
 
-- [ ] 6.1 `src/admin-views.mjs`, the office actions panel and its dialogs (D12):
+- [x] 6.1 `src/admin-views.mjs`, the office actions panel and its dialogs (D12):
   - Mark e-filed… with the three choices, or the outstanding returns;
   - Record filing result…;
   - Return to signing… ("The fix is done.") or its waiting explanation;
@@ -65,15 +65,15 @@
   - Close at Rejected.
 
   Update `tests/fixtures/confirm-dialogs.json` and `tests/admin-views.test.mjs`.
-- [ ] 6.2 `src/staff-views.mjs`:
+- [x] 6.2 `src/staff-views.mjs`:
   - `LIFECYCLE` with Accepted and the Rejected mark, labels from the record;
   - the Filing panel (each filing's notes in order, escaped, with who and when);
   - `stageWork` texts;
   - `EVENT_SENTENCES` for the two new actions.
 
   Tests in `tests/staff-views.test.mjs`.
-- [ ] 6.3 `src/pool-views.mjs`: `poolPhase` and `POOL_TABS` (Needs attention, Done). `src/office-views.mjs`: the `result` and `rejected` kinds, the row texts, the latest fix note, the Signing row after Return to signing, and the colouring rule (D11). Tests in `tests/office-views.test.mjs` and the pool tests.
-- [ ] 6.4 `src/app.mjs` and `src/views.mjs`: wire the new actions, dialogs and toasts. Update `tests/shell.test.mjs` as needed.
+- [x] 6.3 `src/pool-views.mjs`: `poolPhase` and `POOL_TABS` (Needs attention, Done). `src/office-views.mjs`: the `result` and `rejected` kinds, the row texts, the latest fix note, the Signing row after Return to signing, and the colouring rule (D11). Tests in `tests/office-views.test.mjs` and the pool tests.
+- [x] 6.4 `src/app.mjs` and `src/views.mjs`: wire the new actions, dialogs and toasts. Update `tests/shell.test.mjs` as needed.
 
 ## 7. Browser: the client
 
