@@ -49,8 +49,9 @@ test("every server stage has plain status copy and no workflow decision", () => 
       "deposit",
       "$",
     ])
+      // Accepted points to the refund websites (spec case-lifecycle), and says nothing about money.
       assert.ok(
-        !clientMessage.toLowerCase().includes(word),
+        (stage === "accepted" && word === "refund") || !clientMessage.toLowerCase().includes(word),
         `${stage} must not mention ${word}`,
       );
   }
@@ -228,6 +229,8 @@ test("the text table's English stage entries match STAGE_DESCRIPTIONS", async ()
   for (const stage of [...STAGES, "unknown"]) {
     const english = describeStage(stage === "unknown" ? "nonsense" : stage);
     assert.equal(t(`stage.${stage}.label`), english.clientLabel, stage);
+    // Rejected and Accepted are built per return (filingMessage), with no text key of their own.
+    if (stage === "rejected" || stage === "accepted") continue;
     assert.equal(t(`stage.${stage}.client`), english.clientMessage, stage);
   }
 });

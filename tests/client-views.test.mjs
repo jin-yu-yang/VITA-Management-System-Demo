@@ -748,7 +748,7 @@ test("the client's progress has five steps", () => {
       ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
       ["progress.step.review", ["review_ready", "reviewing"]],
       ["progress.step.signing", ["review_approved"]],
-      ["progress.step.filing", ["ready_to_efile", "efiled"]],
+      ["progress.step.filing", ["ready_to_efile", "efiled", "rejected"]],
     ],
   );
   assert.equal(t("progress.step.signing", {}, "zh-Hans"), "签名");
@@ -805,6 +805,91 @@ test("a closed case shows its closed notice, not a step", () => {
       lang,
     );
   }
+});
+
+test("the stepper: Filing is current at Rejected, and Accepted completes all five", () => {
+  assert.deepEqual(trackOf(progressAt("rejected")).slice(3), ["Signing: complete", "Filing: in progress"]);
+  const accepted = trackOf(progressAt("accepted"));
+  assert.equal(accepted.length, 5);
+  for (const step of accepted) assert.match(step, /: complete$/, step);
+  assert.ok(!progressAt("accepted").includes('class="current"'));
+});
+
+const statusOf = (html) => /<p class="status-explanation">([^<]*)<\/p>/.exec(html)?.[1];
+const BOTH_EFILE = { federalMethod: "efile", stateMethod: "efile", federalResult: null, stateResult: null };
+const REFUNDS_EN =
+  'If you are due a refund, you can check on it with &quot;Where&#39;s My Refund?&quot; at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.';
+
+test("the client's filing messages, per return", () => {
+  assert.equal(
+    statusOf(progressAt("efiled", "en", BOTH_EFILE)),
+    "Your federal and Pennsylvania returns were e-filed. The IRS and Pennsylvania will each confirm whether they are accepted.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "en", { ...BOTH_EFILE, federalResult: "accepted" })),
+    "The IRS accepted your federal return. Your Pennsylvania return was e-filed. Pennsylvania will confirm whether it is accepted.",
+  );
+  assert.equal(
+    statusOf(progressAt("rejected", "zh-Hans", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "rejected" })),
+    "国税局已接受您的联邦报税表。您的宾州报税表需要更正后才能被接受。PCDC 会就更正事宜联系您。",
+  );
+  assert.equal(
+    statusOf(progressAt("rejected", "en", { ...BOTH_EFILE, federalResult: "rejected", stateResult: "rejected" })),
+    "Your federal and Pennsylvania returns need a correction before they can be accepted. PCDC will contact you about the correction.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "en", { federalMethod: "paper", stateMethod: "paper" })),
+    "Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "zh-Hans", { federalMethod: "efile", stateMethod: "paper" })),
+    "您的联邦报税表已电子递交。国税局会确认是否接受。您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。",
+  );
+});
+
+test("Complete: the refund sites are plain text, not links", () => {
+  const html = progressAt("accepted", "en", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "accepted" });
+  assert.equal(statusOf(html), `The IRS and Pennsylvania accepted your returns. ${REFUNDS_EN}`);
+  const zh = progressAt("accepted", "zh-Hans", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "accepted" });
+  assert.equal(
+    statusOf(zh),
+    '国税局和宾州税务局都已接受您的报税表。如果您有退税，可以在 irs.gov/refunds 使用 "Where&#39;s My Refund?" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）'.replace(
+      '"Where&#39;s My Refund?"',
+      "&quot;Where&#39;s My Refund?&quot;",
+    ),
+  );
+  for (const page of [html, zh]) assert.ok(!/<a[ >]/.test(statusOf(page) ?? "") && !/<a [^>]*irs\.gov/.test(page));
+});
+
+test("a case e-filed before filing methods keeps its message", () => {
+  for (const [lang, text] of [
+    ["en", "Your return was e-filed. The IRS will confirm whether it is accepted."],
+    ["zh-Hans", "您的报税表已电子递交。国税局会确认是否接受。"],
+  ])
+    assert.equal(statusOf(progressAt("efiled", lang, { federalMethod: null, stateMethod: null })), text);
+});
+
+test("Sign again: the re-sign message replaces the approval's variant", () => {
+  const record = { signingPlan: "portal", ...BOTH_EFILE, federalResult: "rejected", stateResult: null };
+  assert.equal(
+    statusOf(progressAt("review_approved", "en", record)),
+    "PCDC corrected your return. Please sign it again so PCDC can file it. PCDC will contact you to arrange this.",
+  );
+  assert.equal(
+    statusOf(progressAt("review_approved", "zh-Hans", record)),
+    "PCDC 已更正您的报税表。请再次签名，以便 PCDC 递交。PCDC 会联系您安排签名。",
+  );
+});
+
+test("no client page shows a reject code or a fix note", () => {
+  const filingAttempts = [
+    { attempt: 1, notes: [{ note: "Fix the zebra SSN", recordedAt: "2026-01-02T00:00:00Z" }], codes: ["IND-031-04"] },
+  ];
+  for (const stage of ["efiled", "rejected", "review_approved", "accepted"])
+    for (const lang of ["en", "zh-Hans"]) {
+      const html = progressAt(stage, lang, { ...BOTH_EFILE, federalResult: "rejected", filingAttempts, rejectCode: "IND-031-04" });
+      assert.ok(!html.includes("IND-031-04") && !html.includes("Fix the zebra SSN"), `${stage} ${lang}`);
+    }
 });
 
 test("the history shows the new lines in 简体", () => {

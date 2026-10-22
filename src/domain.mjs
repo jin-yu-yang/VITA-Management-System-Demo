@@ -3,7 +3,7 @@
 // revisions (see `supabase/migrations/`), and this file only names what the
 // browser is allowed to show and to send.
 import { isLang } from "./language.mjs";
-import { t } from "./client-text.mjs";
+import { t, filingSentences } from "./client-text.mjs";
 
 // Names and plain-language copy for every server stage in STAGES, so the
 // browser can name what it is showing without deciding anything. Each stage has
@@ -76,18 +76,19 @@ const STAGE_DESCRIPTIONS = Object.freeze({
     clientMessage:
       "Your return was e-filed. The IRS will confirm whether it is accepted.",
   },
-  // Rejected and Accepted (change add-post-efiling-stages). These messages are
-  // the neutral fallback; the client page words them per return.
+  // Rejected and Accepted (change add-post-efiling-stages). Their messages are
+  // built per return by filingMessage; these are the stage's closing sentence,
+  // which is all a record with no filing methods has.
   rejected: {
     label: "Rejected",
     clientLabel: "Needs a correction",
-    clientMessage:
-      "Your return needs a correction before it can be accepted. PCDC will contact you about the correction.",
+    clientMessage: "PCDC will contact you about the correction.",
   },
   accepted: {
     label: "Accepted",
     clientLabel: "Complete",
-    clientMessage: "Your return was accepted.",
+    clientMessage:
+      "If you are due a refund, you can check on it with \"Where's My Refund?\" at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.",
   },
   closed: {
     label: "Closed",
@@ -144,8 +145,11 @@ export function signingWhen(isoMinute, lang = "en") {
 // At Ready to exit, the case's signing plan says how and when the client signs
 // Form 8879 (design D11); without a plan the stage's own message stands.
 function signingMessage(stage, lang, record) {
+  if (stage !== "review_approved") return null;
+  // Back at Ready to exit after a rejection: the re-sign message replaces any variant.
+  if (returnedToSigning(record)) return t("stage.review_approved.client.resign", {}, lang);
   const plan = record?.signingPlan;
-  if (stage !== "review_approved" || !SIGNING_PLANS.includes(plan)) return null;
+  if (!SIGNING_PLANS.includes(plan)) return null;
   const when = plan === "appointment" ? signingWhen(record.signingAppointmentAt, lang) : "";
   if (plan === "appointment" && !when) return null;
   return t(`stage.review_approved.client.${plan}`, { when }, lang);
@@ -227,10 +231,31 @@ const METHOD_LABELS = Object.freeze({
   },
 });
 
+// What the client reads at E-filed, Rejected and Accepted: a sentence about each
+// return (the combined one when both are alike), then the stage's closing
+// sentence. A case e-filed before filing methods existed has no returns to
+// tell apart, so E-filed keeps its one message. Never names a code or a note.
+export function filingMessage(stage, lang = "en", record = null) {
+  const federal = returnState(record, "federal");
+  const state = returnState(record, "state");
+  const joiner = !isLang(lang) || lang === "en" ? " " : "";
+  if (!federal && !state && stage === "efiled") return t("stage.efiled.client", {}, lang);
+  return [
+    filingSentences(federal, state, lang),
+    stage === "rejected" || stage === "accepted" ? t(`filing.closing.${stage}`, {}, lang) : "",
+  ]
+    .filter(Boolean)
+    .join(joiner);
+}
+
+const FILING_STAGES = Object.freeze(["efiled", "rejected", "accepted"]);
+
 export function describeStage(stage, lang = "en", record = null) {
   const known = Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "");
   const base = known ? STAGE_DESCRIPTIONS[stage] : UNKNOWN_STAGE;
-  const variant = signingMessage(stage, lang, record);
+  const variant = FILING_STAGES.includes(stage)
+    ? filingMessage(stage, lang, record)
+    : signingMessage(stage, lang, record);
   const byMethod = known
     ? METHOD_LABELS[stage]?.[filingMethodKind(record)] ?? null
     : null;

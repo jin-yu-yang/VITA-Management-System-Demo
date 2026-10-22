@@ -289,7 +289,7 @@ export const PROGRESS_STEPS = Object.freeze([
   ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
   ["progress.step.review", ["review_ready", "reviewing"]],
   ["progress.step.signing", ["review_approved"]],
-  ["progress.step.filing", ["ready_to_efile", "efiled"]],
+  ["progress.step.filing", ["ready_to_efile", "efiled", "rejected"]],
 ]);
 
 const REVIEW_STAGES = Object.freeze([
@@ -299,10 +299,16 @@ const REVIEW_STAGES = Object.freeze([
   "review_approved",
   "ready_to_efile",
   "efiled",
+  "rejected",
+  "accepted",
 ]);
 
 function progressTrack(stage, lang = "en") {
-  const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+  // An accepted case has finished every step, so none is current.
+  const current =
+    stage === "accepted"
+      ? PROGRESS_STEPS.length
+      : PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
   // A closed case has no current step: its notice says what happened instead.
   if (current < 0) return "";
   return `<div class="progress-steps">${PROGRESS_STEPS.map(([label], index) => {

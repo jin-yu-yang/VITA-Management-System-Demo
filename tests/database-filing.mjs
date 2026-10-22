@@ -731,7 +731,7 @@ test("record filing result", async (t) => {
       assert.equal((await columns(third)).stage, "rejected");
     });
 
-    await t.test("the history lines all translate", { todo: "Task 9" }, async () => {
+    await t.test("the history lines all translate", async () => {
       const { SENTENCES } = await import("../src/client-text.mjs");
       const states = [null, "waiting", "accepted", "rejected", "mailed"];
       const lines = new Set();
