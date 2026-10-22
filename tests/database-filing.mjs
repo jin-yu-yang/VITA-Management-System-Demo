@@ -806,6 +806,26 @@ test("filing details stay with staff", async (t) => {
       assert.deepEqual(staff.data, [{ note: NOTE }]);
     });
 
+    await t.test("naming a real case in the clearing setting frees none of its notes", async () => {
+      const caseId = await loop();
+      const attempt = (await f.sql("select is_fixture from (select fixture is_fixture from public.cases where id=$1) x", [caseId])).rows[0];
+      assert.equal(attempt.is_fixture, false);
+      await assert.rejects(() =>
+        f.sql(
+          "with s as (select set_config('vitally.clearing_case',$1,true) v) delete from public.filing_notes where case_id=$1::uuid and (select count(*) from s)>=0",
+          [caseId],
+        ),
+      );
+      await assert.rejects(() =>
+        f.sql(
+          "with s as (select set_config('vitally.clearing_case',$1,true) v) update public.filing_notes set note='x' where case_id=$1::uuid and (select count(*) from s)>=0",
+          [caseId],
+        ),
+      );
+      const notes = await f.sql("select note from public.filing_notes where case_id=$1", [caseId]);
+      assert.deepEqual(notes.rows, [{ note: NOTE }]);
+    });
+
     await t.test("no event message holds a code or note", async () => {
       const caseId = await loop();
       const day = await nyDay();

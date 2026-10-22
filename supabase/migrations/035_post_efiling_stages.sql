@@ -158,9 +158,11 @@ begin
  -- cascade from deleting just a filing attempt, finds the case and is refused.
  -- A sample reload (apply_fixture_scenario) clears the filing rows of the one
  -- case it is rewriting in place; it names that case in a transaction-local
- -- setting first.
+ -- setting first. Only a sample (fixture) case qualifies, so setting the name
+ -- never frees the notes of a real case.
  if tg_op='DELETE' and (not exists(select 1 from public.cases where id=old.case_id)
-   or current_setting('vitally.clearing_case',true)=old.case_id::text) then
+   or (current_setting('vitally.clearing_case',true)=old.case_id::text
+    and exists(select 1 from public.cases c where c.id=old.case_id and c.fixture))) then
   return old;
  end if;
  raise sqlstate 'VT007' using message='VALIDATION';
@@ -905,6 +907,7 @@ begin
  -- in the list: they are historical scalars and outlive their targets.
  perform set_config('vitally.clearing_case',p_case.id::text,true); -- 035
  delete from public.filing_attempts where workspace_id=p_case.workspace_id and case_id=p_case.id; -- 035
+ perform set_config('vitally.clearing_case','',true); -- 035
  delete from public.contact_attempts where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.contact_log where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.admin_followups where workspace_id=p_case.workspace_id and case_id=p_case.id;
