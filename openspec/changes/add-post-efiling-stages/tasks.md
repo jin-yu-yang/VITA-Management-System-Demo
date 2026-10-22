@@ -5,22 +5,22 @@
 
 ## 2. Database: schema and Mark e-filed
 
-- [ ] 2.1 Write failing database tests (`tests/database-stages.mjs`, or a new `tests/database-filing.mjs` registered with `npm run test:database`):
+- [x] 2.1 Write failing database tests (`tests/database-stages.mjs`, or a new `tests/database-filing.mjs` registered with `npm run test:database`):
   - the stage check accepts `rejected` and `accepted`;
   - the method constraints (three combinations; results only fit their method);
   - Mark e-filed's first-filing payload (three combinations accepted, the other one and a missing return refused with `VALIDATION`);
   - the history lines per method.
-- [ ] 2.2 New migration `035_post_efiling_stages.sql`:
+- [x] 2.2 New migration `035_post_efiling_stages.sql`:
   - the header lists every copied function, as 033 does;
   - the stage constraint;
   - `cases.federal_method`, `state_method`, `federal_result`, `state_result`, with their checks (D2);
   - `filing_attempts`, `filing_returns` and the append-only `filing_notes` (a trigger refuses update and delete) with 013's presenter-only select policy, not published (D2);
   - `act_mark_efiled` (from 032) recording methods, attempts and the history line (D3).
-- [ ] 2.3 `check_payload` copied from 034 with new branches for `MARK_EFILED`, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`. Every other branch is verbatim.
+- [x] 2.3 `check_payload` copied from 034 with new branches for `MARK_EFILED`, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`. Every other branch is verbatim.
 
 ## 3. Database: results, return to signing, close
 
-- [ ] 3.1 Write failing tests for `RECORD_FILING_RESULT`:
+- [x] 3.1 Write failing tests for `RECORD_FILING_RESULT`:
   - one return at a time;
   - any rejected → Rejected at once;
   - all accepted or mailed → Accepted;
@@ -32,15 +32,15 @@
   - a pre-change E-filed case (null methods) is treated as both e-filed;
   - the per-return history lines;
   - admin-only.
-- [ ] 3.2 Implement `act_record_filing_result` (D4, D5).
-- [ ] 3.3 Write failing tests for `RETURN_TO_SIGNING` and the second filing:
+- [x] 3.2 Implement `act_record_filing_result` (D4, D5).
+- [x] 3.3 Write failing tests for `RETURN_TO_SIGNING` and the second filing:
   - refused while a return waits;
   - Rejected → Ready to exit, keeping methods and answers;
   - Mark ready to e-file accepted straight away;
   - the second Mark e-filed takes only the rejected returns, may change the PA-40 to paper, refuses an accepted return, and keeps the accepted one.
 
   Then implement `act_return_to_signing` (D6), and the second-filing branch of `act_mark_efiled` (D3).
-- [ ] 3.4 `act_close_case` (from 032): allow `rejected`, refuse `accepted` (D7). `check_operation_authority` (from 032): the two new actions are admin-only. `vitally_apply_action` (from 032): two dispatch lines. Tests: Close from Rejected; Close refused at Accepted; volunteers refused for both new actions.
+- [x] 3.4 `act_close_case` (from 032): allow `rejected`, refuse `accepted` (D7). `check_operation_authority` (from 032): the two new actions are admin-only. `vitally_apply_action` (from 032): two dispatch lines. Tests: Close from Rejected; Close refused at Accepted; volunteers refused for both new actions.
 - [ ] 3.5 Privacy tests: a client session reads its case's method and result columns, but no row of `filing_attempts`, `filing_returns` or `filing_notes`; no realtime change carries them; no stored event message contains a reject code or a fix note; an update or delete of a `filing_notes` row is refused, by the service role too.
 
 ## 4. Database: samples
