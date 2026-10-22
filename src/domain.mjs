@@ -203,6 +203,8 @@ export function returnedToSigning(record) {
 
 // The newest fix note across every filing, or null.
 export function latestFixNote(record) {
+  // A list-shaped record carries only the newest note, read by the staff list.
+  if (!record?.filingAttempts?.length && record?.latestFixNote) return record.latestFixNote;
   let newest = null;
   let newestAt = -Infinity;
   for (const attempt of record?.filingAttempts ?? [])

@@ -479,6 +479,16 @@ export function createStore(client) {
           .eq("status", "approved")
           .order("created_at"),
       );
+      // The newest fix note of each case, for Follow-ups' Rejected row (staff
+      // only; the filing attempts themselves stay on the case page's read).
+      const fixNotes = await read(
+        client
+          .from("filing_notes")
+          .select("case_id,note")
+          .in("case_id", ids)
+          .order("recorded_at")
+          .order("id"),
+      );
       const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
       return cases.map((record) => {
         const open = forCase(followups, record.id);
@@ -498,6 +508,7 @@ export function createStore(client) {
           // "pending", "completed", or null when no review has been approved.
           reviewContactStatus:
             forCase(approvals, record.id).at(-1)?.client_contact_status ?? null,
+          latestFixNote: forCase(fixNotes, record.id).at(-1)?.note ?? null,
         };
       });
     },

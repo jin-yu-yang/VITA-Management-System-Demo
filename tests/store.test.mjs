@@ -549,13 +549,15 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly seven summary fields.
+  // The Case scalars, unchanged, plus exactly eight summary fields (the
+  // eighth, the newest fix note, is read from filing_notes for Follow-ups).
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
       ...Object.keys(mapCase(CASE_ROW)),
       "followupAssigneeIds",
       "goOverOpen",
+      "latestFixNote",
       "openFollowups",
       "openRequests",
       "participants",
@@ -602,6 +604,7 @@ test("a presenter list carries the summaries a work board reads", async () => {
   assert.deepEqual(approvalRead.orders, ["created_at"]);
   // This case has only an active review, so no call status yet.
   assert.equal(row.reviewContactStatus, null);
+  assert.equal(row.latestFixNote, null);
 });
 
 test("a listed case carries its latest approved review's call status", async () => {
