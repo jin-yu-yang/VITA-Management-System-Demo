@@ -108,6 +108,20 @@ const CASES = [
 const render = (filters = {}, cases = CASES) =>
   renderCasePool(cases, PEOPLE, { filters, now: NOW });
 
+test("a pool row names E-filed and Accepted by the filing method", () => {
+  const html = render({}, [
+    rec("M", "efiled", { federalMethod: "efile", stateMethod: "paper" }),
+    rec("O", "efiled"),
+  ]);
+  assert.match(html, /<i><\/i>E-filed &amp; paper</);
+  assert.match(html, /<i><\/i>E-filed</);
+});
+
+test("the pool's stage filter keeps the plain stage names", () => {
+  assert.match(render(), /<option value="efiled">E-filed<\/option>/);
+}
+);
+
 test("the pool shows ten phase tabs with counts and pressed state", () => {
   const html = render({ poolPhase: "review" });
   assert.match(html, /role="group" aria-label="Case phase"/);

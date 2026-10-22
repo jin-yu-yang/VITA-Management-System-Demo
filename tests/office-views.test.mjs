@@ -1083,6 +1083,13 @@ test("A returned case's Signing row reads for signing again", () => {
   assert.match(kindRow(html, "back", "signing"), /Waiting for the client to sign again\./);
 });
 
+test("a Follow-ups row and the Log contact drawer name E-filed by the filing method", () => {
+  const record = filed("m", "efiled", { federalMethod: "efile", stateMethod: "paper", federalResult: null, stateResult: null });
+  assert.match(kindRow(page([record]), "m", "result"), /<i><\/i>E-filed &amp; paper</);
+  const drawer = logCallDrawerBody({ record, person: sam, ui: {}, caseId: "m" });
+  assert.match(drawer, /<i><\/i>E-filed &amp; paper</);
+});
+
 test("the Follow-ups filter lists the two new kinds before Call the client", () => {
   const html = page([filed("e", "efiled", E)]);
   const order = [...html.matchAll(/data-filter="officeKind" data-value="([a-z]+)"/g)].map((m) => m[1]);

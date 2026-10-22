@@ -298,7 +298,7 @@ function queueRow(row, person, ui) {
   // A help request can name a case this window's list doesn't hold; say so
   // rather than claiming there is no case.
   const client = record
-    ? `${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference ?? "This case")}</button>${stageBadge(record.stage)}`
+    ? `${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference ?? "This case")}</button>${stageBadge(record.stage, "en", { record })}`
     : item?.caseId
       ? '<span class="muted">A case in this workspace</span>'
       : '<span class="muted">No case yet</span>';
@@ -409,7 +409,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   if (!record || record.id !== caseId)
     return `${drawerError(ui)}<p>This case could not be opened. Close this and try again.</p>${button("Close", "close-dialog", "secondary")}`;
   const tasks = openFollowups(record);
-  const head = `<div class="drawer-case">${esc(clientNumberLabel(record))} · ${esc(record.reference)} ${stageBadge(record.stage)}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
+  const head = `<div class="drawer-case">${esc(clientNumberLabel(record))} · ${esc(record.reference)} ${stageBadge(record.stage, "en", { record })}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
   if (!tasks.length)
     return `${head}${drawerError(ui)}${emptyLine("No open follow-up is left on this case.")}${button("Close", "close-dialog", "secondary")}`;
   return `${head}${drawerError(ui)}${tasks

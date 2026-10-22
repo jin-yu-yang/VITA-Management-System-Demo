@@ -2815,3 +2815,11 @@ test("old VERIFY_INTAKE event renders", () => {
   assert.match(html, /recorded the screening checks/i);
   assert.doesNotMatch(html, /simulat/i);
 });
+
+test("the case page header names Accepted by the filing method", () => {
+  const html = renderStaffCase(
+    staffCase({ stage: "accepted", federalMethod: "paper", stateMethod: "paper", federalResult: "mailed", stateResult: "mailed" }),
+    SAM,
+  );
+  assert.match(html, /<i><\/i>Mailed<\/span>/);
+});
