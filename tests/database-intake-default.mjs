@@ -15,8 +15,10 @@ const KEYS = [
   "review_ready",
   "corrections_required",
   "review_approved",
+  "rejected",
+  "accepted",
 ];
-const NAMES = ["Mei", "Jordan", "Linh", "Dana", "Wei", "Tomas"];
+const NAMES = ["Mei", "Jordan", "Linh", "Dana", "Wei", "Tomas", "Priya", "Marcus"];
 const CONTACT_KEYS = ["tp_phone", "sp_phone", "best_contact_time", "best_contact_note"];
 
 const versionsOf = async (f) =>
@@ -109,7 +111,7 @@ test("the switch-over (020): new applications are version 2", async (t) => {
     try {
       await f.seedFixtures();
       const rows = await samples(f);
-      assert.equal(rows.length, 6);
+      assert.equal(rows.length, 8);
       for (const row of rows) assert.equal(row.intake_version, 2, row.fixture_key);
     } finally {
       await f.close();
@@ -136,9 +138,9 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
 
     await f.seedFixtures();
 
-    await t.test("six version-2 samples whose answers pass the field checks", async () => {
+    await t.test("eight version-2 samples whose answers pass the field checks", async () => {
       const rows = await samples(f);
-      assert.equal(rows.length, 6);
+      assert.equal(rows.length, 8);
       assert.deepEqual(
         rows.map((row) => row.fixture_key),
         KEYS,
@@ -177,15 +179,15 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
       );
       assert.deepEqual(
         rows.map((row) => row.answers.service),
-        ["drop_off", "drop_off", "same_day", "online", "drop_off", "same_day"],
+        ["drop_off", "drop_off", "same_day", "online", "drop_off", "same_day", "same_day", "drop_off"],
       );
       assert.deepEqual(
         rows.map((row) => row.answers.language),
-        ["mandarin", "cantonese", "cantonese", "english", "mandarin", "english"],
+        ["mandarin", "cantonese", "cantonese", "english", "mandarin", "english", "english", "english"],
       );
       assert.deepEqual(
         rows.map((row) => row.answers.addr_zip),
-        ["19107", "19123", "19148", "19130", "19104", "19146"],
+        ["19107", "19123", "19148", "19130", "19104", "19146", "19147", "19143"],
       );
       for (const [index, row] of rows.entries()) {
         const contact = (await f.sql("select * from public.case_contacts where case_id=$1", [row.id])).rows;

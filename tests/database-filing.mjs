@@ -759,3 +759,77 @@ test("record filing result", async (t) => {
     await f.close();
   }
 });
+
+// Task 5: filing details stay with staff.
+test("filing details stay with staff", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const CODE = "IND-031-04";
+    const NOTE = "Fictional note: preparer to correct the dependent's SSN in TaxSlayer.";
+    const nyDay = async () =>
+      (await f.sql("select (now() at time zone 'America/New_York')::date::text d")).rows[0].d;
+    const act = (caseId, type, payload) => f.act(f.presenter, caseId, f.sam, type, payload);
+    // A client's case, filed and rejected on the state return with a code and a note.
+    const loop = async () => {
+      const caseId = await f.approvedCase();
+      await act(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+      const day = await nyDay();
+      await act(caseId, "RECORD_FILING_RESULT", {
+        confirmed: true,
+        results: {
+          federal: { result: "accepted", date: day },
+          state: { result: "rejected", date: day, code: CODE },
+        },
+        fixNote: NOTE,
+      });
+      return caseId;
+    };
+
+    await t.test("a client reads the result columns only", async () => {
+      const caseId = await loop();
+      const mine = await f.applicantA
+        .from("cases")
+        .select("federal_method,state_method,federal_result,state_result")
+        .eq("id", caseId);
+      assert.equal(mine.error, null);
+      assert.deepEqual(mine.data, [
+        { federal_method: "efile", state_method: "efile", federal_result: "accepted", state_result: "rejected" },
+      ]);
+      for (const table of ["filing_attempts", "filing_returns", "filing_notes"]) {
+        const read = await f.applicantA.from(table).select("*");
+        assert.equal(read.error, null, table);
+        assert.deepEqual(read.data, [], table);
+      }
+      // The presenter does read them, so the empty answers above are row security.
+      const staff = await f.presenter.from("filing_notes").select("note").eq("case_id", caseId);
+      assert.deepEqual(staff.data, [{ note: NOTE }]);
+    });
+
+    await t.test("no event message holds a code or note", async () => {
+      const caseId = await loop();
+      const day = await nyDay();
+      await act(caseId, "RETURN_TO_SIGNING", { confirmed: true });
+      await act(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods: { state: "efile" } });
+      await act(caseId, "RECORD_FILING_RESULT", {
+        confirmed: true,
+        results: { state: { result: "accepted", date: day } },
+      });
+      const stage = (await f.sql("select stage from public.cases where id=$1", [caseId])).rows[0].stage;
+      assert.equal(stage, "accepted");
+      const messages = await f.clientMessages(caseId);
+      assert.ok(messages.length > 5);
+      for (const message of messages) {
+        assert.ok(!message.includes(CODE), message);
+        assert.ok(!message.includes("SSN") && !message.includes("TaxSlayer"), message);
+      }
+      const details = (
+        await f.sql("select detail::text d from public.case_events where case_id=$1", [caseId])
+      ).rows.map((row) => row.d);
+      for (const d of details) assert.ok(!d.includes(CODE) && !d.includes("TaxSlayer"), d);
+    });
+  } finally {
+    await f.close();
+  }
+});

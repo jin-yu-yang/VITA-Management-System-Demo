@@ -96,16 +96,16 @@ test("version 2 is the only accepted version", async (t) => {
           name,
         );
     });
-    await t.test("a reset seeds six version-2 samples whose submit history has no screening detail", async () => {
+    await t.test("a reset seeds eight version-2 samples whose submit history has no screening detail", async () => {
       await f.seedFixtures();
       const { rows } = await f.sql("select id, intake_version from public.cases where workspace_id=$1 and fixture", [f.workspaceId]);
-      assert.equal(rows.length, 6);
+      assert.equal(rows.length, 8);
       for (const row of rows) assert.equal(Number(row.intake_version), 2);
       const { rows: events } = await f.sql(
         "select detail from public.case_events where workspace_id=$1 and action='SUBMIT' and case_id = any($2::uuid[])",
         [f.workspaceId, rows.map((r) => r.id)],
       );
-      assert.equal(events.length, 6);
+      assert.equal(events.length, 8);
       for (const event of events) assert.equal(event.detail?.screening, undefined);
     });
   } finally {

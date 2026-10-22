@@ -43,6 +43,8 @@ const FIXTURE_KEYS = Object.freeze([
   "review_ready",
   "corrections_required",
   "review_approved",
+  "rejected",
+  "accepted",
 ]);
 // The one key this fixture binds to applicant A through the shared
 // initializer, so a reset has a durable client binding to reapply.
