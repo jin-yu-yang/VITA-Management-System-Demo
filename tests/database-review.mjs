@@ -1555,7 +1555,7 @@ test("questionnaire payloads are validated by the database", async (t) => {
       for (const [type, payload] of [
         ["START_SCREENING", {}],
         ["MARK_READY_TO_EFILE", { confirmed: true }],
-        ["MARK_EFILED", { confirmed: true }],
+        ["MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } }],
       ])
         await f.sql("select vitally_private.check_payload($1,$2::jsonb)", [
           type,
