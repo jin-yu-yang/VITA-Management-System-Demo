@@ -461,7 +461,7 @@ export const SENTENCES = Object.freeze({
   "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
   // Migration 035: Return to signing (the filing lines are Task 9's).
-  "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表。您需要重新签署。",
+  "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",

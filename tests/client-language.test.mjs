@@ -379,6 +379,15 @@ test("the screening, 8879 and e-file history lines translate exactly", () => {
   }
 });
 
+test("the Return to signing line translates exactly", () => {
+  const english = "PCDC corrected your return. You need to sign it again.";
+  const zh = "PCDC 已更正您的报税表，您需要再次签名。";
+  assert.equal(SENTENCES[english], zh);
+  assert.equal(historyLine(english, "zh-Hans"), zh);
+  assert.equal(historyLine(english, "en"), english);
+  assert.ok(migrationSentences().sentences.includes(english), "migration 035 writes it");
+});
+
 test("new screening line translated", () => {
   const english = "PCDC finished screening your application. A volunteer will start preparing your return next.";
   const zh = "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。";
