@@ -244,3 +244,292 @@ test("mark e-filed records the methods", async (t) => {
     await f.close();
   }
 });
+
+// Task 3: Admins record each return's filing result.
+test("record filing result", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const nyDay = async (offset = 0) =>
+      (
+        await f.sql("select ((now() at time zone 'America/New_York')::date + $1::int)::text d", [offset])
+      ).rows[0].d;
+    const filedCase = async (methods = { federal: "efile", state: "efile" }) => {
+      const caseId = await f.approvedCase();
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", { confirmed: true });
+      await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", { confirmed: true, methods });
+      return caseId;
+    };
+    const record = (caseId, results, extra = {}, who = f.sam, client = f.presenter) =>
+      f.act(client, caseId, who, "RECORD_FILING_RESULT", { confirmed: true, results, ...extra });
+    const columns = async (caseId) =>
+      (
+        await f.sql(
+          "select stage, federal_method, state_method, federal_result, state_result from public.cases where id=$1",
+          [caseId],
+        )
+      ).rows[0];
+    const lastMessage = async (caseId) => (await f.clientMessages(caseId)).at(-1);
+    const counts = async (caseId) =>
+      (
+        await f.sql(
+          `select (select count(*)::int from public.filing_returns where case_id=$1 and result is not null) answered,
+                  (select count(*)::int from public.filing_notes where case_id=$1) notes,
+                  (select count(*)::int from public.case_events where case_id=$1 and action='RECORD_FILING_RESULT') events`,
+          [caseId],
+        )
+      ).rows[0];
+
+    await t.test("one answer at a time", async () => {
+      const caseId = await filedCase();
+      const today = await nyDay();
+      await record(caseId, { federal: { result: "accepted", date: today } });
+      const c = await columns(caseId);
+      assert.equal(c.stage, "efiled");
+      assert.equal(c.federal_result, "accepted");
+      assert.equal(c.state_result, null);
+      assert.equal(await lastMessage(caseId), "The IRS accepted your federal return.");
+      await record(caseId, { state: { result: "accepted", date: today } });
+      assert.equal((await columns(caseId)).stage, "accepted");
+      assert.equal(await lastMessage(caseId), "Pennsylvania accepted your Pennsylvania return.");
+    });
+
+    await t.test("a rejection doesn't wait", async () => {
+      const caseId = await filedCase();
+      const today = await nyDay();
+      await record(caseId, { federal: { result: "rejected", date: today, code: "IND-031-04" } });
+      assert.equal((await columns(caseId)).stage, "rejected");
+      assert.equal(await lastMessage(caseId), "Your federal return needs a correction before it can be accepted.");
+      await record(caseId, { state: { result: "accepted", date: today } });
+      assert.equal((await columns(caseId)).stage, "rejected");
+    });
+
+    await t.test("both in one move", async () => {
+      const today = await nyDay();
+      const both = await filedCase();
+      await record(both, { federal: { result: "accepted", date: today }, state: { result: "accepted", date: today } });
+      assert.equal((await columns(both)).stage, "accepted");
+      assert.equal(await lastMessage(both), "The IRS and Pennsylvania accepted your returns.");
+      const mixed = await filedCase();
+      await record(mixed, {
+        federal: { result: "accepted", date: today },
+        state: { result: "rejected", date: today, code: "PA-REJ-1" },
+      });
+      assert.equal((await columns(mixed)).stage, "rejected");
+      assert.equal(
+        await lastMessage(mixed),
+        "The IRS accepted your federal return. Your Pennsylvania return needs a correction before it can be accepted.",
+      );
+      const detail = (await f.readStaffCase(mixed)).internalHistory.at(-1).detail;
+      assert.deepEqual(detail, { attempt: 1, results: { federal: "accepted", state: "rejected" }, noteAdded: false });
+    });
+
+    await t.test("paper is mailed", async () => {
+      const caseId = await filedCase({ federal: "efile", state: "paper" });
+      const today = await nyDay();
+      await assert.rejects(
+        () => record(caseId, { state: { result: "accepted", date: today } }),
+        rejected("VALIDATION"),
+      );
+      await assert.rejects(
+        () => record(caseId, { federal: { result: "mailed", date: today } }),
+        rejected("VALIDATION"),
+      );
+      await record(caseId, { state: { result: "mailed", date: today } });
+      assert.equal((await columns(caseId)).stage, "efiled");
+      assert.equal(
+        await lastMessage(caseId),
+        "Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.",
+      );
+      await record(caseId, { federal: { result: "accepted", date: today } });
+      const c = await columns(caseId);
+      assert.equal(c.stage, "accepted");
+      assert.equal(c.state_result, "mailed");
+    });
+
+    await t.test("refusals", async () => {
+      const today = await nyDay();
+      const caseId = await filedCase();
+      const ok = { result: "accepted", date: today };
+      const bad = [
+        ["empty results", { results: {} }],
+        ["blank code", { results: { federal: { result: "rejected", date: today, code: "   " } } }],
+        ["empty code", { results: { federal: { result: "rejected", date: today, code: "" } } }],
+        ["missing code", { results: { federal: { result: "rejected", date: today } } }],
+        ["41-char code", { results: { federal: { result: "rejected", date: today, code: "x".repeat(41) } } }],
+        ["code on accepted", { results: { federal: { ...ok, code: "IND-1" } } }],
+        ["tomorrow", { results: { federal: { ...ok, date: await nyDay(1) } } }],
+        ["before filing", { results: { federal: { ...ok, date: await nyDay(-1) } } }],
+        ["non-ISO date", { results: { federal: { ...ok, date: "03/04/2026" } } }],
+        ["impossible date", { results: { federal: { ...ok, date: "2026-02-30" } } }],
+        ["note at efiled", { results: { federal: ok }, fixNote: "Fictional note." }],
+        ["note stays at accepted", { results: { federal: ok, state: ok }, fixNote: "Fictional note." }],
+        ["long note", { results: { federal: { result: "rejected", date: today, code: "C1" } }, fixNote: "n".repeat(1001) }],
+        ["unknown return", { results: { local: ok } }],
+        ["unknown result", { results: { federal: { result: "pending", date: today } } }],
+        ["extra key", { results: { federal: { ...ok, extra: 1 } } }],
+      ];
+      for (const [name, body] of bad)
+        await assert.rejects(
+          () => f.act(f.presenter, caseId, f.sam, "RECORD_FILING_RESULT", { confirmed: true, ...body }),
+          rejected("VALIDATION"),
+          name,
+        );
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.sam, "RECORD_FILING_RESULT", { results: { federal: ok } }),
+        rejected("VALIDATION"),
+        "no confirmed",
+      );
+      assert.deepEqual(await counts(caseId), { answered: 0, notes: 0, events: 0 });
+      assert.deepEqual(await columns(caseId), {
+        stage: "efiled",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: null,
+        state_result: null,
+      });
+      // A return already answered (the second of two identical calls).
+      await record(caseId, { federal: ok });
+      await assert.rejects(() => record(caseId, { federal: ok }), rejected("VALIDATION"));
+      await assert.rejects(() => record(caseId, { federal: ok, state: ok }), rejected("VALIDATION"));
+      assert.deepEqual(await counts(caseId), { answered: 1, notes: 0, events: 1 });
+      assert.equal((await columns(caseId)).state_result, null);
+    });
+
+    await t.test("only at efiled, or at rejected with a waiting return", async () => {
+      const today = await nyDay();
+      const ready = await f.approvedCase();
+      await assert.rejects(
+        () => record(ready, { federal: { result: "accepted", date: today } }),
+        rejected("INVALID_TRANSITION"),
+      );
+      const caseId = await filedCase();
+      await record(caseId, {
+        federal: { result: "rejected", date: today, code: "C1" },
+        state: { result: "rejected", date: today, code: "C2" },
+      });
+      await assert.rejects(
+        () => record(caseId, { federal: { result: "accepted", date: today } }),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+
+    await t.test("the date window is PCDC's day", async () => {
+      const src = (await f.sql("select prosrc from pg_proc where proname='act_record_filing_result'")).rows[0].prosrc;
+      assert.ok(src.includes("(now() at time zone 'America/New_York')::date"));
+    });
+
+    await t.test("fix notes are appended", async () => {
+      const today = await nyDay();
+      const caseId = await filedCase();
+      await record(
+        caseId,
+        { federal: { result: "rejected", date: today, code: "  IND-031-04 " } },
+        { fixNote: "Fictional note one." },
+      );
+      let notes = await f.sql(
+        "select note, attempt, recorded_by from public.filing_notes where case_id=$1 order by recorded_at",
+        [caseId],
+      );
+      assert.deepEqual(notes.rows, [{ note: "Fictional note one.", attempt: 1, recorded_by: f.sam }]);
+      const row = await f.sql(
+        "select answered_on::text d, reject_code, recorded_by, result from public.filing_returns where case_id=$1 and return_kind='federal'",
+        [caseId],
+      );
+      assert.deepEqual(row.rows, [{ d: today, reject_code: "IND-031-04", recorded_by: f.sam, result: "rejected" }]);
+      assert.equal((await f.readStaffCase(caseId)).internalHistory.at(-1).detail.noteAdded, true);
+      await record(caseId, { state: { result: "accepted", date: today } }, { fixNote: "Fictional note two." });
+      notes = await f.sql("select note from public.filing_notes where case_id=$1 order by recorded_at", [caseId]);
+      assert.deepEqual(notes.rows, [{ note: "Fictional note one." }, { note: "Fictional note two." }]);
+      for (const message of await f.clientMessages(caseId)) {
+        assert.ok(!message.includes("IND-031-04"), message);
+        assert.ok(!message.includes("Fictional note"), message);
+      }
+      const history = JSON.stringify((await f.readStaffCase(caseId)).internalHistory);
+      assert.ok(!history.includes("IND-031-04") && !history.includes("Fictional note"));
+    });
+
+    await t.test("admin only", async () => {
+      const today = await nyDay();
+      const caseId = await filedCase();
+      const results = { federal: { result: "accepted", date: today } };
+      for (const [client, who] of [
+        [f.presenter, f.alex],
+        [f.presenter, f.morgan],
+        [f.presenter, null],
+        [f.applicantA, null],
+      ])
+        await assert.rejects(() => record(caseId, results, {}, who, client), rejected("FORBIDDEN"));
+      assert.deepEqual(await counts(caseId), { answered: 0, notes: 0, events: 0 });
+    });
+
+    await t.test("an older e-filed case", async () => {
+      const today = await nyDay();
+      const old = async () => {
+        const caseId = await filedCase();
+        await f.sql("delete from public.filing_attempts where case_id=$1", [caseId]);
+        await f.sql("update public.cases set federal_method=null, state_method=null where id=$1", [caseId]);
+        // Filed ten days ago, before 035.
+        await f.sql(
+          "update public.case_events set created_at=now()-interval '10 days' where case_id=$1 and action='MARK_EFILED'",
+          [caseId],
+        );
+        return caseId;
+      };
+      const caseId = await old();
+      await record(caseId, {
+        federal: { result: "accepted", date: await nyDay(-5) },
+        state: { result: "accepted", date: today },
+      });
+      assert.deepEqual(await columns(caseId), {
+        stage: "accepted",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: "accepted",
+        state_result: "accepted",
+      });
+      const attempt = await f.sql(
+        "select attempt, filed_by, filed_at < now()-interval '9 days' old from public.filing_attempts where case_id=$1",
+        [caseId],
+      );
+      assert.deepEqual(attempt.rows, [{ attempt: 1, filed_by: f.sam, old: true }]);
+      // The bound still holds: an answer dated before the filing is refused.
+      const other = await old();
+      const eleven = await nyDay(-11);
+      await assert.rejects(
+        () => record(other, { federal: { result: "accepted", date: eleven } }),
+        rejected("VALIDATION"),
+      );
+      assert.equal((await columns(other)).federal_method, null);
+      const third = await old();
+      await record(third, { state: { result: "rejected", date: today, code: "C9" } });
+      assert.equal((await columns(third)).stage, "rejected");
+    });
+
+    await t.test("the history lines all translate", { todo: "Task 9" }, async () => {
+      const { SENTENCES } = await import("../src/client-text.mjs");
+      const states = [null, "waiting", "accepted", "rejected", "mailed"];
+      const lines = new Set();
+      for (const a of states)
+        for (const b of states) {
+          if (a === null && b === null) continue;
+          lines.add((await f.sql("select vitally_private.filing_line($1::text,$2::text) l", [a, b])).rows[0].l);
+        }
+      for (const [a, b, second] of [
+        ["efile", "efile", false],
+        ["efile", "paper", false],
+        ["paper", "paper", false],
+        ["efile", null, true],
+        ["paper", null, true],
+        [null, "efile", true],
+        [null, "paper", true],
+      ])
+        lines.add(
+          (await f.sql("select vitally_private.efiled_line($1::text,$2::text,$3::boolean) l", [a, b, second])).rows[0]
+            .l,
+        );
+      for (const line of lines) assert.ok(line in SENTENCES, line);
+    });
+  } finally {
+    await f.close();
+  }
+});
