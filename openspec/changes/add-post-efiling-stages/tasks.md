@@ -87,17 +87,17 @@
 
 ## 8. The story
 
-- [ ] 8.1 `tests/browser.mjs`: continue the class's case through brainstorm Q11's six steps. Check:
+- [x] 8.1 `tests/browser.mjs`: continue the class's case through brainstorm Q11's six steps. Check:
   - the pool's Filing, Needs attention, Waiting on client and Done tabs;
   - the Follow-ups rows (Filing result, Rejected with the fix note, the Signing row's "sign again");
   - the case page's Filing panel and lifecycle bar;
   - the client's messages at one-accepted-one-rejected, re-sign and Complete, one of them in 简体.
-- [ ] 8.2 Run `npm run test:browser`.
+- [x] 8.2 Run `npm run test:browser`.
 
 ## 9. Docs
 
-- [ ] 9.1 `docs/media/return-lifecycle.svg`: relabel to match what is built. Keep the amendment boxes, marked as not built yet.
-- [ ] 9.2 `docs/demo-script.md`'s "What is simulated, and what is real" table, `docs/developer/database.md`, `docs/developer/frontend.md` (the stages and client labels, which change 1 updated), `docs/developer/production-roadmap.md` §4 (the IRS's answer is built; amendments and reassignment are not), and `docs/setup.md` if the sample list is named there.
+- [x] 9.1 `docs/media/return-lifecycle.svg`: relabel to match what is built. Keep the amendment boxes, marked as not built yet.
+- [x] 9.2 `docs/demo-script.md`'s "What is simulated, and what is real" table, `docs/developer/database.md`, `docs/developer/frontend.md` (the stages and client labels, which change 1 updated), `docs/developer/production-roadmap.md` §4 (the IRS's answer is built; amendments and reassignment are not), and `docs/setup.md` if the sample list is named there.
 
 ## 10. Checks
 
