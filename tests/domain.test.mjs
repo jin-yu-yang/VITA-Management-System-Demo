@@ -229,8 +229,11 @@ test("the text table's English stage entries match STAGE_DESCRIPTIONS", async ()
   for (const stage of [...STAGES, "unknown"]) {
     const english = describeStage(stage === "unknown" ? "nonsense" : stage);
     assert.equal(t(`stage.${stage}.label`), english.clientLabel, stage);
-    // Rejected and Accepted are built per return (filingMessage), with no text key of their own.
-    if (stage === "rejected" || stage === "accepted") continue;
+    // Rejected and Accepted are built per return (filingMessage); their base is the closing sentence.
+    if (stage === "rejected" || stage === "accepted") {
+      assert.equal(t(`filing.closing.${stage}`), english.clientMessage, stage);
+      continue;
+    }
     assert.equal(t(`stage.${stage}.client`), english.clientMessage, stage);
   }
 });

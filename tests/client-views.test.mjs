@@ -861,6 +861,23 @@ test("Complete: the refund sites are plain text, not links", () => {
   for (const page of [html, zh]) assert.ok(!/<a[ >]/.test(statusOf(page) ?? "") && !/<a [^>]*irs\.gov/.test(page));
 });
 
+test("clients see the filing method's label on the list and the progress page", () => {
+  const cases = [
+    [{ federalMethod: "efile", stateMethod: "paper" }, "Filed", "已递交"],
+    [{ federalMethod: "paper", stateMethod: "paper" }, "Mailed", "已邮寄"],
+    [{ federalMethod: "efile", stateMethod: "efile" }, "E-filed", "已电子递交"],
+    [{ federalMethod: null, stateMethod: null }, "E-filed", "已电子递交"],
+  ];
+  for (const [methods, en, zh] of cases)
+    for (const [lang, label] of [["en", en], ["zh-Hans", zh]]) {
+      const record = caseRecord({ stage: "efiled", revision: 8, ...methods });
+      const list = applicationsScreen(baseState({ lang, cases: [record] }));
+      assert.ok(list.includes(`<i></i>${label}</span>`), `list ${lang} ${label}`);
+      const page = progressAt("efiled", lang, methods);
+      assert.equal(page.split(`<i></i>${label}</span>`).length - 1, 2, `progress ${lang} ${label}`);
+    }
+});
+
 test("a case e-filed before filing methods keeps its message", () => {
   for (const [lang, text] of [
     ["en", "Your return was e-filed. The IRS will confirm whether it is accepted."],
