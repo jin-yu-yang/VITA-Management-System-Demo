@@ -106,7 +106,8 @@
 
   <!-- rejection loop -->
   <path class="e" d="M840,1306 C1110,1306 1110,866 702,866"/>
-  <text class="lbl" x="1040" y="1090">Once fixed</text>
+  <text class="lbl" x="1040" y="1082">Return to signing</text>
+  <text class="lbl" x="1040" y="1100">(once fixed)</text>
 
   <!-- amendment loop -->
   <path class="e" d="M370,1306 H287"/>
@@ -137,15 +138,15 @@
     <rect x="220" y="1060" width="220" height="52" rx="10"/><text x="330" y="1078">Both e-filed</text><text class="sub" x="330" y="1097">(1040 / PA-40)</text>
     <rect x="500" y="1062" width="200" height="48" rx="10"/><text x="600" y="1086">E-filed &amp; paper</text>
     <rect x="760" y="1060" width="220" height="52" rx="10"/><text x="870" y="1078">Both paper</text><text class="sub" x="870" y="1097">(1040 / PA-40)</text>
-    <rect x="500" y="1172" width="200" height="48" rx="10"/><text x="600" y="1196">IRS acknowledged</text>
+    <rect x="500" y="1172" width="200" height="48" rx="10"/><text x="600" y="1190">IRS acknowledged</text><text class="sub" x="600" y="1208">(the wait at E-filed)</text>
     <rect x="370" y="1282" width="160" height="48" rx="10"/><text x="450" y="1306">Accepted</text>
   </g>
   <g class="n exit">
     <rect x="680" y="1282" width="160" height="48" rx="10"/><text x="760" y="1306">Rejected</text>
   </g>
   <g class="n amend">
-    <rect x="95" y="1282" width="190" height="48" rx="10"/><text x="190" y="1306">Amendment needed</text>
-    <rect x="95" y="842" width="190" height="48" rx="10"/><text x="190" y="866">Amendment in progress</text>
+    <rect x="95" y="1282" width="190" height="48" rx="10"/><text x="190" y="1297">Amendment needed</text><text class="sub" x="190" y="1316">(not built yet)</text>
+    <rect x="95" y="842" width="190" height="48" rx="10"/><text x="190" y="857">Amendment in progress</text><text class="sub" x="190" y="876">(not built yet)</text>
   </g>
 
   <!-- ================= Side panel ================= -->

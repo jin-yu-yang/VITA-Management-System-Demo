@@ -32,6 +32,7 @@ what that suite already verified, not a hoped-for behavior.
 | Documents | The "sample mileage record" is a fixed fictional filename, never a real upload | — |
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
+| Filing results | The IRS's and Pennsylvania's answers (accepted, rejected, mailed) are recorded by hand by an admin; nothing is sent to the IRS or Pennsylvania, and the refund sites are plain text | — |
 | Screening checks | — | A volunteer ticks what they confirmed (phone, documents, scope, and identity for an online client); the office records it |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
@@ -57,7 +58,7 @@ actions from anyone else regardless of what the screen shows). It has:
   `Waiting for a reviewer`, `Sent back for corrections`). The case keeps its Application ID and
   its bound client; only its recorded work changes. Use this to skip ahead without narrating every
   intermediate step.
-- **"Reset sample cases"**: rebuilds all six sample cases and the one sample assistance request
+- **"Reset sample cases"**: rebuilds all eight sample cases and the one sample assistance request
   from scratch, with fresh Application IDs. **Applications the class itself created are never
   touched, and neither is anyone's sign-in** — the reset only replaces `fixture=true` records.
 - **"Fill fictional details"**: fills a form with generated fictional answers (used both by an
@@ -71,7 +72,7 @@ application, and narrate the off-screen intake/tax-preparation work rather than 
 click live. Everything here is clearly labeled simulated on screen, and nothing about a checkpoint
 or a time jump is hidden from the audience.
 
-1. **Start on the staff board with six sample cases visible.** Point out `waiting_documents`
+1. **Start on the staff board with eight sample cases visible.** Point out `waiting_documents`
    (Alex is preparing it and is waiting on a document) or load the `admin_followup_needed`
    checkpoint directly to skip to "the office has a call to make."
 2. **Switch to Sam** and show the office board's "Follow-up needed" section: the task is assigned
@@ -98,7 +99,7 @@ coverage the automated story adds. Use this version for a longer walkthrough or 
 what the test suite actually proved.
 
 1. **Both windows sign in** with a real generated one-time code, verified through the real form.
-2. **The presenter resets the sample cases** so the board shows exactly six known cases.
+2. **The presenter resets the sample cases** so the board shows exactly eight known cases.
 3. **A new application is submitted** in the client window: sign in with an approved email, fill
    fictional details in one click, confirm, and submit. Its generated Application ID
    (`VT-XXXX-XXXX`) appears on the staff board in the other window/engine — nothing is copied by
@@ -198,7 +199,7 @@ What to say when a class member asks "what happens to my stuff":
   or public sign-up; an address not on the roster gets the same neutral response as anyone else
   (below), never an error that reveals whether it is or is not approved.
 - **Applications a class member creates are never touched by a presenter's reset.** A reset only
-  rebuilds the six `fixture=true` sample cases; anything a real signed-in person submitted keeps
+  rebuilds the eight `fixture=true` sample cases; anything a real signed-in person submitted keeps
   its Application ID, its stage, and its owner through any number of resets.
 - **A class member cannot act as staff**, no matter what is typed or clicked. The persona switcher
   is presenter-only UI; even if an applicant somehow reached a staff control, the server checks
