@@ -13,6 +13,8 @@ import {
   closeCaseDialogBody,
   markReadyToEfileDialogBody,
   markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
 } from "./admin-views.mjs";
 import {
   renderAddCaseV2,
@@ -444,6 +446,14 @@ export function dialog(state) {
   if (state.dialog === "mark-efiled") {
     title = "Mark e-filed?";
     body = markEfiledDialogBody(state);
+  }
+  if (state.dialog === "record-filing-result") {
+    title = "Record the filing result?";
+    body = recordFilingResultDialogBody(state);
+  }
+  if (state.dialog === "return-to-signing") {
+    title = "Return to signing?";
+    body = returnToSigningDialogBody(state);
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

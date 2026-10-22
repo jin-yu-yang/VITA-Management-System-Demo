@@ -213,11 +213,14 @@ const STAGE_TONES = Object.freeze({
   review_approved: "filing",
   ready_to_efile: "filing",
   efiled: "filing",
+  rejected: "amend",
+  accepted: "filing",
   closed: "neutral",
 });
 // Staff see the staff name (English); a client sees the label in their language.
-export const stageBadge = (stage, lang = "en", { audience = "staff" } = {}) => {
-  const described = describeStage(stage, lang);
+// A `record` lets E-filed and Accepted carry the case's filing method.
+export const stageBadge = (stage, lang = "en", { audience = "staff", record = null } = {}) => {
+  const described = describeStage(stage, lang, record);
   const text = audience === "client" ? described.clientLabel : described.label;
   return `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(text)}</span>`;
 };

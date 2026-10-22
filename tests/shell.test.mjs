@@ -1212,10 +1212,16 @@ test("app.mjs opens, closes and announces the two e-file confirmations", () => {
   // case in place (no navigation, so screening never starts from the queue),
   // and the dialog opens only once that case is the one loaded.
   const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
-  assert.match(opener, /case "open-mark-ready-to-efile":\s+case "open-mark-efiled": \{/);
+  assert.match(
+    opener,
+    /case "open-mark-ready-to-efile":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing": \{/,
+  );
   assert.match(opener, /const opener = describeFocus\(target\);/);
   assert.match(opener, /const caseId = target\.dataset\.caseId;/);
-  assert.match(opener, /target\.dataset\.action === "open-mark-efiled" \? "mark-efiled" : "mark-ready-to-efile"/);
+  assert.match(opener, /const name = CASE_DIALOGS\[target\.dataset\.action\];/);
+  assert.match(app, /"open-mark-efiled": "mark-efiled"/);
+  assert.match(app, /"open-record-filing-result": "record-filing-result"/);
+  assert.match(app, /"open-return-to-signing": "return-to-signing"/);
   assert.match(opener, /if \(caseId\) \{\s+controller\.dismissError\(\);\s+await controller\.selectCase\(caseId, \{ navigate: false \}\);\s+if \(controller\.getState\(\)\.savedCase\?\.id !== caseId\) break;\s+\}\s+openDialog\(name, null, opener\);/);
   // After a confirm the keyboard goes back to the opener, or, when its row has
   // left the queue, to the case title or the queue heading, whichever screen it is.
@@ -1223,6 +1229,11 @@ test("app.mjs opens, closes and announces the two e-file confirmations", () => {
   assert.match(app, /if \(type === "MARK_EFILED" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
   assert.match(app, /MARK_READY_TO_EFILE: "Marked ready to e-file\. The client was told\."/);
   assert.match(app, /MARK_EFILED: "Marked e-filed\. The client was told\."/);
+  // The two moves after E-filed open from the same places and announce themselves.
+  assert.match(app, /if \(type === "RECORD_FILING_RESULT" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /if \(type === "RETURN_TO_SIGNING" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /RECORD_FILING_RESULT: "The filing result is recorded\."/);
+  assert.match(app, /RETURN_TO_SIGNING: "The case is back at signing\."/);
   // The shared modal frame places both.
   assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
   assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);

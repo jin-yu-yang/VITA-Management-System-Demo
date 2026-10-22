@@ -6,6 +6,7 @@ import {
   caseSubmit,
   textarea,
   select,
+  input,
   fieldId,
   formatTime,
   confirmBody,
@@ -40,7 +41,9 @@ import {
   contactsPanel,
   logContactForm,
   taskContacts,
+  filingPanel,
 } from "./staff-views.mjs";
+import { waitingReturns, returnedToSigning, returnState } from "./domain.mjs";
 
 // The task's own list lives beside the Contacts tab, in staff-views.mjs, and
 // the office drawer takes it from here as it always took the attempt list.
@@ -103,7 +106,25 @@ const CLOSABLE_STAGES = Object.freeze([
   "review_ready",
   "reviewing",
   "corrections_required",
+  "rejected",
 ]);
+
+// A case e-filed before filing methods existed has none on file and is treated
+// as both returns e-filed (spec: "Admins record each return's filing result").
+const unrecordedMethods = (record) =>
+  record?.stage === "efiled" && !record?.federalMethod && !record?.stateMethod;
+
+const methodOf = (record, kind) =>
+  record?.[`${kind}Method`] ?? (unrecordedMethods(record) ? "efile" : null);
+
+// The returns filed and not yet answered, federal first.
+const waitingKinds = (record) =>
+  unrecordedMethods(record)
+    ? ["federal", "state"].filter((kind) => !record?.[`${kind}Result`])
+    : waitingReturns(record);
+
+const RETURN_WORDS = Object.freeze({ federal: "federal return", state: "Pennsylvania return" });
+const WAIT_FOR = Object.freeze({ federal: "the IRS's", state: "Pennsylvania's" });
 
 /**
  * What one office persona may do, on one case and on the related records the
@@ -172,6 +193,9 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stopped) return stopped;
     if (stage !== "review_approved")
       return refused("This is recorded once the reviewer has approved the return.");
+    // After a rejection the reviewer's conversation and the office's go-over
+    // were done the first time; the client only signs again.
+    if (returnedToSigning(record)) return allowed;
     // The reviewer's call with the client comes first, as the database checks.
     // A full case carries its reviews; a list row carries only reviewContactStatus.
     const call =
@@ -197,6 +221,32 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     return stage === "ready_to_efile"
       ? allowed
       : refused("This is recorded once the client has signed Form 8879.");
+  };
+
+  const recordFilingResult = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (stage === "efiled") return allowed;
+    if (stage === "rejected")
+      return waitingKinds(record).length
+        ? allowed
+        : refused("Every return already has its answer.");
+    return refused("This is recorded once the return is e-filed.");
+  };
+
+  const returnToSigning = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (stage !== "rejected")
+      return refused("This is offered once a return has been rejected.");
+    const waiting = waitingKinds(record);
+    if (!waiting.length) return allowed;
+    const kind = waiting[0];
+    return refused(
+      methodOf(record, kind) === "paper"
+        ? `Record when the ${RETURN_WORDS[kind]} is mailed before the return can go back to signing.`
+        : `Waiting for ${WAIT_FOR[kind]} answer before the return can go back to signing.`,
+    );
   };
 
   // Starting an assisted application needs no case at all.
@@ -274,6 +324,8 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     closeCase: closeCase(),
     markReadyToEfile: markReadyToEfile(),
     markEfiled: markEfiled(),
+    recordFilingResult: recordFilingResult(),
+    returnToSigning: returnToSigning(),
     assistedIntake: assistedIntake(),
     // One rule, two actions: the database checks the same capability, the same
     // assignment and the same open status for both.
@@ -551,6 +603,31 @@ function officeActionsPanel(record, rights, ui) {
         ? button(`${icon("check")} Mark e-filed…`, "open-mark-efiled", "primary", busy)
         : explain(rights.markEfiled)
     }`,
+  )}${when(
+    record.stage === "efiled" ||
+      (record.stage === "rejected" && rights.recordFilingResult.allowed),
+    `<h3>Filing result</h3><p class="field-note">Record what the IRS or Pennsylvania answered, or when a paper return was mailed. This can't be undone.</p>${
+      rights.recordFilingResult.allowed
+        ? button(
+            `${icon("check")} Record filing result…`,
+            "open-record-filing-result",
+            "primary",
+            busy,
+          )
+        : explain(rights.recordFilingResult)
+    }`,
+  )}${when(
+    record.stage === "rejected",
+    `<h3>Return to signing</h3><p class="field-note">When the fix is done, the case goes back to Ready to exit for the client to sign again. The client is told.</p>${
+      rights.returnToSigning.allowed
+        ? button(
+            `${icon("check")} Return to signing…`,
+            "open-return-to-signing",
+            "primary",
+            busy,
+          )
+        : explain(rights.returnToSigning)
+    }`,
   )}<h3>Close this case</h3><p class="field-note">Closing cancels the pending document requests and office tasks <strong>in ViTally</strong>. It does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority.</p>${
     rights.closeCase.allowed
       ? button(
@@ -617,7 +694,11 @@ export function markReadyToEfileDialogBody(state = {}) {
     )}</strong> as ready to e-file?`,
     note: {
       icon: "shield",
-      html: "The client will be told PCDC recorded that they signed Form 8879. This can't be undone.",
+      html: `${
+        returnedToSigning(record)
+          ? "This is the client's second signing: the return was corrected after a rejection. "
+          : ""
+      }The client will be told PCDC recorded that they signed Form 8879. This can't be undone.`,
     },
     form: {
       fields: `<label class="checkbox-row" for="${fieldId(
@@ -638,7 +719,83 @@ export function markReadyToEfileDialogBody(state = {}) {
   });
 }
 
-/** The e-filed confirmation: the client is told the return was e-filed. */
+// What the client is told when Mark e-filed lands (the migration's
+// `efiled_line`, and the history table of the case-lifecycle spec). The dialog
+// lists the line beside each choice, so the choice and its words are read together.
+const FILED_LINES = Object.freeze({
+  both_efile: "PCDC e-filed your return.",
+  efile_and_paper: "PCDC e-filed your federal return and mailed your Pennsylvania return.",
+  both_paper: "PCDC mailed your returns.",
+  federal: Object.freeze({
+    efile: "PCDC e-filed your federal return.",
+    paper: "PCDC mailed your federal return.",
+  }),
+  state: Object.freeze({
+    efile: "PCDC e-filed your Pennsylvania return.",
+    paper: "PCDC mailed your Pennsylvania return.",
+  }),
+});
+
+const RESULT_WORDS = Object.freeze({ accepted: "accepted", mailed: "mailed" });
+
+// One radio with the line the client will be told under it.
+const choice = (name, value, label, line, scope) =>
+  `<label class="checkbox-row" for="${fieldId(`${name}-${value}`, scope)}"><input type="radio" id="${fieldId(
+    `${name}-${value}`,
+    scope,
+  )}" name="${name}" value="${value}" required><span>${esc(label)}${
+    line ? `<br><small class="muted">The client will be told: ${esc(line)}</small>` : ""
+  }</span></label>`;
+
+// A first filing picks one of the three combinations PCDC uses. Filing again
+// offers only the returns that were rejected, each e-filed or on paper, and
+// lists every accepted or mailed return as already done.
+function efiledChoices(record) {
+  const rejected = ["federal", "state"].filter((kind) => returnState(record, kind) === "rejected");
+  if (!rejected.length)
+    return [
+      choice("filing-combination", "both_efile", "Both returns e-filed", FILED_LINES.both_efile, "efiled"),
+      choice(
+        "filing-combination",
+        "efile_and_paper",
+        "Federal e-filed, Pennsylvania on paper",
+        FILED_LINES.efile_and_paper,
+        "efiled",
+      ),
+      choice("filing-combination", "both_paper", "Both returns on paper", FILED_LINES.both_paper, "efiled"),
+    ].join("");
+  const done = ["federal", "state"]
+    .filter((kind) => !rejected.includes(kind))
+    .map((kind) => {
+      const word = RESULT_WORDS[returnState(record, kind)] ?? "answered";
+      return `<p class="field-note">${icon("check")} ${esc(
+        kind === "federal" ? "Federal return" : "Pennsylvania return",
+      )}: ${word}. Nothing to file again.</p>`;
+    })
+    .join("");
+  const groups = rejected
+    .map((kind) => {
+      const title = kind === "federal" ? "Federal return" : "Pennsylvania return";
+      const lines = rejected.length === 1;
+      return `<fieldset class="filing-choice"><legend>${title} (rejected): how was it filed this time?</legend>${choice(
+        `method-${kind}`,
+        "efile",
+        "E-filed",
+        lines ? FILED_LINES[kind].efile : "",
+        "efiled",
+      )}${choice(`method-${kind}`, "paper", "On paper", lines ? FILED_LINES[kind].paper : "", "efiled")}</fieldset>`;
+    })
+    .join("");
+  const both =
+    rejected.length === 2
+      ? `<p class="field-note">The client will be told: ${esc(FILED_LINES.both_efile)} (both e-filed), ${esc(
+          FILED_LINES.efile_and_paper,
+        )} (federal e-filed, Pennsylvania on paper) or ${esc(FILED_LINES.both_paper)} (both on paper).</p>`
+      : "";
+  return `${done}${groups}${both}`;
+}
+
+/** The e-filed confirmation: how each return was filed, and what the client is told. */
 export function markEfiledDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
@@ -647,10 +804,10 @@ export function markEfiledDialogBody(state = {}) {
     )}</strong> as e-filed?`,
     note: {
       icon: "shield",
-      html: "The client will be told their return was e-filed. This can't be undone.",
+      html: "The client will be told how their return was filed, in the words beside your choice. This can't be undone.",
     },
     form: {
-      fields: `<label class="checkbox-row" for="${fieldId(
+      fields: `${efiledChoices(record)}<label class="checkbox-row" for="${fieldId(
         "confirmed",
         "efiled",
       )}"><input type="checkbox" id="${fieldId(
@@ -661,6 +818,104 @@ export function markEfiledDialogBody(state = {}) {
     confirm: caseSubmit(
       `${icon("check")} Mark e-filed`,
       "MARK_EFILED",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+const FILED_AS = Object.freeze({ efile: "e-filed", paper: "on paper" });
+
+// One waiting return's answer: what it can be recorded as, the date, and, for
+// a rejection, the code. A paper return can only be mailed.
+function resultFields(record, kind) {
+  const method = methodOf(record, kind);
+  const options =
+    method === "paper"
+      ? [["mailed", "Mailed"]]
+      : [
+          ["accepted", "Accepted"],
+          ["rejected", "Rejected"],
+        ];
+  const title = kind === "federal" ? "Federal return" : "Pennsylvania return";
+  const id = fieldId(`result-${kind}`, "filing");
+  return `<fieldset class="filing-return"><legend>${title} (${FILED_AS[method] ?? "filed"})</legend><label class="field" for="${id}"><span>Answer</span><select id="${id}" name="result-${kind}"><option value="">No answer yet</option>${options
+    .map(([value, text]) => `<option value="${value}">${text}</option>`)
+    .join("")}</select></label>${input(
+    method === "paper" ? "Date mailed" : "Date of the answer",
+    `date-${kind}`,
+    "",
+    "date",
+    "",
+    "filing",
+  )}${when(
+    method !== "paper",
+    input("Reject code (only if rejected)", `code-${kind}`, "", "text", 'maxlength="40"', "filing"),
+  )}</fieldset>`;
+}
+
+/** The filing-result confirmation: what each waiting return is recorded as. */
+export function recordFilingResultDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Record the filing result for <strong>${esc(
+      record.reference ?? "this case",
+    )}</strong> for <strong>${esc(clientName(record))}</strong>?`,
+    note: {
+      icon: "shield",
+      html: "Each return is recorded as accepted or rejected (e-filed) or mailed (on paper), with its date. A return left on No answer yet stays as it is. A rejection moves the case to Rejected at once. This can't be undone.",
+    },
+    form: {
+      fields: `${waitingKinds(record)
+        .map((kind) => resultFields(record, kind))
+        .join("")}${textarea(
+        "Fix note (only when a return is rejected): who fixes it, and how",
+        "fix-note",
+        "",
+        'maxlength="1000" rows="3"',
+        "filing",
+      )}<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "filing-result",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "filing-result",
+      )}" name="confirmed" value="true" required><span>These results are correct.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Record the result`,
+      "RECORD_FILING_RESULT",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+/** The return-to-signing confirmation: the client is told to sign again. */
+export function returnToSigningDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Return <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> to signing?`,
+    note: {
+      icon: "shield",
+      html: "The client will be told: PCDC corrected your return. You need to sign it again. This can't be undone.",
+    },
+    form: {
+      fields: `<label class="checkbox-row" for="${fieldId(
+        "confirmed",
+        "return-to-signing",
+      )}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "return-to-signing",
+      )}" name="confirmed" value="true" required><span>The fix is done.</span></label>`,
+    },
+    confirm: caseSubmit(
+      `${icon("check")} Return to signing`,
+      "RETURN_TO_SIGNING",
       "primary full",
       state.busy ? "disabled" : "",
     ),
@@ -700,6 +955,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
         draftForOffice ? continueInAddCase(record, rights) : "",
         receiptPanel(record, person, view),
         officeActionsPanel(record, rights, view),
+        filingPanel(record),
         caseDetails(record),
       ].join(""),
     ],

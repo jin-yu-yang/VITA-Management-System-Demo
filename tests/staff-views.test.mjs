@@ -13,6 +13,7 @@ import {
   DEFAULT_BOARD_FILTERS,
   caseTabs,
   lifecycleBar,
+  filingPanel,
   caseHeader,
   caseDetails,
   CASE_TABS,
@@ -1186,7 +1187,7 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   const steps = (stage) =>
     [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
   assert.deepEqual(steps("preparing"), [
-    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo",
+    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo", "todo",
   ]);
   assert.deepEqual(steps("received")[0], "current");
   assert.deepEqual(steps("screening").slice(0, 3), ["done", "current", "todo"]);
@@ -1199,7 +1200,7 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   assert.doesNotMatch(lifecycleBar("draft"), /aria-current/);
   // Closed can happen at any stage, so nothing before it is claimed as done.
   assert.deepEqual(steps("closed"), [
-    "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "current",
+    "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "current",
   ]);
 });
 
@@ -1209,7 +1210,7 @@ test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
   const ready = steps("ready_to_efile");
   assert.deepEqual(ready.slice(0, 7), Array(7).fill("done"));
   assert.equal(ready[7], "current");
-  assert.deepEqual(ready.slice(8), ["todo", "todo"]);
+  assert.deepEqual(ready.slice(8), ["todo", "todo", "todo"]);
   const bar = lifecycleBar("ready_to_efile");
   assert.match(bar, /Ready to e-file/);
   assert.match(bar, /E-filed/);
@@ -1218,17 +1219,119 @@ test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
   assert.match(lifecycleBar("efiled"), /aria-current="step"[^>]*>[\s\S]*?E-filed/);
 });
 
+test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the method's name", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const labels = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  assert.deepEqual(labels({ stage: "efiled" }).slice(7), [
+    "Ready to e-file", "E-filed", "Accepted", "Closed",
+  ]);
+  // Rejected shows on the E-filed step, marked like Corrections on Filing in progress.
+  const rejected = steps({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" });
+  assert.deepEqual(rejected.slice(0, 8), Array(8).fill("done"));
+  assert.equal(rejected[8], "current amend");
+  assert.equal(rejected[9], "todo");
+  assert.equal(
+    labels({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" })[8],
+    "Rejected",
+  );
+  assert.match(
+    lifecycleBar({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" }),
+    /aria-current="step"/,
+  );
+  // Accepted is the current step; the rest before it are done.
+  const accepted = steps({ stage: "accepted", federalMethod: "efile", stateMethod: "efile" });
+  assert.equal(accepted[9], "current");
+  assert.deepEqual(accepted.slice(0, 9), Array(9).fill("done"));
+  // The method's staff name; a case e-filed before methods keeps "E-filed".
+  assert.equal(
+    labels({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" })[8],
+    "E-filed &amp; paper",
+  );
+  assert.equal(labels({ stage: "efiled", federalMethod: null, stateMethod: null })[8], "E-filed");
+  assert.equal(labels({ stage: "efiled" })[8], "E-filed");
+});
+
 test("the stage work sentences name who does the next thing", () => {
   assert.equal(stageWork("screening").work, "The office is screening this application.");
   assert.equal(stageWork("received").work, "The office starts screening when an admin opens the case.");
   assert.equal(stageWork("ready_to_efile").work, "The office e-files the return.");
-  assert.equal(stageWork("efiled").work, "The return is e-filed. Nothing more is needed here.");
+  assert.equal(
+    stageWork("efiled").work,
+    "The office records the answers from the IRS and Pennsylvania.",
+  );
+  assert.equal(
+    stageWork("rejected").work,
+    "A return was rejected. The office arranges the fix and contacts the client.",
+  );
+  assert.equal(
+    stageWork("accepted").work,
+    "The returns are accepted or mailed. Nothing more is needed here.",
+  );
   assert.equal(
     stageWork("review_approved").work,
     "The reviewer records the conversation with the client; the office records the client's signature.",
   );
-  for (const stage of ["received", "screening", "ready_to_efile", "efiled"])
+  for (const stage of ["received", "screening", "ready_to_efile", "efiled", "rejected", "accepted"])
     assert.equal(stageWork(stage).needs, null, stage);
+});
+
+const ATTEMPTS = [
+  {
+    attempt: 2,
+    filedAt: "2026-10-12T15:00:00.000Z",
+    returns: [
+      { returnKind: "state", method: "efile", result: null, answeredOn: null, rejectCode: null },
+    ],
+    notes: [],
+  },
+  {
+    attempt: 1,
+    filedAt: "2026-10-01T15:00:00.000Z",
+    returns: [
+      { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-03", rejectCode: null },
+      { returnKind: "state", method: "efile", result: "rejected", answeredOn: "2026-10-04", rejectCode: "PA-INV-7" },
+    ],
+    notes: [
+      { note: "Preparer to correct the SSN", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-05T14:00:00.000Z" },
+      { note: "<b>x</b> Client to bring the card", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-06T14:00:00.000Z" },
+    ],
+  },
+];
+
+test("the Filing panel shows each filing, newest first, with its notes oldest first", () => {
+  const html = filingPanel(staffCase({ stage: "rejected", filingAttempts: ATTEMPTS }));
+  assert.match(html, /<h2[^>]*>Filing<\/h2>/);
+  assert.ok(html.indexOf("Filing 2") < html.indexOf("Filing 1"));
+  assert.match(html, /PA-INV-7/);
+  assert.match(html, /2026-10-03/);
+  assert.match(html, /Accepted/);
+  assert.match(html, /Rejected/);
+  assert.match(html, /Waiting for an answer/);
+  assert.ok(html.indexOf("Preparer to correct the SSN") < html.indexOf("Client to bring the card"));
+  assert.match(html, /Sam/);
+  // A fix note is escaped, never parsed (Review Focus 3).
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt; Client to bring the card/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+test("the Filing panel renders nothing before E-filed, and reads a client-shaped record", () => {
+  assert.equal(filingPanel(staffCase({ stage: "ready_to_efile" })), "");
+  assert.equal(filingPanel(staffCase({ stage: "preparing" })), "");
+  // The key is absent on a client record: it must not throw.
+  const bare = filingPanel(staffCase({ stage: "efiled", federalMethod: "efile", stateMethod: "efile" }));
+  assert.match(bare, /Filing/);
+  assert.match(bare, /Waiting for an answer/);
+});
+
+test("the staff case page puts the Filing panel after the next step", () => {
+  const html = renderStaffCase(
+    staffCase({ stage: "rejected", filingAttempts: ATTEMPTS }),
+    ALEX,
+  );
+  assert.ok(html.indexOf('id="next-step-title"') < html.indexOf(">Filing</h2>"));
+  assert.match(html, /Preparer to correct the SSN/);
 });
 
 test("the new actions have their history sentences", () => {
@@ -1239,6 +1342,11 @@ test("the new actions have their history sentences", () => {
     historySentence({ action: "MARK_EFILED", actorName: "Sam" }),
     "Sam recorded that the return was e-filed.",
   );
+});
+
+test("the filing actions have their history sentences", () => {
+  assert.equal(EVENT_SENTENCES.RECORD_FILING_RESULT, "recorded the filing result");
+  assert.equal(EVENT_SENTENCES.RETURN_TO_SIGNING, "returned the case to signing");
 });
 
 test("the case header names the case, its stage and its people", () => {

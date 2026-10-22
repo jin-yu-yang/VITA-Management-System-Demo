@@ -142,7 +142,15 @@ const STAGE_WORK = Object.freeze({
     needs: "review",
   },
   ready_to_efile: { work: "The office e-files the return.", needs: null },
-  efiled: { work: "The return is e-filed. Nothing more is needed here.", needs: null },
+  efiled: { work: "The office records the answers from the IRS and Pennsylvania.", needs: null },
+  rejected: {
+    work: "A return was rejected. The office arranges the fix and contacts the client.",
+    needs: null,
+  },
+  accepted: {
+    work: "The returns are accepted or mailed. Nothing more is needed here.",
+    needs: null,
+  },
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
 });
 const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null });
@@ -769,19 +777,31 @@ const LIFECYCLE = Object.freeze([
   "review_approved",
   "ready_to_efile",
   "efiled",
+  "accepted",
   "closed",
 ]);
 
-export function lifecycleBar(stage) {
+// The record, so that E-filed and Accepted carry the filing method's staff
+// name. A bare stage name still works (a list row, a test).
+export function lifecycleBar(subject) {
+  const record = typeof subject === "string" ? { stage: subject } : (subject ?? {});
+  const stage = record.stage;
+  // Corrections loop back into preparation; a rejection loops back into
+  // filing. Each shows on the step it returns to, marked as amendment.
   const correcting = stage === "corrections_required";
-  const at = LIFECYCLE.indexOf(correcting ? "preparing" : stage);
+  const rejected = stage === "rejected";
+  const at = LIFECYCLE.indexOf(correcting ? "preparing" : rejected ? "efiled" : stage);
   return `<ol class="lifecycle" aria-label="Where this case is">${LIFECYCLE.map((step, index) => {
     // A case can be closed from any stage, so a closed case marks no step as
     // done; the History tab shows the path it took.
     const state =
       at < 0 ? "todo" : index === at ? "current" : index < at && stage !== "closed" ? "done" : "todo";
-    const amend = correcting && step === "preparing";
-    const label = describeStage(amend ? "corrections_required" : step).label;
+    const amend = (correcting && step === "preparing") || (rejected && step === "efiled");
+    const label = describeStage(
+      amend ? (correcting ? "corrections_required" : "rejected") : step,
+      "en",
+      record,
+    ).label;
     return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${index === at ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
   }).join("")}</ol>`;
 }
@@ -790,14 +810,14 @@ const namePill = (role, id, name, personId) =>
   `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
 
 export function caseHeader(record, person) {
-  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>${stageBadge(record.stage)}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record.stage)}<p class="field-note">${esc(
+  return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>${stageBadge(record.stage, "en", { record })}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record)}<p class="field-note">${esc(
     person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
   )}</p></section>`;
 }
 
 /** The facts the old header listed, kept as rows the story and office read. */
 export function caseDetails(record) {
-  const described = describeStage(record.stage);
+  const described = describeStage(record.stage, "en", record);
   return `<section class="panel case-details" aria-labelledby="details-title"><div class="section-head"><h2 id="details-title">Case details</h2></div>${detailRow("Stage", described.label)}${detailRow(
     "Preparation version",
     record.preparationVersion ? `Version ${record.preparationVersion}` : "Not prepared yet",
@@ -816,6 +836,71 @@ export function caseDetails(record) {
       ? `${formatTime(record.lastRemindedAt)}${record.lastRemindedByName ? ` by ${record.lastRemindedByName}` : ""}`
       : "Not reminded yet",
   )}${detailRow("Updated", record.updatedAt ? formatTime(record.updatedAt) : "No updates yet")}</section>`;
+}
+
+// ---------------------------------------------------------------------------
+// The Filing panel (change add-post-efiling-stages): every staff member who can
+// open a case reads each filing's returns and its fix notes. A client record
+// carries no `filingAttempts` at all, so the key is always read with a default.
+// ---------------------------------------------------------------------------
+
+const FILED_STAGES = Object.freeze(["efiled", "rejected", "accepted"]);
+const RETURN_NAMES = Object.freeze({ federal: "Federal return", state: "Pennsylvania return" });
+const METHOD_NAMES = Object.freeze({ efile: "E-filed", paper: "Paper" });
+const RESULT_NAMES = Object.freeze({ accepted: "Accepted", rejected: "Rejected", mailed: "Mailed" });
+
+function filingReturnRow(entry) {
+  const method = METHOD_NAMES[entry.method] ?? "—";
+  const answer = entry.result
+    ? RESULT_NAMES[entry.result]
+    : entry.method === "paper"
+      ? "Waiting for the mailing to be recorded"
+      : "Waiting for an answer";
+  const parts = [method, answer];
+  if (entry.answeredOn) parts.push(entry.answeredOn);
+  if (entry.rejectCode) parts.push(`Reject code ${entry.rejectCode}`);
+  return detailRow(RETURN_NAMES[entry.returnKind] ?? "Return", parts.join(" · "));
+}
+
+// With no recorded attempts (a list-shaped record, or a case e-filed before
+// filing methods existed), the returns come from the case itself.
+function currentReturns(record) {
+  const staged = record.stage === "efiled" && !record.federalMethod && !record.stateMethod;
+  return ["federal", "state"]
+    .map((kind) => {
+      const method = record[`${kind}Method`] ?? (staged ? "efile" : null);
+      if (!method) return null;
+      const result = record[`${kind}Result`] ?? null;
+      return { returnKind: kind, method, result, answeredOn: null, rejectCode: null };
+    })
+    .filter(Boolean);
+}
+
+export function filingPanel(record) {
+  const attempts = record?.filingAttempts ?? [];
+  if (!attempts.length && !FILED_STAGES.includes(record?.stage)) return "";
+  const shown = attempts.length
+    ? attempts
+    : [{ attempt: 1, filedAt: null, returns: currentReturns(record), notes: [] }];
+  const body = shown
+    .map((filing) => {
+      const notes = (filing.notes ?? [])
+        .map(
+          (entry) =>
+            `<li class="fix-note"><p>${esc(entry.note)}</p><small class="muted">${esc(
+              entry.recordedByName ?? UNKNOWN_PERSON,
+            )}${entry.recordedAt ? ` · ${esc(formatTime(entry.recordedAt))}` : ""}</small></li>`,
+        )
+        .join("");
+      return `<div class="filing-attempt"><h3>Filing ${esc(filing.attempt)}${
+        filing.filedAt ? ` <small class="muted">filed ${esc(formatTime(filing.filedAt))}</small>` : ""
+      }</h3>${(filing.returns ?? []).map(filingReturnRow).join("")}${when(
+        notes,
+        `<h4>Fix notes</h4><ul class="fix-notes">${notes}</ul>`,
+      )}</div>`;
+    })
+    .join("");
+  return `<section class="panel filing-panel" aria-labelledby="filing-title"><div class="section-head"><h2 id="filing-title">Filing</h2></div>${body}</section>`;
 }
 
 // The answers, read by step and sub-step.
@@ -1965,7 +2050,7 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
       "overview",
       "Overview",
       staffShaped
-        ? `${nextStep(record, rights, view)}${caseDetails(record)}${preparationPanel(record)}${reviewPanel(record)}`
+        ? `${nextStep(record, rights, view)}${filingPanel(record)}${caseDetails(record)}${preparationPanel(record)}${reviewPanel(record)}`
         : `${caseDetails(record)}${notLoaded}`,
     ],
     [

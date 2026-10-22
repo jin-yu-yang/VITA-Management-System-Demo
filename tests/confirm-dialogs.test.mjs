@@ -5,6 +5,8 @@ import {
   closeCaseDialogBody,
   markReadyToEfileDialogBody,
   markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
 } from "../src/admin-views.mjs";
 import { correctionsDialogBody } from "../src/staff-views.mjs";
 import { resetDialogBody, checkpointDialogBody } from "../src/presenter-views.mjs";
@@ -21,6 +23,8 @@ const render = {
   closeCaseDialogBody,
   markReadyToEfileDialogBody,
   markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
   correctionsDialogBody,
   resetDialogBody,
   checkpointDialogBody,
