@@ -239,6 +239,232 @@ test("mark e-filed records the methods", async (t) => {
       assert.equal(await efiled(null, "paper", true), "PCDC mailed your Pennsylvania return.");
       assert.equal(await efiled("efile", "paper", false), "PCDC e-filed your federal return and mailed your Pennsylvania return.");
       assert.equal(await efiled("paper", "paper", false), "PCDC mailed your returns.");
+      // Second filings of one return, and the combinations no filing produces.
+      assert.equal(await efiled("efile", null, true), "PCDC e-filed your federal return.");
+      assert.equal(await efiled(null, "paper", true), "PCDC mailed your Pennsylvania return.");
+      assert.equal(await efiled("paper", "efile", false), null);
+      assert.equal(await efiled(null, null, false), null);
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+// Task 4: Return to signing, the second filing, and Close.
+test("return to signing and file again", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const nyDay = async () =>
+      (await f.sql("select (now() at time zone 'America/New_York')::date::text d")).rows[0].d;
+    const act = (caseId, type, payload, who = f.sam, client = f.presenter) =>
+      f.act(client, caseId, who, type, payload);
+    const columns = async (caseId) =>
+      (
+        await f.sql(
+          "select stage, federal_method, state_method, federal_result, state_result from public.cases where id=$1",
+          [caseId],
+        )
+      ).rows[0];
+    const lastMessage = async (caseId) => (await f.clientMessages(caseId)).at(-1);
+    // A case filed with `methods`, with the given results recorded.
+    const answeredCase = async (methods, results, opts = {}) => {
+      const caseId = await f.approvedCase(opts);
+      // A "no" approval opens the office's go-over follow-up; signing waits for it.
+      for (const task of (
+        await f.sql(
+          "select id, assignee_person_id from public.admin_followups where case_id=$1 and purpose='go_over_return' and status='open'",
+          [caseId],
+        )
+      ).rows)
+        await f.act(f.presenter, caseId, task.assignee_person_id, "RESOLVE_FOLLOWUP", {
+          followupId: task.id,
+          outcome: "reached",
+          note: "Fictional: went over the return by phone.",
+        });
+      await act(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods });
+      const day = await nyDay();
+      const body = {};
+      for (const [kind, result] of Object.entries(results))
+        body[kind] = result === "rejected" ? { result, date: day, code: "C1" } : { result, date: day };
+      await act(caseId, "RECORD_FILING_RESULT", { confirmed: true, results: body });
+      return caseId;
+    };
+    const back = async (caseId) => {
+      await act(caseId, "RETURN_TO_SIGNING", { confirmed: true });
+      await act(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+    };
+
+    await t.test("return to signing waits for every answer", async () => {
+      const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected" });
+      await assert.rejects(() => act(caseId, "RETURN_TO_SIGNING", { confirmed: true }), rejected("INVALID_TRANSITION"));
+      assert.equal((await columns(caseId)).stage, "rejected");
+      await act(caseId, "RECORD_FILING_RESULT", {
+        confirmed: true,
+        results: { state: { result: "accepted", date: await nyDay() } },
+      });
+      await act(caseId, "RETURN_TO_SIGNING", { confirmed: true });
+      assert.deepEqual(await columns(caseId), {
+        stage: "review_approved",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: "rejected",
+        state_result: "accepted",
+      });
+      assert.equal(await lastMessage(caseId), "PCDC corrected your return. You need to sign it again.");
+      for (const payload of [{}, { confirmed: false }, { confirmed: true, extra: 1 }])
+        await assert.rejects(() => act(caseId, "RETURN_TO_SIGNING", payload), rejected("VALIDATION"));
+    });
+
+    await t.test("only from rejected", async () => {
+      const ready = await f.approvedCase();
+      await assert.rejects(() => act(ready, "RETURN_TO_SIGNING", { confirmed: true }), rejected("INVALID_TRANSITION"));
+      const accepted = await answeredCase(
+        { federal: "efile", state: "efile" },
+        { federal: "accepted", state: "accepted" },
+      );
+      await assert.rejects(
+        () => act(accepted, "RETURN_TO_SIGNING", { confirmed: true }),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+
+    await t.test("the second signing is not held up", async () => {
+      const caseId = await answeredCase(
+        { federal: "efile", state: "efile" },
+        { federal: "rejected", state: "accepted" },
+        { wentOver: false },
+      );
+      // The go-over follow-up of the first signing, resolved before the first MARK_READY_TO_EFILE.
+      await act(caseId, "RETURN_TO_SIGNING", { confirmed: true });
+      await act(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+      assert.equal((await columns(caseId)).stage, "ready_to_efile");
+    });
+
+    await t.test("filing again", async () => {
+      const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" });
+      await back(caseId);
+      await assert.rejects(
+        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } }),
+        rejected("VALIDATION"),
+      );
+      for (const methods of [{}, { federal: "paper" }, { federal: "efile", state: "paper" }])
+        await assert.rejects(
+          () => act(caseId, "MARK_EFILED", { confirmed: true, methods }),
+          rejected("VALIDATION"),
+          JSON.stringify(methods),
+        );
+      assert.equal((await columns(caseId)).stage, "ready_to_efile");
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods: { state: "paper" } });
+      assert.deepEqual(await columns(caseId), {
+        stage: "efiled",
+        federal_method: "efile",
+        state_method: "paper",
+        federal_result: "accepted",
+        state_result: null,
+      });
+      assert.equal(await lastMessage(caseId), "PCDC mailed your Pennsylvania return.");
+      const attempts = await f.sql(
+        "select attempt, filed_by from public.filing_attempts where case_id=$1 order by attempt",
+        [caseId],
+      );
+      assert.deepEqual(attempts.rows, [
+        { attempt: 1, filed_by: f.sam },
+        { attempt: 2, filed_by: f.sam },
+      ]);
+      const returns = await f.sql(
+        "select attempt, return_kind, method, result from public.filing_returns where case_id=$1 order by attempt, return_kind",
+        [caseId],
+      );
+      assert.deepEqual(returns.rows, [
+        { attempt: 1, return_kind: "federal", method: "efile", result: "accepted" },
+        { attempt: 1, return_kind: "state", method: "efile", result: "rejected" },
+        { attempt: 2, return_kind: "state", method: "paper", result: null },
+      ]);
+      assert.deepEqual((await f.readStaffCase(caseId)).internalHistory.at(-1).detail, {
+        attempt: 2,
+        methods: { state: "paper" },
+      });
+      // The refiled return is answered like any other, in the new attempt.
+      await act(caseId, "RECORD_FILING_RESULT", {
+        confirmed: true,
+        results: { state: { result: "mailed", date: await nyDay() } },
+      });
+      assert.equal((await columns(caseId)).stage, "accepted");
+    });
+
+    await t.test("both returns rejected are filed together", async () => {
+      const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected", state: "rejected" });
+      await back(caseId);
+      await assert.rejects(
+        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "efile" } }),
+        rejected("VALIDATION"),
+      );
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+      assert.deepEqual(await columns(caseId), {
+        stage: "efiled",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: null,
+        state_result: null,
+      });
+      assert.equal(await lastMessage(caseId), "PCDC e-filed your return.");
+    });
+
+    for (const [name, first, results, methods, line] of [
+      ["federal e-file", { federal: "efile", state: "efile" }, { federal: "rejected", state: "accepted" }, { federal: "efile" }, "PCDC e-filed your federal return."],
+      ["federal paper", { federal: "efile", state: "paper" }, { federal: "rejected", state: "mailed" }, { federal: "paper" }, "PCDC mailed your federal return."],
+      ["state e-file", { federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" }, { state: "efile" }, "PCDC e-filed your Pennsylvania return."],
+      ["state paper", { federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" }, { state: "paper" }, "PCDC mailed your Pennsylvania return."],
+    ])
+      await t.test(`second filing line: ${name}`, async () => {
+        const caseId = await answeredCase(first, results);
+        await back(caseId);
+        await act(caseId, "MARK_EFILED", { confirmed: true, methods });
+        assert.equal(await lastMessage(caseId), line);
+      });
+
+    await t.test("an unused combination on refiling", async () => {
+      const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected", state: "accepted" });
+      await back(caseId);
+      await assert.rejects(
+        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "paper" } }),
+        rejected("VALIDATION"),
+      );
+      assert.deepEqual(await columns(caseId), {
+        stage: "ready_to_efile",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: "rejected",
+        state_result: "accepted",
+      });
+      const n = await f.sql("select count(*)::int n from public.filing_attempts where case_id=$1", [caseId]);
+      assert.equal(n.rows[0].n, 1);
+    });
+
+    await t.test("close", async () => {
+      const closing = { confirmed: true, reason: "Fictional: the client withdrew." };
+      const rej = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected" });
+      await act(rej, "CLOSE_CASE", closing);
+      assert.equal((await columns(rej)).stage, "closed");
+      const acc = await answeredCase({ federal: "efile", state: "efile" }, { federal: "accepted", state: "accepted" });
+      await assert.rejects(() => act(acc, "CLOSE_CASE", closing), rejected("INVALID_TRANSITION"));
+      assert.equal((await columns(acc)).stage, "accepted");
+    });
+
+    await t.test("admin only", async () => {
+      const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected", state: "accepted" });
+      for (const [client, who] of [
+        [f.presenter, f.alex],
+        [f.presenter, f.morgan],
+        [f.presenter, null],
+        [f.applicantA, null],
+      ])
+        await assert.rejects(
+          () => act(caseId, "RETURN_TO_SIGNING", { confirmed: true }, who, client),
+          rejected("FORBIDDEN"),
+        );
+      assert.equal((await columns(caseId)).stage, "rejected");
     });
   } finally {
     await f.close();

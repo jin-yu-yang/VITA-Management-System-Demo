@@ -20,15 +20,15 @@
 --   | vitally_private.check_payload              | 034                       | MARK_EFILED carries the method of each return (split from MARK_READY_TO_EFILE); new RECORD_FILING_RESULT branch |
 --   | vitally_private.fixture_history            | 034                       | (later task) |
 --   | vitally_private.apply_fixture_scenario     | 033                       | (later task) |
---   | vitally_private.act_mark_efiled            | 032                       | a first filing records both methods, attempt 1 and its two returns (more in later sections) |
---   | vitally_private.act_close_case             | 032                       | (later task) |
---   | vitally_private.check_operation_authority  | 032                       | RECORD_FILING_RESULT joins the admin-only group (more in later sections) |
---   | public.vitally_apply_action                | 032                       | dispatches RECORD_FILING_RESULT (more in later sections) |
+--   | vitally_private.act_mark_efiled            | 032                       | a first filing records both methods, attempt 1 and its two returns; a filing after Return to signing refiles the rejected returns as the next attempt |
+--   | vitally_private.act_close_case             | 032                       | a Rejected case can be closed (Accepted cannot) |
+--   | vitally_private.check_operation_authority  | 032                       | RECORD_FILING_RESULT and RETURN_TO_SIGNING join the admin-only group (more in later sections) |
+--   | public.vitally_apply_action                | 032                       | dispatches RECORD_FILING_RESULT and RETURN_TO_SIGNING (more in later sections) |
 --   | vitally_private.fixture_keys               | 009                       | (later task) |
 --
 -- New functions: vitally_private.filing_line and vitally_private.efiled_line
 -- (the client sentences for the filing results and the Mark e-filed line), and
--- vitally_private.act_record_filing_result.
+-- vitally_private.act_record_filing_result and vitally_private.act_return_to_signing.
 --
 -- Written to be safe to apply again on a local test stack whose
 -- schema_migrations row for this file was deleted during development: every
@@ -304,7 +304,7 @@ begin
     or not vitally_private.payload_text(p_payload,'reason',1000) then
     raise sqlstate 'VT007' using message='VALIDATION';
    end if;
-  when 'MARK_READY_TO_EFILE' then -- 035
+  when 'MARK_READY_TO_EFILE','RETURN_TO_SIGNING' then -- 035
    if vitally_private.payload_keys(p_payload)<>array['confirmed'] -- 032
     or p_payload->'confirmed'<>'true'::jsonb then -- 032
     raise sqlstate 'VT007' using message='VALIDATION'; -- 032
@@ -412,16 +412,44 @@ revoke all on function vitally_private.efiled_line(text,text,boolean) from publi
 create or replace function vitally_private.act_mark_efiled(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_federal text; v_state text; -- 035
+ v_rejected text[]; -- 035
+ v_attempt int; -- 035
 begin
  if p_case.stage<>'ready_to_efile' then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- -- 035: a first filing (no methods yet) names both returns, in a used pair.
- -- (A filing after Return to signing is a later section's.)
  v_federal:=p_payload->'methods'->>'federal'; -- 035
  v_state:=p_payload->'methods'->>'state'; -- 035
- if p_case.federal_method is not null or p_case.state_method is not null -- 035
-  or v_federal is null or v_state is null or (v_federal='paper' and v_state='efile') then -- 035
+ -- 035: a case that already has methods is back from Return to signing: a second
+ -- filing names exactly the rejected returns; the others keep their method and
+ -- answer.
+ if p_case.federal_method is not null or p_case.state_method is not null then -- 035
+  v_rejected:=array(select x.k from (values ('federal',p_case.federal_result),('state',p_case.state_result)) x(k,r) where x.r='rejected' order by x.k); -- 035
+  if cardinality(v_rejected)=0 or vitally_private.payload_keys(p_payload->'methods')<>v_rejected then -- 035
+   raise sqlstate 'VT007' using message='VALIDATION'; -- 035
+  end if; -- 035
+  -- The pair that results must be a used one. -- 035
+  if coalesce(v_federal,p_case.federal_method)='paper' and coalesce(v_state,p_case.state_method)='efile' then -- 035
+   raise sqlstate 'VT007' using message='VALIDATION'; -- 035
+  end if; -- 035
+  select max(a.attempt)+1 into v_attempt from public.filing_attempts a where a.case_id=p_case.id; -- 035
+  update public.cases set stage='efiled', -- 035
+   federal_method=coalesce(v_federal,federal_method),state_method=coalesce(v_state,state_method), -- 035
+   federal_result=case when v_federal is not null then null else federal_result end, -- 035
+   state_result=case when v_state is not null then null else state_result end -- 035
+   where id=p_case.id; -- 035
+  insert into public.filing_attempts(workspace_id,case_id,attempt,filed_by) values(p_case.workspace_id,p_case.id,v_attempt,p_person.id); -- 035
+  if v_federal is not null then -- 035
+   insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method) values(p_case.workspace_id,p_case.id,v_attempt,'federal',v_federal); -- 035
+  end if; -- 035
+  if v_state is not null then -- 035
+   insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method) values(p_case.workspace_id,p_case.id,v_attempt,'state',v_state); -- 035
+  end if; -- 035
+  return jsonb_build_object('detail',jsonb_build_object('attempt',v_attempt,'methods',p_payload->'methods'), -- 035
+   'message',vitally_private.efiled_line(v_federal,v_state,true)); -- 035
+ end if; -- 035
+ -- 035: a first filing names both returns, in a used pair.
+ if v_federal is null or v_state is null or (v_federal='paper' and v_state='efile') then -- 035
   raise sqlstate 'VT007' using message='VALIDATION'; -- 035
  end if; -- 035
  update public.cases set stage='efiled',federal_method=v_federal,state_method=v_state where id=p_case.id; -- 035
@@ -431,6 +459,47 @@ begin
  return jsonb_build_object('detail',jsonb_build_object('attempt',1,'methods',jsonb_build_object('federal',v_federal,'state',v_state)), -- 035
   'message',vitally_private.efiled_line(v_federal,v_state,false)); -- 035
 end; $$;
+
+-- ---------------------------------------------------------------------------
+-- 8b. act_return_to_signing: a rejected case, with every return answered, goes
+-- back to Review approved so the client can sign again. Methods and results
+-- stay as they are: the second filing reads them.
+
+create or replace function vitally_private.act_return_to_signing(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ if p_case.stage<>'rejected'
+  or (p_case.federal_method is not null and p_case.federal_result is null)
+  or (p_case.state_method is not null and p_case.state_result is null) then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.cases set stage='review_approved' where id=p_case.id;
+ return jsonb_build_object('detail','{}'::jsonb,
+  'message','PCDC corrected your return. You need to sign it again.');
+end; $$;
+
+-- ---------------------------------------------------------------------------
+-- 8c. act_close_case, verbatim from 032 with rejected in the closable stages
+-- (accepted is not).
+
+create or replace function vitally_private.act_close_case(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ if not (p_case.stage in ('received','screening','preparation_ready','preparing','review_ready','reviewing','corrections_required','rejected') -- 035
+   or (p_case.stage='draft' and p_case.owner_user_id is null)) then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.cases set stage='closed' where id=p_case.id;
+ update public.document_requests set status='cancelled',updated_at=now()
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status in ('open','awaiting_verification');
+ update public.admin_followups set status='cancelled'
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='open';
+ -- The reason is staff context: case_events is presenter-only, and the client
+ -- message says plainly that an office decision, not a filing, has changed.
+ return jsonb_build_object('detail',jsonb_build_object('reason',p_payload->>'reason'),
+  'message','Your application was closed by the office. This does not change any return filed elsewhere. Contact PCDC if you have questions.');
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 9. act_record_filing_result: an admin records the answer of one or both
@@ -543,7 +612,7 @@ begin
    elsif not ('admin'=any(v_person.capabilities)) then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
-  when 'VERIFY_INTAKE','REMIND','CLOSE_CASE','START_SCREENING','MARK_READY_TO_EFILE','MARK_EFILED','RECORD_FILING_RESULT' then -- 035
+  when 'VERIFY_INTAKE','REMIND','CLOSE_CASE','START_SCREENING','MARK_READY_TO_EFILE','MARK_EFILED','RECORD_FILING_RESULT','RETURN_TO_SIGNING' then -- 035
    if p_person_id is null or not ('admin'=any(v_person.capabilities)) then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
@@ -660,6 +729,7 @@ begin
   when 'MARK_READY_TO_EFILE' then v_outcome=vitally_private.act_mark_ready_to_efile(v_member,v_case,v_person,p_payload); -- 032
   when 'MARK_EFILED' then v_outcome=vitally_private.act_mark_efiled(v_member,v_case,v_person,p_payload); -- 032
   when 'RECORD_FILING_RESULT' then v_outcome=vitally_private.act_record_filing_result(v_member,v_case,v_person,p_payload); -- 035
+  when 'RETURN_TO_SIGNING' then v_outcome=vitally_private.act_return_to_signing(v_member,v_case,v_person,p_payload); -- 035
   when 'UPDATE_CONTACT' then v_outcome=vitally_private.act_update_contact(v_member,v_case,v_person,p_payload);
   when 'RECORD_MATERIALS' then v_outcome=vitally_private.act_record_materials(v_member,v_case,v_person,p_payload);
   when 'SET_DOCUMENT_CARD' then v_outcome=vitally_private.act_set_document_card(v_member,v_case,v_person,p_payload);
