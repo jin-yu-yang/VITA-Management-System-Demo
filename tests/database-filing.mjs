@@ -1,0 +1,98 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createDatabaseFixture } from "./support/database-fixture.mjs";
+
+// Migration 035: the stages after E-filed (rejected, accepted), the cases'
+// filing columns, and the three staff-only filing tables.
+
+test("filing results schema against real Supabase", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const setStage = (caseId, stage) =>
+      f.sql("update public.cases set stage=$2 where id=$1", [caseId, stage]);
+    const setColumns = (caseId, set) =>
+      f.sql(`update public.cases set ${set} where id=$1`, [caseId]);
+
+    await t.test("the stage check accepts rejected and accepted", async () => {
+      const { caseId } = await f.submittedClientCase();
+      await setStage(caseId, "rejected");
+      await setStage(caseId, "accepted");
+      await assert.rejects(() => setStage(caseId, "acknowledged"));
+    });
+
+    await t.test("method and result constraints", async () => {
+      const { caseId } = await f.submittedClientCase();
+      for (const set of [
+        "federal_method='paper', state_method='efile'",
+        "federal_method='efile'",
+        "state_method='efile'",
+        "federal_method='efile', state_method='efile', federal_result='mailed'",
+        "federal_method='paper', state_method='paper', federal_result='accepted'",
+        "federal_result='accepted'",
+        "state_result='rejected'",
+      ])
+        await assert.rejects(() => setColumns(caseId, set), set);
+      for (const set of [
+        "federal_method='efile', state_method='efile'",
+        "federal_method='efile', state_method='paper'",
+        "federal_method='paper', state_method='paper'",
+        "federal_method='paper', state_method='paper', federal_result='mailed', state_result='mailed'",
+        "federal_method='efile', state_method='efile', federal_result='accepted', state_result='rejected'",
+      ])
+        await setColumns(caseId, set);
+    });
+
+    await t.test("filing tables are staff-only", async () => {
+      const { caseId } = await f.submittedClientCase();
+      const inserts = {
+        filing_attempts:
+          "insert into public.filing_attempts(workspace_id,case_id,attempt,filed_by) values($1,$2,1,$3)",
+        filing_returns:
+          "insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method) values($1,$2,1,'federal','efile')",
+        filing_notes:
+          "insert into public.filing_notes(workspace_id,case_id,attempt,note,recorded_by) values($1,$2,1,'Fictional fix note.',$3)",
+      };
+      await f.sql(inserts.filing_attempts, [f.workspaceId, caseId, f.sam]);
+      await f.sql(inserts.filing_returns, [f.workspaceId, caseId]);
+      await f.sql(inserts.filing_notes, [f.workspaceId, caseId, f.sam]);
+      for (const table of Object.keys(inserts)) {
+        const applicant = await f.applicantA.from(table).select("*").eq("case_id", caseId);
+        assert.equal(applicant.error, null, table);
+        assert.deepEqual(applicant.data, [], table);
+        const staff = await f.presenter.from(table).select("*").eq("case_id", caseId);
+        assert.equal(staff.error, null, table);
+        assert.equal(staff.data.length, 1, table);
+        for (const client of [f.applicantA, f.presenter])
+          assert.ok(
+            (await client.from(table).insert({ workspace_id: f.workspaceId, case_id: caseId })).error,
+            `${table} insert`,
+          );
+      }
+    });
+
+    await t.test("fix notes are append-only", async () => {
+      const { caseId } = await f.submittedClientCase();
+      await f.sql("insert into public.filing_attempts(workspace_id,case_id,attempt,filed_by) values($1,$2,1,$3)", [
+        f.workspaceId,
+        caseId,
+        f.sam,
+      ]);
+      await f.sql(
+        "insert into public.filing_notes(workspace_id,case_id,attempt,note,recorded_by) values($1,$2,1,'Fictional fix note.',$3)",
+        [f.workspaceId, caseId, f.sam],
+      );
+      await assert.rejects(() =>
+        f.sql("update public.filing_notes set note='Changed' where case_id=$1", [caseId]),
+      );
+      await assert.rejects(() => f.sql("delete from public.filing_notes where case_id=$1", [caseId]));
+      const update = await f.presenter.from("filing_notes").update({ note: "Changed" }).eq("case_id", caseId);
+      const del = await f.presenter.from("filing_notes").delete().eq("case_id", caseId);
+      const after = await f.sql("select note from public.filing_notes where case_id=$1", [caseId]);
+      assert.ok(update.error || after.rows[0].note === "Fictional fix note.");
+      assert.ok(del.error || after.rows.length === 1);
+      assert.deepEqual(after.rows, [{ note: "Fictional fix note." }]);
+    });
+  } finally {
+    await f.close();
+  }
+});
