@@ -41,7 +41,10 @@ import {
   openFollowups,
   openFollowupCount,
   remindedNote,
+  methodOf,
+  waitingKinds,
 } from "./admin-views.mjs";
+import { returnedToSigning, latestFixNote } from "./domain.mjs";
 import {
   when,
   explain,
@@ -72,6 +75,8 @@ export const QUEUE_KINDS = Object.freeze([
   ["screening", "Screening"],
   ["signing", "Signing"],
   ["efiling", "E-filing"],
+  ["result", "Filing result"],
+  ["rejected", "Rejected"],
   ["call", "Call the client"],
   ["help", "Help request"],
   ["unclaimed", "Unclaimed work"],
@@ -83,6 +88,8 @@ const KIND_ICONS = Object.freeze({
   screening: "clock",
   signing: "file",
   efiling: "check",
+  result: "clock",
+  rejected: "help",
   call: "phone",
   help: "help",
   unclaimed: "user",
@@ -100,6 +107,14 @@ export const waitingLabel = (days) =>
 // same fact, so the color is never the only signal.
 const waitingTone = (days) => (days >= 5 ? "late" : days >= 3 ? "aging" : "");
 
+// A Filing result row is coloured only while an e-filed return waits for its
+// acknowledgment; a mailing wait and a Rejected row are never coloured.
+const awaitsEfileAnswer = (record) => waitingKinds(record).some((kind) => methodOf(record, kind) === "efile");
+const rowTone = (row) =>
+  row.kind === "rejected" || (row.kind === "result" && !awaitsEfileAnswer(row.record))
+    ? ""
+    : waitingTone(row.days);
+
 export function followupQueue(cases = [], assistance = [], now = Date.now()) {
   const records = Array.isArray(cases) ? cases : [];
   const rows = [];
@@ -116,6 +131,13 @@ export function followupQueue(cases = [], assistance = [], now = Date.now()) {
       rows.push({ kind: "signing", record, item: null, draft: false, since: record.updatedAt });
     else if (record?.stage === "ready_to_efile")
       rows.push({ kind: "efiling", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "efiled")
+      rows.push({ kind: "result", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "rejected") {
+      if (waitingKinds(record).length)
+        rows.push({ kind: "result", record, item: null, draft: false, since: record.updatedAt });
+      rows.push({ kind: "rejected", record, item: null, draft: false, since: record.updatedAt });
+    }
     if (isAvailableWork(record))
       rows.push({ kind: "unclaimed", record, item: null, draft: false, since: record.updatedAt });
     if (openFollowupCount(record))
@@ -168,8 +190,30 @@ export function queueCounts(rows, chosen) {
 // The Follow-ups page
 // ---------------------------------------------------------------------------
 
+const WAITS = Object.freeze({ federal: "the IRS's answer", state: "Pennsylvania's answer" });
+const RETURN_WORDS = Object.freeze({ federal: "federal return", state: "Pennsylvania return" });
+
+// What a Filing result row is waiting for: an e-filed return's answer, then a
+// paper return's mailing, each as one sentence.
+function resultText(record) {
+  const waiting = waitingKinds(record);
+  const efile = waiting.filter((kind) => methodOf(record, kind) === "efile");
+  const paper = waiting.filter((kind) => methodOf(record, kind) === "paper");
+  const sentences = [];
+  if (efile.length === 2) sentences.push("Waiting for the IRS and Pennsylvania.");
+  else if (efile.length === 1) sentences.push(`Waiting for ${WAITS[efile[0]]}.`);
+  if (paper.length === 2) sentences.push("Record when the returns are mailed.");
+  else if (paper.length === 1) sentences.push(`Record when the ${RETURN_WORDS[paper[0]]} is mailed.`);
+  return sentences.join(" ");
+}
+
 function needed(row) {
   const { kind, record, item } = row;
+  if (kind === "result") return esc(resultText(record));
+  if (kind === "rejected") {
+    const note = latestFixNote(record);
+    return `${esc("Rejected: contact the client to fix and sign again.")}${when(note, `<small>${esc(note)}</small>`)}`;
+  }
   if (kind === "intake")
     return esc(
       row.draft
@@ -180,11 +224,13 @@ function needed(row) {
   if (kind === "signing")
     return esc(
       // A list row carries only the reviewer's call status, never the reviews.
-      record.reviewContactStatus !== "completed"
-        ? "Waiting for the reviewer's call with the client."
-        : record.goOverOpen
-          ? "Waiting for the office to go over the return with the client."
-          : "Waiting for the client to sign Form 8879.",
+      returnedToSigning(record)
+        ? "Waiting for the client to sign again."
+        : record.reviewContactStatus !== "completed"
+          ? "Waiting for the reviewer's call with the client."
+          : record.goOverOpen
+            ? "Waiting for the office to go over the return with the client."
+            : "Waiting for the client to sign Form 8879.",
     );
   if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;
@@ -219,6 +265,16 @@ function rowAction(row, person, ui) {
       ? button(`${icon("check")} ${label}`, action, "primary", `data-case-id="${id}" ${busy}`)
       : explain(decision);
   }
+  if (kind === "result" || kind === "rejected") {
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const [decision, action, label] =
+      kind === "result"
+        ? [rights.recordFilingResult, "open-record-filing-result", "Record filing result…"]
+        : [rights.returnToSigning, "open-return-to-signing", "Return to signing…"];
+    return decision.allowed
+      ? button(`${icon("check")} ${label}`, action, "primary", `data-case-id="${id}" ${busy}`)
+      : explain(decision);
+  }
   if (kind === "unclaimed") {
     const rights = adminEligibility({ caseRecord: record }, person);
     return rights.remind.allowed
@@ -246,7 +302,7 @@ function queueRow(row, person, ui) {
     : item?.caseId
       ? '<span class="muted">A case in this workspace</span>'
       : '<span class="muted">No case yet</span>';
-  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${languageCell(languageSummary(rowLanguages(row)))}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${waitingTone(row.days)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
+  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${languageCell(languageSummary(rowLanguages(row)))}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${rowTone(row)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
 }
 
 /**

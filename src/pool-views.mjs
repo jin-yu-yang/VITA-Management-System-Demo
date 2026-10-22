@@ -12,6 +12,8 @@ export const POOL_TABS = Object.freeze([
   ["review", "Waiting for review"],
   ["signing", "Waiting on client"],
   ["filing", "Filing"],
+  ["attention", "Needs attention"],
+  ["done", "Done"],
   ["closed", "Closed"],
 ]);
 const TAB_VALUES = Object.freeze(POOL_TABS.map(([value]) => value));
@@ -31,6 +33,8 @@ export function poolPhase(record) {
   if (["draft", "received", "screening"].includes(stage)) return "intake";
   if (stage === "review_approved") return "signing";
   if (stage === "ready_to_efile" || stage === "efiled") return "filing";
+  if (stage === "rejected") return "attention";
+  if (stage === "accepted") return "done";
   if (stage === "closed") return "closed";
   return phaseTab(record);
 }

@@ -114,11 +114,11 @@ const CLOSABLE_STAGES = Object.freeze([
 const unrecordedMethods = (record) =>
   record?.stage === "efiled" && !record?.federalMethod && !record?.stateMethod;
 
-const methodOf = (record, kind) =>
+export const methodOf = (record, kind) =>
   record?.[`${kind}Method`] ?? (unrecordedMethods(record) ? "efile" : null);
 
 // The returns filed and not yet answered, federal first.
-const waitingKinds = (record) =>
+export const waitingKinds = (record) =>
   unrecordedMethods(record)
     ? ["federal", "state"].filter((kind) => !record?.[`${kind}Result`])
     : waitingReturns(record);
