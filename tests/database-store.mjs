@@ -179,6 +179,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
           "followupAssigneeIds",
           "openRequests",
           "reviewContactStatus",
+          "latestFixNote",
         ])
           assert.ok(!(field in row), `${field} is absent for an applicant`);
     });
@@ -376,7 +377,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
       // the call is accepted and that the database really moved.
       await presenter.resetFixtures({ actionId: crypto.randomUUID() });
       const seeded = await f.readFixtureCases();
-      assert.equal(seeded.length, 6);
+      assert.equal(seeded.length, 8);
       const target = seeded.find((row) => row.fixtureKey === "review_approved");
       await presenter.loadCheckpoint({
         actionId: crypto.randomUUID(),

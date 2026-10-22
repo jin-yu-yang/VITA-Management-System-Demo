@@ -23,6 +23,27 @@ export const STATES = Object.freeze({
     },
   ],
   efiledNameless: ["markEfiledDialogBody", { savedCase: { reference: "VT-TEST-0003", answers: {} } }],
+  recordFilingResult: [
+    "recordFilingResultDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0004",
+        stage: "efiled",
+        federalMethod: "efile",
+        stateMethod: "efile",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
+  returnToSigning: [
+    "returnToSigningDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0005",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
   corrections: ["correctionsDialogBody", {}],
   correctionsRetry: [
     "correctionsDialogBody",

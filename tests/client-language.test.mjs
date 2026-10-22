@@ -6,7 +6,7 @@ import * as views from "../src/views.mjs";
 import * as client from "../src/client-views.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import MAP from "../src/zh-hant.mjs";
-import { SENTENCES, t, sentence, historyLine } from "../src/client-text.mjs";
+import { SENTENCES, TEXT, t, sentence, historyLine } from "../src/client-text.mjs";
 import { NEUTRAL_SEND_MESSAGE } from "../src/auth.mjs";
 import { payloadFor, SAMPLE_DOCUMENT_FILENAME } from "../src/case-actions.mjs";
 import { OFFICE_CONTACT } from "../src/ui.mjs";
@@ -376,6 +376,55 @@ test("the screening, 8879 and e-file history lines translate exactly", () => {
     assert.equal(historyLine(english, "zh-Hans"), zh, english);
     assert.equal(historyLine(english, "en"), english, english);
     assert.ok(migrationSentences().sentences.includes(english), `${english} is written by migration 032`);
+  }
+});
+
+test("the Return to signing line translates exactly", () => {
+  const english = "PCDC corrected your return. You need to sign it again.";
+  const zh = "PCDC 已更正您的报税表，您需要再次签名。";
+  assert.equal(SENTENCES[english], zh);
+  assert.equal(historyLine(english, "zh-Hans"), zh);
+  assert.equal(historyLine(english, "en"), english);
+  assert.ok(migrationSentences().sentences.includes(english), "migration 035 writes it");
+});
+
+test("the filing history lines translate exactly", () => {
+  const rows = [
+    ["PCDC e-filed your federal return and mailed your Pennsylvania return.", "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。"],
+    ["PCDC mailed your returns.", "PCDC 已邮寄您的报税表。"],
+    ["PCDC e-filed your federal return.", "PCDC 已电子递交您的联邦报税表。"],
+    ["PCDC mailed your federal return.", "PCDC 已邮寄您的联邦报税表。"],
+    ["PCDC e-filed your Pennsylvania return.", "PCDC 已电子递交您的宾州报税表。"],
+    ["PCDC mailed your Pennsylvania return.", "PCDC 已邮寄您的宾州报税表。"],
+    ["The IRS and Pennsylvania accepted your returns.", "国税局和宾州税务局都已接受您的报税表。"],
+    [
+      "The IRS accepted your federal return. Your Pennsylvania return needs a correction before it can be accepted.",
+      "国税局已接受您的联邦报税表。您的宾州报税表需要更正后才能被接受。",
+    ],
+    [
+      "Your federal return was mailed. A reply to a mailed return can take several weeks. Pennsylvania accepted your Pennsylvania return.",
+      "您的联邦报税表已邮寄。邮寄的报税表可能需要几周才会有回复。宾州税务局已接受您的宾州报税表。",
+    ],
+  ];
+  for (const [english, zh] of rows) {
+    assert.equal(SENTENCES[english], zh, english);
+    assert.equal(historyLine(english, "zh-Hans"), zh, english);
+    assert.doesNotMatch(zh, /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/);
+  }
+  const hant = historyLine("PCDC mailed your returns.", "zh-Hant");
+  assert.notEqual(hant, "PCDC 已邮寄您的报税表。");
+  assert.ok(hant.includes("郵寄"), hant);
+});
+
+test("every filing message has 简体, no phone number, and 繁體 is generated", () => {
+  const keys = Object.keys(TEXT).filter((key) => key.startsWith("filing.") || key.startsWith("stage.review_approved.client.resign"));
+  assert.ok(keys.length >= 15, keys.length);
+  for (const key of keys) {
+    assert.match(TEXT[key].zh, /\p{Script=Han}/u, key);
+    assert.doesNotMatch(TEXT[key].en, /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/, key);
+    assert.doesNotMatch(TEXT[key].zh, /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/, key);
+    assert.doesNotMatch(TEXT[key].zh, /宾夕法尼亚/, key);
+    assert.notEqual(t(key, {}, "zh-Hant"), undefined);
   }
 });
 

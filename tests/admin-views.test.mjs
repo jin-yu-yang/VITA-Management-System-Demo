@@ -5,6 +5,8 @@ import {
   closeCaseDialogBody,
   markReadyToEfileDialogBody,
   markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
   adminEligibility,
 } from "../src/admin-views.mjs";
 import { decorateStaffCase, renderStaffCase } from "../src/staff-views.mjs";
@@ -13,6 +15,7 @@ import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
 import { payloadFor } from "../src/case-actions.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { nowInput } from "../src/contact-log.mjs";
 
 // The admin screens are pure functions of records and one persona, so these
 // tests read the HTML string itself. No DOM library, and nothing here may reach
@@ -730,7 +733,7 @@ test("the e-file dialogs name the client and the application", () => {
   assert.match(ready, /signed Form 8879/);
   const filed = markEfiledDialogBody(state);
   assert.match(filed, /data-case-action="MARK_EFILED"/);
-  assert.match(filed, /told their return was e-filed/);
+  assert.match(filed, /The client will be told how their return was filed/);
   assert.match(
     markEfiledDialogBody({ savedCase: { reference: "VT-X", answers: {} } }),
     /this client/,
@@ -1130,4 +1133,210 @@ test("a task's Log contact form starts with its purpose; the Contacts tab choose
   assert.match(followup, /name="purpose" value="request_documents" required checked/);
   const contacts = html.slice(html.indexOf('id="case-panel-contacts"'));
   assert.doesNotMatch(contacts, /name="purpose"[^>]* checked/);
+});
+
+// ---------------------------------------------------------------------------
+// After E-filed (change add-post-efiling-stages)
+// ---------------------------------------------------------------------------
+const BOTH_EFILED = { federalMethod: "efile", stateMethod: "efile" };
+const rejectedFederal = (over = {}) =>
+  officeCase({
+    stage: "rejected",
+    ...BOTH_EFILED,
+    federalResult: "rejected",
+    stateResult: "accepted",
+    reviews: CALLED,
+    ...over,
+  });
+
+test("at E-filed an admin is offered Record filing result…; volunteers see none of the new buttons", () => {
+  const filed = officeCase({ stage: "efiled", ...BOTH_EFILED, reviews: CALLED });
+  const html = renderAdminCase(filed, { person: SAM });
+  assert.match(
+    html,
+    /<button[^>]*data-action="open-record-filing-result"[^>]*>[^]*?Record filing result…<\/button>/,
+  );
+  assert.doesNotMatch(html, /open-return-to-signing/);
+  for (const person of [ALEX, MORGAN]) {
+    const other = renderAdminCase(filed, { person });
+    assert.doesNotMatch(other, /open-record-filing-result|open-return-to-signing/);
+    const staff = renderStaffCase(filed, person);
+    assert.doesNotMatch(staff, /open-record-filing-result|open-return-to-signing/);
+  }
+  // A case e-filed before methods existed is offered it too.
+  const old = renderAdminCase(officeCase({ stage: "efiled", reviews: CALLED }), { person: SAM });
+  assert.match(old, /open-record-filing-result/);
+  // Nothing leaves Accepted.
+  const accepted = renderAdminCase(
+    officeCase({ stage: "accepted", ...BOTH_EFILED, federalResult: "accepted", stateResult: "accepted" }),
+    { person: SAM },
+  );
+  assert.doesNotMatch(accepted, /open-record-filing-result|open-return-to-signing|open-close-case/);
+});
+
+test("at Rejected: Return to signing… and Close, or the wait", () => {
+  const done = renderAdminCase(rejectedFederal(), { person: SAM });
+  assert.match(done, /data-action="open-return-to-signing"[^>]*>[^]*?Return to signing…<\/button>/);
+  assert.match(done, /data-action="open-close-case"/);
+  assert.doesNotMatch(done, /open-record-filing-result/);
+  assert.doesNotMatch(done, /answer before the return can go back to signing/);
+
+  const waiting = renderAdminCase(rejectedFederal({ stateResult: null }), { person: SAM });
+  assert.doesNotMatch(waiting, /data-action="open-return-to-signing"/);
+  assert.match(
+    waiting,
+    /Waiting for Pennsylvania(&#39;|')s answer before the return can go back to signing\./,
+  );
+  assert.match(waiting, /open-record-filing-result/);
+  const irs = renderAdminCase(
+    rejectedFederal({ federalResult: null, stateResult: "rejected" }),
+    { person: SAM },
+  );
+  assert.match(irs, /Waiting for the IRS(&#39;|')s answer before the return can go back to signing\./);
+  for (const person of [ALEX, MORGAN])
+    assert.doesNotMatch(renderAdminCase(rejectedFederal(), { person }), /open-return-to-signing/);
+});
+
+test("the eligibility of the new office moves", () => {
+  const sam = (record) => adminEligibility({ caseRecord: record }, SAM);
+  const answered = { ...BOTH_EFILED, federalResult: "rejected", stateResult: "accepted" };
+  const waitingState = { ...BOTH_EFILED, federalResult: "rejected" };
+  assert.equal(sam({ stage: "efiled", ...BOTH_EFILED }).recordFilingResult.allowed, true);
+  assert.equal(sam({ stage: "ready_to_efile" }).recordFilingResult.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...answered }).recordFilingResult.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...waitingState }).recordFilingResult.allowed, true);
+  assert.equal(sam({ stage: "rejected", ...answered }).returnToSigning.allowed, true);
+  assert.equal(sam({ stage: "rejected", ...waitingState }).returnToSigning.allowed, false);
+  assert.equal(sam({ stage: "efiled", ...BOTH_EFILED }).returnToSigning.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...answered }).closeCase.allowed, true);
+  // Back at signing, Mark ready to e-file is offered without the reviewer's call or the go-over.
+  assert.equal(
+    sam({ stage: "review_approved", ...answered, reviews: WAITING, goOverOpen: true }).markReadyToEfile.allowed,
+    true,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "efiled", ...BOTH_EFILED } }, ALEX).recordFilingResult.allowed,
+    false,
+  );
+});
+
+test("a case returned to signing says this is the client's second signing", () => {
+  const record = officeCase({
+    stage: "review_approved",
+    ...BOTH_EFILED,
+    federalResult: "rejected",
+    stateResult: "accepted",
+    reviews: CALLED,
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  assert.match(html, /data-action="open-mark-ready-to-efile"/);
+  assert.match(markReadyToEfileDialogBody({ savedCase: record }), /second signing/);
+  assert.doesNotMatch(
+    markReadyToEfileDialogBody({ savedCase: officeCase({ stage: "review_approved" }) }),
+    /second signing/,
+  );
+});
+
+const radios = (html, name) =>
+  [...html.matchAll(new RegExp(`<input[^>]*type="radio"[^>]*name="${name}"[^>]*value="([a-z_]+)"`, "g"))].map(
+    (m) => m[1],
+  );
+
+test("Mark e-filed offers three choices on a first filing, each with what the client is told", () => {
+  const html = markEfiledDialogBody({
+    savedCase: officeCase({ stage: "ready_to_efile", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } }),
+  });
+  assert.deepEqual(radios(html, "filing-combination"), ["both_efile", "efile_and_paper", "both_paper"]);
+  assert.match(html, /PCDC e-filed your return\./);
+  assert.match(html, /PCDC e-filed your federal return and mailed your Pennsylvania return\./);
+  assert.match(html, /PCDC mailed your returns\./);
+  assert.match(html, /data-case-action="MARK_EFILED"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  assert.doesNotMatch(html, /name="method-federal"|name="method-state"/);
+});
+
+test("Mark e-filed after a rejection offers only the rejected return, and lists the accepted one as done", () => {
+  const record = officeCase({
+    stage: "ready_to_efile",
+    ...BOTH_EFILED,
+    federalResult: "accepted",
+    stateResult: "rejected",
+    answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+  });
+  const html = markEfiledDialogBody({ savedCase: record });
+  assert.deepEqual(radios(html, "method-state"), ["efile", "paper"]);
+  assert.deepEqual(radios(html, "method-federal"), []);
+  assert.doesNotMatch(html, /filing-combination/);
+  assert.match(html, /Federal return[^]*?accepted/i);
+  assert.match(html, /PCDC e-filed your Pennsylvania return\./);
+  assert.match(html, /PCDC mailed your Pennsylvania return\./);
+  // Both rejected: both choices, with the combination lines.
+  const both = markEfiledDialogBody({
+    savedCase: officeCase({ stage: "ready_to_efile", ...BOTH_EFILED, federalResult: "rejected", stateResult: "rejected" }),
+  });
+  assert.deepEqual(radios(both, "method-federal"), ["efile", "paper"]);
+  assert.deepEqual(radios(both, "method-state"), ["efile", "paper"]);
+  assert.match(both, /PCDC e-filed your return\./);
+});
+
+test("the Record filing result dialog names the client and the application, and builds its payload", () => {
+  const record = officeCase({
+    stage: "efiled",
+    ...BOTH_EFILED,
+    reference: "VT-AAAA-BBBB",
+    answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+  });
+  const html = recordFilingResultDialogBody({ savedCase: record });
+  assert.match(html, /Mei Chen/);
+  assert.match(html, /VT-AAAA-BBBB/);
+  assert.match(html, /data-case-action="RECORD_FILING_RESULT"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  for (const field of ["result-federal", "date-federal", "code-federal", "result-state", "date-state", "code-state", "fix-note"])
+    assert.match(html, new RegExp(`name="${field}"`), field);
+  // No answer is dated after PCDC's today, and the submit control carries the stage.
+  const today = nowInput().slice(0, 10);
+  assert.equal(html.match(new RegExp(`name="date-(federal|state)" type="date"[^>]*max="${today}"`, "g")).length, 2);
+  assert.match(html, /data-case-action="RECORD_FILING_RESULT"[^>]*data-stage="efiled"/);
+  // A paper return can only be mailed.
+  const paper = recordFilingResultDialogBody({
+    savedCase: officeCase({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" }),
+  });
+  const fromState = paper.slice(paper.indexOf('name="result-state"'));
+  const stateSelect = fromState.slice(0, fromState.indexOf("</select>"));
+  assert.match(stateSelect, /value="mailed"/);
+  assert.doesNotMatch(stateSelect, /value="accepted"|value="rejected"/);
+  // At Rejected, only the returns still waiting are offered.
+  const waiting = recordFilingResultDialogBody({ savedCase: rejectedFederal({ stateResult: null }) });
+  assert.match(waiting, /name="result-state"/);
+  assert.doesNotMatch(waiting, /name="result-federal"/);
+  const built = payloadFor("RECORD_FILING_RESULT", {}, {
+    confirmed: "true",
+    "result-federal": "rejected",
+    "date-federal": "2026-10-05",
+    "code-federal": "IND-031-04",
+    "fix-note": "Preparer to fix",
+  });
+  assert.deepEqual(built.payload, {
+    confirmed: true,
+    results: { federal: { result: "rejected", date: "2026-10-05", code: "IND-031-04" } },
+    fixNote: "Preparer to fix",
+  });
+});
+
+test("the Return to signing dialog names the client and reads 'The fix is done.'", () => {
+  const html = returnToSigningDialogBody({
+    savedCase: { reference: "VT-AAAA-BBBB", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } },
+  });
+  assert.match(html, /Mei Chen/);
+  assert.match(html, /VT-AAAA-BBBB/);
+  assert.match(html, /<span>The fix is done\.<\/span>/);
+  assert.match(html, /data-case-action="RETURN_TO_SIGNING"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  assert.match(returnToSigningDialogBody({}), /this client/);
+});
+
+test("the shared frame places the two new dialogs", () => {
+  const savedCase = { reference: "VT-X", answers: {}, stage: "efiled" };
+  assert.match(dialog({ dialog: "record-filing-result", savedCase }), /Record the filing result\?/);
+  assert.match(dialog({ dialog: "return-to-signing", savedCase }), /Return to signing\?/);
 });

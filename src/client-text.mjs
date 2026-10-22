@@ -170,6 +170,28 @@ export const TEXT = Object.freeze({
   "stage.ready_to_efile.client": { en: "You signed Form 8879. PCDC will e-file your return next.", zh: "您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。" },
   "stage.efiled.label": { en: "E-filed", zh: "已电子递交" },
   "stage.efiled.client": { en: "Your return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的报税表已电子递交。国税局会确认是否接受。" },
+  // E-filed by filing method (domain.mjs describeStage): federal e-filed with the state return on paper, and both on paper
+  "stage.efiled.filed.label": { en: "Filed", zh: "已递交" },
+  "stage.efiled.mailed.label": { en: "Mailed", zh: "已邮寄" },
+  "stage.rejected.label": { en: "Needs a correction", zh: "需要更正" },
+  "stage.accepted.label": { en: "Complete", zh: "已完成" },
+  // Ready to exit after Return to signing (replaces every signing variant)
+  "stage.review_approved.client.resign": { en: "PCDC corrected your return. Please sign it again so PCDC can file it. PCDC will contact you to arrange this.", zh: "PCDC 已更正您的报税表。请再次签名，以便 PCDC 递交。PCDC 会联系您安排签名。" },
+  // E-filed, Rejected and Accepted: one sentence per return by its state, the combined one when both are the same (domain.mjs filingMessage)
+  "filing.federal.waiting": { en: "Your federal return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的联邦报税表已电子递交。国税局会确认是否接受。" },
+  "filing.federal.accepted": { en: "The IRS accepted your federal return.", zh: "国税局已接受您的联邦报税表。" },
+  "filing.federal.rejected": { en: "Your federal return needs a correction before it can be accepted.", zh: "您的联邦报税表需要更正后才能被接受。" },
+  "filing.federal.mailed": { en: "Your federal return was mailed. A reply to a mailed return can take several weeks.", zh: "您的联邦报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+  "filing.state.waiting": { en: "Your Pennsylvania return was e-filed. Pennsylvania will confirm whether it is accepted.", zh: "您的宾州报税表已电子递交。宾州税务局会确认是否接受。" },
+  "filing.state.accepted": { en: "Pennsylvania accepted your Pennsylvania return.", zh: "宾州税务局已接受您的宾州报税表。" },
+  "filing.state.rejected": { en: "Your Pennsylvania return needs a correction before it can be accepted.", zh: "您的宾州报税表需要更正后才能被接受。" },
+  "filing.state.mailed": { en: "Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.", zh: "您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+  "filing.both.waiting": { en: "Your federal and Pennsylvania returns were e-filed. The IRS and Pennsylvania will each confirm whether they are accepted.", zh: "您的联邦和宾州报税表已电子递交。国税局和宾州税务局会分别确认是否接受。" },
+  "filing.both.accepted": { en: "The IRS and Pennsylvania accepted your returns.", zh: "国税局和宾州税务局都已接受您的报税表。" },
+  "filing.both.rejected": { en: "Your federal and Pennsylvania returns need a correction before they can be accepted.", zh: "您的联邦和宾州报税表需要更正后才能被接受。" },
+  "filing.both.mailed": { en: "Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.", zh: "您的联邦和宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+  "filing.closing.rejected": { en: "PCDC will contact you about the correction.", zh: "PCDC 会就更正事宜联系您。" },
+  "filing.closing.accepted": { en: "If you are due a refund, you can check on it with \"Where's My Refund?\" at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.", zh: "如果您有退税，可以在 irs.gov/refunds 使用 \"Where's My Refund?\" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },
@@ -460,6 +482,16 @@ export const SENTENCES = Object.freeze({
   "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
   "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  // Migration 035: Return to signing, Mark e-filed, and Record filing result.
+  "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
+  "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",
+  "PCDC mailed your returns.": "PCDC 已邮寄您的报税表。",
+  "PCDC e-filed your federal return.": "PCDC 已电子递交您的联邦报税表。",
+  "PCDC mailed your federal return.": "PCDC 已邮寄您的联邦报税表。",
+  "PCDC e-filed your Pennsylvania return.": "PCDC 已电子递交您的宾州报税表。",
+  "PCDC mailed your Pennsylvania return.": "PCDC 已邮寄您的宾州报税表。",
+  // Record filing result: every combination filing_line can write, from the sentences above
+  ...filingLines(),
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",
@@ -492,6 +524,27 @@ export function t(key, params = {}, lang = "en") {
   if (!isLang(lang) || lang === "en") return fill(plural(entry.en, given), given);
   const zh = lang === "zh-Hant" ? toHant(entry.zh) : entry.zh;
   return fill(zh, given);
+}
+
+// What the client reads about their returns: one sentence for each, federal
+// first, or the combined sentence when both are in the same state. A null state
+// leaves that return out. Chinese sentences run together without a space.
+export function filingSentences(federal, state, lang = "en") {
+  const parts =
+    federal === state
+      ? federal ? [t(`filing.both.${federal}`, {}, lang)] : []
+      : [federal && t(`filing.federal.${federal}`, {}, lang), state && t(`filing.state.${state}`, {}, lang)];
+  return parts.filter(Boolean).join(!isLang(lang) || lang === "en" ? " " : "");
+}
+
+// Every history line filing_line (migration 035) can write, English to 简体.
+function filingLines() {
+  const lines = {};
+  const states = [null, "waiting", "accepted", "rejected", "mailed"];
+  for (const federal of states)
+    for (const state of states)
+      if (federal || state) lines[filingSentences(federal, state)] = filingSentences(federal, state, "zh-Hans");
+  return lines;
 }
 
 export function sentence(text, lang = "en") {

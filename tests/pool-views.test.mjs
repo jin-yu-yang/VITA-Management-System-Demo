@@ -9,7 +9,8 @@ test("every stage lands on exactly one pool phase", () => {
     draft: "intake", received: "intake", screening: "intake",
     preparation_ready: "available", preparing: "preparation", corrections_required: "preparation",
     review_ready: "review", reviewing: "review",
-    review_approved: "signing", ready_to_efile: "filing", efiled: "filing", closed: "closed",
+    review_approved: "signing", ready_to_efile: "filing", efiled: "filing",
+    rejected: "attention", accepted: "done", closed: "closed",
   };
   assert.deepEqual([...POOL_STAGES].sort(), Object.keys(expected).sort());
   assert.deepEqual(POOL_STAGES, STAGES);
@@ -20,7 +21,7 @@ test("every stage lands on exactly one pool phase", () => {
   for (const stage of POOL_STAGES) assert.notEqual(describeStage(stage).label, "Application");
 });
 
-test("the pool's tabs, in order: no Done, Waiting on client and Filing before Closed", () => {
+test("the pool's tabs, in order: Needs attention and Done before Closed", () => {
   assert.deepEqual(POOL_TABS, [
     ["all", "All cases"],
     ["intake", "Intake"],
@@ -29,18 +30,22 @@ test("the pool's tabs, in order: no Done, Waiting on client and Filing before Cl
     ["review", "Waiting for review"],
     ["signing", "Waiting on client"],
     ["filing", "Filing"],
+    ["attention", "Needs attention"],
+    ["done", "Done"],
     ["closed", "Closed"],
   ]);
-  // A saved "done" tab from before falls back to All.
-  assert.equal(poolFilters({ poolPhase: "done" }).poolPhase, "all");
+  assert.equal(poolFilters({ poolPhase: "done" }).poolPhase, "done");
   assert.equal(poolFilters({ poolPhase: "filing" }).poolPhase, "filing");
   // Every stage is counted on a tab, so the tab counts add up to All.
-  const cases = POOL_STAGES.map((stage, i) => ({ id: String(i), stage, preparerId: null, answers: {} }));
+  const mapped = [...POOL_STAGES];
+  const cases = mapped.map((stage, i) => ({ id: String(i), stage, preparerId: null, answers: {} }));
   const counts = poolCounts(cases, poolFilters({}));
   const { all, ...tabs } = counts;
-  assert.equal(all, POOL_STAGES.length);
+  assert.equal(all, mapped.length);
   assert.equal(Object.values(tabs).reduce((a, b) => a + b, 0), all);
-  assert.deepEqual(tabs, { intake: 3, available: 1, preparation: 2, review: 2, signing: 1, filing: 2, closed: 1 });
+  assert.deepEqual(tabs, { intake: 3, available: 1, preparation: 2, review: 2, signing: 1, filing: 2, attention: 1, done: 1, closed: 1 });
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "attention" })).map((c) => c.stage), ["rejected"]);
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "done" })).map((c) => c.stage), ["accepted"]);
   assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "filing" })).map((c) => c.stage), ["ready_to_efile", "efiled"]);
 });
 
@@ -103,11 +108,25 @@ const CASES = [
 const render = (filters = {}, cases = CASES) =>
   renderCasePool(cases, PEOPLE, { filters, now: NOW });
 
-test("the pool shows eight phase tabs with counts and pressed state", () => {
+test("a pool row names E-filed and Accepted by the filing method", () => {
+  const html = render({}, [
+    rec("M", "efiled", { federalMethod: "efile", stateMethod: "paper" }),
+    rec("O", "efiled"),
+  ]);
+  assert.match(html, /<i><\/i>E-filed &amp; paper</);
+  assert.match(html, /<i><\/i>E-filed</);
+});
+
+test("the pool's stage filter keeps the plain stage names", () => {
+  assert.match(render(), /<option value="efiled">E-filed<\/option>/);
+}
+);
+
+test("the pool shows ten phase tabs with counts and pressed state", () => {
   const html = render({ poolPhase: "review" });
   assert.match(html, /role="group" aria-label="Case phase"/);
   const tabs = html.match(/<button[^>]*data-filter="poolPhase"[^>]*>/g) ?? [];
-  assert.equal(tabs.length, 8);
+  assert.equal(tabs.length, 10);
   for (const tab of tabs) assert.match(tab, /data-action="set-board-filter"/);
   assert.match(html, /data-value="review"[^>]*aria-pressed="true"/);
   assert.match(html, /data-value="all"[^>]*aria-pressed="false"/);

@@ -3372,7 +3372,8 @@ textarea::placeholder {
   background: var(--vt-stage-intake-bg);
   color: var(--vt-stage-intake);
 }
-.kind-pill.call {
+.kind-pill.call,
+.kind-pill.rejected {
   background: var(--vt-stage-amend-bg);
   color: var(--vt-stage-amend);
 }
@@ -3382,6 +3383,7 @@ textarea::placeholder {
 }
 .kind-pill.unclaimed,
 .kind-pill.signing,
+.kind-pill.result,
 .kind-pill.efiling {
   background: var(--vt-background);
   border-color: var(--vt-line);

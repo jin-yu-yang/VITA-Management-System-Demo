@@ -13,7 +13,8 @@ import { STATES, SENTENCES } from "./empty-states.states.mjs";
 // gained the Contacts tab, and the task's list became "Contacts so far", on
 // purpose too (change add-contact-log). Follow-ups gained the Screening,
 // Signing and E-filing filter chips (change add-screening-and-efiling-stages);
-// the three queue states differ from the capture by those chips alone.
+// the three queue states differ from the capture by those chips alone, and by
+// the Filing result and Rejected chips (change add-post-efiling-stages).
 //
 // The case pages print "Updated" with formatTime, in the machine's own time
 // zone, and the fixture was captured in New York. Node re-reads TZ when it is

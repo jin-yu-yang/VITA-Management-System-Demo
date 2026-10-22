@@ -318,12 +318,14 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
 
 ## Stages and their words
 
-A case has one of twelve stages, in chain order: `draft`, `received`, `screening`,
+A case has one of fourteen stages, in chain order: `draft`, `received`, `screening`,
 `preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
-`review_approved`, `ready_to_efile`, `efiled`, `closed`. The browser decides none of the moves
-(the database does, see the [state machine](database.md#the-case-state-machine)); it only names
-what it shows. `describeStage(stage, lang)` in [`domain.mjs`](../../src/domain.mjs) is the one
-place the words live. For each stage it returns three texts:
+`review_approved`, `ready_to_efile`, `efiled`, `rejected`, `accepted`, `closed`. The browser decides
+none of the moves (the database does, see the [state machine](database.md#the-case-state-machine));
+it only names what it shows. `describeStage(stage, lang, record)` in
+[`domain.mjs`](../../src/domain.mjs) is the one place the words live. The `record` (a case) is
+needed only for `efiled`, `rejected` and `accepted`, whose words depend on how each return was
+filed. For each stage it returns three texts:
 
 | Field | Who reads it | Where it comes from |
 | --- | --- | --- |
@@ -334,19 +336,35 @@ place the words live. For each stage it returns three texts:
 A stage that is not in the table gets neutral wording. A client message names no milestone the case
 has not reached, and no client text names a phone number.
 
+**Names by filing method.** From the case's `federal_method` and `state_method`:
+
+| Stage | Staff name (both e-filed / one each / both paper) | Client label |
+| --- | --- | --- |
+| `efiled` | Both e-filed / E-filed & paper / Both paper | E-filed / Filed / Mailed |
+| `rejected` | Rejected | Needs a correction |
+| `accepted` | Accepted / Accepted & mailed / Mailed | Complete |
+
+A case e-filed before the methods existed (null methods) is "E-filed" for staff and the client.
+`filingMessage` composes the client's message: a sentence for each return (one combined sentence
+when both returns are in the same state), then the stage's closing sentence. It never names a
+reject code or a fix note, which a client session does not receive. A case at `review_approved`
+that has methods was returned to signing, and its message asks the client to sign again.
+
 - **The badge.** `stageBadge(stage, lang, { audience })` in [`ui.mjs`](../../src/ui.mjs) shows
   `label` for `audience: "staff"` (the default) and `clientLabel` for `audience: "client"`. The
   client's screens (the applications list, the progress page and its review panel) pass
   `"client"`; every staff, office and presenter screen leaves the default.
-- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists ten steps with staff
+- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists eleven steps with staff
   labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
-  `review_approved`, `ready_to_efile`, `efiled`, `closed`. A case in `corrections_required` shows
-  on the `preparing` step, marked as an amendment.
+  `review_approved`, `ready_to_efile`, `efiled`, `accepted`, `closed`. A case in
+  `corrections_required` shows on the `preparing` step, marked as an amendment; a `rejected` case
+  shows on the `efiled` step the same way.
 - **The client's progress track** (`PROGRESS_STEPS` in `client-views.mjs`) has five steps, each
   holding the stages that belong to it: intake (`draft`, `received`, `screening`), preparation
   (`preparation_ready`, `preparing`, `corrections_required`), review (`review_ready`, `reviewing`),
-  signing (`review_approved`) and filing (`ready_to_efile`, `efiled`). A `closed` case shows no
-  current step.
+  signing (`review_approved`) and filing (`ready_to_efile`, `efiled`, `rejected`). A `rejected`
+  case therefore sits on Filing. An `accepted` case shows every step done, with the "done"
+  screen-reader text. A `closed` case shows no current step.
 - **History lines.** The three lines the database writes for the new actions ("PCDC started
   reviewing your application. We may call you.", the signing line and "PCDC e-filed your
   return.") are entries in `SENTENCES`, so the client reads them in their own language.
@@ -370,11 +388,23 @@ refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
 
 The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
 "Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
-sends `{confirmed: true}` through `payloadFor`, like any [workflow button](#events-and-actions).
+sends its payload through `payloadFor` (`{confirmed: true}` for "Mark ready to e-file…";
+`{confirmed, methods}` for "Mark e-filed…"), like any [workflow button](#events-and-actions).
 `adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
 whose reviewer has recorded a completed call with the client (the database checks the same), and
 the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows
 offer the same two marks, selecting the case in place.
+
+After E-filed, three more admin buttons record the IRS's and Pennsylvania's answers by hand
+(nothing is sent to either). "Mark e-filed…" now asks how each return was filed (federal and state,
+each e-file or paper; three combinations are allowed) and sends `{confirmed, methods}`. "Record
+filing result…" (`efiled`, or `rejected` while a return is waiting) sends each waiting return's
+result, date and, when rejected, a code, plus an optional fix note. "Return to signing…" (`rejected`
+with every return answered) sends `{confirmed: true}`; "Close case…" is also offered at `rejected`.
+A staff-only Filing panel on the case page lists every attempt, newest first, with each return's
+method, result, date and code, and the fix notes in the order recorded. The case pool has two more
+tabs, Needs attention (`rejected`) and Done (`accepted`), and Follow-ups gains the kinds "Filing
+result" and "Rejected".
 
 ## Events and actions
 

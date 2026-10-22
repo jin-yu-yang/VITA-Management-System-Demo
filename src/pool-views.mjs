@@ -12,6 +12,8 @@ export const POOL_TABS = Object.freeze([
   ["review", "Waiting for review"],
   ["signing", "Waiting on client"],
   ["filing", "Filing"],
+  ["attention", "Needs attention"],
+  ["done", "Done"],
   ["closed", "Closed"],
 ]);
 const TAB_VALUES = Object.freeze(POOL_TABS.map(([value]) => value));
@@ -31,6 +33,8 @@ export function poolPhase(record) {
   if (["draft", "received", "screening"].includes(stage)) return "intake";
   if (stage === "review_approved") return "signing";
   if (stage === "ready_to_efile" || stage === "efiled") return "filing";
+  if (stage === "rejected") return "attention";
+  if (stage === "accepted") return "done";
   if (stage === "closed") return "closed";
   return phaseTab(record);
 }
@@ -104,7 +108,7 @@ const who = (name, id) => (id ? esc(name ?? "Unknown") : `<span class="unassigne
 
 function poolRow(record, now, person) {
   const phase = TAB_LABELS[poolPhase(record)];
-  return `<tr class="pool-row"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage)}${
+  return `<tr class="pool-row"><th scope="row">${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference)}</button></th><td>${stageBadge(record.stage, "en", { record })}${
     phase ? `<span class="pool-phase">${esc(phase)}</span>` : ""
   }</td><td>${listPhone(record, person, "pool-phone")}</td><td>${languageCell(languageSummary(clientLanguages(record?.answers)))}</td><td>${esc(serviceLabel(record?.answers?.service) || "—")}</td><td>${who(record.preparerName, record.preparerId)}</td><td>${who(record.reviewerName, record.reviewerId)}</td><td class="board-updated">${esc(
     record.updatedAt ? relativeDay(record.updatedAt, now) : "No updates yet",

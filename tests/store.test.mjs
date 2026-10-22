@@ -24,6 +24,9 @@ const STAFF_ONLY_TABLES = [
   "case_materials",
   "preparer_questionnaires",
   "reviewer_questionnaires",
+  "filing_attempts",
+  "filing_returns",
+  "filing_notes",
 ];
 
 const CASE_ROW = Object.freeze({
@@ -523,6 +526,10 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       intakeVisited: ["about.you", "before.ready"],
       signingPlan: null,
       signingAppointmentAt: null,
+      federalMethod: null,
+      stateMethod: null,
+      federalResult: null,
+      stateResult: null,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -542,13 +549,15 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly seven summary fields.
+  // The Case scalars, unchanged, plus exactly eight summary fields (the
+  // eighth, the newest fix note, is read from filing_notes for Follow-ups).
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
       ...Object.keys(mapCase(CASE_ROW)),
       "followupAssigneeIds",
       "goOverOpen",
+      "latestFixNote",
       "openFollowups",
       "openRequests",
       "participants",
@@ -595,6 +604,7 @@ test("a presenter list carries the summaries a work board reads", async () => {
   assert.deepEqual(approvalRead.orders, ["created_at"]);
   // This case has only an active review, so no call status yet.
   assert.equal(row.reviewContactStatus, null);
+  assert.equal(row.latestFixNote, null);
 });
 
 test("a listed case carries its latest approved review's call status", async () => {
@@ -719,6 +729,8 @@ test("an applicant case read asks for no staff table at all", async () => {
     "createdAt",
     "documentCards",
     "documents",
+    "federalMethod",
+    "federalResult",
     "fixture",
     "history",
     "id",
@@ -738,6 +750,8 @@ test("an applicant case read asks for no staff table at all", async () => {
     "signingAppointmentAt",
     "signingPlan",
     "stage",
+    "stateMethod",
+    "stateResult",
     "updatedAt",
     "workspaceId",
   ]);
@@ -807,6 +821,9 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "contact_log_versions",
       "document_requests",
       "documents",
+      "filing_attempts",
+      "filing_notes",
+      "filing_returns",
       "memberships",
       "preparation_participants",
       "preparer_questionnaires",
@@ -1426,6 +1443,77 @@ test("mapCase carries the signing plan and appointment, null until approval", ()
   const planned = mapCase({ ...CASE_ROW, signing_plan: "appointment", signing_appointment_at: "2026-11-02T14:30:00" });
   assert.equal(planned.signingPlan, "appointment");
   assert.equal(planned.signingAppointmentAt, "2026-11-02T14:30:00");
+});
+
+test("mapCase carries the filing methods and results, null before a filing", () => {
+  const filed = mapCase({
+    ...CASE_ROW,
+    federal_method: "efile",
+    state_method: "paper",
+    federal_result: "accepted",
+    state_result: "mailed",
+  });
+  assert.deepEqual(
+    [filed.federalMethod, filed.stateMethod, filed.federalResult, filed.stateResult],
+    ["efile", "paper", "accepted", "mailed"],
+  );
+});
+
+test("a staff case read carries the filing attempts, newest first; an applicant read none of them", async () => {
+  const rows = {
+    // In the order the database returns them: attempts newest first.
+    filing_attempts: [
+      { id: "a2", case_id: "case-1", attempt: 2, filed_at: "2026-10-05T10:00:00Z", filed_by: "person-sam" },
+      { id: "a1", case_id: "case-1", attempt: 1, filed_at: "2026-10-01T10:00:00Z", filed_by: "person-sam" },
+    ],
+    filing_returns: [
+      { id: "r1", case_id: "case-1", attempt: 1, return_kind: "federal", method: "efile", result: "accepted", answered_on: "2026-10-02", reject_code: null, recorded_by: "person-sam" },
+      { id: "r2", case_id: "case-1", attempt: 1, return_kind: "state", method: "efile", result: "rejected", answered_on: "2026-10-02", reject_code: "PA-1", recorded_by: "person-sam" },
+      { id: "r3", case_id: "case-1", attempt: 2, return_kind: "state", method: "paper", result: null, answered_on: null, reject_code: null, recorded_by: null },
+    ],
+    filing_notes: [
+      { id: "n1", case_id: "case-1", attempt: 1, note: "First fix", recorded_by: "person-sam", recorded_at: "2026-10-03T10:00:00Z" },
+      { id: "n2", case_id: "case-1", attempt: 1, note: "Second fix", recorded_by: "person-alex", recorded_at: "2026-10-04T10:00:00Z" },
+    ],
+  };
+  const client = fakeClient({ access: "presenter", rows });
+  const staff = await createStore(client).getCase("case-1");
+  assert.deepEqual(staff.filingAttempts, [
+    {
+      attempt: 2,
+      filedAt: "2026-10-05T10:00:00Z",
+      returns: [{ returnKind: "state", method: "paper", result: null, answeredOn: null, rejectCode: null }],
+      notes: [],
+    },
+    {
+      attempt: 1,
+      filedAt: "2026-10-01T10:00:00Z",
+      returns: [
+        { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-02", rejectCode: null },
+        { returnKind: "state", method: "efile", result: "rejected", answeredOn: "2026-10-02", rejectCode: "PA-1" },
+      ],
+      notes: [
+        { note: "First fix", recordedBy: "person-sam", recordedAt: "2026-10-03T10:00:00Z" },
+        { note: "Second fix", recordedBy: "person-alex", recordedAt: "2026-10-04T10:00:00Z" },
+      ],
+    },
+  ]);
+  // Each read is scoped to the case, and the tables are ordered without a created_at.
+  for (const table of ["filing_attempts", "filing_returns", "filing_notes"]) {
+    const [read] = client.reads.filter((entry) => entry.table === table);
+    assert.deepEqual(read.filters, [["case_id", "case-1"]], table);
+    assert.ok(!read.orders.includes("created_at"), `${table} has no created_at`);
+  }
+  const ordered = (table) => client.reads.find((entry) => entry.table === table).orders;
+  assert.deepEqual(ordered("filing_attempts"), ["attempt"]);
+  assert.deepEqual(ordered("filing_returns"), ["attempt", "return_kind"]);
+  assert.deepEqual(ordered("filing_notes"), ["recorded_at", "id"]);
+  assert.deepEqual((await createStore(fakeClient({ access: "presenter" })).getCase("case-1")).filingAttempts, []);
+
+  const applicantClient = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(applicantClient).getCase("case-1");
+  assert.ok(!("filingAttempts" in applicant), "an applicant's Case carries no filing section");
+  assert.ok(!applicantClient.reads.some((read) => read.table.startsWith("filing_")));
 });
 
 test("a staff case read carries both questionnaire tables, an applicant read neither", async () => {

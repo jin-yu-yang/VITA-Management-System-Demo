@@ -19,6 +19,7 @@ const CLOSURE = {
   confirmed: true,
 };
 const CONFIRMED = { confirmed: true };
+const EFILED = { confirmed: true, methods: { federal: "efile", state: "efile" } };
 
 test("the main chain's new stages against real Supabase", async (t) => {
   const f = await createDatabaseFixture();
@@ -131,7 +132,7 @@ test("the main chain's new stages against real Supabase", async (t) => {
     await t.test("signing and e-filing, admin only, confirmed only", async () => {
       const caseId = await f.approvedCase();
       await assert.rejects(
-        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED),
+        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", EFILED),
         rejected("INVALID_TRANSITION"),
       );
       for (const personId of [f.alex, f.morgan, null])
@@ -155,18 +156,18 @@ test("the main chain's new stages against real Supabase", async (t) => {
       assert.ok((await f.clientMessages(caseId)).includes(SIGNED_LINE));
       for (const personId of [f.alex, f.morgan, null])
         await assert.rejects(
-          () => f.act(f.presenter, caseId, personId, "MARK_EFILED", CONFIRMED),
+          () => f.act(f.presenter, caseId, personId, "MARK_EFILED", EFILED),
           rejected("FORBIDDEN"),
         );
       await assert.rejects(
         () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", {}),
         rejected("VALIDATION"),
       );
-      await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED);
+      await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", EFILED);
       assert.equal(await stageOf(caseId), "efiled");
       assert.ok((await f.clientMessages(caseId)).includes(EFILED_LINE));
       await assert.rejects(
-        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED),
+        () => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", EFILED),
         rejected("INVALID_TRANSITION"),
       );
       await assert.rejects(
@@ -247,7 +248,7 @@ test("the main chain's new stages against real Supabase", async (t) => {
           () => f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", CLOSURE),
           rejected("INVALID_TRANSITION"),
         );
-        await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", CONFIRMED);
+        await f.act(f.presenter, caseId, f.sam, "MARK_EFILED", EFILED);
         await assert.rejects(
           () => f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", CLOSURE),
           rejected("INVALID_TRANSITION"),
@@ -273,7 +274,7 @@ test("the main chain's new stages against real Supabase", async (t) => {
             revision,
             personId: f.sam,
             type,
-            payload: CONFIRMED,
+            payload: type === "MARK_EFILED" ? EFILED : CONFIRMED,
           }),
         );
         assert.equal(error?.code, "VT004", type);

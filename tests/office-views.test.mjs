@@ -137,7 +137,7 @@ test("Follow-ups shows new applications, screening, signing and e-filing", () =>
     now,
   );
   const kinds = Object.fromEntries(rows.map((row) => [row.record.id, row.kind]));
-  assert.deepEqual(kinds, { A: "intake", B: "screening", C: "signing", D: "efiling" });
+  assert.deepEqual(kinds, { A: "intake", B: "screening", C: "signing", D: "efiling", E: "result" });
   // A received case whose intake checks were already recorded still waits
   // for screening to start, so it stays a row.
   const verified = followupQueue([{ ...rec("V", "received"), intakeVerified: true }], [], now);
@@ -261,7 +261,7 @@ test("the task-type toggles narrow the rows and show counts", () => {
   assert.match(html, /role="group" aria-label="Task type"/);
   assert.equal(
     [...html.matchAll(/data-action="set-board-filter" data-filter="officeKind"/g)].length,
-    8,
+    10,
   );
   assert.match(html, /data-filter="officeKind" data-value="all" aria-pressed="true"/);
   const calls = page(cases, [], sam, { officeKind: "call" });
@@ -980,4 +980,118 @@ test("a task's Log contact form starts with its purpose", () => {
     caseId: "c1",
   });
   assert.match(docs, /name="purpose" value="request_documents" required checked/);
+});
+
+// ---------------------------------------------------------------------------
+// After E-filed: Filing result and Rejected rows
+// ---------------------------------------------------------------------------
+
+const filed = (id, stage, over = {}) =>
+  kase({ id, stage, ownerUserId: "u", reviewContactStatus: "completed", ...over });
+const E = { federalMethod: "efile", stateMethod: "efile", federalResult: null, stateResult: null };
+const P = { federalMethod: "paper", stateMethod: "paper", federalResult: null, stateResult: null };
+// The row of one kind for one case (a rejected case may have two rows).
+const kindRow = (html, id, kind) => {
+  const found = html
+    .split('<tr class="queue-row"')
+    .slice(1)
+    .find((row) => row.startsWith(` data-kind="${kind}"`) && row.includes(`data-case-id="${id}"`));
+  assert.ok(found, `no ${kind} row for ${id}`);
+  return found.slice(0, found.indexOf("</tr>"));
+};
+
+test("Follow-ups queue: Filing result and Rejected rows, none for Accepted", () => {
+  const rows = followupQueue(
+    [
+      filed("e", "efiled", E),
+      filed("r", "rejected", { ...E, federalResult: "rejected" }),
+      filed("done", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted" }),
+      filed("a", "accepted", { ...E, federalResult: "accepted", stateResult: "accepted" }),
+    ],
+    [],
+    NOW,
+  );
+  assert.deepEqual(
+    rows.map((row) => `${row.kind}:${row.record.id}`).sort(),
+    ["rejected:done", "rejected:r", "result:e", "result:r"],
+  );
+});
+
+test("Filing result row texts", () => {
+  const html = page([
+    filed("both", "efiled", E),
+    filed("pa", "efiled", { ...E, federalResult: "accepted" }),
+    filed("irs", "efiled", { ...E, stateResult: "accepted" }),
+    filed("paper", "efiled", P),
+    filed("pstate", "efiled", { ...P, federalResult: "mailed" }),
+    filed("old", "efiled", { federalMethod: null, stateMethod: null }),
+  ]);
+  assert.match(kindRow(html, "both", "result"), /Waiting for the IRS and Pennsylvania\./);
+  assert.match(kindRow(html, "pa", "result"), /Waiting for Pennsylvania(&#39;|')s answer\./);
+  assert.match(kindRow(html, "irs", "result"), /Waiting for the IRS(&#39;|')s answer\./);
+  assert.match(kindRow(html, "paper", "result"), /Record when the returns are mailed\./);
+  assert.match(kindRow(html, "pstate", "result"), /Record when the Pennsylvania return is mailed\./);
+  assert.match(kindRow(html, "old", "result"), /Waiting for the IRS and Pennsylvania\./);
+  assert.match(
+    kindRow(html, "both", "result"),
+    /data-action="open-record-filing-result" data-case-id="both"[^>]*>[^]*? Record filing result…<\/button>/,
+  );
+});
+
+test("Filing result tone: amber at 3, red at 5, none for a mailing wait", () => {
+  const html = page([
+    filed("amber", "efiled", { ...E, updatedAt: daysAgo(3) }),
+    filed("red", "efiled", { ...E, updatedAt: daysAgo(5) }),
+    filed("paper", "efiled", { ...P, updatedAt: daysAgo(6) }),
+    filed("old", "efiled", { federalMethod: null, stateMethod: null, updatedAt: daysAgo(5) }),
+  ]);
+  assert.match(kindRow(html, "amber", "result"), /class="queue-waiting aging"/);
+  assert.match(kindRow(html, "red", "result"), /class="queue-waiting late"/);
+  assert.match(kindRow(html, "old", "result"), /class="queue-waiting late"/);
+  assert.match(kindRow(html, "paper", "result"), /class="queue-waiting "/);
+});
+
+test("Rejected row: latest fix note, escaped; waiting text instead of the button; never coloured", () => {
+  const attempts = [
+    { notes: [{ note: "First note", recordedAt: "2026-09-20T10:00:00Z" }] },
+    { notes: [{ note: "Fix <b>SSN</b>", recordedAt: "2026-09-25T10:00:00Z" }] },
+  ];
+  const html = page([
+    filed("fix", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted", filingAttempts: attempts, updatedAt: daysAgo(6) }),
+    filed("wait", "rejected", { ...E, federalResult: "rejected" }),
+    filed("waitp", "rejected", { ...E, federalResult: "rejected", stateMethod: "paper" }),
+    filed("nonote", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted" }),
+  ]);
+  const fix = kindRow(html, "fix", "rejected");
+  assert.match(fix, /Rejected: contact the client to fix and sign again\./);
+  assert.match(fix, /Fix &lt;b&gt;SSN&lt;\/b&gt;/);
+  assert.doesNotMatch(fix, /First note|<b>SSN/);
+  assert.match(fix, /data-action="open-return-to-signing" data-case-id="fix"[^>]*>[^]*? Return to signing…<\/button>/);
+  assert.match(fix, /class="queue-waiting "/);
+  assert.doesNotMatch(kindRow(html, "nonote", "rejected"), /Fix &lt;|<small/);
+  const wait = kindRow(html, "wait", "rejected");
+  assert.match(wait, /Waiting for Pennsylvania(&#39;|')s answer before the return can go back to signing\./);
+  assert.doesNotMatch(wait, /Return to signing…/);
+  assert.match(
+    kindRow(html, "waitp", "rejected"),
+    /Record when the Pennsylvania return is mailed before the return can go back to signing\./,
+  );
+});
+
+test("A returned case's Signing row reads for signing again", () => {
+  const html = page([filed("back", "review_approved", { ...E, federalResult: "rejected", stateResult: "accepted" })]);
+  assert.match(kindRow(html, "back", "signing"), /Waiting for the client to sign again\./);
+});
+
+test("a Follow-ups row and the Log contact drawer name E-filed by the filing method", () => {
+  const record = filed("m", "efiled", { federalMethod: "efile", stateMethod: "paper", federalResult: null, stateResult: null });
+  assert.match(kindRow(page([record]), "m", "result"), /<i><\/i>E-filed &amp; paper</);
+  const drawer = logCallDrawerBody({ record, person: sam, ui: {}, caseId: "m" });
+  assert.match(drawer, /<i><\/i>E-filed &amp; paper</);
+});
+
+test("the Follow-ups filter lists the two new kinds before Call the client", () => {
+  const html = page([filed("e", "efiled", E)]);
+  const order = [...html.matchAll(/data-filter="officeKind" data-value="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["all", "intake", "screening", "signing", "efiling", "result", "rejected", "call", "help", "unclaimed"]);
 });

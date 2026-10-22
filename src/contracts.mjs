@@ -13,6 +13,8 @@ export const STAGES = Object.freeze([
   "review_approved",
   "ready_to_efile",
   "efiled",
+  "rejected",
+  "accepted",
   "closed",
 ]);
 
@@ -40,6 +42,12 @@ export const CASE_ACTIONS = Object.freeze([
   "RECORD_REVIEW_CONTACT",
   "MARK_READY_TO_EFILE",
   "MARK_EFILED",
+  // Change add-post-efiling-stages (migration 035). MARK_EFILED carries
+  // { confirmed, methods: { federal?, state? } } (each 'efile' or 'paper');
+  // RECORD_FILING_RESULT carries { confirmed, results: { federal?, state? },
+  // fixNote? } with each result { result, date, code? }.
+  "RECORD_FILING_RESULT",
+  "RETURN_TO_SIGNING",
   "REMIND",
   "CLOSE_CASE",
   // Part 4a (migration 013). No screen offers them until 4b and 4c.

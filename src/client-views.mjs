@@ -118,7 +118,7 @@ export function accessScreen(state) {
 // ---------------------------------------------------------------------------
 
 function applicationRow(entry, updatedAt, lang = "en") {
-  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage, lang, { audience: "client" })}</span><span class="application-when">${updatedAt ? esc(t("apps.updated", { when: updatedAt }, lang)) : esc(t("apps.no_updates", {}, lang))}</span>${icon("chevron")}</button>`;
+  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage, lang, { audience: "client", record: entry })}</span><span class="application-when">${updatedAt ? esc(t("apps.updated", { when: updatedAt }, lang)) : esc(t("apps.no_updates", {}, lang))}</span>${icon("chevron")}</button>`;
 }
 
 export function applicationsScreen(state) {
@@ -289,7 +289,7 @@ export const PROGRESS_STEPS = Object.freeze([
   ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
   ["progress.step.review", ["review_ready", "reviewing"]],
   ["progress.step.signing", ["review_approved"]],
-  ["progress.step.filing", ["ready_to_efile", "efiled"]],
+  ["progress.step.filing", ["ready_to_efile", "efiled", "rejected"]],
 ]);
 
 const REVIEW_STAGES = Object.freeze([
@@ -299,10 +299,16 @@ const REVIEW_STAGES = Object.freeze([
   "review_approved",
   "ready_to_efile",
   "efiled",
+  "rejected",
+  "accepted",
 ]);
 
 function progressTrack(stage, lang = "en") {
-  const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+  // An accepted case has finished every step, so none is current.
+  const current =
+    stage === "accepted"
+      ? PROGRESS_STEPS.length
+      : PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
   // A closed case has no current step: its notice says what happened instead.
   if (current < 0) return "";
   return `<div class="progress-steps">${PROGRESS_STEPS.map(([label], index) => {
@@ -336,7 +342,7 @@ function reviewProgress(record, lang = "en") {
   const stage = record.stage;
   if (!REVIEW_STAGES.includes(stage)) return "";
   const described = describeStage(stage, lang, record);
-  return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang, { audience: "client" })}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
+  return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang, { audience: "client", record })}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
 }
 
 export function progressScreen(state) {
@@ -352,7 +358,7 @@ export function progressScreen(state) {
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
   const firstName = answers.tp_first_name;
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang, { audience: "client" })}</div>${progressTrack(record.stage, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${progressDocumentsV2(state, lang)}${
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang, { audience: "client", record })}</div>${progressTrack(record.stage, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${progressDocumentsV2(state, lang)}${
     open.length
       ? open.map((request) => documentRequest(request, state, lang)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>${say("progress.all_set")}</h3><p>${say("progress.all_set_body")}</p></div></div>`
