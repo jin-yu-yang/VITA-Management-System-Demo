@@ -1351,9 +1351,34 @@ test("internal history reads as sentences, with who did it", () => {
   // An event this table does not know still reads as words, never as a code.
   assert.equal(historySentence(record.internalHistory[1]), "Load something new.");
   for (const action of CASE_ACTIONS) assert.ok(EVENT_SENTENCES[action], action);
+  assert.equal(
+    historySentence({ action: "RECORD_FILING_RESULT", actorName: "Sam" }),
+    "Sam recorded the filing result.",
+  );
+  assert.equal(
+    historySentence({ action: "RETURN_TO_SIGNING", actorName: "Sam" }),
+    "Sam returned the case to signing.",
+  );
   const html = historyPanel(record, true);
   assert.match(html, /Alex claimed preparation\./);
   assert.doesNotMatch(html, /CLAIM_PREPARATION/);
+});
+
+test("decorateStaffCase names who recorded each fix note, from the same people lookup", () => {
+  const people = [{ id: "person-alex", name: "Alex" }];
+  const record = decorateStaffCase(
+    {
+      id: "case-1",
+      filingAttempts: [
+        { attempt: 1, notes: [{ note: "Fixed", recordedBy: "person-alex" }, { note: "Again", recordedBy: "gone" }], returns: [] },
+      ],
+    },
+    people,
+  );
+  assert.deepEqual(record.filingAttempts[0].notes.map((n) => n.recordedByName), ["Alex", "Unknown person"]);
+  assert.equal(record.filingAttempts[0].notes[0].note, "Fixed");
+  // A case without the section (an applicant's, a board row) gains none.
+  assert.ok(!("filingAttempts" in decorateStaffCase({ id: "case-2" }, people)));
 });
 
 // ---------------------------------------------------------------------------

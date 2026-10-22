@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeStage, phaseTab, BOARD_TABS, signingWhen } from "../src/domain.mjs";
+import {
+  describeStage,
+  phaseTab,
+  BOARD_TABS,
+  signingWhen,
+  filingMethodKind,
+  returnState,
+  waitingReturns,
+  awaitsAcknowledgment,
+  returnedToSigning,
+  latestFixNote,
+} from "../src/domain.mjs";
 import { spawnSync } from "node:child_process";
 import { historyLine } from "../src/client-text.mjs";
 import {
@@ -73,7 +84,7 @@ test("every server stage has plain status copy and no workflow decision", () => 
   for (const unknown of [
     "signed",
     "filed",
-    "accepted",
+    "approved",
     "",
     undefined,
     null,
@@ -103,6 +114,8 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "review_approved",
     "ready_to_efile",
     "efiled",
+    "rejected",
+    "accepted",
     "closed",
   ]);
   assert.deepEqual(CASE_ACTIONS, [
@@ -125,6 +138,8 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "RECORD_REVIEW_CONTACT",
     "MARK_READY_TO_EFILE",
     "MARK_EFILED",
+    "RECORD_FILING_RESULT",
+    "RETURN_TO_SIGNING",
     "REMIND",
     "CLOSE_CASE",
     "UPDATE_CONTACT",
@@ -218,9 +233,9 @@ test("the text table's English stage entries match STAGE_DESCRIPTIONS", async ()
 });
 
 test("each stage has a staff name, a client label and a client message", () => {
-  const STAFF = { draft: "Draft", received: "Request sent", screening: "Screening in progress", preparation_ready: "Pending intake / filing", preparing: "Filing in progress (preparing)", corrections_required: "Corrections in progress", review_ready: "Pending review", reviewing: "Review in progress", review_approved: "Ready to exit", ready_to_efile: "Ready to e-file", efiled: "E-filed", closed: "Closed" };
-  const CLIENT_EN = { draft: "Draft", received: "Sent to PCDC", screening: "Being reviewed", preparation_ready: "Waiting for a volunteer", preparing: "Being prepared", corrections_required: "Being corrected", review_ready: "Waiting for review", reviewing: "Being checked", review_approved: "Ready to sign", ready_to_efile: "Signed", efiled: "E-filed", closed: "Closed" };
-  const CLIENT_ZH = { draft: "草稿", received: "已发送给 PCDC", screening: "审核中", preparation_ready: "等待志愿者", preparing: "准备中", corrections_required: "正在更正", review_ready: "等待检查", reviewing: "检查中", review_approved: "等待签名", ready_to_efile: "已签名", efiled: "已电子递交", closed: "已关闭" };
+  const STAFF = { draft: "Draft", received: "Request sent", screening: "Screening in progress", preparation_ready: "Pending intake / filing", preparing: "Filing in progress (preparing)", corrections_required: "Corrections in progress", review_ready: "Pending review", reviewing: "Review in progress", review_approved: "Ready to exit", ready_to_efile: "Ready to e-file", efiled: "E-filed", rejected: "Rejected", accepted: "Accepted", closed: "Closed" };
+  const CLIENT_EN = { draft: "Draft", received: "Sent to PCDC", screening: "Being reviewed", preparation_ready: "Waiting for a volunteer", preparing: "Being prepared", corrections_required: "Being corrected", review_ready: "Waiting for review", reviewing: "Being checked", review_approved: "Ready to sign", ready_to_efile: "Signed", efiled: "E-filed", rejected: "Needs a correction", accepted: "Complete", closed: "Closed" };
+  const CLIENT_ZH = { draft: "草稿", received: "已发送给 PCDC", screening: "审核中", preparation_ready: "等待志愿者", preparing: "准备中", corrections_required: "正在更正", review_ready: "等待检查", reviewing: "检查中", review_approved: "等待签名", ready_to_efile: "已签名", efiled: "已电子递交", rejected: "需要更正", accepted: "已完成", closed: "已关闭" };
   const MESSAGES = {
     received: ["Your application is with PCDC. The office will review it soon and may call you.", "PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。"],
     screening: ["PCDC is reviewing your application. We may call you to confirm your information and documents.", "PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。"],
@@ -354,4 +369,91 @@ test("no variant names a phone number or a money word", () => {
       assert.ok(!/\d{3}[-.\s)]*\d{3,4}/.test(text), `${plan} ${lang} has a phone-like number`);
       for (const word of MONEY_WORDS) assert.ok(!text.toLowerCase().includes(word), `${plan} ${lang} says ${word}`);
     }
+});
+
+// ---- Filing methods and results (change add-post-efiling-stages) ----
+const methods = (federalMethod, stateMethod, extra = {}) => ({ federalMethod, stateMethod, ...extra });
+
+test("describeStage names E-filed and Accepted by filing method, for staff and for the client", () => {
+  const cases = [
+    ["efiled", methods("efile", "efile"), "Both e-filed", "E-filed", "已电子递交"],
+    ["efiled", methods("efile", "paper"), "E-filed & paper", "Filed", "已递交"],
+    ["efiled", methods("paper", "paper"), "Both paper", "Mailed", "已邮寄"],
+    ["efiled", methods(null, null), "E-filed", "E-filed", "已电子递交"],
+    ["efiled", null, "E-filed", "E-filed", "已电子递交"],
+    ["accepted", methods("efile", "efile"), "Accepted", "Complete", "已完成"],
+    ["accepted", methods("efile", "paper"), "Accepted & mailed", "Complete", "已完成"],
+    ["accepted", methods("paper", "paper"), "Mailed", "Complete", "已完成"],
+    ["accepted", methods(null, null), "Accepted", "Complete", "已完成"],
+    ["rejected", methods("efile", "efile"), "Rejected", "Needs a correction", "需要更正"],
+    ["rejected", null, "Rejected", "Needs a correction", "需要更正"],
+  ];
+  for (const [stage, record, staff, client, zh] of cases) {
+    const en = describeStage(stage, "en", record);
+    assert.equal(en.label, staff, `${stage} ${JSON.stringify(record)}`);
+    assert.equal(en.clientLabel, client, `${stage} ${JSON.stringify(record)}`);
+    const hans = describeStage(stage, "zh-Hans", record);
+    assert.equal(hans.label, staff, "staff names stay English");
+    assert.equal(hans.clientLabel, zh, `${stage} ${JSON.stringify(record)}`);
+    assert.ok(en.clientMessage && hans.clientMessage);
+  }
+  // A method never renames another stage.
+  assert.equal(describeStage("closed", "en", methods("paper", "paper")).label, "Closed");
+});
+
+test("returnState, waitingReturns and awaitsAcknowledgment read the methods and results", () => {
+  assert.equal(filingMethodKind(methods("efile", "efile")), "both_efile");
+  assert.equal(filingMethodKind(methods("efile", "paper")), "efile_and_paper");
+  assert.equal(filingMethodKind(methods("paper", "paper")), "both_paper");
+  assert.equal(filingMethodKind(methods(null, null)), null);
+  assert.equal(filingMethodKind(null), null);
+  assert.equal(filingMethodKind(methods("paper", "efile")), null, "a combination PCDC doesn't use");
+
+  const waiting = methods("efile", "paper");
+  assert.equal(returnState(waiting, "federal"), "waiting");
+  assert.equal(returnState(waiting, "state"), "mailed", "a paper return with no result is mailed");
+  const split = methods("efile", "efile", { federalResult: "accepted", stateResult: "rejected" });
+  assert.equal(returnState(split, "federal"), "accepted");
+  assert.equal(returnState(split, "state"), "rejected");
+  assert.equal(returnState(methods("paper", "paper", { federalResult: "mailed" }), "federal"), "mailed");
+  assert.equal(returnState(methods(null, null), "federal"), null);
+  assert.equal(returnState(null, "state"), null);
+
+  assert.deepEqual(waitingReturns(methods("efile", "efile")), ["federal", "state"]);
+  assert.deepEqual(waitingReturns(methods("efile", "paper")), ["federal", "state"]);
+  assert.deepEqual(waitingReturns(methods("efile", "efile", { federalResult: "accepted" })), ["state"]);
+  assert.deepEqual(waitingReturns(methods("efile", "efile", { federalResult: "accepted", stateResult: "accepted" })), []);
+  assert.deepEqual(waitingReturns(methods(null, null)), []);
+  assert.deepEqual(waitingReturns(null), []);
+
+  assert.equal(awaitsAcknowledgment(methods("efile", "paper")), true);
+  assert.equal(awaitsAcknowledgment(methods("paper", "paper")), false, "a case waiting only on paper");
+  assert.equal(awaitsAcknowledgment(methods("efile", "paper", { federalResult: "accepted" })), false);
+  assert.equal(awaitsAcknowledgment(methods(null, null)), false);
+});
+
+test("returnedToSigning is Ready to exit with methods on file; latestFixNote is the newest note", () => {
+  assert.equal(returnedToSigning({ stage: "review_approved", federalMethod: "efile" }), true);
+  assert.equal(returnedToSigning({ stage: "review_approved", federalMethod: null }), false);
+  assert.equal(returnedToSigning({ stage: "rejected", federalMethod: "efile" }), false);
+  assert.equal(returnedToSigning(null), false);
+
+  assert.equal(latestFixNote({ filingAttempts: [] }), null);
+  assert.equal(latestFixNote({}), null);
+  assert.equal(latestFixNote(null), null);
+  const record = {
+    filingAttempts: [
+      { attempt: 2, notes: [] },
+      {
+        attempt: 1,
+        notes: [
+          { note: "First fix", recordedAt: "2026-10-01T10:00:00Z" },
+          { note: "Second fix", recordedAt: "2026-10-02T10:00:00Z" },
+        ],
+      },
+    ],
+  };
+  assert.equal(latestFixNote(record), "Second fix");
+  record.filingAttempts[0].notes.push({ note: "Newest", recordedAt: "2026-10-05T10:00:00Z" });
+  assert.equal(latestFixNote(record), "Newest");
 });

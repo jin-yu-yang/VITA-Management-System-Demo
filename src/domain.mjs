@@ -76,6 +76,19 @@ const STAGE_DESCRIPTIONS = Object.freeze({
     clientMessage:
       "Your return was e-filed. The IRS will confirm whether it is accepted.",
   },
+  // Rejected and Accepted (change add-post-efiling-stages). These messages are
+  // the neutral fallback; the client page words them per return.
+  rejected: {
+    label: "Rejected",
+    clientLabel: "Needs a correction",
+    clientMessage:
+      "Your return needs a correction before it can be accepted. PCDC will contact you about the correction.",
+  },
+  accepted: {
+    label: "Accepted",
+    clientLabel: "Complete",
+    clientMessage: "Your return was accepted.",
+  },
   closed: {
     label: "Closed",
     clientLabel: "Closed",
@@ -138,17 +151,102 @@ function signingMessage(stage, lang, record) {
   return t(`stage.review_approved.client.${plan}`, { when }, lang);
 }
 
+// ---------------------------------------------------------------------------
+// Filing methods and results (change add-post-efiling-stages). The columns are
+// the database's; these read them and name nothing the database has not decided.
+// ---------------------------------------------------------------------------
+
+const RETURN_KINDS = Object.freeze(["federal", "state"]);
+
+// How the case was filed: both returns e-filed, the federal e-filed and the
+// state on paper, or both on paper. A case e-filed before methods existed has
+// none, and neither does a combination PCDC does not use.
+export function filingMethodKind(record) {
+  const federal = record?.federalMethod ?? null;
+  const state = record?.stateMethod ?? null;
+  if (federal === "efile" && state === "efile") return "both_efile";
+  if (federal === "efile" && state === "paper") return "efile_and_paper";
+  if (federal === "paper" && state === "paper") return "both_paper";
+  return null;
+}
+
+// 'waiting' (e-filed, no answer yet), 'accepted', 'rejected', 'mailed' (a paper
+// return, answered or not), or null when this return was never filed.
+export function returnState(record, kind) {
+  const method = record?.[`${kind}Method`] ?? null;
+  if (!method) return null;
+  const result = record?.[`${kind}Result`] ?? null;
+  if (result) return result;
+  return method === "paper" ? "mailed" : "waiting";
+}
+
+// The returns filed and not yet answered, federal first.
+export function waitingReturns(record) {
+  return RETURN_KINDS.filter(
+    (kind) => record?.[`${kind}Method`] && !record?.[`${kind}Result`],
+  );
+}
+
+// Some waiting return was e-filed, so the IRS or Pennsylvania will answer it.
+export function awaitsAcknowledgment(record) {
+  return waitingReturns(record).some((kind) => record[`${kind}Method`] === "efile");
+}
+
+// Back at Ready to exit after a rejection: the case has methods on file.
+export function returnedToSigning(record) {
+  return record?.stage === "review_approved" && (record?.federalMethod ?? null) !== null;
+}
+
+// The newest fix note across every filing, or null.
+export function latestFixNote(record) {
+  let newest = null;
+  let newestAt = -Infinity;
+  for (const attempt of record?.filingAttempts ?? [])
+    for (const entry of attempt?.notes ?? []) {
+      const at = Date.parse(entry?.recordedAt);
+      if (newest === null || (Number.isFinite(at) ? at : -Infinity) >= newestAt) {
+        newest = entry.note;
+        newestAt = Number.isFinite(at) ? at : -Infinity;
+      }
+    }
+  return newest;
+}
+
+// The staff name and the client's label for E-filed and Accepted by filing
+// method (spec: case-lifecycle). Every other stage has one name.
+const METHOD_LABELS = Object.freeze({
+  efiled: {
+    both_efile: { label: "Both e-filed", clientLabel: "E-filed" },
+    efile_and_paper: { label: "E-filed & paper", clientLabel: "Filed", clientKey: "stage.efiled.filed.label" },
+    both_paper: { label: "Both paper", clientLabel: "Mailed", clientKey: "stage.efiled.mailed.label" },
+  },
+  accepted: {
+    both_efile: { label: "Accepted" },
+    efile_and_paper: { label: "Accepted & mailed" },
+    both_paper: { label: "Mailed" },
+  },
+});
+
 export function describeStage(stage, lang = "en", record = null) {
   const known = Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "");
   const base = known ? STAGE_DESCRIPTIONS[stage] : UNKNOWN_STAGE;
   const variant = signingMessage(stage, lang, record);
+  const byMethod = known
+    ? METHOD_LABELS[stage]?.[filingMethodKind(record)] ?? null
+    : null;
+  const label = byMethod?.label ?? base.label;
   if (!isLang(lang) || lang === "en") {
-    return variant ? { ...base, clientMessage: variant } : { ...base };
+    return {
+      ...base,
+      label,
+      clientLabel: byMethod?.clientLabel ?? base.clientLabel,
+      ...(variant ? { clientMessage: variant } : {}),
+    };
   }
   const key = known ? stage : "unknown";
   return {
-    label: base.label,
-    clientLabel: t(`stage.${key}.label`, {}, lang),
+    label,
+    clientLabel: t(byMethod?.clientKey ?? `stage.${key}.label`, {}, lang),
     clientMessage: variant ?? t(`stage.${key}.client`, {}, lang),
   };
 }

@@ -151,6 +151,64 @@ function materialsReceived(values) {
   return received;
 }
 
+// How the return was filed. A first filing picks one of PCDC's three
+// combinations (the one `filing-combination` radio); filing again offers only
+// the returns that were rejected, one `method-federal` / `method-state` choice
+// each, and exactly those that arrive are sent. Whether a combination is one
+// the office uses is the database's to say.
+const FILING_COMBINATIONS = Object.freeze({
+  both_efile: { federal: "efile", state: "efile" },
+  efile_and_paper: { federal: "efile", state: "paper" },
+  both_paper: { federal: "paper", state: "paper" },
+});
+const FILING_METHODS = Object.freeze(["efile", "paper"]);
+const CHOOSE_METHODS = "Choose how each return was filed.";
+
+function filingMethods(values) {
+  const combination = String(values?.["filing-combination"] ?? "").trim();
+  if (combination) {
+    if (!Object.hasOwn(FILING_COMBINATIONS, combination)) throw validation(CHOOSE_METHODS);
+    return { ...FILING_COMBINATIONS[combination] };
+  }
+  const methods = {};
+  for (const kind of ["federal", "state"]) {
+    const value = String(values?.[`method-${kind}`] ?? "").trim();
+    if (!value) continue;
+    if (!FILING_METHODS.includes(value)) throw validation(CHOOSE_METHODS);
+    methods[kind] = value;
+  }
+  if (!Object.keys(methods).length) throw validation(CHOOSE_METHODS);
+  return methods;
+}
+
+// The answers to the returns waiting. A return left on "no answer yet" (or on a
+// value outside the list) is not sent; a rejection needs its reject code; every
+// answer needs its date. The date window and who may record are the database's.
+const FILING_RESULTS = Object.freeze(["accepted", "rejected", "mailed"]);
+
+function filingResults(values) {
+  const results = {};
+  for (const kind of ["federal", "state"]) {
+    const result = String(values?.[`result-${kind}`] ?? "").trim();
+    if (!FILING_RESULTS.includes(result)) continue;
+    const date = String(values?.[`date-${kind}`] ?? "").trim();
+    if (!date) throw validation("A date is required.");
+    const entry = { result, date };
+    if (result === "rejected") {
+      const code = String(values?.[`code-${kind}`] ?? "").trim();
+      if (!code) throw validation("A reject code is required.");
+      entry.code = code;
+    }
+    results[kind] = entry;
+  }
+  if (!Object.keys(results).length)
+    throw validation("Record a result for at least one return.");
+  const payload = { confirmed: true, results };
+  const fixNote = String(values?.["fix-note"] ?? "").trim();
+  if (fixNote) payload.fixNote = fixNote;
+  return payload;
+}
+
 // SAVE_ANSWERS is deliberately absent: it is built by the controller from the
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
@@ -207,6 +265,11 @@ const BUILDERS = Object.freeze({
   }),
   MARK_EFILED: (dataset, values) => ({
     confirmed: confirmation(values, "Confirm that the return was e-filed."),
+    methods: filingMethods(values),
+  }),
+  RECORD_FILING_RESULT: (dataset, values) => filingResults(values),
+  RETURN_TO_SIGNING: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that the fix is done."),
   }),
   CLOSE_CASE: (dataset, values) => ({
     reason: text(values, "reason", "A reason"),

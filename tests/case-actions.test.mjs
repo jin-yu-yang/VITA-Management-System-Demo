@@ -126,7 +126,19 @@ test("every action builds exactly the payload the contract names", () => {
     ],
     ["START_SCREENING", {}, {}, {}],
     ["MARK_READY_TO_EFILE", {}, { confirmed: "true" }, { confirmed: true }],
-    ["MARK_EFILED", {}, { confirmed: "true" }, { confirmed: true }],
+    [
+      "MARK_EFILED",
+      {},
+      { confirmed: "true", "filing-combination": "efile_and_paper" },
+      { confirmed: true, methods: { federal: "efile", state: "paper" } },
+    ],
+    [
+      "RECORD_FILING_RESULT",
+      {},
+      { "result-federal": "accepted", "date-federal": "2026-10-20" },
+      { confirmed: true, results: { federal: { result: "accepted", date: "2026-10-20" } } },
+    ],
+    ["RETURN_TO_SIGNING", {}, { confirmed: "true" }, { confirmed: true }],
     [
       "UPDATE_CONTACT",
       {},
@@ -424,6 +436,87 @@ test("the 8879 and e-file actions need their own confirmation sentence", () => {
   }
   // Closing keeps its own sentence.
   assert.throws(() => payloadFor("CLOSE_CASE", {}, { reason: "r" }), (error) => error.message === "Confirm that you want to close this case.");
+});
+
+const refused = (type, values, message) =>
+  assert.throws(
+    () => payloadFor(type, {}, values),
+    (error) => error.code === "VALIDATION" && error.message === message,
+    `${type} ${JSON.stringify(values)}`,
+  );
+
+test("MARK_EFILED carries the methods: one combination on a first filing, or the returns being filed again", () => {
+  const sure = { confirmed: "true" };
+  for (const [combination, methods] of [
+    ["both_efile", { federal: "efile", state: "efile" }],
+    ["efile_and_paper", { federal: "efile", state: "paper" }],
+    ["both_paper", { federal: "paper", state: "paper" }],
+  ])
+    assert.deepEqual(
+      payloadFor("MARK_EFILED", {}, { ...sure, "filing-combination": combination }).payload,
+      { confirmed: true, methods },
+      combination,
+    );
+  // A second filing sends exactly the returns the dialog offered.
+  assert.deepEqual(
+    payloadFor("MARK_EFILED", {}, { ...sure, "method-state": "paper" }).payload,
+    { confirmed: true, methods: { state: "paper" } },
+  );
+  assert.deepEqual(
+    payloadFor("MARK_EFILED", {}, { ...sure, "method-federal": "efile", "method-state": "efile" }).payload,
+    { confirmed: true, methods: { federal: "efile", state: "efile" } },
+  );
+  refused("MARK_EFILED", sure, "Choose how each return was filed.");
+  refused("MARK_EFILED", { ...sure, "filing-combination": "carrier_pigeon" }, "Choose how each return was filed.");
+  refused("MARK_EFILED", { ...sure, "method-federal": "fax" }, "Choose how each return was filed.");
+  refused("MARK_EFILED", { "filing-combination": "both_efile" }, "Confirm that the return was e-filed.");
+});
+
+test("RECORD_FILING_RESULT builds the results of the returns answered", () => {
+  assert.deepEqual(
+    payloadFor("RECORD_FILING_RESULT", {}, {
+      "result-federal": "accepted",
+      "date-federal": " 2026-10-20 ",
+      "code-federal": "ignored on an accepted return",
+      "result-state": "rejected",
+      "date-state": "2026-10-21",
+      "code-state": " PA-123 ",
+      "fix-note": " Corrected the SSN. ",
+    }).payload,
+    {
+      confirmed: true,
+      results: {
+        federal: { result: "accepted", date: "2026-10-20" },
+        state: { result: "rejected", date: "2026-10-21", code: "PA-123" },
+      },
+      fixNote: "Corrected the SSN.",
+    },
+  );
+  // A return left on "no answer yet" is not sent; a blank note is not sent.
+  assert.deepEqual(
+    payloadFor("RECORD_FILING_RESULT", {}, {
+      "result-federal": "",
+      "result-state": "mailed",
+      "date-state": "2026-10-22",
+      "fix-note": "  ",
+    }).payload,
+    { confirmed: true, results: { state: { result: "mailed", date: "2026-10-22" } } },
+  );
+  refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20" }, "A reject code is required.");
+  refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20", "code-federal": "  " }, "A reject code is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "accepted" }, "A date is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "accepted", "date-state": " " }, "A date is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "lost", "date-state": "2026-10-20" }, "Record a result for at least one return.");
+  refused("RECORD_FILING_RESULT", {}, "Record a result for at least one return.");
+});
+
+test("RETURN_TO_SIGNING needs the fix confirmed", () => {
+  assert.deepEqual(payloadFor("RETURN_TO_SIGNING", {}, { confirmed: "on" }), {
+    type: "RETURN_TO_SIGNING",
+    payload: { confirmed: true },
+  });
+  refused("RETURN_TO_SIGNING", {}, "Confirm that the fix is done.");
+  refused("RETURN_TO_SIGNING", { confirmed: "no" }, "Confirm that the fix is done.");
 });
 
 test("screeningCheckKeys by service", () => {

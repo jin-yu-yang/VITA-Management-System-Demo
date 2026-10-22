@@ -170,6 +170,13 @@ export const TEXT = Object.freeze({
   "stage.ready_to_efile.client": { en: "You signed Form 8879. PCDC will e-file your return next.", zh: "您已签署 8879 表。PCDC 接下来会以电子方式递交您的报税表。" },
   "stage.efiled.label": { en: "E-filed", zh: "已电子递交" },
   "stage.efiled.client": { en: "Your return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的报税表已电子递交。国税局会确认是否接受。" },
+  // E-filed by filing method (domain.mjs describeStage): federal e-filed with the state return on paper, and both on paper
+  "stage.efiled.filed.label": { en: "Filed", zh: "已递交" },
+  "stage.efiled.mailed.label": { en: "Mailed", zh: "已邮寄" },
+  "stage.rejected.label": { en: "Needs a correction", zh: "需要更正" },
+  "stage.rejected.client": { en: "Your return needs a correction before it can be accepted. PCDC will contact you about the correction.", zh: "您的报税表需要更正后才能被接受。PCDC 会就更正事宜联系您。" },
+  "stage.accepted.label": { en: "Complete", zh: "已完成" },
+  "stage.accepted.client": { en: "Your return was accepted.", zh: "您的报税表已被接受。" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },

@@ -243,6 +243,14 @@ export function decorateStaffCase(caseRecord, people = []) {
       ...entry,
       recordedByName: nameOf(entry?.recordedByPersonId),
     }));
+  if (Array.isArray(caseRecord.filingAttempts))
+    decorated.filingAttempts = caseRecord.filingAttempts.map((attempt) => ({
+      ...attempt,
+      notes: (attempt?.notes ?? []).map((note) => ({
+        ...note,
+        recordedByName: nameOf(note?.recordedBy) ?? UNKNOWN_PERSON,
+      })),
+    }));
   if (Array.isArray(caseRecord.internalHistory))
     decorated.internalHistory = caseRecord.internalHistory.map((entry) => ({
       ...entry,
@@ -1883,6 +1891,8 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
   MARK_READY_TO_EFILE: "recorded the client's Form 8879 signature",
   MARK_EFILED: "recorded that the return was e-filed",
+  RECORD_FILING_RESULT: "recorded the filing result",
+  RETURN_TO_SIGNING: "returned the case to signing",
   REMIND: "recorded a reminder for the client",
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",

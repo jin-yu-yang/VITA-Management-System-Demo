@@ -98,7 +98,39 @@ export const mapCase = (row) => ({
   // (migration 033); null until a questionnaire approval sets them.
   signingPlan: row.signing_plan ?? null,
   signingAppointmentAt: row.signing_appointment_at ?? null,
+  // How each return was filed ('efile' or 'paper') and the answer to it
+  // (migration 035); null until the case is filed, and until answered.
+  federalMethod: row.federal_method ?? null,
+  stateMethod: row.state_method ?? null,
+  federalResult: row.federal_result ?? null,
+  stateResult: row.state_result ?? null,
 });
+
+// The filing history (migration 035), staff only: one entry per time the case
+// was filed, newest first, with that filing's returns (federal then state) and
+// the fix notes recorded after a rejection (oldest first). The rows arrive in
+// those orders; this only groups them.
+export const mapFilingAttempts = (attempts = [], returns = [], notes = []) =>
+  attempts.map((row) => ({
+    attempt: Number(row.attempt),
+    filedAt: row.filed_at,
+    returns: returns
+      .filter((entry) => Number(entry.attempt) === Number(row.attempt))
+      .map((entry) => ({
+        returnKind: entry.return_kind,
+        method: entry.method,
+        result: entry.result ?? null,
+        answeredOn: entry.answered_on ?? null,
+        rejectCode: entry.reject_code ?? null,
+      })),
+    notes: notes
+      .filter((entry) => Number(entry.attempt) === Number(row.attempt))
+      .map((entry) => ({
+        note: entry.note,
+        recordedBy: entry.recorded_by,
+        recordedAt: entry.recorded_at,
+      })),
+  }));
 
 // The case's contact details (migration 011), or null when it has no row: a
 // case nobody has saved a contact for.
@@ -271,6 +303,9 @@ export const mapStaffCase = ({
   materials = [],
   preparerQuestionnaires = [],
   reviewerQuestionnaires = [],
+  filingAttempts = [],
+  filingReturns = [],
+  filingNotes = [],
 }) => ({
   ...mapClientCase({ row, requests, documents, history, contacts, cards }),
   participants: participants.map((participant) => participant.person_id),
@@ -281,6 +316,7 @@ export const mapStaffCase = ({
   internalHistory: internalHistory.map(camelRow),
   preparerQuestionnaires: preparerQuestionnaires.map(camelRow),
   reviewerQuestionnaires: reviewerQuestionnaires.map(camelRow),
+  filingAttempts: mapFilingAttempts(filingAttempts, filingReturns, filingNotes),
 });
 
 export function createStore(client) {
@@ -552,6 +588,31 @@ export function createStore(client) {
         // Staff only: the applicant path above never names these tables.
         preparerQuestionnaires: await relatedRows("preparer_questionnaires", id),
         reviewerQuestionnaires: await relatedRows("reviewer_questionnaires", id),
+        // Staff only (migration 035). These tables have no created_at, so they
+        // are ordered by their own keys rather than through relatedRows.
+        filingAttempts: await read(
+          client
+            .from("filing_attempts")
+            .select("*")
+            .eq("case_id", id)
+            .order("attempt", { ascending: false }),
+        ),
+        filingReturns: await read(
+          client
+            .from("filing_returns")
+            .select("*")
+            .eq("case_id", id)
+            .order("attempt")
+            .order("return_kind"),
+        ),
+        filingNotes: await read(
+          client
+            .from("filing_notes")
+            .select("*")
+            .eq("case_id", id)
+            .order("recorded_at")
+            .order("id"),
+        ),
       });
     },
 
