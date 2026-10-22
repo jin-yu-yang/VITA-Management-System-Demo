@@ -96,3 +96,44 @@ test("filing results schema against real Supabase", async (t) => {
     await f.close();
   }
 });
+
+test("fix notes go only with their case", async (t) => {
+  const f = await createDatabaseFixture();
+  try {
+    const withNote = async () => {
+      const { caseId } = await f.submittedClientCase();
+      await f.sql("insert into public.filing_attempts(workspace_id,case_id,attempt,filed_by) values($1,$2,1,$3)", [
+        f.workspaceId,
+        caseId,
+        f.sam,
+      ]);
+      await f.sql(
+        "insert into public.filing_notes(workspace_id,case_id,attempt,note,recorded_by) values($1,$2,1,'Fictional fix note.',$3)",
+        [f.workspaceId, caseId, f.sam],
+      );
+      return caseId;
+    };
+    const noteCount = async (caseId) =>
+      (await f.sql("select count(*)::int n from public.filing_notes where case_id=$1", [caseId])).rows[0].n;
+
+    await t.test("deleting a filing attempt alone is refused and keeps the note", async () => {
+      const caseId = await withNote();
+      await assert.rejects(() => f.sql("delete from public.filing_attempts where case_id=$1", [caseId]));
+      assert.equal(await noteCount(caseId), 1);
+    });
+
+    await t.test("deleting the case removes its notes", async () => {
+      const caseId = await withNote();
+      await f.sql("delete from public.cases where id=$1", [caseId]);
+      assert.equal(await noteCount(caseId), 0);
+    });
+
+    await t.test("deleting the workspace removes its notes", async () => {
+      const caseId = await withNote();
+      await f.sql("delete from public.workspaces where id=$1", [f.workspaceId]);
+      assert.equal(await noteCount(caseId), 0);
+    });
+  } finally {
+    await f.close();
+  }
+});

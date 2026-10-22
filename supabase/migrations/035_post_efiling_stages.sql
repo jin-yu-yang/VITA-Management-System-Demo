@@ -60,20 +60,27 @@ alter table public.cases add constraint cases_filing_results check(
  and (state_result is null or (state_result in ('accepted','rejected','mailed') and state_method is not null and (state_result='mailed')=(state_method='paper'))));
 
 -- ---------------------------------------------------------------------------
+-- The foreign keys to people below are deferred: a workspace delete removes its
+-- people before its cases, and the check must wait until the cases (and so
+-- these rows) are gone too.
+--
 -- 3. filing_attempts: one row per time the case was filed. Only the action RPC
 -- writes it; the select policy is 013's presenter-only one.
 
 create table if not exists public.filing_attempts (
  id uuid primary key default gen_random_uuid(),
- workspace_id uuid not null references public.workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  case_id uuid not null,
  attempt int not null check(attempt>=1),
  filed_at timestamptz not null default now(),
  filed_by uuid not null,
  unique(case_id,attempt),
  foreign key(workspace_id,case_id) references public.cases(workspace_id,id) on delete cascade,
- foreign key(workspace_id,filed_by) references public.people(workspace_id,id)
+ foreign key(workspace_id,filed_by) references public.people(workspace_id,id) deferrable initially deferred
 );
+-- No direct workspace foreign key (see filing_notes): a workspace delete reaches
+-- the attempts through their case only.
+alter table public.filing_attempts drop constraint if exists filing_attempts_workspace_id_fkey;
 alter table public.filing_attempts enable row level security;
 drop policy if exists presenter_filing_attempts on public.filing_attempts;
 create policy presenter_filing_attempts on public.filing_attempts for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_attempts.case_id where m.workspace_id=filing_attempts.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access='presenter' and (c.origin<>'client' or c.stage<>'draft')));
@@ -87,7 +94,7 @@ grant select, insert, update, delete on public.filing_attempts to service_role;
 
 create table if not exists public.filing_returns (
  id uuid primary key default gen_random_uuid(),
- workspace_id uuid not null references public.workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  case_id uuid not null,
  attempt int not null,
  return_kind text not null check(return_kind in ('federal','state')),
@@ -99,8 +106,9 @@ create table if not exists public.filing_returns (
  unique(case_id,attempt,return_kind),
  foreign key(workspace_id,case_id) references public.cases(workspace_id,id) on delete cascade,
  foreign key(case_id,attempt) references public.filing_attempts(case_id,attempt) on delete cascade,
- foreign key(workspace_id,recorded_by) references public.people(workspace_id,id)
+ foreign key(workspace_id,recorded_by) references public.people(workspace_id,id) deferrable initially deferred
 );
+alter table public.filing_returns drop constraint if exists filing_returns_workspace_id_fkey;
 alter table public.filing_returns enable row level security;
 drop policy if exists presenter_filing_returns on public.filing_returns;
 create policy presenter_filing_returns on public.filing_returns for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_returns.case_id where m.workspace_id=filing_returns.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access='presenter' and (c.origin<>'client' or c.stage<>'draft')));
@@ -114,7 +122,7 @@ grant select, insert, update, delete on public.filing_returns to service_role;
 
 create table if not exists public.filing_notes (
  id uuid primary key default gen_random_uuid(),
- workspace_id uuid not null references public.workspaces(id) on delete cascade,
+ workspace_id uuid not null,
  case_id uuid not null,
  attempt int not null,
  note text not null check(char_length(note) between 1 and 1000),
@@ -122,8 +130,13 @@ create table if not exists public.filing_notes (
  recorded_at timestamptz not null default now(),
  foreign key(workspace_id,case_id) references public.cases(workspace_id,id) on delete cascade,
  foreign key(case_id,attempt) references public.filing_attempts(case_id,attempt) on delete cascade,
- foreign key(workspace_id,recorded_by) references public.people(workspace_id,id)
+ foreign key(workspace_id,recorded_by) references public.people(workspace_id,id) deferrable initially deferred
 );
+-- A note cascades only through its case and its filing, never straight from
+-- the workspace, so the trigger below always sees the case row already gone
+-- when a case or a workspace is deleted. (An earlier draft had a direct
+-- workspace foreign key; this drops it where it was applied.)
+alter table public.filing_notes drop constraint if exists filing_notes_workspace_id_fkey;
 alter table public.filing_notes enable row level security;
 drop policy if exists presenter_filing_notes on public.filing_notes;
 create policy presenter_filing_notes on public.filing_notes for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_notes.case_id where m.workspace_id=filing_notes.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access='presenter' and (c.origin<>'client' or c.stage<>'draft')));
@@ -134,8 +147,10 @@ grant select, insert, update, delete on public.filing_notes to service_role;
 create or replace function vitally_private.filing_notes_append_only() returns trigger
 language plpgsql security definer set search_path='' as $$
 begin
- -- A note goes only with its case: when the case itself is being deleted (a
- -- workspace teardown), the cascade is allowed through.
+ -- A note may go only together with its whole case (a sample reset, a fixture
+ -- or workspace teardown), never on its own. A delete cascading from a deleted
+ -- case sees the case row already gone, so it passes; a direct delete, or a
+ -- cascade from deleting just a filing attempt, finds the case and is refused.
  if tg_op='DELETE' and not exists(select 1 from public.cases where id=old.case_id) then
   return old;
  end if;
