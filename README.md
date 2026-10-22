@@ -20,7 +20,7 @@ The full workflow described in the [approved design](docs/superpowers/specs/2026
 is implemented and tested against an isolated local Supabase stack: identity and case ownership,
 every workflow action (intake through closure, documents, admin follow-up, assistance, independent
 review and corrections), real email (OTP) sign-in, Realtime-driven shared state across two
-browsers, and six seeded sample cases with presenter-only reset/checkpoint controls.
+browsers, and eight seeded sample cases with presenter-only reset/checkpoint controls.
 
 You can already sign in by hand on the local stack with fictional rehearsal accounts (see
 [Run locally](#run-locally)).

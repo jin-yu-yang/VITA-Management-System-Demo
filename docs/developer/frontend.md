@@ -388,7 +388,8 @@ refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
 
 The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
 "Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
-sends `{confirmed: true}` through `payloadFor`, like any [workflow button](#events-and-actions).
+sends its payload through `payloadFor` (`{confirmed: true}` for "Mark ready to e-file…";
+`{confirmed, methods}` for "Mark e-filed…"), like any [workflow button](#events-and-actions).
 `adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
 whose reviewer has recorded a completed call with the client (the database checks the same), and
 the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows

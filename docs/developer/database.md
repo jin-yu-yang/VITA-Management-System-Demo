@@ -257,7 +257,7 @@ caller itself, and returns a JSON receipt.
 | Function | Purpose | Returns |
 | --- | --- | --- |
 | `vitally_create_case(p_action_id uuid, p_mode text, p_person_id uuid, p_answers jsonb)` | New draft. `p_mode` is `client` (an applicant, no person) or `assisted` (a presenter acting as an `admin` person, for a walk-in client) | `{actionId, caseId, reference, revision}` |
-| `vitally_apply_action(p_action_id uuid, p_case_id uuid, p_expected_revision bigint, p_person_id uuid, p_type text, p_payload jsonb)` | Every case workflow action (21 types) | `{actionId, caseId, reference, revision}` |
+| `vitally_apply_action(p_action_id uuid, p_case_id uuid, p_expected_revision bigint, p_person_id uuid, p_type text, p_payload jsonb)` | Every case workflow action (the types in `CASE_ACTIONS`, [`src/contracts.mjs`](../../src/contracts.mjs)) | `{actionId, caseId, reference, revision}` |
 | `vitally_assistance_action(p_action_id uuid, p_item_id uuid, p_expected_revision bigint, p_person_id uuid, p_type text, p_note text)` | `CLAIM` or `RESOLVE` an assistance item | `{actionId, itemId, revision}` |
 | `vitally_log_contact(p_action_id uuid, p_case_id uuid, p_person_id uuid, p_followup_id uuid, p_entry jsonb)` | Log a contact on a case, optionally linked to an open follow-up task | `{actionId, contactId, caseId, revision}` |
 | `vitally_edit_contact(p_action_id uuid, p_contact_id uuid, p_expected_revision bigint, p_person_id uuid, p_entry jsonb)` | Edit a logged contact; appends a version | `{actionId, contactId, caseId, revision}` |
@@ -699,7 +699,7 @@ What the suite covers, by file:
 | `database-intake.mjs` | Intake versions, the catalogue load, version-2 saves and submits, contact details, materials, and the browser-against-database comparison of every check |
 | `database-redesign.mjs` | Visits, `case_document_cards` and the two card actions (017), and who may mark and move cards (018) |
 | `database-intake-default.mjs` | The column default, new applications on version 2, version-2 samples, and a checkpoint that clears materials and card marks (019) |
-| `database-intake-v1-removed.mjs` | Migration 023: the guard's predicates and count, every workspace on 2, both `CHECK`s refusing 1, an application's fixed version, a create that carries answers refused, the dropped functions, and a reset's six version-2 samples |
+| `database-intake-v1-removed.mjs` | Migration 023: the guard's predicates and count, every workspace on 2, both `CHECK`s refusing 1, an application's fixed version, a create that carries answers refused, the dropped functions, and a reset's eight version-2 samples |
 | `database-realtime.mjs` | Realtime privacy between clients and for staff tables |
 | `database-store.mjs` | The browser's data adapter against the real database |
 
