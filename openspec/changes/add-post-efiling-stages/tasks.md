@@ -77,13 +77,13 @@
 
 ## 7. Browser: the client
 
-- [ ] 7.1 `src/client-text.mjs`:
+- [x] 7.1 `src/client-text.mjs`:
   - the per-return sentences, the closing sentences, the re-sign message and the new labels, in English and 简体 (宾州; the PCDC / 我们 mix left as it is);
   - every new history line in `SENTENCES` (D10).
 
   Run `npm run build:hant` and commit `src/zh-hant.mjs`.
-- [ ] 7.2 `src/client-views.mjs`: compose the status message (D9), the re-sign message at Ready to exit after Return to signing, the stepper's Rejected placement and complete state, and `REVIEW_STAGES`. Tests in `tests/client-views.test.mjs`, including a check that no reject code or fix note is rendered.
-- [ ] 7.3 Translation tests (`tests/client-language.test.mjs`): enumerate every history line the SQL can produce and check each has a 简体 entry, and that no new message or line contains a phone number.
+- [x] 7.2 `src/client-views.mjs`: compose the status message (D9), the re-sign message at Ready to exit after Return to signing, the stepper's Rejected placement and complete state, and `REVIEW_STAGES`. Tests in `tests/client-views.test.mjs`, including a check that no reject code or fix note is rendered.
+- [x] 7.3 Translation tests (`tests/client-language.test.mjs`): enumerate every history line the SQL can produce and check each has a 简体 entry, and that no new message or line contains a phone number.
 
 ## 8. The story
 
