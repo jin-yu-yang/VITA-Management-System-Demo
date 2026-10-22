@@ -179,6 +179,7 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
           "followupAssigneeIds",
           "openRequests",
           "reviewContactStatus",
+          "latestFixNote",
         ])
           assert.ok(!(field in row), `${field} is absent for an applicant`);
     });

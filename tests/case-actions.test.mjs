@@ -510,6 +510,34 @@ test("RECORD_FILING_RESULT builds the results of the returns answered", () => {
   refused("RECORD_FILING_RESULT", {}, "Record a result for at least one return.");
 });
 
+test("RECORD_FILING_RESULT keeps a fix note for a rejection", () => {
+  const accepted = { "result-federal": "accepted", "date-federal": "2026-10-20", "fix-note": "Fictional note." };
+  // At E-filed with nothing rejected, a note has nothing to attach to.
+  assert.throws(
+    () => payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, accepted),
+    (error) => error.message === "A fix note goes with a rejection.",
+  );
+  assert.throws(
+    () => payloadFor("RECORD_FILING_RESULT", {}, accepted),
+    (error) => error.message === "A fix note goes with a rejection.",
+  );
+  // Rejected in the move, or already at Rejected: the note goes.
+  assert.equal(
+    payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, {
+      ...accepted,
+      "result-federal": "rejected",
+      "code-federal": "C1",
+    }).payload.fixNote,
+    "Fictional note.",
+  );
+  assert.equal(payloadFor("RECORD_FILING_RESULT", { stage: "rejected" }, accepted).payload.fixNote, "Fictional note.");
+  // A blank note is no note.
+  assert.equal(
+    payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, { ...accepted, "fix-note": "  " }).payload.fixNote,
+    undefined,
+  );
+});
+
 test("RETURN_TO_SIGNING needs the fix confirmed", () => {
   assert.deepEqual(payloadFor("RETURN_TO_SIGNING", {}, { confirmed: "on" }), {
     type: "RETURN_TO_SIGNING",

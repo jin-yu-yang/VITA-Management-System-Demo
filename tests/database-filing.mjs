@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
 
 // Migration 035: the stages after E-filed (rejected, accepted), the cases'
@@ -62,11 +63,21 @@ test("filing results schema against real Supabase", async (t) => {
         const staff = await f.presenter.from(table).select("*").eq("case_id", caseId);
         assert.equal(staff.error, null, table);
         assert.equal(staff.data.length, 1, table);
-        for (const client of [f.applicantA, f.presenter])
-          assert.ok(
-            (await client.from(table).insert({ workspace_id: f.workspaceId, case_id: caseId })).error,
-            `${table} insert`,
-          );
+        // A complete, otherwise-valid row, so only the missing insert grant can refuse it.
+        const row = {
+          filing_attempts: { attempt: 2, filed_by: f.sam },
+          filing_returns: { attempt: 1, return_kind: "state", method: "efile" },
+          filing_notes: { attempt: 1, note: "Fictional second note.", recorded_by: f.sam },
+        }[table];
+        for (const client of [f.applicantA, f.presenter]) {
+          const { error } = await client
+            .from(table)
+            .insert({ workspace_id: f.workspaceId, case_id: caseId, ...row });
+          assert.ok(error, `${table} insert`);
+          assert.equal(error.code, "42501", `${table} insert is a permission refusal: ${error.message}`);
+        }
+        const total = await f.sql(`select count(*)::int n from public.${table} where case_id=$1`, [caseId]);
+        assert.equal(total.rows[0].n, 1, `${table} unchanged`);
       }
     });
 
@@ -702,6 +713,11 @@ test("record filing result", async (t) => {
         return caseId;
       };
       const caseId = await old();
+      // The filing is credited to whoever marked it E-filed, not to the admin recording the answer.
+      await f.sql(
+        "update public.case_events set actor_person_id=$2 where case_id=$1 and action='MARK_EFILED'",
+        [caseId, f.alex],
+      );
       await record(caseId, {
         federal: { result: "accepted", date: await nyDay(-5) },
         state: { result: "accepted", date: today },
@@ -717,7 +733,7 @@ test("record filing result", async (t) => {
         "select attempt, filed_by, filed_at < now()-interval '9 days' old from public.filing_attempts where case_id=$1",
         [caseId],
       );
-      assert.deepEqual(attempt.rows, [{ attempt: 1, filed_by: f.sam, old: true }]);
+      assert.deepEqual(attempt.rows, [{ attempt: 1, filed_by: f.alex, old: true }]);
       // The bound still holds: an answer dated before the filing is refused.
       const other = await old();
       const eleven = await nyDay(-11);
@@ -729,6 +745,25 @@ test("record filing result", async (t) => {
       const third = await old();
       await record(third, { state: { result: "rejected", date: today, code: "C9" } });
       assert.equal((await columns(third)).stage, "rejected");
+    });
+
+    await t.test("two admins recording the same return at once: one wins", async () => {
+      const today = await nyDay();
+      const caseId = await filedCase();
+      const revision = (await f.sql("select revision from public.cases where id=$1", [caseId])).rows[0].revision;
+      const call = () =>
+        f.presenter.rpc("vitally_apply_action", {
+          p_action_id: randomUUID(),
+          p_case_id: caseId,
+          p_expected_revision: Number(revision),
+          p_person_id: f.sam,
+          p_type: "RECORD_FILING_RESULT",
+          p_payload: { confirmed: true, results: { federal: { result: "accepted", date: today } } },
+        });
+      const settled = await Promise.all([call(), call()]);
+      assert.equal(settled.filter((r) => !r.error).length, 1, JSON.stringify(settled.map((r) => r.error)));
+      assert.equal(settled.filter((r) => r.error).length, 1);
+      assert.deepEqual(await counts(caseId), { answered: 1, notes: 0, events: 1 });
     });
 
     await t.test("the history lines all translate", async () => {

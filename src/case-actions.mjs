@@ -186,7 +186,7 @@ function filingMethods(values) {
 // answer needs its date. The date window and who may record are the database's.
 const FILING_RESULTS = Object.freeze(["accepted", "rejected", "mailed"]);
 
-function filingResults(values) {
+function filingResults(dataset, values) {
   const results = {};
   for (const kind of ["federal", "state"]) {
     const result = String(values?.[`result-${kind}`] ?? "").trim();
@@ -205,7 +205,13 @@ function filingResults(values) {
     throw validation("Record a result for at least one return.");
   const payload = { confirmed: true, results };
   const fixNote = String(values?.["fix-note"] ?? "").trim();
-  if (fixNote) payload.fixNote = fixNote;
+  if (fixNote) {
+    // The submit control carries `data-stage`: a case already at Rejected may
+    // take a note with a later answer; otherwise the note needs a rejection.
+    const rejects = Object.values(results).some((entry) => entry.result === "rejected");
+    if (!rejects && dataset?.stage !== "rejected") throw validation("A fix note goes with a rejection.");
+    payload.fixNote = fixNote;
+  }
   return payload;
 }
 
@@ -267,7 +273,7 @@ const BUILDERS = Object.freeze({
     confirmed: confirmation(values, "Confirm that the return was e-filed."),
     methods: filingMethods(values),
   }),
-  RECORD_FILING_RESULT: (dataset, values) => filingResults(values),
+  RECORD_FILING_RESULT: (dataset, values) => filingResults(dataset, values),
   RETURN_TO_SIGNING: (dataset, values) => ({
     confirmed: confirmation(values, "Confirm that the fix is done."),
   }),

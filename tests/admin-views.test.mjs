@@ -15,6 +15,7 @@ import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
 import { payloadFor } from "../src/case-actions.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { nowInput } from "../src/contact-log.mjs";
 
 // The admin screens are pure functions of records and one persona, so these
 // tests read the HTML string itself. No DOM library, and nothing here may reach
@@ -1292,6 +1293,10 @@ test("the Record filing result dialog names the client and the application, and 
   assert.match(html, /name="confirmed" value="true" required/);
   for (const field of ["result-federal", "date-federal", "code-federal", "result-state", "date-state", "code-state", "fix-note"])
     assert.match(html, new RegExp(`name="${field}"`), field);
+  // No answer is dated after PCDC's today, and the submit control carries the stage.
+  const today = nowInput().slice(0, 10);
+  assert.equal(html.match(new RegExp(`name="date-(federal|state)" type="date"[^>]*max="${today}"`, "g")).length, 2);
+  assert.match(html, /data-case-action="RECORD_FILING_RESULT"[^>]*data-stage="efiled"/);
   // A paper return can only be mailed.
   const paper = recordFilingResultDialogBody({
     savedCase: officeCase({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" }),

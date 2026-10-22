@@ -1410,6 +1410,14 @@ test("your next step offers the one action that fits, or says who the case waits
   assert.match(step({ stage: "received" }, ALEX), /<h2 id="next-step-title" tabindex="-1">Your next step<\/h2>/);
   // No persona.
   assert.match(step({ stage: "preparing" }, null), /Choose a volunteer persona to act as\./);
+  // A case returned to signing after a rejection: no review conversation is due.
+  const returned = step({ stage: "review_approved", federalMethod: "efile", stateMethod: "efile" }, MORGAN);
+  assert.match(returned, /The client signs again\. The office then marks it ready to e-file\./);
+  assert.doesNotMatch(returned, /reviewer records the conversation/);
+  assert.match(
+    step({ stage: "review_approved", federalMethod: null }, MORGAN),
+    /The reviewer records the conversation with the client/,
+  );
 });
 
 test("the staff case page is five tabs, with each action in exactly one place", () => {

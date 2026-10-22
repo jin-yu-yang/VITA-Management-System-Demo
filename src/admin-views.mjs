@@ -44,6 +44,7 @@ import {
   filingPanel,
 } from "./staff-views.mjs";
 import { waitingReturns, returnedToSigning, returnState } from "./domain.mjs";
+import { nowInput } from "./contact-log.mjs";
 
 // The task's own list lives beside the Contacts tab, in staff-views.mjs, and
 // the office drawer takes it from here as it always took the attempt list.
@@ -847,7 +848,7 @@ function resultFields(record, kind) {
     `date-${kind}`,
     "",
     "date",
-    "",
+    `max="${nowInput().slice(0, 10)}"`, // PCDC's today: no answer is dated later
     "filing",
   )}${when(
     method !== "paper",
@@ -887,7 +888,7 @@ export function recordFilingResultDialogBody(state = {}) {
       `${icon("check")} Record the result`,
       "RECORD_FILING_RESULT",
       "primary full",
-      state.busy ? "disabled" : "",
+      `data-stage="${esc(record.stage ?? "")}" ${state.busy ? "disabled" : ""}`,
     ),
     keep: "Keep it as it is",
   });

@@ -521,6 +521,7 @@ declare v_today date:=(now() at time zone 'America/New_York')::date;
  v_attempt int;
  v_filed date;
  v_filed_at timestamptz;
+ v_filed_by uuid;
  v_kind text;
  v_in jsonb;
  v_row public.filing_returns;
@@ -541,9 +542,13 @@ begin
  -- A case e-filed before 035 has no methods and no filing rows: both returns
  -- were e-filed, in one filing that happened when it was marked E-filed.
  if v_fm is null then
-  v_filed_at:=coalesce((select max(e.created_at) from public.case_events e where e.case_id=p_case.id and e.action='MARK_EFILED'),p_case.updated_at);
+  select e.created_at,e.actor_person_id into v_filed_at,v_filed_by
+   from public.case_events e where e.case_id=p_case.id and e.action='MARK_EFILED'
+   order by e.created_at desc limit 1; -- 035
+  v_filed_at:=coalesce(v_filed_at,p_case.updated_at);
+  v_filed_by:=coalesce(v_filed_by,p_person.id);
   update public.cases set federal_method='efile',state_method='efile' where id=p_case.id;
-  insert into public.filing_attempts(workspace_id,case_id,attempt,filed_at,filed_by) values(p_case.workspace_id,p_case.id,1,v_filed_at,p_person.id);
+  insert into public.filing_attempts(workspace_id,case_id,attempt,filed_at,filed_by) values(p_case.workspace_id,p_case.id,1,v_filed_at,v_filed_by);
   insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method)
    values(p_case.workspace_id,p_case.id,1,'federal','efile'),(p_case.workspace_id,p_case.id,1,'state','efile');
  end if;

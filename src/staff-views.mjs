@@ -42,7 +42,7 @@ import {
   emptyState,
   emptyLine,
 } from "./ui.mjs";
-import { describeStage, phaseTab, BOARD_TABS } from "./domain.mjs";
+import { describeStage, phaseTab, BOARD_TABS, returnedToSigning } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 import {
   CONFIRMED_BY,
@@ -154,6 +154,9 @@ const STAGE_WORK = Object.freeze({
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
 });
 const UNKNOWN_WORK = Object.freeze({ work: "Waiting on the office.", needs: null });
+// A case sent back from Rejected is at the same stage as a freshly approved
+// one, but the reviewer's conversation with the client is long done.
+const RETURNED_TO_SIGNING_WORK = "The client signs again. The office then marks it ready to e-file.";
 export const stageWork = (stage) =>
   Object.hasOwn(STAGE_WORK, stage ?? "") ? STAGE_WORK[stage] : UNKNOWN_WORK;
 
@@ -1394,7 +1397,9 @@ export function nextStep(record, rights, ui = {}) {
     default:
       body = "";
   }
-  return `<section class="panel next-step" aria-labelledby="next-step-title"><div class="section-head"><h2 id="next-step-title" tabindex="-1">Your next step</h2></div><p class="next-step-waiting">${esc(stageWork(record.stage).work)}</p>${body}</section>`;
+  return `<section class="panel next-step" aria-labelledby="next-step-title"><div class="section-head"><h2 id="next-step-title" tabindex="-1">Your next step</h2></div><p class="next-step-waiting">${esc(
+    returnedToSigning(record) ? RETURNED_TO_SIGNING_WORK : stageWork(record.stage).work,
+  )}</p>${body}</section>`;
 }
 
 // The preparation milestones, not the stage sentence or blockers "Your next
