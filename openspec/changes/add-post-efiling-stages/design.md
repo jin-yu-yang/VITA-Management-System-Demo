@@ -65,7 +65,7 @@
 
     These four columns are all a client needs for the stepper, the sentences and the labels.
   - **Staff-only table `filing_returns`:** one row per return per filing attempt. It holds `case_id`, `attempt`, `return_kind` (`federal` | `state`), `method`, `filed_at`, `result`, `answered_on` (the acknowledgment or mailing date), `reject_code`, `recorded_by`. A sibling `filing_attempts` (`case_id`, `attempt`, `filed_at`, `filed_by`) records each filing.
-  - **Staff-only, append-only table `filing_notes`** (`case_id`, `attempt`, `note`, `recorded_by`, `recorded_at`): one row per fix note, never updated or deleted. A `before update or delete` trigger raises on any attempt, so even the service role can't rewrite a note. The writes are audited by construction: each row records who wrote it and when, and the action's event records that a note was added (not its text).
+  - **Staff-only, append-only table `filing_notes`** (`case_id`, `attempt`, `note`, `recorded_by`, `recorded_at`): one row per fix note, never updated, and deleted only with its whole case (sample reset, sample checkpoint, workspace teardown). A `before update or delete` trigger raises on any other attempt, so even the service role can't rewrite a note. (Rulings during apply: the case-gone exception is deterministic because notes cascade only through their case and filing; the checkpoint exception applies to sample cases only.) The writes are audited by construction: each row records who wrote it and when, and the action's event records that a note was added (not its text).
   - **Access:** all three tables use 013's presenter-only select, are written only by the action RPC, and are loaded by `relatedRows`. They are not added to the realtime publication: a `cases` update already triggers the staff reload.
 - **Reason:** the reject code, dates and fix note must never reach a client session, whether by select or by realtime. The `cases` columns carry only what a client is told anyway. Staff see earlier attempts in the Filing panel.
 - **Alternatives considered:**
@@ -202,7 +202,7 @@ The conversation before propose didn't cover this. Say the federal return is rej
 ### D13: Samples and the story
 
 - **Choice:**
-  - `fixture_keys` gains `rejected` and `accepted`.
+  - `fixture_keys` gains `rejected` and `accepted`, so a reset now seeds eight samples (a `client-intake` delta records this).
   - **`apply_fixture_scenario`** builds them through the real chain's end state:
     - `accepted`: both e-filed, both accepted;
     - `rejected`: both e-filed, federal accepted, state rejected, with a fictional reject code and fix note.

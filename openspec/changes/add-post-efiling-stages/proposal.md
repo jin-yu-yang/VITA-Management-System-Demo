@@ -69,7 +69,9 @@ A case stops at E-filed today: nothing records how the return went in or what th
   - the client messages and history lines;
   - ADDED requirements for Record filing result and Return to signing.
 
-  `office-follow-up` was checked and is unchanged: its follow-up tasks aren't touched.
+- `client-intake`: the sample reset seeds eight samples (adds `rejected` and `accepted`).
+
+`office-follow-up` was checked and is unchanged: its follow-up tasks aren't touched.
 
 ## Impact
 

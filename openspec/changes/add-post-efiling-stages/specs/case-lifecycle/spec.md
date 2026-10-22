@@ -7,7 +7,7 @@ At E-filed, an admin SHALL be offered **Record filing result…**, on the case p
 - an e-filed return SHALL be recorded as **accepted** or **rejected**, with the acknowledgment date. A rejected return SHALL also have a reject code: free text, 1 to 40 characters after trimming;
 - a paper return SHALL be recorded as **mailed**, with the mailing date.
 
-Every date SHALL be no later than today and no earlier than the day the return was filed. When the case is at Rejected, or the move takes it there, the admin MAY add a fix note (at most 1000 characters) saying who fixes the return and how. That includes recording the second return's answer at Rejected. A fix note SHALL be refused on any other move. Fix notes SHALL be append-only: each note SHALL be kept with who recorded it and when, and no note SHALL ever be changed or deleted, not even by the database's own service role.
+Every date SHALL be no later than today and no earlier than the day the return was filed. When the case is at Rejected, or the move takes it there, the admin MAY add a fix note (at most 1000 characters) saying who fixes the return and how. That includes recording the second return's answer at Rejected. A fix note SHALL be refused on any other move. Fix notes SHALL be append-only: each note SHALL be kept with who recorded it and when, and no note SHALL ever be changed, or deleted on its own, not even by the database's own service role. A note is removed only together with its case: a sample reset, a sample checkpoint, or a workspace teardown.
 
 Its confirmation dialog SHALL:
 - name the client (as Mark e-filed's does) and the application ID;
@@ -51,8 +51,12 @@ The move SHALL be admin-only, and SHALL have no undo. A case e-filed before fili
 - **THEN** the database refuses it with `VALIDATION`, and nothing is recorded
 
 #### Scenario: A note can't be changed
-- **WHEN** anyone, the database's service role included, tries to change or delete a recorded fix note
+- **WHEN** anyone, the database's service role included, tries to change or delete a recorded fix note on a real (non-sample) case
 - **THEN** it is refused, and the note stays as recorded
+
+#### Scenario: A note goes with its sample
+- **WHEN** the sample cases are reset
+- **THEN** each sample's notes are removed with it
 
 #### Scenario: A rejection needs a code
 - **WHEN** an admin records a return as rejected with an empty reject code

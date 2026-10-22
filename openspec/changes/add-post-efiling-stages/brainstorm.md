@@ -279,3 +279,4 @@ Baseline on `main` (2026-10-20, from #93's verify): unit 1235, database 326, bro
 - **Fix notes are append-only, with audited writes.** A `filing_notes` table (case, attempt, note, recorded by, recorded at) replaces a single note column. The Filing panel lists each filing's notes in order, and the Rejected row shows the latest.
 - **A fix note may be added whenever the case is at Rejected or the move takes it there**, not only when the move itself contains a rejection. That covers adding a note while recording the second return's answer at Rejected (design D5).
 - **The docs task includes `docs/developer/frontend.md`** (the stages and client labels), which change 1 updated.
+- **After apply (2026-10-22, the user's decisions):** the fix-note rule now says a note is removed only together with its case (a sample reset, a sample checkpoint, or a workspace teardown), matching the apply rulings; and a `client-intake` delta records that a reset seeds eight samples.
