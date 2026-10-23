@@ -485,6 +485,11 @@ export const SENTENCES = Object.freeze({
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
   "PCDC is working on your application again.": "PCDC 已继续处理您的申请。", // 036
   "PCDC is trying to reach you.": "PCDC 正在设法联系您。", // 036
+  "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.": "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。", // 036
+  "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.": "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。", // 036
+  "This application was closed. Your return continues under your other application with PCDC.": "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。", // 036
+  "PCDC could not reach you, so this application was closed. Your return was not filed.": "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。", // 036
+  "You withdrew this application. Your return was not filed.": "您已撤回此申请。您的报税表未递交。", // 036
   // Migration 035: Return to signing, Mark e-filed, and Record filing result.
   "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
   "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",

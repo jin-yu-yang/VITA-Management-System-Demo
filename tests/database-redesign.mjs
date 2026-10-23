@@ -353,7 +353,7 @@ test("visits and document cards on the server", async (t) => {
 
     await t.test("the preparer is refused once the case is closed", async () => {
       const caseId = await claimedCase(f);
-      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "Test close." });
+      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "other", note: "Test close." });
       await assert.rejects(
         card(f, f.presenter, caseId, f.alex, "w2.household", "later"),
         rejected("INVALID_TRANSITION"),
@@ -423,7 +423,7 @@ test("visits and document cards on the server", async (t) => {
     await t.test("both actions are refused on a closed case", async () => {
       const caseId = await submittedCase(f);
       await group(f, f.presenter, caseId, f.sam, "w2.household", "needed");
-      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "Test close." });
+      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "other", note: "Test close." });
       assert.equal((await caseRow(f, caseId)).stage, "closed");
       await assert.rejects(
         card(f, f.presenter, caseId, f.sam, "ssn.tp", "none"),

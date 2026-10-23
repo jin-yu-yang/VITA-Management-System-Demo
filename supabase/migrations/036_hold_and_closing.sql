@@ -16,15 +16,16 @@
 --
 --   | Function                                   | Copied from               | What 036 changes |
 --   |--------------------------------------------|---------------------------|------------------|
---   | vitally_private.check_payload              | 035                       | new REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD branches |
---   | vitally_private.receive_document           | 004                       | also accepted at Waiting for documents, and at a Hold that came from it |
+--   | vitally_private.check_payload              | 035                       | new REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD branches; CLOSE_CASE takes one of six reasons and an optional note (`other` needs it) |
+--   | vitally_private.act_close_case             | 035                       | also closes from Waiting for documents and Hold, stores the reason, clears both origins, tells the client the reason's line |
+--   | vitally_private.receive_document           | 004                      | also accepted at Waiting for documents, and at a Hold that came from it |
 --   | vitally_private.act_verify_document        | 004                       | at those stages an admin verifies, and the last verified request returns the case |
 --   | vitally_private.check_operation_authority  | 035                       | REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD join the admin-only group |
 --   | public.vitally_apply_action                | 035                       | dispatches REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD |
 --
 -- New functions: vitally_private.act_request_documents_at_intake,
--- vitally_private.return_from_documents, vitally_private.act_put_on_hold and
--- vitally_private.act_resume_from_hold.
+-- vitally_private.return_from_documents, vitally_private.act_put_on_hold,
+-- vitally_private.act_resume_from_hold and vitally_private.closed_line.
 --
 -- Written to be safe to apply again on a local test stack whose
 -- schema_migrations row for this file was deleted during development: every
@@ -218,10 +219,13 @@ begin
     raise sqlstate 'VT007' using message='VALIDATION';
    end if;
   when 'CLOSE_CASE' then
-   -- Closing is deliberate: a written reason and an explicit confirmation.
-   if vitally_private.payload_keys(p_payload)<>array['confirmed','reason']
+   -- Closing is deliberate: one of six reasons, an optional staff note, and an explicit confirmation. -- 036
+   if vitally_private.payload_keys(p_payload) not in (array['confirmed','reason'], array['confirmed','note','reason']) -- 036
     or p_payload->'confirmed'<>'true'::jsonb
-    or not vitally_private.payload_text(p_payload,'reason',1000) then
+    or jsonb_typeof(p_payload->'reason')<>'string' -- 036
+    or (p_payload->>'reason') not in ('out_of_scope','no_need_to_file','duplicate','dismissed','withdrawn','other') -- 036
+    or (p_payload ? 'note' and not vitally_private.payload_text(p_payload,'note',1000)) -- 036
+    or (p_payload->>'reason'='other' and not p_payload ? 'note') then -- 036
     raise sqlstate 'VT007' using message='VALIDATION';
    end if;
   when 'MARK_READY_TO_EFILE','RETURN_TO_SIGNING' then -- 035
@@ -366,6 +370,23 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 5c. closed_line: the client's line for each closing reason. `other` keeps the
+-- generic line that every close had before reasons existed. No line names the
+-- other application of a duplicate or carries a staff note.
+
+create or replace function vitally_private.closed_line(p_reason text) returns text
+language sql immutable security definer set search_path='' as $$
+ select case p_reason
+  when 'out_of_scope' then 'This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.'
+  when 'no_need_to_file' then 'A PCDC volunteer confirmed with you that you don''t need to file a return this year, so this application was closed.'
+  when 'duplicate' then 'This application was closed. Your return continues under your other application with PCDC.'
+  when 'dismissed' then 'PCDC could not reach you, so this application was closed. Your return was not filed.'
+  when 'withdrawn' then 'You withdrew this application. Your return was not filed.'
+  else 'Your application was closed by the office. This does not change any return filed elsewhere. Contact PCDC if you have questions.'
+ end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 6. receive_document, verbatim from 004 with the stages where the office has
 -- asked for documents.
 
@@ -432,6 +453,30 @@ begin
  end if; -- 036
  return jsonb_build_object('detail',jsonb_build_object('requestId',v_request.id),
   'message','A volunteer verified your document. No further action is needed for this request.');
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7b. act_close_case, verbatim from 035 with Waiting for documents and Hold in
+-- the closable stages, the reason stored and both origins cleared.
+
+create or replace function vitally_private.act_close_case(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ if not (p_case.stage in ('received','screening','preparation_ready','preparing','review_ready','reviewing','corrections_required','rejected','awaiting_documents','on_hold') -- 036
+   or (p_case.stage='draft' and p_case.owner_user_id is null)) then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.cases set stage='closed',closing_reason=p_payload->>'reason',documents_origin=null,hold_origin=null where id=p_case.id; -- 036
+ update public.document_requests set status='cancelled',updated_at=now()
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status in ('open','awaiting_verification');
+ update public.admin_followups set status='cancelled'
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='open';
+ -- The reason and note are staff context: case_events is presenter-only, and the client
+ -- message says plainly that an office decision, not a filing, has changed.
+ return jsonb_build_object('detail',jsonb_build_object('reason',p_payload->>'reason') -- 036
+   ||case when p_payload ? 'note' then jsonb_build_object('note',p_payload->>'note') else '{}'::jsonb end, -- 036
+  'message',vitally_private.closed_line(p_payload->>'reason')); -- 036
 end;
 $$;
 

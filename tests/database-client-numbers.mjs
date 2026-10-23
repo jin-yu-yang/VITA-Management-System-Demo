@@ -160,7 +160,8 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
         const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
         const before = await counter(f);
         await f.act(f.presenter, created.caseId, f.sam, "CLOSE_CASE", {
-          reason: "The client decided to file elsewhere.",
+          reason: "other",
+          note: "The client decided to file elsewhere.",
           confirmed: true,
         });
         const [row] = (

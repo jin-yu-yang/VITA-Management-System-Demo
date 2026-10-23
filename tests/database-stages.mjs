@@ -15,7 +15,8 @@ const SIGNED_LINE =
 const EFILED_LINE = "PCDC e-filed your return.";
 const CALL_NOTE = "Told the fictional client the return is ready.";
 const CLOSURE = {
-  reason: "The fictional client asked us to stop.",
+  reason: "other",
+  note: "The fictional client asked us to stop.",
   confirmed: true,
 };
 const CONFIRMED = { confirmed: true };

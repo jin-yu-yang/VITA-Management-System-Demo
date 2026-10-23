@@ -454,7 +454,7 @@ test("return to signing and file again", async (t) => {
     });
 
     await t.test("close", async () => {
-      const closing = { confirmed: true, reason: "Fictional: the client withdrew." };
+      const closing = { confirmed: true, reason: "withdrawn" };
       const rej = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected" });
       await act(rej, "CLOSE_CASE", closing);
       assert.equal((await columns(rej)).stage, "closed");

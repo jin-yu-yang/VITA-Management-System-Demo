@@ -294,6 +294,109 @@ test("documents at intake against real Supabase", async (t) => {
       );
       assert.equal("note" in bare.rows[0].detail, false);
     });
+
+    const close = (caseId, payload, who = [f.presenter, f.sam]) =>
+      f.act(who[0], caseId, who[1], "CLOSE_CASE", payload);
+    const CLOSED_LINES = {
+      out_of_scope:
+        "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.",
+      no_need_to_file:
+        "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.",
+      duplicate: "This application was closed. Your return continues under your other application with PCDC.",
+      dismissed: "PCDC could not reach you, so this application was closed. Your return was not filed.",
+      withdrawn: "You withdrew this application. Your return was not filed.",
+      other:
+        "Your application was closed by the office. This does not change any return filed elsewhere. Contact PCDC if you have questions.",
+    };
+
+    await t.test("each reason closes and tells the client", async () => {
+      for (const [reason, line] of Object.entries(CLOSED_LINES)) {
+        const caseId = await atScreening();
+        await close(caseId, reason === "other" ? { confirmed: true, reason, note: "A fictional note." } : { confirmed: true, reason });
+        assert.equal((await columns(caseId)).stage, "closed");
+        assert.equal((await columns(caseId)).closing_reason, reason);
+        assert.equal((await f.clientMessages(caseId)).at(-1), line);
+        const fn = await f.sql("select vitally_private.closed_line($1) as line", [reason]);
+        assert.equal(fn.rows[0].line, line);
+      }
+    });
+
+    await t.test("other needs a note", async () => {
+      const caseId = await atScreening();
+      await assert.rejects(() => close(caseId, { confirmed: true, reason: "other" }), rejected("VALIDATION"));
+      assert.equal((await columns(caseId)).stage, "screening");
+      const note = "Client chose another preparer";
+      await close(caseId, { confirmed: true, reason: "other", note });
+      const events = await f.sql(
+        "select detail from public.case_events where case_id=$1 and action='CLOSE_CASE'",
+        [caseId],
+      );
+      assert.equal(events.rows[0].detail.note, note);
+      assert.equal(events.rows[0].detail.reason, "other");
+      for (const line of await f.clientMessages(caseId)) assert.equal(line.includes("another preparer"), false);
+    });
+
+    await t.test("close refusals", async () => {
+      const caseId = await atScreening();
+      for (const payload of [
+        { confirmed: true },
+        { confirmed: true, reason: "nonsense" },
+        { confirmed: true, reason: "duplicate", note: "x".repeat(1001) },
+        { confirmed: true, reason: "duplicate", note: "  " },
+        { confirmed: true, reason: "duplicate", extra: 1 },
+        { reason: "duplicate" },
+      ])
+        await assert.rejects(() => close(caseId, payload), rejected("VALIDATION"));
+      assert.equal((await columns(caseId)).stage, "screening");
+    });
+
+    await t.test("close from the new stages", async () => {
+      const waiting = await waitingCase();
+      await close(waiting, { confirmed: true, reason: "dismissed" });
+      assert.deepEqual(await columns(waiting), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: "dismissed",
+      });
+      assert.deepEqual((await requests(waiting)).map((r) => r.status), ["cancelled"]);
+
+      const heldDocs = await waitingCase();
+      await hold(heldDocs);
+      await close(heldDocs, { confirmed: true, reason: "withdrawn" });
+      assert.deepEqual(await columns(heldDocs), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: "withdrawn",
+      });
+      assert.deepEqual((await requests(heldDocs)).map((r) => r.status), ["cancelled"]);
+
+      const heldSigning = await f.approvedCase();
+      await hold(heldSigning);
+      await close(heldSigning, { confirmed: true, reason: "dismissed" });
+      assert.deepEqual(await columns(heldSigning), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: "dismissed",
+      });
+      assert.equal(
+        (await f.clientMessages(heldSigning)).at(-1),
+        "PCDC could not reach you, so this application was closed. Your return was not filed.",
+      );
+    });
+
+    await t.test("older closed cases", async () => {
+      const caseId = await atScreening();
+      await f.sql("update public.cases set stage='closed' where id=$1", [caseId]);
+      assert.deepEqual(await columns(caseId), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: null,
+      });
+    });
   } finally {
     await f.close();
   }
