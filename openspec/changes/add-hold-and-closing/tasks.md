@@ -73,20 +73,20 @@
 
 ## 6. Browser: staff screens
 
-- [ ] 6.1 `src/admin-views.mjs`:
+- [x] 6.1 `src/admin-views.mjs`:
   - the office actions panel and dialogs: Ask for documents…, Put on hold…, Got in touch…, and Close… with the reason radio and note;
   - "Ask for documents…" in the screening checks panel;
   - an admin's Verify at Waiting for documents and at Hold.
 
   Update `tests/fixtures/confirm-dialogs.json` and the view tests.
-- [ ] 6.2 `src/staff-views.mjs`: the lifecycle-bar marks, the "Your next step" texts, and `EVENT_SENTENCES` for the four new actions. Tests.
-- [ ] 6.3 `src/pool-views.mjs`: `poolPhase` (Waiting on client, Needs attention) and the Closed reason filter. `src/office-views.mjs`: the `documents`, `hold` and `withdrawn` kinds, their texts and colouring (D12). Tests.
-- [ ] 6.4 `src/app.mjs` and `src/views.mjs`: wire the actions, dialogs and toasts. Update `tests/shell.test.mjs` as needed.
+- [x] 6.2 `src/staff-views.mjs`: the lifecycle-bar marks, the "Your next step" texts, and `EVENT_SENTENCES` for the four new actions. Tests.
+- [x] 6.3 `src/pool-views.mjs`: `poolPhase` (Waiting on client, Needs attention) and the Closed reason filter. `src/office-views.mjs`: the `documents`, `hold` and `withdrawn` kinds, their texts and colouring (D12). Tests.
+- [x] 6.4 `src/app.mjs` and `src/views.mjs`: wire the actions, dialogs and toasts. Update `tests/shell.test.mjs` as needed.
 
 ## 7. Browser: the client
 
-- [ ] 7.1 `src/client-text.mjs`: the labels, stage messages, Hold messages, closed messages, the withdraw button, box and contact line, and every new history line in `SENTENCES` (D11). Run `npm run build:hant` and commit `src/zh-hant.mjs`.
-- [ ] 7.2 `src/client-views.mjs`:
+- [x] 7.1 `src/client-text.mjs`: the labels, stage messages, Hold messages, closed messages, the withdraw button, box and contact line, and every new history line in `SENTENCES` (D11). Run `npm run build:hant` and commit `src/zh-hant.mjs`.
+- [x] 7.2 `src/client-views.mjs`:
   - the stepper placement, with Hold by origin;
   - the Withdraw button at the D7 stages and its dialog;
   - the contact line from Ready to exit on;
@@ -94,7 +94,7 @@
   - the closed message by reason.
 
   Tests, including that no hold or close note is ever rendered.
-- [ ] 7.3 Translation tests: every history line the SQL can produce has a 简体 entry, and no new message names a phone number.
+- [x] 7.3 Translation tests: every history line the SQL can produce has a 简体 entry, and no new message names a phone number.
 
 ## 8. The story
 
