@@ -212,7 +212,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
     await t.test("a sample reset never reuses a number", async () => {
       await f.seedFixtures();
       const first = await sampleNumbers(f);
-      assert.equal(first.length, 8);
+      assert.equal(first.length, 10);
       first.forEach((row, index) =>
         assert.equal(row.client_number, first[0].client_number + index),
       );
@@ -222,7 +222,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       );
       await f.seedFixtures();
       const second = await sampleNumbers(f);
-      assert.equal(second.length, 8);
+      assert.equal(second.length, 10);
       const firstMax = Math.max(...first.map((row) => row.client_number));
       for (const row of second) assert.ok(row.client_number > firstMax);
       const secondMax = Math.max(...second.map((row) => row.client_number));
