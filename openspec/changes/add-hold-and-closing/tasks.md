@@ -113,4 +113,4 @@
 
 ## 10. Checks
 
-- [ ] 10.1 Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all`, `npm run db:migrate:test` + `npm run test:database`, and `npm run test:browser`. Record the counts against the baseline (unit 1279, database 374, story 65).
+- [x] 10.1 Run `npm test`, `npm run build:hant -- --check`, `npx openspec validate --all`, `npm run db:migrate:test` + `npm run test:database`, and `npm run test:browser`. Record the counts against the baseline (unit 1279, database 374, story 65).
