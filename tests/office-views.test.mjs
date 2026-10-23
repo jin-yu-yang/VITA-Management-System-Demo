@@ -261,7 +261,7 @@ test("the task-type toggles narrow the rows and show counts", () => {
   assert.match(html, /role="group" aria-label="Task type"/);
   assert.equal(
     [...html.matchAll(/data-action="set-board-filter" data-filter="officeKind"/g)].length,
-    10,
+    13,
   );
   assert.match(html, /data-filter="officeKind" data-value="all" aria-pressed="true"/);
   const calls = page(cases, [], sam, { officeKind: "call" });
@@ -1093,5 +1093,107 @@ test("a Follow-ups row and the Log contact drawer name E-filed by the filing met
 test("the Follow-ups filter lists the two new kinds before Call the client", () => {
   const html = page([filed("e", "efiled", E)]);
   const order = [...html.matchAll(/data-filter="officeKind" data-value="([a-z]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(order, ["all", "intake", "screening", "signing", "efiling", "result", "rejected", "call", "help", "unclaimed"]);
+  assert.deepEqual(order, [
+    "all", "intake", "screening", "documents", "hold", "withdrawn", "signing", "efiling", "result", "rejected", "call", "help", "unclaimed",
+  ]);
+});
+
+test("Waiting for documents row: the sentence, Put on hold…, amber at 3 days and red at 5", () => {
+  const html = page([
+    filed("d0", "awaiting_documents", { documentsOrigin: "screening", updatedAt: daysAgo(2) }),
+    filed("d3", "awaiting_documents", { documentsOrigin: "screening", updatedAt: daysAgo(3) }),
+    filed("d5", "awaiting_documents", { documentsOrigin: "preparation_ready", updatedAt: daysAgo(5) }),
+  ]);
+  const row = kindRow(html, "d3", "documents");
+  assert.match(row, /Waiting for the client(&#39;|')s documents\./);
+  assert.match(row, /data-action="open-put-on-hold" data-case-id="d3"[^>]*>[^]*? Put on hold…<\/button>/);
+  assert.match(row, /class="queue-waiting aging"/);
+  assert.match(kindRow(html, "d0", "documents"), /class="queue-waiting "/);
+  assert.match(kindRow(html, "d5", "documents"), /class="queue-waiting late"/);
+  assert.match(row, /<span class="kind-pill documents">[^]*Waiting for documents/);
+});
+
+test("Hold rows: the two sentences, Got in touch… and Close…, never coloured", () => {
+  const html = page([
+    filed("hd", "on_hold", { holdOrigin: "awaiting_documents", documentsOrigin: "screening", updatedAt: daysAgo(10) }),
+    filed("hs", "on_hold", { holdOrigin: "review_approved", updatedAt: daysAgo(10) }),
+  ]);
+  const docs = kindRow(html, "hd", "hold");
+  assert.match(docs, /Can(&#39;|')t reach the client about documents\./);
+  assert.match(docs, /data-action="open-resume-from-hold" data-case-id="hd"[^>]*>[^]*? Got in touch…<\/button>/);
+  assert.match(docs, /data-action="open-close-case" data-case-id="hd"[^>]*>[^]*? Close…<\/button>/);
+  assert.match(docs, /class="queue-waiting "/);
+  const signing = kindRow(html, "hs", "hold");
+  assert.match(signing, /Can(&#39;|')t reach the client to sign Form 8879\./);
+  assert.match(signing, /class="queue-waiting "/);
+  // A held signing case has no Signing row.
+  assert.doesNotMatch(html, /data-kind="signing"/);
+});
+
+test("Withdrawn row: names the volunteer, escaped, from an open withdrawal notice; never coloured", () => {
+  const closed = (id, over) =>
+    filed(id, "closed", { closingReason: "withdrawn", preparerId: "p-alex", preparerName: "Alex Rivera", updatedAt: daysAgo(9), ...over });
+  // A list row carries the count; an opened case carries the follow-ups.
+  const html = page([
+    closed("w1", { openFollowups: 1, openWithdrawalNotices: 1 }),
+    closed("w2", { followups: [{ id: "f1", status: "open", purpose: "withdrawal_notice" }] }),
+    closed("w3", { openFollowups: 0, openWithdrawalNotices: 0 }),
+    closed("w4", { openFollowups: 1, openWithdrawalNotices: 1, preparerName: "<b>Alex</b>" }),
+  ]);
+  for (const id of ["w1", "w2"]) {
+    const row = kindRow(html, id, "withdrawn");
+    assert.match(row, /The client withdrew; tell Alex Rivera to stop work\./);
+    assert.match(row, /data-action="open-log-call" data-case-id="[a-z0-9]+"[^>]*>[^]*? Resolve<\/button>/);
+    assert.match(row, /class="queue-waiting "/);
+  }
+  assert.match(kindRow(html, "w4", "withdrawn"), /tell &lt;b&gt;Alex&lt;\/b&gt; to stop work/);
+  // Withdrawn at Review in progress: the reviewer is set, and is the one told.
+  const review = page([
+    closed("w5", { openFollowups: 1, openWithdrawalNotices: 1, reviewerId: "p-morgan", reviewerName: "Morgan Lee" }),
+  ]);
+  assert.match(kindRow(review, "w5", "withdrawn"), /tell Morgan Lee to stop work/);
+  assert.doesNotMatch(kindRow(review, "w5", "withdrawn"), /Alex Rivera/);
+  // The notice is the office's own job: it is not also a "Call the client" task, and a
+  // closed case without one has no row.
+  assert.doesNotMatch(html, /data-kind="call"/);
+  assert.doesNotMatch(html, /data-case-id="w3"/);
+});
+
+test("Withdrawn row: an admin's withdrawn close before filing reads the TaxSlayer sentence", () => {
+  const TRANSMIT = "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+  const STOP = "The client withdrew the application: tell the volunteer to stop work.";
+  const closed = (id, over) =>
+    filed(id, "closed", { closingReason: "withdrawn", preparerId: "p-alex", preparerName: "Alex Rivera", updatedAt: daysAgo(9), ...over });
+  const html = page([
+    // A list row carries the first open notice's text; an opened case carries the follow-ups.
+    closed("t1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("t2", { followups: [{ id: "f1", status: "open", purpose: "withdrawal_notice", reason: TRANSMIT }] }),
+    closed("t3", { preparerName: null, preparerId: null, openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("s1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: STOP }),
+    closed("s2", { followups: [{ id: "f2", status: "open", purpose: "withdrawal_notice", reason: STOP }] }),
+  ]);
+  for (const id of ["t1", "t2", "t3"]) {
+    const row = kindRow(html, id, "withdrawn");
+    assert.match(row, /The client withdrew; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /to stop work/);
+  }
+  for (const id of ["s1", "s2"])
+    assert.match(kindRow(html, id, "withdrawn"), /The client withdrew; tell Alex Rivera to stop work\./);
+  // A signing hold closed for another reason stores its own sentence, shown as stored.
+  const BEFORE = "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.";
+  const other = page([
+    closed("b1", { closingReason: "dismissed", openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: BEFORE }),
+    closed("b2", { closingReason: "dismissed", followups: [{ id: "f3", status: "open", purpose: "withdrawal_notice", reason: BEFORE }] }),
+  ]);
+  for (const id of ["b1", "b2"]) {
+    const row = kindRow(other, id, "withdrawn");
+    assert.match(row, /The case was closed before filing; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /The client withdrew/);
+  }
+});
+
+test("a case on hold with a call task keeps its Call the client row beside the Hold row", () => {
+  const html = page([filed("h", "on_hold", { holdOrigin: "awaiting_documents", openFollowups: 1 })]);
+  assert.match(kindRow(html, "h", "hold"), /Can(&#39;|')t reach/);
+  assert.match(kindRow(html, "h", "call"), /1 open task/);
 });

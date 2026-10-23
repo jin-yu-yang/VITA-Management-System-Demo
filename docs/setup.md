@@ -9,7 +9,7 @@ organized by phase instead of by task number.
 Everything through the shared demonstration story is implemented and tested against an
 **isolated local Supabase stack**: identity and case ownership, the full workflow (intake,
 preparation, documents, admin follow-up, assistance, independent review and corrections,
-reminders and closure), Realtime-driven shared state, eight seeded sample cases with presenter-only
+reminders and closure), Realtime-driven shared state, ten seeded sample cases with presenter-only
 reset/checkpoint controls, and the client/staff/admin/presenter browser screens with real email
 (OTP) sign-in. A roster command admits approved addresses to a workspace, so the local stack can
 hold permanent fictional rehearsal accounts for signing in by hand
@@ -134,7 +134,7 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    second browser) and repeat steps 2–4 with `client-a@example.org`.
 
 A new code for the same address can be requested only about once a minute; the form shows a
-countdown. **Reset sample cases** in the presenter panel rebuilds the eight sample cases at any time
+countdown. **Reset sample cases** in the presenter panel rebuilds the ten sample cases at any time
 and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
 
 The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
@@ -351,6 +351,7 @@ already applied, so **the migrations are run only through the migrator, never by
 | `033_review_questionnaires.sql` | Hand-written: `preparer_questionnaires` and `reviewer_questionnaires` (staff-only), `admin_followups.purpose` and a nullable `request_id`, `cases.signing_plan` and `signing_appointment_at`; the review hand-offs take a questionnaire, an approval settles the contact step and opens a go-over task when the reviewer did not, `MARK_READY_TO_EFILE` waits for that task, and the sample cases seed questionnaires |
 | `034_screening_checks.sql` | Hand-written: `VERIFY_INTAKE` records the real screening checks, `phone`, `documents` and `in_scope`, plus `identity` only when the case's `service` answer is `online`; the client's history line says PCDC finished screening the application; `check_payload`, `act_verify_intake` and `fixture_history` replaced, and the sample cases record the new checks |
 | `035_post_efiling_stages.sql` | Hand-written: the `rejected` and `accepted` stages, each return's filing method and result on `cases`, the staff-only `filing_attempts`, `filing_returns` and append-only `filing_notes`, `MARK_EFILED` with methods, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`, and the `rejected` and `accepted` sample cases |
+| `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages, `cases.documents_origin`, `hold_origin` and `closing_reason`, the `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and `WITHDRAW` actions, `CLOSE_CASE` with a reason, the `withdrawal_notice` follow-up purpose, and the `on_hold` and `withdrawn` sample cases |
 
 Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one. The build writes one only when the catalogue's hash differs from the

@@ -194,6 +194,18 @@ export const TEXT = Object.freeze({
   "filing.closing.accepted": { en: "If you are due a refund, you can check on it with \"Where's My Refund?\" at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.", zh: "如果您有退税，可以在 irs.gov/refunds 使用 \"Where's My Refund?\" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
+  // Waiting for documents and Hold (change add-hold-and-closing); a Hold is told by where it came from (domain.mjs holdKind)
+  "stage.awaiting_documents.label": { en: "Documents needed", zh: "需要文件" },
+  "stage.awaiting_documents.client": { en: "PCDC needs more documents from you before your return can be prepared. See the requests below.", zh: "PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。" },
+  "stage.on_hold.label": { en: "Waiting for you", zh: "等待您的回复" },
+  "stage.on_hold.client": { en: "PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC.", zh: "PCDC 一直在设法联系您，询问所需的文件。请在下方上传，或联系 PCDC。" },
+  "stage.on_hold.client.signing": { en: "PCDC has been trying to reach you to sign Form 8879. Please contact PCDC. Your return can't be filed until you sign.", zh: "PCDC 一直在设法联系您签署 8879 表。请联系 PCDC。您签署后才能递交报税表。" },
+  // Closed, by the reason it recorded (domain.mjs describeStage); 'other' and no reason use stage.closed.client
+  "stage.closed.client.out_of_scope": { en: "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.", zh: "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。" },
+  "stage.closed.client.no_need_to_file": { en: "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.", zh: "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。" },
+  "stage.closed.client.duplicate": { en: "This application was closed. Your return continues under your other application with PCDC.", zh: "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。" },
+  "stage.closed.client.dismissed": { en: "PCDC could not reach you, so this application was closed. Your return was not filed.", zh: "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。" },
+  "stage.closed.client.withdrawn": { en: "You withdrew this application. Your return was not filed.", zh: "您已撤回此申请。您的报税表未递交。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },
   "stage.unknown.client": { en: "This application is with the office. Contact PCDC if you have questions.", zh: "此申请正在办公室处理。如有疑问，请联系 PCDC。" },
   // Days on lists (ui.mjs relativeDay); older dates use the language's own month and day
@@ -293,8 +305,17 @@ export const TEXT = Object.freeze({
   "progress.questions": { en: "Questions about your application? Our volunteers can help.", zh: "对申请有疑问？我们的志愿者可以帮助您。" },
   "progress.contact": { en: "Contact the office", zh: "联系办公室" },
   "progress.back": { en: "Back to my applications", zh: "返回我的申请" },
+  // Withdraw (change add-hold-and-closing): the button, its dialog, and the line from Ready to exit on
+  "withdraw.button": { en: "Withdraw this application", zh: "撤回此申请" },
+  "withdraw.title": { en: "Withdraw this application?", zh: "撤回此申请？" },
+  "withdraw.body": { en: "If you withdraw, PCDC will close this application and your return will not be filed.", zh: "撤回后，PCDC 将关闭此申请，您的报税表将不会被递交。" },
+  "withdraw.box": { en: "I want to withdraw this application. My return will not be filed.", zh: "我要撤回此申请。我的报税表将不会被递交。" },
+  "withdraw.keep": { en: "Keep my application", zh: "保留我的申请" },
+  "withdraw.contact": { en: "To withdraw now, contact PCDC.", zh: "如需撤回，请联系 PCDC。" },
+  "toast.withdrawn": { en: "You withdrew your application.", zh: "您已撤回申请。" },
   // The application history: a request line keeps the office's title as typed (spec §3.3)
   "history.requested": { en: "A volunteer requested a document: {title}", zh: "志愿者请求了一份文件：{title}" },
+  "history.requested_documents": { en: "PCDC asked for these documents: {titles}.", zh: "PCDC 请您提供以下文件：{titles}。" },
   // Document cards on the client's screens (intake-views.mjs docCard, bringList,
   // progressDocumentsV2); the office's card words (Add a case) stay English
   "doc.bring": { en: "Bring these to your visit", zh: "请携带以下文件" },
@@ -429,6 +450,8 @@ export const SENTENCES = Object.freeze({
   "Please check the information and try again.": "请检查信息后再试一次。",
   "Network error. Please try again later.": "网络连接失败，请稍后再试。",
   "Something went wrong. Please try again.": "出了点问题。请再试一次。",
+  // case-actions.mjs: the client's Withdraw refuses without its box ticked (draft translation, for the group's wording review)
+  "Tick the box to withdraw this application.": "请勾选方框以撤回此申请。", // 036
   // app.mjs: a refused action with no message of its own; the save chip's default
   "Something went wrong.": "出了点问题。",
   "Please try again.": "请再试一次。",
@@ -482,6 +505,14 @@ export const SENTENCES = Object.freeze({
   "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
   "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  "PCDC is working on your application again.": "PCDC 已继续处理您的申请。", // 036
+  "PCDC is trying to reach you.": "PCDC 正在设法联系您。", // 036
+  "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.": "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。", // 036
+  "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.": "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。", // 036
+  "This application was closed. Your return continues under your other application with PCDC.": "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。", // 036
+  "PCDC could not reach you, so this application was closed. Your return was not filed.": "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。", // 036
+  "You withdrew this application. Your return was not filed.": "您已撤回此申请。您的报税表未递交。", // 036
+  "You withdrew your application. Your return was not filed.": "您已撤回申请。您的报税表未递交。", // 036
   // Migration 035: Return to signing, Mark e-filed, and Record filing result.
   "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
   "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",
@@ -557,8 +588,16 @@ export function sentence(text, lang = "en") {
 // prefix is replaced and the office's title kept as typed; every other line is
 // a sentence, and an unknown one stays English.
 const REQUEST_PREFIX = "A volunteer requested a document: ";
+// Migration 036: the office's request at intake. The titles are typed by the
+// office, so the rest of the line (minus its final ".") fills {titles}.
+const DOCUMENTS_PREFIX = "PCDC asked for these documents: ";
 export function historyLine(message, lang = "en") {
   if (typeof message !== "string") return "";
+  if (message.startsWith(DOCUMENTS_PREFIX)) {
+    if (!isLang(lang) || lang === "en") return message;
+    const rest = message.slice(DOCUMENTS_PREFIX.length);
+    return t("history.requested_documents", { titles: rest.endsWith(".") ? rest.slice(0, -1) : rest }, lang);
+  }
   if (!message.startsWith(REQUEST_PREFIX)) return sentence(message, lang);
   if (!isLang(lang) || lang === "en") return message;
   return t("history.requested", { title: message.slice(REQUEST_PREFIX.length) }, lang);

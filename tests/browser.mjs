@@ -383,7 +383,7 @@ async function tickScreeningChecks(page) {
   assert.equal(await button.isDisabled(), true, "the screening checks could be recorded before any box was ticked");
   const panel = page.locator("section.panel", { has: page.locator("#checks-title") });
   assert.equal(
-    (await panel.locator(".field-note").innerText()).trim(),
+    (await panel.locator(".field-note").first().innerText()).trim(),
     "Tick every check before recording them.",
   );
   const service = (await button.getAttribute("data-service")) || undefined;
@@ -890,7 +890,7 @@ async function runPermutation(t, roles) {
       evidence.story.signIn = "applicant A in the client window, the presenter in the staff window";
     });
 
-    await phase("the presenter's reset leaves exactly the eight seeded cases", async () => {
+    await phase("the presenter's reset leaves exactly the ten seeded cases", async () => {
       evidence.story.indicatorBefore = await readFixtureIndicator(staff);
       evidence.story.indicatorAfter = await resetSampleCases(staff);
       // The confirmation's toast reaches the live region, outside anything
@@ -907,10 +907,10 @@ async function runPermutation(t, roles) {
       );
       evidence.story.resetToast = "announced in #toast, outside anything inert";
       const totals = await readBoardTotals(staff);
-      assert.equal(totals.total, 8);
+      assert.equal(totals.total, 10);
       assert.equal(await staff.locator(".board-row").count(), totals.shown);
       samples = await fixtureCases(fixture);
-      assert.equal(samples.length, 8);
+      assert.equal(samples.length, 10);
       assert.deepEqual(
         samples.map((row) => row.fixture_key).sort(),
         [...fixture.database.fixtureKeys].sort(),
@@ -938,7 +938,7 @@ async function runPermutation(t, roles) {
       assert.equal(classCase.owner_user_id, applicantA.userId);
       assert.equal(classCase.fixture, false);
       // A client's own draft is theirs alone: the staff board cannot see it yet.
-      assert.equal((await readBoardTotals(staff)).total, 8);
+      assert.equal((await readBoardTotals(staff)).total, 10);
       assert.equal(
         Number(
           (await one(fixture, "select intake_version from public.cases where id=$1", [classCase.id]))
@@ -954,7 +954,7 @@ async function runPermutation(t, roles) {
       await waitFor(
         staff,
         "the board to count the new application",
-        () => /of 9 cases/.test(document.querySelector(".staff-board .section-head")?.textContent ?? ""),
+        () => /of 11 cases/.test(document.querySelector(".staff-board .section-head")?.textContent ?? ""),
         undefined,
         ARRIVAL_MS,
       );
@@ -1036,7 +1036,7 @@ async function runPermutation(t, roles) {
         ARRIVAL_MS,
       );
       evidence.story.clientNumber = clientNumber;
-      assert.equal((await readBoardTotals(staff)).total, 9);
+      assert.equal((await readBoardTotals(staff)).total, 11);
       evidence.story.reference = "matched REFERENCE_PATTERN and arrived on the board";
     });
 
@@ -4372,7 +4372,7 @@ async function runPermutation(t, roles) {
       await openBoard(staff, OFFICE_BOARD_HEADING);
       const indicator = await resetSampleCases(staff);
       const after = await fixtureCases(fixture);
-      assert.equal(after.length, 8);
+      assert.equal(after.length, 10);
       assert.equal(
         after.filter((row) => before.some((old) => old.id === row.id)).length,
         0,
@@ -6433,6 +6433,427 @@ async function runPermutation(t, roles) {
       } finally {
         await zhWin?.context.close();
       }
+    });
+
+    // ---- Hold and closing (change add-hold-and-closing) ---------------------
+    // The Chinese phase's applicant keeps going: the office asks for a
+    // document, puts the case on hold and takes it off again, the client sends
+    // the document, and the case is claimed and then withdrawn by the client,
+    // all in 简体. The sample Hold and Withdrawn cases cover the rest.
+    let holdCase = null;
+    let hansWin = null;
+    const HOLD_NOTE = "Simulated: two fictional calls went unanswered.";
+    const CLOSE_NOTE = "Simulated: the fictional client never replied.";
+    const ASK_TITLE = "Photo ID";
+    const ASK_MESSAGE = "Please send a fictional photo ID.";
+    const hansLang = "zh-Hans";
+    const hansStatus = (page, wanted, what) =>
+      waitFor(
+        page,
+        what,
+        (text) => document.querySelector(".status-explanation")?.textContent.trim() === text,
+        wanted,
+        ARRIVAL_MS,
+      );
+    const officeRow = (kind, reference) =>
+      staff
+        .locator(`tr.queue-row[data-kind="${kind}"]`)
+        .filter({ has: staff.locator("button.board-reference", { hasText: reference }) })
+        .first();
+    // Press a row's opener until its dialog is on screen. Opening one reads the
+    // case and changes nothing, so pressing again is always safe.
+    const openFromRow = async (kind, reference, action, ready) => {
+      for (let attempt = 1; ; attempt += 1) {
+        await officeRow(kind, reference).waitFor({ state: "visible", timeout: RENDER_MS });
+        await waitForQuiet(staff);
+        await officeRow(kind, reference).locator(`[data-action="${action}"]`).click({ timeout: CLICK_MS });
+        try {
+          await staff.locator(`.modal ${ready}`).waitFor({ state: "visible", timeout: 5_000 });
+          return;
+        } catch (error) {
+          if (attempt >= 3) throw error;
+        }
+      }
+    };
+    const chooseRadio = async (page, id) => {
+      await waitForQuiet(page);
+      if (await page.locator(`#${id}`).isChecked()) return;
+      await page.locator(`label[for="${id}"]`).click({ timeout: CLICK_MS });
+      await waitFor(
+        page,
+        `#${id} to come back chosen`,
+        (selector) => document.querySelector(selector)?.checked === true,
+        `#${id}`,
+        RENDER_MS,
+      );
+    };
+    // The office dialog's confirm: fill its fields (again, if a rebuild emptied
+    // them), tick its box, press the submit, and repeat only when nothing moved.
+    const confirmDialog = (type, caseId, { fill, box, ready, arg, what }) =>
+      unmovedSince(caseId).then((safeToRepeat) =>
+        pressUntilEffect(staff, {
+          press: async () => {
+            await waitForQuiet(staff);
+            if (fill) await fill();
+            if (box) {
+              await waitForQuiet(staff);
+              if (!(await staff.locator(`#${box}`).isChecked())) await tickBox(staff, box);
+            }
+            await waitForQuiet(staff);
+            await staff.locator(`.modal button[type="submit"][data-case-action="${type}"]`).click({ timeout: CLICK_MS });
+          },
+          ready,
+          arg,
+          what,
+          safeToRepeat,
+        }).then((outcome) => record(type, outcome)),
+      );
+    const modalGone = () => document.querySelector(".modal") === null;
+    const showPoolTab = async (value) => {
+      await clickAction(staff, "set-board-filter", { attributes: `[data-filter="poolPhase"][data-value="${value}"]` });
+      await waitFor(
+        staff,
+        `the pool's ${value} tab to be shown`,
+        (wanted) =>
+          document.querySelector(`[data-filter="poolPhase"][data-value="${wanted}"]`)?.getAttribute("aria-pressed") === "true",
+        value,
+        RENDER_MS,
+      );
+    };
+    const poolShows = (reference, shown, what) =>
+      waitFor(
+        staff,
+        what,
+        ([wanted, expected]) =>
+          [...document.querySelectorAll("tr.pool-row")].some((row) => row.textContent.includes(wanted)) === expected,
+        [reference, shown],
+        RENDER_MS,
+      );
+    const stageOf = async (id) => (await caseById(fixture, id)).stage;
+
+    await phase("the office asks for documents at Screening, and the client reads the request in 简体", async () => {
+      const reference = evidence.story.chinese.reference;
+      holdCase = await caseByReference(fixture, reference);
+      assert.equal(holdCase.stage, "received");
+      await choosePersona(staff, sam);
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await openCaseByReference(staff, reference);
+      await waitForBadge(staff, "Screening in progress");
+      assert.equal(await stageOf(holdCase.id), "screening");
+
+      // The screening checks panel offers it while the documents box is unticked.
+      const opener = 'section.panel:has(#checks-title) [data-action="open-request-documents"]';
+      await revealCaseControl(staff, opener);
+      await waitForQuiet(staff);
+      await staff.locator(opener).click({ timeout: CLICK_MS });
+      await staff.locator("#field-ask-request-title-1").waitFor({ state: "visible", timeout: RENDER_MS });
+      const asked = await staff.locator(".modal").innerText();
+      assert.ok(asked.replace(/\s+/g, " ").includes("The case waits at Waiting for documents until you verify every one."));
+      await confirmDialog("REQUEST_DOCUMENTS_AT_INTAKE", holdCase.id, {
+        fill: async () => {
+          await staff.locator("#field-ask-request-title-1").fill(ASK_TITLE, { timeout: CLICK_MS });
+          await staff.locator("#field-ask-request-message-1").fill(ASK_MESSAGE, { timeout: CLICK_MS });
+        },
+        ready: modalGone,
+        what: "the Ask for documents dialog to close",
+      });
+      await waitForBadge(staff, "Waiting for documents");
+      assert.equal(await stageOf(holdCase.id), "awaiting_documents");
+
+      // The pool: Waiting on client, and the Follow-ups row.
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await showPoolTab("signing");
+      await poolShows(reference, true, "the pool's Waiting on client tab to list the case");
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await officeRow("documents", reference).waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await officeRow("documents", reference).locator(".queue-needed").innerText()).trim(),
+        "Waiting for the client's documents.",
+      );
+
+      // The client, in 简体.
+      hansWin = await clientEngine.newPage({ locale: "zh-CN" });
+      const page = hansWin.page;
+      await guardToast(page);
+      await loginTestUserById({ page, actor: applicantB, fixture });
+      await watchAlerts(page);
+      const applicationRow = page.locator(`.application-row:has-text("${reference}")`).first();
+      await applicationRow.waitFor({ state: "visible", timeout: ARRIVAL_MS });
+      await waitForQuiet(page);
+      await applicationRow.click({ timeout: CLICK_MS });
+      await hansStatus(
+        page,
+        describeStage("awaiting_documents", hansLang).clientMessage,
+        "the status to ask for documents in 简体",
+      );
+      assert.equal(
+        describeStage("awaiting_documents", hansLang).clientMessage,
+        say("stage.awaiting_documents.client", {}, hansLang),
+      );
+      assert.equal(await page.locator(".action-card h2").first().innerText(), ASK_TITLE);
+      assert.ok((await page.locator(".action-card p").first().innerText()).includes(ASK_MESSAGE));
+      evidence.story.documentsRequest = "asked at Screening, listed under Waiting on client, read in 简体";
+    });
+
+    await phase("a hold and a call back, from the Follow-ups rows", async () => {
+      const reference = evidence.story.chinese.reference;
+      const page = hansWin.page;
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+
+      // Put on hold… from the Waiting for documents row.
+      await openFromRow("documents", reference, "open-put-on-hold", "#field-hold-hold-note");
+      await confirmDialog("PUT_ON_HOLD", holdCase.id, {
+        fill: () => staff.locator("#field-hold-hold-note").fill(HOLD_NOTE, { timeout: CLICK_MS }),
+        box: "field-hold-confirmed",
+        ready: modalGone,
+        what: "the Put on hold dialog to close",
+      });
+      assert.equal(await stageOf(holdCase.id), "on_hold");
+      await officeRow("hold", reference).waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.equal(
+        (await officeRow("hold", reference).locator(".queue-needed").innerText()).trim(),
+        "Can't reach the client about documents.",
+      );
+      // A Hold needs attention.
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await showPoolTab("attention");
+      await poolShows(reference, true, "the pool's Needs attention tab to list the Hold");
+      // The client is told, and never sees the note.
+      const holdMessage = describeStage("on_hold", hansLang, { stage: "on_hold", holdOrigin: "awaiting_documents" }).clientMessage;
+      await hansStatus(page, holdMessage, "the status to tell the client about the Hold in 简体");
+      assert.ok(!(await pageText(page)).includes("unanswered"), "the hold note reached the client");
+
+      // Got in touch… from the Hold row.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await openFromRow("hold", reference, "open-resume-from-hold", "#field-resume-confirmed");
+      await confirmDialog("RESUME_FROM_HOLD", holdCase.id, {
+        box: "field-resume-confirmed",
+        ready: modalGone,
+        what: "the Got in touch dialog to close",
+      });
+      assert.equal(await stageOf(holdCase.id), "awaiting_documents");
+      await officeRow("documents", reference).waitFor({ state: "visible", timeout: RENDER_MS });
+      await hansStatus(
+        page,
+        describeStage("awaiting_documents", hansLang).clientMessage,
+        "the status to ask for documents again in 简体",
+      );
+    });
+
+    await phase("the client sends the document, the admin verifies it, and Screening goes on", async () => {
+      const reference = evidence.story.chinese.reference;
+      const page = hansWin.page;
+      await act(page, "RESPOND_DOCUMENT", { text: say("progress.sent", {}, hansLang) }, { caseId: holdCase.id });
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await openCaseByReference(staff, reference);
+      await waitForBadge(staff, "Received, not verified yet");
+      await act(staff, "VERIFY_DOCUMENT", { badge: "Verified" }, { caseId: holdCase.id });
+      // The last request is verified: the case is back where the request came from.
+      await waitForBadge(staff, "Screening in progress");
+      assert.equal(await stageOf(holdCase.id), "screening");
+      await hansStatus(page, describeStage("screening", hansLang).clientMessage, "the status to read Screening in 简体");
+      // The Verify left the window on the Documents tab; the checks are elsewhere.
+      await revealCaseControl(staff, '[data-case-action="VERIFY_INTAKE"]');
+      await tickScreeningChecks(staff);
+      await actForm(
+        staff,
+        "VERIFY_INTAKE",
+        {},
+        { detail: { label: "Intake checks", value: "Recorded" } },
+        { caseId: holdCase.id },
+      );
+      assert.equal(await stageOf(holdCase.id), "preparation_ready");
+      evidence.story.documentsFlow = "asked, held, called back, sent, verified, back at Screening, checks recorded";
+    });
+
+    await phase("the office closes a Hold from a Follow-ups row and filters the Closed tab by reason", async () => {
+      const onHold = (await fixtureCases(fixture)).find((row) => row.fixture_key === "on_hold");
+      const withdrawnSample = (await fixtureCases(fixture)).find((row) => row.fixture_key === "withdrawn");
+      assert.ok(onHold && withdrawnSample, "the on_hold or withdrawn sample is missing");
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await openFromRow("hold", onHold.reference, "open-close-case", "#field-close-close-note");
+      // Other needs a note: the dialog refuses without one.
+      await chooseRadio(staff, "field-close-close-reason-other");
+      await tickBox(staff, "field-close-confirmed");
+      await waitForQuiet(staff);
+      await staff.locator('.modal button[type="submit"][data-case-action="CLOSE_CASE"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the refusal for Other with no note",
+        () => /Add a note for Other/.test(document.querySelector(".modal")?.textContent ?? "") || /Add a note for Other/.test(document.querySelector("#toast")?.textContent ?? "") || (window.__vitallyAlerts ?? []).some((line) => line.includes("Add a note for Other")),
+        undefined,
+        RENDER_MS,
+      );
+      assert.equal(await stageOf(onHold.id), "on_hold", "Other with no note closed the case");
+      await confirmDialog("CLOSE_CASE", onHold.id, {
+        fill: async () => {
+          await chooseRadio(staff, "field-close-close-reason-other");
+          await staff.locator("#field-close-close-note").fill(CLOSE_NOTE, { timeout: CLICK_MS });
+        },
+        box: "field-close-confirmed",
+        ready: modalGone,
+        what: "the Close dialog to close",
+      });
+      assert.equal(await stageOf(onHold.id), "closed");
+      assert.equal((await one(fixture, "select closing_reason from public.cases where id=$1", [onHold.id])).closing_reason, "other");
+      await waitFor(
+        staff,
+        "the Hold row to leave the queue",
+        (wanted) => ![...document.querySelectorAll('tr.queue-row[data-kind="hold"]')].some((row) => row.textContent.includes(wanted)),
+        onHold.reference,
+        RENDER_MS,
+      );
+
+      // The pool's Closed tab and its reason filter.
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await showPoolTab("closed");
+      await staff.locator('select[data-board-filter="poolReason"]').waitFor({ state: "visible", timeout: RENDER_MS });
+      const chooseReason = async (reason) => {
+        await waitForQuiet(staff);
+        await staff.locator('select[data-board-filter="poolReason"]').selectOption(reason, { timeout: CLICK_MS });
+        await waitFor(
+          staff,
+          `the Closed reason filter to read ${reason}`,
+          (wanted) => document.querySelector('select[data-board-filter="poolReason"]')?.value === wanted,
+          reason,
+          RENDER_MS,
+        );
+      };
+      await chooseReason("other");
+      await poolShows(onHold.reference, true, "the Other filter to list the closed Hold");
+      await poolShows(withdrawnSample.reference, false, "the Other filter to leave out the withdrawn sample");
+      await chooseReason("withdrawn");
+      await poolShows(withdrawnSample.reference, true, "the Withdrawn filter to list the withdrawn sample");
+      await poolShows(onHold.reference, false, "the Withdrawn filter to leave out the closed Hold");
+      await chooseReason("all");
+      await poolShows(onHold.reference, true, "Any reason to list the closed Hold");
+      evidence.story.closeFromRow = "Other with a note, closed from a Hold row; the Closed tab filtered by reason";
+    });
+
+    await phase("a claimed case is withdrawn by the client, and the office is told", async () => {
+      const reference = evidence.story.chinese.reference;
+      const page = hansWin.page;
+      await choosePersona(staff, alex);
+      await openBoard(staff, WORK_BOARD_HEADING);
+      await openCaseByReference(staff, reference);
+      await act(staff, "CLAIM_PREPARATION", { detail: { label: "Preparer", value: "Alex" } }, { caseId: holdCase.id });
+      assert.equal(await stageOf(holdCase.id), "preparing");
+      await hansStatus(page, describeStage("preparing", hansLang).clientMessage, "the status to read Preparing in 简体");
+
+      // The button and the dialog, in 简体.
+      const button = page.locator('[data-action="open-withdraw"]');
+      await button.waitFor({ state: "visible", timeout: ARRIVAL_MS });
+      assert.equal((await button.innerText()).trim(), say("withdraw.button", {}, hansLang));
+      await clickAction(page, "open-withdraw");
+      await page.locator("#field-withdraw-withdraw-confirmed").waitFor({ state: "visible", timeout: RENDER_MS });
+      assert.ok((await page.locator(".modal").innerText()).includes(say("withdraw.box", {}, hansLang)));
+      const closedMessage = describeStage("closed", hansLang, { stage: "closed", closingReason: "withdrawn" }).clientMessage;
+      assert.equal(closedMessage, say("stage.closed.client.withdrawn", {}, hansLang));
+      record(
+        "WITHDRAW",
+        await pressUntilEffect(page, {
+          press: async () => {
+            await waitForQuiet(page);
+            if (!(await page.locator("#field-withdraw-withdraw-confirmed").isChecked())) await tickBox(page, "field-withdraw-withdraw-confirmed");
+            await waitForQuiet(page);
+            await page.locator('.modal button[type="submit"][data-case-action="WITHDRAW"]').click({ timeout: CLICK_MS });
+          },
+          ready: (wanted) =>
+            document.querySelector(".modal") === null &&
+            document.querySelector(".status-explanation")?.textContent.trim() === wanted,
+          arg: closedMessage,
+          what: "the page to read the withdrawn message in 简体",
+          safeToRepeat: await unmovedSince(holdCase.id),
+        }),
+      );
+      const closed = await one(fixture, "select stage,closing_reason from public.cases where id=$1", [holdCase.id]);
+      assert.deepEqual(closed, { stage: "closed", closing_reason: "withdrawn" });
+      assert.equal(await page.locator('[data-action="open-withdraw"]').count(), 0, "a closed case still offers Withdraw");
+      assert.equal(
+        Number(
+          (
+            await one(
+              fixture,
+              "select count(*)::int as count from public.admin_followups where case_id=$1 and purpose='withdrawal_notice' and status='open'",
+              [holdCase.id],
+            )
+          ).count,
+        ),
+        1,
+      );
+
+      // The office: Closed · Withdrawn in the pool, and the notice in Follow-ups.
+      await choosePersona(staff, sam);
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      const notice = officeRow("withdrawn", reference);
+      await notice.waitFor({ state: "visible", timeout: RENDER_MS });
+      const told = (await notice.locator(".queue-needed").innerText()).trim();
+      assert.match(told, /^The client withdrew; tell Alex.* to stop work\.$/);
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await showPoolTab("closed");
+      await staff.locator('select[data-board-filter="poolReason"]').selectOption("withdrawn", { timeout: CLICK_MS });
+      await poolShows(reference, true, "the Withdrawn filter to list the withdrawn case");
+      assert.ok(
+        await staff.evaluate(
+          (wanted) =>
+            [...document.querySelectorAll("tr.pool-row")]
+              .find((row) => row.textContent.includes(wanted))
+              ?.textContent.includes("Closed · Withdrawn") ?? false,
+          reference,
+        ),
+        "the pool row does not read Closed · Withdrawn",
+      );
+
+      // Resolve it, from the row.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await officeRow("withdrawn", reference).waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForQuiet(staff);
+      await officeRow("withdrawn", reference).locator('[data-action="open-log-call"]').click({ timeout: CLICK_MS });
+      await staff.locator(".modal.office-drawer").waitFor({ state: "visible", timeout: ARRIVAL_MS });
+      const noticeId = (
+        await one(
+          fixture,
+          "select id from public.admin_followups where case_id=$1 and purpose='withdrawal_notice' and status='open'",
+          [holdCase.id],
+        )
+      ).id;
+      record(
+        "RESOLVE_FOLLOWUP (withdrawal notice)",
+        await submitCaseFormUntil(
+          staff,
+          "RESOLVE_FOLLOWUP",
+          { "How it ended": "reached", "What the office concluded": "Told the fictional volunteer to stop work." },
+          {
+            ready: modalGone,
+            what: "the drawer to close after the withdrawal notice is resolved",
+            safeToRepeat: async () =>
+              (await one(fixture, "select status from public.admin_followups where id=$1", [noticeId])).status === "open",
+          },
+        ),
+      );
+      assert.notEqual(
+        (await one(fixture, "select status from public.admin_followups where id=$1", [noticeId])).status,
+        "open",
+      );
+      await waitFor(
+        staff,
+        "the Withdrawn row to leave the queue",
+        (wanted) => ![...document.querySelectorAll('tr.queue-row[data-kind="withdrawn"]')].some((row) => row.textContent.includes(wanted)),
+        reference,
+        RENDER_MS,
+      );
+      // The client's page, in 简体, still reads the withdrawn message.
+      await hansStatus(page, closedMessage, "the client's page to keep the withdrawn message in 简体");
+      assert.ok(!(await pageText(page)).includes("unanswered"), "a hold note reached the client");
+      evidence.story.withdrawal = {
+        consoleLines: assertConsoleQuiet(hansWin, { name: "简体 client window", allow: REFUSAL_LINES }),
+      };
+      await hansWin.context.close();
+      hansWin = null;
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {

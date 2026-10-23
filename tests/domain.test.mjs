@@ -11,6 +11,11 @@ import {
   awaitsAcknowledgment,
   returnedToSigning,
   latestFixNote,
+  holdKind,
+  canWithdraw,
+  mustContactToWithdraw,
+  WITHDRAW_STAGES,
+  CLOSING_REASON_NAMES,
 } from "../src/domain.mjs";
 import { spawnSync } from "node:child_process";
 import { historyLine } from "../src/client-text.mjs";
@@ -107,12 +112,14 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "draft",
     "received",
     "screening",
+    "awaiting_documents",
     "preparation_ready",
     "preparing",
     "review_ready",
     "reviewing",
     "corrections_required",
     "review_approved",
+    "on_hold",
     "ready_to_efile",
     "efiled",
     "rejected",
@@ -142,6 +149,10 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "RECORD_FILING_RESULT",
     "RETURN_TO_SIGNING",
     "REMIND",
+    "REQUEST_DOCUMENTS_AT_INTAKE",
+    "PUT_ON_HOLD",
+    "RESUME_FROM_HOLD",
+    "WITHDRAW",
     "CLOSE_CASE",
     "UPDATE_CONTACT",
     "RECORD_MATERIALS",
@@ -239,9 +250,9 @@ test("the text table's English stage entries match STAGE_DESCRIPTIONS", async ()
 });
 
 test("each stage has a staff name, a client label and a client message", () => {
-  const STAFF = { draft: "Draft", received: "Request sent", screening: "Screening in progress", preparation_ready: "Pending intake / filing", preparing: "Filing in progress (preparing)", corrections_required: "Corrections in progress", review_ready: "Pending review", reviewing: "Review in progress", review_approved: "Ready to exit", ready_to_efile: "Ready to e-file", efiled: "E-filed", rejected: "Rejected", accepted: "Accepted", closed: "Closed" };
-  const CLIENT_EN = { draft: "Draft", received: "Sent to PCDC", screening: "Being reviewed", preparation_ready: "Waiting for a volunteer", preparing: "Being prepared", corrections_required: "Being corrected", review_ready: "Waiting for review", reviewing: "Being checked", review_approved: "Ready to sign", ready_to_efile: "Signed", efiled: "E-filed", rejected: "Needs a correction", accepted: "Complete", closed: "Closed" };
-  const CLIENT_ZH = { draft: "草稿", received: "已发送给 PCDC", screening: "审核中", preparation_ready: "等待志愿者", preparing: "准备中", corrections_required: "正在更正", review_ready: "等待检查", reviewing: "检查中", review_approved: "等待签名", ready_to_efile: "已签名", efiled: "已电子递交", rejected: "需要更正", accepted: "已完成", closed: "已关闭" };
+  const STAFF = { draft: "Draft", received: "Request sent", screening: "Screening in progress", awaiting_documents: "Waiting for documents", preparation_ready: "Pending intake / filing", preparing: "Filing in progress (preparing)", corrections_required: "Corrections in progress", review_ready: "Pending review", reviewing: "Review in progress", review_approved: "Ready to exit", on_hold: "Hold", ready_to_efile: "Ready to e-file", efiled: "E-filed", rejected: "Rejected", accepted: "Accepted", closed: "Closed" };
+  const CLIENT_EN = { draft: "Draft", received: "Sent to PCDC", screening: "Being reviewed", awaiting_documents: "Documents needed", preparation_ready: "Waiting for a volunteer", preparing: "Being prepared", corrections_required: "Being corrected", review_ready: "Waiting for review", reviewing: "Being checked", review_approved: "Ready to sign", on_hold: "Waiting for you", ready_to_efile: "Signed", efiled: "E-filed", rejected: "Needs a correction", accepted: "Complete", closed: "Closed" };
+  const CLIENT_ZH = { draft: "草稿", received: "已发送给 PCDC", screening: "审核中", awaiting_documents: "需要文件", preparation_ready: "等待志愿者", preparing: "准备中", corrections_required: "正在更正", review_ready: "等待检查", reviewing: "检查中", review_approved: "等待签名", on_hold: "等待您的回复", ready_to_efile: "已签名", efiled: "已电子递交", rejected: "需要更正", accepted: "已完成", closed: "已关闭" };
   const MESSAGES = {
     received: ["Your application is with PCDC. The office will review it soon and may call you.", "PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。"],
     screening: ["PCDC is reviewing your application. We may call you to confirm your information and documents.", "PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。"],
@@ -405,6 +416,96 @@ test("describeStage names E-filed and Accepted by filing method, for staff and f
   }
   // A method never renames another stage.
   assert.equal(describeStage("closed", "en", methods("paper", "paper")).label, "Closed");
+});
+
+// ---- Hold and closing (change add-hold-and-closing) ----
+const CLOSED_MESSAGES = {
+  out_of_scope: ["This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.", "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。"],
+  no_need_to_file: ["A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.", "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。"],
+  duplicate: ["This application was closed. Your return continues under your other application with PCDC.", "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。"],
+  dismissed: ["PCDC could not reach you, so this application was closed. Your return was not filed.", "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。"],
+  withdrawn: ["You withdrew this application. Your return was not filed.", "您已撤回此申请。您的报税表未递交。"],
+  other: ["This application was closed by the office. This does not change any return filed elsewhere.", "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。"],
+};
+
+test("Closed carries its reason's staff name, and the client reads the message for the reason", () => {
+  assert.deepEqual(CLOSING_REASON_NAMES, {
+    out_of_scope: "Out of scope",
+    no_need_to_file: "No need to file",
+    duplicate: "Duplicate",
+    dismissed: "Dismissed (client unreachable)",
+    withdrawn: "Withdrawn",
+    other: "Other",
+  });
+  assert.equal(describeStage("closed", "en", { closingReason: "duplicate" }).label, "Closed · Duplicate");
+  assert.equal(describeStage("closed", "zh-Hans", { closingReason: "dismissed" }).label, "Closed · Dismissed (client unreachable)");
+  assert.equal(describeStage("closed", "en", { closingReason: null }).label, "Closed");
+  assert.equal(describeStage("closed", "en", { closingReason: "toString" }).label, "Closed");
+  assert.equal(describeStage("closed", "en").label, "Closed");
+  for (const [reason, [en, zh]] of Object.entries(CLOSED_MESSAGES)) {
+    assert.equal(describeStage("closed", "en", { closingReason: reason }).clientMessage, en, reason);
+    assert.equal(describeStage("closed", "zh-Hans", { closingReason: reason }).clientMessage, zh, reason);
+    assert.equal(describeStage("closed", "en", { closingReason: reason }).clientLabel, "Closed");
+  }
+  // No reason (closed before reasons existed), and any unknown one, keep the generic message.
+  for (const record of [null, {}, { closingReason: null }, { closingReason: "nonsense" }]) {
+    assert.equal(describeStage("closed", "en", record).clientMessage, CLOSED_MESSAGES.other[0]);
+    assert.equal(describeStage("closed", "zh-Hans", record).clientMessage, CLOSED_MESSAGES.other[1]);
+  }
+  // A note never reaches the client.
+  const noted = describeStage("closed", "en", { closingReason: "other", closingNote: "<b>secret</b>" });
+  assert.doesNotMatch(JSON.stringify(noted), /secret/);
+});
+
+test("Hold and Waiting for documents are told by where the hold came from", () => {
+  const docsEn = "PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC.";
+  const docsZh = "PCDC 一直在设法联系您，询问所需的文件。请在下方上传，或联系 PCDC。";
+  const signEn = "PCDC has been trying to reach you to sign Form 8879. Please contact PCDC. Your return can't be filed until you sign.";
+  const signZh = "PCDC 一直在设法联系您签署 8879 表。请联系 PCDC。您签署后才能递交报税表。";
+  assert.equal(describeStage("on_hold", "en", { holdOrigin: "awaiting_documents" }).clientMessage, docsEn);
+  assert.equal(describeStage("on_hold", "zh-Hans", { holdOrigin: "awaiting_documents" }).clientMessage, docsZh);
+  assert.equal(describeStage("on_hold", "en", { holdOrigin: "review_approved" }).clientMessage, signEn);
+  assert.equal(describeStage("on_hold", "zh-Hans", { holdOrigin: "review_approved" }).clientMessage, signZh);
+  assert.equal(describeStage("on_hold", "en", { holdOrigin: "review_approved" }).label, "Hold");
+  // Without an origin the documents message stands.
+  assert.equal(describeStage("on_hold", "en").clientMessage, docsEn);
+  assert.equal(
+    describeStage("awaiting_documents", "en").clientMessage,
+    "PCDC needs more documents from you before your return can be prepared. See the requests below.",
+  );
+  assert.equal(
+    describeStage("awaiting_documents", "zh-Hans").clientMessage,
+    "PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。",
+  );
+  for (const origin of [null, "toString"]) assert.equal(holdKind({ holdOrigin: origin }), null);
+  assert.equal(holdKind({ holdOrigin: "awaiting_documents" }), "documents");
+  assert.equal(holdKind({ holdOrigin: "review_approved" }), "signing");
+  assert.equal(holdKind(null), null);
+});
+
+test("canWithdraw is true at the withdraw stages and at a documents hold only", () => {
+  assert.deepEqual(WITHDRAW_STAGES, [
+    "received", "screening", "awaiting_documents", "preparation_ready",
+    "preparing", "corrections_required", "review_ready", "reviewing",
+  ]);
+  for (const stage of WITHDRAW_STAGES) assert.equal(canWithdraw({ stage }), true, stage);
+  assert.equal(canWithdraw({ stage: "on_hold", holdOrigin: "awaiting_documents" }), true);
+  assert.equal(canWithdraw({ stage: "on_hold", holdOrigin: "review_approved" }), false);
+  assert.equal(canWithdraw({ stage: "on_hold", holdOrigin: null }), false);
+  for (const stage of ["draft", "review_approved", "ready_to_efile", "efiled", "rejected", "accepted", "closed"])
+    assert.equal(canWithdraw({ stage }), false, stage);
+  assert.equal(canWithdraw(null), false);
+});
+
+test("mustContactToWithdraw is true from Ready to exit to Ready to e-file, at Rejected and at a signing hold", () => {
+  for (const stage of ["review_approved", "ready_to_efile", "rejected"])
+    assert.equal(mustContactToWithdraw({ stage }), true, stage);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: "review_approved" }), true);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: "awaiting_documents" }), false);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: null }), false);
+  for (const stage of ["draft", "preparing", "efiled", "accepted", "closed"])
+    assert.equal(mustContactToWithdraw({ stage }), false, stage);
+  assert.equal(mustContactToWithdraw(null), false);
 });
 
 test("returnState, waitingReturns and awaitsAcknowledgment read the methods and results", () => {

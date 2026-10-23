@@ -1,5 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber, loadingLine, confirmBody } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
+import { withdrawDialogBody } from "./client-views.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
 import {
@@ -15,6 +16,9 @@ import {
   markEfiledDialogBody,
   recordFilingResultDialogBody,
   returnToSigningDialogBody,
+  requestDocumentsDialogBody,
+  putOnHoldDialogBody,
+  resumeFromHoldDialogBody,
 } from "./admin-views.mjs";
 import {
   renderAddCaseV2,
@@ -434,6 +438,10 @@ export function dialog(state) {
       keep: "Keep editing",
     });
   }
+  if (state.dialog === "withdraw") {
+    title = t("withdraw.title", {}, lang);
+    body = withdrawDialogBody(state);
+  }
   if (state.dialog === "close-case") {
     title = "Close this case?";
     // The office screens own their own copy; this frame only places it.
@@ -454,6 +462,18 @@ export function dialog(state) {
   if (state.dialog === "return-to-signing") {
     title = "Return to signing?";
     body = returnToSigningDialogBody(state);
+  }
+  if (state.dialog === "request-documents") {
+    title = "Ask for documents?";
+    body = requestDocumentsDialogBody(state);
+  }
+  if (state.dialog === "put-on-hold") {
+    title = "Put this case on hold?";
+    body = putOnHoldDialogBody(state);
+  }
+  if (state.dialog === "resume-from-hold") {
+    title = "Got in touch?";
+    body = resumeFromHoldDialogBody(state);
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

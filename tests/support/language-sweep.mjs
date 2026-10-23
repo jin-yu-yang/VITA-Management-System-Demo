@@ -61,6 +61,8 @@ export function latinLeaks(text, data = []) {
 // ---------------------------------------------------------------------------
 
 export const REQUEST_PREFIX = "A volunteer requested a document: ";
+// Migration 036: the office's request line at intake (titles typed by the office).
+export const DOCUMENTS_PREFIX = "PCDC asked for these documents: ";
 
 // SQL as tokens: single-quoted literals ('' unescaped), words (identifiers and
 // keywords, dots included), numbers and single punctuation marks. `--`
@@ -182,7 +184,7 @@ export function historySentences(sql) {
   const sentences = new Set();
   const prefixes = new Set();
   const requests = new Set();
-  const keep = (text) => (text.startsWith(REQUEST_PREFIX) ? requests : sentences).add(text);
+  const keep = (text) => (text.startsWith(REQUEST_PREFIX) || text.startsWith(DOCUMENTS_PREFIX) ? requests : sentences).add(text);
   for (let i = 0; i < list.length; i++) {
     const token = list[i];
     if (is(token, "str", "message") && token.depth === 0 && is(list[i + 1], "punct", ",")) {

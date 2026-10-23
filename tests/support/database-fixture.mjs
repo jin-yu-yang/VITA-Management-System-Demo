@@ -34,8 +34,8 @@ const SAMPLE_ASSISTANCE = Object.freeze({
   language: "Mandarin",
   contactPreference: "Prefers calls from the main office",
 });
-// The eight scenario keys the private binding table and `cases.fixture_key`
-// constrain (migration 001, widened to eight in 035). They are stable names,
+// The ten scenario keys the private binding table and `cases.fixture_key`
+// constrain (migration 001, widened to eight in 035 and ten in 036). They are stable names,
 // never case ids.
 const FIXTURE_KEYS = Object.freeze([
   "preparation_ready",
@@ -46,6 +46,8 @@ const FIXTURE_KEYS = Object.freeze([
   "review_approved",
   "rejected",
   "accepted",
+  "on_hold",
+  "withdrawn",
 ]);
 // The one key this fixture binds to applicant A through the shared
 // initializer, so a reset has a durable client binding to reapply.

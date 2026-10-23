@@ -1006,7 +1006,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         );
         // Closure from reviewing keeps the review history and its reviewer.
         await f.act(f.presenter, waiting, f.sam, "CLOSE_CASE", {
-          reason: CLOSURE_REASON,
+          reason: "other", note: CLOSURE_REASON,
           confirmed: true,
         });
         staff = await f.readStaffCase(waiting);
@@ -1018,7 +1018,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         // Closure from review_ready cancels nothing and creates no review.
         const readyCaseId = await f.preparedCase();
         await f.act(f.presenter, readyCaseId, f.sam, "CLOSE_CASE", {
-          reason: CLOSURE_REASON,
+          reason: "other", note: CLOSURE_REASON,
           confirmed: true,
         });
         staff = await f.readStaffCase(readyCaseId);
@@ -1039,7 +1039,7 @@ test("review submission waits for documents, not for office contact", async (t) 
           f.sampleRequest,
         );
         await f.act(f.presenter, correcting, f.sam, "CLOSE_CASE", {
-          reason: CLOSURE_REASON,
+          reason: "other", note: CLOSURE_REASON,
           confirmed: true,
         });
         staff = await f.readStaffCase(correcting);
@@ -1054,7 +1054,7 @@ test("review submission waits for documents, not for office contact", async (t) 
         await assert.rejects(
           () =>
             f.act(f.presenter, approved, f.sam, "CLOSE_CASE", {
-              reason: CLOSURE_REASON,
+              reason: "other", note: CLOSURE_REASON,
               confirmed: true,
             }),
           rejected("INVALID_TRANSITION"),

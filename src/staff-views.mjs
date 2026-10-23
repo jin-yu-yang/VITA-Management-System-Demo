@@ -42,7 +42,14 @@ import {
   emptyState,
   emptyLine,
 } from "./ui.mjs";
-import { describeStage, phaseTab, BOARD_TABS, returnedToSigning } from "./domain.mjs";
+import {
+  describeStage,
+  phaseTab,
+  BOARD_TABS,
+  returnedToSigning,
+  holdKind,
+  CLOSING_REASON_NAMES,
+} from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 import {
   CONFIRMED_BY,
@@ -117,6 +124,8 @@ const STAGE_WORK = Object.freeze({
   draft: { work: "Nothing yet. The client has not sent this application.", needs: null },
   received: { work: "The office starts screening when an admin opens the case.", needs: null },
   screening: { work: "The office is screening this application.", needs: null },
+  awaiting_documents: { work: "The office is waiting for the client's documents.", needs: null },
+  on_hold: { work: "The office is trying to reach the client.", needs: null },
   preparation_ready: {
     work: "Waiting for a preparer to claim it.",
     needs: "prepare",
@@ -397,6 +406,16 @@ export function staffEligibility(caseRecord, person) {
     return allowed;
   };
 
+  // The office verifies the documents it asked for at intake (Waiting for
+  // documents, and a Hold that came from it); the preparer's loop is unchanged.
+  const verifyIntakeDocument = () => {
+    if (!id) return refused(CHOOSE_PERSONA);
+    if (stage !== "awaiting_documents" && !(stage === "on_hold" && holdKind(record) === "documents"))
+      return refused("Preparation work happens while this case is being prepared.");
+    if (!capabilities.includes("admin")) return refused("Needs office administrator access.");
+    return allowed;
+  };
+
   return {
     personId: id,
     canPrepare,
@@ -409,6 +428,7 @@ export function staffEligibility(caseRecord, person) {
     claimPreparation: claimPreparation(),
     claimReview: claimReview(),
     preparationWork: preparationWork(),
+    verifyIntakeDocument: verifyIntakeDocument(),
     reviewDecision: reviewDecision(),
     reviewContact: reviewContact(),
     seesContact,
@@ -793,18 +813,24 @@ export function lifecycleBar(subject) {
   // filing. Each shows on the step it returns to, marked as amendment.
   const correcting = stage === "corrections_required";
   const rejected = stage === "rejected";
-  const at = LIFECYCLE.indexOf(correcting ? "preparing" : rejected ? "efiled" : stage);
+  // Waiting for documents shows on the stage it was asked from; a Hold shows on
+  // the stage it came from (Ready to exit, or the stage the documents were asked from).
+  const held = stage === "awaiting_documents" || stage === "on_hold";
+  const heldOn = !held
+    ? null
+    : stage === "awaiting_documents" || record.holdOrigin === "awaiting_documents"
+      ? (record.documentsOrigin ?? null)
+      : (record.holdOrigin ?? null);
+  const amendStep = correcting ? "preparing" : rejected ? "efiled" : heldOn;
+  const amendStage = correcting ? "corrections_required" : rejected ? "rejected" : stage;
+  const at = LIFECYCLE.indexOf(amendStep ?? stage);
   return `<ol class="lifecycle" aria-label="Where this case is">${LIFECYCLE.map((step, index) => {
     // A case can be closed from any stage, so a closed case marks no step as
     // done; the History tab shows the path it took.
     const state =
       at < 0 ? "todo" : index === at ? "current" : index < at && stage !== "closed" ? "done" : "todo";
-    const amend = (correcting && step === "preparing") || (rejected && step === "efiled");
-    const label = describeStage(
-      amend ? (correcting ? "corrections_required" : "rejected") : step,
-      "en",
-      record,
-    ).label;
+    const amend = amendStep !== null && step === amendStep;
+    const label = describeStage(amend ? amendStage : step, "en", record).label;
     return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${index === at ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
   }).join("")}</ol>`;
 }
@@ -1194,7 +1220,7 @@ function requestCard(record, request, rights, ui) {
   const scope = request?.id ?? "request";
   const verify = when(
     request?.status === "awaiting_verification",
-    rights.preparationWork.allowed
+    rights.preparationWork.allowed || rights.verifyIntakeDocument?.allowed
       ? caseButton(
           `${icon("check")} Verify this document`,
           "VERIFY_DOCUMENT",
@@ -1984,6 +2010,11 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_FILING_RESULT: "recorded the filing result",
   RETURN_TO_SIGNING: "returned the case to signing",
   REMIND: "recorded a reminder for the client",
+  REQUEST_DOCUMENTS_AT_INTAKE: "asked for documents",
+  PUT_ON_HOLD: "put the case on hold",
+  RESUME_FROM_HOLD: "recorded that the office got in touch",
+  // The client acts, so the event has no staff actor and this is the whole sentence.
+  WITHDRAW: "the client withdrew the application",
   CLOSE_CASE: "closed the case",
   UPDATE_CONTACT: "updated the best time to reach",
   RECORD_MATERIALS: "recorded the materials received",
@@ -1998,11 +2029,22 @@ export function historySentence(entry) {
     (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
     "recorded a change";
   const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
+  // A close or a hold carries staff context: the reason's name and the note, as typed.
+  const reason =
+    code === "CLOSE_CASE" && Object.hasOwn(CLOSING_REASON_NAMES, entry?.detail?.reason ?? "")
+      ? ` Reason: ${CLOSING_REASON_NAMES[entry.detail.reason]}.`
+      : "";
+  const note =
+    (code === "CLOSE_CASE" || code === "PUT_ON_HOLD") &&
+    typeof entry?.detail?.note === "string" &&
+    entry.detail.note
+      ? ` Note: ${entry.detail.note}`
+      : "";
   const assigned =
     code === "SUBMIT" && typeof entry?.detail?.clientNumber === "number"
       ? ` Client ${formatClientNumber(entry.detail.clientNumber)} assigned.`
       : "";
-  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.${assigned}`;
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.${assigned}${reason}${note}`;
 }
 
 export function historyPanel(record, staffShaped) {

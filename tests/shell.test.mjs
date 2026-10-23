@@ -1214,8 +1214,20 @@ test("app.mjs opens, closes and announces the two e-file confirmations", () => {
   const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
   assert.match(
     opener,
-    /case "open-mark-ready-to-efile":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing": \{/,
+    /case "open-mark-ready-to-efile":\s+case "open-close-case":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing":\s+case "open-request-documents":\s+case "open-put-on-hold":\s+case "open-resume-from-hold":\s+case "open-withdraw": \{/,
   );
+  assert.match(app, /"open-close-case": "close-case"/);
+  assert.match(app, /"open-request-documents": "request-documents"/);
+  assert.match(app, /"open-put-on-hold": "put-on-hold"/);
+  assert.match(app, /"open-resume-from-hold": "resume-from-hold"/);
+  // The toasts of the intake-and-closing moves.
+  assert.match(app, /REQUEST_DOCUMENTS_AT_INTAKE: "The documents are requested\."/);
+  assert.match(app, /PUT_ON_HOLD: "The case is on hold\."/);
+  assert.match(app, /RESUME_FROM_HOLD: "The case is back in progress\."/);
+  assert.match(app, /CLOSE_CASE: "The case is closed\."/);
+  assert.match(dialog({ dialog: "request-documents", savedCase: { reference: "VT-X" } }), /Ask for documents\?/);
+  assert.match(dialog({ dialog: "put-on-hold", savedCase: { reference: "VT-X" } }), /Put this case on hold\?/);
+  assert.match(dialog({ dialog: "resume-from-hold", savedCase: { reference: "VT-X" } }), /Got in touch\?/);
   assert.match(opener, /const opener = describeFocus\(target\);/);
   assert.match(opener, /const caseId = target\.dataset\.caseId;/);
   assert.match(opener, /const name = CASE_DIALOGS\[target\.dataset\.action\];/);

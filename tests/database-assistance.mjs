@@ -701,7 +701,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
           pending.caseId,
           f.sam,
           "CLOSE_CASE",
-          { reason: CLOSURE_REASON, confirmed: true },
+          { reason: "other", note: CLOSURE_REASON, confirmed: true },
         );
         assert.equal(closed.revision, before.revision + 1);
         const after = await f.readStaffCase(pending.caseId);
@@ -730,7 +730,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
         assert.equal(after.answers.tp_first_name, before.answers.tp_first_name);
         const event = after.internalHistory.at(-1);
         assert.equal(event.action, "CLOSE_CASE");
-        assert.deepEqual(event.detail, { reason: CLOSURE_REASON });
+        assert.deepEqual(event.detail, { reason: "other", note: CLOSURE_REASON });
         assert.equal(event.actorPersonId, f.sam);
         // The client is told plainly, without the internal reason.
         const message = after.history.at(-1);
@@ -747,7 +747,8 @@ test("closure cancels pending work without erasing its history", async (t) => {
       async () => {
         const pending = await pendingCase(f);
         await f.act(f.presenter, pending.caseId, f.sam, "CLOSE_CASE", {
-          reason: CLOSURE_REASON,
+          reason: "other",
+          note: CLOSURE_REASON,
           confirmed: true,
         });
         const { revision } = await f.readStaffCase(pending.caseId);
@@ -828,7 +829,7 @@ test("closure cancels pending work without erasing its history", async (t) => {
             {
               personId: f.sam,
               type: "CLOSE_CASE",
-              payload: { reason: "Closing again", confirmed: true },
+              payload: { reason: "other", note: "Closing again", confirmed: true },
             },
           ],
         ];
@@ -882,13 +883,13 @@ test("closure cancels pending work without erasing its history", async (t) => {
         for (const payload of [
           {},
           { confirmed: true },
-          { reason: CLOSURE_REASON },
+          { reason: "other", note: CLOSURE_REASON },
           { reason: "", confirmed: true },
           { reason: "   ", confirmed: true },
-          { reason: "x".repeat(1001), confirmed: true },
-          { reason: CLOSURE_REASON, confirmed: false },
-          { reason: CLOSURE_REASON, confirmed: "true" },
-          { reason: CLOSURE_REASON, confirmed: true, force: true },
+          { reason: "other", note: "x".repeat(1001), confirmed: true },
+          { reason: "other", note: CLOSURE_REASON, confirmed: false },
+          { reason: "other", note: CLOSURE_REASON, confirmed: "true" },
+          { reason: "other", note: CLOSURE_REASON, confirmed: true, force: true },
           { reason: 12, confirmed: true },
         ])
           await refuseAction(f, f.presenter, { ...close, payload }, "VT007");
@@ -897,19 +898,20 @@ test("closure cancels pending work without erasing its history", async (t) => {
           "preparation_ready",
         );
         await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", {
-          reason: "x".repeat(1000),
+          reason: "other",
+          note: "x".repeat(1000),
           confirmed: true,
         });
         const staff = await f.readStaffCase(caseId);
         assert.equal(staff.stage, "closed");
-        assert.equal(staff.internalHistory.at(-1).detail.reason.length, 1000);
+        assert.equal(staff.internalHistory.at(-1).detail.note.length, 1000);
       },
     );
     await t.test(
       "only an admin presenter closes, and only before approval",
       async () => {
         const caseId = await f.readyCase();
-        const payload = { reason: CLOSURE_REASON, confirmed: true };
+        const payload = { reason: "other", note: CLOSURE_REASON, confirmed: true };
         const close = { caseId, revision: 5, type: "CLOSE_CASE", payload };
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await refuseAction(f, f.presenter, { ...close, personId }, "VT001");

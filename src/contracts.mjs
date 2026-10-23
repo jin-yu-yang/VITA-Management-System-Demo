@@ -5,17 +5,29 @@ export const STAGES = Object.freeze([
   "draft",
   "received",
   "screening",
+  "awaiting_documents",
   "preparation_ready",
   "preparing",
   "review_ready",
   "reviewing",
   "corrections_required",
   "review_approved",
+  "on_hold",
   "ready_to_efile",
   "efiled",
   "rejected",
   "accepted",
   "closed",
+]);
+
+// Why a case closed (migration 036), in the order the close dialog offers them.
+export const CLOSING_REASONS = Object.freeze([
+  "out_of_scope",
+  "no_need_to_file",
+  "duplicate",
+  "dismissed",
+  "withdrawn",
+  "other",
 ]);
 
 export const CASE_ACTIONS = Object.freeze([
@@ -49,6 +61,14 @@ export const CASE_ACTIONS = Object.freeze([
   "RECORD_FILING_RESULT",
   "RETURN_TO_SIGNING",
   "REMIND",
+  // Change add-hold-and-closing (migration 036). REQUEST_DOCUMENTS_AT_INTAKE
+  // carries { requests: [{ title, message }] } (1-5); PUT_ON_HOLD carries
+  // { confirmed, note? }; RESUME_FROM_HOLD and WITHDRAW carry { confirmed };
+  // CLOSE_CASE carries { confirmed, reason, note? } (note required for 'other').
+  "REQUEST_DOCUMENTS_AT_INTAKE",
+  "PUT_ON_HOLD",
+  "RESUME_FROM_HOLD",
+  "WITHDRAW",
   "CLOSE_CASE",
   // Part 4a (migration 013). No screen offers them until 4b and 4c.
   "UPDATE_CONTACT",
@@ -112,7 +132,8 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //   openRequests, phone and reviewContactStatus (the latest approved
 //   review's client_contact_status: 'pending', 'completed', or null when no
 //   review has been approved). A list entry's goOverOpen is true while a
-//   go_over_return follow-up is open (D13). documentCards: the case_document_cards rows as
+//   go_over_return follow-up is open (D13). Its openWithdrawalNotices counts
+//   the open withdrawal_notice follow-ups; withdrawalNoticeReason is the first one's stored text. documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
 //   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,

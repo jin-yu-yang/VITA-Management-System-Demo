@@ -1,8 +1,8 @@
-import { STAGES } from "./contracts.mjs";
-import { phaseTab, describeStage } from "./domain.mjs";
+import { STAGES, CLOSING_REASONS } from "./contracts.mjs";
+import { phaseTab, describeStage, CLOSING_REASON_NAMES } from "./domain.mjs";
 import { clientLanguages, languageOptions, languageSummary, speaksLanguage, serviceLabel } from "./intake-catalogue.mjs";
 import { esc, icon, button, relativeDay, stageBadge, clientNumberTag, languageCell, loadingLine, unloadedLine, emptyState } from "./ui.mjs";
-import { listPhone } from "./staff-views.mjs";
+import { listPhone, when } from "./staff-views.mjs";
 
 export const POOL_TABS = Object.freeze([
   ["all", "All cases"],
@@ -20,18 +20,21 @@ const TAB_VALUES = Object.freeze(POOL_TABS.map(([value]) => value));
 export const POOL_STAGES = STAGES;
 export const DEFAULT_POOL_FILTERS = Object.freeze({
   poolPhase: "all", poolStage: "all", poolLanguage: "all",
-  poolService: "all", poolPreparer: "all", poolReviewer: "all",
+  poolService: "all", poolPreparer: "all", poolReviewer: "all", poolReason: "all",
 });
 export const POOL_FILTER_KEYS = Object.freeze(Object.keys(DEFAULT_POOL_FILTERS));
 
-// The office's phases on the twelve stages. The three middle ones are the
+// The office's phases on every stage. The three middle ones are the
 // volunteer board's own tabs (`phaseTab`), so a case never sits on one tab
-// for a volunteer and another for the office. An approved return waits on the
-// client (Form 8879); once signed, it is the office's to file.
+// for a volunteer and another for the office. A case waiting on the client
+// (Waiting for documents, or an approved return awaiting Form 8879) is on
+// "signing"; once signed, it is the office's to file. A Hold, like a Rejected
+// return, needs the office's attention.
 export function poolPhase(record) {
   const stage = record?.stage;
   if (["draft", "received", "screening"].includes(stage)) return "intake";
-  if (stage === "review_approved") return "signing";
+  if (stage === "review_approved" || stage === "awaiting_documents") return "signing";
+  if (stage === "on_hold") return "attention";
   if (stage === "ready_to_efile" || stage === "efiled") return "filing";
   if (stage === "rejected") return "attention";
   if (stage === "accepted") return "done";
@@ -47,8 +50,25 @@ export function poolFilters(filters) {
   }
   if (!TAB_VALUES.includes(chosen.poolPhase)) chosen.poolPhase = "all";
   if (chosen.poolStage !== "all" && !POOL_STAGES.includes(chosen.poolStage)) chosen.poolStage = "all";
+  // The reason filter belongs to the Closed tab: anywhere else it is "all".
+  if (chosen.poolPhase !== "closed" || !POOL_REASONS.includes(chosen.poolReason)) chosen.poolReason = "all";
   return chosen;
 }
+
+// A closed case's reason: one of the six, or "none" for a case closed before
+// reasons existed (it has no reason, and shows the staff name "Closed").
+const POOL_REASONS = Object.freeze(["all", ...CLOSING_REASONS, "none"]);
+const REASON_OPTIONS = Object.freeze([
+  ["all", "Any reason"],
+  ...CLOSING_REASONS.map((reason) => [reason, CLOSING_REASON_NAMES[reason]]),
+  ["none", "No reason"],
+]);
+const matchesReason = (record, chosen) =>
+  chosen === "all" ||
+  (record?.stage === "closed" &&
+    (chosen === "none"
+      ? !Object.hasOwn(CLOSING_REASON_NAMES, record?.closingReason ?? "")
+      : record?.closingReason === chosen));
 
 const matchesValue = (value, chosen, labelOf = (v) => v) =>
   chosen === "all" || labelOf(value ?? "") === labelOf(chosen);
@@ -60,6 +80,7 @@ export function filterPool(cases = [], chosen, { ignorePhase = false } = {}) {
     (record) =>
       (ignorePhase || chosen.poolPhase === "all" || poolPhase(record) === chosen.poolPhase) &&
       matchesValue(record?.stage, chosen.poolStage) &&
+      (ignorePhase || matchesReason(record, chosen.poolReason)) &&
       speaksLanguage(clientLanguages(record?.answers), chosen.poolLanguage) &&
       matchesValue(record?.answers?.service, chosen.poolService, serviceLabel) &&
       matchesPerson(record?.preparerId, chosen.poolPreparer) &&
@@ -140,6 +161,9 @@ export function renderCasePool(cases = [], people = [], ui = {}) {
   const filters = `<div class="pool-filters">${filterSelect(
     "Stage", "poolStage", chosen.poolStage,
     [["all", "Any stage"], ...POOL_STAGES.map((stage) => [stage, describeStage(stage).label])],
+  )}${when(
+    chosen.poolPhase === "closed",
+    filterSelect("Closed reason", "poolReason", chosen.poolReason, REASON_OPTIONS),
   )}${filterSelect("Language", "poolLanguage", chosen.poolLanguage, languageOptions(all, "Any language"))}${filterSelect(
     "Service", "poolService", chosen.poolService, valueOptions(all, "service", "Any service", serviceLabel),
   )}${filterSelect("Prepared by", "poolPreparer", chosen.poolPreparer, personOptions(people))}${filterSelect(

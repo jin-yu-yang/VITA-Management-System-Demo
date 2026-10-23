@@ -143,6 +143,37 @@ const SCENARIOS = Object.freeze({
     events: 12,
     clientEvents: 12,
   },
+  // 036: asked for a Photo ID from Screening, then put on Hold; and a withdrawal
+  // from Filing in progress.
+  on_hold: {
+    stage: "on_hold",
+    preparer: null,
+    reviewer: null,
+    version: 0,
+    participants: 0,
+    requests: ["open"],
+    documents: 0,
+    followups: [],
+    contacts: 0,
+    reviews: [],
+    events: 3,
+    clientEvents: 3,
+    intakeVerified: false,
+  },
+  withdrawn: {
+    stage: "closed",
+    preparer: "alex",
+    reviewer: null,
+    version: 0,
+    participants: 1,
+    requests: [],
+    documents: 0,
+    followups: ["open"],
+    contacts: 0,
+    reviews: [],
+    events: 4,
+    clientEvents: 4,
+  },
 });
 
 // A reset seeds one history entry per recorded step plus the `FIXTURE_SEEDED`
@@ -185,7 +216,7 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   const [row] = (await f.sql("select * from public.cases where id=$1", [caseId])).rows;
   assert.ok(row, `${key} case exists`);
   assert.equal(row.stage, expected.stage, `${key} stage`);
-  assert.equal(row.intake_verified, true, `${key} intake`);
+  assert.equal(row.intake_verified, expected.intakeVerified ?? true, `${key} intake`);
   assert.equal(
     Number(row.preparation_version),
     expected.version,
@@ -231,7 +262,10 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   );
   for (const followup of followups) {
     assert.equal(followup.assignee_person_id, f.sam, `${key} follow-up assignee`);
-    assert.equal(followup.request_id, requests[0].id, `${key} follow-up request`);
+    if (key === "withdrawn") {
+      assert.equal(followup.purpose, "withdrawal_notice", `${key} follow-up purpose`);
+      assert.equal(followup.request_id, null, `${key} follow-up request`);
+    } else assert.equal(followup.request_id, requests[0].id, `${key} follow-up request`);
     assert.equal(followup.resolved_at, null, `${key} follow-up unresolved`);
   }
   // The sample follow-up's call is a linked contact log entry (OpenSpec
@@ -324,7 +358,7 @@ test("sample reset preserves class-created applications", async () => {
     assert.deepEqual(await f.readStableSetup(), stableSetup);
     assert.deepEqual(await f.readMembership(f.applicantAUserId), membership);
     const fixtures = await f.readFixtureCases();
-    assert.equal(fixtures.length, 8);
+    assert.equal(fixtures.length, 10);
     assert.deepEqual(
       fixtures.map((c) => c.fixtureKey).sort(),
       [...f.fixtureKeys].sort(),
@@ -483,6 +517,82 @@ test("the seeded workspace tells one coherent story", async (t) => {
       }
     });
 
+    await t.test("the on_hold and withdrawn samples hold their origins, requests and lines", async () => {
+      const byKey = await fixtureByKey(f);
+      const caseRow = async (key) =>
+        (
+          await f.sql(
+            "select stage,hold_origin,documents_origin,closing_reason,preparer_id from public.cases where id=$1",
+            [byKey[key].id],
+          )
+        ).rows[0];
+      assert.deepEqual(await caseRow("on_hold"), {
+        stage: "on_hold",
+        hold_origin: "awaiting_documents",
+        documents_origin: "screening",
+        closing_reason: null,
+        preparer_id: null,
+      });
+      const requests = await rowsFor(f, "document_requests", byKey.on_hold.id);
+      assert.deepEqual(
+        requests.map((r) => [r.title, r.status]),
+        [["Photo ID", "open"]],
+      );
+      assert.deepEqual((await f.clientMessages(byKey.on_hold.id)).slice(-2), [
+        "PCDC asked for these documents: Photo ID.",
+        "PCDC is trying to reach you.",
+      ]);
+      assert.deepEqual(await caseRow("withdrawn"), {
+        stage: "closed",
+        hold_origin: null,
+        documents_origin: null,
+        closing_reason: "withdrawn",
+        preparer_id: f.alex,
+      });
+      const followups = await rowsFor(f, "admin_followups", byKey.withdrawn.id);
+      assert.deepEqual(
+        followups.map((x) => [x.purpose, x.status, x.request_id]),
+        [["withdrawal_notice", "open", null]],
+      );
+      assert.equal(
+        (await f.clientMessages(byKey.withdrawn.id)).at(-1),
+        "You withdrew your application. Your return was not filed.",
+      );
+      for (const key of f.fixtureKeys.filter((k) => k !== "on_hold" && k !== "withdrawn")) {
+        const other = await caseRow(key);
+        assert.equal(other.hold_origin, null, key);
+        assert.equal(other.closing_reason, null, key);
+      }
+    });
+
+    await t.test("a checkpoint on the new samples clears their requests and follow-ups", async () => {
+      const cases = await fixtureByKey(f);
+      for (const key of ["on_hold", "withdrawn"]) {
+        const target = cases[key];
+        const answered = await loadCheckpoint(f.presenter, target.id, target.revision, "ready_for_review");
+        assert.equal(answered.error, null, key);
+        const [row] = (
+          await f.sql(
+            "select stage,hold_origin,documents_origin,closing_reason from public.cases where id=$1",
+            [target.id],
+          )
+        ).rows;
+        assert.deepEqual(row, {
+          stage: "review_ready",
+          hold_origin: null,
+          documents_origin: null,
+          closing_reason: null,
+        });
+        assert.deepEqual(await rowsFor(f, "admin_followups", target.id, "id"), [], key);
+        assert.deepEqual(
+          (await rowsFor(f, "document_requests", target.id, "id")).map((r) => r.title),
+          ["Mileage record"],
+          key,
+        );
+      }
+      await f.seedFixtures();
+    });
+
     await t.test("a checkpoint on a filed sample clears its filing rows", async () => {
       const target = (await fixtureByKey(f)).rejected;
       const answered = await loadCheckpoint(f.presenter, target.id, target.revision, "ready_for_review");
@@ -535,10 +645,10 @@ test("the seeded workspace tells one coherent story", async (t) => {
         assert.ok(row.created_at, `${row.fixture_key} created_at`);
         assert.ok(row.updated_at, `${row.fixture_key} updated_at`);
       }
-      assert.equal(references.size, 8, "every fixture reference is its own");
+      assert.equal(references.size, 10, "every fixture reference is its own");
       // Each sample is its own fictional client.
       const names = new Set(rows.map((row) => `${row.answers.tp_first_name} ${row.answers.tp_last_name}`));
-      assert.equal(names.size, 8, "every sample has its own name");
+      assert.equal(names.size, 10, "every sample has its own name");
     });
 
     await t.test("one assistance request, on the case the office is chasing", async () => {
@@ -660,7 +770,7 @@ test("the seeded workspace tells one coherent story", async (t) => {
       for (const result of results) assert.equal(result.error, null);
       assert.equal(await generationOf(f), before + 2);
       const state = await f.readFixtureState();
-      assert.equal(state.caseIds.length, 8);
+      assert.equal(state.caseIds.length, 10);
       assert.equal(state.itemIds.length, 1);
       // The set on disk is the later of the two, whole and consistent.
       const byKey = await fixtureByKey(f);
@@ -684,7 +794,9 @@ test("fixture checks by service", async () => {
     const byKey = await fixtureByKey(f);
     const SENTENCE =
       "PCDC finished screening your application. A volunteer will start preparing your return next.";
-    for (const key of f.fixtureKeys) {
+    // on_hold was asked for documents straight from Screening, so it never
+    // finished screening.
+    for (const key of f.fixtureKeys.filter((k) => k !== "on_hold")) {
       const [event] = (
         await f.sql(
           "select detail from public.case_events where case_id=$1 and action='VERIFY_INTAKE'",
