@@ -13,17 +13,19 @@ A case SHALL be in exactly one of these stages. Each stage's key, as stored, and
 | `draft` | Draft |
 | `received` | Request sent |
 | `screening` | Screening in progress |
+| `awaiting_documents` | Waiting for documents |
 | `preparation_ready` | Pending intake / filing |
 | `preparing` | Filing in progress (preparing) |
 | `corrections_required` | Corrections in progress |
 | `review_ready` | Pending review |
 | `reviewing` | Review in progress |
 | `review_approved` | Ready to exit |
+| `on_hold` | Hold |
 | `ready_to_efile` | Ready to e-file |
 | `efiled` | by filing method: Both e-filed (both returns e-filed), E-filed & paper (federal e-filed, state on paper), Both paper (both on paper); E-filed for a case e-filed before filing methods existed |
 | `rejected` | Rejected |
 | `accepted` | by filing method: Accepted (both e-filed), Accepted & mailed (federal e-filed, state on paper), Mailed (both on paper) |
-| `closed` | Closed |
+| `closed` | Closed, followed by its reason's staff name when it has one (for example "Closed · Duplicate") |
 
 The database SHALL refuse any other stage. The moves along the chain SHALL be:
 
@@ -33,6 +35,10 @@ The database SHALL refuse any other stage. The moves along the chain SHALL be:
 | Submit, by the office (Add a case) | Draft | Screening in progress | an admin |
 | Start screening | Request sent | Screening in progress | an admin |
 | The intake check | Screening in progress | Pending intake / filing | an admin |
+| Ask for documents | Screening in progress, Pending intake / filing | Waiting for documents | an admin |
+| Verify the last open request | Waiting for documents; Hold from Waiting for documents | the stage the documents were asked from | an admin |
+| Put on hold | Waiting for documents, Ready to exit | Hold | an admin |
+| Got in touch | Hold | the stage it came from | an admin |
 | Claim preparation | Pending intake / filing, no preparer | Filing in progress | a preparer |
 | Send to review | Filing in progress | Pending review | the preparer |
 | Claim review | Pending review, no reviewer | Review in progress | a reviewer who did not prepare it |
@@ -44,10 +50,11 @@ The database SHALL refuse any other stage. The moves along the chain SHALL be:
 | Record filing result | E-filed | E-filed, Rejected or Accepted | an admin |
 | Record filing result, for a return still waiting | Rejected | Rejected | an admin |
 | Return to signing | Rejected, every return answered | Ready to exit | an admin |
+| Withdraw | Request sent through Review in progress, and a Hold from Waiting for documents | Closed (withdrawn) | the case's client |
 
 Every other move along the chain SHALL be refused as not available.
 
-Closing SHALL stay one move to Closed, by an admin. It SHALL be allowed from Request sent, Screening in progress, Pending intake / filing, Filing in progress, Corrections in progress, Pending review, Review in progress and Rejected, and from a draft the office owns. It SHALL be refused from Ready to exit, Ready to e-file, E-filed, Accepted and Closed. A case SHALL receive its client number when it leaves Draft for any stage but Closed, including when the office's submit moves it straight to Screening in progress.
+Closing SHALL stay one move to Closed, by an admin, with a reason (see "A closed case records why it closed"). It SHALL be allowed from Request sent, Screening in progress, Waiting for documents, Pending intake / filing, Filing in progress, Corrections in progress, Pending review, Review in progress, Hold (whatever it came from) and Rejected, and from a draft the office owns. At Ready to exit and Ready to e-file it SHALL be allowed only with reason `withdrawn`, after the client contacts PCDC; any other reason SHALL be refused as not available. It SHALL be refused from E-filed, Accepted and Closed. A case SHALL receive its client number when it leaves Draft for any stage but Closed, including when the office's submit moves it straight to Screening in progress.
 
 #### Scenario: The intake check waits for screening
 - **WHEN** an admin records the intake check on a case at Request sent
@@ -58,15 +65,23 @@ Closing SHALL stay one move to Closed, by an admin. It SHALL be allowed from Req
 - **THEN** the case is at Screening in progress, with a client number
 
 #### Scenario: A volunteer can't start screening or mark e-filing
-- **WHEN** a preparer or reviewer tries to start screening, mark ready to e-file, mark e-filed, record a filing result or return a case to signing
+- **WHEN** a preparer or reviewer tries to start screening, ask for documents, put a case on hold, mark ready to e-file, mark e-filed, record a filing result or return a case to signing
 - **THEN** each is refused as forbidden, and nothing is recorded
 
 #### Scenario: Closing after review is refused
-- **WHEN** an admin tries to close a case at Ready to exit, Ready to e-file, E-filed or Accepted
+- **WHEN** an admin tries to close a case at E-filed or Accepted with any reason, or at Ready to exit or Ready to e-file with any reason but Withdrawn
 - **THEN** it is refused as not available
+
+#### Scenario: Withdrawn before filing
+- **WHEN** an admin closes a case at Ready to exit or Ready to e-file with reason Withdrawn
+- **THEN** the case is Closed
 
 #### Scenario: Closing during screening
 - **WHEN** an admin closes a case at Screening in progress, with a reason
+- **THEN** the case is Closed
+
+#### Scenario: Closing a held signer
+- **WHEN** an admin closes a Hold that came from Ready to exit, with reason Dismissed
 - **THEN** the case is Closed
 
 ### Requirement: Screening starts when an admin first opens a case
@@ -162,12 +177,14 @@ Staff screens SHALL show each stage's staff name (see the first requirement), in
 | `draft` | Draft / 草稿 |
 | `received` | Sent to PCDC / 已发送给 PCDC |
 | `screening` | Being reviewed / 审核中 |
+| `awaiting_documents` | Documents needed / 需要文件 |
 | `preparation_ready` | Waiting for a volunteer / 等待志愿者 |
 | `preparing` | Being prepared / 准备中 |
 | `corrections_required` | Being corrected / 正在更正 |
 | `review_ready` | Waiting for review / 等待检查 |
 | `reviewing` | Being checked / 检查中 |
 | `review_approved` | Ready to sign / 等待签名 |
+| `on_hold` | Waiting for you / 等待您的回复 |
 | `ready_to_efile` | Signed / 已签名 |
 | `efiled` | E-filed / 已电子递交 (both e-filed, or e-filed before filing methods existed); Filed / 已递交 (federal e-filed, state on paper); Mailed / 已邮寄 (both on paper) |
 | `rejected` | Needs a correction / 需要更正 |
@@ -175,10 +192,10 @@ Staff screens SHALL show each stage's staff name (see the first requirement), in
 | `closed` | Closed / 已关闭 |
 
 The client's progress page SHALL show five steps:
-- Intake 登记 (Draft, Request sent, Screening in progress);
+- Intake 登记 (Draft, Request sent, Screening in progress, Waiting for documents, and a Hold that came from Waiting for documents);
 - Preparation 准备 (Pending intake / filing, Filing in progress, Corrections in progress);
 - Review 审核 (Pending review, Review in progress);
-- Signing 签名 (Ready to exit);
+- Signing 签名 (Ready to exit, and a Hold that came from Ready to exit);
 - Filing 递交 (Ready to e-file, E-filed, Rejected).
 
 Earlier steps SHALL be done, the case's step current, and later steps not started. At Accepted, every step SHALL be done, and none current. A closed case SHALL show its closed notice instead of a current step.
@@ -201,6 +218,12 @@ Earlier steps SHALL be done, the case's step current, and later steps not starte
 - **WHEN** a client's case is Accepted
 - **THEN** all five steps are done, and the badge reads "Complete"
 
+#### Scenario: The stepper on hold
+- **WHEN** a client's case is on a Hold that came from Waiting for documents
+- **THEN** Intake is current, and the badge reads "Waiting for you"
+- **AND WHEN** another client's case is on a Hold that came from Ready to exit
+- **THEN** Signing is current, and the badge reads "Waiting for you"
+
 ### Requirement: The lists and the case page show every stage
 **The work board** SHALL keep its three tabs:
 - **Available:** Pending intake / filing with no preparer.
@@ -209,11 +232,14 @@ Earlier steps SHALL be done, the case's step current, and later steps not starte
 
 Its search SHALL reach a case in any stage.
 
-**The case pool** SHALL have these tabs, in this order: All, Intake (Draft, Request sent, Screening in progress), Available, Waiting for preparation, Waiting for review, Waiting on client (Ready to exit), Filing (Ready to e-file, E-filed), Needs attention (Rejected), Done (Accepted), and Closed. Its stage filter SHALL list every stage. The pool, Follow-ups and the case page SHALL show E-filed and Accepted by their staff name for the case's filing method.
+**The case pool** SHALL have these tabs, in this order: All, Intake (Draft, Request sent, Screening in progress), Available, Waiting for preparation, Waiting for review, Waiting on client (Waiting for documents, Ready to exit), Filing (Ready to e-file, E-filed), Needs attention (Hold, Rejected), Done (Accepted), and Closed. Its stage filter SHALL list every stage. The Closed tab SHALL have a reason filter: All, each of the six reasons, and No reason (cases closed before reasons existed). The pool, Follow-ups and the case page SHALL show E-filed and Accepted by their staff name for the case's filing method.
 
 **Follow-ups** SHALL show an admin:
 - a row for each case at Request sent ("New application: open it to start screening."), with **Open**;
 - a row for each case at Screening in progress ("Finish screening."), with **Open**;
+- a **Waiting for documents** row for each case at Waiting for documents ("Waiting for the client's documents."), with **Put on hold…**;
+- a **Hold** row for each case on Hold: "Can't reach the client about documents." for a Hold that came from Waiting for documents, or "Can't reach the client to sign Form 8879." for one that came from Ready to exit. It has **Got in touch…** and **Close…**;
+- a **Withdrawn** row for each open `withdrawal_notice` follow-up, with **Resolve**. It reads "The client withdrew; tell <name> to stop work." for a client's own withdrawal during preparation or review, or "The client withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close at Ready to exit, a Hold from Ready to exit, or Ready to e-file;
 - a row for each case at Ready to exit ("Waiting for the client to sign Form 8879."), with **Mark ready to e-file…**. While the reviewer's call with the client is still pending, the row SHALL read "Waiting for the reviewer's call with the client." instead, with the call-pending explanation in place of the button. For a case returned to signing after a rejection, the row SHALL read "Waiting for the client to sign again.";
 - a row for each case at Ready to e-file ("Ready to e-file."), with **Mark e-filed…**;
 - a **Filing result** row for each case at E-filed, and for each case at Rejected with a return still waiting, with **Record filing result…**. It SHALL read:
@@ -222,13 +248,22 @@ Its search SHALL reach a case in any stage.
   - "Record when the Pennsylvania return is mailed." (or "…the federal return…", or "Record when the returns are mailed." for both) while a paper return waits;
 - a **Rejected** row for each case at Rejected ("Rejected: contact the client to fix and sign again."), followed by the latest fix note, as typed, if there is one. It has **Return to signing…**, or, while a return still waits, "Waiting for Pennsylvania's answer before the return can go back to signing." (or "…the IRS's answer…") in its place;
 
-alongside today's rows. A case at Accepted SHALL have no row. Follow-ups' filter SHALL list the two new kinds. A row's waiting time SHALL count from the case's last move or recorded result. The amber (3 days) and red (5 days) colouring SHALL apply to a Filing result row only while one of its returns waits for an e-file acknowledgment. A row waiting only for a mailing to be recorded, and a Rejected row, SHALL never be coloured.
+alongside today's rows. A case at Accepted SHALL have no row. Follow-ups' filter SHALL list every kind. A row's waiting time SHALL count from the case's last move or recorded result.
+
+The amber (3 days) and red (5 days) colouring SHALL apply:
+- to a Waiting for documents row;
+- to a Filing result row, only while one of its returns waits for an e-file acknowledgment.
+
+A Hold row, a Withdrawn row, a row waiting only for a mailing to be recorded, and a Rejected row SHALL never be coloured.
 
 **The case page:**
-- Its lifecycle bar SHALL show Request sent, Screening in progress, Pending intake / filing, Filing in progress, Pending review, Review in progress, Ready to exit, Ready to e-file, E-filed, Accepted and Closed. Corrections in progress SHALL show on Filing in progress, and Rejected on E-filed.
+- Its lifecycle bar SHALL show Request sent, Screening in progress, Pending intake / filing, Filing in progress, Pending review, Review in progress, Ready to exit, Ready to e-file, E-filed, Accepted and Closed. Corrections in progress SHALL show on Filing in progress, and Rejected on E-filed. Waiting for documents SHALL show on the stage it was asked from. Hold SHALL show on the stage it came from: Ready to exit, or the stage the documents were asked from.
 - For an admin, the intake-check form SHALL show at Screening in progress only.
+- For an admin, the office actions panel SHALL offer Ask for documents…, Put on hold…, Got in touch… and Close… at the stages their moves allow. Close… SHALL offer the six reasons and the note.
 - At Request sent, the case page SHALL say that screening starts when an admin opens the case.
 - A volunteer's "Your next step" SHALL say what each new stage is waiting for:
+  - Waiting for documents: "The office is waiting for the client's documents.";
+  - Hold: "The office is trying to reach the client.";
   - E-filed: "The office records the answers from the IRS and Pennsylvania.";
   - Rejected: "A return was rejected. The office arranges the fix and contacts the client.";
   - Accepted: "The returns are accepted or mailed. Nothing more is needed here.".
@@ -240,11 +275,27 @@ alongside today's rows. A case at Accepted SHALL have no row. Follow-ups' filter
 
 #### Scenario: Needs attention and Done
 - **WHEN** an admin opens the case pool's Needs attention tab, then its Done tab
-- **THEN** the first lists only Rejected cases, and the second only Accepted cases
+- **THEN** the first lists only cases on Hold and Rejected cases, and the second only Accepted cases
+
+#### Scenario: Waiting on client
+- **WHEN** an admin opens the case pool's Waiting on client tab
+- **THEN** it lists the cases at Waiting for documents and Ready to exit, and no other
+
+#### Scenario: Closed by reason
+- **WHEN** an admin filters the Closed tab by Withdrawn
+- **THEN** it lists only cases closed with reason `withdrawn`
 
 #### Scenario: Follow-ups shows signing
 - **WHEN** a case is approved by its reviewer, and the reviewer has recorded the conversation with the client
 - **THEN** Follow-ups shows its row, "Waiting for the client to sign Form 8879.", with Mark ready to e-file…
+
+#### Scenario: Waiting for documents turns amber
+- **WHEN** a case has waited three days at Waiting for documents
+- **THEN** its row is amber, and reads "Waiting for the client's documents."
+
+#### Scenario: A hold is never coloured
+- **WHEN** a case has been on Hold for ten days
+- **THEN** its Hold row is not coloured
 
 #### Scenario: A late acknowledgment turns amber
 - **WHEN** a both-e-filed case has waited three days at E-filed with no answer recorded
@@ -269,6 +320,9 @@ The client's status panel SHALL show the message for their case's stage, in thei
 |---|---|---|
 | Request sent | Your application is with PCDC. The office will review it soon and may call you. | PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。 |
 | Screening in progress | PCDC is reviewing your application. We may call you to confirm your information and documents. | PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。 |
+| Waiting for documents | PCDC needs more documents from you before your return can be prepared. See the requests below. | PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。 |
+| Hold, from Waiting for documents | PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC. | PCDC 一直在设法联系您，询问所需的文件。请在下方上传，或联系 PCDC。 |
+| Hold, from Ready to exit | PCDC has been trying to reach you to sign Form 8879. Please contact PCDC. Your return can't be filed until you sign. | PCDC 一直在设法联系您签署 8879 表。请联系 PCDC。您签署后才能递交报税表。 |
 | Pending intake / filing | Your application has been checked. It is waiting for a volunteer to start preparing your return. | 您的申请已核对完毕，正在等待志愿者开始准备您的报税表。 |
 | Pending review | Your return is prepared and is waiting for an independent reviewer. | 您的报税表已准备好，正在等待审核志愿者检查。 |
 | Ready to exit | Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed. | 您的报税表已检查完毕。PCDC 会联系您签署 8879 表，签署后才能递交报税表。 |
@@ -308,13 +362,31 @@ At E-filed, Rejected and Accepted, the message SHALL be built from one sentence 
 
 A case at E-filed whose returns have no filing method (e-filed before filing methods existed) SHALL show "Your return was e-filed. The IRS will confirm whether it is accepted." / "您的报税表已电子递交。国税局会确认是否接受。". The websites SHALL appear as plain text, not links.
 
-Draft, Filing in progress, Corrections in progress, Review in progress and Closed SHALL keep today's messages.
+A closed case SHALL show the message for its reason:
+
+| Reason | English | 简体 |
+|---|---|---|
+| `out_of_scope` | This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC. | 此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。 |
+| `no_need_to_file` | A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed. | PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。 |
+| `duplicate` | This application was closed. Your return continues under your other application with PCDC. | 此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。 |
+| `dismissed` | PCDC could not reach you, so this application was closed. Your return was not filed. | PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。 |
+| `withdrawn` | You withdrew this application. Your return was not filed. | 您已撤回此申请。您的报税表未递交。 |
+| `other`, or no reason (closed before reasons existed) | This application was closed by the office. This does not change any return filed elsewhere. | 此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。 |
+
+The `duplicate` message SHALL never name the other application. No closed message SHALL show the staff note.
+
+Draft, Filing in progress, Corrections in progress and Review in progress SHALL keep today's messages.
 
 Each new move SHALL add one line to the client's history, in their language:
 
 | Move | English | 简体 |
 |---|---|---|
 | Start screening, and the office's submit | PCDC started reviewing your application. We may call you. | PCDC 已开始审核您的申请。我们可能会致电您。 |
+| Ask for documents | PCDC asked for these documents: {titles}. | PCDC 请您提供以下文件：{titles}。 |
+| Put on hold | PCDC is trying to reach you. | PCDC 正在设法联系您。 |
+| Got in touch, and the return after the last verified document | PCDC is working on your application again. | PCDC 已继续处理您的申请。 |
+| Withdraw | You withdrew your application. Your return was not filed. | 您已撤回申请。您的报税表未递交。 |
+| Close | the closed message for its reason, from the table above; for `other`, today's line | the same, in 简体 |
 | Mark ready to e-file | PCDC recorded that you signed Form 8879. Your return is ready to e-file. | PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。 |
 | Mark e-filed, both e-filed | PCDC e-filed your return. | PCDC 已电子递交您的报税表。 |
 | Mark e-filed, federal e-filed and state on paper | PCDC e-filed your federal return and mailed your Pennsylvania return. | PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。 |
@@ -324,14 +396,16 @@ Each new move SHALL add one line to the client's history, in their language:
 | Return to signing | PCDC corrected your return. You need to sign it again. | PCDC 已更正您的报税表，您需要再次签名。 |
 | The screening checks | PCDC finished screening your application. A volunteer will start preparing your return next. | PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。 |
 
-Every history line the system can store SHALL have its 简体 translation. Earlier history lines SHALL keep their words and translations. The screening checks' line SHALL replace "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation." for every new record; lines already stored SHALL keep that sentence and its translation. No client message or history line SHALL name a phone number.
+`{titles}` SHALL be every title requested in the move, as the office typed it, joined with ", ". The titles SHALL stay as typed in every language, as a preparer's request title does today.
+
+Every history line the system can store SHALL have its 简体 translation. Earlier history lines SHALL keep their words and translations. The screening checks' line SHALL replace "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation." for every new record; lines already stored SHALL keep that sentence and its translation. No client message or history line SHALL name a phone number, a hold note or a close note.
 
 #### Scenario: A history line in 简体
 - **WHEN** a client reading in 简体 opens a case an admin marked ready to e-file
 - **THEN** its history shows "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。"
 
 #### Scenario: No phone number
-- **WHEN** a client reads any new stage message or history line, in any language, including each Ready to exit variant with an appointment and the Accepted message
+- **WHEN** a client reads any new stage message or history line, in any language, including each Ready to exit variant with an appointment, the Accepted message, the Hold messages and every closed message
 - **THEN** none of them contains a phone number
 
 #### Scenario: An appointment to sign
@@ -395,6 +469,18 @@ Every history line the system can store SHALL have its 简体 translation. Earli
 #### Scenario: Sign again
 - **WHEN** an admin returns a rejected case to signing and the client opens their progress page
 - **THEN** the status panel shows the re-sign message instead of the approval's signing variant, and the history gains "PCDC corrected your return. You need to sign it again."
+
+#### Scenario: Waiting for documents, in 简体
+- **WHEN** a client reading in 简体 opens a case at Waiting for documents
+- **THEN** the status panel reads "PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。", and the requests are listed below it
+
+#### Scenario: Closed, not filed
+- **WHEN** a client opens a case closed with reason Dismissed
+- **THEN** the status panel reads "PCDC could not reach you, so this application was closed. Your return was not filed."
+
+#### Scenario: A duplicate doesn't name the other application
+- **WHEN** a client opens a case closed with reason Duplicate
+- **THEN** the status panel reads "This application was closed. Your return continues under your other application with PCDC.", and no reference or client number of another case appears
 
 ### Requirement: The office records the screening checks
 At Screening in progress, an admin SHALL record the screening checks before the case moves to Pending intake / filing. The panel SHALL be titled "Screening checks" and SHALL show these checks, each a box to tick, with these words:
@@ -566,3 +652,152 @@ From E-filed onward, the staff case page SHALL show a **Filing** panel, newest f
 #### Scenario: The preparer reads the fix note
 - **WHEN** the case's preparer opens a Rejected case whose fix note says "Preparer to correct the dependent's SSN in TaxSlayer"
 - **THEN** the Filing panel shows the note
+
+### Requirement: The office asks for documents at intake
+At Screening in progress and at Pending intake / filing, an admin SHALL be offered **Ask for documents…** on the case page. At Screening in progress it SHALL also be offered in the screening checks panel while "The basic documents are present" isn't ticked. The move SHALL create one to five document requests, each with a title and a message (the same limits as a preparer's request). It SHALL move the case to **Waiting for documents** and record the stage it came from. The client's history SHALL gain one line naming every title requested in that move, in the order entered: "PCDC asked for these documents: {titles}." Adding requests later in Waiting for documents SHALL add one such line per move.
+
+While the case is at Waiting for documents:
+- the client SHALL see the requests and answer them as they answer a preparer's;
+- an admin SHALL be able to record a received document and to verify a document, which today only the preparer can, during preparation;
+- an admin SHALL be able to add further requests, and the case SHALL stay at Waiting for documents.
+
+When the last open request is verified (no request left open or awaiting verification), the case SHALL return to the stage it came from, Screening in progress or Pending intake / filing. The client's history SHALL gain "PCDC is working on your application again.". From Screening in progress, the screening checks SHALL then be recorded as before, before the case can be claimed.
+
+The preparer's own document requests during Filing in progress and Corrections in progress, and their escalation to the office, SHALL stay as they are. The stage SHALL not change while a preparer waits for a document.
+
+#### Scenario: A failed documents check
+- **WHEN** an admin at Screening in progress can't tick "The basic documents are present" and asks the client for a photo ID
+- **THEN** the case is at Waiting for documents, the client sees the request, and the case is not claimable
+
+#### Scenario: Back to screening when the documents are in
+- **WHEN** the client uploads the photo ID and an admin verifies it
+- **THEN** the case is back at Screening in progress, its history gains "PCDC is working on your application again.", and the screening checks can be recorded
+
+#### Scenario: Every title in the history
+- **WHEN** an admin asks for "W-2" and "Photo ID" in one move, and the client opens their history in English, then in 简体
+- **THEN** it shows "PCDC asked for these documents: W-2, Photo ID." and "PCDC 请您提供以下文件：W-2, Photo ID。", with the titles as typed
+
+#### Scenario: One more document
+- **WHEN** an admin adds a second request before verifying the first, then verifies only the first
+- **THEN** the case stays at Waiting for documents
+
+#### Scenario: A volunteer can't ask at intake
+- **WHEN** a preparer or reviewer tries to ask for documents at Screening in progress
+- **THEN** it is refused as forbidden, and nothing is recorded
+
+#### Scenario: The preparer's loop is unchanged
+- **WHEN** the preparer of a case at Filing in progress requests a document
+- **THEN** the case stays at Filing in progress, as before
+
+### Requirement: The office puts a case on hold while it chases the client
+An admin SHALL be offered **Put on hold…** at Waiting for documents and at Ready to exit, with an optional staff note of at most 1000 characters. The move SHALL take the case to **Hold** and record where it came from. The note SHALL be readable only by staff.
+
+While the case is on Hold:
+- the client SHALL still be able to answer open requests;
+- at a Hold that came from Ready to exit, Mark ready to e-file SHALL be refused as not available.
+
+**Got in touch…** (admin) SHALL return the case to the stage it came from, with the client's history line "PCDC is working on your application again.".
+
+At a Hold that came from Waiting for documents, verifying the last open request SHALL return the case straight to the stage the documents were asked from (Screening in progress or Pending intake / filing), with no separate Got in touch.
+
+Close SHALL be allowed from Hold, whatever it came from, with reason Dismissed or any other reason.
+
+#### Scenario: Chasing the documents
+- **WHEN** a case has waited at Waiting for documents for a week and an admin puts it on hold
+- **THEN** the case is on Hold, its Follow-ups row reads "Can't reach the client about documents.", and the client's history gains "PCDC is trying to reach you."
+
+#### Scenario: The upload ends the hold
+- **WHEN** the client of a documents Hold uploads the last document and an admin verifies it
+- **THEN** the case is back at the stage the documents were asked from, with no Got in touch
+
+#### Scenario: A signer who can't be reached
+- **WHEN** an admin puts a case at Ready to exit on hold
+- **THEN** the case is on Hold, its Follow-ups row reads "Can't reach the client to sign Form 8879.", and Mark ready to e-file is refused as not available
+- **AND WHEN** the admin presses Got in touch…
+- **THEN** the case is back at Ready to exit
+
+#### Scenario: Never signed
+- **WHEN** an admin closes a Hold that came from Ready to exit with reason Dismissed
+- **THEN** the case is Closed, and the client reads "PCDC could not reach you, so this application was closed. Your return was not filed."
+
+#### Scenario: Only from the two chase points
+- **WHEN** an admin tries to put a case at Filing in progress on hold
+- **THEN** it is refused as not available
+
+### Requirement: A closed case records why it closed
+Every close SHALL record one reason:
+
+| Key | Staff name | Notes |
+|---|---|---|
+| `out_of_scope` | Out of scope | |
+| `no_need_to_file` | No need to file | |
+| `duplicate` | Duplicate | |
+| `dismissed` | Dismissed (client unreachable) | |
+| `withdrawn` | Withdrawn | set by the client's withdrawal, or by an admin on the client's behalf |
+| `other` | Other | a staff note is required |
+
+An admin MAY add a staff note of at most 1000 characters with any reason, and SHALL add one with `other`. The database SHALL refuse a close with no reason, an unknown reason, `other` without a note, or a note over 1000 characters, with `VALIDATION`. The reason SHALL be stored on the case. The note SHALL be readable only by staff and SHALL never reach a client.
+
+The close dialog SHALL offer the six reasons as one choice and the note as a text box. Its confirmation box SHALL stay as it is.
+
+A case closed before reasons existed SHALL have no reason, SHALL show the staff name "Closed", and SHALL keep the generic client message.
+
+#### Scenario: Closing a duplicate
+- **WHEN** an admin closes a case at Request sent with reason Duplicate
+- **THEN** the case is Closed with reason `duplicate`, and the pool's Closed tab shows it under Duplicate
+
+#### Scenario: Other needs a note
+- **WHEN** an admin closes with reason Other and no note
+- **THEN** the database refuses it with `VALIDATION`, and the case is unchanged
+
+#### Scenario: The note stays with staff
+- **WHEN** an admin closes with reason Other and the note "Client chose another preparer"
+- **THEN** staff see the note in the case's history, and the client sees neither the note nor the reason's key
+
+#### Scenario: An older closed case
+- **WHEN** a client opens a case that was closed before reasons existed
+- **THEN** they read "This application was closed by the office. This does not change any return filed elsewhere."
+
+### Requirement: A client may withdraw their own application
+The client SHALL be offered **Withdraw this application** / 撤回此申请 on their progress page while the case is at Request sent, Screening in progress, Waiting for documents, a Hold that came from Waiting for documents, Pending intake / filing, Filing in progress, Corrections in progress, Pending review or Review in progress.
+
+Its dialog SHALL require the box "I want to withdraw this application. My return will not be filed." / "我要撤回此申请。我的报税表将不会被递交。" to be ticked. The database SHALL refuse the move without it.
+
+The move SHALL:
+- close the case with reason `withdrawn`, cancelling open document requests and follow-ups as Close does;
+- add the client's history line "You withdrew your application. Your return was not filed." / "您已撤回申请。您的报税表未递交。";
+- add the staff history sentence "the client withdrew the application".
+
+It SHALL have no undo. Only the case's own client SHALL be able to withdraw it, and no staff persona SHALL withdraw on a client's behalf through this move.
+
+At Draft the button SHALL not be offered. At Ready to exit, a Hold that came from Ready to exit, Ready to e-file and Rejected, the client SHALL have no Withdraw button. The button SHALL be replaced by "To withdraw now, contact PCDC." / "如需撤回，请联系 PCDC。". After the client contacts PCDC, an admin closes the case with reason `withdrawn`. At E-filed, Accepted and Closed, the client SHALL see neither the button nor the line.
+
+When the client withdraws a case at Filing in progress, Corrections in progress or Review in progress, an office follow-up with purpose `withdrawal_notice` SHALL open (capability `office-follow-up`). Follow-ups SHALL show it as "The client withdrew; tell <name> to stop work.", naming the case's preparer (or, at Review in progress, its reviewer). Withdrawing at any other stage SHALL open no follow-up.
+
+When an admin closes a case with reason `withdrawn` at Ready to exit, a Hold that came from Ready to exit, or Ready to e-file, an office follow-up with purpose `withdrawal_notice` SHALL open. Follow-ups SHALL show it as "The client withdrew; make sure the return is not transmitted in TaxSlayer.". Each notice SHALL stay open until someone resolves it, like any other follow-up.
+
+#### Scenario: Withdrawing before preparation
+- **WHEN** a client at Pending intake / filing withdraws, ticking the box
+- **THEN** the case is Closed with reason `withdrawn`, the client reads "You withdrew this application. Your return was not filed.", and no follow-up opens
+
+#### Scenario: Withdrawing during preparation
+- **WHEN** a client whose case Alex Rivera is preparing withdraws
+- **THEN** the case is Closed, and Follow-ups shows "The client withdrew; tell Alex Rivera to stop work." until the office resolves it
+
+#### Scenario: Too late for the button
+- **WHEN** a client opens a case at Ready to exit
+- **THEN** there is no Withdraw button, and the page says "To withdraw now, contact PCDC."
+
+#### Scenario: Only the client
+- **WHEN** a staff persona tries to withdraw a case
+- **THEN** it is refused as forbidden, and nothing is recorded
+- **AND WHEN** a different client tries to withdraw it
+- **THEN** it is refused as not found, because that client can't see the case, and nothing is recorded
+
+#### Scenario: Withdrawn after signing
+- **WHEN** the client of a case at Ready to e-file contacts PCDC and an admin closes the case with reason Withdrawn
+- **THEN** the case is Closed with reason `withdrawn`, and Follow-ups shows "The client withdrew; make sure the return is not transmitted in TaxSlayer." until the office resolves it
+
+#### Scenario: No line once filed
+- **WHEN** a client opens a case at E-filed or Accepted
+- **THEN** there is neither a Withdraw button nor "To withdraw now, contact PCDC."

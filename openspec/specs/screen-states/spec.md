@@ -208,11 +208,11 @@ Every confirmation dialog SHALL be built from one shared body. Its parts SHALL c
 - one confirm control, which sends the dialog's action;
 - one text button, outside any form, that closes the dialog without sending anything ("Keep it open", "Keep reviewing", "Keep them as they are", and so on).
 
-This SHALL hold for close case, ask the preparer for corrections, reset the sample cases, load a sample checkpoint (and its state with no sample cases), replace the fictional answers, and leave Add a case without saving. Building a dialog from the shared body SHALL NOT change its words, its action, the action's payload, or its controls' ids.
+This SHALL hold for close case, ask the preparer for corrections, reset the sample cases, load a sample checkpoint (and its state with no sample cases), replace the fictional answers, leave Add a case without saving, ask for documents, put on hold, got in touch, and the client's withdraw. Building a dialog from the shared body SHALL NOT change its words, its action, the action's payload, or its controls' ids. The close-case dialog's own fields are set by capability `case-lifecycle` ("A closed case records why it closed").
 
 #### Scenario: Close case keeps its action and payload
-- **WHEN** the office confirms Close this case with a reason and the "I understand" box ticked
-- **THEN** the action sent is `CLOSE_CASE` with the same reason and confirmation fields as before, and the case closes as before
+- **WHEN** the office confirms Close this case with the reason Duplicate, no note, and the "I understand" box ticked
+- **THEN** the action sent is `CLOSE_CASE` with that reason, no note and the confirmation, and the case closes
 
 #### Scenario: A note inside the form
 - **WHEN** the presenter opens "Load a sample checkpoint" with sample cases in the workspace

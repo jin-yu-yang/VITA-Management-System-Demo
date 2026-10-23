@@ -40,11 +40,11 @@ An application's intake version SHALL be fixed when the application is created. 
 - **THEN** the change is refused and the version stays 2
 
 ### Requirement: Sample cases are version 2
-Resetting a workspace's sample cases SHALL seed eight samples, every one a version-2 application, including the `rejected` and `accepted` samples.
+Resetting a workspace's sample cases SHALL seed ten samples, every one a version-2 application, including the `rejected`, `accepted`, `on_hold` and `withdrawn` samples.
 
 #### Scenario: A reset seeds version-2 samples
 - **WHEN** the sample cases are reset in a workspace
-- **THEN** eight samples are seeded and every one is a version-2 application
+- **THEN** ten samples are seeded and every one is a version-2 application
 
 ### Requirement: A household member may have a middle name
 A household member SHALL have an optional middle name (`hh[i].middle_name`), asked between the first and last name in both the standard and senior versions of the form. Leaving it empty SHALL NOT block the member or the application. The member's summary line, shown in the client's review summary, the office's review and the staff answers panel, SHALL read first, middle and last name, separated by single spaces, skipping any part that is empty. Document cards SHALL keep the member's first and last name, as the taxpayer's and spouse's cards do.
