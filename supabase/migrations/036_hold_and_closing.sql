@@ -16,14 +16,15 @@
 --
 --   | Function                                   | Copied from               | What 036 changes |
 --   |--------------------------------------------|---------------------------|------------------|
---   | vitally_private.check_payload              | 035                       | new REQUEST_DOCUMENTS_AT_INTAKE branch |
+--   | vitally_private.check_payload              | 035                       | new REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD branches |
 --   | vitally_private.receive_document           | 004                       | also accepted at Waiting for documents, and at a Hold that came from it |
 --   | vitally_private.act_verify_document        | 004                       | at those stages an admin verifies, and the last verified request returns the case |
---   | vitally_private.check_operation_authority  | 035                       | REQUEST_DOCUMENTS_AT_INTAKE joins the admin-only group |
---   | public.vitally_apply_action                | 035                       | dispatches REQUEST_DOCUMENTS_AT_INTAKE |
+--   | vitally_private.check_operation_authority  | 035                       | REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD join the admin-only group |
+--   | public.vitally_apply_action                | 035                       | dispatches REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD |
 --
--- New functions: vitally_private.act_request_documents_at_intake and
--- vitally_private.return_from_documents.
+-- New functions: vitally_private.act_request_documents_at_intake,
+-- vitally_private.return_from_documents, vitally_private.act_put_on_hold and
+-- vitally_private.act_resume_from_hold.
 --
 -- Written to be safe to apply again on a local test stack whose
 -- schema_migrations row for this file was deleted during development: every
@@ -112,6 +113,18 @@ begin
      raise sqlstate 'VT007' using message='VALIDATION'; -- 036
     end if; -- 036
    end loop; -- 036
+  when 'PUT_ON_HOLD' then -- 036
+   -- An explicit confirmation and an optional staff note (1 to 1000 characters). -- 036
+   if vitally_private.payload_keys(p_payload) not in (array['confirmed'], array['confirmed','note']) -- 036
+    or p_payload->'confirmed'<>'true'::jsonb -- 036
+    or (p_payload ? 'note' and not vitally_private.payload_text(p_payload,'note',1000)) then -- 036
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 036
+   end if; -- 036
+  when 'RESUME_FROM_HOLD' then -- 036
+   if vitally_private.payload_keys(p_payload)<>array['confirmed'] -- 036
+    or p_payload->'confirmed'<>'true'::jsonb then -- 036
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 036
+   end if; -- 036
   when 'RESPOND_DOCUMENT','RECORD_DOCUMENT_RESPONSE' then
    -- One simulated document exists in this demo; its name is fixed.
    if vitally_private.payload_keys(p_payload)<>array['filename','requestId']
@@ -322,6 +335,37 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 5b. act_put_on_hold and act_resume_from_hold. A Hold records where it came
+-- from (Waiting for documents or Review approved); documents_origin stays on a
+-- documents Hold. Getting in touch returns the case to that stage. The optional
+-- note is staff context: it goes in the event detail only, never the client line.
+
+create or replace function vitally_private.act_put_on_hold(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ if p_case.stage not in ('awaiting_documents','review_approved') then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.cases set stage='on_hold',hold_origin=p_case.stage where id=p_case.id;
+ return jsonb_build_object(
+  'detail',case when p_payload ? 'note' then jsonb_build_object('note',p_payload->>'note') else '{}'::jsonb end,
+  'message','PCDC is trying to reach you.');
+end;
+$$;
+
+create or replace function vitally_private.act_resume_from_hold(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+begin
+ if p_case.stage<>'on_hold' then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ update public.cases set stage=p_case.hold_origin,hold_origin=null where id=p_case.id;
+ return jsonb_build_object('detail','{}'::jsonb,
+  'message','PCDC is working on your application again.');
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 6. receive_document, verbatim from 004 with the stages where the office has
 -- asked for documents.
 
@@ -419,7 +463,7 @@ begin
    elsif not ('admin'=any(v_person.capabilities)) then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
-  when 'VERIFY_INTAKE','REMIND','CLOSE_CASE','START_SCREENING','MARK_READY_TO_EFILE','MARK_EFILED','RECORD_FILING_RESULT','RETURN_TO_SIGNING','REQUEST_DOCUMENTS_AT_INTAKE' then -- 036
+  when 'VERIFY_INTAKE','REMIND','CLOSE_CASE','START_SCREENING','MARK_READY_TO_EFILE','MARK_EFILED','RECORD_FILING_RESULT','RETURN_TO_SIGNING','REQUEST_DOCUMENTS_AT_INTAKE','PUT_ON_HOLD','RESUME_FROM_HOLD' then -- 036
    if p_person_id is null or not ('admin'=any(v_person.capabilities)) then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
@@ -538,6 +582,8 @@ begin
   when 'RECORD_FILING_RESULT' then v_outcome=vitally_private.act_record_filing_result(v_member,v_case,v_person,p_payload); -- 035
   when 'RETURN_TO_SIGNING' then v_outcome=vitally_private.act_return_to_signing(v_member,v_case,v_person,p_payload); -- 035
   when 'REQUEST_DOCUMENTS_AT_INTAKE' then v_outcome=vitally_private.act_request_documents_at_intake(v_member,v_case,v_person,p_payload); -- 036
+  when 'PUT_ON_HOLD' then v_outcome=vitally_private.act_put_on_hold(v_member,v_case,v_person,p_payload); -- 036
+  when 'RESUME_FROM_HOLD' then v_outcome=vitally_private.act_resume_from_hold(v_member,v_case,v_person,p_payload); -- 036
   when 'UPDATE_CONTACT' then v_outcome=vitally_private.act_update_contact(v_member,v_case,v_person,p_payload);
   when 'RECORD_MATERIALS' then v_outcome=vitally_private.act_record_materials(v_member,v_case,v_person,p_payload);
   when 'SET_DOCUMENT_CARD' then v_outcome=vitally_private.act_set_document_card(v_member,v_case,v_person,p_payload);

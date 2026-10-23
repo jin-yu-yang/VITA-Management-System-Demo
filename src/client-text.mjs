@@ -484,6 +484,7 @@ export const SENTENCES = Object.freeze({
   "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
   "PCDC is working on your application again.": "PCDC 已继续处理您的申请。", // 036
+  "PCDC is trying to reach you.": "PCDC 正在设法联系您。", // 036
   // Migration 035: Return to signing, Mark e-filed, and Record filing result.
   "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
   "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",
