@@ -523,6 +523,19 @@ test("the client's own case actions refuse in sentences the table knows", () => 
   }
 });
 
+test("the client's Withdraw refuses in a sentence the table translates", () => {
+  let message = "";
+  try {
+    payloadFor("WITHDRAW", {}, {});
+  } catch (error) {
+    message = error.message;
+  }
+  assert.equal(message, "Tick the box to withdraw this application.");
+  assert.ok(Object.hasOwn(SENTENCES, message));
+  assert.equal(sentence(message, "zh-Hans"), "请勾选方框以撤回此申请。");
+  assert.equal(sentence(message, "en"), message);
+});
+
 // ---------------------------------------------------------------------------
 // The version-2 intake (Task 7): every visible sub-step, Review & submit,
 // Documents, the submitted page and the progress page's open cards

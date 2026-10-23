@@ -442,6 +442,8 @@ export const SENTENCES = Object.freeze({
   "Please check the information and try again.": "请检查信息后再试一次。",
   "Network error. Please try again later.": "网络连接失败，请稍后再试。",
   "Something went wrong. Please try again.": "出了点问题。请再试一次。",
+  // case-actions.mjs: the client's Withdraw refuses without its box ticked (draft translation, for the group's wording review)
+  "Tick the box to withdraw this application.": "请勾选方框以撤回此申请。", // 036
   // app.mjs: a refused action with no message of its own; the save chip's default
   "Something went wrong.": "出了点问题。",
   "Please try again.": "请再试一次。",

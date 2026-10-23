@@ -1475,6 +1475,11 @@ test("internal history reads as sentences, with who did it", () => {
     historySentence({ action: "RETURN_TO_SIGNING", actorName: "Sam" }),
     "Sam returned the case to signing.",
   );
+  // Design D12's four sentences. The client's withdrawal has no staff actor.
+  assert.equal(historySentence({ action: "REQUEST_DOCUMENTS_AT_INTAKE", actorName: "Sam" }), "Sam asked for documents.");
+  assert.equal(historySentence({ action: "PUT_ON_HOLD", actorName: "Sam" }), "Sam put the case on hold.");
+  assert.equal(historySentence({ action: "RESUME_FROM_HOLD", actorName: "Sam" }), "Sam recorded that the office got in touch.");
+  assert.equal(historySentence({ action: "WITHDRAW", actorName: null }), "The client withdrew the application.");
   const html = historyPanel(record, true);
   assert.match(html, /Alex claimed preparation\./);
   assert.doesNotMatch(html, /CLAIM_PREPARATION/);
