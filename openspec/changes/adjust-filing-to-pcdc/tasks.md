@@ -8,7 +8,7 @@
 
 ## 2. Database: the paper handover and the four pairs
 
-- [ ] 2.1 In `tests/database-filing.mjs`, replace the "paper is mailed" group with failing tests:
+- [x] 2.1 In `tests/database-filing.mjs`, replace the "paper is mailed" group with failing tests:
   - Mark e-filed records each paper return as `given_to_client`, with null `answered_on` and `recorded_by` the filer;
   - both paper goes from Ready to e-file straight to Accepted;
   - federal e-file with state paper waits at E-filed for the IRS only;
@@ -17,19 +17,19 @@
   - a second filing re-filing the rejected return on paper lands at Accepted when the other return is answered, and names only the rejected returns;
   - Record filing result refuses `mailed`, `given_to_client` and any paper return with `VALIDATION`;
   - Mark e-filed writes exactly one client line, even when it lands at Accepted.
-- [ ] 2.2 Add failing tests for the client lines:
+- [x] 2.2 Add failing tests for the client lines:
   - `filing_line` with `'given_to_client'` for each return and both;
   - `efiled_line` for all four pairs and the four second-filing lines, each with the handover instruction and "about 3 months" once;
   - Mark ready to e-file's new line.
-- [ ] 2.3 Write `supabase/migrations/037_adjust_filing_to_pcdc.sql`, sections 1–3. Its header table lists every copied function and its source, and states design D3: nothing is hosted, cases filed under 035 with a paper return still waiting are left as they are, and a sample reset clears them.
+- [x] 2.3 Write `supabase/migrations/037_adjust_filing_to_pcdc.sql`, sections 1–3. Its header table lists every copied function and its source, and states design D3: nothing is hosted, cases filed under 035 with a paper return still waiting are left as they are, and a sample reset clears them.
   1. The rename of stored `mailed` to `given_to_client` in `cases.federal_result`, `cases.state_result` and `filing_returns.result`, with `answered_on` set to null on those rows. Then drop and re-add `cases_filing_methods` (without the unused-pair clause), `cases_filing_results` and the `filing_returns.result` check.
   2. `filing_line` and `efiled_line` (from 035), with the new sentences (D6, D7).
   3. `act_mark_efiled` (from 035): no pair refusal and no used-pair check, the paper result at filing, and the stage computed as Record filing result computes it (D1, D4).
-- [ ] 2.4 037, sections 4–6:
+- [x] 2.4 037, sections 4–6:
   4. `check_payload` (from 036): `RECORD_FILING_RESULT` results limited to `accepted` and `rejected`. Every other branch stays verbatim.
   5. `act_record_filing_result` (from 035): only e-filed returns can be answered (D2).
   6. `act_mark_ready_to_efile` (from 033): the new history line (D8).
-- [ ] 2.5 Run `npm run db:migrate:test` and the filing tests until they pass. Also re-run 037 on the same stack to confirm it's safe to apply again.
+- [x] 2.5 Run `npm run db:migrate:test` and the filing tests until they pass. Also re-run 037 on the same stack to confirm it's safe to apply again.
 
 ## 3. Database: the season-end close
 

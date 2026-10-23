@@ -26,8 +26,8 @@
 --   | vitally_private.act_mark_efiled            | 035                       | no pair is refused; a paper return gets result `given_to_client` and its row at once; Accepted when both returns are answered |
 --   | vitally_private.act_record_filing_result   | 035                       | only an e-filed return takes a result; the stage rule counts `given_to_client` |
 --   | vitally_private.act_mark_ready_to_efile    | 033                       | the client line no longer names Form 8879 |
---   | vitally_private.fixture_history            | 036                       | (a later section) |
---   | vitally_private.apply_fixture_scenario     | 036                       | (a later section) |
+--   | vitally_private.fixture_history            | 036                       | the two filed samples' Mark ready to e-file line is the one act_mark_ready_to_efile writes now |
+--   | vitally_private.apply_fixture_scenario     | 036                       | the `rejected` sample's fix note is the site coordinator's |
 --
 -- Written to be safe to apply again on a local test stack whose
 -- schema_migrations row for this file was deleted during development: every
@@ -500,3 +500,321 @@ begin
  return jsonb_build_object('detail','{}'::jsonb,
   'message','PCDC recorded that your return is ready. PCDC will take the next step.'); -- 037
 end; $$;
+
+-- ---------------------------------------------------------------------------
+-- 8. The samples. fixture_history and apply_fixture_scenario, verbatim from 036
+-- except the lines marked -- 037, then the closing revoke as 036 ends.
+
+-- fixture_history, verbatim from 035 with the two new samples' histories. Their
+-- client lines are the strings the real moves write: the documents line and the
+-- Hold line (act_request_documents_at_intake, act_put_on_hold) and the withdrawal
+-- line (act_withdraw). None carries a phone number or a note.
+create or replace function vitally_private.fixture_history(p_key text)
+returns table(seq int,action text,person_key text,detail jsonb,message text)
+language sql immutable security definer set search_path='' as $$
+ select v.seq,v.action,v.person_key,v.detail,v.message from (values
+  ('preparation_ready',1,'SUBMIT',null::text,'{"simulated":true}'::jsonb,'Application received. A volunteer will check your information and documents.'::text),
+  ('preparation_ready',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}'::jsonb,'PCDC finished screening your application. A volunteer will start preparing your return next.'),
+
+  ('waiting_documents',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('waiting_documents',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('waiting_documents',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('waiting_documents',4,'REQUEST_DOCUMENT','alex','{"simulated":true,"title":"Mileage record"}','A volunteer requested a document: Mileage record'),
+
+  ('admin_followup',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('admin_followup',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('admin_followup',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('admin_followup',4,'REQUEST_DOCUMENT','alex','{"simulated":true,"title":"Mileage record"}','A volunteer requested a document: Mileage record'),
+  ('admin_followup',5,'ESCALATE_CONTACT','alex','{"simulated":true}',null),
+  ('admin_followup',6,'RECORD_CONTACT','sam','{"simulated":true,"outcome":"no_answer"}',null),
+
+  ('review_ready',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('review_ready',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true,"identity":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('review_ready',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('review_ready',4,'REQUEST_DOCUMENT','alex','{"simulated":true,"title":"Mileage record"}','A volunteer requested a document: Mileage record'),
+  ('review_ready',5,'RECORD_DOCUMENT_RESPONSE','sam','{"simulated":true,"source":"staff_recorded"}','A sample document was recorded by staff and is awaiting verification.'),
+  ('review_ready',6,'VERIFY_DOCUMENT','alex','{"simulated":true}','A volunteer verified your document. No further action is needed for this request.'),
+  ('review_ready',7,'SUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":1}','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.'),
+
+  ('corrections_required',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('corrections_required',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('corrections_required',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('corrections_required',4,'SUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":1}','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.'),
+  ('corrections_required',5,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('corrections_required',6,'REQUEST_CORRECTIONS','morgan','{"simulated":true,"preparationVersion":1}','The reviewer asked your preparer to make corrections. No action is needed from you right now.'),
+
+  ('review_approved',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('review_approved',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('review_approved',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('review_approved',4,'SUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":1}','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.'),
+  ('review_approved',5,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('review_approved',6,'REQUEST_CORRECTIONS','morgan','{"simulated":true,"preparationVersion":1}','The reviewer asked your preparer to make corrections. No action is needed from you right now.'),
+  ('review_approved',7,'RESUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":2}','Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.'),
+  ('review_approved',8,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('review_approved',9,'APPROVE_REVIEW','morgan','{"simulated":true,"preparationVersion":2}','Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.'),
+
+  ('rejected',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('rejected',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('rejected',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('rejected',4,'SUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":1}','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.'),
+  ('rejected',5,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('rejected',6,'REQUEST_CORRECTIONS','morgan','{"simulated":true,"preparationVersion":1}','The reviewer asked your preparer to make corrections. No action is needed from you right now.'),
+  ('rejected',7,'RESUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":2}','Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.'),
+  ('rejected',8,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('rejected',9,'APPROVE_REVIEW','morgan','{"simulated":true,"preparationVersion":2}','Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.'),
+  ('rejected',10,'MARK_READY_TO_EFILE','sam','{"simulated":true}','PCDC recorded that your return is ready. PCDC will take the next step.'), -- 037
+  ('rejected',11,'MARK_EFILED','sam','{"simulated":true,"attempt":1,"methods":{"federal":"efile","state":"efile"}}',vitally_private.efiled_line('efile','efile',false)),
+  ('rejected',12,'RECORD_FILING_RESULT','sam','{"simulated":true,"attempt":1,"results":{"federal":"accepted","state":"rejected"},"noteAdded":true}',vitally_private.filing_line('accepted','rejected')),
+
+  ('accepted',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'),
+  ('accepted',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'),
+  ('accepted',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'),
+  ('accepted',4,'SUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":1}','Your volunteer recorded that preparation is complete in the tax software. An independent reviewer will check it next.'),
+  ('accepted',5,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('accepted',6,'REQUEST_CORRECTIONS','morgan','{"simulated":true,"preparationVersion":1}','The reviewer asked your preparer to make corrections. No action is needed from you right now.'),
+  ('accepted',7,'RESUBMIT_REVIEW','alex','{"simulated":true,"preparationVersion":2}','Your volunteer recorded the requested corrections in the tax software. An independent reviewer will check the updated return.'),
+  ('accepted',8,'CLAIM_REVIEW','morgan','{"simulated":true}','An independent reviewer is checking your return.'),
+  ('accepted',9,'APPROVE_REVIEW','morgan','{"simulated":true,"preparationVersion":2}','Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.'),
+  ('accepted',10,'MARK_READY_TO_EFILE','sam','{"simulated":true}','PCDC recorded that your return is ready. PCDC will take the next step.'), -- 037
+  ('accepted',11,'MARK_EFILED','sam','{"simulated":true,"attempt":1,"methods":{"federal":"efile","state":"efile"}}',vitally_private.efiled_line('efile','efile',false)),
+  ('accepted',12,'RECORD_FILING_RESULT','sam','{"simulated":true,"attempt":1,"results":{"federal":"accepted","state":"accepted"},"noteAdded":false}',vitally_private.filing_line('accepted','accepted')),
+
+  ('on_hold',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'), -- 036
+  ('on_hold',2,'REQUEST_DOCUMENTS_AT_INTAKE','sam','{"simulated":true}','PCDC asked for these documents: Photo ID.'), -- 036
+  ('on_hold',3,'PUT_ON_HOLD','sam','{"simulated":true}','PCDC is trying to reach you.'), -- 036
+
+  ('withdrawn',1,'SUBMIT',null,'{"simulated":true}','Application received. A volunteer will check your information and documents.'), -- 036
+  ('withdrawn',2,'VERIFY_INTAKE','sam','{"checks":{"phone":true,"documents":true,"in_scope":true}}','PCDC finished screening your application. A volunteer will start preparing your return next.'), -- 036
+  ('withdrawn',3,'CLAIM_PREPARATION','alex','{"simulated":true}','A volunteer has started preparing your return.'), -- 036
+  ('withdrawn',4,'WITHDRAW',null,'{"simulated":true}','You withdrew your application. Your return was not filed.') -- 036
+ ) as v(key,seq,action,person_key,detail,message)
+ where v.key=p_key
+ order by v.seq
+$$;
+
+-- apply_fixture_scenario, verbatim from 035 with the two new samples. `on_hold`
+-- is asked for a Photo ID from Screening and then put on Hold (the request is
+-- open, the case remembers both origins, no preparer). `withdrawn` was at
+-- Filing in progress with its preparer when the client withdrew, so it is Closed
+-- with the reason `withdrawn` and the office's open withdrawal_notice follow-up
+-- (no request), assigned to the workspace's follow-up person as act_withdraw
+-- assigns it. A reload deletes the document requests and follow-ups with the
+-- other rows, and the new origin and reason columns are rewritten with the stage.
+create or replace function vitally_private.apply_fixture_scenario(p_case public.cases,p_scenario text,p_actor uuid)
+returns int language plpgsql security definer set search_path='' as $$
+declare v_alex uuid;
+ v_morgan uuid;
+ v_sam uuid;
+ v_request uuid;
+ v_followup uuid;
+ v_contact uuid;
+ v_total int;
+ v_stage text;
+ v_version bigint=0;
+ v_preparer uuid;
+ v_reviewer uuid;
+ v_review uuid;
+ v_signed boolean=p_scenario in ('review_approved','rejected','accepted');
+ v_filed boolean=p_scenario in ('rejected','accepted');
+ v_assignee uuid; -- 036
+begin
+ if p_scenario is null or not (p_scenario=any(vitally_private.fixture_keys())) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ select id into v_alex from public.people where workspace_id=p_case.workspace_id and person_key='alex';
+ select id into v_morgan from public.people where workspace_id=p_case.workspace_id and person_key='morgan';
+ select id into v_sam from public.people where workspace_id=p_case.workspace_id and person_key='sam';
+ -- The permanent people are the shared initializer's; a workspace without them
+ -- is not set up, and seeding half a scenario would be worse than refusing.
+ if v_alex is null or v_morgan is null or v_sam is null or p_actor is null then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ -- Everything this case currently holds, and only this case. Receipts are not
+ -- in the list: they are historical scalars and outlive their targets.
+ perform set_config('vitally.clearing_case',p_case.id::text,true);
+ delete from public.filing_attempts where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ perform set_config('vitally.clearing_case','',true);
+ delete from public.contact_attempts where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.contact_log where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.admin_followups where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.documents where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.document_requests where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.preparation_participants where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.reviewer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.preparer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.reviews where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.case_events where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.client_events where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ -- A sample's materials and document-card marks are office work on the sample,
+ -- so a checkpoint clears them with the rest. `case_contacts` stays: it is the
+ -- sample's own contact details, not scenario work.
+ delete from public.case_materials where workspace_id=p_case.workspace_id and case_id=p_case.id;
+ delete from public.case_document_cards where workspace_id=p_case.workspace_id and case_id=p_case.id;
+
+ -- Preparation has been claimed in every scenario but the first and the Hold,
+ -- and claiming is the participation threshold (contracts, "Authority and participation").
+ if p_scenario not in ('preparation_ready','on_hold') then -- 036
+  v_preparer=v_alex;
+  insert into public.preparation_participants(workspace_id,case_id,person_id)
+  values(p_case.workspace_id,p_case.id,v_alex);
+ end if;
+
+ -- One open request in the two document scenarios; a verified one, with the
+ -- office's recorded receipt of the client's paper, in the review scenarios.
+ -- The Hold has the office's open request for a Photo ID.
+ if p_scenario in ('waiting_documents','admin_followup') then
+  insert into public.document_requests(workspace_id,case_id,title,message,status,requested_by_person_id)
+  values(p_case.workspace_id,p_case.id,'Mileage record','Please add the fictional sample.','open',v_alex)
+  returning id into v_request;
+ elsif p_scenario='on_hold' then -- 036
+  insert into public.document_requests(workspace_id,case_id,title,message,status,requested_by_person_id) -- 036
+  values(p_case.workspace_id,p_case.id,'Photo ID','Please add the fictional sample.','open',v_sam) -- 036
+  returning id into v_request; -- 036
+ elsif p_scenario='review_ready' then
+  insert into public.document_requests(workspace_id,case_id,title,message,status,requested_by_person_id)
+  values(p_case.workspace_id,p_case.id,'Mileage record','Please add the fictional sample.','verified',v_alex)
+  returning id into v_request;
+  -- Recorded by the office rather than uploaded: a fixture case has no client
+  -- session behind it, and the staff receipt is the path that exists for that.
+  insert into public.documents(workspace_id,case_id,request_id,filename,source,submitted_by_user_id,submitted_by_person_id)
+  values(p_case.workspace_id,p_case.id,v_request,'demo-mileage-record-2025.pdf','staff_recorded',p_actor,v_sam);
+ end if;
+
+ -- The office's contact task, with one unanswered call already logged on it.
+ -- Logging a contact never resolves the task, so it is still open.
+ if p_scenario='admin_followup' then
+  insert into public.admin_followups(workspace_id,case_id,request_id,assignee_person_id,status,reason,created_by_person_id)
+  values(p_case.workspace_id,p_case.id,v_request,v_sam,'open','No response to the document request.',v_alex)
+  returning id into v_followup;
+  insert into public.contact_log(workspace_id,case_id,followup_id,logged_by_user_id,logged_by_person_id,
+    direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+  values(p_case.workspace_id,p_case.id,v_followup,p_actor,v_sam,
+    'outgoing',now(),'client',null,'phone','request_documents','no_answer',
+    'Called during office hours. No answer, so a message was left.')
+  returning id into v_contact;
+  insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
+    direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+  select l.id,1,l.workspace_id,l.case_id,l.logged_by_user_id,l.logged_by_person_id,l.logged_at,
+    l.direction,l.contacted_at,l.with_whom,l.other_name,l.method,l.purpose,l.outcome,l.note
+  from public.contact_log l where l.id=v_contact;
+ end if;
+
+ -- The office's note to tell the volunteer to stop, left open on the Closed case.
+ if p_scenario='withdrawn' then -- 036
+  select w.default_followup_person_id into v_assignee from public.workspaces w where w.id=p_case.workspace_id; -- 036
+  insert into public.admin_followups(workspace_id,case_id,request_id,purpose,assignee_person_id,status,reason,created_by_person_id) -- 036
+  values(p_case.workspace_id,p_case.id,null,'withdrawal_notice',coalesce(v_assignee,v_sam),'open', -- 036
+   'The client withdrew the application: tell the volunteer to stop work.',coalesce(v_assignee,v_sam)); -- 036
+ end if; -- 036
+
+ -- Review attempts. Findings and resolutions are internal staff text and live
+ -- only here; no client-readable row carries a word of them.
+ if p_scenario='corrections_required' then
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,findings,decided_at,created_at)
+  values(p_case.workspace_id,p_case.id,1,v_morgan,'corrections_requested',
+   'Check the household size against the intake answers, and confirm the filing status before this comes back.',
+   now()-interval '2 hours',now()-interval '4 hours');
+ elsif v_signed then
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,findings,resolution,decided_at,created_at)
+  values(p_case.workspace_id,p_case.id,1,v_morgan,'corrections_requested',
+   'Check the household size against the intake answers, and confirm the filing status before this comes back.',
+   'Corrected the household size and re-checked the filing status in the tax software.',
+   now()-interval '6 hours',now()-interval '8 hours');
+  -- Approved, with the client conversation the approval opens already done:
+  -- the reviewer went over the return, so the contact step is reached and the
+  -- case can be marked ready to e-file at once (D8, D10).
+  insert into public.reviews(workspace_id,case_id,preparation_version,reviewer_person_id,status,decided_at,client_contact_status,client_contact_outcome,client_contacted_at,created_at)
+  values(p_case.workspace_id,p_case.id,2,v_morgan,'approved',now()-interval '1 hour','completed','reached',now()-interval '1 hour',now()-interval '3 hours')
+  returning id into v_review;
+ end if;
+
+ -- Stage, versions and assignments. The approving reviewer stays on the case:
+ -- the client contact task is theirs (Ruling R28).
+ v_stage=case p_scenario
+  when 'preparation_ready' then 'preparation_ready'
+  when 'waiting_documents' then 'preparing'
+  when 'admin_followup' then 'preparing'
+  when 'review_ready' then 'review_ready'
+  when 'corrections_required' then 'corrections_required'
+  when 'review_approved' then 'review_approved'
+  when 'rejected' then 'rejected'
+  when 'accepted' then 'accepted'
+  when 'on_hold' then 'on_hold' -- 036
+  when 'withdrawn' then 'closed' -- 036
+ end;
+ if p_scenario='review_ready' or p_scenario='corrections_required' then v_version=1;
+ end if;
+ if v_signed then
+  v_version=2;
+  v_reviewer=v_morgan;
+ end if;
+
+ -- Fictional questionnaire answers (D8): each version the sample reached has
+ -- its preparer's hand-off, and the approved attempt has the reviewer's answers.
+ if p_scenario in ('review_ready','corrections_required') or v_signed then
+  insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,
+    confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
+  values(p_case.workspace_id,p_case.id,1,v_alex,'client',
+   case when v_signed then 'in_person' else 'phone' end,true,true,current_date);
+ end if;
+ if v_signed then
+  insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,
+    confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
+  values(p_case.workspace_id,p_case.id,2,v_alex,'client','phone',true,true,current_date);
+  insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on,
+    pa_forgiveness,went_over,went_over_on,went_over_how,sign_method,sign_appointment_at,exit_form,remarks)
+  values(p_case.workspace_id,p_case.id,v_review,v_morgan,current_date,
+   'eligible',true,current_date,'phone','portal',null,
+   '{"federal":{"method":"efile","result":"refund","amount":"412.00","refundBy":"direct_deposit"},"state":null,"local":[{"type":"NPT","method":"paper","result":"none"}]}'::jsonb,
+   null);
+ end if;
+
+ -- The history, spaced an hour apart so the most recent entry is the newest
+ -- and the timeline reads in the order the work happened.
+ select max(h.seq) into v_total from vitally_private.fixture_history(p_scenario) h;
+ insert into public.case_events(workspace_id,case_id,actor_user_id,actor_person_id,action,detail,created_at)
+ select p_case.workspace_id,p_case.id,null,pp.id,h.action,h.detail,now()-make_interval(hours=>v_total-h.seq+1)
+ from vitally_private.fixture_history(p_scenario) h
+ left join public.people pp on pp.workspace_id=p_case.workspace_id and pp.person_key=h.person_key;
+ insert into public.client_events(workspace_id,case_id,action,message,created_at)
+ select p_case.workspace_id,p_case.id,h.action,h.message,now()-make_interval(hours=>v_total-h.seq+1)
+ from vitally_private.fixture_history(p_scenario) h
+ where h.message is not null;
+
+ -- A case leaving draft straight for Closed takes no client number (010), but a
+ -- withdrawn application was submitted, so a fresh sample steps through Received.
+ if p_scenario='withdrawn' and p_case.stage='draft' then -- 036
+  update public.cases set stage='received' where id=p_case.id; -- 036
+ end if; -- 036
+
+ update public.cases set stage=v_stage,intake_verified=(p_scenario<>'on_hold'),preparation_version=v_version, -- 036
+  preparer_id=v_preparer,reviewer_id=v_reviewer,last_reminded_at=null,last_reminded_by_person_id=null,
+  signing_plan=case when v_signed then 'portal' end,signing_appointment_at=null,
+  federal_method=case when v_filed then 'efile' end,state_method=case when v_filed then 'efile' end,
+  federal_result=case when v_filed then 'accepted' end,
+  state_result=case p_scenario when 'rejected' then 'rejected' when 'accepted' then 'accepted' end,
+  hold_origin=case when p_scenario='on_hold' then 'awaiting_documents' end, -- 036
+  documents_origin=case when p_scenario='on_hold' then 'screening' end, -- 036
+  closing_reason=case when p_scenario='withdrawn' then 'withdrawn' end, -- 036
+  updated_at=now()
+  where id=p_case.id;
+
+ -- The filing: one attempt, filed an hour before its answer, with both returns
+ -- answered. The reject code and the fix note are staff-only rows.
+ if v_filed then
+  insert into public.filing_attempts(workspace_id,case_id,attempt,filed_at,filed_by)
+  values(p_case.workspace_id,p_case.id,1,now()-interval '2 hours',v_sam);
+  insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method,result,answered_on,reject_code,recorded_by)
+  values(p_case.workspace_id,p_case.id,1,'federal','efile','accepted',(now() at time zone 'America/New_York')::date,null,v_sam),
+   (p_case.workspace_id,p_case.id,1,'state','efile',case p_scenario when 'rejected' then 'rejected' else 'accepted' end,
+    (now() at time zone 'America/New_York')::date,case p_scenario when 'rejected' then 'IND-031-04' end,v_sam);
+  if p_scenario='rejected' then
+   insert into public.filing_notes(workspace_id,case_id,attempt,note,recorded_by,recorded_at)
+   values(p_case.workspace_id,p_case.id,1,'Fictional note: site coordinator to correct the dependent''s SSN in TaxSlayer.',v_sam,now()-interval '1 hour'); -- 037
+  end if;
+ end if;
+ return v_total;
+end;
+$$;
+
+revoke all on all functions in schema vitally_private from public,anon,authenticated,service_role;
