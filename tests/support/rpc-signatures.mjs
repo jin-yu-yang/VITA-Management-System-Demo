@@ -87,6 +87,20 @@ export const RPC_SIGNATURES = Object.freeze([
       p_entry: context.contactEntry,
     }),
   }),
+  // The season-end close (OpenSpec change adjust-filing-to-pcdc): an admin
+  // closes the listed signing cases. The sample at Ready to exit is the target.
+  Object.freeze({
+    name: "vitally_close_unsigned",
+    signature: "vitally_close_unsigned(uuid,uuid,jsonb,boolean)",
+    authorized: (f) => f.presenter,
+    receiptKeys: Object.freeze(["actionId", "cases"]),
+    args: (context) => ({
+      p_action_id: crypto.randomUUID(),
+      p_person_id: context.assistPersonId,
+      p_cases: [{ caseId: context.exitCaseId, revision: context.exitCaseRevision }],
+      p_confirmed: true,
+    }),
+  }),
   Object.freeze({
     name: "vitally_edit_contact",
     signature: "vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb)",

@@ -49,11 +49,11 @@
 
 ## 4. Database: samples
 
-- [ ] 4.1 Update the failing expectations in `tests/database-fixtures.mjs` and `tests/database-stages.mjs`:
+- [x] 4.1 Update the failing expectations in `tests/database-fixtures.mjs` and `tests/database-stages.mjs`:
   - the `rejected` and `accepted` samples' Mark ready to e-file line is the new one;
   - `rejected`'s fix note is "Fictional note: site coordinator to correct the dependent's SSN in TaxSlayer.".
-- [ ] 4.2 037, section 8: `fixture_history` and `apply_fixture_scenario` (from 036), with only those lines changed. Then the closing grants, as 036 ends.
-- [ ] 4.3 Run `npm run test:database` in full until it passes.
+- [x] 4.2 037, section 8: `fixture_history` and `apply_fixture_scenario` (from 036), with only those lines changed. Then the closing grants, as 036 ends.
+- [x] 4.3 Run `npm run test:database` in full until it passes.
 
 ## 5. Browser: domain and client text
 

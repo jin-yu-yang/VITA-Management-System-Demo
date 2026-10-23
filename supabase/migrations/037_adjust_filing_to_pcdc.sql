@@ -7,7 +7,9 @@
 --   * All four federal/state method pairs are allowed (federal paper with state
 --     e-file is no longer refused).
 --   * The stored result value `mailed` is renamed `given_to_client`.
---   * A new RPC, and the sample fixtures, follow in later sections.
+--   * A new RPC, public.vitally_close_unsigned (new function, no earlier
+--     definition), closes the listed signing cases at season end (section 7);
+--     the sample fixtures follow in section 8.
 --
 -- Nothing is hosted (D3, Task 10B): paper returns filed under 035 that are still
 -- waiting for a result are left as they are (no result), and a sample reset
@@ -500,6 +502,87 @@ begin
  return jsonb_build_object('detail','{}'::jsonb,
   'message','PCDC recorded that your return is ready. PCDC will take the next step.'); -- 037
 end; $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. The season-end close (design D9). One admin RPC closes, all or nothing, the
+-- listed cases that are at Ready to exit or on a Hold from Ready to exit, with
+-- reason `dismissed`. Each case gets one CLOSE_CASE event and one client line
+-- (closed_line), and no withdrawal_notice follow-up. Any raise rolls back the
+-- whole statement, receipt included, so a stale or ineligible case changes
+-- nothing; the caller's dialog reopens without that case.
+
+create or replace function public.vitally_close_unsigned(p_action_id uuid,p_person_id uuid,p_cases jsonb,p_confirmed boolean)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_receipt public.action_receipts;
+ v_case public.cases;
+ v_item jsonb;
+ v_ids uuid[]:='{}';
+ v_id uuid;
+ v_revisions jsonb:='{}'::jsonb;
+ v_digest text;
+ v_cases jsonb:='[]'::jsonb;
+ v_revision bigint;
+ v_result jsonb;
+begin
+ v_member=vitally_private.require_membership();
+ -- Admin only: a null person and a person without `admin` are FORBIDDEN.
+ perform vitally_private.check_operation_authority(v_member,p_person_id,'CLOSE_CASE');
+ if p_action_id is null or p_confirmed is not true or p_cases is null or jsonb_typeof(p_cases)<>'array'
+  or jsonb_array_length(p_cases)=0 then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ for v_item in select value from jsonb_array_elements(p_cases) loop
+  if jsonb_typeof(v_item)<>'object'
+   or (select count(*) from jsonb_object_keys(v_item))<>2
+   or not (v_item ? 'caseId') or not (v_item ? 'revision')
+   or jsonb_typeof(v_item->'caseId')<>'string'
+   or (v_item->>'caseId')!~'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+   or jsonb_typeof(v_item->'revision')<>'number'
+   or (v_item->>'revision')::numeric<>trunc((v_item->>'revision')::numeric) then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+  v_id=(v_item->>'caseId')::uuid;
+  if v_id=any(v_ids) then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+  v_ids=array_append(v_ids,v_id);
+  v_revisions=v_revisions||jsonb_build_object(v_id::text,v_item->'revision');
+ end loop;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation','CLOSE_UNSIGNED','cases',p_cases,
+  'personId',p_person_id)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,'CLOSE_UNSIGNED',v_digest,p_person_id);
+ if v_receipt.receipt is not null then
+  return v_receipt.receipt;
+ end if;
+ -- Lock in a fixed order so two closes cannot deadlock, and check every case
+ -- before changing any.
+ select array_agg(x order by x) into v_ids from unnest(v_ids) as x;
+ foreach v_id in array v_ids loop
+  v_case=vitally_private.lock_case(v_member,v_id);
+  if v_case.revision<>(v_revisions->>(v_id::text))::numeric
+   or not (v_case.stage='review_approved' or (v_case.stage='on_hold' and v_case.hold_origin='review_approved')) then
+   raise sqlstate 'VT003' using message='CONFLICT';
+  end if;
+ end loop;
+ foreach v_id in array v_ids loop
+  select * into v_case from public.cases where id=v_id;
+  perform vitally_private.close_case_steps(v_case,'dismissed');
+  insert into public.case_events(workspace_id,case_id,actor_user_id,actor_person_id,action,detail)
+  values(v_case.workspace_id,v_case.id,v_member.user_id,p_person_id,'CLOSE_CASE',
+   jsonb_build_object('reason','dismissed','seasonEnd',true));
+  insert into public.client_events(workspace_id,case_id,action,message)
+  values(v_case.workspace_id,v_case.id,'CLOSE_CASE',vitally_private.closed_line('dismissed'));
+  update public.cases set revision=revision+1,updated_at=now() where id=v_id returning revision into v_revision;
+  v_cases=v_cases||jsonb_build_array(jsonb_build_object('caseId',v_id,'reference',v_case.reference,'revision',v_revision));
+ end loop;
+ v_result=jsonb_build_object('actionId',p_action_id,'cases',v_cases);
+ update public.action_receipts set target_id=null,target_reference=null,receipt=v_result where id=v_receipt.id;
+ return v_result;
+end;
+$$;
+revoke all on function public.vitally_close_unsigned(uuid,uuid,jsonb,boolean) from public,anon,authenticated;
+grant execute on function public.vitally_close_unsigned(uuid,uuid,jsonb,boolean) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 8. The samples. fixture_history and apply_fixture_scenario, verbatim from 036
