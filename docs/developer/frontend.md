@@ -426,9 +426,10 @@ selectable (a note in the dialog says why). An admin records and verifies docume
 and a documents Hold. In the case pool, Waiting for documents sits under Waiting on client, Hold
 under Needs attention, and Closed has a reason filter (with "No reason" for older cases).
 Follow-ups gains the kinds "Waiting for documents", "Hold" and "Withdrawn" (the
-`withdrawal_notice` task, "The client withdrew; tell <name> to stop work.", or "The client
-withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close
-before filing, told apart by the notice's stored text, which the list summary carries as
+`withdrawal_notice` task, "The client withdrew; tell <name> to stop work.", or, for an admin's
+close before filing, "The client withdrew; make sure the return is not transmitted in TaxSlayer."
+(reason Withdrawn) or "The case was closed before filing; make sure the return is not transmitted
+in TaxSlayer." (any other reason from a signing hold), told apart by the notice's stored text, which the list summary carries as
 `withdrawalNoticeReason`). Notes are escaped in
 the staff history and never reach a client screen.
 

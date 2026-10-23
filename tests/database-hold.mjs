@@ -556,6 +556,29 @@ test("documents at intake against real Supabase", async (t) => {
       }
     });
 
+    await t.test("any close of a signing hold opens the TaxSlayer notice, worded by reason", async () => {
+      const held = await f.approvedCase();
+      await hold(held);
+      await close(held, { confirmed: true, reason: "dismissed" });
+      assert.equal((await columns(held)).stage, "closed");
+      assert.equal((await columns(held)).closing_reason, "dismissed");
+      assert.equal((await f.clientMessages(held)).at(-1), CLOSED_LINES.dismissed);
+      const rows = await noticeReasons(held);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].status, "open");
+      assert.equal(rows[0].request_id, null);
+      assert.equal(
+        rows[0].reason,
+        "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.",
+      );
+      // A documents hold has no reviewed return: closing it opens no notice.
+      const documentsHold = await atScreening();
+      await asSam(documentsHold, "REQUEST_DOCUMENTS_AT_INTAKE", { requests: [{ title: "Photo ID", message: "A fictional note." }] });
+      await hold(documentsHold);
+      await close(documentsHold, { confirmed: true, reason: "dismissed" });
+      assert.deepEqual(await noticeReasons(documentsHold), []);
+    });
+
     await t.test("only a withdrawn close is allowed before filing, and none after", async () => {
       const ready = await readyToEfile();
       await assert.rejects(() => close(ready, { confirmed: true, reason: "duplicate" }), rejected("INVALID_TRANSITION"));

@@ -1179,6 +1179,17 @@ test("Withdrawn row: an admin's withdrawn close before filing reads the TaxSlaye
   }
   for (const id of ["s1", "s2"])
     assert.match(kindRow(html, id, "withdrawn"), /The client withdrew; tell Alex Rivera to stop work\./);
+  // A signing hold closed for another reason stores its own sentence, shown as stored.
+  const BEFORE = "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.";
+  const other = page([
+    closed("b1", { closingReason: "dismissed", openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: BEFORE }),
+    closed("b2", { closingReason: "dismissed", followups: [{ id: "f3", status: "open", purpose: "withdrawal_notice", reason: BEFORE }] }),
+  ]);
+  for (const id of ["b1", "b2"]) {
+    const row = kindRow(other, id, "withdrawn");
+    assert.match(row, /The case was closed before filing; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /The client withdrew/);
+  }
 });
 
 test("a case on hold with a call task keeps its Call the client row beside the Hold row", () => {

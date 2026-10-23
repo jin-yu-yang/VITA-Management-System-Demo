@@ -321,10 +321,17 @@ export function mustContactToWithdraw(record) {
   return ["review_approved", "ready_to_efile", "rejected"].includes(stage);
 }
 
-// The stored text of the follow-up an admin's withdrawn close opens before
-// filing; Follow-ups tells the two withdrawal notices apart by it.
+// The stored texts of the follow-up an admin's close before filing opens: one for a
+// withdrawal, one for any other reason from a signing hold. Follow-ups shows either
+// as stored, and tells them from the client's own stop-work notice by it.
 export const TRANSMIT_NOTICE_REASON =
   "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+export const CLOSED_BEFORE_FILING_NOTICE_REASON =
+  "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.";
+export const BEFORE_FILING_NOTICE_REASONS = Object.freeze([
+  TRANSMIT_NOTICE_REASON,
+  CLOSED_BEFORE_FILING_NOTICE_REASON,
+]);
 
 // The client text key of a Hold or a closed case's own message, or null when
 // the stage's base message stands (a documents Hold; Closed with no reason or

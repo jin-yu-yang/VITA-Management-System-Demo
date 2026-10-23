@@ -6,7 +6,7 @@ Every office follow-up SHALL have a purpose:
 - `go_over_return`;
 - `withdrawal_notice`, opened in two situations (capability `case-lifecycle`):
   - when a client withdraws a case that a preparer or reviewer was working on, so the office tells that volunteer to stop work;
-  - when an admin closes a case with reason `withdrawn` at Ready to exit, a Hold from Ready to exit, or Ready to e-file, so the office makes sure the return is not transmitted in TaxSlayer.
+  - when an admin closes a case before filing (with reason `withdrawn` at Ready to exit or Ready to e-file, or with any reason from a Hold that came from Ready to exit), so the office makes sure the return is not transmitted in TaxSlayer.
 
 `request_documents` and `go_over_return` use the contact log's own words. `withdrawal_notice` is the office's own: it isn't a contact with the client.
 

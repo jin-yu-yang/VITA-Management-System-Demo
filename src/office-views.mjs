@@ -44,7 +44,7 @@ import {
   methodOf,
   waitingKinds,
 } from "./admin-views.mjs";
-import { returnedToSigning, latestFixNote, holdKind, TRANSMIT_NOTICE_REASON } from "./domain.mjs";
+import { returnedToSigning, latestFixNote, holdKind, BEFORE_FILING_NOTICE_REASONS } from "./domain.mjs";
 import {
   when,
   explain,
@@ -259,11 +259,12 @@ function needed(row) {
     );
   if (kind === "withdrawn")
     return esc(
-      // The admin's withdrawn close before filing stores its own sentence. The client's
-      // own notice names the volunteer: reviewer_id is set on a closed case with that
-      // notice only when the client withdrew at Review in progress.
-      noticeReason(record) === TRANSMIT_NOTICE_REASON
-        ? TRANSMIT_NOTICE_REASON
+      // An admin's close before filing stores its own sentence (withdrawn, or any other
+      // reason from a signing hold). The client's own notice names the volunteer:
+      // reviewer_id is set on a closed case with that notice only when the client
+      // withdrew at Review in progress.
+      BEFORE_FILING_NOTICE_REASONS.includes(noticeReason(record))
+        ? noticeReason(record)
         : `The client withdrew; tell ${record.reviewerName ?? record.preparerName ?? "the volunteer"} to stop work.`,
     );
   if (kind === "signing")

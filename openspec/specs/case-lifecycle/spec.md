@@ -239,7 +239,7 @@ Its search SHALL reach a case in any stage.
 - a row for each case at Screening in progress ("Finish screening."), with **Open**;
 - a **Waiting for documents** row for each case at Waiting for documents ("Waiting for the client's documents."), with **Put on hold…**;
 - a **Hold** row for each case on Hold: "Can't reach the client about documents." for a Hold that came from Waiting for documents, or "Can't reach the client to sign Form 8879." for one that came from Ready to exit. It has **Got in touch…** and **Close…**;
-- a **Withdrawn** row for each open `withdrawal_notice` follow-up, with **Resolve**. It reads "The client withdrew; tell <name> to stop work." for a client's own withdrawal during preparation or review, or "The client withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close at Ready to exit, a Hold from Ready to exit, or Ready to e-file;
+- a **Withdrawn** row for each open `withdrawal_notice` follow-up, with **Resolve**. It reads "The client withdrew; tell <name> to stop work." for a client's own withdrawal during preparation or review, "The client withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close at Ready to exit, a Hold from Ready to exit, or Ready to e-file, or "The case was closed before filing; make sure the return is not transmitted in TaxSlayer." for an admin's close of a Hold from Ready to exit with any other reason;
 - a row for each case at Ready to exit ("Waiting for the client to sign Form 8879."), with **Mark ready to e-file…**. While the reviewer's call with the client is still pending, the row SHALL read "Waiting for the reviewer's call with the client." instead, with the call-pending explanation in place of the button. For a case returned to signing after a rejection, the row SHALL read "Waiting for the client to sign again.";
 - a row for each case at Ready to e-file ("Ready to e-file."), with **Mark e-filed…**;
 - a **Filing result** row for each case at E-filed, and for each case at Rejected with a return still waiting, with **Record filing result…**. It SHALL read:
@@ -774,7 +774,11 @@ At Draft the button SHALL not be offered. At Ready to exit, a Hold that came fro
 
 When the client withdraws a case at Filing in progress, Corrections in progress or Review in progress, an office follow-up with purpose `withdrawal_notice` SHALL open (capability `office-follow-up`). Follow-ups SHALL show it as "The client withdrew; tell <name> to stop work.", naming the case's preparer (or, at Review in progress, its reviewer). Withdrawing at any other stage SHALL open no follow-up.
 
-When an admin closes a case with reason `withdrawn` at Ready to exit, a Hold that came from Ready to exit, or Ready to e-file, an office follow-up with purpose `withdrawal_notice` SHALL open. Follow-ups SHALL show it as "The client withdrew; make sure the return is not transmitted in TaxSlayer.". Each notice SHALL stay open until someone resolves it, like any other follow-up.
+When an admin closes a case before filing, an office follow-up with purpose `withdrawal_notice` SHALL open, because a reviewed return that hasn't been transmitted is left in TaxSlayer. Closing before filing means with reason `withdrawn` at Ready to exit or Ready to e-file, or with any reason at a Hold that came from Ready to exit. Follow-ups SHALL show it as:
+- "The client withdrew; make sure the return is not transmitted in TaxSlayer." for reason `withdrawn`;
+- "The case was closed before filing; make sure the return is not transmitted in TaxSlayer." for any other reason.
+
+Each notice SHALL stay open until someone resolves it, like any other follow-up. Closing a Hold that came from Waiting for documents SHALL open no notice.
 
 #### Scenario: Withdrawing before preparation
 - **WHEN** a client at Pending intake / filing withdraws, ticking the box
@@ -797,6 +801,10 @@ When an admin closes a case with reason `withdrawn` at Ready to exit, a Hold tha
 #### Scenario: Withdrawn after signing
 - **WHEN** the client of a case at Ready to e-file contacts PCDC and an admin closes the case with reason Withdrawn
 - **THEN** the case is Closed with reason `withdrawn`, and Follow-ups shows "The client withdrew; make sure the return is not transmitted in TaxSlayer." until the office resolves it
+
+#### Scenario: A signer who can't be reached is closed before filing
+- **WHEN** an admin closes a Hold that came from Ready to exit with reason Dismissed
+- **THEN** the case is Closed, and Follow-ups shows "The case was closed before filing; make sure the return is not transmitted in TaxSlayer." until the office resolves it
 
 #### Scenario: No line once filed
 - **WHEN** a client opens a case at E-filed or Accepted
