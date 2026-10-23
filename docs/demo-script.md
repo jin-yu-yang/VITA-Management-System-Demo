@@ -32,7 +32,7 @@ what that suite already verified, not a hoped-for behavior.
 | Documents | The "sample mileage record" is a fixed fictional filename, never a real upload | — |
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
-| Filing results | The IRS's and Pennsylvania's answers (accepted, rejected, mailed) are recorded by hand by an admin; nothing is sent to the IRS or Pennsylvania, and the refund sites are plain text | — |
+| Filing results | The IRS's and Pennsylvania's answers (accepted or rejected for an e-filed return; a paper return is given to the client at Mark e-filed) are recorded by hand by an admin; nothing is sent to the IRS or Pennsylvania, and the refund sites are plain text | — |
 | Holds, withdrawal and closing | A hold's "Got in touch" is recorded by hand; nothing calls or messages the client, and a withdrawal notice is only a follow-up for the office to act on | A client's Withdraw button and an admin's close, hold and document requests are real database writes, shared with the other window |
 | Screening checks | — | A volunteer ticks what they confirmed (phone, documents, scope, and identity for an online client); the office records it |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
@@ -128,9 +128,21 @@ what the test suite actually proved.
 11. **The approval settles the client conversation.** There is no "Record this conversation" step
     after a questionnaire approval. If Morgan answered **No** to going over the return, the office
     has a go-over task in Follow-ups, and **Mark ready to e-file** waits until it is resolved. The
-    client's screen updates to "Ready to exit" with how and when to sign Form 8879, which is needed before the return can be filed. The story asserts, at this exact point, that none of
+    client's screen updates to "Ready to exit" with how and when to sign, which is needed before the return can be filed. The story asserts, at this exact point, that none of
     the reviewer's findings, the preparer's resolution note, the office's contact notes, or any
     `$`/refund/routing/deposit language appear anywhere in the client's window.
+12. **Filing, with the state return on paper.** Alex's case is marked ready to e-file once the client
+    has signed, then **Mark e-filed** records the federal return e-filed and the PA-40 as given to the
+    client on paper ("E-filed, PA on paper"). Nothing e-filed is left waiting, so the case goes straight
+    to Accepted ("Accepted, PA on paper") with no Record filing result. The client's badge reads
+    "Ready to mail", with the sentence that PCDC gave the Pennsylvania return on paper and the client
+    mails it themselves. (A separate case in the story is e-filed on both, rejected by the state, and
+    returned to signing; it shows the two filing results recorded by hand.)
+13. **Season-end close.** Sam puts one sample case on a signing Hold and returns another to signing,
+    then opens **Close unsigned cases…** on the office board. Both are listed, ticked, with their stage
+    and days waiting; the heading follows the ticks. With only the held case ticked, the confirmation
+    closes it as Dismissed, the client is told, and no TaxSlayer notice is raised. The case that was
+    left out does not move.
 
 ### The assisted-intake (walk-in) path
 

@@ -92,12 +92,16 @@
   <text class="lbl" x="600" y="925">Once client signed</text>
 
   <!-- filing method -->
-  <path class="e" d="M540,1000 C540,1036 330,1021 330,1058"/>
+  <path class="e" d="M540,1000 C540,1036 370,1021 370,1058"/>
   <path class="e" d="M600,1000 V1060"/>
   <path class="e" d="M660,1000 C660,1036 870,1021 870,1058"/>
-  <path class="e" d="M330,1112 C330,1176 420,1196 498,1196"/>
+  <path class="e" d="M370,1112 C370,1176 430,1196 498,1196"/>
   <path class="e" d="M600,1110 V1170"/>
   <path class="e" d="M870,1112 C870,1176 780,1196 702,1196"/>
+
+  <!-- both on paper: straight to Accepted -->
+  <path class="e" d="M500,976 C260,976 255,1060 255,1150 C255,1240 400,1230 400,1280"/>
+  <text class="lbl" x="255" y="1070">Paper</text>
 
   <!-- IRS outcome -->
   <path class="e" d="M560,1220 C540,1256 460,1256 452,1280"/>
@@ -135,9 +139,9 @@
   </g>
   <g class="n file">
     <rect x="500" y="952" width="200" height="48" rx="10"/><text x="600" y="976">Ready to e-file</text>
-    <rect x="220" y="1060" width="220" height="52" rx="10"/><text x="330" y="1078">Both e-filed</text><text class="sub" x="330" y="1097">(1040 / PA-40)</text>
-    <rect x="500" y="1062" width="200" height="48" rx="10"/><text x="600" y="1086">E-filed &amp; paper</text>
-    <rect x="760" y="1060" width="220" height="52" rx="10"/><text x="870" y="1078">Both paper</text><text class="sub" x="870" y="1097">(1040 / PA-40)</text>
+    <rect x="300" y="1060" width="140" height="52" rx="10"/><text x="370" y="1078">Both e-filed</text><text class="sub" x="370" y="1097">(1040 / PA-40)</text>
+    <rect x="500" y="1062" width="200" height="48" rx="10"/><text x="600" y="1086">E-filed, PA on paper</text>
+    <rect x="760" y="1062" width="220" height="48" rx="10"/><text x="870" y="1086">E-filed, federal on paper</text>
     <rect x="500" y="1172" width="200" height="48" rx="10"/><text x="600" y="1190">IRS acknowledged</text><text class="sub" x="600" y="1208">(the wait at E-filed)</text>
     <rect x="370" y="1282" width="160" height="48" rx="10"/><text x="450" y="1306">Accepted</text>
   </g>

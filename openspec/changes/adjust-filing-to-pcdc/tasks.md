@@ -109,17 +109,17 @@
 
 ## 8. The story
 
-- [ ] 8.1 Update the signing and filing step's assertions to the new wording, in English and 简体. Change the fix note to "Site coordinator to correct the dependent's date of birth in TaxSlayer".
-- [ ] 8.2 Rewrite step 5 (rejection loop):
+- [x] 8.1 Update the signing and filing step's assertions to the new wording, in English and 简体. Change the fix note to "Site coordinator to correct the dependent's date of birth in TaxSlayer".
+- [x] 8.2 Rewrite step 5 (rejection loop):
   - Mark e-filed with the PA-40 "On paper (given to the client to mail)" lands at "Accepted, PA on paper";
   - the Record filing result block is removed, leaving one `RECORD_FILING_RESULT` event;
   - the case is in the Done tab;
   - the client sees "Ready to mail" and a status panel with the IRS acceptance, the PA handover sentence and the refund sentence as plain text, and the history gains the handover line;
   - the evidence string is updated.
-- [ ] 8.3 Add a final story step, the season-end close:
+- [x] 8.3 Add a final story step, the season-end close:
   - after a sample reset, put the `review_approved` sample on a signing Hold and return the `rejected` sample to signing. Open Close unsigned cases…, check the stage, days and ticks, untick the `rejected` sample and confirm;
   - the ticked cases are Closed · Dismissed and under the Dismissed filter, the unticked case hasn't moved, each closed client reads the Dismissed line, and no TaxSlayer notice row appears.
-- [ ] 8.4 Run `npm run test:browser` until it passes.
+- [x] 8.4 Run `npm run test:browser` until it passes.
 
 ## 9. Docs
 
