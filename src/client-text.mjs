@@ -194,6 +194,18 @@ export const TEXT = Object.freeze({
   "filing.closing.accepted": { en: "If you are due a refund, you can check on it with \"Where's My Refund?\" at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.", zh: "如果您有退税，可以在 irs.gov/refunds 使用 \"Where's My Refund?\" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
+  // Waiting for documents and Hold (change add-hold-and-closing); a Hold is told by where it came from (domain.mjs holdKind)
+  "stage.awaiting_documents.label": { en: "Documents needed", zh: "需要文件" },
+  "stage.awaiting_documents.client": { en: "PCDC needs more documents from you before your return can be prepared. See the requests below.", zh: "PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。" },
+  "stage.on_hold.label": { en: "Waiting for you", zh: "等待您的回复" },
+  "stage.on_hold.client": { en: "PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC.", zh: "PCDC 一直在设法联系您，询问所需的文件。请在下方上传，或联系 PCDC。" },
+  "stage.on_hold.client.signing": { en: "PCDC has been trying to reach you to sign Form 8879. Please contact PCDC. Your return can't be filed until you sign.", zh: "PCDC 一直在设法联系您签署 8879 表。请联系 PCDC。您签署后才能递交报税表。" },
+  // Closed, by the reason it recorded (domain.mjs describeStage); 'other' and no reason use stage.closed.client
+  "stage.closed.client.out_of_scope": { en: "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.", zh: "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。" },
+  "stage.closed.client.no_need_to_file": { en: "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.", zh: "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。" },
+  "stage.closed.client.duplicate": { en: "This application was closed. Your return continues under your other application with PCDC.", zh: "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。" },
+  "stage.closed.client.dismissed": { en: "PCDC could not reach you, so this application was closed. Your return was not filed.", zh: "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。" },
+  "stage.closed.client.withdrawn": { en: "You withdrew this application. Your return was not filed.", zh: "您已撤回此申请。您的报税表未递交。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },
   "stage.unknown.client": { en: "This application is with the office. Contact PCDC if you have questions.", zh: "此申请正在办公室处理。如有疑问，请联系 PCDC。" },
   // Days on lists (ui.mjs relativeDay); older dates use the language's own month and day

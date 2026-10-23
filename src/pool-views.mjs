@@ -31,7 +31,8 @@ export const POOL_FILTER_KEYS = Object.freeze(Object.keys(DEFAULT_POOL_FILTERS))
 export function poolPhase(record) {
   const stage = record?.stage;
   if (["draft", "received", "screening"].includes(stage)) return "intake";
-  if (stage === "review_approved") return "signing";
+  if (stage === "review_approved" || stage === "awaiting_documents") return "signing";
+  if (stage === "on_hold") return "attention";
   if (stage === "ready_to_efile" || stage === "efiled") return "filing";
   if (stage === "rejected") return "attention";
   if (stage === "accepted") return "done";

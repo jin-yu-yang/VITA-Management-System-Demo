@@ -8,7 +8,7 @@ import {
   FOLLOWUP_RESOLUTION_OUTCOMES,
   screeningCheckKeys,
 } from "../src/case-actions.mjs";
-import { CASE_ACTIONS } from "../src/contracts.mjs";
+import { CASE_ACTIONS, CLOSING_REASONS } from "../src/contracts.mjs";
 import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 
 // The payload rules are a pure function, so these tests are the payload table
@@ -121,8 +121,41 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "CLOSE_CASE",
       {},
-      { reason: "Client moved away", confirmed: "true" },
-      { reason: "Client moved away", confirmed: true },
+      { "close-reason": "duplicate", confirmed: "true" },
+      { confirmed: true, reason: "duplicate" },
+    ],
+    [
+      "CLOSE_CASE",
+      {},
+      { "close-reason": "other", "close-note": " Moved away ", confirmed: "true" },
+      { confirmed: true, reason: "other", note: "Moved away" },
+    ],
+    [
+      "PUT_ON_HOLD",
+      {},
+      { "hold-note": " Called twice ", confirmed: "true" },
+      { confirmed: true, note: "Called twice" },
+    ],
+    ["PUT_ON_HOLD", {}, { confirmed: "true" }, { confirmed: true }],
+    ["RESUME_FROM_HOLD", {}, { confirmed: "true" }, { confirmed: true }],
+    ["WITHDRAW", {}, { "withdraw-confirmed": "on" }, { confirmed: true }],
+    [
+      "REQUEST_DOCUMENTS_AT_INTAKE",
+      {},
+      {
+        "request-title-1": " Photo ID ",
+        "request-message-1": " Please upload it ",
+        "request-title-2": "",
+        "request-message-2": "ignored",
+        "request-title-3": "W-2",
+        "request-message-3": "From your employer",
+      },
+      {
+        requests: [
+          { title: "Photo ID", message: "Please upload it" },
+          { title: "W-2", message: "From your employer" },
+        ],
+      },
     ],
     ["START_SCREENING", {}, {}, {}],
     ["MARK_READY_TO_EFILE", {}, { confirmed: "true" }, { confirmed: true }],
@@ -157,7 +190,7 @@ test("every action builds exactly the payload the contract names", () => {
   // Every action in the table is covered, and the table is every action this
   // module claims to build.
   assert.deepEqual(
-    cases.map(([type]) => type).toSorted(),
+    [...new Set(cases.map(([type]) => type))].toSorted(),
     [...PAYLOAD_ACTIONS].toSorted(),
   );
 });
@@ -228,8 +261,16 @@ test("a missing required field refuses before anything is sent", () => {
     ["RECORD_REVIEW_CONTACT", {}, { note: "A note" }],
     ["RECORD_REVIEW_CONTACT", {}, { outcome: "reached" }],
     ["CLOSE_CASE", {}, {}],
-    ["CLOSE_CASE", {}, { reason: "Client moved away" }],
+    ["CLOSE_CASE", {}, { "close-reason": "duplicate" }],
+    ["CLOSE_CASE", {}, { "close-reason": "bogus", confirmed: "true" }],
+    ["CLOSE_CASE", {}, { "close-reason": "other", confirmed: "true" }],
     ["CLOSE_CASE", {}, { confirmed: "true" }],
+    ["PUT_ON_HOLD", {}, {}],
+    ["RESUME_FROM_HOLD", {}, {}],
+    ["WITHDRAW", {}, {}],
+    ["WITHDRAW", {}, { "withdraw-confirmed": "no" }],
+    ["REQUEST_DOCUMENTS_AT_INTAKE", {}, {}],
+    ["REQUEST_DOCUMENTS_AT_INTAKE", {}, { "request-title-1": "ID", "request-message-1": " " }],
     // Two of the three checks is not a screening.
     ["VERIFY_INTAKE", { service: "drop_off" }, {}],
     ["VERIFY_INTAKE", { service: "drop_off" }, { phone: "true", documents: "true" }],
@@ -295,11 +336,11 @@ test("a form value never overrides the file name or the confirmation flag", () =
   // literal `true` the contract names: a form can withhold it, never redefine
   // it as something else.
   assert.throws(
-    () => payloadFor("CLOSE_CASE", {}, { reason: "r", confirmed: "no" }),
+    () => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate", confirmed: "no" }),
     invalid,
   );
   const closure = payloadFor("CLOSE_CASE", {}, {
-    reason: "r",
+    "close-reason": "duplicate",
     confirmed: "on",
   }).payload;
   assert.deepEqual(Object.keys(closure).toSorted(), ["confirmed", "reason"]);
@@ -435,7 +476,18 @@ test("the 8879 and e-file actions need their own confirmation sentence", () => {
     assert.throws(() => payloadFor(type, {}, { confirmed: "no" }), (error) => error.message === message, type);
   }
   // Closing keeps its own sentence.
-  assert.throws(() => payloadFor("CLOSE_CASE", {}, { reason: "r" }), (error) => error.message === "Confirm that you want to close this case.");
+  assert.throws(() => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate" }), (error) => error.message === "Confirm that you want to close this case.");
+});
+
+test("hold and closing builders refuse with their own sentences", () => {
+  refused("CLOSE_CASE", { confirmed: "true" }, "Choose a reason.");
+  refused("CLOSE_CASE", { "close-reason": "nope", confirmed: "true" }, "Choose a reason.");
+  refused("CLOSE_CASE", { "close-reason": "other", "close-note": "  ", confirmed: "true" }, "Add a note for Other.");
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", {}, "Ask for at least one document.");
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": "x" }, "Ask for at least one document.");
+  for (const type of ["PUT_ON_HOLD", "RESUME_FROM_HOLD", "WITHDRAW"])
+    assert.ok(PAYLOAD_ACTIONS.includes(type), type);
+  assert.deepEqual(CLOSING_REASONS, ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn", "other"]);
 });
 
 const refused = (type, values, message) =>

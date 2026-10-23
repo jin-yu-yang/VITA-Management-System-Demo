@@ -530,6 +530,9 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       stateMethod: null,
       federalResult: null,
       stateResult: null,
+      documentsOrigin: null,
+      holdOrigin: null,
+      closingReason: null,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -725,14 +728,17 @@ test("an applicant case read asks for no staff table at all", async () => {
   assert.deepEqual(Object.keys(found).toSorted(), [
     "answers",
     "clientNumber",
+    "closingReason",
     "contact",
     "createdAt",
     "documentCards",
     "documents",
+    "documentsOrigin",
     "federalMethod",
     "federalResult",
     "fixture",
     "history",
+    "holdOrigin",
     "id",
     "intakeVerified",
     "intakeVersion",
@@ -1456,6 +1462,21 @@ test("mapCase carries the filing methods and results, null before a filing", () 
   assert.deepEqual(
     [filed.federalMethod, filed.stateMethod, filed.federalResult, filed.stateResult],
     ["efile", "paper", "accepted", "mailed"],
+  );
+});
+
+test("mapCase carries the documents origin, hold origin and closing reason, null when unset", () => {
+  const plain = mapCase(CASE_ROW);
+  assert.deepEqual([plain.documentsOrigin, plain.holdOrigin, plain.closingReason], [null, null, null]);
+  const held = mapCase({
+    ...CASE_ROW,
+    documents_origin: "screening",
+    hold_origin: "awaiting_documents",
+    closing_reason: "dismissed",
+  });
+  assert.deepEqual(
+    [held.documentsOrigin, held.holdOrigin, held.closingReason],
+    ["screening", "awaiting_documents", "dismissed"],
   );
 });
 

@@ -9,7 +9,7 @@
 // file refuses only what it can know by itself: an unknown action, a missing
 // related id, an empty required field and an outcome outside its own list.
 
-import { CASE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, CLOSING_REASONS } from "./contracts.mjs";
 import {
   MATERIALS_ITEMS,
   checkValue,
@@ -215,6 +215,20 @@ function filingResults(dataset, values) {
   return payload;
 }
 
+// The documents the office asks for at intake: up to five title and message
+// rows. A row with no title is skipped; a title with no message is refused (the
+// database would). At least one row must remain.
+function intakeRequests(values) {
+  const requests = [];
+  for (let n = 1; n <= 5; n += 1) {
+    const title = String(values?.[`request-title-${n}`] ?? "").trim();
+    if (!title) continue;
+    requests.push({ title, message: text(values, `request-message-${n}`, "A message for the client") });
+  }
+  if (!requests.length) throw validation("Ask for at least one document.");
+  return requests;
+}
+
 // SAVE_ANSWERS is deliberately absent: it is built by the controller from the
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
@@ -277,10 +291,29 @@ const BUILDERS = Object.freeze({
   RETURN_TO_SIGNING: (dataset, values) => ({
     confirmed: confirmation(values, "Confirm that the fix is done."),
   }),
-  CLOSE_CASE: (dataset, values) => ({
-    reason: text(values, "reason", "A reason"),
-    confirmed: confirmation(values),
+  REQUEST_DOCUMENTS_AT_INTAKE: (dataset, values) => ({ requests: intakeRequests(values) }),
+  PUT_ON_HOLD: (dataset, values) => {
+    const note = String(values?.["hold-note"] ?? "").trim();
+    return {
+      confirmed: confirmation(values, "Confirm that you want to put this case on hold."),
+      ...(note ? { note } : {}),
+    };
+  },
+  RESUME_FROM_HOLD: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that you got in touch with the client."),
   }),
+  WITHDRAW: (dataset, values) => {
+    if (!ticked(values, "withdraw-confirmed"))
+      throw validation("Tick the box to withdraw this application.");
+    return { confirmed: true };
+  },
+  CLOSE_CASE: (dataset, values) => {
+    const reason = String(values?.["close-reason"] ?? "").trim();
+    if (!CLOSING_REASONS.includes(reason)) throw validation("Choose a reason.");
+    const note = String(values?.["close-note"] ?? "").trim();
+    if (reason === "other" && !note) throw validation("Add a note for Other.");
+    return { confirmed: confirmation(values), reason, ...(note ? { note } : {}) };
+  },
   UPDATE_CONTACT: (dataset, values) => contactUpdate(values),
   RECORD_MATERIALS: (dataset, values) => ({ received: materialsReceived(values) }),
 });

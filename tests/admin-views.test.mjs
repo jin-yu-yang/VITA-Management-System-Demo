@@ -551,13 +551,13 @@ test("the close dialog asks for a reason and an explicit confirmation", () => {
   assert.match(html, /data-action="close-dialog"/);
   // The confirmation is what the payload needs; a reason alone is refused.
   assert.throws(
-    () => payloadFor("CLOSE_CASE", {}, { reason: "Client moved away" }),
+    () => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate" }),
     (error) => error.code === "VALIDATION",
   );
   assert.deepEqual(
-    payloadFor("CLOSE_CASE", {}, { reason: "Client moved away", confirmed: "true" })
+    payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate", confirmed: "true" })
       .payload,
-    { reason: "Client moved away", confirmed: true },
+    { reason: "duplicate", confirmed: true },
   );
 });
 

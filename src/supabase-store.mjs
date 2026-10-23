@@ -104,6 +104,11 @@ export const mapCase = (row) => ({
   stateMethod: row.state_method ?? null,
   federalResult: row.federal_result ?? null,
   stateResult: row.state_result ?? null,
+  // Where the case was when documents were asked for or it went on hold, and
+  // why it closed (migration 036); null when none applies.
+  documentsOrigin: row.documents_origin ?? null,
+  holdOrigin: row.hold_origin ?? null,
+  closingReason: row.closing_reason ?? null,
 });
 
 // The filing history (migration 035), staff only: one entry per time the case

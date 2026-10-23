@@ -31,6 +31,20 @@ const STAGE_DESCRIPTIONS = Object.freeze({
     clientMessage:
       "PCDC is reviewing your application. We may call you to confirm your information and documents.",
   },
+  awaiting_documents: {
+    label: "Waiting for documents",
+    clientLabel: "Documents needed",
+    clientMessage:
+      "PCDC needs more documents from you before your return can be prepared. See the requests below.",
+  },
+  // A Hold's message depends on where it came from (holdMessage); this is the
+  // one a record with no origin gets.
+  on_hold: {
+    label: "Hold",
+    clientLabel: "Waiting for you",
+    clientMessage:
+      "PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC.",
+  },
   preparation_ready: {
     label: "Pending intake / filing",
     clientLabel: "Waiting for a volunteer",
@@ -252,16 +266,78 @@ export function filingMessage(stage, lang = "en", record = null) {
 
 const FILING_STAGES = Object.freeze(["efiled", "rejected", "accepted"]);
 
+// ---------------------------------------------------------------------------
+// Hold and closing (change add-hold-and-closing). The columns are the
+// database's; these read them and decide nothing.
+// ---------------------------------------------------------------------------
+
+// Why the case closed, in the order the close dialog offers them, with the
+// staff name of each.
+export const CLOSING_REASON_NAMES = Object.freeze({
+  out_of_scope: "Out of scope",
+  no_need_to_file: "No need to file",
+  duplicate: "Duplicate",
+  dismissed: "Dismissed (client unreachable)",
+  withdrawn: "Withdrawn",
+  other: "Other",
+});
+
+const closingReasonOf = (record) =>
+  Object.hasOwn(CLOSING_REASON_NAMES, record?.closingReason ?? "") ? record.closingReason : null;
+
+// What a Hold is chasing: 'documents' (it came from Waiting for documents),
+// 'signing' (it came from Ready to exit), or null with no origin.
+export function holdKind(record) {
+  if (record?.holdOrigin === "awaiting_documents") return "documents";
+  if (record?.holdOrigin === "review_approved") return "signing";
+  return null;
+}
+
+// The stages the client may withdraw from (design D7); a Hold that came from
+// Waiting for documents joins them (canWithdraw).
+export const WITHDRAW_STAGES = Object.freeze([
+  "received",
+  "screening",
+  "awaiting_documents",
+  "preparation_ready",
+  "preparing",
+  "corrections_required",
+  "review_ready",
+  "reviewing",
+]);
+
+export function canWithdraw(record) {
+  const stage = record?.stage;
+  if (WITHDRAW_STAGES.includes(stage)) return true;
+  return stage === "on_hold" && record?.holdOrigin === "awaiting_documents";
+}
+
+// The client text key of a Hold or a closed case's own message, or null when
+// the stage's base message stands (a documents Hold; Closed with no reason or
+// with Other).
+function holdClosedKey(stage, record) {
+  if (stage === "on_hold") return holdKind(record) === "signing" ? "stage.on_hold.client.signing" : null;
+  if (stage !== "closed") return null;
+  const reason = closingReasonOf(record);
+  return reason && reason !== "other" ? `stage.closed.client.${reason}` : null;
+}
+
 export function describeStage(stage, lang = "en", record = null) {
   const known = Object.hasOwn(STAGE_DESCRIPTIONS, stage ?? "");
   const base = known ? STAGE_DESCRIPTIONS[stage] : UNKNOWN_STAGE;
-  const variant = FILING_STAGES.includes(stage)
-    ? filingMessage(stage, lang, record)
-    : signingMessage(stage, lang, record);
+  const keyed = holdClosedKey(stage, record);
+  const variant = keyed
+    ? t(keyed, {}, lang)
+    : FILING_STAGES.includes(stage)
+      ? filingMessage(stage, lang, record)
+      : signingMessage(stage, lang, record);
   const byMethod = known
     ? METHOD_LABELS[stage]?.[filingMethodKind(record)] ?? null
     : null;
-  const label = byMethod?.label ?? base.label;
+  const closedReason = stage === "closed" ? closingReasonOf(record) : null;
+  const label =
+    byMethod?.label ??
+    (closedReason ? `${base.label} · ${CLOSING_REASON_NAMES[closedReason]}` : base.label);
   if (!isLang(lang) || lang === "en") {
     return {
       ...base,

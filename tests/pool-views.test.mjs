@@ -7,6 +7,7 @@ import { STAGES } from "../src/contracts.mjs";
 test("every stage lands on exactly one pool phase", () => {
   const expected = {
     draft: "intake", received: "intake", screening: "intake",
+    awaiting_documents: "signing", on_hold: "attention",
     preparation_ready: "available", preparing: "preparation", corrections_required: "preparation",
     review_ready: "review", reviewing: "review",
     review_approved: "signing", ready_to_efile: "filing", efiled: "filing",
@@ -43,8 +44,8 @@ test("the pool's tabs, in order: Needs attention and Done before Closed", () => 
   const { all, ...tabs } = counts;
   assert.equal(all, mapped.length);
   assert.equal(Object.values(tabs).reduce((a, b) => a + b, 0), all);
-  assert.deepEqual(tabs, { intake: 3, available: 1, preparation: 2, review: 2, signing: 1, filing: 2, attention: 1, done: 1, closed: 1 });
-  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "attention" })).map((c) => c.stage), ["rejected"]);
+  assert.deepEqual(tabs, { intake: 3, available: 1, preparation: 2, review: 2, signing: 2, filing: 2, attention: 2, done: 1, closed: 1 });
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "attention" })).map((c) => c.stage), ["on_hold", "rejected"]);
   assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "done" })).map((c) => c.stage), ["accepted"]);
   assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "filing" })).map((c) => c.stage), ["ready_to_efile", "efiled"]);
 });
