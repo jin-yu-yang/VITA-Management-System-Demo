@@ -295,6 +295,7 @@ export const TEXT = Object.freeze({
   "progress.back": { en: "Back to my applications", zh: "返回我的申请" },
   // The application history: a request line keeps the office's title as typed (spec §3.3)
   "history.requested": { en: "A volunteer requested a document: {title}", zh: "志愿者请求了一份文件：{title}" },
+  "history.requested_documents": { en: "PCDC asked for these documents: {titles}.", zh: "PCDC 请您提供以下文件：{titles}。" },
   // Document cards on the client's screens (intake-views.mjs docCard, bringList,
   // progressDocumentsV2); the office's card words (Add a case) stay English
   "doc.bring": { en: "Bring these to your visit", zh: "请携带以下文件" },
@@ -482,6 +483,7 @@ export const SENTENCES = Object.freeze({
   "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
   "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
   "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  "PCDC is working on your application again.": "PCDC 已继续处理您的申请。", // 036
   // Migration 035: Return to signing, Mark e-filed, and Record filing result.
   "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
   "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",
@@ -557,8 +559,16 @@ export function sentence(text, lang = "en") {
 // prefix is replaced and the office's title kept as typed; every other line is
 // a sentence, and an unknown one stays English.
 const REQUEST_PREFIX = "A volunteer requested a document: ";
+// Migration 036: the office's request at intake. The titles are typed by the
+// office, so the rest of the line (minus its final ".") fills {titles}.
+const DOCUMENTS_PREFIX = "PCDC asked for these documents: ";
 export function historyLine(message, lang = "en") {
   if (typeof message !== "string") return "";
+  if (message.startsWith(DOCUMENTS_PREFIX)) {
+    if (!isLang(lang) || lang === "en") return message;
+    const rest = message.slice(DOCUMENTS_PREFIX.length);
+    return t("history.requested_documents", { titles: rest.endsWith(".") ? rest.slice(0, -1) : rest }, lang);
+  }
   if (!message.startsWith(REQUEST_PREFIX)) return sentence(message, lang);
   if (!isLang(lang) || lang === "en") return message;
   return t("history.requested", { title: message.slice(REQUEST_PREFIX.length) }, lang);

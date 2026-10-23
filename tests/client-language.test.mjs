@@ -22,6 +22,7 @@ import {
   historySentences,
   migrationSentences,
   REQUEST_PREFIX,
+  DOCUMENTS_PREFIX,
 } from "./support/language-sweep.mjs";
 
 // Part 4d Task 6 (spec 2026-10-05 §3, §6): the client frame, sign-in, the
@@ -352,8 +353,8 @@ test("every history sentence in the migrations is a SENTENCES key; the request l
   assert.ok(sentences.length >= 13, "the live handlers and the seeded rows");
   assert.ok(sentences.includes("A volunteer spoke with you about the next service step."));
   for (const text of sentences) assert.ok(Object.hasOwn(SENTENCES, text), text);
-  assert.deepEqual(prefixes, [REQUEST_PREFIX]);
-  for (const line of requests) {
+  assert.deepEqual([...prefixes].sort(), [DOCUMENTS_PREFIX, REQUEST_PREFIX].sort());
+  for (const line of requests.filter((line) => line.startsWith(REQUEST_PREFIX))) {
     const title = line.slice(REQUEST_PREFIX.length);
     assert.equal(historyLine(line, "zh-Hans"), `志愿者请求了一份文件：${title}`);
     assert.equal(historyLine(line, "en"), line);
@@ -363,6 +364,19 @@ test("every history sentence in the migrations is a SENTENCES key; the request l
   // Other lines go through the sentence table; unknown ones stay English.
   assert.equal(historyLine(sentences[0], "zh-Hans"), SENTENCES[sentences[0]]);
   assert.equal(historyLine("Something new.", "zh-Hans"), "Something new.");
+});
+
+test("the intake documents line keeps the titles as typed (migration 036)", () => {
+  const line = `${DOCUMENTS_PREFIX}W-2, Photo ID.`;
+  assert.equal(historyLine(line, "zh-Hans"), "PCDC 请您提供以下文件：W-2, Photo ID。");
+  assert.equal(historyLine(line, "en"), line);
+  // The titles are never converted or filled.
+  assert.equal(
+    historyLine(`${DOCUMENTS_PREFIX}发达 {n}.`, "zh-Hant"),
+    t("history.requested_documents", { titles: "" }, "zh-Hant").replace("。", "发达 {n}。"),
+  );
+  assert.equal(historyLine(line, "zh-Hant"), "PCDC 請您提供以下文件：W-2, Photo ID。");
+  assert.equal(SENTENCES["PCDC is working on your application again."], "PCDC 已继续处理您的申请。");
 });
 
 test("the screening, 8879 and e-file history lines translate exactly", () => {
