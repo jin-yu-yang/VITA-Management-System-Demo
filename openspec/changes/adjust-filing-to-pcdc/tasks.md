@@ -101,11 +101,11 @@
 
 ## 7. Browser: the season-end close
 
-- [ ] 7.1 Write failing tests:
+- [x] 7.1 Write failing tests:
   - `tests/office-views.test.mjs`, the button and dialog markup: the button only for admins; disabled with "No case is waiting for a signature." when nothing qualifies; one row per Ready to exit case and signing Hold, oldest first, ticked, with reference, name, stage and days; the heading for all and for some ticked; the confirmation box;
   - `tests/controller.test.mjs` and `tests/store.test.mjs`: `closeUnsigned` sends the ticked `{caseId, revision}` list and applies each revision, and on `CONFLICT` it re-reads and reopens with the current list.
-- [ ] 7.2 Implement: `closeUnsigned` in `src/supabase-store.mjs`, the controller action, the dialog and its live count in `src/office-views.mjs` and `src/app.mjs`, and the staff history sentence "closed the case at season end · Dismissed" for a `CLOSE_CASE` event with `seasonEnd`.
-- [ ] 7.3 Run `npm test` until it passes.
+- [x] 7.2 Implement: `closeUnsigned` in `src/supabase-store.mjs`, the controller action, the dialog and its live count in `src/office-views.mjs` and `src/app.mjs`, and the staff history sentence "closed the case at season end · Dismissed" for a `CLOSE_CASE` event with `seasonEnd`.
+- [x] 7.3 Run `npm test` until it passes.
 
 ## 8. The story
 
