@@ -15,6 +15,9 @@ import {
   markEfiledDialogBody,
   recordFilingResultDialogBody,
   returnToSigningDialogBody,
+  requestDocumentsDialogBody,
+  putOnHoldDialogBody,
+  resumeFromHoldDialogBody,
 } from "./admin-views.mjs";
 import {
   renderAddCaseV2,
@@ -454,6 +457,18 @@ export function dialog(state) {
   if (state.dialog === "return-to-signing") {
     title = "Return to signing?";
     body = returnToSigningDialogBody(state);
+  }
+  if (state.dialog === "request-documents") {
+    title = "Ask for documents?";
+    body = requestDocumentsDialogBody(state);
+  }
+  if (state.dialog === "put-on-hold") {
+    title = "Put this case on hold?";
+    body = putOnHoldDialogBody(state);
+  }
+  if (state.dialog === "resume-from-hold") {
+    title = "Got in touch?";
+    body = resumeFromHoldDialogBody(state);
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

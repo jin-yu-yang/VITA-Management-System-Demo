@@ -43,7 +43,14 @@ import {
   taskContacts,
   filingPanel,
 } from "./staff-views.mjs";
-import { waitingReturns, returnedToSigning, returnState } from "./domain.mjs";
+import {
+  waitingReturns,
+  returnedToSigning,
+  returnState,
+  holdKind,
+  CLOSING_REASON_NAMES,
+} from "./domain.mjs";
+import { CLOSING_REASONS } from "./contracts.mjs";
 import { nowInput } from "./contact-log.mjs";
 
 // The task's own list lives beside the Contacts tab, in staff-views.mjs, and
@@ -96,12 +103,16 @@ const NEEDS = Object.freeze({
   assist: "Needs client assistance access.",
 });
 
-const DOCUMENT_STAGES = Object.freeze(["preparing", "corrections_required"]);
+const DOCUMENT_STAGES = Object.freeze(["preparing", "corrections_required", "awaiting_documents"]);
+// The stages the office can ask the client for documents from, or add to.
+const ASK_STAGES = Object.freeze(["screening", "preparation_ready", "awaiting_documents"]);
 // The stages `vitally_private.act_close_case` accepts, plus the assisted draft
 // nobody owns. An approved review and a closed case are deliberately absent.
 const CLOSABLE_STAGES = Object.freeze([
   "received",
   "screening",
+  "awaiting_documents",
+  "on_hold",
   "preparation_ready",
   "preparing",
   "review_ready",
@@ -187,6 +198,32 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stage !== "draft" && !CLOSABLE_STAGES.includes(stage))
       return refused("This case cannot be closed at this stage.");
     return allowed;
+  };
+
+  // At Waiting for documents, or a Hold that came from it, more can be asked.
+  const documentsHold = stage === "on_hold" && holdKind(record) === "documents";
+
+  const requestDocuments = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (!ASK_STAGES.includes(stage) && !documentsHold)
+      return refused("Documents are asked for during screening or before preparation is claimed.");
+    return allowed;
+  };
+
+  const putOnHold = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    if (stage === "on_hold") return refused("This case is already on hold.");
+    if (stage !== "awaiting_documents" && stage !== "review_approved")
+      return refused("A case is put on hold while it waits for documents or for the client to sign.");
+    return allowed;
+  };
+
+  const resumeFromHold = () => {
+    const stopped = gate("admin");
+    if (stopped) return stopped;
+    return stage === "on_hold" ? allowed : refused("Only a case on hold can be resumed.");
   };
 
   const markReadyToEfile = () => {
@@ -276,7 +313,7 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stopped) return stopped;
     if (record.ownerUserId)
       return refused("This client has their own account, so they send it themselves.");
-    if (!DOCUMENT_STAGES.includes(stage))
+    if (!DOCUMENT_STAGES.includes(stage) && !documentsHold)
       return refused("A document is recorded while the case is being prepared.");
     if (!request) return refused("This request is no longer on screen.");
     if (request.status !== "open")
@@ -323,6 +360,9 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     verifyIntake: verifyIntake(),
     remind: remind(),
     closeCase: closeCase(),
+    requestDocuments: requestDocuments(),
+    putOnHold: putOnHold(),
+    resumeFromHold: resumeFromHold(),
     markReadyToEfile: markReadyToEfile(),
     markEfiled: markEfiled(),
     recordFilingResult: recordFilingResult(),
@@ -422,7 +462,15 @@ function intakeChecksPanel(record, rights, ui) {
       )}${when(
         !all,
         '<p class="field-note">Tick every check before recording them.</p>',
-      )}</form>`
+      )}</form>${when(
+        !ticked("documents") && rights.requestDocuments.allowed,
+        `<p class="field-note">If the basic documents are not all here, ask the client for them.</p>${button(
+          `${icon("file")} Ask for documents…`,
+          "open-request-documents",
+          "secondary",
+          ui.busy ? "disabled" : "",
+        )}`,
+      )}`
     : explain(rights.verifyIntake);
   return `<section class="panel" aria-labelledby="checks-title"><div class="section-head"><h2 id="checks-title">Screening checks</h2><span class="badge ${
     record.intakeVerified ? "green" : "blue"
@@ -586,6 +634,34 @@ function officeActionsPanel(record, rights, ui) {
       ? caseButton(`${icon("clock")} Send a reminder`, "REMIND", "secondary", busy)
       : explain(rights.remind)
   }${when(
+    rights.requestDocuments.allowed,
+    `<h3>Documents</h3><p class="field-note">Ask the client for up to five documents. The case waits for them and the client is told.</p>${button(
+      `${icon("file")} Ask for documents…`,
+      "open-request-documents",
+      "secondary",
+      busy,
+    )}`,
+  )}${when(
+    rights.putOnHold.allowed,
+    `<h3>Hold</h3><p class="field-note">Put the case on hold while the office tries to reach the client. The client is told.</p>${button(
+      `${icon("clock")} Put on hold…`,
+      "open-put-on-hold",
+      "secondary",
+      busy,
+    )}`,
+  )}${when(
+    rights.resumeFromHold.allowed,
+    `<h3>Hold</h3><p class="field-note">${esc(
+      holdKind(record) === "signing"
+        ? "The office could not reach the client to sign Form 8879."
+        : "The office could not reach the client about documents.",
+    )} Record when the office gets in touch.</p>${button(
+      `${icon("phone")} Got in touch…`,
+      "open-resume-from-hold",
+      "primary",
+      busy,
+    )}`,
+  )}${when(
     record.stage === "review_approved",
     `<h3>Form 8879</h3><p class="field-note">Record that the client signed Form 8879. The client is told.</p>${
       rights.markReadyToEfile.allowed
@@ -650,17 +726,21 @@ export function closeCaseDialogBody(state = {}) {
   return confirmBody({
     lead: `Closing <strong>${esc(
       record.reference ?? "this case",
+    )}</strong> for <strong>${esc(
+      clientName(record),
     )}</strong> ends the office's work on it in ViTally. Its open document requests and office tasks are cancelled; their titles, reasons, notes and received documents stay exactly as they are.`,
     note: {
       icon: "shield",
-      html: "This does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority. The client is told the office closed the application.",
+      html: "This does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority. The client is told the office closed the application, in words that fit the reason. They never see your note.",
     },
     form: {
-      fields: `${textarea(
-        "Why the office is closing this case",
-        "reason",
+      fields: `<fieldset class="close-reasons"><legend>Why the office is closing this case</legend>${CLOSING_REASONS.map(
+        (reason) => choice("close-reason", reason, CLOSING_REASON_NAMES[reason], "", "close"),
+      ).join("")}</fieldset>${textarea(
+        "Note for staff (required for Other)",
+        "close-note",
         "",
-        'required maxlength="1000" rows="3"',
+        'maxlength="1000" rows="3"',
         "close",
       )}<label class="checkbox-row" for="${fieldId(
         "confirmed",
@@ -921,6 +1001,107 @@ export function returnToSigningDialogBody(state = {}) {
       state.busy ? "disabled" : "",
     ),
     keep: "Keep it as it is",
+  });
+}
+
+const confirmRow = (name, scope, text) =>
+  `<label class="checkbox-row" for="${fieldId(name, scope)}"><input type="checkbox" id="${fieldId(
+    name,
+    scope,
+  )}" name="${name}" value="true" required><span>${esc(text)}</span></label>`;
+
+/** Ask for documents: one to five requests, each a title and a message. */
+export function requestDocumentsDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  const rows = [1, 2, 3, 4, 5]
+    .map(
+      (n) =>
+        `<fieldset class="request-row"><legend>Document ${n}${n === 1 ? "" : " (optional)"}</legend>${input(
+          "Short title",
+          `request-title-${n}`,
+          "",
+          "text",
+          `${n === 1 ? "required " : ""}maxlength="120"`,
+          "ask",
+        )}${textarea(
+          "What the client should send",
+          `request-message-${n}`,
+          "",
+          'maxlength="2000" rows="2"',
+          "ask",
+        )}</fieldset>`,
+    )
+    .join("");
+  return confirmBody({
+    lead: `Ask <strong>${esc(clientName(record))}</strong> for documents on <strong>${esc(
+      record.reference ?? "this case",
+    )}</strong>?`,
+    note: {
+      icon: "shield",
+      html: "The client sees each title and message and sends the documents themselves. The case waits at Waiting for documents until you verify every one. The client is told which documents PCDC asked for.",
+    },
+    form: { fields: rows },
+    confirm: caseSubmit(
+      `${icon("file")} Ask for these documents`,
+      "REQUEST_DOCUMENTS_AT_INTAKE",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+/** Put on hold: the office could not reach the client. The note is staff-only. */
+export function putOnHoldDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Put <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
+      clientName(record),
+    )}</strong> on hold?`,
+    note: {
+      icon: "shield",
+      html: "Use this when the office cannot reach the client. The client is told PCDC is trying to reach them. Your note stays with staff.",
+    },
+    form: {
+      fields: `${textarea(
+        "Note for staff (optional)",
+        "hold-note",
+        "",
+        'maxlength="1000" rows="3"',
+        "hold",
+      )}${confirmRow("confirmed", "hold", "I understand the case goes on hold.")}`,
+    },
+    confirm: caseSubmit(
+      `${icon("clock")} Put on hold`,
+      "PUT_ON_HOLD",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it as it is",
+  });
+}
+
+/** Got in touch: the case returns to the stage the hold came from. */
+export function resumeFromHoldDialogBody(state = {}) {
+  const record = state.savedCase ?? {};
+  return confirmBody({
+    lead: `Record that the office got in touch with <strong>${esc(
+      clientName(record),
+    )}</strong> about <strong>${esc(record.reference ?? "this case")}</strong>?`,
+    note: {
+      icon: "shield",
+      html: "The case goes back to the stage it was on before the hold. The client is told PCDC is working on their application again.",
+    },
+    form: {
+      fields: confirmRow("confirmed", "resume", "The office got in touch with the client."),
+    },
+    confirm: caseSubmit(
+      `${icon("phone")} Got in touch`,
+      "RESUME_FROM_HOLD",
+      "primary full",
+      state.busy ? "disabled" : "",
+    ),
+    keep: "Keep it on hold",
   });
 }
 

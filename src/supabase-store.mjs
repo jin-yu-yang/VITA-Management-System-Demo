@@ -503,6 +503,8 @@ export function createStore(client) {
           openFollowups: open.length,
           // D13: Mark ready to e-file waits while the office's go-over is open.
           goOverOpen: open.some((row) => row.purpose === "go_over_return"),
+          // Follow-ups' Withdrawn row: the office's own job, not a call.
+          openWithdrawalNotices: open.filter((row) => row.purpose === "withdrawal_notice").length,
           // Who owes this client a call, without the tasks themselves: the
           // board names people, and the case screen holds the work.
           followupAssigneeIds: [

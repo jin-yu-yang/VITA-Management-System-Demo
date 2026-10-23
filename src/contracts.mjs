@@ -132,7 +132,8 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
 //   openRequests, phone and reviewContactStatus (the latest approved
 //   review's client_contact_status: 'pending', 'completed', or null when no
 //   review has been approved). A list entry's goOverOpen is true while a
-//   go_over_return follow-up is open (D13). documentCards: the case_document_cards rows as
+//   go_over_return follow-up is open (D13). Its openWithdrawalNotices counts
+//   the open withdrawal_notice follow-ups (a client's withdrawal). documentCards: the case_document_cards rows as
 //   [{ slotId, status: 'later'|'none'|null, groupOverride: 'needed'|null,
 //   changedAt }], for both principals.
 // Staff case additionally includes participants, reviews, followups,

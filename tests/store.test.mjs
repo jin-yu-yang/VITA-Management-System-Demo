@@ -563,6 +563,7 @@ test("a presenter list carries the summaries a work board reads", async () => {
       "latestFixNote",
       "openFollowups",
       "openRequests",
+      "openWithdrawalNotices",
       "participants",
       "phone",
       "reviewContactStatus",
@@ -570,6 +571,8 @@ test("a presenter list carries the summaries a work board reads", async () => {
   );
   assert.deepEqual(row.participants, ["person-alex"]);
   assert.equal(row.openFollowups, 1);
+  // The fake client's one open task is not a withdrawal notice.
+  assert.equal(row.openWithdrawalNotices, 0);
   assert.deepEqual(row.followupAssigneeIds, ["person-sam"]);
   assert.equal(row.openRequests, 1);
   // The client's phone for the list's masked column (D5), and nothing else

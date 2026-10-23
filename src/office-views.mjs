@@ -44,7 +44,7 @@ import {
   methodOf,
   waitingKinds,
 } from "./admin-views.mjs";
-import { returnedToSigning, latestFixNote } from "./domain.mjs";
+import { returnedToSigning, latestFixNote, holdKind } from "./domain.mjs";
 import {
   when,
   explain,
@@ -73,6 +73,9 @@ import {
 export const QUEUE_KINDS = Object.freeze([
   ["intake", "Intake checks"],
   ["screening", "Screening"],
+  ["documents", "Waiting for documents"],
+  ["hold", "Hold"],
+  ["withdrawn", "Withdrawn"],
   ["signing", "Signing"],
   ["efiling", "E-filing"],
   ["result", "Filing result"],
@@ -86,6 +89,9 @@ const KIND_LABELS = Object.freeze(Object.fromEntries(QUEUE_KINDS));
 const KIND_ICONS = Object.freeze({
   intake: "shield",
   screening: "clock",
+  documents: "file",
+  hold: "phone",
+  withdrawn: "close",
   signing: "file",
   efiling: "check",
   result: "clock",
@@ -110,10 +116,22 @@ const waitingTone = (days) => (days >= 5 ? "late" : days >= 3 ? "aging" : "");
 // A Filing result row is coloured only while an e-filed return waits for its
 // acknowledgment; a mailing wait and a Rejected row are never coloured.
 const awaitsEfileAnswer = (record) => waitingKinds(record).some((kind) => methodOf(record, kind) === "efile");
+// A Hold row, a Withdrawn row and a Rejected row are never coloured.
+const NEVER_COLOURED = Object.freeze(["rejected", "hold", "withdrawn"]);
 const rowTone = (row) =>
-  row.kind === "rejected" || (row.kind === "result" && !awaitsEfileAnswer(row.record))
+  NEVER_COLOURED.includes(row.kind) || (row.kind === "result" && !awaitsEfileAnswer(row.record))
     ? ""
     : waitingTone(row.days);
+
+// The open withdrawal notice follow-ups of a case: a full record carries the
+// follow-ups themselves, a list row only the count its summary attaches.
+const isOpenNotice = (task) => task?.status === "open" && task?.purpose === "withdrawal_notice";
+export const openWithdrawalNotices = (record) =>
+  Array.isArray(record?.followups)
+    ? record.followups.filter(isOpenNotice).length
+    : Number(record?.openWithdrawalNotices ?? 0);
+// The tasks that are calls to the client: the notice is the office's own job.
+const callTasks = (record) => Math.max(0, openFollowupCount(record) - openWithdrawalNotices(record));
 
 export function followupQueue(cases = [], assistance = [], now = Date.now()) {
   const records = Array.isArray(cases) ? cases : [];
@@ -127,6 +145,10 @@ export function followupQueue(cases = [], assistance = [], now = Date.now()) {
       rows.push({ kind: "intake", record, item: null, draft: true, since: record.updatedAt });
     else if (record?.stage === "screening")
       rows.push({ kind: "screening", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "awaiting_documents")
+      rows.push({ kind: "documents", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "on_hold")
+      rows.push({ kind: "hold", record, item: null, draft: false, since: record.updatedAt });
     else if (record?.stage === "review_approved")
       rows.push({ kind: "signing", record, item: null, draft: false, since: record.updatedAt });
     else if (record?.stage === "ready_to_efile")
@@ -140,8 +162,10 @@ export function followupQueue(cases = [], assistance = [], now = Date.now()) {
     }
     if (isAvailableWork(record))
       rows.push({ kind: "unclaimed", record, item: null, draft: false, since: record.updatedAt });
-    if (openFollowupCount(record))
+    if (callTasks(record))
       rows.push({ kind: "call", record, item: null, draft: false, since: record.updatedAt });
+    if (openWithdrawalNotices(record))
+      rows.push({ kind: "withdrawn", record, item: null, draft: false, since: record.updatedAt });
   }
   for (const item of Array.isArray(assistance) ? assistance : [])
     if (item?.status === "open" || item?.status === "assigned")
@@ -221,6 +245,17 @@ function needed(row) {
         : "New application: open it to start screening.",
     );
   if (kind === "screening") return esc("Finish screening.");
+  if (kind === "documents") return esc("Waiting for the client's documents.");
+  if (kind === "hold")
+    return esc(
+      holdKind(record) === "signing"
+        ? "Can't reach the client to sign Form 8879."
+        : "Can't reach the client about documents.",
+    );
+  if (kind === "withdrawn")
+    return esc(
+      `The client withdrew; tell ${record.preparerName ?? record.reviewerName ?? "the volunteer"} to stop work.`,
+    );
   if (kind === "signing")
     return esc(
       // A list row carries only the reviewer's call status, never the reviews.
@@ -235,7 +270,7 @@ function needed(row) {
   if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;
   if (kind === "call") {
-    const n = openFollowupCount(record);
+    const n = callTasks(record);
     const owed = record?.followupAssigneeNames ?? [];
     return `${esc(n)} open ${n === 1 ? "task" : "tasks"}${when(owed.length, ` · waiting on ${esc(owed.join(", "))}`)}`;
   }
@@ -253,6 +288,29 @@ function rowAction(row, person, ui) {
       "primary",
       `data-case-id="${id}"`,
     );
+  if (kind === "documents" || kind === "hold") {
+    // List rows: each button opens the case in place, then its confirmation.
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const attrs = `data-case-id="${id}" ${busy}`;
+    if (kind === "documents")
+      return rights.putOnHold.allowed
+        ? button(`${icon("clock")} Put on hold…`, "open-put-on-hold", "primary", attrs)
+        : explain(rights.putOnHold);
+    return `${
+      rights.resumeFromHold.allowed
+        ? button(`${icon("phone")} Got in touch…`, "open-resume-from-hold", "primary", attrs)
+        : explain(rights.resumeFromHold)
+    }${
+      rights.closeCase.allowed
+        ? button(`${icon("close")} Close…`, "open-close-case", "secondary", attrs)
+        : explain(rights.closeCase)
+    }`;
+  }
+  if (kind === "withdrawn") {
+    // The notice is resolved in the Log contact drawer, which holds the
+    // follow-up's Resolve form.
+    return button(`${icon("check")} Resolve`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
+  }
   if (kind === "signing" || kind === "efiling") {
     // The rows are list rows: the marks open the case in place, then their
     // confirmation (app.mjs), so nothing here sends or changes anything.

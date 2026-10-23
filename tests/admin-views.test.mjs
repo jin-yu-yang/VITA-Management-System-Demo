@@ -7,6 +7,9 @@ import {
   markEfiledDialogBody,
   recordFilingResultDialogBody,
   returnToSigningDialogBody,
+  requestDocumentsDialogBody,
+  putOnHoldDialogBody,
+  resumeFromHoldDialogBody,
   adminEligibility,
 } from "../src/admin-views.mjs";
 import { decorateStaffCase, renderStaffCase } from "../src/staff-views.mjs";
@@ -541,7 +544,14 @@ test("closure is offered before approval only, and is confirmed in a dialog", ()
 test("the close dialog asks for a reason and an explicit confirmation", () => {
   const html = closeCaseDialogBody({ savedCase: officeCase() });
   assert.match(html, /data-case-action="CLOSE_CASE"/);
-  assert.match(html, /<textarea id="field-close-reason" name="reason" required/);
+  // The six reasons are one choice, and the note is a text box.
+  assert.deepEqual(
+    [...html.matchAll(/<input type="radio" id="[^"]+" name="close-reason" value="([a-z_]+)" required>/g)].map((m) => m[1]),
+    ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn", "other"],
+  );
+  assert.match(html, /<span>Dismissed \(client unreachable\)<\/span>/);
+  assert.match(html, /<textarea id="field-close-close-note" name="close-note" maxlength="1000"/);
+  assert.doesNotMatch(html, /name="reason"/);
   assert.match(
     html,
     /<input type="checkbox" id="field-close-confirmed" name="confirmed" value="true" required>/,
@@ -1333,6 +1343,149 @@ test("the Return to signing dialog names the client and reads 'The fix is done.'
   assert.match(html, /data-case-action="RETURN_TO_SIGNING"/);
   assert.match(html, /name="confirmed" value="true" required/);
   assert.match(returnToSigningDialogBody({}), /this client/);
+});
+
+// ---------------------------------------------------------------------------
+// Hold and closing (change add-hold-and-closing)
+// ---------------------------------------------------------------------------
+
+const MEI = { tp_first_name: "Mei", tp_last_name: "Chen" };
+const page = (overrides, person = SAM) =>
+  renderAdminCase(officeCase({ answers: { service: "Drop-off", language: "Cantonese", ...MEI }, ...overrides }), { person });
+const opens = (html) => [...html.matchAll(/data-action="(open-[a-z-]+)"/g)].map((m) => m[1]);
+
+test("the office panel offers Ask for documents… at Screening and Pending intake / filing", () => {
+  for (const stage of ["screening", "preparation_ready"])
+    assert.ok(opens(page({ stage, preparerId: null })).includes("open-request-documents"), stage);
+  // More can be asked while the case waits, or sits on a documents Hold.
+  assert.ok(opens(page({ stage: "awaiting_documents", documentsOrigin: "screening" })).includes("open-request-documents"));
+  assert.ok(
+    opens(page({ stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" })).includes("open-request-documents"),
+  );
+  for (const stage of ["received", "preparing", "review_approved", "efiled"])
+    assert.ok(!opens(page({ stage })).includes("open-request-documents"), stage);
+});
+
+test("the office panel offers Put on hold… at Waiting for documents and Ready to exit", () => {
+  const withDocs = page({ stage: "awaiting_documents", documentsOrigin: "screening" });
+  assert.ok(opens(withDocs).includes("open-put-on-hold"));
+  assert.match(withDocs, /Put on hold…/);
+  assert.ok(opens(page({ stage: "review_approved" })).includes("open-put-on-hold"));
+  for (const stage of ["screening", "preparing", "on_hold", "ready_to_efile"])
+    assert.ok(!opens(page({ stage, holdOrigin: "review_approved" })).includes("open-put-on-hold"), stage);
+});
+
+test("the office panel offers Got in touch… at a Hold, and Close… from it", () => {
+  for (const hold of [
+    { holdOrigin: "review_approved" },
+    { holdOrigin: "awaiting_documents", documentsOrigin: "screening" },
+  ]) {
+    const html = page({ stage: "on_hold", ...hold });
+    assert.ok(opens(html).includes("open-resume-from-hold"));
+    assert.match(html, /Got in touch…/);
+    assert.ok(opens(html).includes("open-close-case"), "Close… from a Hold, whatever it came from");
+  }
+  assert.ok(!opens(page({ stage: "preparing" })).includes("open-resume-from-hold"));
+  assert.match(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign Form 8879/);
+});
+
+test("volunteers see none of the intake-and-hold buttons", () => {
+  for (const person of [ALEX, MORGAN]) {
+    for (const overrides of [
+      { stage: "screening" },
+      { stage: "awaiting_documents", documentsOrigin: "screening" },
+      { stage: "review_approved" },
+      { stage: "on_hold", holdOrigin: "review_approved" },
+    ]) {
+      const html = page(overrides, person);
+      for (const name of ["open-request-documents", "open-put-on-hold", "open-resume-from-hold"])
+        assert.ok(!opens(html).includes(name), `${person.name} ${overrides.stage} ${name}`);
+    }
+  }
+  const rights = adminEligibility({ caseRecord: { stage: "screening" } }, ALEX);
+  assert.equal(rights.requestDocuments.allowed, false);
+  assert.equal(rights.putOnHold.allowed, false);
+  assert.equal(rights.resumeFromHold.allowed, false);
+});
+
+test("the screening checks panel offers Ask for documents… until the documents box is ticked", () => {
+  const record = officeCase({ stage: "screening", intakeVerified: false, answers: { service: "Drop-off", ...MEI } });
+  const panel = (openPanels) => {
+    const html = renderAdminCase(record, { person: SAM, openPanels });
+    const checks = html.slice(html.indexOf('id="checks-title"'), html.indexOf('id="receipt-title"'));
+    return checks;
+  };
+  assert.match(panel([]), /data-action="open-request-documents"/);
+  assert.doesNotMatch(panel(["intake-check-documents"]), /open-request-documents/);
+  // Only during screening, and only for an admin.
+  const later = renderAdminCase(officeCase({ stage: "preparation_ready" }), { person: SAM });
+  assert.doesNotMatch(later.slice(later.indexOf('id="checks-title"'), later.indexOf('id="receipt-title"')), /open-request-documents/);
+  const volunteer = renderAdminCase(record, { person: ALEX });
+  assert.doesNotMatch(volunteer, /open-request-documents/);
+});
+
+test("an admin records and verifies documents at Waiting for documents and at a documents Hold", () => {
+  const request = { id: "r1", title: "Photo ID", message: "Send a photo", status: "open", createdAt: "2026-10-01T12:00:00Z" };
+  const docs = { stage: "awaiting_documents", documentsOrigin: "screening", ownerUserId: null, requests: [request] };
+  assert.match(page(docs), /data-case-action="RECORD_DOCUMENT_RESPONSE"/);
+  const received = { ...docs, requests: [{ ...request, status: "awaiting_verification" }] };
+  assert.match(page(received), /data-case-action="VERIFY_DOCUMENT"/);
+  const hold = { ...received, stage: "on_hold", holdOrigin: "awaiting_documents" };
+  assert.match(page(hold), /data-case-action="VERIFY_DOCUMENT"/);
+  assert.match(page({ ...hold, requests: [request] }), /data-case-action="RECORD_DOCUMENT_RESPONSE"/);
+  // A signing hold has no document work, and a volunteer cannot verify at intake.
+  assert.doesNotMatch(page({ ...received, stage: "on_hold", holdOrigin: "review_approved" }), /VERIFY_DOCUMENT/);
+  assert.doesNotMatch(page(received, ALEX), /VERIFY_DOCUMENT/);
+});
+
+test("the close dialog's choices reach the CLOSE_CASE payload", () => {
+  const html = closeCaseDialogBody({ savedCase: officeCase({ answers: MEI }) });
+  assert.match(html, /<strong>VT-AB2C-DE3F<\/strong> for <strong>Mei Chen<\/strong>/);
+  assert.deepEqual(
+    payloadFor("CLOSE_CASE", {}, { "close-reason": "other", "close-note": "Client chose another preparer", confirmed: "true" }).payload,
+    { confirmed: true, reason: "other", note: "Client chose another preparer" },
+  );
+  assert.throws(() => payloadFor("CLOSE_CASE", {}, { "close-reason": "other", confirmed: "true" }), (e) => e.code === "VALIDATION");
+  // An older close: stages the office closes now include the two chase stages.
+  for (const stage of ["awaiting_documents", "on_hold"])
+    assert.equal(adminEligibility({ caseRecord: { stage } }, SAM).closeCase.allowed, true, stage);
+});
+
+test("the three new dialogs name the client and the application, with the shared confirmation body", () => {
+  const savedCase = { reference: "VT-TEST-0009", answers: MEI };
+  const ask = requestDocumentsDialogBody({ savedCase });
+  assert.match(ask, /<strong>Mei Chen<\/strong>[\s\S]*<strong>VT-TEST-0009<\/strong>/);
+  for (let n = 1; n <= 5; n += 1) {
+    assert.match(ask, new RegExp(`name="request-title-${n}"`));
+    assert.match(ask, new RegExp(`name="request-message-${n}"`));
+  }
+  assert.match(ask, /data-case-action="REQUEST_DOCUMENTS_AT_INTAKE"/);
+  assert.match(ask, /data-action="close-dialog"/);
+  assert.deepEqual(
+    payloadFor("REQUEST_DOCUMENTS_AT_INTAKE", {}, {
+      "request-title-1": "W-2", "request-message-1": "Send every W-2",
+      "request-title-2": "", "request-message-2": "",
+      "request-title-3": "Photo ID", "request-message-3": "Front and back",
+    }).payload,
+    { requests: [{ title: "W-2", message: "Send every W-2" }, { title: "Photo ID", message: "Front and back" }] },
+  );
+  const hold = putOnHoldDialogBody({ savedCase });
+  assert.match(hold, /<strong>VT-TEST-0009<\/strong> for <strong>Mei Chen<\/strong>/);
+  assert.match(hold, /<textarea id="field-hold-hold-note" name="hold-note" maxlength="1000"/);
+  assert.match(hold, /name="confirmed" value="true" required/);
+  assert.match(hold, /data-case-action="PUT_ON_HOLD"/);
+  assert.deepEqual(
+    payloadFor("PUT_ON_HOLD", {}, { "hold-note": " no answer ", confirmed: "true" }).payload,
+    { confirmed: true, note: "no answer" },
+  );
+  const back = resumeFromHoldDialogBody({ savedCase });
+  assert.match(back, /<strong>Mei Chen<\/strong>[\s\S]*<strong>VT-TEST-0009<\/strong>/);
+  assert.match(back, /data-case-action="RESUME_FROM_HOLD"/);
+  assert.match(back, /name="confirmed" value="true" required/);
+  assert.match(requestDocumentsDialogBody({}), /this client/);
+  // What staff typed is escaped when it is shown back (a dialog only holds empty boxes,
+  // but the client name and reference are data).
+  assert.match(putOnHoldDialogBody({ savedCase: { reference: "<b>x</b>", answers: {} } }), /&lt;b&gt;x&lt;\/b&gt;/);
 });
 
 test("the shared frame places the two new dialogs", () => {

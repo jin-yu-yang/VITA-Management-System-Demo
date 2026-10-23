@@ -44,6 +44,33 @@ export const STATES = Object.freeze({
       },
     },
   ],
+  requestDocuments: [
+    "requestDocumentsDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0006",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
+  putOnHold: [
+    "putOnHoldDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0007",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
+  resumeFromHold: [
+    "resumeFromHoldDialogBody",
+    {
+      savedCase: {
+        reference: "VT-TEST-0008",
+        answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+      },
+    },
+  ],
   corrections: ["correctionsDialogBody", {}],
   correctionsRetry: [
     "correctionsDialogBody",

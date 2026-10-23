@@ -1011,7 +1011,10 @@ if (!config) {
     RESOLVE_FOLLOWUP: "The contact task is resolved. Nothing else changed.",
     RECORD_DOCUMENT_RESPONSE:
       "Recorded as staff-recorded, awaiting preparer verification.",
-    CLOSE_CASE: "The case is closed and its pending work is cancelled.",
+    CLOSE_CASE: "The case is closed.",
+    REQUEST_DOCUMENTS_AT_INTAKE: "The documents are requested.",
+    PUT_ON_HOLD: "The case is on hold.",
+    RESUME_FROM_HOLD: "The case is back in progress.",
     MARK_READY_TO_EFILE: "Marked ready to e-file. The client was told.",
     MARK_EFILED: "Marked e-filed. The client was told.",
     RECORD_FILING_RESULT: "The filing result is recorded.",
@@ -1035,6 +1038,10 @@ if (!config) {
     "open-mark-efiled": "mark-efiled",
     "open-record-filing-result": "record-filing-result",
     "open-return-to-signing": "return-to-signing",
+    "open-close-case": "close-case",
+    "open-request-documents": "request-documents",
+    "open-put-on-hold": "put-on-hold",
+    "open-resume-from-hold": "resume-from-hold",
   });
   const CLAIMS = Object.freeze(["CLAIM_PREPARATION", "CLAIM_REVIEW"]);
   // Actions whose form holds a checkbox group (contact best time, materials).
@@ -1112,13 +1119,15 @@ if (!config) {
       controller.togglePanel("edit-contact");
     }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
-    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title, #office-queue-title");
     // From a Follow-ups row the opener has left the queue (the case moved on)
     // and there is no #case-title, so the queue's heading takes the keyboard.
     if (type === "MARK_READY_TO_EFILE" && receipt) closeDialog("#case-title, #office-queue-title");
     if (type === "MARK_EFILED" && receipt) closeDialog("#case-title, #office-queue-title");
     if (type === "RECORD_FILING_RESULT" && receipt) closeDialog("#case-title, #office-queue-title");
     if (type === "RETURN_TO_SIGNING" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (["REQUEST_DOCUMENTS_AT_INTAKE", "PUT_ON_HOLD", "RESUME_FROM_HOLD"].includes(type) && receipt)
+      closeDialog("#case-title, #office-queue-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
@@ -1535,13 +1544,14 @@ if (!config) {
         // The page is rebuilt around the checkbox, so give it back the focus.
         root.querySelector(`#field-intake-${target.dataset.check}`)?.focus();
         break;
-      case "open-close-case":
-        openDialog("close-case");
-        break;
       case "open-mark-ready-to-efile":
+      case "open-close-case":
       case "open-mark-efiled":
       case "open-record-filing-result":
-      case "open-return-to-signing": {
+      case "open-return-to-signing":
+      case "open-request-documents":
+      case "open-put-on-hold":
+      case "open-resume-from-hold": {
         // From the case page the button carries no case id and the dialog
         // opens at once. From a Follow-ups row it does: that case is read in
         // place (no navigation, so screening never starts from the queue)

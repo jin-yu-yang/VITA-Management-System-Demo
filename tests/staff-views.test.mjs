@@ -1253,6 +1253,90 @@ test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the met
   assert.equal(labels({ stage: "efiled" })[8], "E-filed");
 });
 
+test("the lifecycle bar shows Waiting for documents and Hold on the step they came from", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const labels = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  // Asked for at Screening: Screening is the current step, named for the wait.
+  const screening = { stage: "awaiting_documents", documentsOrigin: "screening" };
+  assert.deepEqual(steps(screening).slice(0, 3), ["done", "current amend", "todo"]);
+  assert.equal(labels(screening)[1], "Waiting for documents");
+  // Asked for at Pending intake / filing.
+  const filing = { stage: "awaiting_documents", documentsOrigin: "preparation_ready" };
+  assert.equal(steps(filing)[2], "current amend");
+  assert.equal(labels(filing)[2], "Waiting for documents");
+  // A Hold from Ready to exit marks Ready to exit.
+  const signing = { stage: "on_hold", holdOrigin: "review_approved" };
+  assert.deepEqual(steps(signing).slice(0, 8), [...Array(6).fill("done"), "current amend", "todo"]);
+  assert.equal(labels(signing)[6], "Hold");
+  // A Hold from Waiting for documents marks the stage the documents were asked from.
+  const chasing = { stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" };
+  assert.equal(steps(chasing)[1], "current amend");
+  assert.equal(labels(chasing)[1], "Hold");
+  assert.match(lifecycleBar(chasing), /aria-current="step"/);
+  // With no origin on the record nothing is claimed.
+  assert.ok(steps({ stage: "on_hold" }).every((s) => s === "todo"));
+});
+
+test("Waiting for documents and Hold have staff sentences for the volunteer's next step", () => {
+  assert.equal(stageWork("awaiting_documents").work, "The office is waiting for the client's documents.");
+  assert.equal(stageWork("on_hold").work, "The office is trying to reach the client.");
+  assert.equal(stageWork("awaiting_documents").needs, null);
+  assert.equal(stageWork("on_hold").needs, null);
+  const html = renderStaffCase(
+    { id: "c", reference: "VT-W", stage: "awaiting_documents", documentsOrigin: "screening", participants: [], reviews: [], answers: {} },
+    { id: "alex", name: "Alex", capabilities: ["prepare"] },
+    {},
+  );
+  assert.match(html, /Your next step[\s\S]*The office is waiting for the client&#39;s documents\./);
+});
+
+test("an admin verifies the documents at Waiting for documents and at a documents Hold", () => {
+  const sam = { id: "sam", name: "Sam", capabilities: ["admin"] };
+  const alex = { id: "alex", name: "Alex", capabilities: ["prepare"], };
+  const base = {
+    id: "c", reference: "VT-W", participants: [], reviews: [], answers: {}, followups: [],
+    requests: [{ id: "r1", title: "Photo ID", message: "Send it", status: "awaiting_verification", createdAt: "2026-10-01T12:00:00Z" }],
+  };
+  const verify = (record, person) =>
+    renderStaffCase({ ...base, ...record }, person, {}).includes('data-case-action="VERIFY_DOCUMENT"');
+  assert.equal(verify({ stage: "awaiting_documents", documentsOrigin: "screening" }, sam), true);
+  assert.equal(verify({ stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" }, sam), true);
+  // Not at a signing hold, not for a volunteer.
+  assert.equal(verify({ stage: "on_hold", holdOrigin: "review_approved" }, sam), false);
+  assert.equal(verify({ stage: "awaiting_documents", documentsOrigin: "screening" }, alex), false);
+  assert.equal(staffEligibility({ stage: "awaiting_documents" }, sam).verifyIntakeDocument.allowed, true);
+  assert.equal(staffEligibility({ stage: "preparing", preparerId: "sam" }, sam).verifyIntakeDocument.allowed, false);
+});
+
+test("a hold note or a close note renders escaped in the staff history", () => {
+  const history = (action, detail) => ({ action, actorName: "Sam", detail, createdAt: "2026-10-01T12:00:00Z" });
+  assert.equal(
+    historySentence(history("PUT_ON_HOLD", { note: "<b>x</b>" })),
+    "Sam put the case on hold. Note: <b>x</b>",
+  );
+  assert.equal(
+    historySentence(history("CLOSE_CASE", { reason: "duplicate", note: "Same as VT-OTHER" })),
+    "Sam closed the case. Reason: Duplicate. Note: Same as VT-OTHER",
+  );
+  // A close from before reasons existed has neither.
+  assert.equal(historySentence(history("CLOSE_CASE", { reason: "free text from long ago" })), "Sam closed the case.");
+  const html = historyPanel(
+    {
+      internalHistory: [history("PUT_ON_HOLD", { note: "<b>x</b>" }), history("CLOSE_CASE", { reason: "other", note: "<script>1</script>" })],
+      history: [{ message: "PCDC is trying to reach you.", createdAt: "2026-10-01T12:00:00Z" }],
+    },
+    true,
+  );
+  assert.match(html, /Note: &lt;b&gt;x&lt;\/b&gt;/);
+  assert.match(html, /Note: &lt;script&gt;1&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<b>x<\/b>|<script>/);
+  // The client's own list never carries the note.
+  const clientList = html.slice(html.indexOf("What the client sees"));
+  assert.doesNotMatch(clientList, /Note:/);
+});
+
 test("the stage work sentences name who does the next thing", () => {
   assert.equal(stageWork("screening").work, "The office is screening this application.");
   assert.equal(stageWork("received").work, "The office starts screening when an admin opens the case.");
