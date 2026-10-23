@@ -840,7 +840,7 @@ export async function showBoardTab(page, value) {
 // ---------------------------------------------------------------------------
 
 /** Rebuild the sample cases through the panel, dialog and all. */
-export async function resetSampleCases(page, { expectedSamples = 8 } = {}) {
+export async function resetSampleCases(page, { expectedSamples = 10 } = {}) {
   await clickAction(page, "open-reset-fixtures");
   await clickAction(page, "confirm-reset-fixtures");
   await waitFor(
