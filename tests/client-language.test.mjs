@@ -430,6 +430,48 @@ test("the filing history lines translate exactly", () => {
   assert.ok(hant.includes("郵寄"), hant);
 });
 
+const FED_EN = "PCDC gave your federal return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.";
+const FED_ZH = "PCDC 已将您的联邦报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。";
+const PA_EN = "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.";
+const PA_ZH = "PCDC 已将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。";
+
+test("the new filing and ready lines translate exactly (migration 037)", () => {
+  const rows = [
+    ["PCDC recorded that your return is ready. PCDC will take the next step.", "PCDC 已记录您的报税表已准备好。PCDC 会进行下一步。"],
+    ["PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.", "PCDC 已电子递交您的联邦报税表，并将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。"],
+    ["PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.", "PCDC 已将您的联邦报税表纸本交给您或您委托的人，并电子递交了您的宾州报税表。如果联邦报税表还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。"],
+    ["PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.", "PCDC 已将您的报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。"],
+    ["PCDC gave your federal and Pennsylvania returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.", "PCDC 已将您的联邦和宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。"],
+    [FED_EN, FED_ZH],
+    [PA_EN, PA_ZH],
+    [`The IRS accepted your federal return. ${PA_EN}`, `国税局已接受您的联邦报税表。${PA_ZH}`],
+  ];
+  for (const [english, zh] of rows) {
+    assert.equal(SENTENCES[english], zh, english);
+    assert.equal(historyLine(english, "zh-Hans"), zh, english);
+    assert.equal(historyLine(english, "en"), english, english);
+  }
+});
+
+test("legacy filing lines keep their translation", () => {
+  const rows = [
+    ["PCDC mailed your returns.", "PCDC 已邮寄您的报税表。"],
+    ["PCDC mailed your federal return.", "PCDC 已邮寄您的联邦报税表。"],
+    ["PCDC mailed your Pennsylvania return.", "PCDC 已邮寄您的宾州报税表。"],
+    ["PCDC e-filed your federal return and mailed your Pennsylvania return.", "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。"],
+    ["Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.", "您的联邦和宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。"],
+    ["Your federal return was mailed. A reply to a mailed return can take several weeks.", "您的联邦报税表已邮寄。邮寄的报税表可能需要几周才会有回复。"],
+    ["Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.", "您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。"],
+    ["Your federal return was mailed. A reply to a mailed return can take several weeks. Pennsylvania accepted your Pennsylvania return.", "您的联邦报税表已邮寄。邮寄的报税表可能需要几周才会有回复。宾州税务局已接受您的宾州报税表。"],
+    ["The IRS accepted your federal return. Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.", "国税局已接受您的联邦报税表。您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。"],
+    ["PCDC recorded that you signed Form 8879. Your return is ready to e-file.", "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。"],
+  ];
+  for (const [english, zh] of rows) {
+    assert.equal(SENTENCES[english], zh, english);
+    assert.equal(historyLine(english, "zh-Hans"), zh, english);
+  }
+});
+
 test("every filing message has 简体, no phone number, and 繁體 is generated", () => {
   const keys = Object.keys(TEXT).filter((key) => key.startsWith("filing.") || key.startsWith("stage.review_approved.client.resign"));
   assert.ok(keys.length >= 15, keys.length);

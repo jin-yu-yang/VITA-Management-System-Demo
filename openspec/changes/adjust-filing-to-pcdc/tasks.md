@@ -33,7 +33,7 @@
 
 ## 3. Database: the season-end close
 
-- [ ] 3.1 Write failing tests in a new `tests/database-season-close.mjs`, and register it in the database suite:
+- [x] 3.1 Write failing tests in a new `tests/database-season-close.mjs`, and register it in the database suite:
   - it closes Ready to exit and a Hold from Ready to exit with reason `dismissed`, and cancels open requests and follow-ups;
   - one `CLOSE_CASE` event per case, with `seasonEnd: true`;
   - one client line per case: the Dismissed message;
@@ -44,8 +44,8 @@
   - a replay returns the same receipt and adds no events;
   - the receipt lists each case's ID, reference and new revision;
   - only listed cases close.
-- [ ] 3.2 037, section 7: `public.vitally_close_unsigned` (D9). It covers membership and the admin check, the envelope check, the receipt, locking in ID order, the eligibility and revision checks, and for each case `close_case_steps`, the event, the client line and the revision bump. Then the receipt, and grants as for `vitally_log_contact`.
-- [ ] 3.3 Run `npm run db:migrate:test`, then `npm run test:database`, until they pass.
+- [x] 3.2 037, section 7: `public.vitally_close_unsigned` (D9). It covers membership and the admin check, the envelope check, the receipt, locking in ID order, the eligibility and revision checks, and for each case `close_case_steps`, the event, the client line and the revision bump. Then the receipt, and grants as for `vitally_log_contact`.
+- [x] 3.3 Run `npm run db:migrate:test`, then `npm run test:database`, until they pass.
 
 ## 4. Database: samples
 

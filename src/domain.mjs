@@ -77,12 +77,12 @@ const STAGE_DESCRIPTIONS = Object.freeze({
     label: "Ready to exit",
     clientLabel: "Ready to sign",
     clientMessage:
-      "Your return has been checked. PCDC will contact you to sign Form 8879, which is needed before your return can be filed.",
+      "Your return has been checked. PCDC will contact you to sign it. Your return can't be filed until you sign.",
   },
   ready_to_efile: {
     label: "Ready to e-file",
-    clientLabel: "Signed",
-    clientMessage: "You signed Form 8879. PCDC will e-file your return next.",
+    clientLabel: "Ready",
+    clientMessage: "Your return is ready. PCDC will take the next step.",
   },
   efiled: {
     label: "E-filed",
@@ -157,7 +157,7 @@ export function signingWhen(isoMinute, lang = "en") {
 }
 
 // At Ready to exit, the case's signing plan says how and when the client signs
-// Form 8879 (design D11); without a plan the stage's own message stands.
+// the return (design D11); without a plan the stage's own message stands.
 function signingMessage(stage, lang, record) {
   if (stage !== "review_approved") return null;
   // Back at Ready to exit after a rejection: the re-sign message replaces any variant.
@@ -177,31 +177,33 @@ function signingMessage(stage, lang, record) {
 const RETURN_KINDS = Object.freeze(["federal", "state"]);
 
 // How the case was filed: both returns e-filed, the federal e-filed and the
-// state on paper, or both on paper. A case e-filed before methods existed has
-// none, and neither does a combination PCDC does not use.
+// state on paper, the federal on paper and the state e-filed, or both on paper.
+// A case e-filed before methods existed has none.
 export function filingMethodKind(record) {
   const federal = record?.federalMethod ?? null;
   const state = record?.stateMethod ?? null;
   if (federal === "efile" && state === "efile") return "both_efile";
   if (federal === "efile" && state === "paper") return "efile_and_paper";
+  if (federal === "paper" && state === "efile") return "paper_and_efile";
   if (federal === "paper" && state === "paper") return "both_paper";
   return null;
 }
 
-// 'waiting' (e-filed, no answer yet), 'accepted', 'rejected', 'mailed' (a paper
-// return, answered or not), or null when this return was never filed.
+// 'waiting' (e-filed, no answer yet), 'accepted', 'rejected', 'given_to_client'
+// (any paper return: it is handed over at Mark e-filed, so a paper return filed
+// before that rule, with no result, reads the same), or null when this return
+// was never filed.
 export function returnState(record, kind) {
   const method = record?.[`${kind}Method`] ?? null;
   if (!method) return null;
-  const result = record?.[`${kind}Result`] ?? null;
-  if (result) return result;
-  return method === "paper" ? "mailed" : "waiting";
+  if (method === "paper") return "given_to_client";
+  return record?.[`${kind}Result`] ?? "waiting";
 }
 
-// The returns filed and not yet answered, federal first.
+// The e-filed returns with no answer yet, federal first. A paper return never waits.
 export function waitingReturns(record) {
   return RETURN_KINDS.filter(
-    (kind) => record?.[`${kind}Method`] && !record?.[`${kind}Result`],
+    (kind) => record?.[`${kind}Method`] === "efile" && !record?.[`${kind}Result`],
   );
 }
 
@@ -237,13 +239,16 @@ export function latestFixNote(record) {
 const METHOD_LABELS = Object.freeze({
   efiled: {
     both_efile: { label: "Both e-filed", clientLabel: "E-filed" },
-    efile_and_paper: { label: "E-filed & paper", clientLabel: "Filed", clientKey: "stage.efiled.filed.label" },
-    both_paper: { label: "Both paper", clientLabel: "Mailed", clientKey: "stage.efiled.mailed.label" },
+    efile_and_paper: { label: "E-filed, PA on paper", clientLabel: "Filed", clientKey: "stage.efiled.filed.label" },
+    paper_and_efile: { label: "E-filed, federal on paper", clientLabel: "Filed", clientKey: "stage.efiled.filed.label" },
+    // Not reached now: both paper goes straight to Accepted. A case filed under 035 still renders.
+    both_paper: { label: "Both paper", clientLabel: "Filed", clientKey: "stage.efiled.filed.label" },
   },
   accepted: {
     both_efile: { label: "Accepted" },
-    efile_and_paper: { label: "Accepted & mailed" },
-    both_paper: { label: "Mailed" },
+    efile_and_paper: { label: "Accepted, PA on paper", clientLabel: "Ready to mail", clientKey: "stage.accepted.paper.label" },
+    paper_and_efile: { label: "Accepted, federal on paper", clientLabel: "Ready to mail", clientKey: "stage.accepted.paper.label" },
+    both_paper: { label: "Paper", clientLabel: "Ready to mail", clientKey: "stage.accepted.paper.label" },
   },
 });
 
