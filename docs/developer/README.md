@@ -49,7 +49,7 @@ flowchart LR
   end
   Auth --> GoTrue
   Store -- "SELECT (row-level security)" --> PostgREST
-  Store -- "7 RPC functions (all writes)" --> PostgREST
+  Store -- "8 RPC functions (all writes)" --> PostgREST
   PostgREST --> PG
   PG -- "INSERT/UPDATE events" --> Realtime
   Realtime -- "row ids only" --> Store
@@ -71,7 +71,7 @@ src/
   app.mjs                  Bootstrap and DOM event wiring. No state, no HTML, no queries.
   controller.mjs           All browser state and every user-level operation.
   window-state.mjs         Per-window, per-user navigation memory (sessionStorage).
-  supabase-store.mjs       The only data adapter: reads, the 7 RPCs, Realtime, row mapping.
+  supabase-store.mjs       The only data adapter: reads, the 8 RPCs, Realtime, row mapping.
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
   contact-log.mjs          The contact log's summary line, labels and New York time helpers.
   contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
