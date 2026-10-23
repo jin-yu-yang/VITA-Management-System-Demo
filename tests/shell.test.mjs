@@ -1214,7 +1214,7 @@ test("app.mjs opens, closes and announces the two e-file confirmations", () => {
   const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
   assert.match(
     opener,
-    /case "open-mark-ready-to-efile":\s+case "open-close-case":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing":\s+case "open-request-documents":\s+case "open-put-on-hold":\s+case "open-resume-from-hold": \{/,
+    /case "open-mark-ready-to-efile":\s+case "open-close-case":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing":\s+case "open-request-documents":\s+case "open-put-on-hold":\s+case "open-resume-from-hold":\s+case "open-withdraw": \{/,
   );
   assert.match(app, /"open-close-case": "close-case"/);
   assert.match(app, /"open-request-documents": "request-documents"/);

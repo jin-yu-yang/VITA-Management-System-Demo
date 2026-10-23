@@ -929,6 +929,179 @@ test("the history shows the new lines in 简体", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hold and closing (change add-hold-and-closing)
+// ---------------------------------------------------------------------------
+
+const WAITING = { holdOrigin: "awaiting_documents" };
+const SIGNING_HOLD = { holdOrigin: "review_approved" };
+const escHtml = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+
+test("the stepper: Intake is current while waiting for documents, Signing at a signing hold", () => {
+  const intake = [
+    "Intake: in progress",
+    "Preparation: not started",
+    "Review: not started",
+    "Signing: not started",
+    "Filing: not started",
+  ];
+  assert.deepEqual(trackOf(progressAt("awaiting_documents")), intake);
+  assert.deepEqual(trackOf(progressAt("on_hold", "en", WAITING)), intake);
+  assert.deepEqual(trackOf(progressAt("on_hold", "en", SIGNING_HOLD)), [
+    "Intake: complete",
+    "Preparation: complete",
+    "Review: complete",
+    "Signing: in progress",
+    "Filing: not started",
+  ]);
+  assert.equal(trackOf(progressAt("on_hold", "en", {})).length, 0);
+});
+
+test("the status panels: Waiting for documents and each Hold", () => {
+  const waiting = progressAt("awaiting_documents", "zh-Hans");
+  assert.ok(waiting.includes("需要文件"));
+  assert.equal(statusOf(waiting), t("stage.awaiting_documents.client", {}, "zh-Hans"));
+  for (const lang of ["en", "zh-Hans"]) {
+    assert.equal(
+      statusOf(progressAt("on_hold", lang, WAITING)),
+      escHtml(t("stage.on_hold.client", {}, lang)),
+      lang,
+    );
+    assert.equal(
+      statusOf(progressAt("on_hold", lang, SIGNING_HOLD)),
+      escHtml(t("stage.on_hold.client.signing", {}, lang)),
+      lang,
+    );
+  }
+  assert.ok(progressAt("on_hold", "zh-Hans", WAITING).includes("等待您的回复"));
+});
+
+test("each closed message, and the generic one for older closed cases", () => {
+  for (const lang of ["en", "zh-Hans"]) {
+    for (const reason of ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn"])
+      assert.equal(
+        statusOf(progressAt("closed", lang, { closingReason: reason })),
+        escHtml(t(`stage.closed.client.${reason}`, {}, lang)),
+        `${lang} ${reason}`,
+      );
+    for (const overrides of [{}, { closingReason: "other" }, { closingReason: null }])
+      assert.equal(
+        statusOf(progressAt("closed", lang, overrides)),
+        escHtml(t("stage.closed.client", {}, lang)),
+        `${lang} ${JSON.stringify(overrides)}`,
+      );
+  }
+  const duplicate = statusOf(progressAt("closed", "en", { closingReason: "duplicate", reference: "VT-AB2C-DE3F" }));
+  assert.ok(!/VT-[A-Z0-9]{4}-[A-Z0-9]{4}/.test(duplicate), duplicate);
+});
+
+test("the Withdraw button shows at exactly the stages the client may withdraw from", () => {
+  const withdrawable = [
+    ["received", {}],
+    ["screening", {}],
+    ["awaiting_documents", {}],
+    ["preparation_ready", {}],
+    ["preparing", {}],
+    ["corrections_required", {}],
+    ["review_ready", {}],
+    ["reviewing", {}],
+    ["on_hold", WAITING],
+  ];
+  const notWithdrawable = [
+    ["draft", {}],
+    ["review_approved", {}],
+    ["ready_to_efile", {}],
+    ["efiled", {}],
+    ["rejected", {}],
+    ["accepted", {}],
+    ["closed", {}],
+    ["on_hold", SIGNING_HOLD],
+    ["on_hold", {}],
+  ];
+  const OPENER = 'data-action="open-withdraw"';
+  for (const [stage, overrides] of withdrawable)
+    for (const [lang, name] of [["en", "Withdraw this application"], ["zh-Hans", "撤回此申请"]]) {
+      const html = progressAt(stage, lang, overrides);
+      assert.ok(html.includes(OPENER), `${stage} ${lang}`);
+      assert.ok(hasButton(html, name), `${stage} ${lang}`);
+      assert.ok(!html.includes("To withdraw now, contact PCDC.") && !html.includes("如需撤回，请联系 PCDC。"), stage);
+    }
+  for (const [stage, overrides] of notWithdrawable) {
+    assert.ok(!progressAt(stage, "en", overrides).includes(OPENER), `${stage} ${JSON.stringify(overrides)}`);
+  }
+});
+
+test("from Ready to exit on, and at a signing hold, the client is told to contact PCDC", () => {
+  for (const [stage, overrides] of [
+    ["review_approved", {}],
+    ["ready_to_efile", {}],
+    ["efiled", {}],
+    ["rejected", {}],
+    ["accepted", {}],
+    ["on_hold", SIGNING_HOLD],
+  ]) {
+    assert.ok(progressAt(stage, "en", overrides).includes("To withdraw now, contact PCDC."), stage);
+    assert.ok(progressAt(stage, "zh-Hans", overrides).includes("如需撤回，请联系 PCDC。"), stage);
+  }
+  for (const [stage, overrides] of [
+    ["draft", {}],
+    ["preparing", {}],
+    ["closed", {}],
+    ["on_hold", WAITING],
+    ["on_hold", {}],
+  ])
+    assert.ok(!progressAt(stage, "en", overrides).includes("To withdraw now, contact PCDC."), stage);
+});
+
+test("the withdraw dialog: the box, the confirm control and the way out, in both languages", () => {
+  for (const [lang, box, confirm, title] of [
+    ["en", "I want to withdraw this application. My return will not be filed.", "Withdraw this application", "Withdraw this application?"],
+    ["zh-Hans", "我要撤回此申请。我的报税表将不会被递交。", "撤回此申请", "撤回此申请？"],
+  ]) {
+    const html = dialog(baseState({ dialog: "withdraw", lang, savedCase: caseRecord({ stage: "preparing" }) }));
+    assert.ok(html.includes(title), lang);
+    const control = labelledControl(html, reEsc(box));
+    assert.match(control, /name="withdraw-confirmed"/);
+    assert.match(control, /type="checkbox"/);
+    assert.match(html, new RegExp(`<button type="submit"[^>]*data-case-action="WITHDRAW"[^>]*>[^<]*${confirm}`));
+    assert.match(html, /data-action="close-dialog"/);
+    assert.ok(!/\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/.test(html));
+  }
+});
+
+test("no client page shows a hold note or a close note", () => {
+  const NOTE = "<b>Left two voicemails</b> zebra-note";
+  const history = [
+    { id: "h1", action: "PUT_ON_HOLD", message: "PCDC is trying to reach you.", createdAt: "2026-01-02T15:04:05Z" },
+  ];
+  for (const [stage, overrides] of [
+    ["on_hold", WAITING],
+    ["on_hold", SIGNING_HOLD],
+    ["closed", { closingReason: "other" }],
+    ["closed", { closingReason: "dismissed" }],
+    ["preparing", {}],
+  ])
+    for (const lang of ["en", "zh-Hans"]) {
+      const record = { holdNote: NOTE, closeNote: NOTE, closingNote: NOTE, note: NOTE, history, ...overrides };
+      const html = progressAt(stage, lang, record);
+      assert.ok(!html.includes("zebra-note") && !html.includes("Left two voicemails"), `${stage} ${lang}`);
+      const list = applicationsScreen(baseState({ lang, cases: [caseRecord({ stage, ...record })] }));
+      assert.ok(!list.includes("zebra-note"), `list ${stage} ${lang}`);
+    }
+});
+
+test("the document requests show at Waiting for documents and at a documents Hold", () => {
+  const requests = [{ id: "req-9", caseId: "case-a", title: "W-2 from Acme", message: "Please send it", status: "open" }];
+  for (const [stage, overrides] of [
+    ["awaiting_documents", {}],
+    ["on_hold", WAITING],
+  ]) {
+    const html = progressAt(stage, "en", { ...overrides, requests });
+    assert.ok(html.includes("W-2 from Acme"), stage);
+    assert.match(html, /data-case-action="RESPOND_DOCUMENT"/, stage);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Version 2: sub-steps, the rail tree, Documents, Review & submit
 // (spec 2026-10-04 §2–§6)
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber, loadingLine, confirmBody } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
+import { withdrawDialogBody } from "./client-views.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
 import {
@@ -436,6 +437,10 @@ export function dialog(state) {
       confirm: button("Leave and discard", "confirm-leave-add-case", "primary full"),
       keep: "Keep editing",
     });
+  }
+  if (state.dialog === "withdraw") {
+    title = t("withdraw.title", {}, lang);
+    body = withdrawDialogBody(state);
   }
   if (state.dialog === "close-case") {
     title = "Close this case?";

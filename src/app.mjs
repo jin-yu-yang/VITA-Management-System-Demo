@@ -1042,6 +1042,7 @@ if (!config) {
     "open-request-documents": "request-documents",
     "open-put-on-hold": "put-on-hold",
     "open-resume-from-hold": "resume-from-hold",
+    "open-withdraw": "withdraw",
   });
   const CLAIMS = Object.freeze(["CLAIM_PREPARATION", "CLAIM_REVIEW"]);
   // Actions whose form holds a checkbox group (contact best time, materials).
@@ -1129,6 +1130,14 @@ if (!config) {
     if (["REQUEST_DOCUMENTS_AT_INTAKE", "PUT_ON_HOLD", "RESUME_FROM_HOLD"].includes(type) && receipt)
       closeDialog("#case-title, #office-queue-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
+    // The client's own withdrawal: the dialog closes, the page now reads Closed.
+    if (type === "WITHDRAW") {
+      if (receipt) {
+        closeDialog("#main");
+        notify("success", t("toast.withdrawn", {}, screenLang()), by);
+      }
+      return;
+    }
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
     if (type === "RESOLVE_FOLLOWUP" && receipt && controller.getState().dialog === "log-call")
@@ -1551,7 +1560,8 @@ if (!config) {
       case "open-return-to-signing":
       case "open-request-documents":
       case "open-put-on-hold":
-      case "open-resume-from-hold": {
+      case "open-resume-from-hold":
+      case "open-withdraw": {
         // From the case page the button carries no case id and the dialog
         // opens at once. From a Follow-ups row it does: that case is read in
         // place (no navigation, so screening never starts from the queue)

@@ -305,6 +305,14 @@ export const TEXT = Object.freeze({
   "progress.questions": { en: "Questions about your application? Our volunteers can help.", zh: "对申请有疑问？我们的志愿者可以帮助您。" },
   "progress.contact": { en: "Contact the office", zh: "联系办公室" },
   "progress.back": { en: "Back to my applications", zh: "返回我的申请" },
+  // Withdraw (change add-hold-and-closing): the button, its dialog, and the line from Ready to exit on
+  "withdraw.button": { en: "Withdraw this application", zh: "撤回此申请" },
+  "withdraw.title": { en: "Withdraw this application?", zh: "撤回此申请？" },
+  "withdraw.body": { en: "If you withdraw, PCDC will close this application and your return will not be filed.", zh: "撤回后，PCDC 将关闭此申请，您的报税表将不会被递交。" },
+  "withdraw.box": { en: "I want to withdraw this application. My return will not be filed.", zh: "我要撤回此申请。我的报税表将不会被递交。" },
+  "withdraw.keep": { en: "Keep my application", zh: "保留我的申请" },
+  "withdraw.contact": { en: "To withdraw now, contact PCDC.", zh: "如需撤回，请联系 PCDC。" },
+  "toast.withdrawn": { en: "You withdrew your application.", zh: "您已撤回申请。" },
   // The application history: a request line keeps the office's title as typed (spec §3.3)
   "history.requested": { en: "A volunteer requested a document: {title}", zh: "志愿者请求了一份文件：{title}" },
   "history.requested_documents": { en: "PCDC asked for these documents: {titles}.", zh: "PCDC 请您提供以下文件：{titles}。" },

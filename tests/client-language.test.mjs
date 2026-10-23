@@ -442,6 +442,37 @@ test("every filing message has 简体, no phone number, and 繁體 is generated"
   }
 });
 
+test("every fixed hold and closing history line has 简体 and no phone number (migration 036)", () => {
+  const lines = [
+    "PCDC is trying to reach you.",
+    "PCDC is working on your application again.",
+    "You withdrew your application. Your return was not filed.",
+  ];
+  const closed = Object.keys(TEXT).filter((key) => key.startsWith("stage.closed.client."));
+  assert.equal(closed.length, 5);
+  const phone = /\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/;
+  for (const english of lines) {
+    assert.ok(Object.hasOwn(SENTENCES, english), english);
+    assert.match(SENTENCES[english], /\p{Script=Han}/u, english);
+    assert.equal(historyLine(english, "zh-Hans"), SENTENCES[english], english);
+    assert.doesNotMatch(english, phone);
+    assert.doesNotMatch(SENTENCES[english], phone);
+  }
+  for (const key of [...closed, "stage.on_hold.client", "stage.on_hold.client.signing", "stage.awaiting_documents.client"]) {
+    assert.match(TEXT[key].zh, /\p{Script=Han}/u, key);
+    assert.doesNotMatch(TEXT[key].en, phone, key);
+    assert.doesNotMatch(TEXT[key].zh, phone, key);
+  }
+  for (const key of ["withdraw.button", "withdraw.title", "withdraw.body", "withdraw.box", "withdraw.keep", "withdraw.contact", "toast.withdrawn"]) {
+    assert.match(TEXT[key].zh, /\p{Script=Han}/u, key);
+    assert.doesNotMatch(TEXT[key].en, phone, key);
+    assert.doesNotMatch(TEXT[key].zh, phone, key);
+  }
+  assert.equal(TEXT["withdraw.button"].zh, "撤回此申请");
+  assert.equal(TEXT["withdraw.box"].zh, "我要撤回此申请。我的报税表将不会被递交。");
+  assert.equal(TEXT["withdraw.contact"].zh, "如需撤回，请联系 PCDC。");
+});
+
 test("new screening line translated", () => {
   const english = "PCDC finished screening your application. A volunteer will start preparing your return next.";
   const zh = "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。";
