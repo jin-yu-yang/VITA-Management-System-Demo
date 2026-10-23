@@ -123,14 +123,14 @@
 
 ## 9. Docs
 
-- [ ] 9.1 `docs/media/return-lifecycle.svg`: the paper branch labels. These are the four pairs' names, and both paper going straight to Accepted ("Paper").
-- [ ] 9.2 `docs/demo-script.md`: the filing-results line (accepted, rejected; paper returns given to the client), the signing wording, the story's paper step and the season-end close.
-- [ ] 9.3 `docs/developer/database.md`: 037 in the migration list, the state diagram (Mark e-filed to Accepted), the `MARK_EFILED` and `RECORD_FILING_RESULT` notes and payloads, `given_to_client`, `vitally_close_unsigned`, and `database-season-close.mjs` in the test list.
-- [ ] 9.4 `docs/developer/frontend.md`: the names table (four kinds, "Ready", "Ready to mail"), the Mark e-filed dialog's four pairs, Record filing result, and the season-end dialog.
+- [x] 9.1 `docs/media/return-lifecycle.svg`: the paper branch labels. These are the four pairs' names, and both paper going straight to Accepted ("Paper").
+- [x] 9.2 `docs/demo-script.md`: the filing-results line (accepted, rejected; paper returns given to the client), the signing wording, the story's paper step and the season-end close.
+- [x] 9.3 `docs/developer/database.md`: 037 in the migration list, the state diagram (Mark e-filed to Accepted), the `MARK_EFILED` and `RECORD_FILING_RESULT` notes and payloads, `given_to_client`, `vitally_close_unsigned`, and `database-season-close.mjs` in the test list.
+- [x] 9.4 `docs/developer/frontend.md`: the names table (four kinds, "Ready", "Ready to mail"), the Mark e-filed dialog's four pairs, Record filing result, and the season-end dialog.
 
 ## 10. Checks
 
-- [ ] 10.1 Run every check and record the counts against the baseline (unit 1317, database 408, browser story 75):
+- [x] 10.1 Run every check and record the counts against the baseline (unit 1317, database 408, browser story 75):
   - `npm test`;
   - `npm run db:migrate:test` and `npm run test:database`;
   - `npm run test:browser`;
