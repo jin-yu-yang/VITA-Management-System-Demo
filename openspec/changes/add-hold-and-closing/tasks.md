@@ -98,13 +98,13 @@
 
 ## 8. The story
 
-- [ ] 8.1 `tests/browser.mjs`: the two flows (documents at screening; a withdrawal of a claimed case, with the Follow-ups notice and the client's closed message in 简体). Update the sample counts to ten. Every existing close in the story sends a reason.
-- [ ] 8.2 Run `npm run test:browser`.
+- [x] 8.1 `tests/browser.mjs`: the two flows (documents at screening; a withdrawal of a claimed case, with the Follow-ups notice and the client's closed message in 简体). Update the sample counts to ten. Every existing close in the story sends a reason.
+- [x] 8.2 Run `npm run test:browser`.
 
 ## 9. Docs
 
-- [ ] 9.1 `docs/media/return-lifecycle.svg`: mark Waiting for documents, Hold and the exits as built. Mark Same day and FSA as not built. Keep the layout.
-- [ ] 9.2 Update:
+- [x] 9.1 `docs/media/return-lifecycle.svg`: mark Waiting for documents, Hold and the exits as built. Mark Same day and FSA as not built. Keep the layout.
+- [x] 9.2 Update:
   - `docs/demo-script.md`;
   - `docs/developer/database.md` (new actions, columns, the follow-up purpose);
   - `docs/developer/frontend.md` (stages, labels, stepper, pool, Follow-ups);
