@@ -5929,3 +5929,75 @@ test("a second press while one waits for the start does nothing", async () => {
   assert.equal(controller.getState().error, null);
   controller.stop();
 });
+
+const unsignedStore = () => {
+  const store = officeStore({
+    cases: [
+      { id: "case-a", reference: "VT-A", stage: "review_approved", revision: 4, answers: {} },
+      { id: "case-b", reference: "VT-B", stage: "review_approved", revision: 2, answers: {} },
+    ],
+  });
+  store.closeUnsigned = async (request) => {
+    store.calls.push("closeUnsigned");
+    store.writes.push(request);
+    const failure = store.failNext;
+    if (failure) {
+      store.failNext = null;
+      throw failure;
+    }
+    for (const { caseId } of request.cases)
+      store.records.set(caseId, { ...store.records.get(caseId), stage: "closed" });
+    return {
+      actionId: request.actionId,
+      cases: request.cases.map(({ caseId, revision }) => ({ caseId, reference: "R", revision: revision + 1 })),
+    };
+  };
+  return store;
+};
+
+test("closeUnsigned sends the ticked list and applies revisions", async () => {
+  const store = unsignedStore();
+  const { controller } = build({ store, newActionId: () => "action-7" });
+  await controller.start();
+  controller.selectPerson("sam");
+  controller.openDialog("close-unsigned");
+  await controller.closeUnsigned([{ caseId: "case-a", revision: 4 }]);
+  assert.deepEqual(store.writes.at(-1), {
+    actionId: "action-7",
+    personId: "sam",
+    cases: [{ caseId: "case-a", revision: 4 }],
+    confirmed: true,
+  });
+  const state = controller.getState();
+  assert.equal(state.cases.find((c) => c.id === "case-a").stage, "closed");
+  assert.equal(state.cases.find((c) => c.id === "case-b").stage, "review_approved");
+  assert.equal(state.busy, false);
+  controller.stop();
+});
+
+test("closeUnsigned conflict re-reads", async () => {
+  const store = unsignedStore();
+  const { controller } = build({ store, newActionId: () => "action-8" });
+  await controller.start();
+  controller.selectPerson("sam");
+  controller.openDialog("close-unsigned");
+  // Another admin moves case-b first; the call changes nothing.
+  store.records.set("case-b", { ...store.records.get("case-b"), stage: "closed" });
+  store.failNext = Object.assign(new Error("A case moved."), { code: "CONFLICT" });
+  const reads = store.calls.filter((c) => c === "listCases").length;
+  await assert.rejects(
+    controller.closeUnsigned([
+      { caseId: "case-a", revision: 4 },
+      { caseId: "case-b", revision: 2 },
+    ]),
+    (error) => error.code === "CONFLICT",
+  );
+  const state = controller.getState();
+  assert.equal(store.calls.filter((c) => c === "listCases").length, reads + 1);
+  assert.equal(state.dialog, "close-unsigned");
+  assert.equal(state.error.code, "CONFLICT");
+  assert.equal(state.cases.find((c) => c.id === "case-a").stage, "review_approved");
+  assert.equal(state.cases.find((c) => c.id === "case-b").stage, "closed");
+  assert.equal(state.busy, false);
+  controller.stop();
+});

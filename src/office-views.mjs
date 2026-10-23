@@ -33,6 +33,8 @@ import {
   unloadedLine,
   emptyState,
   emptyLine,
+  fieldId,
+  confirmBody,
 } from "./ui.mjs";
 import {
   adminEligibility,
@@ -431,10 +433,98 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
     .map((row) => queueRow(row, person, view))
     .join("")}</tbody></table></div>`;
 
-  return `<section class="panel office-queue" aria-labelledby="office-queue-title"><div class="section-head"><div><h2 id="office-queue-title" tabindex="-1">Office queue</h2> <span class="muted small">most urgent first</span></div><span class="muted small">${esc(counts.all)} open · ${esc(over3)} over 3 days</span></div>${toggles}${chips}${when(
+  // The season-end close: for an admin, disabled (with its reason) when no
+  // case is waiting for a signature.
+  const waitingSignature = unsignedCases(cases).length;
+  const seasonEnd = isAdminPerson(person)
+    ? `<div class="season-end">${button(
+        "Close unsigned cases…",
+        "open-close-unsigned",
+        "secondary",
+        waitingSignature ? "" : 'disabled aria-describedby="close-unsigned-none"',
+      )}${when(
+        !waitingSignature,
+        `<span class="muted small" id="close-unsigned-none">No case is waiting for a signature.</span>`,
+      )}</div>`
+    : "";
+
+  return `<section class="panel office-queue" aria-labelledby="office-queue-title"><div class="section-head"><div><h2 id="office-queue-title" tabindex="-1">Office queue</h2> <span class="muted small">most urgent first</span></div><span class="muted small">${esc(counts.all)} open · ${esc(over3)} over 3 days</span></div>${seasonEnd}${toggles}${chips}${when(
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this queue is read-only.</p>`,
   )}${shown.length ? table : empty}<p class="field-note board-note">Waiting turns amber at 3 days and red at 5. This queue shows workflow only: no taxpayer names, no addresses and no document contents.</p></section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Season end: close the cases that are still waiting for a signature
+// ---------------------------------------------------------------------------
+
+const isAdminPerson = (person) => Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
+
+/**
+ * The cases the season-end close may take: Ready to exit, or on Hold from
+ * Ready to exit. Oldest first, so the longest wait is at the top.
+ */
+export function unsignedCases(cases = []) {
+  return cases
+    .filter(
+      (record) =>
+        record?.stage === "review_approved" ||
+        (record?.stage === "on_hold" && record?.holdOrigin === "review_approved"),
+    )
+    .sort((a, b) => String(a.updatedAt ?? "").localeCompare(String(b.updatedAt ?? "")));
+}
+
+/** The dialog's heading, kept in step with the ticks. */
+export const closeUnsignedHeading = (ticked, total) =>
+  `Close ${ticked === total ? total : `${ticked} of ${total}`} ${
+    total === 1 ? "case that is" : "cases that are"
+  } waiting for a signature, as Dismissed?`;
+
+const unsignedName = (record) =>
+  [record?.answers?.tp_first_name, record?.answers?.tp_last_name]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ") || "—";
+
+/**
+ * The season-end confirmation. `state.cases` is the loaded list; `unticked`
+ * names cases to draw unticked. The confirm button is drawn disabled: the page
+ * script opens it once a case and the box are both ticked.
+ */
+export function closeUnsignedDialogBody(state = {}) {
+  const list = unsignedCases(state.cases ?? []);
+  const unticked = new Set(state.unticked ?? []);
+  const ticked = list.filter((record) => !unticked.has(record.id)).length;
+  const rows = list
+    .map((record) => {
+      const id = `close-unsigned-${esc(record.id)}`;
+      const where = record.stage === "on_hold" ? "Hold" : "Ready to exit";
+      return `<tr><td><input type="checkbox" id="${id}" name="caseId" value="${esc(record.id)}" data-revision="${esc(
+        record.revision,
+      )}" aria-label="Close ${esc(record.reference)}"${unticked.has(record.id) ? "" : " checked"}></td><th scope="row"><label for="${id}">${esc(
+        record.reference,
+      )}</label></th><td>${esc(unsignedName(record))}</td><td>${where}</td><td>${esc(
+        waitingDays(record.updatedAt, state.now ?? Date.now()),
+      )} days</td></tr>`;
+    })
+    .join("");
+  const table = list.length
+    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col"><span class="sr-only">Close</span></th><th scope="col">Case</th><th scope="col">Client</th><th scope="col">Now</th><th scope="col">Waiting</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<p class="muted">No case is waiting for a signature.</p>`;
+  return confirmBody({
+    lead: `<span id="close-unsigned-heading">${esc(closeUnsignedHeading(ticked, list.length))}</span>`,
+    form: {
+      attrs: 'class="staff-form" id="close-unsigned-form"',
+      fields: `${table}<label class="checkbox-row" for="${fieldId("confirmed", "close-unsigned")}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "close-unsigned",
+      )}" name="confirmed" value="true" required><span>${esc(
+        "These clients didn't come back to sign. None of these returns will be transmitted in TaxSlayer.",
+      )}</span></label>`,
+    },
+    confirm: `<button type="submit" class="btn primary full" id="close-unsigned-submit" disabled>${icon("check")} Close as Dismissed</button>`,
+    keep: "Keep them open",
+  });
 }
 
 // ---------------------------------------------------------------------------

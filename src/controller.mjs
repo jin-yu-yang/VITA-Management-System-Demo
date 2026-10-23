@@ -2495,6 +2495,45 @@ export function createController({
     );
   }
 
+  // Season end: the ticked cases and the revisions the dialog showed. The
+  // database moves all of them or none. A refusal is shown inside the dialog,
+  // which stays open; a CONFLICT also re-reads the list, so the dialog reopens
+  // with the cases as they are now (without the one that moved).
+  async function closeUnsigned(cases) {
+    state.busy = true;
+    state.error = null;
+    show();
+    try {
+      await store.closeUnsigned({
+        actionId: newActionId(),
+        personId: state.selectedPersonId ?? null,
+        cases: cases.map(({ caseId, revision }) => ({ caseId, revision })),
+        confirmed: true,
+      });
+    } catch (error) {
+      state.busy = false;
+      noteFailure(
+        error,
+        error?.code === "CONFLICT"
+          ? { message: "A case changed while you were deciding. The list is up to date: check it and try again." }
+          : undefined,
+      );
+      state.retryable = false;
+      if (error?.code === "CONFLICT") await loadList().catch(() => {});
+      show();
+      throw error;
+    }
+    state.busy = false;
+    noteConnected();
+    try {
+      await loadList();
+      state.error = null;
+    } catch (error) {
+      noteFailure(error);
+    }
+    show();
+  }
+
   async function editContact(contactId, entry) {
     const contact = (state.savedCase?.contacts ?? []).find(
       (item) => item?.id === contactId,
@@ -2691,6 +2730,7 @@ export function createController({
     saveOfficeDraft,
     runAssistanceAction,
     logContact,
+    closeUnsigned,
     editContact,
     resetFixtures,
     loadCheckpoint,

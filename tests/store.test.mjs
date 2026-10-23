@@ -1576,3 +1576,18 @@ test("a staff case read carries both questionnaire tables, an applicant read nei
   assert.ok(!("preparerQuestionnaires" in applicant));
   assert.ok(!client.reads.some((read) => read.table.endsWith("_questionnaires")));
 });
+
+test("closeUnsigned calls vitally_close_unsigned", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const cases = [{ caseId: "case-1", revision: 4 }];
+  await createStore(client).closeUnsigned({
+    actionId: "action-9",
+    personId: "person-sam",
+    cases,
+    confirmed: true,
+  });
+  assert.deepEqual(client.rpcCalls.at(-1), {
+    name: "vitally_close_unsigned",
+    args: { p_action_id: "action-9", p_person_id: "person-sam", p_cases: cases, p_confirmed: true },
+  });
+});

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  closeUnsignedDialogBody,
+  unsignedCases,
   followupQueue,
   logCallDrawerBody,
   officeFilters,
@@ -1197,4 +1199,65 @@ test("a case on hold with a call task keeps its Call the client row beside the H
   const html = page([filed("h", "on_hold", { holdOrigin: "awaiting_documents", openFollowups: 1 })]);
   assert.match(kindRow(html, "h", "hold"), /Can(&#39;|')t reach/);
   assert.match(kindRow(html, "h", "call"), /1 open task/);
+});
+
+// ---------------------------------------------------------------------------
+// The season-end dialog (change adjust-filing-to-pcdc, Close unsigned cases)
+// ---------------------------------------------------------------------------
+const waitingCase = (id, stage, updatedAt, over = {}) => ({
+  id,
+  reference: `VT-${id}`,
+  stage,
+  revision: 4,
+  answers: { tp_first_name: "Mei", tp_last_name: `Client ${id}` },
+  updatedAt,
+  ...over,
+});
+
+test("unsignedCases picks Ready to exit and Hold from Ready to exit, oldest first", () => {
+  const picked = unsignedCases([
+    waitingCase("new", "review_approved", daysAgo(2)),
+    waitingCase("other", "on_hold", daysAgo(30), { holdOrigin: "awaiting_documents" }),
+    waitingCase("hold", "on_hold", daysAgo(9), { holdOrigin: "review_approved" }),
+    waitingCase("old", "review_approved", daysAgo(20)),
+    waitingCase("done", "closed", daysAgo(40)),
+  ]);
+  assert.deepEqual(picked.map((r) => r.id), ["old", "hold", "new"]);
+});
+
+test("Follow-ups shows Close unsigned cases for an admin only", () => {
+  const some = [waitingCase("a", "review_approved", daysAgo(3))];
+  const html = page(some);
+  assert.match(html, /Close unsigned cases…/);
+  assert.doesNotMatch(html.match(/<button[^>]*open-close-unsigned[^>]*>/)[0], /disabled/);
+  const none = page([]);
+  assert.match(none.match(/<button[^>]*open-close-unsigned[^>]*>/)[0], /disabled/);
+  assert.match(none, /No case is waiting for a signature\./);
+  assert.doesNotMatch(page(some, [], ALEX), /open-close-unsigned|Close unsigned cases/);
+});
+
+test("closeUnsignedDialogBody lists each case ticked, with the heading and the box", () => {
+  const cases = [
+    waitingCase("a", "review_approved", daysAgo(6)),
+    waitingCase("b", "on_hold", daysAgo(4), { holdOrigin: "review_approved" }),
+    waitingCase("c", "review_approved", daysAgo(1)),
+  ];
+  const html = closeUnsignedDialogBody({ cases, now: NOW });
+  assert.match(html, /Close 3 cases that are waiting for a signature, as Dismissed\?/);
+  for (const id of ["a", "b", "c"])
+    assert.match(html, new RegExp(`id="close-unsigned-${id}"[^>]*checked`));
+  assert.match(html, /VT-a/);
+  assert.match(html, /Mei Client a/);
+  assert.match(html, /Ready to exit/);
+  assert.match(html, /Hold/);
+  assert.match(html, /6 days/);
+  assert.match(html, /id="field-close-unsigned-confirmed"/);
+  assert.match(
+    html,
+    /These clients didn(&#39;|')t come back to sign\. None of these returns will be transmitted in TaxSlayer\./,
+  );
+  assert.match(html, /id="close-unsigned-submit"[^>]*disabled/);
+  const one = closeUnsignedDialogBody({ cases, now: NOW, unticked: ["b"] });
+  assert.match(one, /Close 2 of 3 cases that are waiting for a signature, as Dismissed\?/);
+  assert.doesNotMatch(one, /id="close-unsigned-b"[^>]*checked/);
 });

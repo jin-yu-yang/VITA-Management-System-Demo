@@ -2947,3 +2947,15 @@ test("a paper return in the Filing panel reads Paper · Given to the client, wit
   assert.match(stuck, /Paper · Given to the client/);
   assert.doesNotMatch(stuck, /mailed|Mailed|Waiting for/);
 });
+
+test("a season-end close reads as one", () => {
+  assert.equal(
+    historySentence({
+      action: "CLOSE_CASE",
+      actorName: "Sam",
+      detail: { reason: "dismissed", seasonEnd: true },
+      createdAt: "2026-10-01T12:00:00Z",
+    }),
+    "Sam closed the case at season end · Dismissed.",
+  );
+});

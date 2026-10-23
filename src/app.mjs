@@ -24,6 +24,7 @@ import {
   addCaseCountText,
   addCasePartStatus,
   addCaseSendOff,
+  closeUnsignedHeading,
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
@@ -273,6 +274,7 @@ if (!config) {
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     syncContactForms();
+    syncCloseUnsigned();
     showDraftLink();
     markPressed(state);
     tickCooldown(state);
@@ -1234,6 +1236,33 @@ if (!config) {
     for (const form of root.querySelectorAll("form.contact-form")) syncContactForm(form);
   }
 
+  // The season-end dialog: its heading counts the ticked cases, and its button
+  // opens only with a case ticked and the box ticked. Drawn here too, after a
+  // re-draw has put the ticks back.
+  function syncCloseUnsigned() {
+    const form = root.querySelector("#close-unsigned-form");
+    if (!form) return;
+    const boxes = [...form.querySelectorAll('input[name="caseId"]')];
+    const ticked = boxes.filter((box) => box.checked).length;
+    const heading = form.parentElement?.querySelector("#close-unsigned-heading");
+    if (heading) heading.textContent = closeUnsignedHeading(ticked, boxes.length);
+    const sure = form.querySelector("#field-close-unsigned-confirmed")?.checked === true;
+    const submit = form.querySelector("#close-unsigned-submit");
+    if (submit) submit.disabled = !ticked || !sure || controller.getState().busy === true;
+  }
+
+  async function submitCloseUnsigned(form, by) {
+    const cases = [...form.querySelectorAll('input[name="caseId"]:checked')].map((box) => ({
+      caseId: box.value,
+      revision: Number(box.dataset.revision),
+    }));
+    if (!cases.length) return;
+    await controller.closeUnsigned(cases);
+    clearFormDrafts(form);
+    closeDialog("#office-queue-title");
+    notify("success", "The unsigned cases were closed as Dismissed.", by);
+  }
+
   async function submitContact(form, by) {
     const values = Object.fromEntries(new FormData(form));
     if (values.withWhom === "other" && !String(values.otherName ?? "").trim()) {
@@ -1577,6 +1606,12 @@ if (!config) {
         openDialog(name, null, opener);
         break;
       }
+      case "open-close-unsigned":
+        // The list is already loaded (it is the Follow-ups page's own), so
+        // the dialog opens at once; a CONFLICT re-reads it in place.
+        controller.dismissError();
+        openDialog("close-unsigned", null, describeFocus(target));
+        break;
       case "open-log-call": {
         // Described before the await: by the time the case has loaded, the
         // page has been rebuilt and the keyboard may be anywhere.
@@ -1972,6 +2007,10 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
+    if (field.closest?.("#close-unsigned-form")) {
+      syncCloseUnsigned();
+      return;
+    }
     if (field.closest?.("form.contact-form") && ["direction", "method", "withWhom"].includes(field.name)) {
       syncContactForm(field.form);
       return;
@@ -2025,6 +2064,8 @@ if (!config) {
         await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
         await runAssistanceAction(assistControl, form, by);
+      } else if (form.id === "close-unsigned-form") {
+        await submitCloseUnsigned(form, by);
       } else if (form.id === "checkpoint-form") {
         // The choice and its confirmation are the same submit: the dialog says
         // what a checkpoint does, and this button is the person agreeing to it.

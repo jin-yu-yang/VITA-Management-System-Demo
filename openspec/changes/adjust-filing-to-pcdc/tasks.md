@@ -82,22 +82,22 @@
 
 ## 6. Browser: staff screens
 
-- [ ] 6.1 Write failing tests in `tests/admin-views.test.mjs`:
+- [x] 6.1 Write failing tests in `tests/admin-views.test.mjs`:
   - the Mark e-filed dialog's four choices, their "given to the client to mail" labels and lines, the second-filing choices and the done line, and the new box;
   - Record filing result offers no paper return and no Mailed or "Date mailed";
   - the role-neutral fix-note prompt;
   - Mark ready to e-file's new box and lead;
   - the signing panel heading "Signing", and the Hold and refusal lines without 8879;
   - no paper branch in the return-to-signing refusal.
-- [ ] 6.2 Implement in `src/admin-views.mjs` and `src/case-actions.mjs`. That covers `FILED_LINES`, `efiledChoices`, `resultFields`, the confirmation sentences, and the four pairs in the methods map.
-- [ ] 6.3 Write failing tests in `tests/office-views.test.mjs`, `tests/staff-views.test.mjs` and `tests/pool-views.test.mjs`:
+- [x] 6.2 Implement in `src/admin-views.mjs` and `src/case-actions.mjs`. That covers `FILED_LINES`, `efiledChoices`, `resultFields`, the confirmation sentences, and the four pairs in the methods map.
+- [x] 6.3 Write failing tests in `tests/office-views.test.mjs`, `tests/staff-views.test.mjs` and `tests/pool-views.test.mjs`:
   - Follow-ups sentences without the mailing wait, and colouring for any Filing result row;
   - "Waiting for the client to sign." and "Can't reach the client to sign.";
   - the Filing panel's "Paper · Given to the client" with no date;
   - the volunteer's next step at Rejected and Accepted;
   - the staff history "recorded the client's signature";
   - the unit fixtures' notes say "Site coordinator to correct…".
-- [ ] 6.4 Implement in `src/office-views.mjs`, `src/staff-views.mjs` and `src/pool-views.mjs`.
+- [x] 6.4 Implement in `src/office-views.mjs`, `src/staff-views.mjs` and `src/pool-views.mjs`.
 
 ## 7. Browser: the season-end close
 

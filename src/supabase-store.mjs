@@ -666,6 +666,16 @@ export function createStore(client) {
       });
     },
 
+    // Season end: close every listed unsigned case as Dismissed, or none.
+    async closeUnsigned(request) {
+      return await call("vitally_close_unsigned", {
+        p_action_id: actionId(request),
+        p_person_id: request.personId ?? null,
+        p_cases: request.cases,
+        p_confirmed: request.confirmed === true,
+      });
+    },
+
     async editContact(request) {
       return await call("vitally_edit_contact", {
         p_action_id: actionId(request),

@@ -2028,13 +2028,19 @@ export const EVENT_SENTENCES = Object.freeze({
 export function historySentence(entry) {
   const code = String(entry?.action ?? "");
   // `??` and `||` cannot be mixed without parentheses.
-  const words =
-    (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
-    "recorded a change";
+  const seasonEnd = code === "CLOSE_CASE" && entry?.detail?.seasonEnd === true;
+  const words = seasonEnd
+    ? `closed the case at season end${
+        Object.hasOwn(CLOSING_REASON_NAMES, entry.detail.reason ?? "")
+          ? ` · ${CLOSING_REASON_NAMES[entry.detail.reason].split(" (")[0]}`
+          : ""
+      }`
+    : (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
+      "recorded a change";
   const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
   // A close or a hold carries staff context: the reason's name and the note, as typed.
   const reason =
-    code === "CLOSE_CASE" && Object.hasOwn(CLOSING_REASON_NAMES, entry?.detail?.reason ?? "")
+    code === "CLOSE_CASE" && !seasonEnd && Object.hasOwn(CLOSING_REASON_NAMES, entry?.detail?.reason ?? "")
       ? ` Reason: ${CLOSING_REASON_NAMES[entry.detail.reason]}.`
       : "";
   const note =
