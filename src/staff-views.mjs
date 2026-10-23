@@ -153,11 +153,11 @@ const STAGE_WORK = Object.freeze({
   ready_to_efile: { work: "The office e-files the return.", needs: null },
   efiled: { work: "The office records the answers from the IRS and Pennsylvania.", needs: null },
   rejected: {
-    work: "A return was rejected. The office arranges the fix and contacts the client.",
+    work: "A return was rejected. The site coordinator fixes it in TaxSlayer, and the office contacts the client.",
     needs: null,
   },
   accepted: {
-    work: "The returns are accepted or mailed. Nothing more is needed here.",
+    work: "The returns are accepted or given to the client on paper. Nothing more is needed here.",
     needs: null,
   },
   closed: { work: "Closed. Nothing further is recorded here.", needs: null },
@@ -876,17 +876,20 @@ export function caseDetails(record) {
 const FILED_STAGES = Object.freeze(["efiled", "rejected", "accepted"]);
 const RETURN_NAMES = Object.freeze({ federal: "Federal return", state: "Pennsylvania return" });
 const METHOD_NAMES = Object.freeze({ efile: "E-filed", paper: "Paper" });
-const RESULT_NAMES = Object.freeze({ accepted: "Accepted", rejected: "Rejected", mailed: "Mailed" });
+const RESULT_NAMES = Object.freeze({ accepted: "Accepted", rejected: "Rejected", given_to_client: "Given to the client" });
 
 function filingReturnRow(entry) {
   const method = METHOD_NAMES[entry.method] ?? "—";
-  const answer = entry.result
-    ? RESULT_NAMES[entry.result]
-    : entry.method === "paper"
-      ? "Waiting for the mailing to be recorded"
+  // A paper return is given to the client at Mark e-filed: it has no answer and no date,
+  // and one filed before that rule, with no result, reads the same.
+  const paper = entry.method === "paper";
+  const answer = paper
+    ? RESULT_NAMES.given_to_client
+    : entry.result
+      ? RESULT_NAMES[entry.result]
       : "Waiting for an answer";
   const parts = [method, answer];
-  if (entry.answeredOn) parts.push(entry.answeredOn);
+  if (entry.answeredOn && !paper) parts.push(entry.answeredOn);
   if (entry.rejectCode) parts.push(`Reject code ${entry.rejectCode}`);
   return detailRow(RETURN_NAMES[entry.returnKind] ?? "Return", parts.join(" · "));
 }
@@ -2005,7 +2008,7 @@ export const EVENT_SENTENCES = Object.freeze({
   RESUBMIT_REVIEW: "recorded that the corrections are complete",
   APPROVE_REVIEW: "approved the review",
   RECORD_REVIEW_CONTACT: "recorded the conversation with the client",
-  MARK_READY_TO_EFILE: "recorded the client's Form 8879 signature",
+  MARK_READY_TO_EFILE: "recorded the client's signature",
   MARK_EFILED: "recorded that the return was e-filed",
   RECORD_FILING_RESULT: "recorded the filing result",
   RETURN_TO_SIGNING: "returned the case to signing",

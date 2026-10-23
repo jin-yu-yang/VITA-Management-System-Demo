@@ -27,7 +27,7 @@ export const POOL_FILTER_KEYS = Object.freeze(Object.keys(DEFAULT_POOL_FILTERS))
 // The office's phases on every stage. The three middle ones are the
 // volunteer board's own tabs (`phaseTab`), so a case never sits on one tab
 // for a volunteer and another for the office. A case waiting on the client
-// (Waiting for documents, or an approved return awaiting Form 8879) is on
+// (Waiting for documents, or an approved return awaiting the client's signature) is on
 // "signing"; once signed, it is the office's to file. A Hold, like a Rejected
 // return, needs the office's attention.
 export function poolPhase(record) {

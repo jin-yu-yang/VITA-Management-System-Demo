@@ -742,10 +742,11 @@ test("the e-file dialogs name the client and the application", () => {
   assert.match(ready, /VT-AAAA-BBBB/);
   assert.match(ready, /data-case-action="MARK_READY_TO_EFILE"/);
   assert.match(ready, /name="confirmed" value="true" required/);
-  assert.match(ready, /signed Form 8879/);
+  assert.match(ready, /<span>The client signed Form 8879, or the return will be given to the client on paper\.<\/span>/);
   const filed = markEfiledDialogBody(state);
   assert.match(filed, /data-case-action="MARK_EFILED"/);
   assert.match(filed, /The client will be told how their return was filed/);
+  assert.match(filed, /<span>Each return was e-filed, or given to the client on paper, as chosen above\.<\/span>/);
   assert.match(
     markEfiledDialogBody({ savedCase: { reference: "VT-X", answers: {} } }),
     /this client/,
@@ -1254,14 +1255,20 @@ const radios = (html, name) =>
     (m) => m[1],
   );
 
-test("Mark e-filed offers three choices on a first filing, each with what the client is told", () => {
+test("Mark e-filed offers four choices on a first filing, each with what the client is told", () => {
   const html = markEfiledDialogBody({
     savedCase: officeCase({ stage: "ready_to_efile", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } }),
   });
-  assert.deepEqual(radios(html, "filing-combination"), ["both_efile", "efile_and_paper", "both_paper"]);
+  assert.deepEqual(radios(html, "filing-combination"), ["both_efile", "efile_and_paper", "paper_and_efile", "both_paper"]);
+  assert.match(html, /Both returns e-filed/);
+  assert.match(html, /Federal e-filed, Pennsylvania on paper \(given to the client to mail\)/);
+  assert.match(html, /Federal on paper \(given to the client to mail\), Pennsylvania e-filed/);
+  assert.match(html, /Both returns on paper \(given to the client to mail\)/);
   assert.match(html, /PCDC e-filed your return\./);
-  assert.match(html, /PCDC e-filed your federal return and mailed your Pennsylvania return\./);
-  assert.match(html, /PCDC mailed your returns\./);
+  assert.match(html, /PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent\. If it isn(&#39;|')t signed yet, sign it, then mail it yourself\. A reply can take about 3 months after you mail it\./);
+  assert.match(html, /PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return\./);
+  assert.match(html, /PCDC gave your returns on paper to you or the person you sent\./);
+  assert.doesNotMatch(html, /mailed your/);
   assert.match(html, /data-case-action="MARK_EFILED"/);
   assert.match(html, /name="confirmed" value="true" required/);
   assert.doesNotMatch(html, /name="method-federal"|name="method-state"/);
@@ -1281,7 +1288,9 @@ test("Mark e-filed after a rejection offers only the rejected return, and lists 
   assert.doesNotMatch(html, /filing-combination/);
   assert.match(html, /Federal return[^]*?accepted/i);
   assert.match(html, /PCDC e-filed your Pennsylvania return\./);
-  assert.match(html, /PCDC mailed your Pennsylvania return\./);
+  assert.match(html, /On paper \(given to the client to mail\)/);
+  assert.match(html, /PCDC gave your Pennsylvania return on paper to you or the person you sent\./);
+  assert.doesNotMatch(html, /mailed your/);
   // Both rejected: both choices, with the combination lines.
   const both = markEfiledDialogBody({
     savedCase: officeCase({ stage: "ready_to_efile", ...BOTH_EFILED, federalResult: "rejected", stateResult: "rejected" }),
@@ -1309,14 +1318,18 @@ test("the Record filing result dialog names the client and the application, and 
   const today = nowInput().slice(0, 10);
   assert.equal(html.match(new RegExp(`name="date-(federal|state)" type="date"[^>]*max="${today}"`, "g")).length, 2);
   assert.match(html, /data-case-action="RECORD_FILING_RESULT"[^>]*data-stage="efiled"/);
-  // A paper return can only be mailed.
+  // A paper return has no answer to record: no fieldset, no mailing words.
   const paper = recordFilingResultDialogBody({
     savedCase: officeCase({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" }),
   });
-  const fromState = paper.slice(paper.indexOf('name="result-state"'));
-  const stateSelect = fromState.slice(0, fromState.indexOf("</select>"));
-  assert.match(stateSelect, /value="mailed"/);
-  assert.doesNotMatch(stateSelect, /value="accepted"|value="rejected"/);
+  assert.match(paper, /name="result-federal"/);
+  assert.doesNotMatch(paper, /name="result-state"|name="date-state"|name="code-state"/);
+  assert.doesNotMatch(html + paper, /mailed|Date mailed|value="mailed"/i);
+  assert.match(html, /Fix note \(only when a return is rejected\): what needs fixing in TaxSlayer/);
+  const stuck = recordFilingResultDialogBody({
+    savedCase: officeCase({ stage: "efiled", federalMethod: "paper", stateMethod: "paper" }),
+  });
+  assert.doesNotMatch(stuck, /name="result-|mailed/i);
   // At Rejected, only the returns still waiting are offered.
   const waiting = recordFilingResultDialogBody({ savedCase: rejectedFederal({ stateResult: null }) });
   assert.match(waiting, /name="result-state"/);
@@ -1388,7 +1401,8 @@ test("the office panel offers Got in touch… at a Hold, and Close… from it", 
     assert.ok(opens(html).includes("open-close-case"), "Close… from a Hold, whatever it came from");
   }
   assert.ok(!opens(page({ stage: "preparing" })).includes("open-resume-from-hold"));
-  assert.match(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign Form 8879/);
+  assert.match(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign\./);
+  assert.doesNotMatch(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign Form/);
 });
 
 test("volunteers see none of the intake-and-hold buttons", () => {
@@ -1516,4 +1530,23 @@ test("the shared frame places the two new dialogs", () => {
   const savedCase = { reference: "VT-X", answers: {}, stage: "efiled" };
   assert.match(dialog({ dialog: "record-filing-result", savedCase }), /Record the filing result\?/);
   assert.match(dialog({ dialog: "return-to-signing", savedCase }), /Return to signing\?/);
+});
+
+test("the signing panel is headed Signing, with neutral wording", () => {
+  const before = page({ stage: "review_approved", reviews: CALLED });
+  assert.match(before, /<h3>Signing<\/h3><p class="field-note">Record that the client signed\./);
+  assert.doesNotMatch(before, /<h3>Form 8879<\/h3>/);
+  const rights = (record) => adminEligibility({ caseRecord: record }, SAM);
+  assert.equal(rights({ stage: "preparing" }).markEfiled.reason, "This is recorded once the client has signed.");
+  assert.equal(rights({ stage: "ready_to_efile" }).markEfiled.allowed, true);
+});
+
+test("Return to signing is never held back by a paper return, and stays refused while an e-filed return waits", () => {
+  const sam = (record) => adminEligibility({ caseRecord: record }, SAM);
+  const paper = { stage: "rejected", federalMethod: "efile", stateMethod: "paper", federalResult: "rejected" };
+  assert.equal(sam(paper).returnToSigning.allowed, true);
+  const stuck = { stage: "rejected", federalMethod: "paper", stateMethod: "efile", stateResult: "rejected" };
+  assert.equal(sam(stuck).returnToSigning.allowed, true);
+  const waiting = { stage: "rejected", federalMethod: "efile", stateMethod: "efile", federalResult: "rejected" };
+  assert.match(sam(waiting).returnToSigning.reason, /^Waiting for Pennsylvania's answer/);
 });

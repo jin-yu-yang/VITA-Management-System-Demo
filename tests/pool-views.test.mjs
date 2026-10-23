@@ -114,7 +114,7 @@ test("a pool row names E-filed and Accepted by the filing method", () => {
     rec("M", "efiled", { federalMethod: "efile", stateMethod: "paper" }),
     rec("O", "efiled"),
   ]);
-  assert.match(html, /<i><\/i>E-filed &amp; paper</);
+  assert.match(html, /<i><\/i>E-filed, PA on paper</);
   assert.match(html, /<i><\/i>E-filed</);
 });
 

@@ -57,7 +57,7 @@
 
 ## 5. Browser: domain and client text
 
-- [ ] 5.1 Write failing unit tests in `tests/domain.test.mjs`:
+- [x] 5.1 Write failing unit tests in `tests/domain.test.mjs`:
   - `filingMethodKind` returns `paper_and_efile`;
   - `returnState` gives `given_to_client` for any paper return;
   - `waitingReturns` and `awaitsAcknowledgment` ignore paper returns;
@@ -65,8 +65,8 @@
   - the client labels: "Filed" at E-filed for both mixed pairs, "Ready to mail" at Accepted with any paper return, "Ready" at Ready to e-file;
   - the eight signing messages (design D8, brainstorm Q3);
   - `filingMessage` with the handover sentences, followed by the refund sentence at Accepted.
-- [ ] 5.2 Implement in `src/domain.mjs`: `filingMethodKind`, `returnState`, `waitingReturns`, `METHOD_LABELS`, and the fallback signing strings.
-- [ ] 5.3 In `src/client-text.mjs`:
+- [x] 5.2 Implement in `src/domain.mjs`: `filingMethodKind`, `returnState`, `waitingReturns`, `METHOD_LABELS`, and the fallback signing strings.
+- [x] 5.3 In `src/client-text.mjs`:
   - the signing keys;
   - `stage.ready_to_efile.label`;
   - `stage.accepted.paper.label`;
@@ -75,10 +75,10 @@
   - the new history lines;
   - a frozen legacy table of 035's mailed sentences that `filingLines()` also expands;
   - keep the old 8879 and mailed history lines in the map (D7).
-- [ ] 5.4 Update `tests/client-language.test.mjs` and `tests/client-views.test.mjs`:
+- [x] 5.4 Update `tests/client-language.test.mjs` and `tests/client-views.test.mjs`:
   - new lines translate exactly;
   - old stored lines (the 8879 line, "PCDC mailed your returns.", a several-weeks sentence) still render their 简体.
-- [ ] 5.5 Run `npm run build:hant` and commit `src/zh-hant.mjs`. Then `npm run build:hant -- --check`.
+- [x] 5.5 Run `npm run build:hant` and commit `src/zh-hant.mjs`. Then `npm run build:hant -- --check`.
 
 ## 6. Browser: staff screens
 

@@ -136,7 +136,6 @@ export const waitingKinds = (record) =>
     ? ["federal", "state"].filter((kind) => !record?.[`${kind}Result`])
     : waitingReturns(record);
 
-const RETURN_WORDS = Object.freeze({ federal: "federal return", state: "Pennsylvania return" });
 const WAIT_FOR = Object.freeze({ federal: "the IRS's", state: "Pennsylvania's" });
 
 /**
@@ -260,7 +259,7 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     if (stopped) return stopped;
     return stage === "ready_to_efile"
       ? allowed
-      : refused("This is recorded once the client has signed Form 8879.");
+      : refused("This is recorded once the client has signed.");
   };
 
   const recordFilingResult = () => {
@@ -281,11 +280,8 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
       return refused("This is offered once a return has been rejected.");
     const waiting = waitingKinds(record);
     if (!waiting.length) return allowed;
-    const kind = waiting[0];
     return refused(
-      methodOf(record, kind) === "paper"
-        ? `Record when the ${RETURN_WORDS[kind]} is mailed before the return can go back to signing.`
-        : `Waiting for ${WAIT_FOR[kind]} answer before the return can go back to signing.`,
+      `Waiting for ${WAIT_FOR[waiting[0]]} answer before the return can go back to signing.`,
     );
   };
 
@@ -655,7 +651,7 @@ function officeActionsPanel(record, rights, ui) {
     rights.resumeFromHold.allowed,
     `<h3>Hold</h3><p class="field-note">${esc(
       holdKind(record) === "signing"
-        ? "The office could not reach the client to sign Form 8879."
+        ? "The office could not reach the client to sign."
         : "The office could not reach the client about documents.",
     )} Record when the office gets in touch.</p>${button(
       `${icon("phone")} Got in touch…`,
@@ -665,7 +661,7 @@ function officeActionsPanel(record, rights, ui) {
     )}`,
   )}${when(
     record.stage === "review_approved",
-    `<h3>Form 8879</h3><p class="field-note">Record that the client signed Form 8879. The client is told.</p>${
+    `<h3>Signing</h3><p class="field-note">Record that the client signed. The client is told.</p>${
       rights.markReadyToEfile.allowed
         ? button(
             `${icon("check")} Mark ready to e-file…`,
@@ -685,7 +681,7 @@ function officeActionsPanel(record, rights, ui) {
   )}${when(
     record.stage === "efiled" ||
       (record.stage === "rejected" && rights.recordFilingResult.allowed),
-    `<h3>Filing result</h3><p class="field-note">Record what the IRS or Pennsylvania answered, or when a paper return was mailed. This can't be undone.</p>${
+    `<h3>Filing result</h3><p class="field-note">Record what the IRS or Pennsylvania answered for an e-filed return. This can't be undone.</p>${
       rights.recordFilingResult.allowed
         ? button(
             `${icon("check")} Record filing result…`,
@@ -775,7 +771,7 @@ const clientName = (record) =>
     .filter(Boolean)
     .join(" ") || "this client";
 
-/** The Form 8879 confirmation: the client is told it was signed. */
+/** The signing confirmation: the client is told it was signed. */
 export function markReadyToEfileDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
@@ -788,7 +784,7 @@ export function markReadyToEfileDialogBody(state = {}) {
         returnedToSigning(record)
           ? "This is the client's second signing: the return was corrected after a rejection. "
           : ""
-      }The client will be told PCDC recorded that they signed Form 8879. This can't be undone.`,
+      }The client will be told PCDC recorded that their return is ready. This can't be undone.`,
     },
     form: {
       fields: `<label class="checkbox-row" for="${fieldId(
@@ -797,7 +793,7 @@ export function markReadyToEfileDialogBody(state = {}) {
       )}"><input type="checkbox" id="${fieldId(
         "confirmed",
         "ready-efile",
-      )}" name="confirmed" value="true" required><span>The client signed Form 8879.</span></label>`,
+      )}" name="confirmed" value="true" required><span>The client signed Form 8879, or the return will be given to the client on paper.</span></label>`,
     },
     confirm: caseSubmit(
       `${icon("check")} Mark ready to e-file`,
@@ -814,19 +810,26 @@ export function markReadyToEfileDialogBody(state = {}) {
 // lists the line beside each choice, so the choice and its words are read together.
 const FILED_LINES = Object.freeze({
   both_efile: "PCDC e-filed your return.",
-  efile_and_paper: "PCDC e-filed your federal return and mailed your Pennsylvania return.",
-  both_paper: "PCDC mailed your returns.",
+  efile_and_paper:
+    "PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
+  paper_and_efile:
+    "PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
+  both_paper:
+    "PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.",
   federal: Object.freeze({
     efile: "PCDC e-filed your federal return.",
-    paper: "PCDC mailed your federal return.",
+    paper:
+      "PCDC gave your federal return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
   }),
   state: Object.freeze({
     efile: "PCDC e-filed your Pennsylvania return.",
-    paper: "PCDC mailed your Pennsylvania return.",
+    paper:
+      "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
   }),
 });
 
-const RESULT_WORDS = Object.freeze({ accepted: "accepted", mailed: "mailed" });
+const RESULT_WORDS = Object.freeze({ accepted: "accepted", given_to_client: "on paper, given to the client" });
+const ON_PAPER = "On paper (given to the client to mail)";
 
 // One radio with the line the client will be told under it.
 const choice = (name, value, label, line, scope) =>
@@ -837,9 +840,9 @@ const choice = (name, value, label, line, scope) =>
     line ? `<br><small class="muted">The client will be told: ${esc(line)}</small>` : ""
   }</span></label>`;
 
-// A first filing picks one of the three combinations PCDC uses. Filing again
-// offers only the returns that were rejected, each e-filed or on paper, and
-// lists every accepted or mailed return as already done.
+// A first filing picks one of the four combinations. Filing again offers only
+// the returns that were rejected, each e-filed or on paper, and lists every
+// accepted return, and every return given to the client, as already done.
 function efiledChoices(record) {
   const rejected = ["federal", "state"].filter((kind) => returnState(record, kind) === "rejected");
   if (!rejected.length)
@@ -848,11 +851,24 @@ function efiledChoices(record) {
       choice(
         "filing-combination",
         "efile_and_paper",
-        "Federal e-filed, Pennsylvania on paper",
+        "Federal e-filed, Pennsylvania on paper (given to the client to mail)",
         FILED_LINES.efile_and_paper,
         "efiled",
       ),
-      choice("filing-combination", "both_paper", "Both returns on paper", FILED_LINES.both_paper, "efiled"),
+      choice(
+        "filing-combination",
+        "paper_and_efile",
+        "Federal on paper (given to the client to mail), Pennsylvania e-filed",
+        FILED_LINES.paper_and_efile,
+        "efiled",
+      ),
+      choice(
+        "filing-combination",
+        "both_paper",
+        "Both returns on paper (given to the client to mail)",
+        FILED_LINES.both_paper,
+        "efiled",
+      ),
     ].join("");
   const done = ["federal", "state"]
     .filter((kind) => !rejected.includes(kind))
@@ -873,14 +889,16 @@ function efiledChoices(record) {
         "E-filed",
         lines ? FILED_LINES[kind].efile : "",
         "efiled",
-      )}${choice(`method-${kind}`, "paper", "On paper", lines ? FILED_LINES[kind].paper : "", "efiled")}</fieldset>`;
+      )}${choice(`method-${kind}`, "paper", ON_PAPER, lines ? FILED_LINES[kind].paper : "", "efiled")}</fieldset>`;
     })
     .join("");
   const both =
     rejected.length === 2
       ? `<p class="field-note">The client will be told: ${esc(FILED_LINES.both_efile)} (both e-filed), ${esc(
           FILED_LINES.efile_and_paper,
-        )} (federal e-filed, Pennsylvania on paper) or ${esc(FILED_LINES.both_paper)} (both on paper).</p>`
+        )} (federal e-filed, Pennsylvania on paper), ${esc(
+          FILED_LINES.paper_and_efile,
+        )} (federal on paper, Pennsylvania e-filed) or ${esc(FILED_LINES.both_paper)} (both on paper).</p>`
       : "";
   return `${done}${groups}${both}`;
 }
@@ -903,7 +921,7 @@ export function markEfiledDialogBody(state = {}) {
       )}"><input type="checkbox" id="${fieldId(
         "confirmed",
         "efiled",
-      )}" name="confirmed" value="true" required><span>The return was e-filed.</span></label>`,
+      )}" name="confirmed" value="true" required><span>Each return was e-filed, or given to the client on paper, as chosen above.</span></label>`,
     },
     confirm: caseSubmit(
       `${icon("check")} Mark e-filed`,
@@ -915,34 +933,25 @@ export function markEfiledDialogBody(state = {}) {
   });
 }
 
-const FILED_AS = Object.freeze({ efile: "e-filed", paper: "on paper" });
-
-// One waiting return's answer: what it can be recorded as, the date, and, for
-// a rejection, the code. A paper return can only be mailed.
-function resultFields(record, kind) {
-  const method = methodOf(record, kind);
-  const options =
-    method === "paper"
-      ? [["mailed", "Mailed"]]
-      : [
-          ["accepted", "Accepted"],
-          ["rejected", "Rejected"],
-        ];
+// One waiting e-filed return's answer: accepted or rejected, the date and, for
+// a rejection, the code. A paper return has none: it was given to the client.
+function resultFields(kind) {
+  const options = [
+    ["accepted", "Accepted"],
+    ["rejected", "Rejected"],
+  ];
   const title = kind === "federal" ? "Federal return" : "Pennsylvania return";
   const id = fieldId(`result-${kind}`, "filing");
-  return `<fieldset class="filing-return"><legend>${title} (${FILED_AS[method] ?? "filed"})</legend><label class="field" for="${id}"><span>Answer</span><select id="${id}" name="result-${kind}"><option value="">No answer yet</option>${options
+  return `<fieldset class="filing-return"><legend>${title} (e-filed)</legend><label class="field" for="${id}"><span>Answer</span><select id="${id}" name="result-${kind}"><option value="">No answer yet</option>${options
     .map(([value, text]) => `<option value="${value}">${text}</option>`)
     .join("")}</select></label>${input(
-    method === "paper" ? "Date mailed" : "Date of the answer",
+    "Date of the answer",
     `date-${kind}`,
     "",
     "date",
     `max="${nowInput().slice(0, 10)}"`, // PCDC's today: no answer is dated later
     "filing",
-  )}${when(
-    method !== "paper",
-    input("Reject code (only if rejected)", `code-${kind}`, "", "text", 'maxlength="40"', "filing"),
-  )}</fieldset>`;
+  )}${input("Reject code (only if rejected)", `code-${kind}`, "", "text", 'maxlength="40"', "filing")}</fieldset>`;
 }
 
 /** The filing-result confirmation: what each waiting return is recorded as. */
@@ -954,13 +963,13 @@ export function recordFilingResultDialogBody(state = {}) {
     )}</strong> for <strong>${esc(clientName(record))}</strong>?`,
     note: {
       icon: "shield",
-      html: "Each return is recorded as accepted or rejected (e-filed) or mailed (on paper), with its date. A return left on No answer yet stays as it is. A rejection moves the case to Rejected at once. This can't be undone.",
+      html: "Each e-filed return is recorded as accepted or rejected, with its date. A return left on No answer yet stays as it is. A rejection moves the case to Rejected at once. This can't be undone.",
     },
     form: {
       fields: `${waitingKinds(record)
-        .map((kind) => resultFields(record, kind))
+        .map((kind) => resultFields(kind))
         .join("")}${textarea(
-        "Fix note (only when a return is rejected): who fixes it, and how",
+        "Fix note (only when a return is rejected): what needs fixing in TaxSlayer",
         "fix-note",
         "",
         'maxlength="1000" rows="3"',

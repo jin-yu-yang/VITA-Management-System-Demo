@@ -468,7 +468,7 @@ test("the 8879 and e-file actions need their own confirmation sentence", () => {
   for (const type of ["START_SCREENING", "MARK_READY_TO_EFILE", "MARK_EFILED"])
     assert.ok(PAYLOAD_ACTIONS.includes(type), type);
   const sentences = {
-    MARK_READY_TO_EFILE: "Confirm that the client signed Form 8879.",
+    MARK_READY_TO_EFILE: "Confirm that the client signed Form 8879, or the return will be given to the client on paper.",
     MARK_EFILED: "Confirm that the return was e-filed.",
   };
   for (const [type, message] of Object.entries(sentences)) {
@@ -509,6 +509,7 @@ test("MARK_EFILED carries the methods: one combination on a first filing, or the
   for (const [combination, methods] of [
     ["both_efile", { federal: "efile", state: "efile" }],
     ["efile_and_paper", { federal: "efile", state: "paper" }],
+    ["paper_and_efile", { federal: "paper", state: "efile" }],
     ["both_paper", { federal: "paper", state: "paper" }],
   ])
     assert.deepEqual(
@@ -555,12 +556,14 @@ test("RECORD_FILING_RESULT builds the results of the returns answered", () => {
   assert.deepEqual(
     payloadFor("RECORD_FILING_RESULT", {}, {
       "result-federal": "",
-      "result-state": "mailed",
+      "result-state": "accepted",
       "date-state": "2026-10-22",
       "fix-note": "  ",
     }).payload,
-    { confirmed: true, results: { state: { result: "mailed", date: "2026-10-22" } } },
+    { confirmed: true, results: { state: { result: "accepted", date: "2026-10-22" } } },
   );
+  // PCDC records no answer for a paper return: "mailed" is not a result any more.
+  refused("RECORD_FILING_RESULT", { "result-state": "mailed", "date-state": "2026-10-22" }, "Record a result for at least one return.");
   refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20" }, "A reject code is required.");
   refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20", "code-federal": "  " }, "A reject code is required.");
   refused("RECORD_FILING_RESULT", { "result-state": "accepted" }, "A date is required.");

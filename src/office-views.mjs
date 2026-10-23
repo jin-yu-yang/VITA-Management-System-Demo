@@ -41,7 +41,6 @@ import {
   openFollowups,
   openFollowupCount,
   remindedNote,
-  methodOf,
   waitingKinds,
 } from "./admin-views.mjs";
 import { returnedToSigning, latestFixNote, holdKind, BEFORE_FILING_NOTICE_REASONS } from "./domain.mjs";
@@ -113,15 +112,10 @@ export const waitingLabel = (days) =>
 // same fact, so the color is never the only signal.
 const waitingTone = (days) => (days >= 5 ? "late" : days >= 3 ? "aging" : "");
 
-// A Filing result row is coloured only while an e-filed return waits for its
-// acknowledgment; a mailing wait and a Rejected row are never coloured.
-const awaitsEfileAnswer = (record) => waitingKinds(record).some((kind) => methodOf(record, kind) === "efile");
 // A Hold row, a Withdrawn row and a Rejected row are never coloured.
 const NEVER_COLOURED = Object.freeze(["rejected", "hold", "withdrawn"]);
 const rowTone = (row) =>
-  NEVER_COLOURED.includes(row.kind) || (row.kind === "result" && !awaitsEfileAnswer(row.record))
-    ? ""
-    : waitingTone(row.days);
+  NEVER_COLOURED.includes(row.kind) ? "" : waitingTone(row.days);
 
 // The open withdrawal notice follow-ups of a case: a full record carries the
 // follow-ups themselves, a list row only the count its summary attaches.
@@ -220,20 +214,15 @@ export function queueCounts(rows, chosen) {
 // ---------------------------------------------------------------------------
 
 const WAITS = Object.freeze({ federal: "the IRS's answer", state: "Pennsylvania's answer" });
-const RETURN_WORDS = Object.freeze({ federal: "federal return", state: "Pennsylvania return" });
 
-// What a Filing result row is waiting for: an e-filed return's answer, then a
-// paper return's mailing, each as one sentence.
+// What a Filing result row is waiting for: an e-filed return's answer. A paper
+// return is never waited for. A case filed on paper before that rule, with
+// nothing e-filed, has no answer to wait for.
 function resultText(record) {
   const waiting = waitingKinds(record);
-  const efile = waiting.filter((kind) => methodOf(record, kind) === "efile");
-  const paper = waiting.filter((kind) => methodOf(record, kind) === "paper");
-  const sentences = [];
-  if (efile.length === 2) sentences.push("Waiting for the IRS and Pennsylvania.");
-  else if (efile.length === 1) sentences.push(`Waiting for ${WAITS[efile[0]]}.`);
-  if (paper.length === 2) sentences.push("Record when the returns are mailed.");
-  else if (paper.length === 1) sentences.push(`Record when the ${RETURN_WORDS[paper[0]]} is mailed.`);
-  return sentences.join(" ");
+  if (waiting.length === 2) return "Waiting for the IRS and Pennsylvania.";
+  if (waiting.length === 1) return `Waiting for ${WAITS[waiting[0]]}.`;
+  return "No e-filed return is waiting for an answer.";
 }
 
 function needed(row) {
@@ -254,7 +243,7 @@ function needed(row) {
   if (kind === "hold")
     return esc(
       holdKind(record) === "signing"
-        ? "Can't reach the client to sign Form 8879."
+        ? "Can't reach the client to sign."
         : "Can't reach the client about documents.",
     );
   if (kind === "withdrawn")
@@ -276,7 +265,7 @@ function needed(row) {
           ? "Waiting for the reviewer's call with the client."
           : record.goOverOpen
             ? "Waiting for the office to go over the return with the client."
-            : "Waiting for the client to sign Form 8879.",
+            : "Waiting for the client to sign.",
     );
   if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;
