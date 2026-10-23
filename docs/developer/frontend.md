@@ -318,8 +318,8 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
 
 ## Stages and their words
 
-A case has one of fourteen stages, in chain order: `draft`, `received`, `screening`,
-`preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
+A case has one of sixteen stages, in chain order: `draft`, `received`, `screening`,
+`awaiting_documents`, `on_hold`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
 `review_approved`, `ready_to_efile`, `efiled`, `rejected`, `accepted`, `closed`. The browser decides
 none of the moves (the database does, see the [state machine](database.md#the-case-state-machine));
 it only names what it shows. `describeStage(stage, lang, record)` in
@@ -332,6 +332,13 @@ filed. For each stage it returns three texts:
 | `label` | Staff | `STAGE_DESCRIPTIONS`; always English (for example `screening` is "Screening in progress", `review_approved` is "Ready to exit") |
 | `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Signed") |
 | `clientMessage` | The client | The same, `stage.<stage>.client` |
+
+Two stages are new (036). `awaiting_documents` is "Waiting for documents" for staff and "Documents
+needed" for the client; `on_hold` is "Hold" and "Waiting for you". A Hold's client message depends
+on where it came from (`holdKind(record)` in `domain.mjs`: `documents` or `signing`), and a closed
+case's message depends on `closingReason` (`stage.closed.client.<reason>`); a case closed with no
+reason, or with Other, gets the generic message. From Ready to exit on, the client reads a "contact
+PCDC" line in place of the Withdraw button.
 
 A stage that is not in the table gets neutral wording. A client message names no milestone the case
 has not reached, and no client text names a phone number.
@@ -358,9 +365,12 @@ that has methods was returned to signing, and its message asks the client to sig
   labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
   `review_approved`, `ready_to_efile`, `efiled`, `accepted`, `closed`. A case in
   `corrections_required` shows on the `preparing` step, marked as an amendment; a `rejected` case
-  shows on the `efiled` step the same way.
+  shows on the `efiled` step the same way. A case at Waiting for documents shows on the step it
+  was asked from (`documentsOrigin`), and a Hold on the step it came from (`holdOrigin`), both
+  marked like an amendment with their own label.
 - **The client's progress track** (`PROGRESS_STEPS` in `client-views.mjs`) has five steps, each
-  holding the stages that belong to it: intake (`draft`, `received`, `screening`), preparation
+  holding the stages that belong to it: intake (`draft`, `received`, `screening`, and Waiting for
+  documents or a documents Hold; a Hold from Ready to exit sits on signing), preparation
   (`preparation_ready`, `preparing`, `corrections_required`), review (`review_ready`, `reviewing`),
   signing (`review_approved`) and filing (`ready_to_efile`, `efiled`, `rejected`). A `rejected`
   case therefore sits on Filing. An `accepted` case shows every step done, with the "done"
@@ -405,6 +415,22 @@ A staff-only Filing panel on the case page lists every attempt, newest first, wi
 method, result, date and code, and the fix notes in the order recorded. The case pool has two more
 tabs, Needs attention (`rejected`) and Done (`accepted`), and Follow-ups gains the kinds "Filing
 result" and "Rejected".
+
+Hold and closing (036) add admin buttons: "Ask for documents…" (Screening, Pending intake / filing;
+one to five requests), "Put on hold…" (Waiting for documents or Ready to exit; an optional staff
+note), "Got in touch…" (Hold), and "Close case…" with a reason list (Out of scope, No need to file,
+Duplicate, Dismissed, Withdrawn, Other; a note is required for Other), which is also offered at
+Waiting for documents and Hold. An admin records and verifies documents at Waiting for documents
+and a documents Hold. In the case pool, Waiting for documents sits under Waiting on client, Hold
+under Needs attention, and Closed has a reason filter (with "No reason" for older cases).
+Follow-ups gains the kinds "Waiting for documents", "Hold" and "Withdrawn" (the
+`withdrawal_notice` task, "The client withdrew; tell <name> to stop work."). Notes are escaped in
+the staff history and never reach a client screen.
+
+On the client's side, the progress page shows a **Withdraw this application** button at the stages
+in `WITHDRAW_STAGES` (and on a documents Hold), which opens a dialog with one box to tick and sends
+`{confirmed: true}`. It is not shown from Ready to exit on; the client reads the contact line
+instead.
 
 ## Events and actions
 

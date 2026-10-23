@@ -63,6 +63,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `033_review_questionnaires.sql` | Hand-written: `preparer_questionnaires` and `reviewer_questionnaires` (staff-only), `admin_followups.purpose` and a nullable `request_id`, `cases.signing_plan` and `signing_appointment_at`; `SUBMIT_REVIEW`, `RESUBMIT_REVIEW` and `APPROVE_REVIEW` take a questionnaire; an approval settles the contact step and, when the reviewer did not go over the return, opens a `go_over_return` task for the office; `MARK_READY_TO_EFILE` waits for an open go-over task; the sample cases seed questionnaires |
 | `034_screening_checks.sql` | Hand-written: `VERIFY_INTAKE` records the real screening checks, `phone`, `documents` and `in_scope`, plus `identity` only when the case's `service` answer is `online` (a replayed old four-key payload is refused); the client's history line is "PCDC finished screening your application. A volunteer will start preparing your return next."; `check_payload`, `act_verify_intake` and `fixture_history` replaced, and the sample cases record the new checks |
 | `035_post_efiling_stages.sql` | Hand-written: the `rejected` and `accepted` stages; `cases.federal_method`, `state_method`, `federal_result` and `state_result`; the staff-only `filing_attempts`, `filing_returns` and append-only `filing_notes`; `MARK_EFILED` records each return's method; `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`; `CLOSE_CASE` from `rejected`; the `rejected` and `accepted` sample cases |
+| `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages; `cases.documents_origin`, `hold_origin` and `closing_reason`; `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and the client's `WITHDRAW`; `CLOSE_CASE` takes one of six reasons and an optional note, and is also allowed from the two new stages; an admin may record and verify documents there; the `withdrawal_notice` follow-up purpose; the `on_hold` and `withdrawn` sample cases |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -104,11 +105,10 @@ version of a function, use the **last** file that defines it:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `035_post_efiling_stages.sql` |
-| `vitally_private.check_payload` | `035_post_efiling_stages.sql` |
+| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `036_hold_and_closing.sql` |
+| `vitally_private.check_payload`, `check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
 | `vitally_private.act_verify_intake` | `034_screening_checks.sql` |
 | `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
-| `vitally_private.check_authority` | `018_document_card_authority.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
@@ -116,13 +116,15 @@ version of a function, use the **last** file that defines it:
 | `public.vitally_create_case` (answers must be `{}`), `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_update_contact` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
-| `vitally_private.act_close_case`, `act_mark_efiled`, `act_record_filing_result`, `act_return_to_signing` | `035_post_efiling_stages.sql` |
+| `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
+| `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
+| `vitally_private.act_mark_efiled`, `act_record_filing_result`, `act_return_to_signing` | `035_post_efiling_stages.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
-| `vitally_private.fixture_answers_v2` | `035_post_efiling_stages.sql` |
+| `vitally_private.fixture_answers_v2` | `036_hold_and_closing.sql` |
 | `vitally_private.fixture_contact_v2` | `019_fixtures_v2.sql` |
-| `vitally_private.apply_fixture_scenario`, `fixture_history`, `fixture_keys` | `035_post_efiling_stages.sql` |
+| `vitally_private.apply_fixture_scenario`, `fixture_history`, `fixture_keys` | `036_hold_and_closing.sql` |
 | `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
@@ -176,12 +178,12 @@ erDiagram
 | `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it; default 2 since 020, and only 2 since 023) |
 | `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
 | `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
-| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign Form 8879), `federal_method` and `state_method` (035; `efile` or `paper`; both null or one of three combinations: efile/efile, efile/paper, paper/paper), `federal_result` and `state_result` (035; `accepted` or `rejected` for an e-filed return, `mailed` for a paper one; null until its method is set and answered). A client reads these four columns and nothing else about a filing |
+| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign Form 8879), `federal_method` and `state_method` (035; `efile` or `paper`; both null or one of three combinations: efile/efile, efile/paper, paper/paper), `federal_result` and `state_result` (035; `accepted` or `rejected` for an e-filed return, `mailed` for a paper one; null until its method is set and answered). A client reads these four columns and nothing else about a filing, `documents_origin` and `hold_origin` (036; the stage a documents request came from and the case returns to, `screening` or `preparation_ready`, and where a hold came from, `awaiting_documents` or `review_approved`; both null otherwise, and both cleared when the case returns), `closing_reason` (036; one of `out_of_scope`, `no_need_to_file`, `duplicate`, `dismissed`, `withdrawn`, `other`; null for a case closed before 036 and for any open case. A client reads the reason's key and never a note) |
 | `action_receipts` | One row per accepted or in-flight action | Unique `(workspace_id, actor_user_id, action_id)`; `request_digest` (SHA-256 of the envelope); `receipt` (the stored result). No foreign key to the target, so receipts outlive deleted cases |
 | `preparation_participants` | Who ever prepared a case | Primary key `(case_id, person_id)`. Written on a preparation claim and never removed. Blocks self-review |
 | `document_requests` | A preparer asking for a document | `status`: `open` → `awaiting_verification` → `verified`, or `cancelled` on closure |
 | `documents` | A received document (metadata only) | `source` is `client` (no person) or `staff_recorded` (a person); `filename` only, **no file storage** |
-| `admin_followups` | An office task to contact a client: about a document request, or (033) to go over the return with the client | `purpose` (`request_documents` or `go_over_return`, the contact log's keys); `request_id` is set for `request_documents` and null for `go_over_return`; `status`: `open`, `resolved`, `cancelled`; at most one open task per request; resolution outcome `reached` or `no_further_contact` |
+| `admin_followups` | An office task to contact a client: about a document request, or (033) to go over the return with the client | `purpose` (`request_documents`, `go_over_return` or (036) `withdrawal_notice`, the contact log's keys; a `withdrawal_notice` has no request, and tells the office to stop the preparer's or reviewer's work); `request_id` is set for `request_documents` and null for the other two; `status`: `open`, `resolved`, `cancelled`; at most one open task per request; resolution outcome `reached` or `no_further_contact` |
 | `contact_attempts` | Old call attempts on a follow-up | Empty since 031 moved its rows into `contact_log`; kept until a later cleanup. Nothing reads or writes it |
 | `contact_log` | The current version of each logged contact | One row per entry on any case: `direction`, `contacted_at` (an instant), `with_whom` (+ `other_name`), `method`, `purpose`, `outcome`, `note`, `followup_id` (null unless logged from a task), `logged_by_*`, `logged_at`, its own `revision`, `edited_at`. The outcome must fit the method. Staff-only; written only by the two contact functions; published to Realtime |
 | `contact_log_versions` | Every version of every entry | Primary key `(contact_id, version)`; version 1 is written with the entry, each edit appends the next. Never updated or deleted by a function, so history cannot be rewritten. Staff-only; published to Realtime |
@@ -261,7 +263,7 @@ caller itself, and returns a JSON receipt.
 | `vitally_assistance_action(p_action_id uuid, p_item_id uuid, p_expected_revision bigint, p_person_id uuid, p_type text, p_note text)` | `CLAIM` or `RESOLVE` an assistance item | `{actionId, itemId, revision}` |
 | `vitally_log_contact(p_action_id uuid, p_case_id uuid, p_person_id uuid, p_followup_id uuid, p_entry jsonb)` | Log a contact on a case, optionally linked to an open follow-up task | `{actionId, contactId, caseId, revision}` |
 | `vitally_edit_contact(p_action_id uuid, p_contact_id uuid, p_expected_revision bigint, p_person_id uuid, p_entry jsonb)` | Edit a logged contact; appends a version | `{actionId, contactId, caseId, revision}` |
-| `vitally_reset_fixtures(p_action_id uuid)` | Demo only: rebuild the eight sample cases | `{actionId, generation, fixtureCaseIds}` |
+| `vitally_reset_fixtures(p_action_id uuid)` | Demo only: rebuild the ten sample cases | `{actionId, generation, fixtureCaseIds}` |
 | `vitally_load_checkpoint(p_action_id uuid, p_case_id uuid, p_expected_revision bigint, p_checkpoint text)` | Demo only: move one sample case to a story point | `{actionId, caseId, reference, revision}` |
 
 `p_person_id` is the staff person the caller acts as. Applicants must send `null`. Presenters send
@@ -330,6 +332,16 @@ stateDiagram-v2
   efiled --> accepted: RECORD_FILING_RESULT (every return accepted or mailed)
   rejected --> review_approved: RETURN_TO_SIGNING
   rejected --> closed: CLOSE_CASE
+  screening --> awaiting_documents: REQUEST_DOCUMENTS_AT_INTAKE
+  preparation_ready --> awaiting_documents: REQUEST_DOCUMENTS_AT_INTAKE
+  awaiting_documents --> screening: last request verified
+  awaiting_documents --> preparation_ready: last request verified
+  awaiting_documents --> on_hold: PUT_ON_HOLD
+  review_approved --> on_hold: PUT_ON_HOLD
+  on_hold --> awaiting_documents: RESUME_FROM_HOLD
+  on_hold --> review_approved: RESUME_FROM_HOLD
+  awaiting_documents --> closed: CLOSE_CASE
+  on_hold --> closed: CLOSE_CASE
   accepted --> [*]
   closed --> [*]
 ```
@@ -341,9 +353,19 @@ preparation.
 
 `accepted` is the end of the demo's main chain. `efiled` waits for the IRS's and Pennsylvania's
 answers, which an admin records by hand (035); `rejected` goes back to signing and is filed again.
-Amendments, reassignment, the unreachable client, and waiting for documents and hold are not
-built; see the [roadmap](production-roadmap.md#4-workflow-coverage). Five admin-only actions and
-one submit rule shape the new stages:
+Amendments, reassignment, same day and FSA are not built; see the
+[roadmap](production-roadmap.md#4-workflow-coverage). Waiting for documents and Hold (036) are:
+`REQUEST_DOCUMENTS_AT_INTAKE` (1 to 5 requests, from `screening` or `preparation_ready`) opens
+`awaiting_documents` and records `documents_origin`; an admin records and verifies the documents
+there and at a documents Hold, and verifying the last request returns the case to its origin
+automatically, clearing both origins. `PUT_ON_HOLD` (optional staff note) takes `awaiting_documents`
+or `review_approved` to `on_hold` and records `hold_origin`; `RESUME_FROM_HOLD` returns it. The
+client's own `WITHDRAW` is allowed from `received` through `reviewing` (including
+`awaiting_documents` and `corrections_required`) and on a documents Hold; it closes the case with
+reason `withdrawn`, and opens a `withdrawal_notice` follow-up when the client withdraws at
+`preparing`, `corrections_required` or `reviewing`. Two moves at the same revision: one wins, the other gets
+the revision conflict. The preparer's own document loop during preparation is unchanged. Five
+admin-only actions and one submit rule shape the earlier stages:
 
 - A client's `SUBMIT` lands in `received`; an office-entered case's `SUBMIT` (no owner) lands in
   `screening`, because the office has already screened a client it entered itself.
@@ -403,7 +425,11 @@ shorthands in the table:
 | `RECORD_FILING_RESULT` | Presenter + `admin` person | `efiled`; `rejected` while a return is waiting | Only waiting returns; result fits the method; date not future and not before the filing; a reject code exactly when rejected | Saves results on `cases` and `filing_returns`, plus a `filing_notes` row for a fix note; → `rejected`, `accepted` or stays | Yes (per return; no code, no note) |
 | `RETURN_TO_SIGNING` | Presenter + `admin` person | `rejected` | No return waiting | → `review_approved`; methods and results kept | Yes |
 | `REMIND` | Presenter + `admin` person | `preparation_ready` with no preparer, or `review_ready` with no reviewer | | Sets `last_reminded_at` (no message is sent) | No |
-| `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required` (`screening` included), `rejected` (035), or an assisted `draft` | | → `closed`; cancels open requests and tasks | Yes |
+| `REQUEST_DOCUMENTS_AT_INTAKE` | Presenter + `admin` person | `screening`, `preparation_ready` | | New `open` requests (1 to 5); → `awaiting_documents`; sets `documents_origin` | Yes (titles) |
+| `PUT_ON_HOLD` | Presenter + `admin` person | `awaiting_documents`, `review_approved` | | → `on_hold`; sets `hold_origin`; the note is staff history only | Yes (no note, no phone) |
+| `RESUME_FROM_HOLD` | Presenter + `admin` person | `on_hold` | | Back to `hold_origin` | Yes |
+| `WITHDRAW` | The client (applicant owner) | `received` through `reviewing` (including `awaiting_documents`, `corrections_required`), and a documents `on_hold` | | → `closed` with reason `withdrawn`; cancels open requests and tasks; a `withdrawal_notice` task at `preparing`, `corrections_required` or `reviewing` | Yes |
+| `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required` (`screening` included), `awaiting_documents`, `on_hold` (036), `rejected` (035), or an assisted `draft` | | → `closed` with `closing_reason`; cancels open requests and tasks | Yes (reason only) |
 | `UPDATE_CONTACT` | Owner on own draft; `followup` or `admin` person; a preparer or reviewer on their own case | Draft (owner); any (staff) | | Edits best time and note in `case_contacts`; never a phone | No |
 | `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
 | `SET_DOCUMENT_CARD` | Applicant owner, or presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |
@@ -436,7 +462,10 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | `REQUEST_CORRECTIONS` | `{findings (≤2000)}` |
 | `RESUBMIT_REVIEW` | `{questionnaire, resolution (≤2000)}` |
 | `RECORD_REVIEW_CONTACT` | `{outcome, note (≤1000)}` |
-| `CLOSE_CASE` | `{confirmed: true, reason (≤1000)}` |
+| `CLOSE_CASE` | `{confirmed: true, reason, note? (≤1000)}`; `reason` is one of `out_of_scope`, `no_need_to_file`, `duplicate`, `dismissed`, `withdrawn`, `other`, and `other` needs a note (036) |
+| `REQUEST_DOCUMENTS_AT_INTAKE` | `{requests: [{title (≤120), message (≤2000)}]}`, 1 to 5 (036) |
+| `PUT_ON_HOLD` | `{confirmed: true, note? (≤1000)}` (036) |
+| `RESUME_FROM_HOLD`, `WITHDRAW` | `{confirmed: true}` (036) |
 
 Assistance items have their own two actions through `vitally_assistance_action`: `CLAIM` (item
 `open` → `assigned`, needs `assist`, no note) and `RESOLVE` (`assigned` → `resolved`, only the
@@ -553,7 +582,8 @@ Migration 009 seeds six sample cases, one per story point (`preparation_ready`,
 `review_approved`), with fictional answers and history. Migration 035 adds two more, `rejected`
 (both returns e-filed, federal accepted, state rejected, with a fictional reject code and fix
 note) and `accepted` (both e-filed, both accepted), so a reset seeds eight. Each has its own
-filing attempt and return rows.
+filing attempt and return rows. Migration 036 adds `on_hold` (a documents hold with a note) and
+`withdrawn` (closed by the client), so a reset now seeds ten.
 
 - **Reset** (`vitally_reset_fixtures`, presenters only) deletes only rows marked `fixture`,
   increments `workspaces.fixture_generation`, and reseeds. Class-created cases, accounts, people

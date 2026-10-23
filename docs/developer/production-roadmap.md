@@ -104,7 +104,8 @@ The demo's stages against the spec's state machine (spec §8.2):
 | Intake | `draft`, `received`, `screening` | An admin opening a `received` case starts screening (`START_SCREENING`); the office's explicit intake check (`VERIFY_INTAKE`) then moves it on. An office-entered case starts in `screening` |
 | PendingPrepare | `preparation_ready` | |
 | InPrepare | `preparing` | |
-| Pending (missing documents) | Document requests beside `preparing` | **Design difference.** The demo keeps the preparer assigned while waiting; the spec returns the case to the pool. Decide which the site wants |
+| Pending (missing documents) | Document requests beside `preparing`; `awaiting_documents` at intake (036) | **Design difference.** In preparation the demo keeps the preparer assigned while waiting; the spec returns the case to the pool (§8.2's in-preparation Pending). Before preparation, an admin's request moves the case to Waiting for documents and back automatically when the last request is verified. Decide which the site wants for preparation |
+| Hold | `on_hold` (036) | Built. An admin puts a case on hold from Waiting for documents or Ready to exit; "Got in touch" resumes it |
 | PendingReview | `review_ready` | |
 | InReview | `reviewing` | |
 | (not in spec) | `corrections_required` | Reviewer sends back to the same preparer, who resubmits a new version |
@@ -112,16 +113,15 @@ The demo's stages against the spec's state machine (spec §8.2):
 | NeedSign | `review_approved`, then `ready_to_efile` | `review_approved` is the wait for the client's Form 8879 signature; once the reviewer's call is recorded, an admin records the signature (`MARK_READY_TO_EFILE`) |
 | Efiled | `efiled`, then `accepted` or `rejected` | An admin records the e-filing and each return's method (`MARK_EFILED`), then the IRS's and Pennsylvania's answers by hand (`RECORD_FILING_RESULT`). A rejection returns to signing (`RETURN_TO_SIGNING`) and is filed again; nothing is sent to or read from the IRS or Pennsylvania |
 | Amended | Not built | Amendments after acceptance are not modelled |
-| CantFindClient | Not built | The unreachable-client loop is not modelled |
-| Cancelled | `closed` | Admin only, with a reason; no client withdrawal |
+| CantFindClient | `on_hold`, then `closed` as Dismissed (036) | Built: Hold, "Got in touch", and closing as Dismissed when the client stays unreachable |
+| Cancelled | `closed` | An admin closes with one of six reasons (and a note for Other); the client may withdraw at the stages the spec allows (036) |
 
 To build next:
 
-- **The unreachable client** (CantFindClient), **amendments**, and the spec's Waiting for
-  documents and Hold. Model them as new stages and actions
-  ([database recipe](database.md#add-a-workflow-action)). The IRS's answer after e-filing
+- **Amendments**, **same day** and **FSA**. Model them as new stages and actions
+  ([database recipe](database.md#add-a-workflow-action)). Waiting for documents, Hold, the
+  unreachable client and client withdrawal are built (036). The IRS's answer after e-filing
   (accepted, rejected, paper) is built, recorded by hand; importing the real answers is not.
-- **Client withdrawal** (spec §8.3): a client action that closes their own case.
 - **Release and reassignment** (spec §8.5, §13), not built: an admin action to change a case's preparer or
   reviewer. The participation record must still block self-review after reassignment; the database
   already enforces that.
@@ -238,7 +238,7 @@ Reviewed and accepted for the demo, and worth knowing about:
   The browser withholds it, so the server never receives one; the two checks are otherwise the
   same, and a database test compares them.
 - **A workspace whose version-1 samples migration 023 deleted has no samples** until a presenter
-  presses **Reset sample cases**, which seeds eight version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
+  presses **Reset sample cases**, which seeds ten version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 
