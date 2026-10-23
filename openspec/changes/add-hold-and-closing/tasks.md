@@ -1,7 +1,7 @@
 ## 1. Gate before apply
 
-- [ ] 1.1 Hailey reviews and approves the planning artifacts. The group's wording review and PCDC's season-end question stay open and don't block apply.
-- [ ] 1.2 Just before apply, check the migration list. 036 must be one after the newest migration; renumber if it's taken. Re-check each copied function's newest definition (design D14).
+- [x] 1.1 Hailey reviews and approves the planning artifacts. The group's wording review and PCDC's season-end question stay open and don't block apply.
+- [x] 1.2 Just before apply, check the migration list. 036 must be one after the newest migration; renumber if it's taken. Re-check each copied function's newest definition (design D14).
 
 ## 2. Database: stages, origins, documents at intake
 
