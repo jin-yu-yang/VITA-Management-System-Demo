@@ -455,7 +455,7 @@ export function createStore(client) {
       const followups = await read(
         client
           .from("admin_followups")
-          .select("case_id,assignee_person_id,purpose")
+          .select("case_id,assignee_person_id,purpose,reason")
           .in("case_id", ids)
           .eq("status", "open"),
       );
@@ -505,6 +505,8 @@ export function createStore(client) {
           goOverOpen: open.some((row) => row.purpose === "go_over_return"),
           // Follow-ups' Withdrawn row: the office's own job, not a call.
           openWithdrawalNotices: open.filter((row) => row.purpose === "withdrawal_notice").length,
+          // The first notice's own text, which says whom the office tells what.
+          withdrawalNoticeReason: open.find((row) => row.purpose === "withdrawal_notice")?.reason ?? null,
           // Who owes this client a call, without the tasks themselves: the
           // board names people, and the case screen holds the work.
           followupAssigneeIds: [

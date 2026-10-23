@@ -1034,15 +1034,16 @@ test("from Ready to exit on, and at a signing hold, the client is told to contac
   for (const [stage, overrides] of [
     ["review_approved", {}],
     ["ready_to_efile", {}],
-    ["efiled", {}],
     ["rejected", {}],
-    ["accepted", {}],
     ["on_hold", SIGNING_HOLD],
   ]) {
     assert.ok(progressAt(stage, "en", overrides).includes("To withdraw now, contact PCDC."), stage);
     assert.ok(progressAt(stage, "zh-Hans", overrides).includes("如需撤回，请联系 PCDC。"), stage);
   }
+  // Once the return is filed or accepted there is nothing to withdraw: no line.
   for (const [stage, overrides] of [
+    ["efiled", {}],
+    ["accepted", {}],
     ["draft", {}],
     ["preparing", {}],
     ["closed", {}],

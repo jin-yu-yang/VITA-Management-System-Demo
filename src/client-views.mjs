@@ -16,7 +16,7 @@ import {
   emptyState,
   emptyLine,
 } from "./ui.mjs";
-import { describeStage, holdKind, canWithdraw } from "./domain.mjs";
+import { describeStage, holdKind, canWithdraw, mustContactToWithdraw } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
 import {
   stepsFor,
@@ -361,23 +361,14 @@ function reviewProgress(record, lang = "en") {
   return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang, { audience: "client", record })}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
 }
 
-// From Ready to exit on, and at a Hold from Ready to exit, the client cannot
-// withdraw on their own: the line sends them to the office (design D7).
-const CONTACT_TO_WITHDRAW_STAGES = Object.freeze([
-  "review_approved",
-  "ready_to_efile",
-  "efiled",
-  "rejected",
-  "accepted",
-]);
-
 // The Withdraw button where the client may withdraw, the contact line where
-// they must ask the office, and nothing at Draft, Closed or a Hold with no origin.
+// they must ask the office (mustContactToWithdraw), and nothing at Draft, E-filed,
+// Accepted, Closed or a Hold with no origin.
 function withdrawSection(record, lang = "en") {
   const say = (key) => esc(t(key, {}, lang));
   if (canWithdraw(record))
     return `<div class="withdraw-card">${button(say("withdraw.button"), "open-withdraw", "text")}</div>`;
-  if (CONTACT_TO_WITHDRAW_STAGES.includes(record.stage) || (record.stage === "on_hold" && holdKind(record) === "signing"))
+  if (mustContactToWithdraw(record))
     return `<p class="field-note withdraw-contact">${say("withdraw.contact")}</p>`;
   return "";
 }

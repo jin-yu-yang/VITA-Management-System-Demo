@@ -13,6 +13,7 @@ import {
   latestFixNote,
   holdKind,
   canWithdraw,
+  mustContactToWithdraw,
   WITHDRAW_STAGES,
   CLOSING_REASON_NAMES,
 } from "../src/domain.mjs";
@@ -494,6 +495,17 @@ test("canWithdraw is true at the withdraw stages and at a documents hold only", 
   for (const stage of ["draft", "review_approved", "ready_to_efile", "efiled", "rejected", "accepted", "closed"])
     assert.equal(canWithdraw({ stage }), false, stage);
   assert.equal(canWithdraw(null), false);
+});
+
+test("mustContactToWithdraw is true from Ready to exit to Ready to e-file, at Rejected and at a signing hold", () => {
+  for (const stage of ["review_approved", "ready_to_efile", "rejected"])
+    assert.equal(mustContactToWithdraw({ stage }), true, stage);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: "review_approved" }), true);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: "awaiting_documents" }), false);
+  assert.equal(mustContactToWithdraw({ stage: "on_hold", holdOrigin: null }), false);
+  for (const stage of ["draft", "preparing", "efiled", "accepted", "closed"])
+    assert.equal(mustContactToWithdraw({ stage }), false, stage);
+  assert.equal(mustContactToWithdraw(null), false);
 });
 
 test("returnState, waitingReturns and awaitsAcknowledgment read the methods and results", () => {

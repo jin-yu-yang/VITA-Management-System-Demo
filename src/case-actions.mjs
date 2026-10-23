@@ -216,13 +216,16 @@ function filingResults(dataset, values) {
 }
 
 // The documents the office asks for at intake: up to five title and message
-// rows. A row with no title is skipped; a title with no message is refused (the
-// database would). At least one row must remain.
+// rows. A row with neither is skipped; a title with no message and a message with
+// no title are refused (the database would). At least one row must remain.
 function intakeRequests(values) {
   const requests = [];
   for (let n = 1; n <= 5; n += 1) {
     const title = String(values?.[`request-title-${n}`] ?? "").trim();
-    if (!title) continue;
+    if (!title) {
+      if (String(values?.[`request-message-${n}`] ?? "").trim()) throw validation(`Add a title for document ${n}.`);
+      continue;
+    }
     requests.push({ title, message: text(values, `request-message-${n}`, "A message for the client") });
   }
   if (!requests.length) throw validation("Ask for at least one document.");

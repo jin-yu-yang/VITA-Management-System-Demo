@@ -362,8 +362,14 @@ automatically, clearing both origins. `PUT_ON_HOLD` (optional staff note) takes 
 or `review_approved` to `on_hold` and records `hold_origin`; `RESUME_FROM_HOLD` returns it. The
 client's own `WITHDRAW` is allowed from `received` through `reviewing` (including
 `awaiting_documents` and `corrections_required`) and on a documents Hold; it closes the case with
-reason `withdrawn`, and opens a `withdrawal_notice` follow-up when the client withdraws at
-`preparing`, `corrections_required` or `reviewing`. Two moves at the same revision: one wins, the other gets
+reason `withdrawn`, and opens a `withdrawal_notice` follow-up (stop-work text) when the client
+withdraws at `preparing`, `corrections_required` or `reviewing` and a preparer or reviewer is
+assigned. An admin's `CLOSE_CASE` is also allowed at `review_approved` and `ready_to_efile` with
+reason `withdrawn` only (any other reason there is `INVALID_TRANSITION`; `efiled`, `accepted`
+and `closed` stay refused). A withdrawn close at those stages, or at a Hold from `review_approved`,
+opens a `withdrawal_notice` whose stored text is "The client withdrew; make sure the return is not
+transmitted in TaxSlayer.", assigned to the workspace's follow-up person like the client's notice.
+Two moves at the same revision: one wins, the other gets
 the revision conflict. The preparer's own document loop during preparation is unchanged. Five
 admin-only actions and one submit rule shape the earlier stages:
 
@@ -428,8 +434,8 @@ shorthands in the table:
 | `REQUEST_DOCUMENTS_AT_INTAKE` | Presenter + `admin` person | `screening`, `preparation_ready` | | New `open` requests (1 to 5); → `awaiting_documents`; sets `documents_origin` | Yes (titles) |
 | `PUT_ON_HOLD` | Presenter + `admin` person | `awaiting_documents`, `review_approved` | | → `on_hold`; sets `hold_origin`; the note is staff history only | Yes (no note, no phone) |
 | `RESUME_FROM_HOLD` | Presenter + `admin` person | `on_hold` | | Back to `hold_origin` | Yes |
-| `WITHDRAW` | The client (applicant owner) | `received` through `reviewing` (including `awaiting_documents`, `corrections_required`), and a documents `on_hold` | | → `closed` with reason `withdrawn`; cancels open requests and tasks; a `withdrawal_notice` task at `preparing`, `corrections_required` or `reviewing` | Yes |
-| `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required` (`screening` included), `awaiting_documents`, `on_hold` (036), `rejected` (035), or an assisted `draft` | | → `closed` with `closing_reason`; cancels open requests and tasks | Yes (reason only) |
+| `WITHDRAW` | The client (applicant owner) | `received` through `reviewing` (including `awaiting_documents`, `corrections_required`), and a documents `on_hold` | | → `closed` with reason `withdrawn`; cancels open requests and tasks; a `withdrawal_notice` task at `preparing`, `corrections_required` or `reviewing` when a preparer or reviewer is assigned | Yes |
+| `CLOSE_CASE` | Presenter + `admin` person | `received` through `corrections_required` (`screening` included), `awaiting_documents`, `on_hold` (036), `rejected` (035), or an assisted `draft`; `review_approved` and `ready_to_efile` with reason `withdrawn` only (036) | | → `closed` with `closing_reason`; cancels open requests and tasks; a withdrawn close before filing opens the TaxSlayer `withdrawal_notice` task | Yes (reason only) |
 | `UPDATE_CONTACT` | Owner on own draft; `followup` or `admin` person; a preparer or reviewer on their own case | Draft (owner); any (staff) | | Edits best time and note in `case_contacts`; never a phone | No |
 | `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
 | `SET_DOCUMENT_CARD` | Applicant owner, or presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |

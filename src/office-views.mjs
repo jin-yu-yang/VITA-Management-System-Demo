@@ -44,7 +44,7 @@ import {
   methodOf,
   waitingKinds,
 } from "./admin-views.mjs";
-import { returnedToSigning, latestFixNote, holdKind } from "./domain.mjs";
+import { returnedToSigning, latestFixNote, holdKind, TRANSMIT_NOTICE_REASON } from "./domain.mjs";
 import {
   when,
   explain,
@@ -130,6 +130,11 @@ export const openWithdrawalNotices = (record) =>
   Array.isArray(record?.followups)
     ? record.followups.filter(isOpenNotice).length
     : Number(record?.openWithdrawalNotices ?? 0);
+// The stored text of the case's first open notice: from the follow-ups, or the list summary.
+const noticeReason = (record) =>
+  Array.isArray(record?.followups)
+    ? (record.followups.find(isOpenNotice)?.reason ?? null)
+    : (record?.withdrawalNoticeReason ?? null);
 // The tasks that are calls to the client: the notice is the office's own job.
 const callTasks = (record) => Math.max(0, openFollowupCount(record) - openWithdrawalNotices(record));
 
@@ -254,9 +259,12 @@ function needed(row) {
     );
   if (kind === "withdrawn")
     return esc(
-      // reviewer_id is set on a closed case with a notice only when the client
-      // withdrew at Review in progress; at the other two stages it is null.
-      `The client withdrew; tell ${record.reviewerName ?? record.preparerName ?? "the volunteer"} to stop work.`,
+      // The admin's withdrawn close before filing stores its own sentence. The client's
+      // own notice names the volunteer: reviewer_id is set on a closed case with that
+      // notice only when the client withdrew at Review in progress.
+      noticeReason(record) === TRANSMIT_NOTICE_REASON
+        ? TRANSMIT_NOTICE_REASON
+        : `The client withdrew; tell ${record.reviewerName ?? record.preparerName ?? "the volunteer"} to stop work.`,
     );
   if (kind === "signing")
     return esc(

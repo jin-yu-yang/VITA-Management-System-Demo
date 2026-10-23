@@ -107,7 +107,8 @@ const DOCUMENT_STAGES = Object.freeze(["preparing", "corrections_required", "awa
 // The stages the office can ask the client for documents from, or add to.
 const ASK_STAGES = Object.freeze(["screening", "preparation_ready", "awaiting_documents"]);
 // The stages `vitally_private.act_close_case` accepts, plus the assisted draft
-// nobody owns. An approved review and a closed case are deliberately absent.
+// nobody owns. Ready to exit and Ready to e-file are closable with the reason
+// Withdrawn only (closeCase below); a filed and a closed case are absent.
 const CLOSABLE_STAGES = Object.freeze([
   "received",
   "screening",
@@ -191,8 +192,9 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
     const stopped = gate("admin");
     if (stopped) return stopped;
     if (stage === "closed") return refused("This case is already closed.");
-    if (["review_approved", "ready_to_efile", "efiled"].includes(stage))
-      return refused("An approved case is not closed from here.");
+    // Before filing only a withdrawal closes a case (the dialog offers just that reason).
+    if (["review_approved", "ready_to_efile"].includes(stage)) return allowed;
+    if (stage === "efiled") return refused("An approved case is not closed from here.");
     if (stage === "draft" && record.ownerUserId)
       return refused("A client's own draft is theirs to finish or leave.");
     if (stage !== "draft" && !CLOSABLE_STAGES.includes(stage))
@@ -723,6 +725,9 @@ function officeActionsPanel(record, rights, ui) {
  */
 export function closeCaseDialogBody(state = {}) {
   const record = state.savedCase ?? {};
+  // Before filing, the database accepts only the reason Withdrawn.
+  const beforeFiling = ["review_approved", "ready_to_efile"].includes(record.stage);
+  const reasons = beforeFiling ? ["withdrawn"] : CLOSING_REASONS;
   return confirmBody({
     lead: `Closing <strong>${esc(
       record.reference ?? "this case",
@@ -734,7 +739,11 @@ export function closeCaseDialogBody(state = {}) {
       html: "This does not cancel, withdraw or amend any return filed elsewhere, and it changes nothing at any tax authority. The client is told the office closed the application, in words that fit the reason. They never see your note.",
     },
     form: {
-      fields: `<fieldset class="close-reasons"><legend>Why the office is closing this case</legend>${CLOSING_REASONS.map(
+      fields: `<fieldset class="close-reasons"><legend>Why the office is closing this case</legend>${
+        beforeFiling
+          ? '<p class="field-note">Before filing, a case can only be closed because the client withdrew.</p>'
+          : ""
+      }${reasons.map(
         (reason) => choice("close-reason", reason, CLOSING_REASON_NAMES[reason], "", "close"),
       ).join("")}</fieldset>${textarea(
         "Note for staff (required for Other)",

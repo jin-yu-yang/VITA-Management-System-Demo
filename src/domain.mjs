@@ -312,6 +312,20 @@ export function canWithdraw(record) {
   return stage === "on_hold" && record?.holdOrigin === "awaiting_documents";
 }
 
+// The stages where the client cannot withdraw on their own and is told to
+// contact PCDC instead: Ready to exit, a Hold from it, Ready to e-file and
+// Rejected. Not E-filed, Accepted or Closed.
+export function mustContactToWithdraw(record) {
+  const stage = record?.stage;
+  if (stage === "on_hold") return holdKind(record) === "signing";
+  return ["review_approved", "ready_to_efile", "rejected"].includes(stage);
+}
+
+// The stored text of the follow-up an admin's withdrawn close opens before
+// filing; Follow-ups tells the two withdrawal notices apart by it.
+export const TRANSMIT_NOTICE_REASON =
+  "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+
 // The client text key of a Hold or a closed case's own message, or null when
 // the stage's base message stands (a documents Hold; Closed with no reason or
 // with Other).

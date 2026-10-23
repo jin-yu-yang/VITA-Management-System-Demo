@@ -337,8 +337,9 @@ Two stages are new (036). `awaiting_documents` is "Waiting for documents" for st
 needed" for the client; `on_hold` is "Hold" and "Waiting for you". A Hold's client message depends
 on where it came from (`holdKind(record)` in `domain.mjs`: `documents` or `signing`), and a closed
 case's message depends on `closingReason` (`stage.closed.client.<reason>`); a case closed with no
-reason, or with Other, gets the generic message. From Ready to exit on, the client reads a "contact
-PCDC" line in place of the Withdraw button.
+reason, or with Other, gets the generic message. At Ready to exit, a Hold from Ready to exit, Ready
+to e-file and Rejected (`mustContactToWithdraw(record)` in `domain.mjs`), the client reads a
+"contact PCDC" line in place of the Withdraw button; E-filed, Accepted and Closed show neither.
 
 A stage that is not in the table gets neutral wording. A client message names no milestone the case
 has not reached, and no client text names a phone number.
@@ -420,17 +421,21 @@ Hold and closing (036) add admin buttons: "Ask for documents…" (Screening, Pen
 one to five requests), "Put on hold…" (Waiting for documents or Ready to exit; an optional staff
 note), "Got in touch…" (Hold), and "Close case…" with a reason list (Out of scope, No need to file,
 Duplicate, Dismissed, Withdrawn, Other; a note is required for Other), which is also offered at
-Waiting for documents and Hold. An admin records and verifies documents at Waiting for documents
+Waiting for documents and Hold, and at Ready to exit and Ready to e-file with only Withdrawn
+selectable (a note in the dialog says why). An admin records and verifies documents at Waiting for documents
 and a documents Hold. In the case pool, Waiting for documents sits under Waiting on client, Hold
 under Needs attention, and Closed has a reason filter (with "No reason" for older cases).
 Follow-ups gains the kinds "Waiting for documents", "Hold" and "Withdrawn" (the
-`withdrawal_notice` task, "The client withdrew; tell <name> to stop work."). Notes are escaped in
+`withdrawal_notice` task, "The client withdrew; tell <name> to stop work.", or "The client
+withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close
+before filing, told apart by the notice's stored text, which the list summary carries as
+`withdrawalNoticeReason`). Notes are escaped in
 the staff history and never reach a client screen.
 
 On the client's side, the progress page shows a **Withdraw this application** button at the stages
 in `WITHDRAW_STAGES` (and on a documents Hold), which opens a dialog with one box to tick and sends
-`{confirmed: true}`. It is not shown from Ready to exit on; the client reads the contact line
-instead.
+`{confirmed: true}`. It is not shown from Ready to exit on; at the stages in
+`mustContactToWithdraw` the client reads the contact line instead.
 
 ## Events and actions
 

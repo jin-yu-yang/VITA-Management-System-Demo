@@ -146,7 +146,7 @@ test("every action builds exactly the payload the contract names", () => {
         "request-title-1": " Photo ID ",
         "request-message-1": " Please upload it ",
         "request-title-2": "",
-        "request-message-2": "ignored",
+        "request-message-2": "  ",
         "request-title-3": "W-2",
         "request-message-3": "From your employer",
       },
@@ -484,7 +484,14 @@ test("hold and closing builders refuse with their own sentences", () => {
   refused("CLOSE_CASE", { "close-reason": "nope", confirmed: "true" }, "Choose a reason.");
   refused("CLOSE_CASE", { "close-reason": "other", "close-note": "  ", confirmed: "true" }, "Add a note for Other.");
   refused("REQUEST_DOCUMENTS_AT_INTAKE", {}, "Ask for at least one document.");
-  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": "x" }, "Ask for at least one document.");
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": " " }, "Ask for at least one document.");
+  // A message with no title is refused, not dropped; N counts from 1.
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": "x" }, "Add a title for document 1.");
+  refused(
+    "REQUEST_DOCUMENTS_AT_INTAKE",
+    { "request-title-1": "ID", "request-message-1": "x", "request-title-3": "", "request-message-3": "Please send it" },
+    "Add a title for document 3.",
+  );
   for (const type of ["PUT_ON_HOLD", "RESUME_FROM_HOLD", "WITHDRAW"])
     assert.ok(PAYLOAD_ACTIONS.includes(type), type);
   assert.deepEqual(CLOSING_REASONS, ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn", "other"]);

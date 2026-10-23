@@ -518,7 +518,7 @@ test("closure is offered before approval only, and is confirmed in a dialog", ()
   assert.match(html, /in ViTally<\/strong>. It does not cancel, withdraw or amend/);
 
   for (const [stage, reason] of [
-    ["review_approved", /An approved case is not closed from here\./],
+    ["efiled", /An approved case is not closed from here\./],
     ["closed", /This case is already closed\./],
   ]) {
     const late = renderAdminCase(officeCase({ stage }), { person: SAM });
@@ -646,10 +646,12 @@ test("the intake checks wait for screening; the e-file marks wait for their stag
     "The reviewer still needs to record the conversation with the client.",
   );
   assert.equal(at("screening").closeCase.allowed, true);
-  for (const stage of ["review_approved", "ready_to_efile", "efiled"]) {
-    const refusal = at(stage).closeCase;
-    assert.equal(refusal.allowed, false, stage);
-    assert.equal(refusal.reason, "An approved case is not closed from here.", stage);
+  // Before filing a case can be closed (as withdrawn only); after filing it cannot.
+  for (const stage of ["review_approved", "ready_to_efile"]) assert.equal(at(stage).closeCase.allowed, true, stage);
+  {
+    const refusal = at("efiled").closeCase;
+    assert.equal(refusal.allowed, false);
+    assert.equal(refusal.reason, "An approved case is not closed from here.");
   }
   const alex = { id: "p-alex", name: "Alex", capabilities: ["prepare"] };
   assert.equal(
@@ -1449,6 +1451,28 @@ test("the close dialog's choices reach the CLOSE_CASE payload", () => {
   // An older close: stages the office closes now include the two chase stages.
   for (const stage of ["awaiting_documents", "on_hold"])
     assert.equal(adminEligibility({ caseRecord: { stage } }, SAM).closeCase.allowed, true, stage);
+});
+
+test("before filing the close dialog offers only Withdrawn, with a note saying why", () => {
+  const radios = (html) => [...html.matchAll(/name="close-reason" value="([a-z_]+)"/g)].map((m) => m[1]);
+  const NOTE = "Before filing, a case can only be closed because the client withdrew.";
+  for (const savedCase of [
+    officeCase({ stage: "review_approved" }),
+    officeCase({ stage: "ready_to_efile" }),
+  ]) {
+    const html = closeCaseDialogBody({ savedCase });
+    assert.deepEqual(radios(html), ["withdrawn"], savedCase.stage);
+    assert.match(html, new RegExp(NOTE.replaceAll(".", "\\.")));
+  }
+  // A Hold from signing, and every earlier stage, keeps all six reasons and no note.
+  for (const savedCase of [officeCase({ stage: "on_hold", holdOrigin: "review_approved" }), officeCase()]) {
+    const html = closeCaseDialogBody({ savedCase });
+    assert.equal(radios(html).length, 6);
+    assert.doesNotMatch(html, /only be closed because the client withdrew/);
+  }
+  // Close… is offered on the case page at both stages.
+  for (const stage of ["review_approved", "ready_to_efile"])
+    assert.ok(opens(page({ stage })).includes("open-close-case"), stage);
 });
 
 test("the three new dialogs name the client and the application, with the shared confirmation body", () => {

@@ -1159,6 +1159,28 @@ test("Withdrawn row: names the volunteer, escaped, from an open withdrawal notic
   assert.doesNotMatch(html, /data-case-id="w3"/);
 });
 
+test("Withdrawn row: an admin's withdrawn close before filing reads the TaxSlayer sentence", () => {
+  const TRANSMIT = "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+  const STOP = "The client withdrew the application: tell the volunteer to stop work.";
+  const closed = (id, over) =>
+    filed(id, "closed", { closingReason: "withdrawn", preparerId: "p-alex", preparerName: "Alex Rivera", updatedAt: daysAgo(9), ...over });
+  const html = page([
+    // A list row carries the first open notice's text; an opened case carries the follow-ups.
+    closed("t1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("t2", { followups: [{ id: "f1", status: "open", purpose: "withdrawal_notice", reason: TRANSMIT }] }),
+    closed("t3", { preparerName: null, preparerId: null, openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("s1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: STOP }),
+    closed("s2", { followups: [{ id: "f2", status: "open", purpose: "withdrawal_notice", reason: STOP }] }),
+  ]);
+  for (const id of ["t1", "t2", "t3"]) {
+    const row = kindRow(html, id, "withdrawn");
+    assert.match(row, /The client withdrew; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /to stop work/);
+  }
+  for (const id of ["s1", "s2"])
+    assert.match(kindRow(html, id, "withdrawn"), /The client withdrew; tell Alex Rivera to stop work\./);
+});
+
 test("a case on hold with a call task keeps its Call the client row beside the Hold row", () => {
   const html = page([filed("h", "on_hold", { holdOrigin: "awaiting_documents", openFollowups: 1 })]);
   assert.match(kindRow(html, "h", "hold"), /Can(&#39;|')t reach/);

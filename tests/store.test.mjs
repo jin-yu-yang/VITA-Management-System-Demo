@@ -567,12 +567,14 @@ test("a presenter list carries the summaries a work board reads", async () => {
       "participants",
       "phone",
       "reviewContactStatus",
+      "withdrawalNoticeReason",
     ].toSorted(),
   );
   assert.deepEqual(row.participants, ["person-alex"]);
   assert.equal(row.openFollowups, 1);
   // The fake client's one open task is not a withdrawal notice.
   assert.equal(row.openWithdrawalNotices, 0);
+  assert.equal(row.withdrawalNoticeReason, null);
   assert.deepEqual(row.followupAssigneeIds, ["person-sam"]);
   assert.equal(row.openRequests, 1);
   // The client's phone for the list's masked column (D5), and nothing else
@@ -904,6 +906,20 @@ test("a list row says whether the office's go-over is open (D13)", async () => {
   assert.equal(await goOverOf([task("go_over_return")]), true);
   assert.equal(await goOverOf([task("request_documents")]), false);
   assert.equal(await goOverOf([]), false);
+});
+
+test("a list row carries the first open withdrawal notice's own text", async () => {
+  const task = (purpose, reason) => ({ ...RELATED_ROWS.admin_followups[0], purpose, reason });
+  const reasonOf = async (admin_followups) => {
+    const client = fakeClient({ access: "presenter", rows: { admin_followups } });
+    const [row] = await createStore(client).listCases();
+    const read = client.reads.find((entry) => entry.table === "admin_followups");
+    assert.match(String(read.columns), /reason/);
+    return row.withdrawalNoticeReason;
+  };
+  assert.equal(await reasonOf([task("withdrawal_notice", "Stop work text.")]), "Stop work text.");
+  assert.equal(await reasonOf([task("request_documents", "Other."), task("withdrawal_notice", "Notice.")]), "Notice.");
+  assert.equal(await reasonOf([task("request_documents", "Other.")]), null);
 });
 
 test("a follow-up row with no purpose reads as a document request", () => {

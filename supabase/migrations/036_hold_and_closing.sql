@@ -17,7 +17,7 @@
 --   | Function                                   | Copied from               | What 036 changes |
 --   |--------------------------------------------|---------------------------|------------------|
 --   | vitally_private.check_payload              | 035                       | new REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD branches; CLOSE_CASE takes one of six reasons and an optional note (`other` needs it) |
---   | vitally_private.act_close_case             | 035                       | also closes from Waiting for documents and Hold, stores the reason, clears both origins, tells the client the reason's line |
+--   | vitally_private.act_close_case             | 035                       | also closes from Waiting for documents and Hold, stores the reason, clears both origins, tells the client the reason's line; also closes at Ready to exit and Ready to e-file for reason `withdrawn` only, and opens the TaxSlayer withdrawal_notice there (and from a signing hold) |
 --   | vitally_private.receive_document           | 004                      | also accepted at Waiting for documents, and at a Hold that came from it |
 --   | vitally_private.act_verify_document        | 004                       | at those stages an admin verifies, and the last verified request returns the case |
 --   | vitally_private.check_operation_authority  | 035                       | REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD join the admin-only group |
@@ -493,12 +493,30 @@ $$;
 
 create or replace function vitally_private.act_close_case(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_assignee public.people;
+ v_before_filing boolean:=p_case.stage in ('review_approved','ready_to_efile') -- 036
+  or (p_case.stage='on_hold' and p_case.hold_origin='review_approved'); -- 036
 begin
  if not (p_case.stage in ('received','screening','preparation_ready','preparing','review_ready','reviewing','corrections_required','rejected','awaiting_documents','on_hold') -- 036
+   or (p_case.stage in ('review_approved','ready_to_efile') and p_payload->>'reason'='withdrawn') -- 036
    or (p_case.stage='draft' and p_case.owner_user_id is null)) then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
+ -- Before filing only a withdrawal closes the case, and the office is told to make
+ -- sure the return is not transmitted (same assignee rule as act_withdraw). -- 036
+ if v_before_filing and p_payload->>'reason'='withdrawn' then -- 036
+  select p.* into v_assignee from public.people p -- 036
+   join public.workspaces w on w.id=p.workspace_id and w.default_followup_person_id=p.id -- 036
+   where w.id=p_case.workspace_id; -- 036
+  if not found or not ('followup'=any(v_assignee.capabilities)) then -- 036
+   raise sqlstate 'VT007' using message='VALIDATION'; -- 036
+  end if; -- 036
+ end if; -- 036
  perform vitally_private.close_case_steps(p_case,p_payload->>'reason'); -- 036
+ if v_assignee.id is not null then -- 036
+  insert into public.admin_followups(workspace_id,case_id,request_id,purpose,assignee_person_id,reason,created_by_person_id) -- 036
+  values(p_case.workspace_id,p_case.id,null,'withdrawal_notice',v_assignee.id,'The client withdrew; make sure the return is not transmitted in TaxSlayer.',v_assignee.id); -- 036
+ end if; -- 036
  -- The reason and note are staff context: case_events is presenter-only, and the client
  -- message says plainly that an office decision, not a filing, has changed.
  return jsonb_build_object('detail',jsonb_build_object('reason',p_payload->>'reason') -- 036

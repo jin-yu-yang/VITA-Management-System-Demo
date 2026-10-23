@@ -497,6 +497,84 @@ test("documents at intake against real Supabase", async (t) => {
       assert.deepEqual(await notices(ready), []);
     });
 
+    await t.test("withdraw at corrections names the stop-work text; at screening there is no notice", async () => {
+      const caseId = await preparingCase();
+      await f.sql("update public.cases set stage='corrections_required' where id=$1", [caseId]);
+      await withdraw(caseId);
+      assert.equal((await columns(caseId)).stage, "closed");
+      const rows = await f.sql(
+        "select status, reason from public.admin_followups where case_id=$1 and purpose='withdrawal_notice'",
+        [caseId],
+      );
+      assert.deepEqual(rows.rows, [
+        { status: "open", reason: "The client withdrew the application: tell the volunteer to stop work." },
+      ]);
+      const screening = await atScreening();
+      await withdraw(screening);
+      assert.equal((await columns(screening)).closing_reason, "withdrawn");
+      assert.deepEqual(await notices(screening), []);
+    });
+
+    const TRANSMIT = "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+    const noticeReasons = async (caseId) =>
+      (
+        await f.sql(
+          "select status, reason, request_id, assignee_person_id, created_by_person_id from public.admin_followups where case_id=$1 and purpose='withdrawal_notice'",
+          [caseId],
+        )
+      ).rows;
+    const readyToEfile = async () => {
+      const caseId = await f.approvedCase();
+      await asSam(caseId, "MARK_READY_TO_EFILE", { confirmed: true });
+      assert.equal((await columns(caseId)).stage, "ready_to_efile");
+      return caseId;
+    };
+
+    await t.test("a withdrawn close before filing opens the TaxSlayer notice", async () => {
+      const signing = await f.approvedCase();
+      const assignee = (
+        await f.sql(
+          "select w.default_followup_person_id as id from public.workspaces w join public.cases c on c.workspace_id=w.id where c.id=$1",
+          [signing],
+        )
+      ).rows[0].id;
+      const held = await f.approvedCase();
+      await hold(held);
+      for (const caseId of [await readyToEfile(), signing, held]) {
+        await close(caseId, { confirmed: true, reason: "withdrawn" });
+        assert.equal((await columns(caseId)).closing_reason, "withdrawn");
+        assert.equal((await f.clientMessages(caseId)).at(-1), CLOSED_LINES.withdrawn);
+        const rows = await noticeReasons(caseId);
+        assert.equal(rows.length, 1);
+        assert.deepEqual(rows[0], {
+          status: "open",
+          reason: TRANSMIT,
+          request_id: null,
+          assignee_person_id: assignee,
+          created_by_person_id: assignee,
+        });
+      }
+    });
+
+    await t.test("only a withdrawn close is allowed before filing, and none after", async () => {
+      const ready = await readyToEfile();
+      await assert.rejects(() => close(ready, { confirmed: true, reason: "duplicate" }), rejected("INVALID_TRANSITION"));
+      const signing = await f.approvedCase();
+      await assert.rejects(() => close(signing, { confirmed: true, reason: "dismissed" }), rejected("INVALID_TRANSITION"));
+      assert.equal((await columns(ready)).stage, "ready_to_efile");
+      assert.deepEqual(await noticeReasons(ready), []);
+      await asSam(ready, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+      await assert.rejects(() => close(ready, { confirmed: true, reason: "withdrawn" }), rejected("INVALID_TRANSITION"));
+      assert.equal((await columns(ready)).stage, "efiled");
+    });
+
+    await t.test("a withdrawn close at preparing opens no notice", async () => {
+      const caseId = await preparingCase();
+      await close(caseId, { confirmed: true, reason: "withdrawn" });
+      assert.equal((await columns(caseId)).closing_reason, "withdrawn");
+      assert.deepEqual(await noticeReasons(caseId), []);
+    });
+
     await t.test("withdraw refusals", async () => {
       const draft = (await f.draftCase(f.applicantA)).caseId;
       await assert.rejects(() => withdraw(draft), rejected("INVALID_TRANSITION"));
