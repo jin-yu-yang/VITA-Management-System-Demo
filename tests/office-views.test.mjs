@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   closeUnsignedDialogBody,
+  closeUnsignedListKey,
   unsignedCases,
   followupQueue,
   logCallDrawerBody,
@@ -1260,4 +1261,35 @@ test("closeUnsignedDialogBody lists each case ticked, with the heading and the b
   const one = closeUnsignedDialogBody({ cases, now: NOW, unticked: ["b"] });
   assert.match(one, /Close 2 of 3 cases that are waiting for a signature, as Dismissed\?/);
   assert.doesNotMatch(one, /id="close-unsigned-b"[^>]*checked/);
+});
+
+test("closeUnsignedDialogBody words the wait as 1 day, N days, 0 days or a dash", () => {
+  const cases = [
+    waitingCase("a", "review_approved", daysAgo(1)),
+    waitingCase("b", "review_approved", daysAgo(0)),
+    waitingCase("c", "review_approved", daysAgo(3)),
+    waitingCase("d", "review_approved", undefined),
+  ];
+  const html = closeUnsignedDialogBody({ cases, now: NOW });
+  assert.match(html, /<td>1 day<\/td>/);
+  assert.match(html, /<td>0 days<\/td>/);
+  assert.match(html, /<td>3 days<\/td>/);
+  assert.doesNotMatch(html, /1 days|null/);
+  assert.match(html, /<td>—<\/td>/);
+});
+
+test("closeUnsignedDialogBody has no count heading when no case is waiting", () => {
+  const html = closeUnsignedDialogBody({ cases: [waitingCase("x", "received", daysAgo(2))], now: NOW });
+  assert.doesNotMatch(html, /close-unsigned-heading|Close 0 cases/);
+  assert.match(html, /No case is waiting for a signature\./);
+});
+
+test("closeUnsignedListKey changes with the listed cases and their revisions", () => {
+  const a = waitingCase("a", "review_approved", daysAgo(2));
+  const b = waitingCase("b", "review_approved", daysAgo(1));
+  const key = closeUnsignedListKey([a, b]);
+  assert.notEqual(closeUnsignedListKey([a]), key);
+  assert.notEqual(closeUnsignedListKey([a, { ...b, revision: 5 }]), key);
+  assert.notEqual(closeUnsignedListKey([a, b, waitingCase("c", "review_approved", daysAgo(3))]), key);
+  assert.equal(closeUnsignedListKey([b, a, waitingCase("z", "received", daysAgo(1))]), key);
 });

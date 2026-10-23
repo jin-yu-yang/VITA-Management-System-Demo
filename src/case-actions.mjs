@@ -288,7 +288,7 @@ const BUILDERS = Object.freeze({
     confirmed: confirmation(values, "Confirm that the client signed Form 8879, or the return will be given to the client on paper."),
   }),
   MARK_EFILED: (dataset, values) => ({
-    confirmed: confirmation(values, "Confirm that the return was e-filed."),
+    confirmed: confirmation(values, "Confirm how each return was filed."),
     methods: filingMethods(values),
   }),
   RECORD_FILING_RESULT: (dataset, values) => filingResults(dataset, values),

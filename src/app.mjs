@@ -25,6 +25,7 @@ import {
   addCasePartStatus,
   addCaseSendOff,
   closeUnsignedHeading,
+  closeUnsignedListKey,
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
@@ -175,6 +176,8 @@ if (!config) {
   // another case opened (by any path), starts with none, so nothing can
   // reappear where it does not belong.
   const formDrafts = new Map();
+  // The season-end dialog's list as last drawn (closeUnsignedListKey), or null.
+  let unsignedListShown = null;
   // Whose unsent entries formDrafts holds, and the case they were typed on
   // (the last case open; null before any), both checked on every render
   // (restoreFormDrafts), like the draft link's maker.
@@ -411,6 +414,18 @@ if (!config) {
     else formDrafts.set(id, draft);
   }
 
+  // The season-end confirmation covers the list the admin saw. If the list
+  // changed under the open dialog (a conflict re-read, a realtime redraw),
+  // the box is not carried over: the new list is confirmed afresh.
+  function dropStaleCloseConfirmation() {
+    const key = root.querySelector("#close-unsigned-form")
+      ? closeUnsignedListKey(controller.getState().cases ?? [])
+      : null;
+    if (key !== null && unsignedListShown !== null && key !== unsignedListShown)
+      formDrafts.delete("field-close-unsigned-confirmed");
+    unsignedListShown = key;
+  }
+
   // Staff form fields are not rendered from controller state — they are blank
   // boxes for text that only exists until it is sent, and boxes drawn from
   // what is saved — so what was typed is put back by hand after a rebuild:
@@ -423,6 +438,7 @@ if (!config) {
   // with no case open changes nothing, so the board's own forms keep theirs
   // and a list and back to the same case keeps the case's.
   function restoreFormDrafts() {
+    dropStaleCloseConfirmation();
     const userId = signedInUserId();
     if (userId !== draftsOwner) formDrafts.clear();
     draftsOwner = userId;

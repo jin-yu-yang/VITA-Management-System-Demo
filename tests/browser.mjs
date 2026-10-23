@@ -6895,7 +6895,7 @@ async function runPermutation(t, roles) {
         assert.ok(text.includes(row.reference), `the row for ${row.reference} is missing its reference: ${text}`);
         assert.ok(text.includes(stage), `the row for ${row.reference} does not say ${stage}: ${text}`);
         assert.ok(text.includes("0 days"), `the row for ${row.reference} does not say 0 days: ${text}`);
-        assert.equal(await staff.locator(`#close-unsigned-${row.id}`).isChecked(), true, "a listed case starts unticked");
+        assert.equal(await staff.locator(`#close-unsigned-${row.id}`).isChecked(), true, "a listed case starts ticked");
       }
       const headingFor = (ticked) =>
         `Close ${ticked === total ? total : `${ticked} of ${total}`} cases that are waiting for a signature, as Dismissed?`;

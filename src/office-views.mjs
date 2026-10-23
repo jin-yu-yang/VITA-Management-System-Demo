@@ -474,6 +474,18 @@ export function unsignedCases(cases = []) {
     .sort((a, b) => String(a.updatedAt ?? "").localeCompare(String(b.updatedAt ?? "")));
 }
 
+/**
+ * What the dialog lists, as one string: the case ids and revisions. When it
+ * changes under an open dialog, the admin has not confirmed the new list.
+ */
+export const closeUnsignedListKey = (cases = []) =>
+  unsignedCases(cases)
+    .map((record) => `${record.id}:${record.revision}`)
+    .join("|");
+
+// "0 days", "1 day", "N days"; a missing date is a dash.
+const unsignedWaiting = (days) => (days === null || days === undefined ? "—" : `${days} ${days === 1 ? "day" : "days"}`);
+
 /** The dialog's heading, kept in step with the ticks. */
 export const closeUnsignedHeading = (ticked, total) =>
   `Close ${ticked === total ? total : `${ticked} of ${total}`} ${
@@ -504,15 +516,17 @@ export function closeUnsignedDialogBody(state = {}) {
       )}" aria-label="Close ${esc(record.reference)}"${unticked.has(record.id) ? "" : " checked"}></td><th scope="row"><label for="${id}">${esc(
         record.reference,
       )}</label></th><td>${esc(unsignedName(record))}</td><td>${where}</td><td>${esc(
-        waitingDays(record.updatedAt, state.now ?? Date.now()),
-      )} days</td></tr>`;
+        unsignedWaiting(waitingDays(record.updatedAt, state.now ?? Date.now())),
+      )}</td></tr>`;
     })
     .join("");
   const table = list.length
     ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col"><span class="sr-only">Close</span></th><th scope="col">Case</th><th scope="col">Client</th><th scope="col">Now</th><th scope="col">Waiting</th></tr></thead><tbody>${rows}</tbody></table></div>`
     : `<p class="muted">No case is waiting for a signature.</p>`;
   return confirmBody({
-    lead: `<span id="close-unsigned-heading">${esc(closeUnsignedHeading(ticked, list.length))}</span>`,
+    lead: list.length
+      ? `<span id="close-unsigned-heading">${esc(closeUnsignedHeading(ticked, list.length))}</span>`
+      : "",
     form: {
       attrs: 'class="staff-form" id="close-unsigned-form"',
       fields: `${table}<label class="checkbox-row" for="${fieldId("confirmed", "close-unsigned")}"><input type="checkbox" id="${fieldId(

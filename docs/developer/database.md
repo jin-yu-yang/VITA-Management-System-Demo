@@ -108,9 +108,9 @@ version of a function, use the **last** file that defines it:
 | Function | Current definition |
 | --- | --- |
 | `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `036_hold_and_closing.sql` |
-| `vitally_private.check_payload`, `check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
+| `vitally_private.check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
 | `vitally_private.act_verify_intake` | `034_screening_checks.sql` |
-| `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
+| `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
@@ -120,7 +120,7 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
 | `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
-| `vitally_private.act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
+| `vitally_private.check_payload`, `act_mark_ready_to_efile`, `apply_fixture_scenario`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.act_return_to_signing` | `035_post_efiling_stages.sql` |
 | `public.vitally_close_unsigned` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
@@ -128,7 +128,7 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
 | `vitally_private.fixture_answers_v2` | `036_hold_and_closing.sql` |
 | `vitally_private.fixture_contact_v2` | `019_fixtures_v2.sql` |
-| `vitally_private.apply_fixture_scenario`, `fixture_history`, `fixture_keys` | `036_hold_and_closing.sql` |
+| `vitally_private.fixture_keys` | `036_hold_and_closing.sql` |
 | `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
@@ -750,7 +750,7 @@ and a case is created with no answers (`vitally_create_case` refuses any other `
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 282 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 421 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.

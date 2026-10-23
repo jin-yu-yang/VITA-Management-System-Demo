@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
+import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
 import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
 import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
@@ -5981,6 +5982,7 @@ test("closeUnsigned conflict re-reads", async () => {
   await controller.start();
   controller.selectPerson("sam");
   controller.openDialog("close-unsigned");
+  const before = structuredClone(controller.getState().cases);
   // Another admin moves case-b first; the call changes nothing.
   store.records.set("case-b", { ...store.records.get("case-b"), stage: "closed" });
   store.failNext = Object.assign(new Error("A case moved."), { code: "CONFLICT" });
@@ -5999,5 +6001,12 @@ test("closeUnsigned conflict re-reads", async () => {
   assert.equal(state.cases.find((c) => c.id === "case-a").stage, "review_approved");
   assert.equal(state.cases.find((c) => c.id === "case-b").stage, "closed");
   assert.equal(state.busy, false);
+  // The re-read list is a new list: the dialog asks for its confirmation again
+  // (the page drops the ticked box when the key changes) and the button is drawn
+  // disabled.
+  assert.notEqual(closeUnsignedListKey(state.cases), closeUnsignedListKey(before));
+  const html = closeUnsignedDialogBody({ cases: state.cases });
+  assert.doesNotMatch(html, /id="field-close-unsigned-confirmed"[^>]*checked/);
+  assert.match(html, /id="close-unsigned-submit"[^>]*disabled/);
   controller.stop();
 });

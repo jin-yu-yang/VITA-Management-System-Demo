@@ -469,7 +469,7 @@ test("the 8879 and e-file actions need their own confirmation sentence", () => {
     assert.ok(PAYLOAD_ACTIONS.includes(type), type);
   const sentences = {
     MARK_READY_TO_EFILE: "Confirm that the client signed Form 8879, or the return will be given to the client on paper.",
-    MARK_EFILED: "Confirm that the return was e-filed.",
+    MARK_EFILED: "Confirm how each return was filed.",
   };
   for (const [type, message] of Object.entries(sentences)) {
     assert.throws(() => payloadFor(type, {}, {}), (error) => error.code === "VALIDATION" && error.message === message, type);
@@ -529,7 +529,7 @@ test("MARK_EFILED carries the methods: one combination on a first filing, or the
   refused("MARK_EFILED", sure, "Choose how each return was filed.");
   refused("MARK_EFILED", { ...sure, "filing-combination": "carrier_pigeon" }, "Choose how each return was filed.");
   refused("MARK_EFILED", { ...sure, "method-federal": "fax" }, "Choose how each return was filed.");
-  refused("MARK_EFILED", { "filing-combination": "both_efile" }, "Confirm that the return was e-filed.");
+  refused("MARK_EFILED", { "filing-combination": "both_efile" }, "Confirm how each return was filed.");
 });
 
 test("RECORD_FILING_RESULT builds the results of the returns answered", () => {
