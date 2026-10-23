@@ -21,11 +21,16 @@
 --   | vitally_private.receive_document           | 004                      | also accepted at Waiting for documents, and at a Hold that came from it |
 --   | vitally_private.act_verify_document        | 004                       | at those stages an admin verifies, and the last verified request returns the case |
 --   | vitally_private.check_operation_authority  | 035                       | REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD join the admin-only group |
---   | public.vitally_apply_action                | 035                       | dispatches REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD and RESUME_FROM_HOLD |
+--   | public.vitally_apply_action                | 035                       | dispatches REQUEST_DOCUMENTS_AT_INTAKE, PUT_ON_HOLD, RESUME_FROM_HOLD and WITHDRAW |
+--   | vitally_private.check_authority            | 018                       | WITHDRAW needs the case's owner, as RESPOND_DOCUMENT does |
+--
+-- (check_payload also gains a WITHDRAW branch, and check_operation_authority
+-- puts WITHDRAW with RESPOND_DOCUMENT in the applicant-only group.)
 --
 -- New functions: vitally_private.act_request_documents_at_intake,
 -- vitally_private.return_from_documents, vitally_private.act_put_on_hold,
--- vitally_private.act_resume_from_hold and vitally_private.closed_line.
+-- vitally_private.act_resume_from_hold, vitally_private.closed_line,
+-- vitally_private.close_case_steps and vitally_private.act_withdraw.
 --
 -- Written to be safe to apply again on a local test stack whose
 -- schema_migrations row for this file was deleted during development: every
@@ -122,6 +127,11 @@ begin
     raise sqlstate 'VT007' using message='VALIDATION'; -- 036
    end if; -- 036
   when 'RESUME_FROM_HOLD' then -- 036
+   if vitally_private.payload_keys(p_payload)<>array['confirmed'] -- 036
+    or p_payload->'confirmed'<>'true'::jsonb then -- 036
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 036
+   end if; -- 036
+  when 'WITHDRAW' then -- 036
    if vitally_private.payload_keys(p_payload)<>array['confirmed'] -- 036
     or p_payload->'confirmed'<>'true'::jsonb then -- 036
     raise sqlstate 'VT007' using message='VALIDATION'; -- 036
@@ -457,8 +467,25 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 7a. close_case_steps: what every close does to the case row and its open work,
+-- shared by act_close_case and act_withdraw. The stage rules and the client line
+-- stay with the callers.
+
+create or replace function vitally_private.close_case_steps(p_case public.cases,p_reason text) returns void
+language plpgsql security definer set search_path='' as $$
+begin
+ update public.cases set stage='closed',closing_reason=p_reason,documents_origin=null,hold_origin=null where id=p_case.id;
+ update public.document_requests set status='cancelled',updated_at=now()
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status in ('open','awaiting_verification');
+ update public.admin_followups set status='cancelled'
+  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='open';
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 7b. act_close_case, verbatim from 035 with Waiting for documents and Hold in
--- the closable stages, the reason stored and both origins cleared.
+-- the closable stages, the reason stored and both origins cleared (the row and
+-- cancellations are close_case_steps).
 
 create or replace function vitally_private.act_close_case(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
@@ -467,16 +494,117 @@ begin
    or (p_case.stage='draft' and p_case.owner_user_id is null)) then
   raise sqlstate 'VT004' using message='INVALID_TRANSITION';
  end if;
- update public.cases set stage='closed',closing_reason=p_payload->>'reason',documents_origin=null,hold_origin=null where id=p_case.id; -- 036
- update public.document_requests set status='cancelled',updated_at=now()
-  where workspace_id=p_case.workspace_id and case_id=p_case.id and status in ('open','awaiting_verification');
- update public.admin_followups set status='cancelled'
-  where workspace_id=p_case.workspace_id and case_id=p_case.id and status='open';
+ perform vitally_private.close_case_steps(p_case,p_payload->>'reason'); -- 036
  -- The reason and note are staff context: case_events is presenter-only, and the client
  -- message says plainly that an office decision, not a filing, has changed.
  return jsonb_build_object('detail',jsonb_build_object('reason',p_payload->>'reason') -- 036
    ||case when p_payload ? 'note' then jsonb_build_object('note',p_payload->>'note') else '{}'::jsonb end, -- 036
   'message',vitally_private.closed_line(p_payload->>'reason')); -- 036
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7c. The follow-up purpose (from 033) gains withdrawal_notice, which names no
+-- request, like go_over_return.
+
+alter table public.admin_followups drop constraint if exists admin_followups_purpose_check;
+alter table public.admin_followups add constraint admin_followups_purpose_check check(purpose in ('request_documents','go_over_return','withdrawal_notice'));
+alter table public.admin_followups drop constraint if exists admin_followups_purpose_request;
+alter table public.admin_followups add constraint admin_followups_purpose_request check((purpose='request_documents')=(request_id is not null));
+
+-- ---------------------------------------------------------------------------
+-- 7d. act_withdraw: the applicant closes their own application (design D7). It
+-- does what Close does with reason `withdrawn`. When a preparer or reviewer was
+-- at work (Filing in progress, Corrections in progress, Review in progress) it
+-- also opens a withdrawal_notice follow-up for the office to tell them to stop;
+-- that row is inserted after the close cancels the open ones, so it stays open
+-- on the Closed case. The assignee is the workspace's follow-up person, found as
+-- act_escalate_contact (004) finds them. RESOLVE_FOLLOWUP needs no change: no
+-- step of its path refuses a closed case.
+
+create or replace function vitally_private.act_withdraw(p_member public.memberships,p_case public.cases,p_person public.people,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_assignee public.people;
+begin
+ if not (p_case.stage in ('received','screening','awaiting_documents','preparation_ready','preparing','corrections_required','review_ready','reviewing')
+   or (p_case.stage='on_hold' and p_case.hold_origin='awaiting_documents')) then
+  raise sqlstate 'VT004' using message='INVALID_TRANSITION';
+ end if;
+ if p_case.stage in ('preparing','corrections_required','reviewing')
+   and (p_case.preparer_id is not null or p_case.reviewer_id is not null) then
+  select p.* into v_assignee from public.people p
+   join public.workspaces w on w.id=p.workspace_id and w.default_followup_person_id=p.id
+   where w.id=p_case.workspace_id;
+  if not found or not ('followup'=any(v_assignee.capabilities)) then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+ end if;
+ perform vitally_private.close_case_steps(p_case,'withdrawn');
+ if v_assignee.id is not null then
+  insert into public.admin_followups(workspace_id,case_id,request_id,purpose,assignee_person_id,reason,created_by_person_id)
+  values(p_case.workspace_id,p_case.id,null,'withdrawal_notice',v_assignee.id,'The client withdrew the application: tell the volunteer to stop work.',v_assignee.id);
+ end if;
+ return jsonb_build_object('detail','{}'::jsonb,
+  'message','You withdrew your application. Your return was not filed.');
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 7e. check_authority, verbatim from 018 with WITHDRAW beside RESPOND_DOCUMENT:
+-- only the case's owner withdraws it.
+
+create or replace function vitally_private.check_authority(p_member public.memberships,p_case public.cases,p_person_id uuid,p_type text)
+returns public.people language plpgsql security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ v_person=vitally_private.check_operation_authority(p_member,p_person_id,p_type);
+ case p_type
+  when 'SAVE_ANSWERS','SUBMIT' then
+   if p_person_id is null then
+    if p_case.owner_user_id is distinct from p_member.user_id then
+     raise sqlstate 'VT001' using message='FORBIDDEN';
+    end if;
+   elsif p_case.owner_user_id is not null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RESPOND_DOCUMENT','WITHDRAW' then -- 036
+   -- The authenticated owner answers; lock_case already hides other clients'
+   -- cases, and this states the same rule where the action's authority lives.
+   if p_case.owner_user_id is distinct from p_member.user_id then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RECORD_DOCUMENT_RESPONSE' then
+   -- The staff receipt exists only where there is no client to answer; it
+   -- never speaks for one who could.
+   if p_case.owner_user_id is not null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'UPDATE_CONTACT' then
+   -- The owner only while the case is their draft; staff per works_on_case.
+   if p_person_id is null then
+    if p_case.owner_user_id is distinct from p_member.user_id or p_case.stage<>'draft' then
+     raise sqlstate 'VT001' using message='FORBIDDEN';
+    end if;
+   elsif not vitally_private.works_on_case(p_case,v_person) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RECORD_MATERIALS' then
+   if not vitally_private.works_on_case(p_case,v_person) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'SET_DOCUMENT_CARD','SET_DOCUMENT_GROUP' then
+   if p_person_id is null then
+    if p_case.owner_user_id is distinct from p_member.user_id then raise sqlstate 'VT001' using message='FORBIDDEN'; end if;
+   elsif p_case.owner_user_id is not null and p_case.stage='draft' then
+    -- Never staff on a client's unsent draft.
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   elsif not vitally_private.works_on_case(p_case,v_person) then
+    -- Office staff on any case; a volunteer only as its preparer or reviewer.
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  else null;
+ end case;
+ return v_person;
 end;
 $$;
 
@@ -518,8 +646,8 @@ begin
    if p_person_id is null then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
-  when 'RESPOND_DOCUMENT' then
-   -- The client answers for themselves: no staff persona at all.
+  when 'RESPOND_DOCUMENT','WITHDRAW' then -- 036
+   -- The client answers or withdraws for themselves: no staff persona at all.
    if p_person_id is not null or p_member.access<>'applicant' then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
@@ -629,6 +757,7 @@ begin
   when 'REQUEST_DOCUMENTS_AT_INTAKE' then v_outcome=vitally_private.act_request_documents_at_intake(v_member,v_case,v_person,p_payload); -- 036
   when 'PUT_ON_HOLD' then v_outcome=vitally_private.act_put_on_hold(v_member,v_case,v_person,p_payload); -- 036
   when 'RESUME_FROM_HOLD' then v_outcome=vitally_private.act_resume_from_hold(v_member,v_case,v_person,p_payload); -- 036
+  when 'WITHDRAW' then v_outcome=vitally_private.act_withdraw(v_member,v_case,v_person,p_payload); -- 036
   when 'UPDATE_CONTACT' then v_outcome=vitally_private.act_update_contact(v_member,v_case,v_person,p_payload);
   when 'RECORD_MATERIALS' then v_outcome=vitally_private.act_record_materials(v_member,v_case,v_person,p_payload);
   when 'SET_DOCUMENT_CARD' then v_outcome=vitally_private.act_set_document_card(v_member,v_case,v_person,p_payload);

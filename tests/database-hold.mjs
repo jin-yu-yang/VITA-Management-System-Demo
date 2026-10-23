@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
+import { applyArgs, createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
 
 // Migration 036: Waiting for documents and Hold (the stage check, the origin
 // columns) and the office's documents at intake.
@@ -396,6 +396,157 @@ test("documents at intake against real Supabase", async (t) => {
         hold_origin: null,
         closing_reason: null,
       });
+    });
+    const withdraw = (caseId, payload = { confirmed: true }, who = [f.applicantA, null]) =>
+      f.act(who[0], caseId, who[1], "WITHDRAW", payload);
+    const notices = async (caseId) =>
+      (
+        await f.sql(
+          "select id, status, request_id, assignee_person_id, resolution_outcome from public.admin_followups where case_id=$1 and purpose='withdrawal_notice'",
+          [caseId],
+        )
+      ).rows;
+    const WITHDREW = "You withdrew your application. Your return was not filed.";
+    const preparingCase = async () => {
+      const caseId = await f.readyCase();
+      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+      return caseId;
+    };
+    const reviewingCase = async () => {
+      const caseId = await f.preparedCase();
+      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      return caseId;
+    };
+
+    await t.test("withdraw before preparation", async () => {
+      const caseId = await f.readyCase();
+      assert.equal((await columns(caseId)).stage, "preparation_ready");
+      await withdraw(caseId);
+      assert.deepEqual(await columns(caseId), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: "withdrawn",
+      });
+      assert.equal((await f.clientMessages(caseId)).at(-1), WITHDREW);
+      assert.deepEqual(await notices(caseId), []);
+      const events = await f.sql("select detail from public.case_events where case_id=$1 and action='WITHDRAW'", [caseId]);
+      assert.equal(events.rows.length, 1);
+    });
+
+    await t.test("withdraw while waiting for documents or on a documents hold", async () => {
+      const waiting = await waitingCase();
+      await withdraw(waiting);
+      assert.equal((await columns(waiting)).closing_reason, "withdrawn");
+      assert.deepEqual((await requests(waiting)).map((r) => r.status), ["cancelled"]);
+      const held = await waitingCase();
+      await hold(held);
+      await withdraw(held);
+      assert.deepEqual(await columns(held), {
+        stage: "closed",
+        documents_origin: null,
+        hold_origin: null,
+        closing_reason: "withdrawn",
+      });
+      const received = (await f.submittedClientCase()).caseId;
+      await withdraw(received);
+      assert.equal((await columns(received)).stage, "closed");
+    });
+
+    await t.test("withdraw during preparation", async () => {
+      const caseId = await preparingCase();
+      assert.equal((await columns(caseId)).stage, "preparing");
+      await withdraw(caseId);
+      assert.equal((await columns(caseId)).stage, "closed");
+      assert.equal((await f.clientMessages(caseId)).at(-1), WITHDREW);
+      const rows = await notices(caseId);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].status, "open");
+      assert.equal(rows[0].request_id, null);
+      await f.act(f.presenter, caseId, f.sam, "RESOLVE_FOLLOWUP", {
+        followupId: rows[0].id,
+        outcome: "reached",
+        note: "Fictional: told the volunteer to stop.",
+      });
+      const after = await notices(caseId);
+      assert.equal(after[0].status, "resolved");
+      assert.equal(after[0].resolution_outcome, "reached");
+      assert.equal((await columns(caseId)).stage, "closed");
+    });
+
+    await t.test("an admin close does not cancel a notice", async () => {
+      const caseId = await preparingCase();
+      await withdraw(caseId);
+      assert.equal((await notices(caseId))[0].status, "open");
+      const other = await preparingCase();
+      await close(other, { confirmed: true, reason: "dismissed" });
+      assert.deepEqual(await notices(other), []);
+    });
+
+    await t.test("withdraw at review", async () => {
+      const reviewing = await reviewingCase();
+      assert.equal((await columns(reviewing)).stage, "reviewing");
+      await withdraw(reviewing);
+      const rows = await notices(reviewing);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].status, "open");
+      const ready = await f.preparedCase();
+      assert.equal((await columns(ready)).stage, "review_ready");
+      await withdraw(ready);
+      assert.equal((await columns(ready)).stage, "closed");
+      assert.deepEqual(await notices(ready), []);
+    });
+
+    await t.test("withdraw refusals", async () => {
+      const draft = (await f.draftCase(f.applicantA)).caseId;
+      await assert.rejects(() => withdraw(draft), rejected("INVALID_TRANSITION"));
+      const approved = await f.approvedCase();
+      await assert.rejects(() => withdraw(approved), rejected("INVALID_TRANSITION"));
+      const signingHold = await f.approvedCase();
+      await hold(signingHold);
+      await assert.rejects(() => withdraw(signingHold), rejected("INVALID_TRANSITION"));
+      const ready = await f.approvedCase();
+      await asSam(ready, "MARK_READY_TO_EFILE", { confirmed: true });
+      await assert.rejects(() => withdraw(ready), rejected("INVALID_TRANSITION"));
+      await asSam(ready, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+      assert.equal((await columns(ready)).stage, "efiled");
+      await assert.rejects(() => withdraw(ready), rejected("INVALID_TRANSITION"));
+      const closed = await f.readyCase();
+      await withdraw(closed);
+      await assert.rejects(() => withdraw(closed), rejected("INVALID_TRANSITION"));
+
+      const target = await f.readyCase();
+      for (const person of [null, f.sam, f.alex])
+        await assert.rejects(() => withdraw(target, { confirmed: true }, [f.presenter, person]), rejected("FORBIDDEN"));
+      // Another client cannot see the case at all.
+      await assert.rejects(() => withdraw(target, { confirmed: true }, [f.applicantB, null]), rejected("NOT_FOUND"));
+      for (const payload of [{}, { confirmed: false }, { confirmed: true, extra: 1 }, { reason: "x" }])
+        await assert.rejects(() => withdraw(target, payload), rejected("VALIDATION"));
+      assert.equal((await columns(target)).stage, "preparation_ready");
+    });
+
+    await t.test("withdraw races a hold", async () => {
+      const caseId = await waitingCase();
+      const { revision } = await f.readStaffCase(caseId);
+      const results = await Promise.all([
+        f.applicantA.rpc("vitally_apply_action", applyArgs({ caseId, revision, type: "WITHDRAW", payload: { confirmed: true } })),
+        f.presenter.rpc(
+          "vitally_apply_action",
+          applyArgs({ caseId, revision, personId: f.sam, type: "PUT_ON_HOLD", payload: { confirmed: true } }),
+        ),
+      ]);
+      assert.equal(results.filter((r) => !r.error).length, 1);
+      const lost = results.find((r) => r.error);
+      assert.equal(lost.error.code, "VT003");
+    });
+
+    await t.test("a close note with HTML", async () => {
+      const caseId = await atScreening();
+      const note = "<b>x</b>";
+      await close(caseId, { confirmed: true, reason: "other", note });
+      const events = await f.sql("select detail from public.case_events where case_id=$1 and action='CLOSE_CASE'", [caseId]);
+      assert.equal(events.rows[0].detail.note, note);
+      for (const line of await f.clientMessages(caseId)) assert.equal(line.includes("<b>"), false);
     });
   } finally {
     await f.close();
