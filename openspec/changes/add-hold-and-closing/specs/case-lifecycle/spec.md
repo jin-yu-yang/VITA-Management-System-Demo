@@ -117,9 +117,11 @@ The move SHALL:
 
 It SHALL have no undo. Only the case's own client SHALL be able to withdraw it, and no staff persona SHALL withdraw on a client's behalf through this move.
 
-At Draft the button SHALL not be offered. From Ready to exit on, including a Hold that came from Ready to exit, the button SHALL be replaced by "To withdraw now, contact PCDC." / "如需撤回，请联系 PCDC。", and an admin MAY close the case with reason `withdrawn`.
+At Draft the button SHALL not be offered. At Ready to exit, a Hold that came from Ready to exit, Ready to e-file and Rejected, the client SHALL have no Withdraw button. The button SHALL be replaced by "To withdraw now, contact PCDC." / "如需撤回，请联系 PCDC。". After the client contacts PCDC, an admin closes the case with reason `withdrawn`. At E-filed, Accepted and Closed, the client SHALL see neither the button nor the line.
 
-When the client withdraws a case at Filing in progress, Corrections in progress or Review in progress, an office follow-up with purpose `withdrawal_notice` SHALL open (capability `office-follow-up`). Follow-ups SHALL show it as "The client withdrew; tell <name> to stop work.", naming the case's preparer (or, at Review in progress, its reviewer). It SHALL be resolved like any other follow-up. Withdrawing at any other stage SHALL open no follow-up.
+When the client withdraws a case at Filing in progress, Corrections in progress or Review in progress, an office follow-up with purpose `withdrawal_notice` SHALL open (capability `office-follow-up`). Follow-ups SHALL show it as "The client withdrew; tell <name> to stop work.", naming the case's preparer (or, at Review in progress, its reviewer). Withdrawing at any other stage SHALL open no follow-up.
+
+When an admin closes a case with reason `withdrawn` at Ready to exit, a Hold that came from Ready to exit, or Ready to e-file, an office follow-up with purpose `withdrawal_notice` SHALL open. Follow-ups SHALL show it as "The client withdrew; make sure the return is not transmitted in TaxSlayer.". Each notice SHALL stay open until someone resolves it, like any other follow-up.
 
 #### Scenario: Withdrawing before preparation
 - **WHEN** a client at Pending intake / filing withdraws, ticking the box
@@ -134,8 +136,18 @@ When the client withdraws a case at Filing in progress, Corrections in progress 
 - **THEN** there is no Withdraw button, and the page says "To withdraw now, contact PCDC."
 
 #### Scenario: Only the client
-- **WHEN** a staff persona, or a different client, tries to withdraw a case
+- **WHEN** a staff persona tries to withdraw a case
 - **THEN** it is refused as forbidden, and nothing is recorded
+- **AND WHEN** a different client tries to withdraw it
+- **THEN** it is refused as not found, because that client can't see the case, and nothing is recorded
+
+#### Scenario: Withdrawn after signing
+- **WHEN** the client of a case at Ready to e-file contacts PCDC and an admin closes the case with reason Withdrawn
+- **THEN** the case is Closed with reason `withdrawn`, and Follow-ups shows "The client withdrew; make sure the return is not transmitted in TaxSlayer." until the office resolves it
+
+#### Scenario: No line once filed
+- **WHEN** a client opens a case at E-filed or Accepted
+- **THEN** there is neither a Withdraw button nor "To withdraw now, contact PCDC."
 
 ## MODIFIED Requirements
 
@@ -188,7 +200,7 @@ The database SHALL refuse any other stage. The moves along the chain SHALL be:
 
 Every other move along the chain SHALL be refused as not available.
 
-Closing SHALL stay one move to Closed, by an admin, with a reason (see "A closed case records why it closed"). It SHALL be allowed from Request sent, Screening in progress, Waiting for documents, Pending intake / filing, Filing in progress, Corrections in progress, Pending review, Review in progress, Hold (whatever it came from) and Rejected, and from a draft the office owns. It SHALL be refused from Ready to exit, Ready to e-file, E-filed, Accepted and Closed. A case SHALL receive its client number when it leaves Draft for any stage but Closed, including when the office's submit moves it straight to Screening in progress.
+Closing SHALL stay one move to Closed, by an admin, with a reason (see "A closed case records why it closed"). It SHALL be allowed from Request sent, Screening in progress, Waiting for documents, Pending intake / filing, Filing in progress, Corrections in progress, Pending review, Review in progress, Hold (whatever it came from) and Rejected, and from a draft the office owns. At Ready to exit and Ready to e-file it SHALL be allowed only with reason `withdrawn`, after the client contacts PCDC; any other reason SHALL be refused as not available. It SHALL be refused from E-filed, Accepted and Closed. A case SHALL receive its client number when it leaves Draft for any stage but Closed, including when the office's submit moves it straight to Screening in progress.
 
 #### Scenario: The intake check waits for screening
 - **WHEN** an admin records the intake check on a case at Request sent
@@ -203,8 +215,12 @@ Closing SHALL stay one move to Closed, by an admin, with a reason (see "A closed
 - **THEN** each is refused as forbidden, and nothing is recorded
 
 #### Scenario: Closing after review is refused
-- **WHEN** an admin tries to close a case at Ready to exit, Ready to e-file, E-filed or Accepted
+- **WHEN** an admin tries to close a case at E-filed or Accepted with any reason, or at Ready to exit or Ready to e-file with any reason but Withdrawn
 - **THEN** it is refused as not available
+
+#### Scenario: Withdrawn before filing
+- **WHEN** an admin closes a case at Ready to exit or Ready to e-file with reason Withdrawn
+- **THEN** the case is Closed
 
 #### Scenario: Closing during screening
 - **WHEN** an admin closes a case at Screening in progress, with a reason
@@ -284,7 +300,7 @@ Its search SHALL reach a case in any stage.
 - a row for each case at Screening in progress ("Finish screening."), with **Open**;
 - a **Waiting for documents** row for each case at Waiting for documents ("Waiting for the client's documents."), with **Put on hold…**;
 - a **Hold** row for each case on Hold: "Can't reach the client about documents." for a Hold that came from Waiting for documents, or "Can't reach the client to sign Form 8879." for one that came from Ready to exit. It has **Got in touch…** and **Close…**;
-- a **Withdrawn** row for each open `withdrawal_notice` follow-up ("The client withdrew; tell <name> to stop work."), with **Resolve**;
+- a **Withdrawn** row for each open `withdrawal_notice` follow-up, with **Resolve**. It reads "The client withdrew; tell <name> to stop work." for a client's own withdrawal during preparation or review, or "The client withdrew; make sure the return is not transmitted in TaxSlayer." for an admin's withdrawn close at Ready to exit, a Hold from Ready to exit, or Ready to e-file;
 - a row for each case at Ready to exit ("Waiting for the client to sign Form 8879."), with **Mark ready to e-file…**. While the reviewer's call with the client is still pending, the row SHALL read "Waiting for the reviewer's call with the client." instead, with the call-pending explanation in place of the button. For a case returned to signing after a rejection, the row SHALL read "Waiting for the client to sign again.";
 - a row for each case at Ready to e-file ("Ready to e-file."), with **Mark e-filed…**;
 - a **Filing result** row for each case at E-filed, and for each case at Rejected with a return still waiting, with **Record filing result…**. It SHALL read:

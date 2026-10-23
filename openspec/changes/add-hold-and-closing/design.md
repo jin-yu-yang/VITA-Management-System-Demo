@@ -75,7 +75,8 @@
 
 - **Choice:** `cases.closing_reason` (`out_of_scope` | `no_need_to_file` | `duplicate` | `dismissed` | `withdrawn` | `other` | null). It is null for every case closed before this change, and set by every new close.
   - **The payload** is `CLOSE_CASE {confirmed, reason, note?}`. `reason` is one of the six, and `note` (1–1000 characters) is required for `other` and optional otherwise.
-  - **Where:** `act_close_case` (from 035) also allows `awaiting_documents` and `on_hold`, whatever the hold's origin. It stores the reason, keeps the note in the event detail (staff-only), clears the origins, and keeps today's cancellations.
+  - **Where:** `act_close_case` (from 035) also allows `awaiting_documents` and `on_hold`, whatever the hold's origin. It also allows `review_approved` and `ready_to_efile`, with reason `withdrawn` only.
+  - **After apply, the user's decision:** an admin's withdrawn close at `review_approved`, a signing `on_hold`, or `ready_to_efile` opens a `withdrawal_notice` follow-up whose text is "The client withdrew; make sure the return is not transmitted in TaxSlayer.". The client's contact line shows only where that close or an existing close is possible (Ready to exit, signing Hold, Ready to e-file, Rejected), never at E-filed or Accepted. It stores the reason, keeps the note in the event detail (staff-only), clears the origins, and keeps today's cancellations.
   - **The client line** is the reason's closed message (D11).
   - A check constraint: `closing_reason` is set only when the stage is `closed`.
 - **Reason:** brainstorm Q3. The reason is a fixed kind, so the client may read it. The note is free text, so it stays staff-only.

@@ -225,3 +225,4 @@ Two origins can be live at once (the hold's and the documents'), so the stored o
 ## Revisions after propose (2026-10-22, the user's review)
 
 - **Ask for documents' history line names every requested title**, in one line per move: "PCDC asked for these documents: W-2, Photo ID." It is translated by prefix, like the preparer's request line, and the titles stay as typed. This replaces Q7's "today's request line, one per request".
+- **After apply (2026-10-23, the user's decision on the final review):** an admin may close with reason `withdrawn` at Ready to exit and Ready to e-file (the client has no button there; they contact PCDC). That close, and one from a signing Hold, opens a `withdrawal_notice`: "The client withdrew; make sure the return is not transmitted in TaxSlayer.", open until resolved. The contact line shows at Ready to exit, a signing Hold, Ready to e-file and Rejected, never at E-filed or Accepted. Another client's Withdraw is refused as not found.
