@@ -24,10 +24,10 @@ test("filing results schema against real Supabase", async (t) => {
     await t.test("method and result constraints", async () => {
       const { caseId } = await f.submittedClientCase();
       for (const set of [
-        "federal_method='paper', state_method='efile'",
         "federal_method='efile'",
         "state_method='efile'",
-        "federal_method='efile', state_method='efile', federal_result='mailed'",
+        "federal_method='efile', state_method='efile', federal_result='given_to_client'",
+        "federal_method='efile', state_method='paper', state_result='mailed'",
         "federal_method='paper', state_method='paper', federal_result='accepted'",
         "federal_result='accepted'",
         "state_result='rejected'",
@@ -36,8 +36,9 @@ test("filing results schema against real Supabase", async (t) => {
       for (const set of [
         "federal_method='efile', state_method='efile'",
         "federal_method='efile', state_method='paper'",
+        "federal_method='paper', state_method='efile'",
         "federal_method='paper', state_method='paper'",
-        "federal_method='paper', state_method='paper', federal_result='mailed', state_result='mailed'",
+        "federal_method='paper', state_method='paper', federal_result='given_to_client', state_result='given_to_client'",
         "federal_method='efile', state_method='efile', federal_result='accepted', state_result='rejected'",
       ])
         await setColumns(caseId, set);
@@ -170,18 +171,20 @@ test("mark e-filed records the methods", async (t) => {
 
     for (const [federal, state, line] of [
       ["efile", "efile", "PCDC e-filed your return."],
-      ["efile", "paper", "PCDC e-filed your federal return and mailed your Pennsylvania return."],
-      ["paper", "paper", "PCDC mailed your returns."],
+      ["efile", "paper", "PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it."],
+      ["paper", "efile", "PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it."],
+      ["paper", "paper", "PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them."],
     ])
       await t.test(`${federal}/${state} is recorded and told`, async () => {
         const caseId = await readyCase();
         await filed(caseId, { federal, state });
+        const given = (m) => (m === "paper" ? "given_to_client" : null);
         assert.deepEqual(await columns(caseId), {
-          stage: "efiled",
+          stage: federal === "paper" && state === "paper" ? "accepted" : "efiled",
           federal_method: federal,
           state_method: state,
-          federal_result: null,
-          state_result: null,
+          federal_result: given(federal),
+          state_result: given(state),
         });
         const attempts = await f.sql("select attempt, filed_by from public.filing_attempts where case_id=$1", [caseId]);
         assert.deepEqual(attempts.rows, [{ attempt: 1, filed_by: f.sam }]);
@@ -190,8 +193,8 @@ test("mark e-filed records the methods", async (t) => {
           [caseId],
         );
         assert.deepEqual(returns.rows, [
-          { return_kind: "federal", method: federal, result: null },
-          { return_kind: "state", method: state, result: null },
+          { return_kind: "federal", method: federal, result: given(federal) },
+          { return_kind: "state", method: state, result: given(state) },
         ]);
         assert.equal((await f.clientMessages(caseId)).at(-1), line);
         const staff = await f.readStaffCase(caseId);
@@ -205,7 +208,6 @@ test("mark e-filed records the methods", async (t) => {
       const caseId = await readyCase();
       for (const payload of [
         { confirmed: true },
-        { confirmed: true, methods: { federal: "paper", state: "efile" } },
         { confirmed: true, methods: { federal: "efile" } },
         { confirmed: true, methods: { state: "efile" } },
         { confirmed: true, methods: {} },
@@ -230,12 +232,12 @@ test("mark e-filed records the methods", async (t) => {
       assert.equal(await filing("waiting", "waiting"), "Your federal and Pennsylvania returns were e-filed. The IRS and Pennsylvania will each confirm whether they are accepted.");
       assert.equal(await filing("accepted", "accepted"), "The IRS and Pennsylvania accepted your returns.");
       assert.equal(await filing("rejected", "rejected"), "Your federal and Pennsylvania returns need a correction before they can be accepted.");
-      assert.equal(await filing("mailed", "mailed"), "Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.");
+      assert.equal(await filing("given_to_client", "given_to_client"), "PCDC gave your federal and Pennsylvania returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.");
       assert.equal(await filing("accepted", null), "The IRS accepted your federal return.");
       assert.equal(await filing(null, "accepted"), "Pennsylvania accepted your Pennsylvania return.");
       assert.equal(await filing("waiting", null), "Your federal return was e-filed. The IRS will confirm whether it is accepted.");
       assert.equal(await filing(null, "rejected"), "Your Pennsylvania return needs a correction before it can be accepted.");
-      assert.equal(await filing(null, "mailed"), "Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.");
+      assert.equal(await filing(null, "given_to_client"), "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
       assert.equal(
         await filing("accepted", "rejected"),
         "The IRS accepted your federal return. Your Pennsylvania return needs a correction before it can be accepted.",
@@ -245,15 +247,14 @@ test("mark e-filed records the methods", async (t) => {
         line("select vitally_private.efiled_line($1::text,$2::text,$3::boolean) l", [a, b, second]);
       assert.equal(await efiled("efile", "efile", true), "PCDC e-filed your return.");
       assert.equal(await efiled("efile", null, true), "PCDC e-filed your federal return.");
-      assert.equal(await efiled("paper", null, true), "PCDC mailed your federal return.");
+      assert.equal(await efiled("paper", null, true), "PCDC gave your federal return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
       assert.equal(await efiled(null, "efile", true), "PCDC e-filed your Pennsylvania return.");
-      assert.equal(await efiled(null, "paper", true), "PCDC mailed your Pennsylvania return.");
-      assert.equal(await efiled("efile", "paper", false), "PCDC e-filed your federal return and mailed your Pennsylvania return.");
-      assert.equal(await efiled("paper", "paper", false), "PCDC mailed your returns.");
+      assert.equal(await efiled(null, "paper", true), "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
+      assert.equal(await efiled("efile", "paper", false), "PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
+      assert.equal(await efiled("paper", "efile", false), "PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
+      assert.equal(await efiled("paper", "paper", false), "PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.");
       // Second filings of one return, and the combinations no filing produces.
       assert.equal(await efiled("efile", null, true), "PCDC e-filed your federal return.");
-      assert.equal(await efiled(null, "paper", true), "PCDC mailed your Pennsylvania return.");
-      assert.equal(await efiled("paper", "efile", false), null);
       assert.equal(await efiled(null, null, false), null);
     });
   } finally {
@@ -368,13 +369,16 @@ test("return to signing and file again", async (t) => {
       assert.equal((await columns(caseId)).stage, "ready_to_efile");
       await act(caseId, "MARK_EFILED", { confirmed: true, methods: { state: "paper" } });
       assert.deepEqual(await columns(caseId), {
-        stage: "efiled",
+        stage: "accepted",
         federal_method: "efile",
         state_method: "paper",
         federal_result: "accepted",
-        state_result: null,
+        state_result: "given_to_client",
       });
-      assert.equal(await lastMessage(caseId), "PCDC mailed your Pennsylvania return.");
+      assert.equal(
+        await lastMessage(caseId),
+        "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
+      );
       const attempts = await f.sql(
         "select attempt, filed_by from public.filing_attempts where case_id=$1 order by attempt",
         [caseId],
@@ -390,18 +394,42 @@ test("return to signing and file again", async (t) => {
       assert.deepEqual(returns.rows, [
         { attempt: 1, return_kind: "federal", method: "efile", result: "accepted" },
         { attempt: 1, return_kind: "state", method: "efile", result: "rejected" },
-        { attempt: 2, return_kind: "state", method: "paper", result: null },
+        { attempt: 2, return_kind: "state", method: "paper", result: "given_to_client" },
       ]);
       assert.deepEqual((await f.readStaffCase(caseId)).internalHistory.at(-1).detail, {
         attempt: 2,
         methods: { state: "paper" },
       });
-      // The refiled return is answered like any other, in the new attempt.
-      await act(caseId, "RECORD_FILING_RESULT", {
-        confirmed: true,
-        results: { state: { result: "mailed", date: await nyDay() } },
-      });
-      assert.equal((await columns(caseId)).stage, "accepted");
+      // The case is Accepted with no return waiting, so nothing more is recorded.
+      await assert.rejects(
+        async () =>
+          act(caseId, "RECORD_FILING_RESULT", {
+            confirmed: true,
+            results: { state: { result: "accepted", date: await nyDay() } },
+          }),
+        rejected("INVALID_TRANSITION"),
+      );
+    });
+
+    await t.test("second filing on paper completes the case", async () => {
+      const caseId = await answeredCase(
+        { federal: "efile", state: "efile" },
+        { federal: "accepted", state: "rejected" },
+      );
+      await back(caseId);
+      await assert.rejects(
+        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "paper" } }),
+        rejected("VALIDATION"),
+      );
+      await act(caseId, "MARK_EFILED", { confirmed: true, methods: { state: "paper" } });
+      const c = await columns(caseId);
+      assert.deepEqual([c.stage, c.federal_result, c.state_result], ["accepted", "accepted", "given_to_client"]);
+      const lines = await f.clientMessages(caseId);
+      assert.equal(
+        lines.at(-1),
+        "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.",
+      );
+      assert.equal(lines.filter((l) => l.startsWith("PCDC gave")).length, 1);
     });
 
     await t.test("both returns rejected are filed together", async () => {
@@ -424,9 +452,9 @@ test("return to signing and file again", async (t) => {
 
     for (const [name, first, results, methods, line] of [
       ["federal e-file", { federal: "efile", state: "efile" }, { federal: "rejected", state: "accepted" }, { federal: "efile" }, "PCDC e-filed your federal return."],
-      ["federal paper", { federal: "efile", state: "paper" }, { federal: "rejected", state: "mailed" }, { federal: "paper" }, "PCDC mailed your federal return."],
+      ["federal paper", { federal: "efile", state: "paper" }, { federal: "rejected" }, { federal: "paper" }, "PCDC gave your federal return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it."],
       ["state e-file", { federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" }, { state: "efile" }, "PCDC e-filed your Pennsylvania return."],
-      ["state paper", { federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" }, { state: "paper" }, "PCDC mailed your Pennsylvania return."],
+      ["state paper", { federal: "efile", state: "efile" }, { federal: "accepted", state: "rejected" }, { state: "paper" }, "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it."],
     ])
       await t.test(`second filing line: ${name}`, async () => {
         const caseId = await answeredCase(first, results);
@@ -435,11 +463,11 @@ test("return to signing and file again", async (t) => {
         assert.equal(await lastMessage(caseId), line);
       });
 
-    await t.test("an unused combination on refiling", async () => {
+    await t.test("refiling an accepted return is refused", async () => {
       const caseId = await answeredCase({ federal: "efile", state: "efile" }, { federal: "rejected", state: "accepted" });
       await back(caseId);
       await assert.rejects(
-        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { federal: "paper" } }),
+        () => act(caseId, "MARK_EFILED", { confirmed: true, methods: { state: "paper" } }),
         rejected("VALIDATION"),
       );
       assert.deepEqual(await columns(caseId), {
@@ -560,27 +588,63 @@ test("record filing result", async (t) => {
       assert.deepEqual(detail, { attempt: 1, results: { federal: "accepted", state: "rejected" }, noteAdded: false });
     });
 
-    await t.test("paper is mailed", async () => {
+    await t.test("paper is given to the client at Mark e-filed", async () => {
       const caseId = await filedCase({ federal: "efile", state: "paper" });
-      const today = await nyDay();
-      await assert.rejects(
-        () => record(caseId, { state: { result: "accepted", date: today } }),
-        rejected("VALIDATION"),
-      );
-      await assert.rejects(
-        () => record(caseId, { federal: { result: "mailed", date: today } }),
-        rejected("VALIDATION"),
-      );
-      await record(caseId, { state: { result: "mailed", date: today } });
-      assert.equal((await columns(caseId)).stage, "efiled");
-      assert.equal(
-        await lastMessage(caseId),
-        "Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.",
-      );
-      await record(caseId, { federal: { result: "accepted", date: today } });
       const c = await columns(caseId);
-      assert.equal(c.stage, "accepted");
-      assert.equal(c.state_result, "mailed");
+      assert.equal(c.stage, "efiled");
+      assert.equal(c.state_result, "given_to_client");
+      const row = (await f.sql("select result, answered_on, recorded_by from public.filing_returns where case_id=$1 and return_kind='state'", [caseId])).rows[0];
+      assert.deepEqual([row.result, row.answered_on, row.recorded_by], ["given_to_client", null, f.sam]);
+      assert.equal(await lastMessage(caseId),
+        "PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
+      for (const result of ["accepted", "mailed", "given_to_client"])
+        await assert.rejects(async () => record(caseId, { state: { result, date: await nyDay() } }), rejected("VALIDATION"));
+      await record(caseId, { federal: { result: "accepted", date: await nyDay() } });
+      assert.equal((await columns(caseId)).stage, "accepted");
+    });
+    await t.test("both paper goes straight to Accepted, with one line", async () => {
+      const caseId = await filedCase({ federal: "paper", state: "paper" });
+      assert.equal((await columns(caseId)).stage, "accepted");
+      const lines = await f.clientMessages(caseId);
+      assert.equal(lines.at(-1), "PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.");
+      assert.equal(lines.filter((l) => l.startsWith("PCDC gave")).length, 1);
+    });
+    await t.test("federal paper with state e-file is accepted", async () => {
+      const caseId = await filedCase({ federal: "paper", state: "efile" });
+      const c = await columns(caseId);
+      assert.deepEqual([c.stage, c.federal_result, c.state_result], ["efiled", "given_to_client", null]);
+      assert.equal(await lastMessage(caseId),
+        "PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.");
+    });
+    await t.test("a first filing missing a return is refused", async () => {
+      const caseId = await f.approvedCase();
+      await f.act(f.presenter, caseId, f.sam, "MARK_READY_TO_EFILE", { confirmed: true });
+      await assert.rejects(() => f.act(f.presenter, caseId, f.sam, "MARK_EFILED", { confirmed: true, methods: { federal: "efile" } }), rejected("VALIDATION"));
+    });
+    await t.test("stored mailed is renamed", async () => {
+      // A 035-style row (the checks dropped, as before 037) holds mailed with a date;
+      // 037's section 1 is run again and renames it, clearing the date.
+      const { readFileSync } = await import("node:fs");
+      const file = readFileSync(new URL("../supabase/migrations/037_adjust_filing_to_pcdc.sql", import.meta.url), "utf8");
+      const section = file.split("-- 037 §1 begin")[1].split("-- 037 §1 end")[0];
+      const { caseId } = await f.submittedClientCase();
+      await f.sql("begin");
+      try {
+        await f.sql("alter table public.cases drop constraint if exists cases_filing_results");
+        await f.sql("alter table public.filing_returns drop constraint if exists filing_returns_result_check");
+        await f.sql("update public.cases set federal_method='paper',state_method='paper',federal_result='mailed',state_result='mailed' where id=$1", [caseId]);
+        await f.sql("insert into public.filing_attempts(workspace_id,case_id,attempt,filed_by) values($1,$2,1,$3)", [f.workspaceId, caseId, f.sam]);
+        await f.sql("insert into public.filing_returns(workspace_id,case_id,attempt,return_kind,method,result,answered_on) values($1,$2,1,'federal','paper','mailed',current_date),($1,$2,1,'state','paper','mailed',current_date)", [f.workspaceId, caseId]);
+        await f.sql("set constraints all immediate"); // the seed's deferred keys are checked before the ALTERs
+        await f.sql(section);
+        await f.sql(section); // and once more: re-applying changes nothing
+        const c = (await f.sql("select federal_result, state_result from public.cases where id=$1", [caseId])).rows[0];
+        assert.deepEqual(c, { federal_result: "given_to_client", state_result: "given_to_client" });
+        const rows = (await f.sql("select result, answered_on from public.filing_returns where case_id=$1", [caseId])).rows;
+        assert.deepEqual(rows, [{ result: "given_to_client", answered_on: null }, { result: "given_to_client", answered_on: null }]);
+      } finally {
+        await f.sql("rollback");
+      }
     });
 
     await t.test("refusals", async () => {
@@ -768,7 +832,7 @@ test("record filing result", async (t) => {
 
     await t.test("the history lines all translate", async () => {
       const { SENTENCES } = await import("../src/client-text.mjs");
-      const states = [null, "waiting", "accepted", "rejected", "mailed"];
+      const states = [null, "waiting", "accepted", "rejected", "given_to_client"];
       const lines = new Set();
       for (const a of states)
         for (const b of states) {
@@ -778,6 +842,7 @@ test("record filing result", async (t) => {
       for (const [a, b, second] of [
         ["efile", "efile", false],
         ["efile", "paper", false],
+        ["paper", "efile", false],
         ["paper", "paper", false],
         ["efile", null, true],
         ["paper", null, true],

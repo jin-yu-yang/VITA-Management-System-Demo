@@ -1247,7 +1247,7 @@ test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the met
   // The method's staff name; a case e-filed before methods keeps "E-filed".
   assert.equal(
     labels({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" })[8],
-    "E-filed &amp; paper",
+    "E-filed, PA on paper",
   );
   assert.equal(labels({ stage: "efiled", federalMethod: null, stateMethod: null })[8], "E-filed");
   assert.equal(labels({ stage: "efiled" })[8], "E-filed");
@@ -1347,11 +1347,11 @@ test("the stage work sentences name who does the next thing", () => {
   );
   assert.equal(
     stageWork("rejected").work,
-    "A return was rejected. The office arranges the fix and contacts the client.",
+    "A return was rejected. The site coordinator fixes it in TaxSlayer, and the office contacts the client.",
   );
   assert.equal(
     stageWork("accepted").work,
-    "The returns are accepted or mailed. Nothing more is needed here.",
+    "The returns are accepted or given to the client on paper. Nothing more is needed here.",
   );
   assert.equal(
     stageWork("review_approved").work,
@@ -1378,7 +1378,7 @@ const ATTEMPTS = [
       { returnKind: "state", method: "efile", result: "rejected", answeredOn: "2026-10-04", rejectCode: "PA-INV-7" },
     ],
     notes: [
-      { note: "Preparer to correct the SSN", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-05T14:00:00.000Z" },
+      { note: "Site coordinator to correct the SSN", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-05T14:00:00.000Z" },
       { note: "<b>x</b> Client to bring the card", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-06T14:00:00.000Z" },
     ],
   },
@@ -1393,7 +1393,7 @@ test("the Filing panel shows each filing, newest first, with its notes oldest fi
   assert.match(html, /Accepted/);
   assert.match(html, /Rejected/);
   assert.match(html, /Waiting for an answer/);
-  assert.ok(html.indexOf("Preparer to correct the SSN") < html.indexOf("Client to bring the card"));
+  assert.ok(html.indexOf("Site coordinator to correct the SSN") < html.indexOf("Client to bring the card"));
   assert.match(html, /Sam/);
   // A fix note is escaped, never parsed (Review Focus 3).
   assert.match(html, /&lt;b&gt;x&lt;\/b&gt; Client to bring the card/);
@@ -1415,12 +1415,12 @@ test("the staff case page puts the Filing panel after the next step", () => {
     ALEX,
   );
   assert.ok(html.indexOf('id="next-step-title"') < html.indexOf(">Filing</h2>"));
-  assert.match(html, /Preparer to correct the SSN/);
+  assert.match(html, /Site coordinator to correct the SSN/);
 });
 
 test("the new actions have their history sentences", () => {
   assert.equal(EVENT_SENTENCES.START_SCREENING, "started screening");
-  assert.equal(EVENT_SENTENCES.MARK_READY_TO_EFILE, "recorded the client's Form 8879 signature");
+  assert.equal(EVENT_SENTENCES.MARK_READY_TO_EFILE, "recorded the client's signature");
   assert.equal(EVENT_SENTENCES.MARK_EFILED, "recorded that the return was e-filed");
   assert.equal(
     historySentence({ action: "MARK_EFILED", actorName: "Sam" }),
@@ -2915,8 +2915,47 @@ test("old VERIFY_INTAKE event renders", () => {
 
 test("the case page header names Accepted by the filing method", () => {
   const html = renderStaffCase(
-    staffCase({ stage: "accepted", federalMethod: "paper", stateMethod: "paper", federalResult: "mailed", stateResult: "mailed" }),
+    staffCase({ stage: "accepted", federalMethod: "paper", stateMethod: "paper", federalResult: "given_to_client", stateResult: "given_to_client" }),
     SAM,
   );
-  assert.match(html, /<i><\/i>Mailed<\/span>/);
+  assert.match(html, /<i><\/i>Paper<\/span>/);
+  assert.doesNotMatch(html, /Mailed/);
+});
+
+test("a paper return in the Filing panel reads Paper · Given to the client, with no date, and none waits for a mailing", () => {
+  const html = filingPanel(
+    staffCase({
+      stage: "accepted",
+      filingAttempts: [
+        {
+          attempt: 1,
+          filedAt: "2026-10-01T15:00:00.000Z",
+          returns: [
+            { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-03", rejectCode: null },
+            { returnKind: "state", method: "paper", result: "given_to_client", answeredOn: null, rejectCode: null },
+          ],
+          notes: [],
+        },
+      ],
+    }),
+  );
+  assert.match(html, /Pennsylvania return[^]*?Paper · Given to the client/);
+  assert.doesNotMatch(html, /Paper · Given to the client · /);
+  assert.doesNotMatch(html, /mailed|Mailed/);
+  // A paper return filed before the rule, with no result, reads the same.
+  const stuck = filingPanel(staffCase({ stage: "efiled", federalMethod: "paper", stateMethod: "paper" }));
+  assert.match(stuck, /Paper · Given to the client/);
+  assert.doesNotMatch(stuck, /mailed|Mailed|Waiting for/);
+});
+
+test("a season-end close reads as one", () => {
+  assert.equal(
+    historySentence({
+      action: "CLOSE_CASE",
+      actorName: "Sam",
+      detail: { reason: "dismissed", seasonEnd: true },
+      createdAt: "2026-10-01T12:00:00Z",
+    }),
+    "Sam closed the case at season end · Dismissed.",
+  );
 });

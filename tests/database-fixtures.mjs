@@ -481,7 +481,7 @@ test("the seeded workspace tells one coherent story", async (t) => {
       assert.equal(rejected.notes[0].recorded_by, f.sam);
       assert.equal(
         rejected.notes[0].note,
-        "Fictional note: preparer to correct the dependent's SSN in TaxSlayer.",
+        "Fictional note: site coordinator to correct the dependent's SSN in TaxSlayer.",
       );
       const accepted = await filing("accepted");
       assert.deepEqual(accepted.row, {
@@ -500,12 +500,12 @@ test("the seeded workspace tells one coherent story", async (t) => {
       // The history lines are the ones the real moves write.
       const lines = async (key) => (await f.clientMessages(byKey[key].id)).slice(-3);
       assert.deepEqual(await lines("rejected"), [
-        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
         "PCDC e-filed your return.",
         "The IRS accepted your federal return. Your Pennsylvania return needs a correction before it can be accepted.",
       ]);
       assert.deepEqual(await lines("accepted"), [
-        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
         "PCDC e-filed your return.",
         "The IRS and Pennsylvania accepted your returns.",
       ]);

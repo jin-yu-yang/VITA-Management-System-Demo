@@ -511,7 +511,7 @@ test("review progress is plain and never carries findings", () => {
       }),
     );
     assert.ok(html.includes(describeStage(stage).clientLabel), stage);
-    assert.ok(html.includes(describeStage(stage).clientMessage), stage);
+    assert.ok(html.includes(escHtml(describeStage(stage).clientMessage)), stage);
     for (const word of ["findings", "refund", "routing", "deposit", "$"])
       assert.ok(!html.toLowerCase().includes(word), `${stage} must not say ${word}`);
   }
@@ -777,7 +777,7 @@ test("at Ready to exit, intake to review are done and signing is current", () =>
 test("the client sees their own label, never the staff name", () => {
   const signing = progressAt("review_approved");
   assert.ok(signing.includes("Ready to sign"));
-  assert.ok(signing.includes(describeStage("review_approved").clientMessage));
+  assert.ok(signing.includes(escHtml(describeStage("review_approved").clientMessage)));
   assert.ok(!signing.includes("Ready to exit"));
   const screening = progressAt("screening", "zh-Hans");
   assert.ok(screening.includes("审核中"));
@@ -789,7 +789,7 @@ test("the client sees their own label, never the staff name", () => {
     /<p class="status-explanation">Your return was e-filed\. The IRS will confirm whether it is accepted\.<\/p>/,
   );
   const signed = progressAt("ready_to_efile", "zh-Hans");
-  assert.ok(signed.includes("已签名"));
+  assert.ok(signed.includes("已准备好"));
   assert.ok(!signed.includes("Ready to e-file"));
 });
 
@@ -839,11 +839,11 @@ test("the client's filing messages, per return", () => {
   );
   assert.equal(
     statusOf(progressAt("efiled", "en", { federalMethod: "paper", stateMethod: "paper" })),
-    "Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.",
+    "PCDC gave your federal and Pennsylvania returns on paper to you or the person you sent. If they aren&#39;t signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.",
   );
   assert.equal(
     statusOf(progressAt("efiled", "zh-Hans", { federalMethod: "efile", stateMethod: "paper" })),
-    "您的联邦报税表已电子递交。国税局会确认是否接受。您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。",
+    "您的联邦报税表已电子递交。国税局会确认是否接受。PCDC 已将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。",
   );
 });
 
@@ -864,7 +864,8 @@ test("Complete: the refund sites are plain text, not links", () => {
 test("clients see the filing method's label on the list and the progress page", () => {
   const cases = [
     [{ federalMethod: "efile", stateMethod: "paper" }, "Filed", "已递交"],
-    [{ federalMethod: "paper", stateMethod: "paper" }, "Mailed", "已邮寄"],
+    [{ federalMethod: "paper", stateMethod: "paper" }, "Filed", "已递交"],
+    [{ federalMethod: "paper", stateMethod: "efile" }, "Filed", "已递交"],
     [{ federalMethod: "efile", stateMethod: "efile" }, "E-filed", "已电子递交"],
     [{ federalMethod: null, stateMethod: null }, "E-filed", "已电子递交"],
   ];
@@ -915,6 +916,8 @@ test("the history shows the new lines in 简体", () => {
     { id: "h2", action: "START_SCREENING", message: "PCDC started reviewing your application. We may call you.", createdAt: "2026-01-03T15:04:05Z" },
     { id: "h3", action: "MARK_READY_TO_EFILE", message: "PCDC recorded that you signed Form 8879. Your return is ready to e-file.", createdAt: "2026-01-04T15:04:05Z" },
     { id: "h4", action: "MARK_EFILED", message: "PCDC e-filed your return.", createdAt: "2026-01-05T15:04:05Z" },
+    { id: "h5", action: "MARK_READY_TO_EFILE", message: "PCDC recorded that your return is ready. PCDC will take the next step.", createdAt: "2026-01-06T15:04:05Z" },
+    { id: "h6", action: "MARK_EFILED", message: "PCDC mailed your returns.", createdAt: "2026-01-07T15:04:05Z" },
   ];
   const html = progressAt("efiled", "zh-Hans", { history });
   for (const line of [
@@ -922,6 +925,8 @@ test("the history shows the new lines in 简体", () => {
     "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
     "PCDC 已电子递交您的报税表。",
     "已收到申请。志愿者会核对您的信息和文件。",
+    "PCDC 已记录您的报税表已准备好。PCDC 会进行下一步。",
+    "PCDC 已邮寄您的报税表。",
   ])
     assert.ok(html.includes(line), line);
   assert.ok(!html.includes("PCDC e-filed your return."));
@@ -2105,7 +2110,7 @@ test("the status panel shows the variant", () => {
   const message = describeStage("review_approved", "en", record).clientMessage;
   assert.ok(message.includes("TaxSlayer Customer Portal"));
   // shown in the status panel and in the review panel
-  assert.equal(html.split(message).length - 1, 2);
+  assert.equal(html.split(escHtml(message)).length - 1, 2);
   const legacy = progressScreen(baseState({ screen: "progress", savedCase: { ...record, signingPlan: null } }));
   assert.ok(!legacy.includes("Customer Portal"));
 });

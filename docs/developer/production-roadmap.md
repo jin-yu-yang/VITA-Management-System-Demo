@@ -110,7 +110,7 @@ The demo's stages against the spec's state machine (spec §8.2):
 | InReview | `reviewing` | |
 | (not in spec) | `corrections_required` | Reviewer sends back to the same preparer, who resubmits a new version |
 | ReadyToExit | `review_approved` | The reviewer records a follow-up conversation with the client |
-| NeedSign | `review_approved`, then `ready_to_efile` | `review_approved` is the wait for the client's Form 8879 signature; once the reviewer's call is recorded, an admin records the signature (`MARK_READY_TO_EFILE`) |
+| NeedSign | `review_approved`, then `ready_to_efile` | `review_approved` is the wait for the client's signature; once the reviewer's call is recorded, an admin records the signature (`MARK_READY_TO_EFILE`) |
 | Efiled | `efiled`, then `accepted` or `rejected` | An admin records the e-filing and each return's method (`MARK_EFILED`), then the IRS's and Pennsylvania's answers by hand (`RECORD_FILING_RESULT`). A rejection returns to signing (`RETURN_TO_SIGNING`) and is filed again; nothing is sent to or read from the IRS or Pennsylvania |
 | Amended | Not built | Amendments after acceptance are not modelled |
 | CantFindClient | `on_hold`, then `closed` as Dismissed (036) | Built: Hold, "Got in touch", and closing as Dismissed when the client stays unreachable |

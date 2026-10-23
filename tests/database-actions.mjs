@@ -896,7 +896,12 @@ test("installed entry points deny anonymous callers and serve members", async (t
           const fixture = (await f.readFixtureCases()).find(
             (row) => row.fixtureKey === "review_ready",
           );
+          const exitCase = (await f.readFixtureCases()).find(
+            (row) => row.fixtureKey === "review_approved",
+          );
           const context = {
+            exitCaseId: exitCase.id,
+            exitCaseRevision: Number(exitCase.revision),
             draftCaseId: draft.caseId,
             draftRevision: 2,
             assistanceItemId: seeded.itemId,

@@ -151,7 +151,7 @@ function materialsReceived(values) {
   return received;
 }
 
-// How the return was filed. A first filing picks one of PCDC's three
+// How the return was filed. A first filing picks one of the
 // combinations (the one `filing-combination` radio); filing again offers only
 // the returns that were rejected, one `method-federal` / `method-state` choice
 // each, and exactly those that arrive are sent. Whether a combination is one
@@ -159,6 +159,7 @@ function materialsReceived(values) {
 const FILING_COMBINATIONS = Object.freeze({
   both_efile: { federal: "efile", state: "efile" },
   efile_and_paper: { federal: "efile", state: "paper" },
+  paper_and_efile: { federal: "paper", state: "efile" },
   both_paper: { federal: "paper", state: "paper" },
 });
 const FILING_METHODS = Object.freeze(["efile", "paper"]);
@@ -184,7 +185,7 @@ function filingMethods(values) {
 // The answers to the returns waiting. A return left on "no answer yet" (or on a
 // value outside the list) is not sent; a rejection needs its reject code; every
 // answer needs its date. The date window and who may record are the database's.
-const FILING_RESULTS = Object.freeze(["accepted", "rejected", "mailed"]);
+const FILING_RESULTS = Object.freeze(["accepted", "rejected"]);
 
 function filingResults(dataset, values) {
   const results = {};
@@ -284,10 +285,10 @@ const BUILDERS = Object.freeze({
     note: text(values, "note", "A note"),
   }),
   MARK_READY_TO_EFILE: (dataset, values) => ({
-    confirmed: confirmation(values, "Confirm that the client signed Form 8879."),
+    confirmed: confirmation(values, "Confirm that the client signed Form 8879, or the return will be given to the client on paper."),
   }),
   MARK_EFILED: (dataset, values) => ({
-    confirmed: confirmation(values, "Confirm that the return was e-filed."),
+    confirmed: confirmation(values, "Confirm how each return was filed."),
     methods: filingMethods(values),
   }),
   RECORD_FILING_RESULT: (dataset, values) => filingResults(dataset, values),

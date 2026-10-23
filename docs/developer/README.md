@@ -49,7 +49,7 @@ flowchart LR
   end
   Auth --> GoTrue
   Store -- "SELECT (row-level security)" --> PostgREST
-  Store -- "7 RPC functions (all writes)" --> PostgREST
+  Store -- "8 RPC functions (all writes)" --> PostgREST
   PostgREST --> PG
   PG -- "INSERT/UPDATE events" --> Realtime
   Realtime -- "row ids only" --> Store
@@ -59,7 +59,7 @@ flowchart LR
 
 There is no application server. The browser talks to Supabase directly with the public
 (publishable) key. Every read goes through row-level security, and **every write goes through one
-of seven database functions** that check who may do what, in a fixed order, inside one
+of eight database functions** that check who may do what, in a fixed order, inside one
 transaction. The database is the back end.
 
 ## Repository map
@@ -71,7 +71,7 @@ src/
   app.mjs                  Bootstrap and DOM event wiring. No state, no HTML, no queries.
   controller.mjs           All browser state and every user-level operation.
   window-state.mjs         Per-window, per-user navigation memory (sessionStorage).
-  supabase-store.mjs       The only data adapter: reads, the 7 RPCs, Realtime, row mapping.
+  supabase-store.mjs       The only data adapter: reads, the 8 RPCs, Realtime, row mapping.
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
   contact-log.mjs          The contact log's summary line, labels and New York time helpers.
   contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
@@ -126,7 +126,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
    in PostgreSQL. The browser predicts what is allowed so it can hide buttons, but a prediction is
    never permission. See [Database: the action API](database.md#the-action-api).
 2. **Browser roles can read, never write, tables.** `authenticated` has `SELECT` only; all
-   changes go through the seven `SECURITY DEFINER` functions. See
+   changes go through the eight `SECURITY DEFINER` functions. See
    [Database: visibility](database.md#who-can-see-what).
 3. **Every write is idempotent and revision-fenced.** A write carries a client-generated action
    id and the revision the person saw. Replaying the same envelope returns the same receipt;

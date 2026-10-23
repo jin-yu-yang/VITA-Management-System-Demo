@@ -2504,7 +2504,7 @@ async function runPermutation(t, roles) {
       await waitForBadge(client, "Ready to sign");
       await waitForText(
         client,
-        "Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign Form 8879. It is needed before your return can be filed.",
+        "Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign it. Your return can't be filed until you sign.",
         RENDER_MS,
       );
       const seen = await pageText(client);
@@ -2678,7 +2678,7 @@ async function runPermutation(t, roles) {
       await pendingRow.waitFor({ state: "visible", timeout: RENDER_MS });
       assert.equal(
         (await pendingRow.locator(".queue-needed").innerText()).trim(),
-        "Waiting for the client to sign Form 8879.",
+        "Waiting for the client to sign.",
       );
       assert.equal(
         await pendingRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
@@ -2692,7 +2692,7 @@ async function runPermutation(t, roles) {
       await shortRow.waitFor({ state: "visible", timeout: RENDER_MS });
       assert.equal(
         (await shortRow.locator(".queue-needed").innerText()).trim(),
-        "Waiting for the client to sign Form 8879.",
+        "Waiting for the client to sign.",
       );
       assert.equal(
         await shortRow.locator('[data-action="open-mark-ready-to-efile"]').count(),
@@ -2797,7 +2797,7 @@ async function runPermutation(t, roles) {
       );
       await waitForText(
         client,
-        "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. It is needed before your return can be filed.",
+        "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. Your return can't be filed until you sign.",
         ARRIVAL_MS,
       );
 
@@ -2817,7 +2817,7 @@ async function runPermutation(t, roles) {
       );
       assert.equal(
         (await signingRow.locator(".queue-needed").innerText()).trim(),
-        "Waiting for the client to sign Form 8879.",
+        "Waiting for the client to sign.",
       );
       const markReady = signingRow.locator('[data-action="open-mark-ready-to-efile"]');
       assert.equal((await markReady.innerText()).trim(), "Mark ready to e-file…");
@@ -2857,11 +2857,11 @@ async function runPermutation(t, roles) {
         (await queueRow("efiling", classReference).locator(".queue-needed").innerText()).trim(),
         "Ready to e-file.",
       );
-      await waitForBadge(client, "Signed");
-      await waitForText(client, "You signed Form 8879. PCDC will e-file your return next.");
+      await waitForBadge(client, "Ready");
+      await waitForText(client, "Your return is ready. PCDC will take the next step.");
       await waitForHistoryLine(
         client,
-        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
       );
 
       // ---- 3. Mark e-filed, from the case page ---------------------------
@@ -2876,8 +2876,8 @@ async function runPermutation(t, roles) {
         `the dialog does not name the client and the reference: ${efiledDialog.slice(0, 200)}`,
       );
       assert.equal((await caseById(fixture, classCase.id)).stage, "ready_to_efile");
-      // A first filing offers the three combinations; PCDC e-filed both.
-      assert.equal(await staff.locator('.modal input[name="filing-combination"]').count(), 3);
+      // A first filing offers the four combinations; PCDC e-filed both.
+      assert.equal(await staff.locator('.modal input[name="filing-combination"]').count(), 4);
       await confirmMark(
         "MARK_EFILED",
         "field-efiled-confirmed",
@@ -2925,7 +2925,7 @@ async function runPermutation(t, roles) {
       ]);
       await waitForHistoryLine(
         client,
-        "PCDC recorded that you signed Form 8879. Your return is ready to e-file.",
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
       );
       await waitForHistoryLine(client, "PCDC e-filed your return.");
       await shoot(client, "progress-efiled");
@@ -2939,7 +2939,7 @@ async function runPermutation(t, roles) {
       await waitForBadge(client, "已电子递交");
       assert.equal(sentence("PCDC e-filed your return.", "zh-Hans"), "PCDC 已电子递交您的报税表。");
       await waitForHistoryLine(client, "PCDC 已电子递交您的报税表。");
-      await waitForHistoryLine(client, "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。");
+      await waitForHistoryLine(client, "PCDC 已记录您的报税表已准备好。PCDC 会进行下一步。");
       assert.equal(
         await client.evaluate(() => document.querySelector(".status-explanation")?.textContent.trim() ?? null),
         "您的联邦和宾州报税表已电子递交。国税局和宾州税务局会分别确认是否接受。",
@@ -2953,7 +2953,7 @@ async function runPermutation(t, roles) {
       await clientLang("en");
       await waitForBadge(client, "E-filed");
       evidence.story.signingAndFiling =
-        "marked ready to e-file from Follow-ups and e-filed (both returns e-filed) from the case page, each behind its confirmation; the client saw Signed, then E-filed, in English and 简体";
+        "marked ready to e-file from Follow-ups and e-filed (both returns e-filed) from the case page, each behind its confirmation; the client saw Ready, then E-filed, in English and 简体";
       loopKit = { queueRow, dialogTitled, dialogText, confirmMark, clientLang };
     });
 
@@ -2963,7 +2963,7 @@ async function runPermutation(t, roles) {
       // Dates are PCDC's day (US Eastern), which is also the filing day.
       const filingDay = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
       const REJECT_CODE = "IND-031-04";
-      const FIX_NOTE = "Preparer to correct the dependent's date of birth in TaxSlayer";
+      const FIX_NOTE = "Site coordinator to correct the dependent's date of birth in TaxSlayer";
       const badgeIs = (wanted) =>
         !document.querySelector(".modal") &&
         [...document.querySelectorAll(".badge")].some((badge) => badge.textContent.trim() === wanted);
@@ -3119,47 +3119,35 @@ async function runPermutation(t, roles) {
         "MARK_EFILED",
         "field-efiled-confirmed",
         badgeIs,
-        "E-filed & paper",
-        "the case page's E-filed & paper badge",
+        "Accepted, PA on paper",
+        "the case page's Accepted, PA on paper badge",
         () => staff.locator("#field-efiled-method-state-paper").check({ timeout: CLICK_MS }),
       );
-      assert.equal((await caseById(fixture, classCase.id)).stage, "efiled");
-
-      // Record the mailing: the state return mailed. The case is Accepted.
-      await revealCaseControl(staff, '[data-action="open-record-filing-result"]');
-      await clickAction(staff, "open-record-filing-result");
-      await dialogTitled("Record the filing result?");
-      assert.equal(await staff.locator("#field-filing-result-federal").count(), 0);
-      await confirmMark(
-        "RECORD_FILING_RESULT",
-        "field-filing-result-confirmed",
-        badgeIs,
-        "Accepted & mailed",
-        "the case page's Accepted & mailed badge",
-        async () => {
-          await staff.locator("#field-filing-result-state").selectOption("mailed", { timeout: CLICK_MS });
-          await staff.locator("#field-filing-date-state").fill(filingDay, { timeout: CLICK_MS });
-        },
-      );
+      // Nothing e-filed waits, so the case goes straight to Accepted: no
+      // second Record filing result.
       assert.equal((await caseById(fixture, classCase.id)).stage, "accepted");
-      assert.equal(await eventCount(fixture, classCase.id, "RECORD_FILING_RESULT"), 2);
+      assert.equal(await eventCount(fixture, classCase.id, "RECORD_FILING_RESULT"), 1);
       await poolTabShows("done", classReference);
 
-      // The client: Complete, and both refund sites as plain text.
-      await waitForBadge(client, "Complete");
+      // The client: Ready to mail, the PA handover sentence and both refund
+      // sites as plain text.
+      const PA_HANDOVER =
+        "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.";
+      await waitForBadge(client, "Ready to mail");
       await waitFor(
         client,
-        "the refund sites in the status panel",
-        () => {
+        "the handover sentence and the refund sites in the status panel",
+        (handover) => {
           const text = document.querySelector(".status-explanation")?.textContent ?? "";
-          return text.includes("irs.gov/refunds") && text.includes("mypath.pa.gov");
+          return text.includes(handover) && text.includes("irs.gov/refunds") && text.includes("mypath.pa.gov");
         },
-        undefined,
+        PA_HANDOVER,
         ARRIVAL_MS,
       );
       assert.equal(await client.locator(".status-explanation a").count(), 0, "a refund site is a link");
+      await waitForHistoryLine(client, PA_HANDOVER);
       evidence.story.rejectionLoop =
-        "both e-filed, federal accepted and state rejected, returned to signing, ready again, the state return mailed, Accepted & mailed; the client read each step";
+        "both e-filed, federal accepted and state rejected, returned to signing, ready again, the state return given to the client on paper, Accepted, PA on paper; the client read each step";
     });
 
     // -----------------------------------------------------------------------
@@ -6854,6 +6842,168 @@ async function runPermutation(t, roles) {
       };
       await hansWin.context.close();
       hansWin = null;
+    });
+
+    await phase("season-end close: the unsigned cases are closed as Dismissed, and the rest are left alone", async () => {
+      await choosePersona(staff, sam);
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await resetSampleCases(staff);
+      const fresh = await fixtureCases(fixture);
+      const held = fresh.find((row) => row.fixture_key === "review_approved");
+      const returned = fresh.find((row) => row.fixture_key === "rejected");
+      assert.ok(held && returned, "the review_approved or rejected sample is missing");
+      assert.equal(held.stage, "review_approved");
+      assert.equal(returned.stage, "rejected");
+
+      // The review_approved sample goes on a signing Hold, from its case page.
+      await openCaseByReference(staff, held.reference);
+      await revealCaseControl(staff, '[data-action="open-put-on-hold"]');
+      await clickAction(staff, "open-put-on-hold");
+      await staff.locator("#field-hold-hold-note").waitFor({ state: "visible", timeout: RENDER_MS });
+      await confirmDialog("PUT_ON_HOLD", held.id, {
+        fill: () => staff.locator("#field-hold-hold-note").fill(HOLD_NOTE, { timeout: CLICK_MS }),
+        box: "field-hold-confirmed",
+        ready: modalGone,
+        what: "the Put on hold dialog to close",
+      });
+      assert.equal(await stageOf(held.id), "on_hold");
+
+      // The rejected sample is returned to signing from its Follow-ups row.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await openFromRow("rejected", returned.reference, "open-return-to-signing", "#field-return-to-signing-confirmed");
+      assert.ok((await staff.locator(".modal").innerText()).includes("The fix is done."));
+      await confirmDialog("RETURN_TO_SIGNING", returned.id, {
+        box: "field-return-to-signing-confirmed",
+        ready: modalGone,
+        what: "the Return to signing dialog to close",
+      });
+      assert.equal(await stageOf(returned.id), "review_approved");
+
+      // Close unsigned cases…: both samples are listed, ticked, with their stage and days.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      await clickAction(staff, "open-close-unsigned");
+      await staff.locator("#close-unsigned-form").waitFor({ state: "visible", timeout: RENDER_MS });
+      const dialogRow = (id) => staff.locator(`#close-unsigned-form tr:has(#close-unsigned-${id})`);
+      const heading = async () => (await staff.locator("#close-unsigned-heading").innerText()).trim();
+      const total = await staff.locator('#close-unsigned-form input[name="caseId"]').count();
+      assert.ok(total >= 2, `the dialog lists ${total} cases, fewer than the two samples`);
+      for (const [row, stage] of [
+        [held, "Hold"],
+        [returned, "Ready to exit"],
+      ]) {
+        const text = (await dialogRow(row.id).innerText()).replace(/\s+/g, " ");
+        assert.ok(text.includes(row.reference), `the row for ${row.reference} is missing its reference: ${text}`);
+        assert.ok(text.includes(stage), `the row for ${row.reference} does not say ${stage}: ${text}`);
+        assert.ok(text.includes("0 days"), `the row for ${row.reference} does not say 0 days: ${text}`);
+        assert.equal(await staff.locator(`#close-unsigned-${row.id}`).isChecked(), true, "a listed case starts ticked");
+      }
+      const headingFor = (ticked) =>
+        `Close ${ticked === total ? total : `${ticked} of ${total}`} cases that are waiting for a signature, as Dismissed?`;
+      assert.equal(await heading(), headingFor(total));
+
+      // Leave out every case but the held sample: the heading follows the ticks.
+      const untick = async (id) => {
+        await waitForQuiet(staff);
+        if (await staff.locator(`#close-unsigned-${id}`).isChecked()) {
+          await staff.locator(`#close-unsigned-${id}`).click({ timeout: CLICK_MS });
+        }
+        await waitFor(
+          staff,
+          `#close-unsigned-${id} to come back unticked`,
+          (selector) => document.querySelector(selector)?.checked === false,
+          `#close-unsigned-${id}`,
+          RENDER_MS,
+        );
+      };
+      const otherIds = (
+        await staff
+          .locator('#close-unsigned-form input[name="caseId"]')
+          .evaluateAll((boxes) => boxes.map((box) => box.value))
+      ).filter((id) => id !== held.id);
+      await untick(returned.id);
+      assert.equal(await heading(), headingFor(total - 1));
+      for (const id of otherIds.filter((id) => id !== returned.id)) await untick(id);
+      assert.equal(await heading(), headingFor(1));
+      assert.equal(await staff.locator(`#close-unsigned-${held.id}`).isChecked(), true);
+      await tickBox(staff, "field-close-unsigned-confirmed");
+      await waitFor(
+        staff,
+        "the confirm button to open",
+        () => document.querySelector("#close-unsigned-submit")?.disabled === false,
+        undefined,
+        RENDER_MS,
+      );
+      await waitForQuiet(staff);
+      await staff.locator("#close-unsigned-submit").click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the season-end toast",
+        () =>
+          (window.__vitallyAlerts ?? []).some(
+            (line) => line.startsWith("toast:") && line.includes("The unsigned cases were closed as Dismissed."),
+          ),
+        undefined,
+        ARRIVAL_MS,
+      );
+      await waitFor(staff, "the dialog to close", modalGone, undefined, RENDER_MS);
+
+      // The held sample is Closed · Dismissed; the other is untouched.
+      const closed = await one(fixture, "select stage,closing_reason from public.cases where id=$1", [held.id]);
+      assert.deepEqual(closed, { stage: "closed", closing_reason: "dismissed" });
+      assert.equal(await stageOf(returned.id), "review_approved", "the case that was left out moved");
+      assert.equal(
+        (
+          await one(
+            fixture,
+            "select message from public.client_events where case_id=$1 order by created_at desc, id desc limit 1",
+            [held.id],
+          )
+        ).message,
+        "PCDC could not reach you, so this application was closed. Your return was not filed.",
+      );
+      await clickAction(staff, "open-cases");
+      await waitForText(staff, "Case pool", RENDER_MS);
+      await showPoolTab("closed");
+      await staff.locator('select[data-board-filter="poolReason"]').waitFor({ state: "visible", timeout: RENDER_MS });
+      await waitForQuiet(staff);
+      await staff.locator('select[data-board-filter="poolReason"]').selectOption("dismissed", { timeout: CLICK_MS });
+      await poolShows(held.reference, true, "the Dismissed filter to list the closed sample");
+      assert.ok(
+        await staff.evaluate(
+          (wanted) =>
+            [...document.querySelectorAll("tr.pool-row")]
+              .find((row) => row.textContent.includes(wanted))
+              ?.textContent.includes("Closed · Dismissed") ?? false,
+          held.reference,
+        ),
+        "the pool row does not read Closed · Dismissed",
+      );
+
+      // No TaxSlayer notice for the season-end close.
+      await openBoard(staff, OFFICE_BOARD_HEADING);
+      assert.equal(
+        await staff
+          .locator("tr.queue-row", {
+            hasText: "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.",
+          })
+          .count(),
+        0,
+        "Follow-ups shows a TaxSlayer notice for the season-end close",
+      );
+      assert.equal(
+        Number(
+          (
+            await one(
+              fixture,
+              "select count(*)::int as count from public.admin_followups where case_id=$1 and purpose='withdrawal_notice'",
+              [held.id],
+            )
+          ).count,
+        ),
+        0,
+      );
+      evidence.story.seasonEndClose =
+        "a held signer closed as Dismissed from Close unsigned cases…; the case left out stayed at Ready to exit; the client was told; no TaxSlayer notice";
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {

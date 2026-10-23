@@ -11,7 +11,7 @@ import {
 const SCREENING_LINE =
   "PCDC started reviewing your application. We may call you.";
 const SIGNED_LINE =
-  "PCDC recorded that you signed Form 8879. Your return is ready to e-file.";
+  "PCDC recorded that your return is ready. PCDC will take the next step.";
 const EFILED_LINE = "PCDC e-filed your return.";
 const CALL_NOTE = "Told the fictional client the return is ready.";
 const CLOSURE = {

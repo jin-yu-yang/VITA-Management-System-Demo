@@ -188,7 +188,7 @@ An approval answered "yes" SHALL meet Mark ready to e-file's wait for the review
 
 #### Scenario: Yes lets the admin mark ready to e-file
 - **WHEN** the reviewer approves with "yes", and an admin opens the case at Ready to exit
-- **THEN** the admin is offered Mark ready to e-file…, its Follow-ups row reads "Waiting for the client to sign Form 8879.", and the database accepts the confirmed move
+- **THEN** the admin is offered Mark ready to e-file…, its Follow-ups row reads "Waiting for the client to sign.", and the database accepts the confirmed move
 
 #### Scenario: No hands the step to the office
 - **WHEN** the reviewer approves with "no"

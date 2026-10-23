@@ -330,7 +330,7 @@ filed. For each stage it returns three texts:
 | Field | Who reads it | Where it comes from |
 | --- | --- | --- |
 | `label` | Staff | `STAGE_DESCRIPTIONS`; always English (for example `screening` is "Screening in progress", `review_approved` is "Ready to exit") |
-| `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Signed") |
+| `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Ready") |
 | `clientMessage` | The client | The same, `stage.<stage>.client` |
 
 Two stages are new (036). `awaiting_documents` is "Waiting for documents" for staff and "Documents
@@ -346,13 +346,17 @@ has not reached, and no client text names a phone number.
 
 **Names by filing method.** From the case's `federal_method` and `state_method`:
 
-| Stage | Staff name (both e-filed / one each / both paper) | Client label |
+| Stage | Staff name (both e-filed / PA on paper / federal on paper / both paper) | Client label |
 | --- | --- | --- |
-| `efiled` | Both e-filed / E-filed & paper / Both paper | E-filed / Filed / Mailed |
+| `efiled` | Both e-filed / E-filed, PA on paper / E-filed, federal on paper / (Both paper, not reached now) | E-filed / Filed / Filed / Filed |
 | `rejected` | Rejected | Needs a correction |
-| `accepted` | Accepted / Accepted & mailed / Mailed | Complete |
+| `accepted` | Accepted / Accepted, PA on paper / Accepted, federal on paper / Paper | Complete / Ready to mail / Ready to mail / Ready to mail |
 
 A case e-filed before the methods existed (null methods) is "E-filed" for staff and the client.
+PCDC never mails a return: a paper return is given to the client at Mark e-filed, so a case with
+nothing e-filed waiting goes straight to Accepted, and "Ready to mail" tells the client to sign the
+paper return and mail it themselves. A paper return filed under 035 that is still waiting for a
+result reads as given to the client too (`returnState`), so such a case still renders.
 `filingMessage` composes the client's message: a sentence for each return (one combined sentence
 when both returns are in the same state), then the stage's closing sentence. It never names a
 reject code or a fix note, which a client session does not receive. A case at `review_approved`
@@ -407,10 +411,12 @@ the second only for an admin on a `ready_to_efile` case. The Follow-ups signing 
 offer the same two marks, selecting the case in place.
 
 After E-filed, three more admin buttons record the IRS's and Pennsylvania's answers by hand
-(nothing is sent to either). "Mark e-filed…" now asks how each return was filed (federal and state,
-each e-file or paper; three combinations are allowed) and sends `{confirmed, methods}`. "Record
-filing result…" (`efiled`, or `rejected` while a return is waiting) sends each waiting return's
-result, date and, when rejected, a code, plus an optional fix note. "Return to signing…" (`rejected`
+(nothing is sent to either). "Mark e-filed…" asks how each return was filed with four choices
+(both e-filed, federal e-filed and Pennsylvania on paper, the reverse, or both on paper, each paper
+choice "given to the client to mail") and sends `{confirmed, methods}`; filing again offers only the
+rejected returns and lists the rest as done. "Record filing result…" (`efiled`, or `rejected` while an
+e-filed return is waiting) asks for e-filed returns only, never a paper one, and sends each waiting
+return's result, date and, when rejected, a code, plus an optional fix note. "Return to signing…" (`rejected`
 with every return answered) sends `{confirmed: true}`; "Close case…" is also offered at `rejected`.
 A staff-only Filing panel on the case page lists every attempt, newest first, with each return's
 method, result, date and code, and the fix notes in the order recorded. The case pool has two more
@@ -437,6 +443,20 @@ On the client's side, the progress page shows a **Withdraw this application** bu
 in `WITHDRAW_STAGES` (and on a documents Hold), which opens a dialog with one box to tick and sends
 `{confirmed: true}`. It is not shown from Ready to exit on; at the stages in
 `mustContactToWithdraw` the client reads the contact line instead.
+
+### The season-end dialog
+
+For an admin, the Follow-ups queue has a **Close unsigned cases…** button (`open-close-unsigned`),
+disabled with its reason when no case is waiting for a signature. Its dialog
+(`closeUnsignedDialogBody` in `office-views.mjs`) lists every case at Ready to exit or on a Hold from
+Ready to exit (`unsignedCases`), oldest first, each ticked with its reference, client name, stage
+and days waiting. The heading follows the ticks ("Close 2 of 5 cases that are waiting for a
+signature, as Dismissed?"), and **Close as Dismissed** opens only with a case ticked and the "didn't
+come back to sign" box ticked. It calls `controller.closeUnsigned(cases)`, which sends one
+`vitally_close_unsigned` with each ticked case's id and the revision the dialog showed
+([Season-end close](database.md#season-end-close)). On a `CONFLICT` the list is re-read and the dialog
+reopens without the case that moved, with nothing closed. On success it closes the dialog and
+toasts "The unsigned cases were closed as Dismissed."
 
 ## Events and actions
 

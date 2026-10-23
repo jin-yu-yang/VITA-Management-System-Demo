@@ -25,6 +25,7 @@ import {
   renderFollowups,
   logCallDrawerBody,
   resolveHelpDrawerBody,
+  closeUnsignedDialogBody,
 } from "./office-views.mjs";
 import { renderCasePool } from "./pool-views.mjs";
 import {
@@ -474,6 +475,10 @@ export function dialog(state) {
   if (state.dialog === "resume-from-hold") {
     title = "Got in touch?";
     body = resumeFromHoldDialogBody(state);
+  }
+  if (state.dialog === "close-unsigned") {
+    title = "Close unsigned cases?";
+    body = closeUnsignedDialogBody({ cases: state.cases ?? [], now: Date.now() });
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

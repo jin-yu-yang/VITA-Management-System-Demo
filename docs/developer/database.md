@@ -12,6 +12,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 - [The action API](#the-action-api)
 - [The case state machine](#the-case-state-machine)
 - [Action catalogue](#action-catalogue)
+- [Season-end close](#season-end-close)
 - [The contact log](#the-contact-log)
 - [Check order and error codes](#check-order-and-error-codes)
 - [Concurrency and idempotency](#concurrency-and-idempotency)
@@ -64,6 +65,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `034_screening_checks.sql` | Hand-written: `VERIFY_INTAKE` records the real screening checks, `phone`, `documents` and `in_scope`, plus `identity` only when the case's `service` answer is `online` (a replayed old four-key payload is refused); the client's history line is "PCDC finished screening your application. A volunteer will start preparing your return next."; `check_payload`, `act_verify_intake` and `fixture_history` replaced, and the sample cases record the new checks |
 | `035_post_efiling_stages.sql` | Hand-written: the `rejected` and `accepted` stages; `cases.federal_method`, `state_method`, `federal_result` and `state_result`; the staff-only `filing_attempts`, `filing_returns` and append-only `filing_notes`; `MARK_EFILED` records each return's method; `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`; `CLOSE_CASE` from `rejected`; the `rejected` and `accepted` sample cases |
 | `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages; `cases.documents_origin`, `hold_origin` and `closing_reason`; `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and the client's `WITHDRAW`; `CLOSE_CASE` takes one of six reasons and an optional note, and is also allowed from the two new stages; an admin may record and verify documents there; the `withdrawal_notice` follow-up purpose; the `on_hold` and `withdrawn` sample cases |
+| `037_adjust_filing_to_pcdc.sql` | Hand-written: a paper return is "given to the client" at `MARK_EFILED` (stored result `given_to_client`, no date; the old `mailed` is renamed and its date dropped); all four federal/state method pairs are allowed; `RECORD_FILING_RESULT` takes e-filed returns only and `MARK_EFILED` moves the case straight to `accepted` when no e-filed return waits; the client line of `MARK_READY_TO_EFILE` no longer names Form 8879; the new RPC `vitally_close_unsigned`; the `rejected` sample's fix note is the site coordinator's |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -106,9 +108,9 @@ version of a function, use the **last** file that defines it:
 | Function | Current definition |
 | --- | --- |
 | `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `036_hold_and_closing.sql` |
-| `vitally_private.check_payload`, `check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
+| `vitally_private.check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
 | `vitally_private.act_verify_intake` | `034_screening_checks.sql` |
-| `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_mark_ready_to_efile`, `act_resolve_followup` | `033_review_questionnaires.sql` |
+| `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
@@ -118,13 +120,15 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
 | `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
-| `vitally_private.act_mark_efiled`, `act_record_filing_result`, `act_return_to_signing` | `035_post_efiling_stages.sql` |
+| `vitally_private.check_payload`, `act_mark_ready_to_efile`, `apply_fixture_scenario`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
+| `vitally_private.act_return_to_signing` | `035_post_efiling_stages.sql` |
+| `public.vitally_close_unsigned` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
 | `vitally_private.fixture_answers_v2` | `036_hold_and_closing.sql` |
 | `vitally_private.fixture_contact_v2` | `019_fixtures_v2.sql` |
-| `vitally_private.apply_fixture_scenario`, `fixture_history`, `fixture_keys` | `036_hold_and_closing.sql` |
+| `vitally_private.fixture_keys` | `036_hold_and_closing.sql` |
 | `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
 | `public.vitally_assistance_action` | `005_assistance_closure.sql` |
 
@@ -138,7 +142,7 @@ grep -n -E "^create (or replace )?function" supabase/migrations/*.sql
 
 Two schemas:
 
-- **`public`**: the application tables and the seven browser-callable functions.
+- **`public`**: the application tables and the eight browser-callable functions.
 - **`vitally_private`**: helper functions, the migration ledger, and tables browsers must never
   reach. Every function here is `SECURITY DEFINER` with `search_path=''`, and `EXECUTE` is revoked
   from every role, including `service_role`.
@@ -178,7 +182,7 @@ erDiagram
 | `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it; default 2 since 020, and only 2 since 023) |
 | `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
 | `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
-| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign Form 8879), `federal_method` and `state_method` (035; `efile` or `paper`; both null or one of three combinations: efile/efile, efile/paper, paper/paper), `federal_result` and `state_result` (035; `accepted` or `rejected` for an e-filed return, `mailed` for a paper one; null until its method is set and answered). A client reads these four columns and nothing else about a filing, `documents_origin` and `hold_origin` (036; the stage a documents request came from and the case returns to, `screening` or `preparation_ready`, and where a hold came from, `awaiting_documents` or `review_approved`; both null otherwise, and both cleared when the case returns), `closing_reason` (036; one of `out_of_scope`, `no_need_to_file`, `duplicate`, `dismissed`, `withdrawn`, `other`; null for a case closed before 036 and for any open case. A client reads the reason's key and never a note) |
+| `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign), `federal_method` and `state_method` (035; `efile` or `paper`; both null or any of the four pairs, 037), `federal_result` and `state_result` (035; `accepted` or `rejected` for an e-filed return, `given_to_client` (037, was `mailed`) for a paper one; null until its method is set and answered). A client reads these four columns and nothing else about a filing, `documents_origin` and `hold_origin` (036; the stage a documents request came from and the case returns to, `screening` or `preparation_ready`, and where a hold came from, `awaiting_documents` or `review_approved`; both null otherwise, and both cleared when the case returns), `closing_reason` (036; one of `out_of_scope`, `no_need_to_file`, `duplicate`, `dismissed`, `withdrawn`, `other`; null for a case closed before 036 and for any open case. A client reads the reason's key and never a note) |
 | `action_receipts` | One row per accepted or in-flight action | Unique `(workspace_id, actor_user_id, action_id)`; `request_digest` (SHA-256 of the envelope); `receipt` (the stored result). No foreign key to the target, so receipts outlive deleted cases |
 | `preparation_participants` | Who ever prepared a case | Primary key `(case_id, person_id)`. Written on a preparation claim and never removed. Blocks self-review |
 | `document_requests` | A preparer asking for a document | `status`: `open` → `awaiting_verification` → `verified`, or `cancelled` on closure |
@@ -193,7 +197,7 @@ erDiagram
 | `case_contacts` | Contact details of a version-2 case | One row per case: client phone and second phone, `best_contact_time`, `best_contact_note`. Client-visible on own cases; written by SAVE_ANSWERS and UPDATE_CONTACT; published to Realtime |
 | `case_materials` | Materials the site has received | Primary key `(case_id, item)`; `item` from the eleven-item checklist; `recorded_by_person_id`. Staff-only; written only by RECORD_MATERIALS; published to Realtime |
 | `filing_attempts` | One row per filing of a case (035) | Unique `(case_id, attempt)`; `filed_at`, `filed_by`. Staff-only (013's presenter-only select); written only by MARK_EFILED; not in the Realtime publication, so a `cases` update triggers the staff reload |
-| `filing_returns` | The federal and the state return of one attempt (035) | Unique `(case_id, attempt, return_kind)`; `method`, `result`, `answered_on` (the acknowledgment or mailing date), `reject_code` (1–40 characters), `recorded_by`. Staff-only; written by MARK_EFILED and RECORD_FILING_RESULT; not in the publication. A reject code never reaches a client |
+| `filing_returns` | The federal and the state return of one attempt (035) | Unique `(case_id, attempt, return_kind)`; `method`, `result`, `answered_on` (the acknowledgment date; null for a return given to the client), `reject_code` (1–40 characters), `recorded_by`. Staff-only; written by MARK_EFILED and RECORD_FILING_RESULT; not in the publication. A reject code never reaches a client |
 | `filing_notes` | What the office fixed after a rejection (035) | `case_id`, `attempt`, `note` (1–1000), `recorded_by`, `recorded_at`. Staff-only, **append-only**: a `before update or delete` trigger refuses any change, the service role included. Two exceptions: a note goes with its whole case (a sample reset, or a case or workspace delete), and a sample's checkpoint reload clears the notes of that one sample case. Written by RECORD_FILING_RESULT's `fixNote`; not in the publication |
 | `case_document_cards` | The state of a version-2 case's document cards | Primary key `(case_id, slot_id)`; `status` is `later`, `none`, or null for "Not done"; `group_override` is null or `needed` (staff moved a Maybe card up). One row per card someone has marked; written only by SET_DOCUMENT_CARD and SET_DOCUMENT_GROUP; never deleted. **No person column**: the client reads these rows and Realtime sends them whole; who changed a card is in `case_events`. Published to Realtime (insert and update) |
 | `vitally_private.intake_fields` | The version-2 question catalogue | Private; one row per question and per household sub-field (`hh.dob`), with type, options, required flag and show-if rule. Loaded (replaced whole) by each catalogue migration through `load_intake_catalogue`; read by the server-side answer checks. It holds no wording |
@@ -253,7 +257,7 @@ policy and `vitally_private.lock_case` (which applies the same rule to writes) i
 
 ## The action API
 
-Browsers can call exactly seven functions. Each runs as its owner (`SECURITY DEFINER`), checks the
+Browsers can call exactly eight functions. Each runs as its owner (`SECURITY DEFINER`), checks the
 caller itself, and returns a JSON receipt.
 
 | Function | Purpose | Returns |
@@ -265,12 +269,13 @@ caller itself, and returns a JSON receipt.
 | `vitally_edit_contact(p_action_id uuid, p_contact_id uuid, p_expected_revision bigint, p_person_id uuid, p_entry jsonb)` | Edit a logged contact; appends a version | `{actionId, contactId, caseId, revision}` |
 | `vitally_reset_fixtures(p_action_id uuid)` | Demo only: rebuild the ten sample cases | `{actionId, generation, fixtureCaseIds}` |
 | `vitally_load_checkpoint(p_action_id uuid, p_case_id uuid, p_expected_revision bigint, p_checkpoint text)` | Demo only: move one sample case to a story point | `{actionId, caseId, reference, revision}` |
+| `vitally_close_unsigned(p_action_id uuid, p_person_id uuid, p_cases jsonb, p_confirmed boolean)` | Season end (037): close the listed signing cases as Dismissed, all or nothing ([below](#season-end-close)) | `{actionId, cases: [{caseId, reference, revision}]}` |
 
 `p_person_id` is the staff person the caller acts as. Applicants must send `null`. Presenters send
 the persona they chose.
 
 The exact signatures are pinned by a test ([`tests/support/rpc-signatures.mjs`](../../tests/support/rpc-signatures.mjs)),
-so adding an eighth function or changing an argument fails the database suite until the list is
+so adding a ninth function or changing an argument fails the database suite until the list is
 updated.
 
 ### Calling it
@@ -329,7 +334,8 @@ stateDiagram-v2
   corrections_required --> closed: CLOSE_CASE
   draft --> closed: CLOSE_CASE (assisted drafts only)
   efiled --> rejected: RECORD_FILING_RESULT (a return rejected)
-  efiled --> accepted: RECORD_FILING_RESULT (every return accepted or mailed)
+  efiled --> accepted: RECORD_FILING_RESULT (every e-filed return accepted)
+  ready_to_efile --> accepted: MARK_EFILED (every return answered)
   rejected --> review_approved: RETURN_TO_SIGNING
   rejected --> closed: CLOSE_CASE
   screening --> awaiting_documents: REQUEST_DOCUMENTS_AT_INTAKE
@@ -379,19 +385,23 @@ admin-only actions and one submit rule shape the earlier stages:
   `screening`, because the office has already screened a client it entered itself.
 - `START_SCREENING` moves `received` to `screening`. The browser sends it when an admin opens the
   case's page ([Front end](frontend.md#screening-starts-when-an-admin-opens-the-case)).
-- `MARK_READY_TO_EFILE` (the client signed Form 8879) and `MARK_EFILED` follow `review_approved`.
+- `MARK_READY_TO_EFILE` (the client signed) and `MARK_EFILED` follow `review_approved`.
   `MARK_READY_TO_EFILE` refuses until the approved review's contact step is `completed`
   (`client_contact_status`), and (033) while the case has an open `go_over_return` follow-up,
   whatever outcome later resolves it.
 - `MARK_EFILED` records how each return was filed (`federal` and `state`, each `efile` or `paper`;
-  the pair must be one of the three combinations) and opens a filing attempt. After a rejection it
-  takes exactly the rejected returns, may change their method, and keeps accepted and mailed ones.
-- `RECORD_FILING_RESULT` records the answer for returns still waiting: `accepted` or `rejected`
-  for an e-filed return, `mailed` for a paper one, with a date, and a reject code when rejected.
-  Any rejected return moves the case to `rejected`; every return accepted or mailed moves it to
+  all four pairs are allowed) and opens a filing attempt. PCDC never mails a return: a paper return
+  is "given to the client" at this move, so it gets the result `given_to_client` (no date) and its
+  `filing_returns` row at once, and the client's line tells them to sign it and mail it themselves.
+  When no e-filed return is left waiting (both on paper, or the other return already answered), the
+  case goes straight to `accepted`; otherwise it moves to `efiled`. After a rejection it takes
+  exactly the rejected returns, may change their method, and keeps accepted and given-to-client ones.
+- `RECORD_FILING_RESULT` records the answer for e-filed returns still waiting, `accepted` or
+  `rejected`, with a date, and a reject code when rejected; a paper return takes no result.
+  Any rejected return moves the case to `rejected`; every e-filed return accepted moves it to
   `accepted`; otherwise it stays at `efiled`. At `rejected` it stays offered while a return is
   still waiting. A fix note (`fixNote`) is allowed only when the case is, or becomes, `rejected`.
-  A case e-filed before 035 has null methods and is treated as both e-filed.
+  A case e-filed before 035 has null methods and is treated as both e-filed. A paper return filed under 035 that still waits for a result (no result) is left as it is, and a sample reset clears it.
 - `RETURN_TO_SIGNING` moves `rejected` to `review_approved`, and is refused until every return has
   an answer. The methods and results are kept: "returned to signing" is `review_approved` with
   `federal_method` set, so no preparation or review pass repeats and the client signs again.
@@ -429,8 +439,8 @@ shorthands in the table:
 | `APPROVE_REVIEW` | Presenter + person | `reviewing` | Current reviewer; review at current version | Questionnaire saved; review → `approved` with the contact step completed (outcome `reached` when the reviewer went over the return, none when not); signing plan saved; → `review_approved`; a `go_over_return` task for the office when the reviewer did not | Yes |
 | `RECORD_REVIEW_CONTACT` | Presenter + person | `review_approved` | Current reviewer; contact `pending` | Outcome saved; `reached` or `no_further_contact` completes it | Only when completed |
 | `MARK_READY_TO_EFILE` | Presenter + `admin` person | `review_approved` | The approved review's contact step is `completed`, and no `go_over_return` follow-up is open (else `INVALID_TRANSITION`): it waits for the contact step and for the office's go-over | → `ready_to_efile` | Yes |
-| `MARK_EFILED` | Presenter + `admin` person | `ready_to_efile` | Methods form one of the three combinations; a second filing takes exactly the rejected returns | Sets the methods, resets the outstanding results, adds a filing attempt; → `efiled` | Yes |
-| `RECORD_FILING_RESULT` | Presenter + `admin` person | `efiled`; `rejected` while a return is waiting | Only waiting returns; result fits the method; date not future and not before the filing; a reject code exactly when rejected | Saves results on `cases` and `filing_returns`, plus a `filing_notes` row for a fix note; → `rejected`, `accepted` or stays | Yes (per return; no code, no note) |
+| `MARK_EFILED` | Presenter + `admin` person | `ready_to_efile` | Any of the four method pairs; a second filing takes exactly the rejected returns | Sets the methods, gives a paper return to the client (`given_to_client`), resets the outstanding e-filed results, adds a filing attempt; → `efiled`, or `accepted` when no e-filed return waits | Yes |
+| `RECORD_FILING_RESULT` | Presenter + `admin` person | `efiled`; `rejected` while a return is waiting | Only waiting e-filed returns; `accepted` or `rejected` only; date not future and not before the filing; a reject code exactly when rejected | Saves results on `cases` and `filing_returns`, plus a `filing_notes` row for a fix note; → `rejected`, `accepted` or stays | Yes (per return; no code, no note) |
 | `RETURN_TO_SIGNING` | Presenter + `admin` person | `rejected` | No return waiting | → `review_approved`; methods and results kept | Yes |
 | `REMIND` | Presenter + `admin` person | `preparation_ready` with no preparer, or `review_ready` with no reviewer | | Sets `last_reminded_at` (no message is sent) | No |
 | `REQUEST_DOCUMENTS_AT_INTAKE` | Presenter + `admin` person | `screening`, `preparation_ready` | | New `open` requests (1 to 5); → `awaiting_documents`; sets `documents_origin` | Yes (titles) |
@@ -455,8 +465,8 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | `START_SCREENING`, `CLAIM_PREPARATION`, `CLAIM_REVIEW`, `REMIND` | `{}` |
 | `SUBMIT_REVIEW`, `APPROVE_REVIEW` | `{questionnaire}` (the preparer's or the reviewer's, see design D2 and D3) |
 | `MARK_READY_TO_EFILE`, `RETURN_TO_SIGNING` | `{confirmed: true}` |
-| `MARK_EFILED` | `{confirmed: true, methods: {federal?, state?}}`, each `efile` or `paper` (035) |
-| `RECORD_FILING_RESULT` | `{confirmed: true, results: {federal?: {result, date, code?}, state?: {…}}, fixNote? (≤1000)}` (035); `code` ≤40 characters |
+| `MARK_EFILED` | `{confirmed: true, methods: {federal?, state?}}`, each `efile` or `paper` (035; all four pairs since 037) |
+| `RECORD_FILING_RESULT` | `{confirmed: true, results: {federal?: {result, date, code?}, state?: {…}}, fixNote? (≤1000)}` (035); `result` is `accepted` or `rejected` (037); `code` ≤40 characters |
 | `REQUEST_DOCUMENT` | `{title (≤120), message (≤2000)}` |
 | `RESPOND_DOCUMENT`, `RECORD_DOCUMENT_RESPONSE` | `{requestId, filename: "demo-mileage-record-2025.pdf"}` |
 | `VERIFY_DOCUMENT` | `{requestId}` |
@@ -478,6 +488,28 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 Assistance items have their own two actions through `vitally_assistance_action`: `CLAIM` (item
 `open` → `assigned`, needs `assist`, no note) and `RESOLVE` (`assigned` → `resolved`, only the
 assignee, note required). They write no case history.
+
+## Season-end close
+
+`vitally_close_unsigned(p_action_id, p_person_id, p_cases, p_confirmed)` (037) closes, as
+**Dismissed**, the cases an admin lists after the filing season: those at `review_approved` ("Ready
+to exit") or on a Hold that came from `review_approved`. It is its own RPC, not a case action,
+because it moves many cases in one call. `p_cases` is a non-empty array of `{caseId, revision}`
+with no repeats, and `p_confirmed` must be `true`.
+
+- **Checks:** a presenter acting as an `admin` person (else `FORBIDDEN`; the same authority as
+  `CLOSE_CASE`). An empty or malformed list, a repeated case, `p_confirmed` not true, or an action
+  id reused with a different list is `VALIDATION`.
+- **All or nothing:** the cases are locked in a fixed order and every one is checked before any
+  changes. A case whose revision moved, or that is no longer at Ready to exit or on that Hold, is
+  `CONFLICT`, and nothing changes, the receipt included. The browser reloads the list and the dialog
+  reopens without that case ([Front end](frontend.md#the-season-end-dialog)).
+- **Per case:** one `CLOSE_CASE` history row (`reason` `dismissed`, `seasonEnd` true) and one client
+  line ("PCDC could not reach you, so this application was closed. Your return was not filed."),
+  the same closing steps as `CLOSE_CASE`, and **no** `withdrawal_notice` follow-up, so no TaxSlayer
+  notice.
+- **Receipt:** `{actionId, cases: [{caseId, reference, revision}]}`, one entry per closed case with
+  its new revision. A replay of the same `p_action_id` and list returns the stored receipt.
 
 ## The contact log
 
@@ -718,7 +750,7 @@ and a case is created with no answers (`vitally_create_case` refuses any other `
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 282 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 421 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.
@@ -738,6 +770,7 @@ What the suite covers, by file:
 | `database-redesign.mjs` | Visits, `case_document_cards` and the two card actions (017), and who may mark and move cards (018) |
 | `database-intake-default.mjs` | The column default, new applications on version 2, version-2 samples, and a checkpoint that clears materials and card marks (019) |
 | `database-intake-v1-removed.mjs` | Migration 023: the guard's predicates and count, every workspace on 2, both `CHECK`s refusing 1, an application's fixed version, a create that carries answers refused, the dropped functions, and a reset's eight version-2 samples |
+| `database-season-close.mjs` | `vitally_close_unsigned`: closing signing cases as Dismissed, all or nothing, refusals, replay, the receipt, and that unlisted cases are left alone |
 | `database-realtime.mjs` | Realtime privacy between clients and for staff tables |
 | `database-store.mjs` | The browser's data adapter against the real database |
 

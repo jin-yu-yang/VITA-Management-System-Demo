@@ -36,6 +36,8 @@ Every office follow-up SHALL have a purpose:
   - when a client withdraws a case that a preparer or reviewer was working on, so the office tells that volunteer to stop work;
   - when an admin closes a case before filing (with reason `withdrawn` at Ready to exit or Ready to e-file, or with any reason from a Hold that came from Ready to exit), so the office makes sure the return is not transmitted in TaxSlayer.
 
+The season-end close of unsigned cases (capability `case-lifecycle`) SHALL open no `withdrawal_notice`. There, the admin's confirmation states once that none of the returns will be transmitted.
+
 `request_documents` and `go_over_return` use the contact log's own words. `withdrawal_notice` is the office's own: it isn't a contact with the client.
 
 A `request_documents` follow-up SHALL name its document request. A `go_over_return` or `withdrawal_notice` follow-up SHALL name none. The database SHALL reject any row that breaks this. Follow-ups that existed before purposes did SHALL have purpose `request_documents`.
@@ -55,6 +57,10 @@ A `withdrawal_notice` follow-up SHALL carry its own text, so Follow-ups shows th
 - **THEN** one open follow-up with purpose `withdrawal_notice` and no document request exists on the Closed case
 - **AND WHEN** the office resolves it with outcome reached
 - **THEN** it is resolved, and the case stays Closed
+
+#### Scenario: The season-end close opens no notice
+- **WHEN** an admin closes a Hold that came from Ready to exit, and a case at Ready to exit, with the season-end close
+- **THEN** both cases are Closed, and neither has a `withdrawal_notice` follow-up
 
 ### Requirement: The office works a go-over follow-up like any other
 The office SHALL see a case with an open `go_over_return` follow-up in Follow-ups as a "Call the client" row with its open-task count and **Log contact**, like any case with an open task. The office SHALL also see the task in the Log contact drawer and on the case page's Follow-up tab, titled "Go over the return with the client", with no document line.

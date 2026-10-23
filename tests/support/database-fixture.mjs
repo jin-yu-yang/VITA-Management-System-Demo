@@ -342,6 +342,22 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     if (error) throw createAppError(error);
     return data;
   };
+  // The season-end close: `cases` is [{caseId, revision}].
+  f.closeUnsigned = async (
+    client,
+    personId,
+    cases,
+    { actionId = randomUUID(), confirmed = true } = {},
+  ) => {
+    const { data, error } = await client.rpc("vitally_close_unsigned", {
+      p_action_id: actionId,
+      p_person_id: personId,
+      p_cases: cases,
+      p_confirmed: confirmed,
+    });
+    if (error) throw createAppError(error);
+    return data;
+  };
   // An edit against the entry's current revision, as the caller reads it.
   f.editContact = async (client, contactId, personId, entry) => {
     const current = await visibleRow(client, "contact_log", contactId);
