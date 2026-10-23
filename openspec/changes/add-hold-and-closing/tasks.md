@@ -5,7 +5,7 @@
 
 ## 2. Database: stages, origins, documents at intake
 
-- [ ] 2.1 Write failing database tests (new `tests/database-hold.mjs`):
+- [x] 2.1 Write failing database tests (new `tests/database-hold.mjs`):
   - the stage check accepts `awaiting_documents` and `on_hold`;
   - the origin and reason constraints (D2, D6);
   - `REQUEST_DOCUMENTS_AT_INTAKE` from Screening and from Pending intake / filing (1–5 requests; volunteers refused; refused at other stages);
@@ -13,25 +13,25 @@
   - an admin verifies there; verifying the last request returns the case to its origin, with the history line;
   - a request added before the last verify keeps the case waiting;
   - the preparer's mid-preparation loop is unchanged.
-- [ ] 2.2 New migration `036_hold_and_closing.sql`:
+- [x] 2.2 New migration `036_hold_and_closing.sql`:
   - a header listing every copied function;
   - the stage check;
   - `cases.documents_origin`, `hold_origin` and `closing_reason`, with their constraints;
   - `receive_document` and `act_verify_document` (from 004) opened to the new stages, with an admin verifying there and the automatic return (D4);
   - `act_request_documents_at_intake` (D3).
-- [ ] 2.3 `check_payload` (from 035): branches for the four new actions and the new `CLOSE_CASE` payload. Every other branch stays verbatim.
+- [x] 2.3 `check_payload` (from 035): branches for the four new actions and the new `CLOSE_CASE` payload. Every other branch stays verbatim.
 
 ## 3. Database: Hold, Close with reasons, Withdraw
 
-- [ ] 3.1 Write failing tests:
+- [x] 3.1 Write failing tests:
   - `PUT_ON_HOLD` from Waiting for documents and from Ready to exit, with the note kept staff-only;
   - refused elsewhere;
   - `RESUME_FROM_HOLD` back to the origin;
   - the last verify at a documents hold returns to the documents' origin;
   - Mark ready to e-file refused while held from Ready to exit;
   - volunteers refused.
-- [ ] 3.2 Implement `act_put_on_hold` and `act_resume_from_hold` (D5).
-- [ ] 3.3 Write failing tests for `CLOSE_CASE`:
+- [x] 3.2 Implement `act_put_on_hold` and `act_resume_from_hold` (D5).
+- [x] 3.3 Write failing tests for `CLOSE_CASE`:
   - the six reasons, with `other` needing a note;
   - unknown or missing reasons refused;
   - Close allowed at Waiting for documents and at Hold, whatever its origin;
@@ -42,7 +42,7 @@
   - older closed cases keep a null reason.
 
   Then rewrite `act_close_case` (from 035, D6).
-- [ ] 3.4 Write failing tests for `WITHDRAW`:
+- [x] 3.4 Write failing tests for `WITHDRAW`:
   - only the case's own client;
   - only at the D7 stages;
   - closed with reason `withdrawn`;
@@ -51,7 +51,7 @@
   - it resolves on the Closed case.
 
   Then implement `act_withdraw` (D7). Add the follow-up purpose constraint (from 033), and change `act_resolve_followup` / `vitally_apply_action` only if a closed case is refused (D8).
-- [ ] 3.5 `check_authority` (from 018) for `WITHDRAW` ownership. `check_operation_authority` and `vitally_apply_action` (from 035): the new groups and dispatch lines (D9). Tests: every refusal and its code.
+- [x] 3.5 `check_authority` (from 018) for `WITHDRAW` ownership. `check_operation_authority` and `vitally_apply_action` (from 035): the new groups and dispatch lines (D9). Tests: every refusal and its code.
 
 ## 4. Database: samples
 
