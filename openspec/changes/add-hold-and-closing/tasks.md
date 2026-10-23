@@ -55,21 +55,21 @@
 
 ## 4. Database: samples
 
-- [ ] 4.1 `fixture_keys`, `fixture_answers_v2`, `fixture_history` and `apply_fixture_scenario` (from 035) gain `on_hold` and `withdrawn`, each with its own fictional client (D13).
-- [ ] 4.2 Fixture tests for both samples. Update every test that counts samples to ten, and `FIXTURE_KEYS` in `tests/support/database-fixture.mjs`. Run `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 4.1 `fixture_keys`, `fixture_answers_v2`, `fixture_history` and `apply_fixture_scenario` (from 035) gain `on_hold` and `withdrawn`, each with its own fictional client (D13).
+- [x] 4.2 Fixture tests for both samples. Update every test that counts samples to ten, and `FIXTURE_KEYS` in `tests/support/database-fixture.mjs`. Run `npm run db:migrate:test`, then `npm run test:database`.
 
 ## 5. Browser: contracts, domain, builders, store
 
-- [ ] 5.1 `src/contracts.mjs`: the new stages, the four new actions, and the closing reasons. Tests first.
-- [ ] 5.2 `src/domain.mjs` (`describeStage`):
+- [x] 5.1 `src/contracts.mjs`: the new stages, the four new actions, and the closing reasons. Tests first.
+- [x] 5.2 `src/domain.mjs` (`describeStage`):
   - the new stage names and labels;
   - Closed's name by reason;
   - the Hold message by origin;
   - the closed message by reason.
 
   Tests.
-- [ ] 5.3 `src/case-actions.mjs`: builders for `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD`, `WITHDRAW` and the new `CLOSE_CASE` (reason and note). Tests first.
-- [ ] 5.4 `src/supabase-store.mjs`: map `documents_origin`, `hold_origin` and `closing_reason`. Tests.
+- [x] 5.3 `src/case-actions.mjs`: builders for `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD`, `WITHDRAW` and the new `CLOSE_CASE` (reason and note). Tests first.
+- [x] 5.4 `src/supabase-store.mjs`: map `documents_origin`, `hold_origin` and `closing_reason`. Tests.
 
 ## 6. Browser: staff screens
 
