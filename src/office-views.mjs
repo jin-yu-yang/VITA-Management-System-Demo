@@ -254,7 +254,9 @@ function needed(row) {
     );
   if (kind === "withdrawn")
     return esc(
-      `The client withdrew; tell ${record.preparerName ?? record.reviewerName ?? "the volunteer"} to stop work.`,
+      // reviewer_id is set on a closed case with a notice only when the client
+      // withdrew at Review in progress; at the other two stages it is null.
+      `The client withdrew; tell ${record.reviewerName ?? record.preparerName ?? "the volunteer"} to stop work.`,
     );
   if (kind === "signing")
     return esc(

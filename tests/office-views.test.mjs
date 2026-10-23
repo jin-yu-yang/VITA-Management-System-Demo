@@ -1147,6 +1147,12 @@ test("Withdrawn row: names the volunteer, escaped, from an open withdrawal notic
     assert.match(row, /class="queue-waiting "/);
   }
   assert.match(kindRow(html, "w4", "withdrawn"), /tell &lt;b&gt;Alex&lt;\/b&gt; to stop work/);
+  // Withdrawn at Review in progress: the reviewer is set, and is the one told.
+  const review = page([
+    closed("w5", { openFollowups: 1, openWithdrawalNotices: 1, reviewerId: "p-morgan", reviewerName: "Morgan Lee" }),
+  ]);
+  assert.match(kindRow(review, "w5", "withdrawn"), /tell Morgan Lee to stop work/);
+  assert.doesNotMatch(kindRow(review, "w5", "withdrawn"), /Alex Rivera/);
   // The notice is the office's own job: it is not also a "Call the client" task, and a
   // closed case without one has no row.
   assert.doesNotMatch(html, /data-kind="call"/);
