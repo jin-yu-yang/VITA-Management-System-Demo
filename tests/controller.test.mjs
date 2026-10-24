@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
-import { SHADED_UPLOAD } from "../src/contracts.mjs";
+import { SHADED_EDITOR, SHADED_UPLOAD } from "../src/contracts.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
@@ -6097,5 +6097,50 @@ test("a second shaded save while one is out does nothing", async () => {
   assert.equal(await controller.saveShadedSection({ incomeW2s: true }, 0), null);
   await first;
   assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 1);
+  controller.stop();
+});
+
+test("an editor's shaded save leaves its refusals to the editor", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  for (const code of ["CONFLICT", "INVALID_TRANSITION", "OFFLINE"]) {
+    store.failNext = Object.assign(new Error(code), { code });
+    await assert.rejects(
+      controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }),
+      (error) => error.code === code,
+    );
+    const state = controller.getState();
+    // The editor says it in its own status; nothing is said behind it.
+    assert.equal(state.error, null, code);
+    assert.equal(state.retryable, false, code);
+    assert.equal(state.shadedStatus, null, code);
+    assert.equal(await controller.retryLast(), null, code);
+  }
+  // An accepted save says Saved beside the tools, as an upload does.
+  await controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" });
+  assert.deepEqual(controller.getState().shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("an editor that couldn't be opened is recorded in the shaded panel, with Try again", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  let opened = 0;
+  controller.noteLocalFailure(
+    { code: "EDITOR", message: "The editor could not be opened. Try again, or use Download to fill elsewhere.", place: SHADED_EDITOR },
+    () => void (opened += 1),
+  );
+  assert.equal(SHADED_EDITOR, "shaded-editor");
+  assert.equal(controller.getState().error.place, SHADED_EDITOR);
+  assert.equal(controller.getState().retryable, true);
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.equal(opened, 1);
+  assert.equal(controller.getState().error, null);
   controller.stop();
 });

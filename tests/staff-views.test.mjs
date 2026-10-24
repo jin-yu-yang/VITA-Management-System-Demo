@@ -42,7 +42,7 @@ import { contactSummary, contactEntryFromForm, nowInput } from "../src/contact-l
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 import { describeStage } from "../src/domain.mjs";
-import { CASE_ACTIONS, SHADED_UPLOAD } from "../src/contracts.mjs";
+import { CASE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD } from "../src/contracts.mjs";
 
 // The staff screens are pure functions of one record and one persona, so these
 // tests operate on the HTML string itself. No DOM library, and nothing here may
@@ -2970,6 +2970,10 @@ test("shaded tools only for the case's preparer at the two stages", () => {
     assert.deepEqual(rights.shadedSection, { allowed: true, reason: "" }, stage);
     const html = renderStaffCase(staffCase({ stage }), ALEX);
     assert.match(html, /data-action="download-shaded-copy"[^>]*>(?:<svg.*?<\/svg>)? Download to fill elsewhere<\/button>/, stage);
+    // The editor first, with download / upload always beside it (D7, D8).
+    assert.match(html, /data-action="open-shaded-editor"[^>]*>(?:<svg.*?<\/svg>)? Fill the shaded section<\/button>/, stage);
+    assert.ok(html.indexOf("open-shaded-editor") < html.indexOf("download-shaded-copy"), stage);
+    assert.match(html, /Chrome and Edge 125 or later, Firefox ESR or later, and Safari 18 or later/, stage);
     assert.match(html, /<input type="file" id="shaded-upload" accept="application\/pdf" data-action="upload-shaded-copy"/, stage);
     assert.match(html, /<label[^>]*for="shaded-upload"[^>]*>(?:<svg.*?<\/svg>)? Upload the filled copy<\/label>/, stage);
   }
@@ -2989,7 +2993,7 @@ test("shaded tools only for the case's preparer at the two stages", () => {
     assert.equal(rights.shadedSection.allowed, false, `${record.stage} ${person?.id}`);
     assert.deepEqual(rights.shadedSection, rights.preparationWork);
     const html = renderStaffCase(record, person);
-    assert.doesNotMatch(html, /download-shaded-copy|upload-shaded-copy/);
+    assert.doesNotMatch(html, /download-shaded-copy|upload-shaded-copy|open-shaded-editor/);
     assert.match(html, /aria-labelledby="shaded-title"/, "the panel says why, in place");
     assert.ok(html.includes(rights.preparationWork.reason.replace("'", "&#39;")), rights.preparationWork.reason);
   }
@@ -3028,6 +3032,33 @@ test("the shaded panel says Saved and its upload error in place, with Dismiss on
   const other = renderStaffCase(record, ALEX, { error: { code: "SERVER_ERROR", message: "Something went wrong." } });
   assert.doesNotMatch(other, /id="shaded-upload-error"/);
   assert.match(other, /That step did not go through/);
+});
+
+test("an editor that couldn't be opened is said in the shaded panel, with Try again and Dismiss", () => {
+  assert.equal(SHADED_EDITOR, "shaded-editor");
+  const record = staffCase({});
+  const error = {
+    code: "EDITOR",
+    message: "The editor could not be opened. Try again, or use Download to fill elsewhere.",
+    place: SHADED_EDITOR,
+  };
+  const html = renderStaffCase(record, ALEX, { error, retryable: true });
+  // Once, in the panel, not at the top of the page.
+  assert.equal(html.match(/role="alert"/g).length, 1);
+  assert.doesNotMatch(html, /That step did not go through/);
+  const panel = html.slice(html.indexOf('aria-labelledby="shaded-title"'));
+  const own = panel.slice(0, panel.indexOf("</section>"));
+  assert.match(
+    own,
+    /<div class="notice error" role="alert" id="shaded-editor-error">.*<h3>The editor did not open<\/h3><p>The editor could not be opened\. Try again, or use Download to fill elsewhere\.<\/p>/,
+  );
+  assert.match(own, /data-action="retry-action"/);
+  assert.match(own, /data-action="dismiss-error"/);
+  // The download and upload tools are still offered beside it.
+  assert.match(own, /data-action="download-shaded-copy"/);
+  assert.match(own, /data-action="upload-shaded-copy"/);
+  assert.match(own, /data-action="open-shaded-editor"/);
+  assert.doesNotMatch(own, /id="shaded-upload-error"/);
 });
 
 test("history names changed fields", () => {

@@ -2,6 +2,7 @@ import {
   CASE_ACTIONS,
   CHECKPOINTS,
   ASSISTANCE_ACTIONS,
+  SHADED_EDITOR,
   SHADED_UPLOAD,
 } from "./contracts.mjs";
 import {
@@ -543,8 +544,9 @@ export function createController({
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
       // Where the page says it, when that is not the usual place: the
-      // shaded section's upload control (SHADED_UPLOAD).
-      ...(error?.place === SHADED_UPLOAD ? { place: SHADED_UPLOAD } : {}),
+      // shaded section's upload control (SHADED_UPLOAD), or its panel when
+      // the editor couldn't be opened (SHADED_EDITOR).
+      ...(error?.place === SHADED_UPLOAD || error?.place === SHADED_EDITOR ? { place: error.place } : {}),
     };
     // A newer error replaces a shaded save's "Saved".
     state.shadedStatus = null;
@@ -2409,8 +2411,11 @@ export function createController({
   // time: a second press while one is out does nothing. A refusal is said
   // beside the upload control with Dismiss only: the way to try again is to
   // upload again.
+  // From the editor (`from: "editor"`, design D7) a refusal is the editor's
+  // to say, in its own status with the edits kept: nothing is recorded on the
+  // page behind it, and nothing is kept to send again.
   let shadedSaveInFlight = false;
-  async function saveShadedSection(fields, basedOnVersion) {
+  async function saveShadedSection(fields, basedOnVersion, { from = "upload" } = {}) {
     if (shadedSaveInFlight) return null;
     shadedSaveInFlight = true;
     const caseId = state.savedCase?.id ?? null;
@@ -2423,7 +2428,13 @@ export function createController({
       }
       return receipt;
     } catch (error) {
-      if (state.error) {
+      if (from === "editor") {
+        state.error = null;
+        state.retryable = false;
+        state.shadedStatus = null;
+        pendingAction = null;
+        show();
+      } else if (state.error) {
         state.error = {
           ...state.error,
           place: SHADED_UPLOAD,

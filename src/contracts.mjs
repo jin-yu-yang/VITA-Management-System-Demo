@@ -86,6 +86,9 @@ export const CASE_ACTIONS = Object.freeze([
 // upload control on the case page (`error.place`). One name, shared by the
 // controller that records it and the page that draws it.
 export const SHADED_UPLOAD = "shaded-upload";
+// Where an editor that couldn't be opened is said: in the shaded panel, with
+// Try again (which opens it again) and Dismiss (design D7, screen-states).
+export const SHADED_EDITOR = "shaded-editor";
 
 // Assistance is its own workflow with its own RPC, so its controls carry their
 // own attribute and are validated against this vocabulary — never translated

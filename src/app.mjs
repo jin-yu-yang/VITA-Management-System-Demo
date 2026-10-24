@@ -1,7 +1,7 @@
 import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
-import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_UPLOAD } from "./contracts.mjs";
+import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
@@ -41,6 +41,7 @@ import {
   readFilledCopy,
 } from "./draft-pdf.mjs";
 import { readShaded } from "./shaded-fields.mjs";
+import { OPEN_FAILED, openShadedEditor } from "./shaded-editor.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -60,7 +61,7 @@ import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, SENTENCES } from "./client-text.mjs";
 import { createToastTimer } from "./toast.mjs";
 import { contactEntryFromForm, contactSummary, contactSummaries } from "./contact-log.mjs";
-import { decorateStaffCase, outcomeGroup } from "./staff-views.mjs";
+import { decorateStaffCase, outcomeGroup, staffEligibility } from "./staff-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -1422,24 +1423,43 @@ if (!config) {
 
   // The English editing copy: the client's answers drawn as in the draft, and
   // only the 106 shaded fields left fillable, holding the saved values. Its
-  // Keywords carry the case and the section version the upload checks.
+  // Keywords carry the case and the section version the upload checks. The
+  // download and the editor (design D7) open the same copy.
+  async function editingCopy(state) {
+    const record = state.savedCase;
+    const reference = record.reference ?? "";
+    const row = savedShaded(record);
+    const version = Number(row?.version ?? 0);
+    const fields = draftFields(state.draftAnswers ?? {}, { form: "en", reference, today: isoToday() });
+    const PDFLib = await import("./vendor/pdf-lib.mjs");
+    const [formBytes, fontFiles] = await Promise.all([
+      fetchBytes(FORM_FILES.en),
+      fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor("en"), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
+    ]);
+    const bytes = await buildEditingCopy({
+      PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
+      shaded: row?.fields ?? {}, reference, version,
+    });
+    return { bytes, reference, version };
+  }
+
+  // What readShaded needs from the case: its household size (rows past it
+  // take no cell) and its season (the year rule), else the workspace's.
+  const shadedRules = (record, workspace) => {
+    const members = Array.isArray(record?.answers?.hh) ? record.answers.hh.length : 0;
+    const season = Number.isInteger(record?.season)
+      ? record.season
+      : Number.isInteger(workspace?.currentSeason)
+        ? workspace.currentSeason
+        : undefined;
+    return { form: "en", householdSize: Math.min(members, 4), season };
+  };
+
   async function downloadShadedCopy(by) {
     const state = controller.getState();
     if (state.principal?.access !== "presenter" || !state.savedCase) return;
-    const record = state.savedCase;
     try {
-      const reference = record.reference ?? "";
-      const row = savedShaded(record);
-      const fields = draftFields(state.draftAnswers ?? {}, { form: "en", reference, today: isoToday() });
-      const PDFLib = await import("./vendor/pdf-lib.mjs");
-      const [formBytes, fontFiles] = await Promise.all([
-        fetchBytes(FORM_FILES.en),
-        fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor("en"), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
-      ]);
-      const bytes = await buildEditingCopy({
-        PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
-        shaded: row?.fields ?? {}, reference, version: Number(row?.version ?? 0),
-      });
+      const { bytes, reference } = await editingCopy(state);
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
       const link = document.createElement("a");
       link.href = url;
@@ -1488,13 +1508,7 @@ if (!config) {
     // Another case was opened while the file was read: this copy was for the old one.
     const now = controller.getState();
     if (now.savedCase?.id !== record.id) return;
-    const members = Array.isArray(now.savedCase.answers?.hh) ? now.savedCase.answers.hh.length : 0;
-    const season = Number.isInteger(now.savedCase.season)
-      ? now.savedCase.season
-      : Number.isInteger(now.workspace?.currentSeason)
-        ? now.workspace.currentSeason
-        : undefined;
-    const { values, errors } = readShaded(read.raw, { form: "en", householdSize: Math.min(members, 4), season });
+    const { values, errors } = readShaded(read.raw, shadedRules(now.savedCase, now.workspace));
     if (errors.length) return shadedFailure(errors.map((entry) => entry.message).join(" "));
     try {
       await controller.saveShadedSection(values, read.version);
@@ -1502,6 +1516,77 @@ if (!config) {
       // The controller said it beside the control; anything it did not is said there too.
       if (controller.getState().errorCount === shown) shadedFailure("Something went wrong.", error?.code ?? "SERVER_ERROR");
     }
+  }
+
+  // ---- the 13614-C shaded section: the editor (design D7) ---------------
+  //
+  // A full-screen layer beside `#app` (shaded-editor.mjs), which `render()`
+  // never touches, so the preparer's edits survive every redraw. `#app` is
+  // inert while it is open. pdf.js is loaded only now.
+  let shadedEditor = null;
+
+  async function loadPdfjs() {
+    const pdfjs = await import("./vendor/pdfjs.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdfjs-worker.mjs", import.meta.url).href;
+    return pdfjs;
+  }
+
+  // Why this window may no longer save the open case's shaded section, or
+  // null: the same rule that offers the tools (staffEligibility).
+  function shadedRefusal(caseId) {
+    const state = controller.getState();
+    if (state.savedCase?.id !== caseId) return "This case is no longer open here. Close the editor.";
+    const people = state.people ?? [];
+    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const decision = staffEligibility(decorateStaffCase(state.savedCase, people), person).shadedSection;
+    return decision.allowed ? null : decision.reason;
+  }
+
+  function openEditor(by) {
+    if (shadedEditor) return;
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    const caseId = state.savedCase.id;
+    if (shadedRefusal(caseId)) return;
+    // The stored version this copy shows, then each accepted save's.
+    let version = Number(savedShaded(state.savedCase)?.version ?? 0);
+    const bytes = editingCopy(state).then((made) => made.bytes);
+    // A copy that couldn't be made fails the opening, through `ready`.
+    bytes.catch(() => {});
+    root.inert = true;
+    const editor = openShadedEditor({
+      document,
+      window,
+      loadPdfjs,
+      bytes,
+      explainRefusal: () => shadedRefusal(caseId),
+      async onSave(raw) {
+        const now = controller.getState();
+        const { values, errors } = readShaded(raw, shadedRules(now.savedCase, now.workspace));
+        if (errors.length) throw { code: "VALIDATION", message: errors.map((entry) => entry.message).join(" ") };
+        const receipt = await controller.saveShadedSection(values, version, { from: "editor" });
+        // Another shaded save (an upload) was still out: nothing was sent.
+        if (!receipt) throw { code: "NOT_SENT", message: "Nothing was saved. Press Save again." };
+        // The receipt carries the case's revision only; the re-read after the
+        // save carries the section's new version.
+        const stored = Number(savedShaded(controller.getState().savedCase)?.version);
+        version = Number.isFinite(stored) && stored > version ? stored : version + 1;
+      },
+      onClose() {
+        shadedEditor = null;
+        root.inert = false;
+        // Back to "Fill the shaded section", or the page when it has gone.
+        const opener = root.querySelector('[data-action="open-shaded-editor"]:not([disabled])');
+        (opener ?? root.querySelector("#main"))?.focus();
+      },
+    });
+    shadedEditor = editor;
+    editor.ready.catch(() => {
+      if (by !== signedInUserId()) return;
+      controller.noteLocalFailure({ code: "EDITOR", message: OPEN_FAILED, place: SHADED_EDITOR }, () =>
+        openEditor(signedInUserId()),
+      );
+    });
   }
 
   async function viewDraft(form, by, kind = "13614c") {
@@ -1923,6 +2008,11 @@ if (!config) {
       case "download-shaded-copy":
         await downloadShadedCopy(by);
         break;
+      case "open-shaded-editor":
+        // A failure to open said earlier goes with the new try.
+        if (controller.getState().error?.place === SHADED_EDITOR) controller.clearError("EDITOR");
+        openEditor(by);
+        break;
       case "toggle-senior":
         controller.editAnswers({
           form_version: state.draftAnswers?.form_version === "senior" ? "general" : "senior",
@@ -2254,6 +2344,8 @@ if (!config) {
 
   // Dialogs keep the keyboard inside them, and Escape always closes.
   document.addEventListener("keydown", (event) => {
+    // The shaded-section editor keeps its own keyboard (shaded-editor.mjs).
+    if (shadedEditor) return;
     if (event.key === "Escape" && !controller.getState().dialog) {
       if (event.isComposing) return; // never block an IME's own cancel
       // applyPeek moves the keyboard to the toggle if it was in the sidebar.

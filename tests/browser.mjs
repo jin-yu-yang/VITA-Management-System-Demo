@@ -1407,6 +1407,8 @@ async function runPermutation(t, roles) {
       await openCaseTab(staff, "intake");
       // The English draft prints the saved count on page 2 and the new stamp.
       let shadedDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      // Page 1's "Yes" strings before the editor's save, to count the new one.
+      let shadedYesBefore = null;
       if (roles.staff === "chrome") {
         await waitForQuiet(staff);
         const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
@@ -1424,8 +1426,131 @@ async function runPermutation(t, roles) {
           `the English draft's stamp does not name the preparer entries: ${JSON.stringify(page1.strings)}`,
         );
         shadedDraft = "page 2 prints 2; the stamp names the preparer entries";
+        shadedYesBefore = page1.strings.filter((text) => text === "Yes").length;
       }
       evidence.story.shadedSection = { saved: "Saved", draft: shadedDraft };
+
+      // ---- The 13614-C shaded section: the editor (design D7) ----------
+      // The same copy in the pdf.js layer beside #app: only the shaded
+      // fields are fields, Save keeps it open, and Escape with an unsaved
+      // change asks first. Selectors are the spike's (tasks 1.3).
+      const ROW1_CHILD = "form1[0].page1[0].namesOf[0].Row1[0].qualifyingChildDependent[0]";
+      const W2S = "form1[0].page2[0].incomeIncluded[0].formW2s[0]";
+      const W2S_COUNT = "form1[0].page2[0].incomeIncluded[0].formW2sNumber[0]";
+      const INCOME_NOTES = "form1[0].page2[0].IncomeIncludedComment[0].IncomeIncludedComments[0]";
+      const EDITOR_NOTE = "Fictional note: the second W-2 is from a summer job.";
+      const editorField = (name) => staff.locator(`.shaded-editor [name="${name}"]`);
+      const editorButton = (which) => staff.locator(`.shaded-editor [data-editor="${which}"]`);
+      await waitForQuiet(staff);
+      await shadedTools.locator('[data-action="open-shaded-editor"]').click({ timeout: CLICK_MS });
+      await editorField(ROW1_CHILD).waitFor({ timeout: ARRIVAL_MS });
+      assert.equal(
+        await staff.evaluate(
+          () =>
+            document.querySelector("#app").inert &&
+            document.querySelector('body > .shaded-editor[role="dialog"][aria-modal="true"]') !== null,
+        ),
+        true,
+        "the editor is a modal layer beside an inert #app",
+      );
+      assert.equal(
+        await staff.locator(".shaded-editor .annotationLayer :is(input, textarea, select)").count(),
+        106,
+        "the editor offers other fields than the 106 shaded ones",
+      );
+      assert.equal(await editorButton("save").isDisabled(), true, "Save is offered before any change");
+      // The saved section is what the editor opens on.
+      assert.equal(await editorField(W2S).isChecked(), true);
+      assert.equal(await editorField(W2S_COUNT).inputValue(), "2");
+      await editorField(ROW1_CHILD).fill("Yes");
+      await editorField(W2S).check();
+      await editorField(W2S_COUNT).fill("2");
+      await editorField(INCOME_NOTES).fill(EDITOR_NOTE);
+      await editorField(INCOME_NOTES).press("Escape");
+      await waitFor(
+        staff,
+        "the editor asks before Escape discards a change",
+        () => document.querySelector(".shaded-editor-confirm:not([hidden])")?.textContent.includes("Discard your changes?") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      await editorButton("keep").click({ timeout: CLICK_MS });
+      assert.equal(await editorField(ROW1_CHILD).inputValue(), "Yes", "keeping the edits lost one");
+      await editorButton("save").click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "Saved in the editor",
+        () => document.querySelector(".shaded-editor #shaded-editor-status")?.textContent.trim() === "Saved",
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal(await staff.locator(".shaded-editor").count(), 1, "the editor closed on Save");
+      assert.equal(await editorButton("save").isDisabled(), true, "Save is offered again before a new change");
+      assert.deepEqual(
+        (
+          await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [classCase.id])
+        ).rows.map((row) => ({ fields: row.fields, version: Number(row.version) })),
+        [
+          {
+            fields: { household1QualifyingChild: "yes", incomeW2s: true, incomeW2sCount: 2, incomeNotes: EDITOR_NOTE },
+            version: 2,
+          },
+        ],
+      );
+      // Nothing unsaved: Close closes, and the keyboard is back on the button.
+      await editorButton("close").click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the editor closed, with the keyboard on Fill the shaded section",
+        () =>
+          !document.querySelector(".shaded-editor") &&
+          !document.querySelector("#app").inert &&
+          document.activeElement?.dataset?.action === "open-shaded-editor",
+        undefined,
+        ARRIVAL_MS,
+      );
+      await openCaseTab(staff, "history");
+      await waitFor(
+        staff,
+        "the editor's save in the internal history",
+        () =>
+          document
+            .querySelector('#case-panel-history [data-role="internal-history"]')
+            ?.textContent.includes("Alex saved the shaded section · Row 1: Qualifying child or dependent, Income notes.") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      await openCaseTab(staff, "intake");
+      // The English draft prints the editor's values and the preparer-entries stamp.
+      let editorDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      if (roles.staff === "chrome") {
+        await waitForQuiet(staff);
+        const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
+        const popup = await opened;
+        const bytes = await draftBytes(popup);
+        await popup.close();
+        const page1 = await draftPageText(bytes, 0);
+        const page2 = await draftPageText(bytes, 1);
+        assert.equal(
+          page1.strings.filter((text) => text === "Yes").length,
+          shadedYesBefore + 1,
+          `page 1 of the English draft does not print row 1's Yes: ${JSON.stringify(page1.strings)}`,
+        );
+        assert.ok(page2.strings.includes("2"), `page 2 of the English draft does not print 2: ${JSON.stringify(page2.strings)}`);
+        assert.ok(
+          page2.strings.some((text) => text.includes("Fictional note:")),
+          `page 2 of the English draft does not print the note: ${JSON.stringify(page2.strings)}`,
+        );
+        assert.ok(
+          page1.strings.some((text) => text.includes("online answers and preparer entries")),
+          `the English draft's stamp does not name the preparer entries: ${JSON.stringify(page1.strings)}`,
+        );
+        editorDraft = "page 1 prints Yes; page 2 prints 2 and the note; the stamp names the preparer entries";
+      }
+      evidence.story.shadedEditor = { saved: "Saved", escape: "Discard your changes?", draft: editorDraft };
 
       // Materials: two boxes, one save.
       const materials = staff.locator("#case-panel-intake #materials-form");
