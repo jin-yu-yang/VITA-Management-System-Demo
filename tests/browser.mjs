@@ -1443,7 +1443,8 @@ async function runPermutation(t, roles) {
       const editorButton = (which) => staff.locator(`.shaded-editor [data-editor="${which}"]`);
       await waitForQuiet(staff);
       await shadedTools.locator('[data-action="open-shaded-editor"]').click({ timeout: CLICK_MS });
-      await editorField(ROW1_CHILD).waitFor({ timeout: ARRIVAL_MS });
+      // The pages are drawn one after another: wait for all of them.
+      await staff.locator('.shaded-editor[data-ready="true"]').waitFor({ timeout: ARRIVAL_MS });
       assert.equal(
         await staff.evaluate(
           () =>

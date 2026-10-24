@@ -466,6 +466,8 @@ export function openShadedEditor({ document, window = document.defaultView, load
       }
       if (gone) return;
       session.start();
+      // Every page is drawn: the form can be read and saved.
+      layer.dataset.ready = "true";
       // First control that isn't the close button (screen-states): Save is
       // off until something changes, so the first shaded field.
       const first = pages.querySelector('input:not([type="hidden"]):not([disabled]),textarea:not([disabled])');
