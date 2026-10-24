@@ -576,6 +576,18 @@ const fail = (code, message) => Object.assign(new Error(message), { code });
  * preparer when the file is not a PDF (NOT_A_PDF), was made for another case
  * (OTHER_CASE) or has none of the shaded fields (NO_FIELDS).
  */
+// A box's export value as text, for readShaded to judge: the field's /V
+// (a name or a string), else its widget's /AS. Not pdf-lib's isChecked(),
+// which is true only for the widget's own on-state name: another PDF tool may
+// tick with /1 or /On, and any value but Off is ticked (Review focus).
+function boxExport(box) {
+  const text = (value) => (typeof value?.decodeText === "function" ? value.decodeText() : "");
+  const value = text(box.acroField.V());
+  if (value) return value;
+  const states = box.acroField.getWidgets().map((widget) => text(widget.getAppearanceState()));
+  return states.find((state) => state && state !== "Off") ?? states.find(Boolean) ?? "";
+}
+
 export async function readFilledCopy({ PDFLib, bytes, reference }) {
   let doc;
   try {
@@ -591,7 +603,7 @@ export async function readFilledCopy({ PDFLib, bytes, reference }) {
     const name = shadedName(field.key, "en");
     if (!form.getFieldMaybe(name)) continue;
     try {
-      raw[name] = field.kind === "box" ? form.getCheckBox(name).isChecked() : (form.getTextField(name).getText() ?? "");
+      raw[name] = field.kind === "box" ? boxExport(form.getCheckBox(name)) : (form.getTextField(name).getText() ?? "");
     } catch {
       raw[name] = ""; // a field of the wrong type: nothing readable, so nothing set
     }

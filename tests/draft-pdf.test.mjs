@@ -819,6 +819,29 @@ test("the copy round-trips through the reader", async () => {
   assert.deepEqual(readShaded(raw, { form: "en" }), { values: { incomeW2s: true, incomeW2sCount: 2 }, errors: [] });
 });
 
+test("the reader takes any box export value but Off as ticked", async () => {
+  // Another PDF tool may tick with its own on-state name (/1, /On) or a string,
+  // or leave /V unset and say it only in the widget's /AS.
+  const doc = await PDFDocument.load(await editingCopy(BASE));
+  const form = doc.getForm();
+  const field = (key) => form.getCheckBox(shadedName(key)).acroField;
+  field("incomeW2s").dict.set(PDFName.of("V"), PDFName.of("1"));
+  field("incomeTips").dict.set(PDFName.of("V"), PDFName.of("Off"));
+  field("income1099R").dict.set(PDFName.of("V"), PDFHexString.fromText("On"));
+  const widgetOnly = field("incomeQcd");
+  widgetOnly.dict.delete(PDFName.of("V"));
+  for (const widget of widgetOnly.getWidgets()) widget.dict.set(PDFName.of("AS"), PDFName.of("On"));
+  const { raw } = await readFilledCopy({ PDFLib, bytes: await doc.save(), reference: "VT-ABCD-EFGH" });
+  const { values, errors } = readShaded(raw, { form: "en" });
+  assert.deepEqual(errors, []);
+  assert.equal(values.incomeW2s, true);
+  assert.equal(values.incomeTips, undefined);
+  assert.equal(values.income1099R, true);
+  assert.equal(values.incomeQcd, true);
+  // An untouched box is still absent.
+  assert.equal(values.incomeDisability, undefined);
+});
+
 test("the reader refuses another case's copy, a flattened copy and a broken file", async () => {
   const copy = await editingCopy(BASE);
   await assert.rejects(readFilledCopy({ PDFLib, bytes: copy, reference: "VT-ZZZZ-YYYY" }), (e) => e.code === "OTHER_CASE" && /different case/.test(e.message));
