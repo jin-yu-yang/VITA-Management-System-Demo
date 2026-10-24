@@ -24,6 +24,9 @@ const insertShaded = (f, caseId, fields, overrides = {}) => {
 };
 
 const checkViolation = (error) => error.code === "23514" || /check/i.test(String(error.message));
+// One SQLSTATE and the constraint or column it names (the driver's error is the cause).
+const violates = (code, where) => (error) =>
+  error.code === code && Object.entries(where).every(([key, value]) => error.cause?.[key] === value);
 
 test("shaded table is staff-only", async () => {
   const f = await createDatabaseFixture();
@@ -37,6 +40,16 @@ test("shaded table is staff-only", async () => {
     assert.equal(staff.error, null);
     assert.equal(staff.data.length, 1);
     assert.deepEqual(staff.data[0].fields, { incomeW2s: true, incomeW2sCount: 2 });
+    // Only the action RPC writes the row: service_role may read and delete it,
+    // but not write it directly (its shape check is not executable there).
+    const privileges = (
+      await f.sql(
+        "select has_table_privilege('service_role','public.preparer_shaded_fields',p) as granted, p from unnest(array['SELECT','INSERT','UPDATE','DELETE']) p",
+      )
+    ).rows;
+    assert.deepEqual(Object.fromEntries(privileges.map((row) => [row.p, row.granted])), {
+      SELECT: true, INSERT: false, UPDATE: false, DELETE: true,
+    });
     for (const client of [f.applicantA, f.presenter]) {
       assert.ok(
         (
@@ -94,8 +107,10 @@ test("the table refuses a bad shape", async () => {
       await assert.rejects(() => insertShaded(f, caseId, fields), checkViolation, name);
     await assert.rejects(() => insertShaded(f, caseId, [true]), checkViolation, "an array");
     await assert.rejects(() => insertShaded(f, caseId, "x"), checkViolation, "a string");
-    await assert.rejects(() => insertShaded(f, caseId, {}, { version: 0 }), "version at least 1");
-    await assert.rejects(() => insertShaded(f, caseId, {}, { fields: null }), "fields not null");
+    // JSON null is a value the shape check refuses; SQL NULL is NOT NULL's.
+    await assert.rejects(() => insertShaded(f, caseId, null), checkViolation, "JSON null");
+    await assert.rejects(() => insertShaded(f, caseId, {}, { version: 0 }), violates("23514", { constraint: "preparer_shaded_fields_version_check" }), "version at least 1");
+    await assert.rejects(() => insertShaded(f, caseId, {}, { fields: null }), violates("23502", { column: "fields" }), "fields not null");
     const none = await f.sql("select 1 from public.preparer_shaded_fields where case_id=$1", [caseId]);
     assert.equal(none.rowCount, 0);
     const good = {
@@ -111,7 +126,7 @@ test("the table refuses a bad shape", async () => {
       itemizedLastYearYes: true,
     };
     await insertShaded(f, caseId, good);
-    await assert.rejects(() => insertShaded(f, caseId, {}), "one row per case");
+    await assert.rejects(() => insertShaded(f, caseId, {}), violates("23505", { constraint: "preparer_shaded_fields_case_id_key" }), "one row per case");
   } finally {
     await f.close();
   }

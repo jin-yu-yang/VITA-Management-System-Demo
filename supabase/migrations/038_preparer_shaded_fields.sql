@@ -88,9 +88,12 @@ alter table public.preparer_shaded_fields add constraint preparer_shaded_fields_
 alter table public.preparer_shaded_fields enable row level security;
 drop policy if exists presenter_preparer_shaded_fields on public.preparer_shaded_fields;
 create policy presenter_preparer_shaded_fields on public.preparer_shaded_fields for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=preparer_shaded_fields.case_id where m.workspace_id=preparer_shaded_fields.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access='presenter' and (c.origin<>'client' or c.stage<>'draft')));
-revoke all on public.preparer_shaded_fields from public, anon, authenticated;
+revoke all on public.preparer_shaded_fields from public, anon, authenticated, service_role;
 grant select on public.preparer_shaded_fields to authenticated;
-grant select, insert, update, delete on public.preparer_shaded_fields to service_role;
+-- Not 033's insert and update: the shape check calls check_preparer_fields,
+-- which no client role may execute, so a direct write by service_role would
+-- fail anyway. Only the action RPC (security definer) writes the row.
+grant select, delete on public.preparer_shaded_fields to service_role;
 
 -- Realtime, with 033's pattern: INSERT and UPDATE only, under the same RLS (a
 -- presenter receives the change, an applicant never does).
@@ -731,7 +734,7 @@ begin
     confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
   values(p_case.workspace_id,p_case.id,1,v_alex,'client',
    case when v_signed then 'in_person' else 'phone' end,true,true,current_date);
-  -- The shaded section the preparer completed, with fictional values (038). The -- 038
+  -- The shaded section the preparer completed, with fictional values. The -- 038
   -- household row is filled only when the sample has a household member. -- 038
   select jsonb_array_length(c.answers->'hh') into v_hh from public.cases c where c.id=p_case.id and jsonb_typeof(c.answers->'hh')='array'; -- 038
   insert into public.preparer_shaded_fields(workspace_id,case_id,fields,version,updated_by_person_id) -- 038
