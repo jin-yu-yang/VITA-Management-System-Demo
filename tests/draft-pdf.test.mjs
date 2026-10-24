@@ -5,23 +5,23 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { inflateSync } from "node:zlib";
 import {
-  PDFDocument, PDFDict, PDFName, PDFArray, PDFCheckBox, PDFTextField, StandardFonts, rgb,
+  PDFDocument, PDFDict, PDFName, PDFBool, PDFHexString, pushGraphicsState, popGraphicsState, translate, drawObject, rotateInPlace, PDFArray, PDFCheckBox, PDFTextField, StandardFonts, rgb,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
-import { shadedName } from "../src/shaded-fields.mjs";
+import { shadedName, shadedNames, readShaded } from "../src/shaded-fields.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
 import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
-  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontFiles,
+  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, buildEditingCopy, readFilledCopy, createDraftOffer, draftFontFiles,
   draftFontsFor, draftLink, fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
 } from "../src/draft-pdf.mjs";
 
 // Node, with pdf-lib and fontkit from node_modules. The fonts are the
 // byte-identical copies installed from npm (DRAFT_FONT_FIXTURES); no test here
 // reaches the network. All names and data are fictional.
-const PDFLib = { PDFDocument, StandardFonts, rgb };
+const PDFLib = { PDFDocument, StandardFonts, rgb, PDFName, PDFBool, PDFHexString, pushGraphicsState, popGraphicsState, translate, drawObject, rotateInPlace };
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const formBytes = (form) => readFile(new URL(`../${FORM_FILES[form]}`, import.meta.url));
 const fixtureBytes = (url) => readFile(new URL(`../${DRAFT_FONT_FIXTURES[url].path}`, import.meta.url));
@@ -764,4 +764,75 @@ test("a short note stays in its box and a case with no section is unchanged", as
   const { doc } = await build(BASE, { shaded: { incomeNotes: "Two jobs." } });
   assert.ok(drawnText(doc.getPage(1)).some((l) => l.text === "Two jobs."));
   assert.ok(!drawnText(doc.getPage(4)).some((l) => l.text.startsWith("Continued from")));
+});
+
+// ---------------------------------------------------------------------------
+// The editing copy and the reader for a filled copy
+// ---------------------------------------------------------------------------
+
+const EDIT_OPTIONS = { reference: "VT-ABCD-EFGH", today: "2026-10-24" };
+async function editingCopy(answers, { shaded = {}, version = 3, reference = EDIT_OPTIONS.reference, lib = PDFLib } = {}) {
+  const fields = draftFields(answers, { ...EDIT_OPTIONS, form: "en" });
+  return buildEditingCopy({
+    PDFLib: lib, fontkit, formBytes: await formBytes("en"), fontFiles: await fontFilesFor("en"),
+    fields, shaded, reference, version,
+  });
+}
+
+test("the editing copy keeps exactly the shaded fields", async () => {
+  const bytes = await editingCopy(BASE);
+  const doc = await PDFDocument.load(bytes);
+  const names = doc.getForm().getFields().map((f) => f.getName());
+  assert.equal(names.length, 106);
+  assert.deepEqual([...names].sort(), [...shadedNames("en")].sort());
+  assert.equal(doc.getKeywords(), "vitally-shaded case:VT-ABCD-EFGH version:3");
+  assert.match(pageContent(doc.getPage(0)), /FlatWidget/, "the client answers are drawn on the page");
+});
+
+test("an editing copy for a Chinese name builds, with the note's /V decoding back", async () => {
+  const note = "收入说明：一份 W-2";
+  const bytes = await editingCopy({ ...BASE, tp_first_name: "美玲" }, { shaded: { incomeNotes: note, incomeW2s: true, incomeW2sCount: 2, household1QualifyingChild: "yes" } });
+  const doc = await PDFDocument.load(bytes);
+  const form = doc.getForm();
+  assert.equal(form.getFields().length, 106);
+  const field = form.getTextField(shadedName("incomeNotes"));
+  assert.equal(field.acroField.dict.lookup(PDFName.of("V")).decodeText(), note);
+  assert.equal(doc.catalog.lookup(PDFName.of("AcroForm")).get(PDFName.of("NeedAppearances")), PDFBool.True);
+  assert.ok(form.getCheckBox(shadedName("incomeW2s")).isChecked());
+  assert.equal(form.getTextField(shadedName("incomeW2sCount")).getText(), "2");
+  assert.equal(form.getTextField(shadedName("household1QualifyingChild")).getText(), "Yes");
+});
+
+test("the editing copy built with the bundled pdf-lib matches", async () => {
+  const bytes = await editingCopy(BASE, { lib: bundled });
+  assert.equal((await PDFDocument.load(bytes)).getForm().getFields().length, 106);
+});
+
+test("the copy round-trips through the reader", async () => {
+  const doc = await PDFDocument.load(await editingCopy(BASE, { version: 4 }));
+  const form = doc.getForm();
+  form.getCheckBox(shadedName("incomeW2s")).check();
+  form.getTextField(shadedName("incomeW2sCount")).setText("2");
+  const filled = await doc.save();
+  const { raw, version } = await readFilledCopy({ PDFLib, bytes: filled, reference: "VT-ABCD-EFGH" });
+  assert.equal(version, 4);
+  assert.deepEqual(readShaded(raw, { form: "en" }), { values: { incomeW2s: true, incomeW2sCount: 2 }, errors: [] });
+});
+
+test("the reader refuses another case's copy, a flattened copy and a broken file", async () => {
+  const copy = await editingCopy(BASE);
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: copy, reference: "VT-ZZZZ-YYYY" }), (e) => e.code === "OTHER_CASE" && /different case/.test(e.message));
+  const flat = await PDFDocument.load(copy);
+  flat.getForm().flatten();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await flat.save(), reference: "VT-ABCD-EFGH" }),
+    (e) => e.code === "NO_FIELDS" && e.message === "This copy has no form fields. In Chrome, use the download button, not Print.");
+  for (const bytes of [new TextEncoder().encode("hello"), new Uint8Array(0)])
+    await assert.rejects(readFilledCopy({ PDFLib, bytes, reference: "VT-ABCD-EFGH" }),
+      (e) => e.code === "NOT_A_PDF" && e.message === "This file isn't a PDF the editor can read.");
+});
+
+test("stored values come back through the reader, a two-line note included", async () => {
+  const shaded = { household1QualifyingChild: "na", incomeNotes: "line one\nline two", incomeRefundAmount: "412.00", itemizedLastYearYes: true };
+  const { raw } = await readFilledCopy({ PDFLib, bytes: await editingCopy(BASE, { shaded }), reference: "VT-ABCD-EFGH" });
+  assert.deepEqual(readShaded(raw, { form: "en" }).values, shaded);
 });

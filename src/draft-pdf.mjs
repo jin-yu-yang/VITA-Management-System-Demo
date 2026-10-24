@@ -4,6 +4,7 @@
 // libraries (src/vendor/pdf-lib.mjs) and the fonts load only when the draft is
 // asked for. The PDF never leaves the browser.
 import { COMMENTS_FIELD } from "./draft-form.mjs";
+import { SHADED_FIELDS, shadedName, shadedNames, shadedPrint } from "./shaded-fields.mjs";
 
 // ---------------------------------------------------------------------------
 // Fonts (Task 1's decision: docs/superpowers/notes/2026-10-04-draft-font-spike.md)
@@ -275,10 +276,13 @@ function wrap(paragraph, widthOf, max) {
  * Builds the draft. `fields` is `draftFields(…)`'s result; `fontFiles` the
  * bytes of `draftFontsFor(form).files`, in order (read only when some value
  * needs them); `stamp` the "DRAFT – …" line; `fileName` the document title.
- * Returns the PDF's bytes.
+ * Returns the PDF's bytes. `editing` ({ keep, values, keywords }) makes the
+ * preparer's editing copy: every field not in `keep` is flattened, and the
+ * ones in `keep` stay live and hold `values` (see buildEditingCopy).
  */
 export async function buildDraftPdf({
   PDFLib, fontkit, formBytes, fontFiles = [], fields, stamp = "", fileName = "13614-C-draft.pdf", flatten = true,
+  editing = null,
 }) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const doc = await PDFDocument.load(formBytes);
@@ -360,6 +364,26 @@ export async function buildDraftPdf({
   }
 
   for (const name of fields?.checks ?? []) form.getCheckBox(name).check();
+
+  // The editing copy's stored values, live on the fields it keeps. Text a
+  // standard font can encode is set the usual way; anything else (Chinese)
+  // goes in as the field's /V with no appearance, after the appearances are
+  // made, and the viewer makes it (NeedAppearances).
+  const viewerDraws = [];
+  if (editing) {
+    for (const field of SHADED_FIELDS) {
+      const value = editing.values?.[field.key];
+      if (value === undefined || value === null || value === false || value === "") continue;
+      const name = shadedName(field.key, "en");
+      if (field.kind === "box") {
+        form.getCheckBox(name).check();
+        continue;
+      }
+      const text = shadedPrint(field.key, value).replace(/\r\n?/g, "\n");
+      if (needsEmbeddedFont(text)) viewerDraws.push([name, text]);
+      else form.getTextField(name).setText(text);
+    }
+  }
 
   // Additional Comments: wrapped to the box's width at its font size and
   // written on its ruled lines; what doesn't fit continues on plain pages
@@ -464,7 +488,17 @@ export async function buildDraftPdf({
   }
 
   form.updateFieldAppearances(helvetica);
-  if (flatten) form.flatten({ updateFieldAppearances: false });
+  if (editing) {
+    partialFlatten(PDFLib, form, editing.keep);
+    const { PDFName, PDFHexString, PDFBool } = PDFLib;
+    for (const [name, text] of viewerDraws) {
+      const field = form.getTextField(name);
+      field.acroField.dict.set(PDFName.of("V"), PDFHexString.fromText(text));
+      for (const widget of field.acroField.getWidgets()) widget.dict.delete(PDFName.of("AP"));
+    }
+    if (viewerDraws.length) doc.catalog.lookup(PDFName.of("AcroForm")).set(PDFName.of("NeedAppearances"), PDFBool.True);
+    doc.setKeywords(editing.keywords ?? []);
+  } else if (flatten) form.flatten({ updateFieldAppearances: false });
   for (const draw of later) draw();
 
   // The stamp, at the top margin of every page, continued pages included.
@@ -482,7 +516,91 @@ export async function buildDraftPdf({
   }
 
   doc.setTitle(fileName, { showInWindowTitleBar: true });
-  return doc.save();
+  return doc.save({ updateFieldAppearances: !editing }); // the editing copy's /V text has no appearance by design
+}
+
+// ---------------------------------------------------------------------------
+// The editing copy and the reader for a filled copy
+// ---------------------------------------------------------------------------
+
+/**
+ * pdf-lib 1.17.1's PDFForm.flatten, for every field whose full name is not in
+ * `keep`: each widget's appearance is drawn on its page, then the field is
+ * removed. (findWidgetPage and findWidgetAppearanceRef are what flatten itself
+ * calls; they are public in JavaScript and private only in the types.)
+ */
+function partialFlatten(PDFLib, form, keep) {
+  const { pushGraphicsState, popGraphicsState, translate, drawObject, rotateInPlace } = PDFLib;
+  for (const field of form.getFields()) {
+    if (keep.has(field.getName())) continue;
+    for (const widget of field.acroField.getWidgets()) {
+      const page = form.findWidgetPage(widget);
+      const appearance = form.findWidgetAppearanceRef(field, widget);
+      const key = page.node.newXObject("FlatWidget", appearance);
+      const rect = widget.getRectangle();
+      page.pushOperators(
+        pushGraphicsState(),
+        translate(rect.x, rect.y),
+        ...rotateInPlace({ ...rect, rotation: 0 }),
+        drawObject(key),
+        popGraphicsState(),
+      );
+    }
+    form.removeField(field);
+  }
+}
+
+/**
+ * The English 13614-C for the case's preparer: the client's answers drawn as
+ * in the draft, with only the 106 shaded fields left fillable and holding
+ * `shaded` (the stored values). `fields` is draftFields(…) made without
+ * shaded values. Keywords carry the case and the section version, so the
+ * upload can be checked. Never uploaded or stored.
+ */
+export function buildEditingCopy({ PDFLib, fontkit, formBytes, fontFiles = [], fields, shaded = {}, reference, version }) {
+  return buildDraftPdf({
+    PDFLib, fontkit, formBytes, fontFiles, fields, stamp: fields.stamp, fileName: fields.fileName,
+    editing: {
+      keep: new Set(shadedNames("en")),
+      values: shaded ?? {},
+      keywords: ["vitally-shaded", `case:${reference}`, `version:${version}`],
+    },
+  });
+}
+
+const fail = (code, message) => Object.assign(new Error(message), { code });
+
+/**
+ * Reads a filled editing copy: `{ raw: { pdfFieldName: value }, version }`,
+ * ready for readShaded. Throws an error with a `code` and a sentence for the
+ * preparer when the file is not a PDF (NOT_A_PDF), was made for another case
+ * (OTHER_CASE) or has none of the shaded fields (NO_FIELDS).
+ */
+export async function readFilledCopy({ PDFLib, bytes, reference }) {
+  let doc;
+  try {
+    doc = await PDFLib.PDFDocument.load(bytes);
+  } catch {
+    throw fail("NOT_A_PDF", "This file isn't a PDF the editor can read.");
+  }
+  const keywords = String(doc.getKeywords() ?? "").split(/\s+/);
+  if (!keywords.includes(`case:${reference}`))
+    throw fail("OTHER_CASE", "This copy was made for a different case. Download the copy from this case and fill that one.");
+  const form = doc.getForm();
+  const raw = {};
+  for (const field of SHADED_FIELDS) {
+    const name = shadedName(field.key, "en");
+    if (!form.getFieldMaybe(name)) continue;
+    try {
+      raw[name] = field.kind === "box" ? form.getCheckBox(name).isChecked() : (form.getTextField(name).getText() ?? "");
+    } catch {
+      raw[name] = ""; // a field of the wrong type: nothing readable, so nothing set
+    }
+  }
+  if (Object.keys(raw).length === 0)
+    throw fail("NO_FIELDS", "This copy has no form fields. In Chrome, use the download button, not Print.");
+  const tag = keywords.find((word) => /^version:\d+$/.test(word));
+  return { raw, version: tag ? Number(tag.slice(8)) : 0 };
 }
 
 // ---------------------------------------------------------------------------
