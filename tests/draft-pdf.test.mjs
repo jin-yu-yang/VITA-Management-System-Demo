@@ -10,6 +10,7 @@ import {
 import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
+import { shadedName } from "../src/shaded-fields.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
 import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
@@ -63,8 +64,8 @@ function watchedFiles(files = []) {
   return { proxy, seen };
 }
 
-async function build(answers, { form = "en", fontFiles = [], flatten = true } = {}) {
-  const fields = draftFields(answers, { ...OPTIONS, form });
+async function build(answers, { form = "en", fontFiles = [], flatten = true, shaded = null } = {}) {
+  const fields = draftFields(answers, { ...OPTIONS, form, shaded });
   const bytes = await buildDraftPdf({
     PDFLib, fontkit, formBytes: await formBytes(form), fontFiles, fields,
     stamp: fields.stamp, fileName: fields.fileName, flatten,
@@ -688,4 +689,40 @@ test("the blocked-tab draft link can be found again by the focus restore", () =>
   const focus = describeFocus(link);
   assert.ok(focus, "the focus restore has something to look for");
   assert.deepEqual(focusSelectors(focus), ['[id="draft-ready-link"]']);
+});
+
+test("shaded values round-trip in all three forms, a Chinese reason through runs", async () => {
+  const shaded = { household1QualifyingChild: "yes", incomeW2s: true, incomeW2sCount: 2, incomeRefundAmount: "412.00", infoDisallowedReason: "子女资格不符" };
+  for (const form of ["en", "zh-s", "zh-t"]) {
+    const { doc } = await build(BASE, { form, shaded, flatten: false, fontFiles: await fontFilesFor(form) });
+    const f = doc.getForm();
+    assert.equal(f.getTextField(shadedName("household1QualifyingChild", form)).getText(), "Yes", form);
+    assert.ok(f.getCheckBox(shadedName("incomeW2s", form)).isChecked(), form);
+    assert.equal(f.getTextField(shadedName("incomeW2sCount", form)).getText(), "2", form);
+    assert.equal(f.getTextField(shadedName("incomeRefundAmount", form)).getText(), "412.00", form);
+    assert.ok(drawnText(doc.getPage(2)).some((l) => l.text.includes("子女资格不符")), `reason drawn: ${form}`);
+  }
+});
+
+test("a long note continues in Additional Comments, every character printed", async () => {
+  const note = Array.from({ length: 80 }, (_, i) => `w${String(i).padStart(3, "0")}`).join(" "); // 400 characters
+  assert.equal(note.length, 399);
+  const { doc, fields } = await build(BASE, { shaded: { deductionNotes: note } });
+  assert.equal(doc.getPageCount(), 6);
+  const lines = (page) => drawnText(page).map((l) => l.text);
+  const inBox = lines(doc.getPage(2));
+  const rest = lines(doc.getPage(4));
+  assert.ok(inBox.length > 0 && inBox[0].startsWith("w000"), JSON.stringify(inBox));
+  const at = rest.indexOf("Continued from page 3, Standard or itemized deductions notes:");
+  assert.ok(at >= 0, JSON.stringify(rest));
+  const printed = [...inBox, ...rest.slice(at + 1)].join(" ").split(/\s+/).filter((w) => /^w\d{3}$/.test(w));
+  assert.deepEqual(printed, note.split(" "));
+  assert.ok(rest.includes("My 1099-INT has not arrived yet."));
+  assert.equal(fields.notes.length, 1);
+});
+
+test("a short note stays in its box and a case with no section is unchanged", async () => {
+  const { doc } = await build(BASE, { shaded: { incomeNotes: "Two jobs." } });
+  assert.ok(drawnText(doc.getPage(1)).some((l) => l.text === "Two jobs."));
+  assert.ok(!drawnText(doc.getPage(4)).some((l) => l.text.startsWith("Continued from")));
 });

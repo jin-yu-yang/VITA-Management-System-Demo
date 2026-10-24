@@ -107,6 +107,7 @@ const printedValues = (fields) => [
     .filter(([name]) => fields?.consentPage || !page6(name))
     .map(([, value]) => value),
   fields?.comments ?? "",
+  ...(fields?.notes ?? []).map((note) => note.text),
 ];
 
 /** Whether these draft fields need the downloaded font at all. */
@@ -372,7 +373,50 @@ export async function buildDraftPdf({
     const own = fields?.words?.[key] ?? english;
     return [key, needsEmbeddedFont(own) && fonts.length === 0 ? english : own];
   }));
-  let comments = cleanComments(fields?.comments);
+  // The shaded notes: each is wrapped in its own box, with the same wrapping
+  // and drawing as Additional Comments. What doesn't fit goes ahead of the
+  // comments under "Continued from page <n>, <block> notes:", and from there
+  // onto continued pages like any comment.
+  const continuations = [];
+  for (const note of fields?.notes ?? []) {
+    const text = cleanComments(note.text);
+    if (text === "") continue;
+    if (needsEmbeddedFont(text) && printable(text, fonts) !== text.normalize("NFC")) lost = true;
+    const field = form.getTextField(note.name);
+    const widget = field.acroField.getWidgets()[0];
+    const rect = widget.getRectangle();
+    const size = fontSizeOf(field);
+    const border = borderOf(widget);
+    const x = rect.x + border + 2;
+    const maxWidth = rect.width - 2 * (border + 2);
+    const pitch = size * 1.2;
+    const capacity = Math.max(1, Math.floor((rect.height - 2 * (border + 2)) / pitch));
+    const helveticaWidth = measurer(() => helvetica, size);
+    const runsWidth = fonts.length ? measurer(fontFor, size) : null;
+    const paragraphs = text.split("\n").map((paragraph) => (needsEmbeddedFont(paragraph) ? printable(paragraph, fonts) : paragraph));
+    const wrapped = [];
+    paragraphs.forEach((paragraph, index) => {
+      const runs = needsEmbeddedFont(paragraph);
+      let pos = 0;
+      for (const line of wrap(paragraph, runs ? runsWidth : helveticaWidth, maxWidth)) {
+        while (/\s/u.test(paragraph[pos] ?? "")) pos += 1;
+        pos += line.length; // wrap() only drops spaces at a line's ends
+        wrapped.push({ text: line, runs, index, pos });
+      }
+    });
+    const inBox = wrapped.slice(0, capacity);
+    const page = pageOf(note.name);
+    const top = rect.y + rect.height - border - 2 - size;
+    later.push(() => inBox.forEach((line, k) => drawLine(page, line, x, top - k * pitch, size)));
+    if (wrapped.length > capacity) {
+      const last = wrapped[capacity - 1];
+      const rest = [paragraphs[last.index].slice(last.pos), ...paragraphs.slice(last.index + 1)];
+      if (rest[0].trim() === "") rest.shift();
+      continuations.push(`Continued from page ${note.page}, ${note.block} notes:\n${rest.join("\n")}`);
+    }
+  }
+
+  let comments = [...continuations, cleanComments(fields?.comments)].filter((part) => part !== "").join("\n\n");
   if (needsEmbeddedFont(comments) && printable(comments, fonts) !== comments.normalize("NFC")) lost = true;
   if (lost) comments = [comments, words.notice].filter(Boolean).join("\n\n");
   if (comments !== "") {
