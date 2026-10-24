@@ -80,6 +80,12 @@ const CONFLICT_MESSAGE =
 // clients read "application", and neither ever sees a revision number.
 const STAFF_CONFLICT_MESSAGE =
   "Someone else changed this case. The newest version is shown — check it and try again.";
+// The shaded section's upload (change add-preparer-13614c-fields, design D8):
+// its errors are said beside the upload control, and a stale copy is named as
+// one, since nothing was "opened" there.
+const SHADED_UPLOAD = "shaded-upload";
+const STAFF_UPLOAD_CONFLICT_MESSAGE =
+  "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.";
 const ASSISTANCE_CONFLICT_MESSAGE =
   "Someone else changed this item. The newest version is shown — check it and try again.";
 const STAFF_CONTACT_GONE_MESSAGE = "This contact is no longer on screen.";
@@ -345,6 +351,10 @@ export function createController({
     sidebarOpen: true,
     // Which tab of the case page this window shows. Overview unless chosen.
     caseTab: "overview",
+    // `{caseId, text: "Saved"}` once an uploaded shaded section was saved,
+    // said beside the upload control on that case's page until the next
+    // upload or error.
+    shadedStatus: null,
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -532,7 +542,12 @@ export function createController({
     state.error = {
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
+      // Where the page says it, when that is not the usual place: the
+      // shaded section's upload control (SHADED_UPLOAD).
+      ...(error?.place === SHADED_UPLOAD ? { place: SHADED_UPLOAD } : {}),
     };
+    // A newer error replaces a shaded save's "Saved".
+    state.shadedStatus = null;
     if (error?.code === "OFFLINE") state.connection = "offline";
   }
 
@@ -2387,6 +2402,44 @@ export function createController({
   const setDocumentGroup = (slotId, group) =>
     cardAction("SET_DOCUMENT_GROUP", { slotId, group });
 
+  // The shaded section, read from an uploaded copy (design D5, D8). The case
+  // revision is the latest this window knows (`runAction`, kept current by
+  // realtime), so unrelated work on the case never blocks it; the copy's own
+  // section version is what catches a stale copy (`basedOnVersion`). One at a
+  // time: a second press while one is out does nothing. A refusal is said
+  // beside the upload control with Dismiss only: the way to try again is to
+  // upload again.
+  let shadedSaveInFlight = false;
+  async function saveShadedSection(fields, basedOnVersion) {
+    if (shadedSaveInFlight) return null;
+    shadedSaveInFlight = true;
+    const caseId = state.savedCase?.id ?? null;
+    state.shadedStatus = null;
+    try {
+      const receipt = await runAction("SAVE_PREPARER_FIELDS", { fields, basedOnVersion });
+      if (receipt && state.savedCase?.id === caseId) {
+        state.shadedStatus = { caseId, text: "Saved" };
+        show();
+      }
+      return receipt;
+    } catch (error) {
+      if (state.error) {
+        state.error = {
+          ...state.error,
+          place: SHADED_UPLOAD,
+          ...(error?.code === "CONFLICT" ? { message: STAFF_UPLOAD_CONFLICT_MESSAGE } : {}),
+        };
+        // Dismiss only (screen-states): no envelope is kept to send again.
+        state.retryable = false;
+        pendingAction = null;
+        show();
+      }
+      throw error;
+    } finally {
+      shadedSaveInFlight = false;
+    }
+  }
+
   // Assistance items are not cases: they have their own RPC, their own revision
   // and their own list, so they get their own dispatch rather than a branch
   // inside `runAction`. The shape is deliberately the same — an unknown type is
@@ -2758,6 +2811,7 @@ export function createController({
     runAction,
     setDocumentCard,
     setDocumentGroup,
+    saveShadedSection,
     retryLast,
     navigate,
     togglePanel,

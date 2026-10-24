@@ -1320,6 +1320,113 @@ async function runPermutation(t, roles) {
       }
       evidence.story.staffDraft = staffDraft;
 
+      // ---- The 13614-C shaded section: download, fill elsewhere, upload --
+      // (change add-preparer-13614c-fields, design D8). The copy is filled
+      // here with npm pdf-lib, as another PDF program would, and uploaded
+      // from a buffer: nothing reaches the server but the values.
+      const shadedTools = staff.locator("#case-panel-intake .shaded-panel");
+      await waitForQuiet(staff);
+      const downloaded = staff.waitForEvent("download", { timeout: ARRIVAL_MS });
+      await shadedTools.locator('[data-action="download-shaded-copy"]').click({ timeout: CLICK_MS });
+      const download = await downloaded;
+      const copy = await PDFDocument.load(await readFile(await download.path()));
+      assert.ok(
+        String(copy.getKeywords() ?? "").split(/\s+/).includes(`case:${classCase.reference}`),
+        "the editing copy does not carry the case's reference",
+      );
+      const copyForm = copy.getForm();
+      assert.equal(copyForm.getFields().length, 106, "the editing copy does not keep exactly the 106 shaded fields");
+      copyForm.getCheckBox("form1[0].page2[0].incomeIncluded[0].formW2s[0]").check();
+      copyForm.getTextField("form1[0].page2[0].incomeIncluded[0].formW2sNumber[0]").setText("2");
+      const filledCopy = Buffer.from(await copy.save());
+      // First, a file that is not a PDF: refused in place, nothing saved.
+      await waitForQuiet(staff);
+      await shadedTools
+        .locator('input[type="file"][data-action="upload-shaded-copy"]')
+        .setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a pdf") });
+      await waitFor(
+        staff,
+        "the not-a-PDF refusal beside the upload control",
+        () =>
+          document.querySelector("#case-panel-intake .shaded-panel #shaded-upload-error")?.textContent.includes(
+            "This file isn't a PDF the editor can read.",
+          ) ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        await staff.evaluate(
+          () =>
+            document.querySelectorAll('[role="alert"]').length === 1 &&
+            !document.querySelector(".problem-banner") &&
+            !(document.querySelector("#toast")?.textContent ?? "").includes("PDF"),
+        ),
+        true,
+        "the upload refusal was said somewhere else too",
+      );
+      assert.equal(
+        (await fixture.database.sql("select 1 from public.preparer_shaded_fields where case_id=$1", [classCase.id])).rows.length,
+        0,
+        "a refused upload saved something",
+      );
+      await shadedTools.locator('[data-action="dismiss-error"]').click({ timeout: CLICK_MS });
+      await waitForQuiet(staff);
+      await shadedTools
+        .locator('input[type="file"][data-action="upload-shaded-copy"]')
+        .setInputFiles({ name: "13614-C-filled.pdf", mimeType: "application/pdf", buffer: filledCopy });
+      await waitFor(
+        staff,
+        "Saved beside the upload control",
+        () => document.querySelector("#case-panel-intake #shaded-status")?.textContent.trim() === "Saved",
+        undefined,
+        ARRIVAL_MS,
+      );
+      const shadedRow = (
+        await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [classCase.id])
+      ).rows;
+      assert.deepEqual(
+        shadedRow.map((row) => ({ fields: row.fields, version: Number(row.version) })),
+        [{ fields: { incomeW2s: true, incomeW2sCount: 2 }, version: 1 }],
+      );
+      await openCaseTab(staff, "history");
+      await waitFor(
+        staff,
+        "the shaded save in the internal history",
+        () =>
+          document
+            .querySelector('#case-panel-history [data-role="internal-history"]')
+            ?.textContent.includes("Alex saved the shaded section · W-2s, W-2s #.") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.doesNotMatch(
+        (await staff.locator('#case-panel-history [data-role="client-history"]').textContent()) ?? "",
+        /shaded/i,
+        "the client's history names the shaded section",
+      );
+      await openCaseTab(staff, "intake");
+      // The English draft prints the saved count on page 2 and the new stamp.
+      let shadedDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      if (roles.staff === "chrome") {
+        await waitForQuiet(staff);
+        const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
+        const popup = await opened;
+        const bytes = await draftBytes(popup);
+        await popup.close();
+        const page2 = await draftPageText(bytes, 1);
+        const page1 = await draftPageText(bytes, 0);
+        assert.ok(page2.strings.includes("2"), `page 2 of the English draft does not print 2: ${JSON.stringify(page2.strings)}`);
+        assert.ok(
+          page1.strings.some((text) => text.includes("online answers and preparer entries")),
+          `the English draft's stamp does not name the preparer entries: ${JSON.stringify(page1.strings)}`,
+        );
+        shadedDraft = "page 2 prints 2; the stamp names the preparer entries";
+      }
+      evidence.story.shadedSection = { saved: "Saved", draft: shadedDraft };
+
       // Materials: two boxes, one save.
       const materials = staff.locator("#case-panel-intake #materials-form");
       await waitForQuiet(staff);

@@ -2959,3 +2959,78 @@ test("a season-end close reads as one", () => {
     "Sam closed the case at season end · Dismissed.",
   );
 });
+
+// ---------------------------------------------------------------------------
+// The shaded section (change add-preparer-13614c-fields, design D4 and D8)
+// ---------------------------------------------------------------------------
+
+test("shaded tools only for the case's preparer at the two stages", () => {
+  for (const stage of ["preparing", "corrections_required"]) {
+    const rights = staffEligibility(staffCase({ stage }), ALEX);
+    assert.deepEqual(rights.shadedSection, { allowed: true, reason: "" }, stage);
+    const html = renderStaffCase(staffCase({ stage }), ALEX);
+    assert.match(html, /data-action="download-shaded-copy"[^>]*>(?:<svg.*?<\/svg>)? Download to fill elsewhere<\/button>/, stage);
+    assert.match(html, /<input type="file" id="shaded-upload" accept="application\/pdf" data-action="upload-shaded-copy"/, stage);
+    assert.match(html, /<label[^>]*for="shaded-upload"[^>]*>(?:<svg.*?<\/svg>)? Upload the filled copy<\/label>/, stage);
+  }
+  // Refused with the preparationWork sentences otherwise.
+  const refusals = [
+    [staffCase({ stage: "review_ready" }), ALEX],
+    [staffCase({ stage: "reviewing", reviewerId: "morgan" }), ALEX],
+    [staffCase({ stage: "on_hold" }), ALEX],
+    [staffCase({ stage: "preparing" }), MORGAN],
+    [staffCase({ stage: "corrections_required", reviewerId: "morgan" }), MORGAN],
+    [staffCase({ stage: "preparing" }), { id: "casey", name: "Casey", capabilities: ["prepare"] }],
+    [staffCase({ stage: "preparing", preparerId: null, participants: [] }), ALEX],
+    [staffCase({ stage: "preparing" }), null],
+  ];
+  for (const [record, person] of refusals) {
+    const rights = staffEligibility(record, person);
+    assert.equal(rights.shadedSection.allowed, false, `${record.stage} ${person?.id}`);
+    assert.deepEqual(rights.shadedSection, rights.preparationWork);
+    const html = renderStaffCase(record, person);
+    assert.doesNotMatch(html, /download-shaded-copy|upload-shaded-copy/);
+    assert.match(html, /aria-labelledby="shaded-title"/, "the panel says why, in place");
+    assert.ok(html.includes(rights.preparationWork.reason.replace("'", "&#39;")), rights.preparationWork.reason);
+  }
+});
+
+test("the shaded panel says Saved and its upload error in place, with Dismiss only", () => {
+  const record = staffCase({
+    preparerShadedFields: [{ caseId: "case-a", fields: { incomeW2s: true }, version: 2 }],
+  });
+  const saved = renderStaffCase(record, ALEX, { shadedStatus: { caseId: "case-a", text: "Saved" } });
+  assert.match(saved, /id="shaded-status"[^>]*>Saved</);
+  // Another case's Saved is not this case's.
+  assert.doesNotMatch(
+    renderStaffCase(record, ALEX, { shadedStatus: { caseId: "case-b", text: "Saved" } }),
+    /id="shaded-status"[^>]*>Saved</,
+  );
+  const error = { code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: "shaded-upload" };
+  const html = renderStaffCase(record, ALEX, { error, retryable: true, shadedStatus: { caseId: "case-a", text: "Saved" } });
+  // Once, beside the upload control, and not at the top of the page.
+  assert.equal(html.match(/role="alert"/g).length, 1);
+  assert.match(html, /<div class="notice error" role="alert" id="shaded-upload-error">.*This file isn&#39;t a PDF the editor can read\./);
+  const panel = html.slice(html.indexOf('aria-labelledby="shaded-title"'));
+  assert.match(panel, /id="shaded-upload-error"/);
+  assert.match(panel, /<input type="file"[^>]*aria-describedby="shaded-upload-error"/);
+  assert.match(panel, /data-action="dismiss-error"/);
+  assert.doesNotMatch(panel.slice(0, panel.indexOf("</section>")), /retry-action/, "Dismiss only");
+  assert.doesNotMatch(html, /id="shaded-status"[^>]*>Saved</, "the error replaces Saved");
+  // Any other error stays at the top of the page, as before.
+  const other = renderStaffCase(record, ALEX, { error: { code: "SERVER_ERROR", message: "Something went wrong." } });
+  assert.doesNotMatch(other, /id="shaded-upload-error"/);
+  assert.match(other, /That step did not go through/);
+});
+
+test("history names changed fields", () => {
+  assert.equal(EVENT_SENTENCES.SAVE_PREPARER_FIELDS, "saved the shaded section");
+  assert.equal(
+    historySentence({ action: "SAVE_PREPARER_FIELDS", actorName: "Alex", detail: { changed: ["incomeW2sCount", "incomeNotes"] } }),
+    "Alex saved the shaded section · W-2s #, Income notes.",
+  );
+  assert.equal(
+    historySentence({ action: "SAVE_PREPARER_FIELDS", actorName: "Alex", detail: { changed: [] } }),
+    "Alex saved the shaded section · no fields changed.",
+  );
+});

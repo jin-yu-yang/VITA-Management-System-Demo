@@ -30,7 +30,17 @@ import {
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
-import { buildDraftPdf, createDraftOffer, draftFontFiles, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
+import {
+  buildDraftPdf,
+  buildEditingCopy,
+  createDraftOffer,
+  draftFontFiles,
+  draftFontsFor,
+  draftLink,
+  fieldsNeedFont,
+  readFilledCopy,
+} from "./draft-pdf.mjs";
+import { readShaded } from "./shaded-fields.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -50,7 +60,7 @@ import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, SENTENCES } from "./client-text.mjs";
 import { createToastTimer } from "./toast.mjs";
 import { contactEntryFromForm, contactSummary, contactSummaries } from "./contact-log.mjs";
-import { decorateStaffCase, outcomeGroup } from "./staff-views.mjs";
+import { decorateStaffCase, outcomeGroup, SHADED_UPLOAD } from "./staff-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -1392,6 +1402,108 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
+  const isoToday = () => {
+    const now = new Date();
+    return [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join("-");
+  };
+
+  // The case's saved shaded section: its one row, or null before the first save.
+  const savedShaded = (record) => (record?.preparerShadedFields ?? [])[0] ?? null;
+
+  // ---- the 13614-C shaded section: download / upload (design D8) --------
+  //
+  // Both stay in this browser: the copy is built here and saved as a file, and
+  // the filled copy is read here. Neither is uploaded or kept. Every failure
+  // is said beside the upload control (SHADED_UPLOAD), with Dismiss only.
+  const shadedFailure = (message, code = "VALIDATION") =>
+    controller.noteLocalFailure({ code, message, place: SHADED_UPLOAD });
+
+  // The English editing copy: the client's answers drawn as in the draft, and
+  // only the 106 shaded fields left fillable, holding the saved values. Its
+  // Keywords carry the case and the section version the upload checks.
+  async function downloadShadedCopy(by) {
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    const record = state.savedCase;
+    try {
+      const reference = record.reference ?? "";
+      const row = savedShaded(record);
+      const fields = draftFields(state.draftAnswers ?? {}, { form: "en", reference, today: isoToday() });
+      const PDFLib = await import("./vendor/pdf-lib.mjs");
+      const [formBytes, fontFiles] = await Promise.all([
+        fetchBytes(FORM_FILES.en),
+        fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor("en"), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
+      ]);
+      const bytes = await buildEditingCopy({
+        PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
+        shaded: row?.fields ?? {}, reference, version: Number(row?.version ?? 0),
+      });
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `13614-C-shaded-${reference || "case"}.pdf`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      if (by !== signedInUserId()) return;
+      shadedFailure(
+        error?.draftFont ? "The draft font could not be checked. Try again later." : "The copy could not be made. Try again.",
+        "DRAFT",
+      );
+    }
+  }
+
+  // A filled copy, read and saved in the same press: the case's reference,
+  // then the shaded fields by name into readShaded (with the case's household
+  // size and season), then SAVE_PREPARER_FIELDS on the copy's own version.
+  async function uploadShadedCopy(input, by) {
+    const file = input.files?.[0] ?? null;
+    if (!file) return;
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    const record = state.savedCase;
+    const shown = state.errorCount;
+    let read;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const PDFLib = await import("./vendor/pdf-lib.mjs");
+      read = await readFilledCopy({ PDFLib, bytes, reference: record.reference ?? "" });
+    } catch (error) {
+      if (by !== signedInUserId()) return;
+      return shadedFailure(
+        ["NOT_A_PDF", "OTHER_CASE", "NO_FIELDS"].includes(error?.code)
+          ? error.message
+          : "This file isn't a PDF the editor can read.",
+      );
+    } finally {
+      // The same file can be chosen again after a fix elsewhere.
+      input.value = "";
+    }
+    if (by !== signedInUserId()) return;
+    // Another case was opened while the file was read: this copy was for the old one.
+    const now = controller.getState();
+    if (now.savedCase?.id !== record.id) return;
+    const members = Array.isArray(now.savedCase.answers?.hh) ? now.savedCase.answers.hh.length : 0;
+    const season = Number.isInteger(now.savedCase.season)
+      ? now.savedCase.season
+      : Number.isInteger(now.workspace?.currentSeason)
+        ? now.workspace.currentSeason
+        : undefined;
+    const { values, errors } = readShaded(read.raw, { form: "en", householdSize: Math.min(members, 4), season });
+    if (errors.length) return shadedFailure(errors.map((entry) => entry.message).join(" "));
+    try {
+      await controller.saveShadedSection(values, read.version);
+    } catch (error) {
+      // The controller said it beside the control; anything it did not is said there too.
+      if (controller.getState().errorCount === shown) shadedFailure("Something went wrong.", error?.code ?? "SERVER_ERROR");
+    }
+  }
+
   async function viewDraft(form, by, kind = "13614c") {
     // A client's 13614-C is half finished (hide-draft-13614c-from-clients): only staff make one.
     if (kind !== "14446" && controller.getState().principal?.access !== "presenter") return;
@@ -1416,7 +1528,11 @@ if (!config) {
       // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
       // The 14446 has no generated lines of its own, so it never needs the map.
       if (kind !== "14446" && form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
-      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, { form, reference, today });
+      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, {
+        // The 13614-C prints the saved shaded section in every form (design
+        // D9); the 14446 has no shaded section and ignores it.
+        form, reference, today, shaded: savedShaded(state.savedCase)?.fields ?? null,
+      });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
         fetchBytes(files[form]),
@@ -1804,6 +1920,9 @@ if (!config) {
       case "view-draft":
         await viewDraft(target.dataset.form ?? "en", by, target.dataset.draft ?? "13614c");
         break;
+      case "download-shaded-copy":
+        await downloadShadedCopy(by);
+        break;
       case "toggle-senior":
         controller.editAnswers({
           form_version: state.draftAnswers?.form_version === "senior" ? "general" : "senior",
@@ -2013,6 +2132,10 @@ if (!config) {
 
   root.addEventListener("change", (event) => {
     const field = event.target;
+    if (field.matches?.('input[type="file"][data-action="upload-shaded-copy"]')) {
+      void uploadShadedCopy(field, signedInUserId());
+      return;
+    }
     if (field.matches?.("select[data-board-filter]")) {
       controller.setBoardFilter(field.dataset.boardFilter, field.value);
       root.querySelector(`#${field.id}`)?.focus();

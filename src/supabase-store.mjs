@@ -309,6 +309,7 @@ export const mapStaffCase = ({
   materials = [],
   preparerQuestionnaires = [],
   reviewerQuestionnaires = [],
+  preparerShadedFields = [],
   filingAttempts = [],
   filingReturns = [],
   filingNotes = [],
@@ -322,6 +323,8 @@ export const mapStaffCase = ({
   internalHistory: internalHistory.map(camelRow),
   preparerQuestionnaires: preparerQuestionnaires.map(camelRow),
   reviewerQuestionnaires: reviewerQuestionnaires.map(camelRow),
+  // One row at most (case_id is unique): `[row]`, or `[]` before the first save.
+  preparerShadedFields: preparerShadedFields.map(camelRow),
   filingAttempts: mapFilingAttempts(filingAttempts, filingReturns, filingNotes),
 });
 
@@ -609,6 +612,8 @@ export function createStore(client) {
         // Staff only: the applicant path above never names these tables.
         preparerQuestionnaires: await relatedRows("preparer_questionnaires", id),
         reviewerQuestionnaires: await relatedRows("reviewer_questionnaires", id),
+        // Staff only (migration 038), and never named on the applicant path.
+        preparerShadedFields: await relatedRows("preparer_shaded_fields", id),
         // Staff only (migration 035). These tables have no created_at, so they
         // are ordered by their own keys rather than through relatedRows.
         filingAttempts: await read(

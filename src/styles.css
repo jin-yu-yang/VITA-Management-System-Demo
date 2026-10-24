@@ -4606,6 +4606,17 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+/* The 13614-C shaded section's download / upload (add-preparer-13614c-fields). */
+.shaded-tools .shaded-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.shaded-tools input[type="file"] {
+  max-width: 100%;
+}
+
 /* 1.5's read-only details (add-form-14446-consent). */
 .sign-details {
   display: grid;

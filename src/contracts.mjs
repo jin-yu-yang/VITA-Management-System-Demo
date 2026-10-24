@@ -76,6 +76,10 @@ export const CASE_ACTIONS = Object.freeze([
   // Part 4b2 (migration 017): the document cards. The controller builds them.
   "SET_DOCUMENT_CARD",
   "SET_DOCUMENT_GROUP",
+  // Change add-preparer-13614c-fields (migration 038): the 13614-C shaded
+  // section. It carries exactly { fields, basedOnVersion }; the controller
+  // builds it from an uploaded copy, not a form.
+  "SAVE_PREPARER_FIELDS",
 ]);
 
 // Assistance is its own workflow with its own RPC, so its controls carry their

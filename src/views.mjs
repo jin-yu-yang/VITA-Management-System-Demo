@@ -264,6 +264,8 @@ export function staffScreen(state) {
         // A dialog opened from the case page holds the only copy of the error.
         error: state.dialog ? null : state.error,
         retryable: state.retryable,
+        // The shaded section's "Saved", beside its upload control.
+        shadedStatus: state.shadedStatus,
         draftAnswers: state.draftAnswers,
         dirty: state.dirty,
         openPanels: state.openPanels,

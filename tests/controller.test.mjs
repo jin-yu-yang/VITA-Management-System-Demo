@@ -6010,3 +6010,89 @@ test("closeUnsigned conflict re-reads", async () => {
   assert.match(html, /id="close-unsigned-submit"[^>]*disabled/);
   controller.stop();
 });
+
+// ---------------------------------------------------------------------------
+// The shaded section (change add-preparer-13614c-fields, design D5)
+// ---------------------------------------------------------------------------
+
+const shadedStore = () =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [
+      {
+        id: "case-s",
+        reference: "VT-SHAD-ED22",
+        stage: "preparing",
+        revision: 7,
+        answers: {},
+        preparerId: "alex",
+        participants: ["alex"],
+        preparerShadedFields: [],
+      },
+    ],
+  });
+
+test("saveShadedSection sends the latest revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The office logs a contact meanwhile: realtime brings the newer revision.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 9 });
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-s", caseId: "case-s" });
+  const fields = { incomeW2s: true, incomeW2sCount: 2 };
+  await controller.saveShadedSection(fields, 0);
+  const sent = store.writes.at(-1);
+  assert.equal(sent.type, "SAVE_PREPARER_FIELDS");
+  assert.equal(sent.caseId, "case-s");
+  assert.equal(sent.expectedRevision, 9);
+  assert.equal(sent.personId, "alex");
+  assert.deepEqual(sent.payload, { fields, basedOnVersion: 0 });
+  // Saved, in place beside the upload control.
+  assert.deepEqual(controller.getState().shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("a refused shaded save is said beside the upload control, with Dismiss only", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
+  await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "CONFLICT");
+  const state = controller.getState();
+  assert.equal(state.error.place, "shaded-upload");
+  assert.equal(
+    state.error.message,
+    "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.",
+  );
+  assert.equal(state.retryable, false);
+  assert.equal(state.shadedStatus, null);
+  // An unknown outcome is not offered again either: the upload is pressed again instead.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "OFFLINE");
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(controller.getState().error.place, "shaded-upload");
+  assert.equal(await controller.retryLast(), null);
+  // A failure the page records itself (a file it couldn't read) goes to the same place.
+  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: "shaded-upload" });
+  assert.equal(controller.getState().error.place, "shaded-upload");
+  controller.stop();
+});
+
+test("a second shaded save while one is out does nothing", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  const first = controller.saveShadedSection({ incomeW2s: true }, 0);
+  assert.equal(await controller.saveShadedSection({ incomeW2s: true }, 0), null);
+  await first;
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 1);
+  controller.stop();
+});
