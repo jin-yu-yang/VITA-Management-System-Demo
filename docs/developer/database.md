@@ -455,7 +455,7 @@ shorthands in the table:
 | `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
 | `SET_DOCUMENT_CARD` | Applicant owner, or presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |
 | `SET_DOCUMENT_GROUP` | Presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | `maybe` only undoes a staff `needed` | Sets or clears the card's `group_override` | No |
-| `SAVE_PREPARER_FIELDS` | Presenter + person (the person must have `prepare`) | `preparing`, `corrections_required` | Current preparer; `basedOnVersion` equals the stored version (0 when there is no row), else `CONFLICT`; the year is before the season and a household row has a member | Replaces the whole set in `preparer_shaded_fields` and adds 1 to its version; the history lists the changed keys | No |
+| `SAVE_PREPARER_FIELDS` | Presenter + person (the person must have `prepare`, `INELIGIBLE` otherwise) | `preparing`, `corrections_required` | Current preparer; `basedOnVersion` equals the stored version (0 when there is no row), else `CONFLICT`; the year is before the season and a household row has a member | Replaces the whole set in `preparer_shaded_fields` and adds 1 to its version; the history lists the changed keys | No |
 
 Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an extra key is a
 `VALIDATION` error, not ignored. The browser builds them in
@@ -510,7 +510,7 @@ The browser side is in [Front end](frontend.md#the-shaded-section-of-the-13614-c
   whole number 0–99, an amount matches `^(0|[1-9][0-9]{0,5})(\.[0-9]{1,2})?$`, a household cell is
   `yes`, `no` or `na`, a VIN is 1–17 letters and digits, a reason is at most 120 characters and a
   note at most 500, counted in characters). A text that is only whitespace is blank and is refused.
-  It cannot know the season or the household, so the action checks those.
+  A year must be four digits and at least 2000 here; the season bound and the household rows need the case, so the action checks those.
 - **The action.** `SAVE_PREPARER_FIELDS` (`act_save_preparer_fields`) takes `{basedOnVersion,
   fields}` and replaces the whole set. The stage must be `preparing` or `corrections_required`
   (`INVALID_TRANSITION` otherwise), then `require_case_preparer` (the current preparer, as for any
