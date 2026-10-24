@@ -24,6 +24,7 @@ const STAFF_ONLY_TABLES = [
   "case_materials",
   "preparer_questionnaires",
   "reviewer_questionnaires",
+  "preparer_shaded_fields",
   "filing_attempts",
   "filing_returns",
   "filing_notes",
@@ -1343,6 +1344,7 @@ test("a subscription watches only the tables its principal may read", async () =
     "case_materials",
     "preparer_questionnaires",
     "reviewer_questionnaires",
+    "preparer_shaded_fields",
   ]);
   // The applicant's channel never names a staff-only table.
   for (const staffTable of STAFF_ONLY_TABLES)

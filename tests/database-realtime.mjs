@@ -346,6 +346,24 @@ const MATRIX = Object.freeze([
 // table they may read, keeps delivering.
 const INTERNAL = Object.freeze([
   {
+    // 038: the preparer's shaded section is staff work. Each attempt clears the
+    // case's row first (a delete is never published), so every attempt is a
+    // fresh INSERT.
+    table: "preparer_shaded_fields",
+    identity: (row) => row.id,
+    commit: async (f, owner) => {
+      await f.sql("delete from public.preparer_shaded_fields where case_id=$1", [owner.caseId]);
+      await f.act(f.presenter, owner.caseId, f.alex, "SAVE_PREPARER_FIELDS", {
+        basedOnVersion: 0,
+        fields: { incomeW2s: true, incomeNotes: marker() },
+      });
+      const [row] = (
+        await f.sql("select id from public.preparer_shaded_fields where case_id=$1", [owner.caseId])
+      ).rows;
+      return { id: row.id };
+    },
+  },
+  {
     table: "case_events",
     identity: (row) => row.id,
     commit: async (f, owner) => {

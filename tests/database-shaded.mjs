@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createDatabaseFixture } from "./support/database-fixture.mjs";
+import { createDatabaseFixture, applyArgs, rejected } from "./support/database-fixture.mjs";
 import { SHADED_FIELDS } from "../src/shaded-fields.mjs";
 
 const MIGRATION = new URL("../supabase/migrations/038_preparer_shaded_fields.sql", import.meta.url);
@@ -130,4 +130,243 @@ test("the SQL key lists match the JS table", async () => {
     total += listed.length;
   }
   assert.equal(total, SHADED_FIELDS.length);
+});
+
+// ---------------------------------------------------------------------------
+// SAVE_PREPARER_FIELDS (design D2, D4, D5)
+
+const refused = (...codes) => (error) => codes.includes(error.code);
+
+// A case the claimed preparer (Alex) is working on: stage `preparing`.
+const preparingCase = async (f) => {
+  const caseId = await f.readyCase();
+  await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+  return caseId;
+};
+const save = (f, caseId, fields, basedOnVersion, who = [f.presenter, f.alex]) =>
+  f.act(who[0], caseId, who[1], "SAVE_PREPARER_FIELDS", { basedOnVersion, fields });
+const stored = async (f, caseId) =>
+  (await f.sql("select fields,version,updated_by_person_id from public.preparer_shaded_fields where case_id=$1", [caseId])).rows[0];
+const stageOf = async (f, caseId) =>
+  (await f.sql("select stage from public.cases where id=$1", [caseId])).rows[0].stage;
+
+test("the case's preparer saves", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    assert.equal(await stageOf(f, caseId), "preparing");
+    const receipt = await save(f, caseId, { incomeW2s: true, incomeW2sCount: 2 }, 0);
+    assert.ok(receipt.revision);
+    const row = await stored(f, caseId);
+    assert.deepEqual(row.fields, { incomeW2s: true, incomeW2sCount: 2 });
+    assert.equal(Number(row.version), 1);
+    assert.equal(row.updated_by_person_id, f.alex);
+    await save(f, caseId, { incomeW2s: true }, 1);
+    assert.equal(Number((await stored(f, caseId)).version), 2);
+    assert.deepEqual((await stored(f, caseId)).fields, { incomeW2s: true });
+  } finally {
+    await f.close();
+  }
+});
+
+test("only the case's preparer may save", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const { casey } = await f.enrich({ addPeople: [{ key: "casey", name: "Casey", capabilities: ["prepare"] }] });
+    const caseId = await preparingCase(f);
+    for (const [name, who] of [
+      ["the reviewer", [f.presenter, f.morgan]],
+      ["an admin who is not the preparer", [f.presenter, f.sam]],
+      ["another volunteer", [f.presenter, casey]],
+      ["no staff person", [f.presenter, null]],
+    ])
+      await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, who), refused("FORBIDDEN", "INELIGIBLE"), name);
+    await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, [f.applicantA, null]), refused("FORBIDDEN"), "the client");
+    assert.equal(await stored(f, caseId), undefined);
+  } finally {
+    await f.close();
+  }
+});
+
+test("saving follows the stage", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const ready = await f.preparedCase();
+    assert.equal(await stageOf(f, ready), "review_ready");
+    await assert.rejects(() => save(f, ready, { incomeW2s: true }, 0), rejected("INVALID_TRANSITION"));
+
+    const held = await preparingCase(f);
+    // No action holds a claimed case, so the stage is set directly.
+    await f.sql("update public.cases set stage='on_hold',hold_origin='awaiting_documents',documents_origin='screening' where id=$1", [held]);
+    assert.equal(await stageOf(f, held), "on_hold");
+    await assert.rejects(() => save(f, held, { incomeW2s: true }, 0), rejected("INVALID_TRANSITION"));
+
+    const approved = await f.approvedCase();
+    assert.equal(await stageOf(f, approved), "review_approved");
+    await assert.rejects(() => save(f, approved, { incomeW2s: true }, 0), rejected("INVALID_TRANSITION"));
+
+    const corrections = await f.preparedCase();
+    await f.act(f.presenter, corrections, f.morgan, "CLAIM_REVIEW", {});
+    await f.act(f.presenter, corrections, f.morgan, "REQUEST_CORRECTIONS", { findings: "A fictional finding." });
+    assert.equal(await stageOf(f, corrections), "corrections_required");
+    await save(f, corrections, { incomeW2s: true }, 0);
+    assert.equal(Number((await stored(f, corrections)).version), 1);
+    for (const id of [ready, held, approved]) assert.equal(await stored(f, id), undefined);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a stale version conflicts and other actions do not block a save", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    await save(f, caseId, { incomeW2s: true }, 0);
+    await assert.rejects(() => save(f, caseId, { incomeTips: true }, 0), rejected("CONFLICT"));
+    await assert.rejects(() => save(f, caseId, { incomeTips: true }, 5), rejected("CONFLICT"));
+    const row = await stored(f, caseId);
+    assert.deepEqual(row.fields, { incomeW2s: true });
+    assert.equal(Number(row.version), 1);
+    // The first save of a case with no row must be based on 0.
+    const fresh = await preparingCase(f);
+    await assert.rejects(() => save(f, fresh, { incomeTips: true }, 1), rejected("CONFLICT"));
+    // Another action moves the case revision; the next save is still accepted.
+    await f.act(f.presenter, caseId, f.sam, "RECORD_MATERIALS", { received: ["w2"] });
+    await save(f, caseId, { incomeW2s: true, incomeTips: true }, 1);
+    assert.equal(Number((await stored(f, caseId)).version), 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the season bound and the household rows are the case's", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    // A submitted case keeps the season it was numbered in (010), so the bound
+    // is that season, and a different workspace season must not move it.
+    const season = Number((await f.sql("select season from public.cases where id=$1", [caseId])).rows[0].season);
+    await f.sql("update public.workspaces set current_season=$2 where id=$1", [f.workspaceId, season + 1]);
+    await f.sql(
+      `update public.cases set answers=jsonb_set(answers,'{hh}','[{"first_name":"Lin"},{"first_name":"Kai"}]'::jsonb) where id=$1`,
+      [caseId],
+    );
+    await assert.rejects(() => save(f, caseId, { infoDisallowedYear: String(season) }, 0), rejected("VALIDATION"));
+    await assert.rejects(() => save(f, caseId, { infoDisallowedYear: String(season + 1) }, 0), rejected("VALIDATION"));
+    await assert.rejects(() => save(f, caseId, { household3QualifyingChild: "yes" }, 0), rejected("VALIDATION"));
+    await assert.rejects(() => save(f, caseId, { household4CostOfHome: "na" }, 0), rejected("VALIDATION"));
+    assert.equal(await stored(f, caseId), undefined);
+    await save(f, caseId, { infoDisallowedYear: String(season - 1), household2OwnSupport: "no", household1QualifyingChild: "yes" }, 0);
+    assert.equal(Number((await stored(f, caseId)).version), 1);
+    // No household answer at all: no row has a member.
+    await f.sql("update public.cases set answers=answers-'hh' where id=$1", [caseId]);
+    await assert.rejects(() => save(f, caseId, { household1QualifyingChild: "yes" }, 1), rejected("VALIDATION"));
+    await save(f, caseId, { incomeW2s: true }, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the payload has exactly basedOnVersion and fields", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    const bad = [
+      ["an extra key", { basedOnVersion: 0, fields: {}, extra: 1 }],
+      ["a missing basedOnVersion", { fields: {} }],
+      ["a missing fields", { basedOnVersion: 0 }],
+      ["fields that are an array", { basedOnVersion: 0, fields: [] }],
+      ["fields that are a string", { basedOnVersion: 0, fields: "x" }],
+      ["fields that are null", { basedOnVersion: 0, fields: null }],
+      ["a negative version", { basedOnVersion: -1, fields: {} }],
+      ["a fractional version", { basedOnVersion: 0.5, fields: {} }],
+      ["a string version", { basedOnVersion: "0", fields: {} }],
+      ["a null version", { basedOnVersion: null, fields: {} }],
+      ["an unknown field", { basedOnVersion: 0, fields: { nope: true } }],
+      ["a bad value", { basedOnVersion: 0, fields: { incomeW2sCount: 120 } }],
+    ];
+    for (const [name, payload] of bad)
+      await assert.rejects(
+        () => f.act(f.presenter, caseId, f.alex, "SAVE_PREPARER_FIELDS", payload),
+        rejected("VALIDATION"),
+        name,
+      );
+    assert.equal(await stored(f, caseId), undefined);
+  } finally {
+    await f.close();
+  }
+});
+
+test("history names the changed keys for staff only", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    const events = async () =>
+      (await f.sql("select detail from public.case_events where case_id=$1 and action='SAVE_PREPARER_FIELDS' order by created_at, id", [caseId])).rows.map((r) => r.detail);
+    const count = async () =>
+      (await f.sql("select count(*)::int as n from public.client_events where case_id=$1", [caseId])).rows[0].n;
+    const before = await count();
+    await save(f, caseId, { incomeW2sCount: 1, incomeW2s: true, incomeNotes: "A" }, 0);
+    await save(f, caseId, { incomeW2sCount: 2, incomeW2s: true, incomeNotes: "B" }, 1);
+    // A removed key counts as changed too; an unchanged save lists nothing.
+    await save(f, caseId, { incomeW2sCount: 2, incomeNotes: "B" }, 2);
+    await save(f, caseId, { incomeW2sCount: 2, incomeNotes: "B" }, 3);
+    assert.deepEqual((await events()).map((d) => d.changed), [
+      ["incomeNotes", "incomeW2s", "incomeW2sCount"],
+      ["incomeNotes", "incomeW2sCount"],
+      ["incomeW2s"],
+      [],
+    ]);
+    assert.equal(Number((await stored(f, caseId)).version), 4);
+    assert.equal(await count(), before);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an identical replay returns the receipt and saves once", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    const caseId = await preparingCase(f);
+    const revision = Number((await f.sql("select revision from public.cases where id=$1", [caseId])).rows[0].revision);
+    const args = applyArgs({ caseId, revision, personId: f.alex, type: "SAVE_PREPARER_FIELDS", payload: { basedOnVersion: 0, fields: { incomeW2s: true } } });
+    const first = await f.presenter.rpc("vitally_apply_action", args);
+    const second = await f.presenter.rpc("vitally_apply_action", args);
+    assert.equal(first.error, null);
+    assert.deepEqual(second.data, first.data);
+    assert.equal(Number((await stored(f, caseId)).version), 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("seeded samples with a preparer questionnaire carry a shaded row", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    await f.seedFixtures();
+    const withQuestionnaire = (await f.sql("select distinct case_id from public.preparer_questionnaires where workspace_id=$1", [f.workspaceId])).rows.map((r) => r.case_id);
+    assert.ok(withQuestionnaire.length >= 3, "several samples have a questionnaire");
+    const shaded = (await f.sql("select case_id,fields,version from public.preparer_shaded_fields where workspace_id=$1", [f.workspaceId])).rows;
+    assert.deepEqual(shaded.map((r) => r.case_id).sort(), [...withQuestionnaire].sort());
+    for (const row of shaded) {
+      assert.equal(Number(row.version), 1);
+      assert.equal(row.fields.incomeW2s, true);
+      assert.equal(row.fields.incomeW2sCount, 1);
+      assert.equal(row.fields.income1099Int, true);
+      assert.equal(row.fields.income1099IntCount, 1);
+      assert.equal(row.fields.deductionStandard, true);
+      assert.equal(row.fields.incomeNotes, "Fictional: one W-2 from a part-time job.");
+      assert.equal(row.fields.household1QualifyingChild, "yes");
+      assert.equal(row.fields.household1OwnSupport, "no");
+      assert.equal(row.fields.household1LowIncome, "yes");
+      assert.equal(row.fields.household1SupportProvided, "na");
+      assert.equal(row.fields.household1CostOfHome, "yes");
+    }
+    // A reseed replaces rather than duplicates.
+    await f.seedFixtures();
+    const again = (await f.sql("select count(*)::int as n from public.preparer_shaded_fields where workspace_id=$1", [f.workspaceId])).rows[0].n;
+    assert.equal(again, shaded.length);
+  } finally {
+    await f.close();
+  }
 });

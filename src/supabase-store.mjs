@@ -41,6 +41,7 @@ const STAFF_TABLES = Object.freeze([
   "case_materials",
   "preparer_questionnaires",
   "reviewer_questionnaires",
+  "preparer_shaded_fields",
 ]);
 export const SUBSCRIBED_TABLES = Object.freeze({
   applicant: CLIENT_TABLES,
