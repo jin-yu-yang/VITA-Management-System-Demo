@@ -6057,14 +6057,70 @@ test("saveShadedSection sends the latest revision", async () => {
   controller.stop();
 });
 
+test("an upload refused only because the case moved is sent once more on the new revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The office records materials in another window; this window hasn't heard yet.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 8 });
+  store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+  const fields = { incomeW2s: true, incomeW2sCount: 2 };
+  assert.ok(await controller.saveShadedSection(fields, 0));
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 2);
+  assert.equal(sends[0].expectedRevision, 7);
+  assert.equal(sends[1].expectedRevision, 8);
+  assert.notEqual(sends[0].actionId, sends[1].actionId);
+  assert.deepEqual(sends[1].payload, { fields, basedOnVersion: 0 });
+  const state = controller.getState();
+  assert.equal(state.error, null);
+  assert.deepEqual(state.shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("an upload whose resend meets the case moving again asks for the same file again", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // Every send meets a newer case revision; the section stays at version 0.
+  const act = store.act;
+  store.act = async (action) => {
+    const record = store.records.get(action.caseId);
+    store.records.set(action.caseId, { ...record, revision: record.revision + 1 });
+    store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+    return act(action);
+  };
+  await assert.rejects(controller.saveShadedSection({ incomeW2s: true }, 0));
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 2);
+  const state = controller.getState();
+  assert.equal(state.error.place, SHADED_UPLOAD);
+  assert.equal(state.error.message, "The case changed while this copy was being saved. Upload the same file again.");
+  assert.equal(state.retryable, false);
+  assert.equal(state.shadedStatus, null);
+  controller.stop();
+});
+
 test("a refused shaded save is said beside the upload control, with Dismiss only", async () => {
   const store = shadedStore();
   const { controller } = build({ store });
   await controller.start();
   controller.selectPerson("alex");
   await controller.selectCase("case-s");
+  // The section itself was saved since the copy was downloaded (version 0).
+  store.records.set("case-s", {
+    ...store.records.get("case-s"),
+    revision: 8,
+    preparerShadedFields: [{ version: 1, fields: {} }],
+  });
   store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
   await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "CONFLICT");
+  // A stale copy is not sent again.
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 1);
   const state = controller.getState();
   // One name for the place, from contracts.mjs, shared by the controller and the page.
   assert.equal(SHADED_UPLOAD, "shaded-upload");

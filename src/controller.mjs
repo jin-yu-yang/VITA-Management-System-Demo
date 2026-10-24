@@ -32,6 +32,7 @@ import {
   withholdInvalid,
 } from "./intake-form.mjs";
 import { cardsFor } from "./document-cards.mjs";
+import { createShadedSave } from "./shaded-editor.mjs";
 import { createWindowState } from "./window-state.mjs";
 import { isLang, readLanguage, writeLanguage } from "./language.mjs";
 
@@ -87,6 +88,10 @@ const STAFF_CONFLICT_MESSAGE =
 // one, since nothing was "opened" there.
 const STAFF_UPLOAD_CONFLICT_MESSAGE =
   "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.";
+// The case moved again while an upload was being sent once more: the copy is
+// still good, so the same file is uploaded again.
+const STAFF_UPLOAD_CASE_MOVED_MESSAGE =
+  "The case changed while this copy was being saved. Upload the same file again.";
 const ASSISTANCE_CONFLICT_MESSAGE =
   "Someone else changed this item. The newest version is shown — check it and try again.";
 const STAFF_CONTACT_GONE_MESSAGE = "This contact is no longer on screen.";
@@ -2414,6 +2419,12 @@ export function createController({
   // From the editor (`from: "editor"`, design D7) a refusal is the editor's
   // to say, in its own status with the edits kept: nothing is recorded on the
   // page behind it, and nothing is kept to send again.
+  // The server says CONFLICT for a stale case revision as well as a stale
+  // section. An upload treats them as the editor does (createShadedSave): when
+  // the re-read case still holds the copy's section version, only the case
+  // moved and the same values go once more on the fresh revision; only a
+  // section that moved is a stale copy. The editor makes that call itself,
+  // around each of its own sends.
   let shadedSaveInFlight = false;
   async function saveShadedSection(fields, basedOnVersion, { from = "upload" } = {}) {
     if (shadedSaveInFlight) return null;
@@ -2421,7 +2432,25 @@ export function createController({
     const caseId = state.savedCase?.id ?? null;
     state.shadedStatus = null;
     try {
-      const receipt = await runAction("SAVE_PREPARER_FIELDS", { fields, basedOnVersion });
+      let receipt = null;
+      const send = async (values, based) =>
+        (receipt = await runAction("SAVE_PREPARER_FIELDS", { fields: values, basedOnVersion: based }));
+      if (from === "editor") await send(fields, basedOnVersion);
+      else {
+        const upload = createShadedSave({
+          version: basedOnVersion,
+          check: () => ({ values: fields, errors: [] }),
+          save: send,
+          storedVersion: () => Number((state.savedCase?.preparerShadedFields ?? [])[0]?.version ?? 0),
+        });
+        try {
+          await upload(fields);
+        } catch (error) {
+          // Nothing was sent (the case was left meanwhile): nothing to say.
+          if (error?.code === "NOT_SENT") return null;
+          throw error;
+        }
+      }
       if (receipt && state.savedCase?.id === caseId) {
         state.shadedStatus = { caseId, text: "Saved" };
         show();
@@ -2439,6 +2468,7 @@ export function createController({
           ...state.error,
           place: SHADED_UPLOAD,
           ...(error?.code === "CONFLICT" ? { message: STAFF_UPLOAD_CONFLICT_MESSAGE } : {}),
+          ...(error?.code === "CASE_MOVED" ? { message: STAFF_UPLOAD_CASE_MOVED_MESSAGE } : {}),
         };
         // Dismiss only (screen-states): no envelope is kept to send again.
         state.retryable = false;
