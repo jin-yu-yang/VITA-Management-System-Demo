@@ -106,7 +106,7 @@ tools/
   build.mjs                Rebuilds the four files in src/vendor/.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1399.
+  *.test.mjs               Unit tests (no network): 1400.
   database*.mjs            Database tests against the local stack: 434.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
   browser.mjs              The full demonstration story, two browsers, both directions: 77.
