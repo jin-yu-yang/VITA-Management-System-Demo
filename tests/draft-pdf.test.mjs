@@ -64,7 +64,7 @@ function watchedFiles(files = []) {
   return { proxy, seen };
 }
 
-async function build(answers, { form = "en", fontFiles = [], flatten = true, shaded = null } = {}) {
+async function build(answers, { form = "en", fontFiles = [], flatten = true, shaded } = {}) {
   const fields = draftFields(answers, { ...OPTIONS, form, shaded });
   const bytes = await buildDraftPdf({
     PDFLib, fontkit, formBytes: await formBytes(form), fontFiles, fields,
@@ -719,6 +719,45 @@ test("a long note continues in Additional Comments, every character printed", as
   assert.deepEqual(printed, note.split(" "));
   assert.ok(rest.includes("My 1099-INT has not arrived yet."));
   assert.equal(fields.notes.length, 1);
+});
+
+/** Every drawn line from `from` (0-based page) on, without the PDF's own continuation lines. */
+const drawnFrom = (doc, from) =>
+  doc.getPages().slice(from).flatMap((page) => drawnText(page).map((l) => l.text))
+    .filter((t) => t !== "Additional comments (continued)" && t !== "补充说明（续）" && !/^(\(continued on page \d+\)|（续见第 \d+ 页）)$/.test(t));
+const squash = (text) => text.replace(/\s+/gu, "");
+
+test("a multi-paragraph note with a blank line prints every character", async () => {
+  const para = (tag, n) => Array.from({ length: n }, (_, i) => `${tag}${String(i).padStart(2, "0")}`).join(" ");
+  const note = `${para("a", 20)}\n\n${para("b", 25)}\n${para("c", 12)}`;
+  const { doc } = await build({ tp_first_name: "Mei" }, { shaded: { deductionNotes: note } });
+  const inBox = drawnText(doc.getPage(2)).map((l) => l.text);
+  const rest = drawnFrom(doc, 4);
+  assert.equal(rest[0], "Continued from page 3, Standard or itemized deductions notes:");
+  assert.equal(squash([...inBox, ...rest.slice(1)].join("")), squash(note));
+});
+
+test("a Chinese note under zh-s prints every character", async () => {
+  const note = "我的表还没收到，请在三月前补交。\n\n" + "子女资格需要再确认".repeat(25);
+  const { doc } = await build({ tp_first_name: "Mei" }, { form: "zh-s", fontFiles: await fontFilesFor("zh-s"), shaded: { deductionNotes: note } });
+  const inBox = drawnText(doc.getPage(2)).map((l) => l.text);
+  const rest = drawnFrom(doc, 4);
+  assert.equal(rest[0], "Continued from page 3, Standard or itemized deductions notes:");
+  assert.equal(squash([...inBox, ...rest.slice(1)].join("")), squash(note));
+});
+
+test("the preparer-entries stamp is on every page, continued pages included", async () => {
+  const { doc } = await build(BASE, { shaded: { deductionNotes: "word ".repeat(3000) } });
+  assert.ok(doc.getPageCount() > 6);
+  for (const page of doc.getPages())
+    assert.ok(hasHexText(pageContent(page), "DRAFT \x96 online answers and preparer entries, 10/04/2026, VT-ABCD-EFGH"));
+});
+
+test("a case with no saved section draws the same as one built without the option", async () => {
+  const [plain, nulled] = await Promise.all([build(BASE), build(BASE, { shaded: null })]);
+  assert.deepEqual(plain.doc.getPages().map((p) => drawnText(p)), nulled.doc.getPages().map((p) => drawnText(p)));
+  assert.equal(plain.fields.stamp, nulled.fields.stamp);
+  assert.equal(plain.doc.getPageCount(), nulled.doc.getPageCount());
 });
 
 test("a short note stays in its box and a case with no section is unchanged", async () => {
