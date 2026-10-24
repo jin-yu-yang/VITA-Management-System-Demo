@@ -42,23 +42,23 @@
 
 ## 7. pdf.js editor (cut entirely if the Oct 29 gate fails)
 
-- [ ] 7.1 Add `pdfjs-dist@6.4.299` exact-pinned. `tools/build.mjs` copies the legacy `pdf.min.mjs` and `pdf.worker.min.mjs` to `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs` with a version banner. Run `npm run build:vendor` and commit them. Add the `.bcmap` allowlist entry and its server test only if spike 1.3 needs them.
-- [ ] 7.2 The editor layer beside `#app`: a dialog, with `#app` inert, opened by "Fill the shaded section". It loads pdf.js by `import()` and renders the editing copy with forms enabled. The toolbar has Save (disabled until changed), Close and the status ("Saved", refusal reasons, the conflict sentence).
-- [ ] 7.3 Save reads `getFieldObjects()` and `annotationStorage` into `readShaded` and sends the action. Edits survive redraws, case changes and refusals. Close or Escape on a changed editor asks "Discard your changes?", `beforeunload` is set, and focus returns to the opener.
-- [ ] 7.4 The editor-open error with Try again, pointing to "Download to fill elsewhere" (screen-states).
-- [ ] 7.5 Story step: after the claim, open the editor, type Yes in row 1, tick W-2s, enter 2 W-2s, add a note and Save. Check "Saved" and the History line. Close, then the English draft shows `Yes`, `2`, the note and the new stamp. Check Escape asks first with unsaved changes.
-- [ ] 7.6 Oct 29 go / no-go: (1) the layer opens with only the shaded fields editable, including the Chinese-name sample; (2) save, then the draft shows the values in all three forms; (3) task 7.5 passes. If not, revert group 7 and remove the pdf.js-only requirement blocks from the delta specs ("The preparer fills the section on the form in ViTally", "The editor states the browsers it supports", the screen-states editor lines).
+- [x] 7.1 Add `pdfjs-dist@6.4.299` exact-pinned. `tools/build.mjs` copies the legacy `pdf.min.mjs` and `pdf.worker.min.mjs` to `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs` with a version banner. Run `npm run build:vendor` and commit them. Add the `.bcmap` allowlist entry and its server test only if spike 1.3 needs them.
+- [x] 7.2 The editor layer beside `#app`: a dialog, with `#app` inert, opened by "Fill the shaded section". It loads pdf.js by `import()` and renders the editing copy with forms enabled. The toolbar has Save (disabled until changed), Close and the status ("Saved", refusal reasons, the conflict sentence).
+- [x] 7.3 Save reads `getFieldObjects()` and `annotationStorage` into `readShaded` and sends the action. Edits survive redraws, case changes and refusals. Close or Escape on a changed editor asks "Discard your changes?", `beforeunload` is set, and focus returns to the opener.
+- [x] 7.4 The editor-open error with Try again, pointing to "Download to fill elsewhere" (screen-states).
+- [x] 7.5 Story step: after the claim, open the editor, type Yes in row 1, tick W-2s, enter 2 W-2s, add a note and Save. Check "Saved" and the History line. Close, then the English draft shows `Yes`, `2`, the note and the new stamp. Check Escape asks first with unsaved changes.
+- [x] 7.6 Oct 29 go / no-go: (1) the layer opens with only the shaded fields editable, including the Chinese-name sample; (2) save, then the draft shows the values in all three forms; (3) task 7.5 passes. If not, revert group 7 and remove the pdf.js-only requirement blocks from the delta specs ("The preparer fills the section on the form in ViTally", "The editor states the browsers it supports", the screen-states editor lines).
 
 ## 8. Docs
 
-- [ ] 8.1 `docs/developer/frontend.md`: the shaded-field module, the editing copy, the editor layer outside `#app`, the download / upload path, and the vendor files.
-- [ ] 8.2 `docs/developer/database.md`: the table, `check_preparer_fields`, `SAVE_PREPARER_FIELDS`, the version guard and the fixtures.
-- [ ] 8.3 `docs/setup.md` "The vendor bundle", `docs/developer/backend.md`'s `build:vendor` row, and `docs/developer/README.md`'s vendor and `build.mjs` lines: name all three vendor outputs. pdf-lib is missing there today.
+- [x] 8.1 `docs/developer/frontend.md`: the shaded-field module, the editing copy, the editor layer outside `#app`, the download / upload path, and the vendor files.
+- [x] 8.2 `docs/developer/database.md`: the table, `check_preparer_fields`, `SAVE_PREPARER_FIELDS`, the version guard and the fixtures.
+- [x] 8.3 `docs/setup.md` "The vendor bundle", `docs/developer/backend.md`'s `build:vendor` row, and `docs/developer/README.md`'s vendor and `build.mjs` lines: name all three vendor outputs. pdf-lib is missing there today.
 
 ## 9. Checks
 
-- [ ] 9.1 `npm test`.
-- [ ] 9.2 `npm run db:migrate:test`, then `npm run test:database`.
-- [ ] 9.3 `npm run test:browser`.
-- [ ] 9.4 `npx openspec validate --all`.
-- [ ] 9.5 Record why `npm run test:auth-browser` (sign-in untouched) and `npm run build:hant -- --check` (no client text changed) were not needed.
+- [x] 9.1 `npm test`.
+- [x] 9.2 `npm run db:migrate:test`, then `npm run test:database`.
+- [x] 9.3 `npm run test:browser`.
+- [x] 9.4 `npx openspec validate --all`.
+- [x] 9.5 Record why `npm run test:auth-browser` (sign-in untouched) and `npm run build:hant -- --check` (no client text changed) were not needed.
