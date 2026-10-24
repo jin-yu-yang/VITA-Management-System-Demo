@@ -2333,11 +2333,14 @@ export function createController({
     show();
   }
 
-  async function runAction(type, payload, { personId } = {}) {
+  // `caseId`, when given, is the case the action is for: nothing is sent once
+  // another case is open (the envelope is never built for a different case).
+  async function runAction(type, payload, { personId, caseId: forCase = null } = {}) {
     if (!CASE_ACTIONS.includes(type))
       throw refuse("VALIDATION", "This step is not available.");
     if (!state.savedCase)
       throw refuse("NOT_FOUND", "Open an application first.");
+    if (forCase !== null && state.savedCase.id !== forCase) return null;
     // A start sent by this window's open is still out: the press waits for it
     // (it re-reads the case), so it pins the new revision and meets no conflict.
     // A second press meanwhile does nothing, as a second click while a
@@ -2357,7 +2360,8 @@ export function createController({
     }
     const action = {
       actionId: newActionId(),
-      caseId: state.savedCase.id,
+      // The open case, which is `forCase` when one was named (checked above).
+      caseId: forCase ?? state.savedCase.id,
       // As a save's pin: the revision this window last knew, the receipt's
       // when the re-read after a save failed.
       expectedRevision: pinRevision(),
@@ -2431,23 +2435,37 @@ export function createController({
     shadedSaveInFlight = true;
     const caseId = state.savedCase?.id ?? null;
     state.shadedStatus = null;
+    // Every send is for the case open when this save began (`caseId`), never
+    // whatever is open by the time it goes: runAction sends nothing once that
+    // case is no longer open, and the section version is read from it only
+    // while it is.
+    const stillOpen = () => caseId !== null && state.savedCase?.id === caseId;
     try {
       let receipt = null;
       const send = async (values, based) =>
-        (receipt = await runAction("SAVE_PREPARER_FIELDS", { fields: values, basedOnVersion: based }));
+        (receipt = await runAction("SAVE_PREPARER_FIELDS", { fields: values, basedOnVersion: based }, { caseId }));
       if (from === "editor") await send(fields, basedOnVersion);
       else {
         const upload = createShadedSave({
           version: basedOnVersion,
           check: () => ({ values: fields, errors: [] }),
           save: send,
-          storedVersion: () => Number((state.savedCase?.preparerShadedFields ?? [])[0]?.version ?? 0),
+          storedVersion: () => (stillOpen() ? Number((state.savedCase.preparerShadedFields ?? [])[0]?.version ?? 0) : NaN),
         });
         try {
           await upload(fields);
         } catch (error) {
           // Nothing was sent (the case was left meanwhile): nothing to say.
           if (error?.code === "NOT_SENT") return null;
+          // Another case was opened while it was out: what this upload met is
+          // the old case's, and nothing of it is said on the new one.
+          if (!stillOpen()) {
+            state.error = null;
+            state.retryable = false;
+            pendingAction = null;
+            show();
+            return null;
+          }
           throw error;
         }
       }

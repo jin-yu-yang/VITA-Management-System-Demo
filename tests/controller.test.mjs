@@ -6081,6 +6081,37 @@ test("an upload refused only because the case moved is sent once more on the new
   controller.stop();
 });
 
+test("an upload is never sent again to a case opened while it was out", async () => {
+  const store = shadedStore();
+  store.records.set("case-t", { ...store.records.get("case-s"), id: "case-t", reference: "VT-SHAD-ED33", revision: 3 });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The first send meets a CONFLICT, and the preparer opens another case meanwhile;
+  // that case's section is also at version 0, as the copy's was.
+  const act = store.act;
+  let first = true;
+  store.act = async (action) => {
+    if (first) {
+      first = false;
+      await controller.selectCase("case-t");
+      store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+    }
+    return act(action);
+  };
+  assert.equal(await controller.saveShadedSection({ incomeW2s: true }, 0), null);
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].caseId, "case-s");
+  const state = controller.getState();
+  assert.equal(state.savedCase.id, "case-t");
+  // Nothing about case-s is said on case-t.
+  assert.equal(state.shadedStatus, null);
+  assert.equal(state.error, null);
+  controller.stop();
+});
+
 test("an upload whose resend meets the case moving again asks for the same file again", async () => {
   const store = shadedStore();
   const { controller } = build({ store });
