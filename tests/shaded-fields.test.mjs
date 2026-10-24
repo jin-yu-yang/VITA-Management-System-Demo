@@ -143,3 +143,18 @@ test("readShaded reads the Chinese form names and ignores other fields", () => {
   const raw = { [shadedName("infoEnergyImprovement", "zh-s")]: "Yes", "form1[0].page1[0].somethingElse[0]": "x" };
   assert.deepEqual(readShaded(raw, { form: "zh-s" }), { values: { infoEnergyImprovement: true }, errors: [] });
 });
+
+test("stored text counts characters, not UTF-16 units, and is never blank", () => {
+  const astral = "\u{1F600}"; // one character, two UTF-16 units
+  const reasonKey = "infoDisallowedReason";
+  assert.deepEqual(checkShaded({ incomeNotes: astral.repeat(500) }), []);
+  assert.equal(checkShaded({ incomeNotes: astral.repeat(501) }).length, 1);
+  assert.deepEqual(checkShaded({ [reasonKey]: astral.repeat(120) }), []);
+  assert.equal(checkShaded({ [reasonKey]: astral.repeat(121) }).length, 1);
+  assert.equal(readShaded({ [shadedName(reasonKey)]: astral.repeat(121) }).errors.length, 1);
+  assert.equal(readShaded({ [shadedName("incomeNotes")]: astral.repeat(501) }).errors.length, 1);
+  for (const key of [reasonKey, "incomeNotes"]) {
+    for (const blank of ["", " ", "\n", " \t\r\n "])
+      assert.equal(checkShaded({ [key]: blank }).length, 1, `${key} ${JSON.stringify(blank)}`);
+  }
+});

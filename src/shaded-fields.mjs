@@ -210,10 +210,10 @@ function normalise(field, raw) {
     case "year":
       return /^[0-9]{4}$/.test(trimmed) ? { value: trimmed } : { bad: true };
     case "reason":
-      return trimmed.length <= REASON_MAX ? { value: trimmed } : { bad: true };
+      return [...trimmed].length <= REASON_MAX ? { value: trimmed } : { bad: true };
     default: {
       const note = text.replace(/\r\n?/g, "\n");
-      return note.length <= NOTE_MAX ? { value: note } : { bad: true };
+      return [...note].length <= NOTE_MAX ? { value: note } : { bad: true };
     }
   }
 }
@@ -239,6 +239,13 @@ function rule(field, season) {
   }
 }
 
+// Length is in characters (code points), as the database counts them. A stored
+// text that is only space, tab, line break, form feed or vertical tab is blank,
+// and blank means absent, so it is refused.
+const chars = (s) => [...s].length;
+const storedText = (value, max) =>
+  typeof value === "string" && !/^[ \t\n\r\f\v]*$/.test(value) && chars(value) <= max;
+
 // Does a stored-shape value satisfy its field's own rule?
 function valid(field, value, season) {
   switch (field.kind) {
@@ -252,8 +259,8 @@ function valid(field, value, season) {
       const year = Number(value);
       return year >= YEAR_MIN && (!Number.isInteger(season) || year < season);
     }
-    case "reason": return typeof value === "string" && value.length >= 1 && value.length <= REASON_MAX;
-    default: return typeof value === "string" && value.length >= 1 && value.length <= NOTE_MAX;
+    case "reason": return storedText(value, REASON_MAX);
+    default: return storedText(value, NOTE_MAX);
   }
 }
 
