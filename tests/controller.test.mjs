@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
+import { SHADED_UPLOAD } from "../src/contracts.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
@@ -6065,7 +6066,9 @@ test("a refused shaded save is said beside the upload control, with Dismiss only
   store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
   await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "CONFLICT");
   const state = controller.getState();
-  assert.equal(state.error.place, "shaded-upload");
+  // One name for the place, from contracts.mjs, shared by the controller and the page.
+  assert.equal(SHADED_UPLOAD, "shaded-upload");
+  assert.equal(state.error.place, SHADED_UPLOAD);
   assert.equal(
     state.error.message,
     "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.",
@@ -6076,11 +6079,11 @@ test("a refused shaded save is said beside the upload control, with Dismiss only
   store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
   await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "OFFLINE");
   assert.equal(controller.getState().retryable, false);
-  assert.equal(controller.getState().error.place, "shaded-upload");
+  assert.equal(controller.getState().error.place, SHADED_UPLOAD);
   assert.equal(await controller.retryLast(), null);
   // A failure the page records itself (a file it couldn't read) goes to the same place.
-  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: "shaded-upload" });
-  assert.equal(controller.getState().error.place, "shaded-upload");
+  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: SHADED_UPLOAD });
+  assert.equal(controller.getState().error.place, SHADED_UPLOAD);
   controller.stop();
 });
 

@@ -42,7 +42,7 @@ import { contactSummary, contactEntryFromForm, nowInput } from "../src/contact-l
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 import { describeStage } from "../src/domain.mjs";
-import { CASE_ACTIONS } from "../src/contracts.mjs";
+import { CASE_ACTIONS, SHADED_UPLOAD } from "../src/contracts.mjs";
 
 // The staff screens are pure functions of one record and one persona, so these
 // tests operate on the HTML string itself. No DOM library, and nothing here may
@@ -3017,6 +3017,13 @@ test("the shaded panel says Saved and its upload error in place, with Dismiss on
   assert.match(panel, /data-action="dismiss-error"/);
   assert.doesNotMatch(panel.slice(0, panel.indexOf("</section>")), /retry-action/, "Dismiss only");
   assert.doesNotMatch(html, /id="shaded-status"[^>]*>Saved</, "the error replaces Saved");
+  // A copy that couldn't be made says so, in its own words, and offers no
+  // control it doesn't have.
+  const download = renderStaffCase(record, ALEX, {
+    error: { code: "DRAFT", message: "The copy could not be made. Press Download to fill elsewhere again.", place: SHADED_UPLOAD },
+  });
+  assert.match(download, /id="shaded-upload-error">.*<h3>The copy was not downloaded<\/h3><p>The copy could not be made\. Press Download to fill elsewhere again\.<\/p>/);
+  assert.doesNotMatch(download, /The filled copy was not saved|retry-action/);
   // Any other error stays at the top of the page, as before.
   const other = renderStaffCase(record, ALEX, { error: { code: "SERVER_ERROR", message: "Something went wrong." } });
   assert.doesNotMatch(other, /id="shaded-upload-error"/);

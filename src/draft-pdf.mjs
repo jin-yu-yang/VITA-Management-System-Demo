@@ -583,9 +583,8 @@ export async function readFilledCopy({ PDFLib, bytes, reference }) {
   } catch {
     throw fail("NOT_A_PDF", "This file isn't a PDF the editor can read.");
   }
-  const keywords = String(doc.getKeywords() ?? "").split(/\s+/);
-  if (!keywords.includes(`case:${reference}`))
-    throw fail("OTHER_CASE", "This copy was made for a different case. Download the copy from this case and fill that one.");
+  // Fields first: a printed copy keeps neither its fields nor its Keywords,
+  // and the Print sentence is the one that helps there.
   const form = doc.getForm();
   const raw = {};
   for (const field of SHADED_FIELDS) {
@@ -599,6 +598,9 @@ export async function readFilledCopy({ PDFLib, bytes, reference }) {
   }
   if (Object.keys(raw).length === 0)
     throw fail("NO_FIELDS", "This copy has no form fields. In Chrome, use the download button, not Print.");
+  const keywords = String(doc.getKeywords() ?? "").split(/\s+/);
+  if (!keywords.includes(`case:${reference}`))
+    throw fail("OTHER_CASE", "This copy was made for a different case. Download the copy from this case and fill that one.");
   const tag = keywords.find((word) => /^version:\d+$/.test(word));
   return { raw, version: tag ? Number(tag.slice(8)) : 0 };
 }

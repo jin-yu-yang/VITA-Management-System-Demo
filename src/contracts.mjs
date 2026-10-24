@@ -82,6 +82,11 @@ export const CASE_ACTIONS = Object.freeze([
   "SAVE_PREPARER_FIELDS",
 ]);
 
+// Where a shaded-section download or upload failure is said: beside the
+// upload control on the case page (`error.place`). One name, shared by the
+// controller that records it and the page that draws it.
+export const SHADED_UPLOAD = "shaded-upload";
+
 // Assistance is its own workflow with its own RPC, so its controls carry their
 // own attribute and are validated against this vocabulary — never translated
 // into a case action. Shared, so the controller and the wiring layer cannot

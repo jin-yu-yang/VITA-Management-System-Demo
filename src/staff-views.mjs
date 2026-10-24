@@ -52,6 +52,7 @@ import {
 } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
 import { shadedLabel } from "./shaded-fields.mjs";
+import { SHADED_UPLOAD } from "./contracts.mjs";
 import {
   CONFIRMED_BY,
   CONFIRMED_METHODS,
@@ -1141,7 +1142,6 @@ const draftTools = () =>
 // prepared, and why not otherwise. An upload's error and its "Saved" are said
 // here, beside the control. The error is shown whoever's page this is, so it
 // is never lost behind a refusal.
-export const SHADED_UPLOAD = "shaded-upload";
 export function shadedPanel(record, rights, ui = {}) {
   const decision = rights?.shadedSection ?? refused(CHOOSE_PERSONA);
   const error = ui?.error?.place === SHADED_UPLOAD ? ui.error : null;
@@ -1149,7 +1149,10 @@ export function shadedPanel(record, rights, ui = {}) {
   const filled = Object.keys(row?.fields ?? {}).length;
   const summary = row ? `${filled} ${filled === 1 ? "field" : "fields"} filled` : "Nothing saved yet";
   const notice = error
-    ? `<div class="notice error" role="alert" id="shaded-upload-error">${icon("help")}<div><h3>The filled copy was not saved</h3><p>${esc(
+    ? `<div class="notice error" role="alert" id="shaded-upload-error">${icon("help")}<div><h3>${
+        // A download that failed (DRAFT) is not a save that failed.
+        error.code === "DRAFT" ? "The copy was not downloaded" : "The filled copy was not saved"
+      }</h3><p>${esc(
         error.message,
       )}</p><div class="conflict-choices">${button("Dismiss", "dismiss-error", "inline")}</div></div></div>`
     : "";

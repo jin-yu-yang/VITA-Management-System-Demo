@@ -1,7 +1,7 @@
 import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
-import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_UPLOAD } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
@@ -60,7 +60,7 @@ import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, SENTENCES } from "./client-text.mjs";
 import { createToastTimer } from "./toast.mjs";
 import { contactEntryFromForm, contactSummary, contactSummaries } from "./contact-log.mjs";
-import { decorateStaffCase, outcomeGroup, SHADED_UPLOAD } from "./staff-views.mjs";
+import { decorateStaffCase, outcomeGroup } from "./staff-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -1452,7 +1452,7 @@ if (!config) {
     } catch (error) {
       if (by !== signedInUserId()) return;
       shadedFailure(
-        error?.draftFont ? "The draft font could not be checked. Try again later." : "The copy could not be made. Try again.",
+        error?.draftFont ? "The draft font could not be checked. Try again later." : "The copy could not be made. Press Download to fill elsewhere again.",
         "DRAFT",
       );
     }

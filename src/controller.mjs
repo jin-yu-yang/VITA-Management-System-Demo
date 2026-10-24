@@ -2,6 +2,7 @@ import {
   CASE_ACTIONS,
   CHECKPOINTS,
   ASSISTANCE_ACTIONS,
+  SHADED_UPLOAD,
 } from "./contracts.mjs";
 import {
   CONTACT_FIELDS,
@@ -83,7 +84,6 @@ const STAFF_CONFLICT_MESSAGE =
 // The shaded section's upload (change add-preparer-13614c-fields, design D8):
 // its errors are said beside the upload control, and a stale copy is named as
 // one, since nothing was "opened" there.
-const SHADED_UPLOAD = "shaded-upload";
 const STAFF_UPLOAD_CONFLICT_MESSAGE =
   "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.";
 const ASSISTANCE_CONFLICT_MESSAGE =

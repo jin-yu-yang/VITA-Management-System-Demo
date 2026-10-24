@@ -831,6 +831,24 @@ test("the reader refuses another case's copy, a flattened copy and a broken file
       (e) => e.code === "NOT_A_PDF" && e.message === "This file isn't a PDF the editor can read.");
 });
 
+test("a printed copy, with no fields and no Keywords, gets the Print sentence", async () => {
+  // Print to PDF makes a new file: the form is drawn, and neither the fields
+  // nor the document's Keywords survive.
+  const printed = await PDFDocument.create();
+  printed.addPage().drawText("13614-C", { x: 50, y: 700 });
+  const bytes = await printed.save();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes, reference: "VT-ABCD-EFGH" }),
+    (e) => e.code === "NO_FIELDS" && e.message === "This copy has no form fields. In Chrome, use the download button, not Print.");
+  // A flattened copy whose Keywords name another case is still a copy with no fields.
+  const flat = await PDFDocument.load(await editingCopy(BASE));
+  flat.getForm().flatten();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await flat.save(), reference: "VT-ZZZZ-YYYY" }), (e) => e.code === "NO_FIELDS");
+  // A copy with the shaded fields but no case keyword is another case's.
+  const unmarked = await PDFDocument.load(await editingCopy(BASE));
+  unmarked.setKeywords([]);
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await unmarked.save(), reference: "VT-ABCD-EFGH" }), (e) => e.code === "OTHER_CASE");
+});
+
 test("stored values come back through the reader, a two-line note included", async () => {
   const shaded = { household1QualifyingChild: "na", incomeNotes: "line one\nline two", incomeRefundAmount: "412.00", itemizedLastYearYes: true };
   const { raw } = await readFilledCopy({ PDFLib, bytes: await editingCopy(BASE, { shaded }), reference: "VT-ABCD-EFGH" });
