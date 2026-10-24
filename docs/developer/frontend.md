@@ -17,6 +17,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
+- [The shaded section of the 13614-C](#the-shaded-section-of-the-13614-c)
 - [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
@@ -315,6 +316,108 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
   persona switch leave without asking. The guard also covers `open-add-case`, though that button
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
+
+## The shaded section of the 13614-C
+
+The shaded part of Form 13614-C ("To be completed by certified volunteer") is filled by the case's
+preparer, either on the form in the browser or in a PDF program. Four modules carry it; the
+database side is in [Database](database.md#the-shaded-section-of-the-13614-c).
+
+**[`src/shaded-fields.mjs`](../../src/shaded-fields.mjs)** is the explicit table of the 106 fields
+(`SHADED_FIELDS`): each has a stable `key`, its PDF field name in the English form (`en`) and in
+the two Chinese forms (`zh`, shared by 简体 and 繁體; the energy-improvement field is the one name
+that differs), a `kind` (`box`, `count`, `amount`, `cell`, `vin`, `year`, `reason`, `note`), a
+`label` and a `block`. It is pure (no DOM, no PDF library) and has no wording in it.
+
+- `checkShaded(values, { householdSize, season })` applies the rules and returns
+  `[{ key, label, message }]`: a count is 0–99, an amount has at most six digits and two decimals,
+  a year is four digits from 2000 to before the season, a reason is at most 120 characters and a
+  note at most 500, the Yes/No box pairs (`SHADED_PAIRS`) cannot both be ticked, and a household
+  row past the household's size must be blank.
+- `readShaded(raw, { form, householdSize, season })` maps `{ pdfFieldName: value }` to
+  `{ values, errors }`: a blank is absent, a checkbox is `true`, a household cell is
+  `yes`, `no` or `na`. The same table serves the draft fill, the editing copy, the upload and the
+  editor. The database repeats the keys and the shape rules; the browser checks first and names
+  the field it refuses, and the database stays the authority.
+
+**The draft fill.** `draftFields(answers, { …, shaded })` in
+[`src/draft-form.mjs`](../../src/draft-form.mjs) puts the saved values on the form: boxes are
+ticked, other values are printed (`shadedPrint`), and the notes come back as
+`notes: [{ name, text, block, page }]` for the builder instead of going into `text`. When any
+value is set, `preparerEntries` is true and the stamp reads "DRAFT – online answers and preparer
+entries" instead of "DRAFT – prepared from online answers". All three languages of the 13614-C
+print the saved section (the 14446 has none and ignores it). `buildDraftPdf` in
+[`src/draft-pdf.mjs`](../../src/draft-pdf.mjs) wraps each note in its own box with the wrapping of
+Additional Comments; what does not fit goes ahead of the comments under "Continued from page
+<n>, <block> notes:" and then onto continued pages like any comment.
+
+**The editing copy.** `buildEditingCopy({ PDFLib, fontkit, formBytes, fontFiles, fields, shaded,
+reference, version })` is the same build with `editing` set:
+
+- A partial flatten (`partialFlatten`, a copy of pdf-lib 1.17.1's `flatten` that skips named
+  fields) draws every field's appearance on its page and removes it, except the 106 shaded fields,
+  which stay live and hold the stored values. The client's answers are therefore fixed text and
+  only the shaded section can be typed in.
+- Text that WinAnsi cannot draw (Chinese, for example) is set as the field's `/V` with no
+  appearance, and `NeedAppearances` is set so the viewer makes it.
+- The PDF's Keywords carry `vitally-shaded case:<reference> version:<n>`, which is how an upload
+  is matched to its case and to the version it was made from. The copy is English only and is
+  never uploaded to a server or stored.
+
+**Download and upload** (`shadedPanel` in `src/staff-views.mjs`, on the Intake answers tab for
+both the volunteer and office pages; handlers in `src/app.mjs`):
+
+- The panel shows "Fill the shaded section" (the editor), "Download to fill elsewhere" and "Upload
+  the filled copy", only when `staffEligibility(...).shadedSection` allows it (the case's
+  preparer, while the case is being prepared or corrections are requested); otherwise it says why
+  not. It also lists the browsers the editor works in: Chrome and Edge 125 or later, Firefox ESR
+  or later, Safari 18 or later. In any other browser, download and upload still work.
+- `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
+- `uploadShadedCopy` reads the file with `readFilledCopy({ PDFLib, bytes, reference })`, which
+  returns `{ raw, version }` or throws an error with a `code` and a sentence for the preparer:
+  `NOT_A_PDF` (not a readable PDF), `NO_FIELDS` (none of the shaded fields: a printed copy, so it
+  says to use the download button, not Print) or `OTHER_CASE` (the Keywords name another case).
+  The values then go through `readShaded` with the case's household size and season, and into
+  `controller.saveShadedSection(values, version)`. A refusal or a failed save is shown in the
+  panel, beside the control (`SHADED_UPLOAD`), and "Saved" is shown there on success, so nothing is
+  lost behind a refusal. A `CONFLICT` there means the section was saved since the copy was
+  downloaded, and the sentence says to download a fresh copy.
+- The case's History tab lists a save as "saved the shaded section", followed by the labels of the
+  fields that changed (never their values). A client sees nothing: no client event is written.
+
+**The editor** ([`src/shaded-editor.mjs`](../../src/shaded-editor.mjs)) draws the editing copy
+with pdf.js in a full-screen layer, so the preparer types straight onto the form.
+
+- **Why the layer lives beside `#app`, not in it.** `render()` replaces the whole of `#app` on
+  every state change, realtime events included, and would wipe what the preparer had typed and
+  the pdf.js canvases. The layer is a sibling that `render()` never touches. While it is open,
+  `#app` is `inert` (the layer is a modal dialog with its own focus trap and Escape/Close
+  handling), and the page's own key handler in `app.mjs` returns early.
+- **Two parts.** `createEditorSession` decides, with no DOM: what changed, when Save is
+  available, what a refusal says, and when Close and Escape ask "Discard your changes?" first.
+  `openShadedEditor` draws the layer and wires it to a session. pdf.js is passed in (`loadPdfjs`
+  in `app.mjs`, a dynamic `import("./vendor/pdfjs.mjs")` with the worker set to
+  `./vendor/pdfjs-worker.mjs`), so it loads only when the editor opens. The editor's `ready`
+  promise settles once every page is drawn (the story waits for it) and rejects, after the layer
+  has gone, when it cannot open; the panel then shows "The editor did not open" with Try again.
+- **Saving.** `createShadedSave` is the `onSave` the editor calls. It checks the values with
+  `readShaded`, then sends them with `basedOnVersion`; an accepted save made exactly `version + 1`
+  (the server writes based + 1), so that is the next base. It is never read back from the case,
+  because another window's newer save landing first would be adopted and silently overwritten.
+  The server says `CONFLICT` for a stale case revision as well as a stale section. After one, the
+  window has re-read the case: if the section is still at this editor's version, only the case
+  moved (the office recorded materials, say), and the same values are sent once more, once. If
+  the case moved again, Save stays offered without the conflict sentence; if the section itself
+  moved, the editor says "Saved elsewhere since you opened this. Close and reopen to see the
+  latest." Save keeps the editor open.
+- **Leaving.** While there are unsaved changes, `beforeunload` guards the tab. The editor closes
+  by itself (`editorGone`, checked in `render()`) when the case is no longer the selected one or
+  no presenter is signed in, for example after a sign-out in another tab, without a prompt.
+- **Vendor files.** `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs` are copied from
+  `pdfjs-dist`'s legacy build by `buildPdfjsFiles()` in `tools/build.mjs`
+  (`npm run build:vendor`), with the library version in a banner. The server's allowlist already
+  serves `/src/vendor/<name>.mjs`. The other two vendor files are `supabase.mjs` and `pdf-lib.mjs`
+  ([setup](../setup.md#the-vendor-bundle)).
 
 ## Stages and their words
 
@@ -708,9 +811,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1160) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1396) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (77) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

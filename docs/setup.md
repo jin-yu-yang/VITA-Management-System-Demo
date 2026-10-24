@@ -142,17 +142,25 @@ database suite and the sign-in gate pass with it present.
 
 ### The vendor bundle
 
-`src/app.mjs` imports the Supabase JS SDK from a committed file, not a CDN or a runtime build
+`src/app.mjs` imports its browser libraries from committed files, not a CDN or a runtime build
 step:
 
 ```sh
 PATH="$VITALLY_NODE_BIN:$PATH" "$VITALLY_NODE" tools/build.mjs   # npm run build:vendor
 ```
 
-This bundles `@supabase/supabase-js` alone (via `tools/vendor-entry.mjs`, which re-exports only
-`createClient`) into minified ESM at `src/vendor/supabase.mjs`, with a banner naming the SDK and
-esbuild versions. Rebuild and commit it whenever the SDK's pinned version changes; there is no
-other build step, and a static host serves this file as-is.
+This writes four files under `src/vendor/`, each with a banner naming its library version:
+
+- `supabase.mjs`: `@supabase/supabase-js` alone (via `tools/vendor-entry.mjs`, which re-exports
+  only `createClient`), bundled into minified ESM with esbuild.
+- `pdf-lib.mjs`: `pdf-lib` and `@pdf-lib/fontkit` (via `tools/vendor-pdf-entry.mjs`), bundled the
+  same way, for the draft Form 13614-C and Form 14446.
+- `pdfjs.mjs` and `pdfjs-worker.mjs`: `pdfjs-dist`'s legacy build, copied rather than bundled
+  (it is already minified ESM and its worker must stay a separate file), for the shaded-section
+  editor. The editor loads them only when it opens.
+
+Rebuild and commit them whenever one of those pinned versions changes; there is no other build
+step, and a static host serves these files as-is.
 
 ## 3. Isolated local Supabase test stack
 
