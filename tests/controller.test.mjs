@@ -6125,6 +6125,30 @@ test("an editor's shaded save leaves its refusals to the editor", async () => {
   controller.stop();
 });
 
+test("an editor's save sent again after a CONFLICT goes out on the re-read revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // Another window moved the case (materials, say).
+  (await store.getCase("case-s")).revision = 8;
+  store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+  await assert.rejects(controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }));
+  // The CONFLICT re-read the case; the section is still at the editor's version.
+  assert.equal((controller.getState().savedCase.preparerShadedFields ?? [])[0]?.version ?? 0, 0);
+  // The second send is not blocked by the first, and is not a retry envelope.
+  assert.ok(await controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }));
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 2);
+  assert.notEqual(sends[0].actionId, sends[1].actionId);
+  // Pinned to the revision the window holds after the re-read, never older.
+  assert.equal(sends[1].expectedRevision, 8);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
 test("an editor that couldn't be opened is recorded in the shaded panel, with Try again", async () => {
   const store = shadedStore();
   const { controller } = build({ store });

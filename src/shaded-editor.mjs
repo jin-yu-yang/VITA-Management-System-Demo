@@ -187,6 +187,62 @@ export function createEditorSession({ read, onSave, explainRefusal, onChange, on
   return { start, mark, save, requestClose, keepEditing, confirmDiscard, escape, close, view };
 }
 
+const CASE_MOVED = "The case changed while you were saving. Press Save again.";
+
+/**
+ * The save behind the editor's Save. `check(raw)` is readShaded with the
+ * case's rules; `save(values, basedOnVersion)` sends SAVE_PREPARER_FIELDS
+ * (null when nothing was sent); `storedVersion()` is the section version the
+ * window now holds. `version` is the stored version the editor opened on.
+ *
+ * - An accepted save made exactly version + 1 (the server accepts only on the
+ *   stored version and writes based + 1), so that is the next base. It is
+ *   never read back from the case: a newer save by another window, landing
+ *   first, would be adopted and then silently overwritten.
+ * - The server says CONFLICT for a stale case revision as well as a stale
+ *   section. After one, the window has re-read the case: when the section is
+ *   still at this editor's version, only the case moved (the office recorded
+ *   materials, say), and the same values are sent once more on the fresh
+ *   revision. When it moved again meanwhile, Save stays offered without the
+ *   conflict sentence. When the section itself moved, it is a conflict.
+ */
+export function createShadedSave({ version: opened, check, save, storedVersion }) {
+  let version = Number(opened) || 0;
+  async function send(values) {
+    const receipt = await save(values, version);
+    if (!receipt) throw { code: "NOT_SENT", message: "Nothing was saved. Press Save again." };
+    version += 1;
+  }
+  async function onSave(raw) {
+    const { values, errors } = check(raw);
+    if (errors.length) throw { code: "VALIDATION", message: errors.map((entry) => entry.message).join(" ") };
+    try {
+      await send(values);
+    } catch (error) {
+      if (error?.code !== "CONFLICT" || Number(storedVersion()) !== version) throw error;
+      try {
+        await send(values);
+      } catch (again) {
+        if (again?.code === "CONFLICT" && Number(storedVersion()) === version)
+          throw { code: "CASE_MOVED", message: CASE_MOVED };
+        throw again;
+      }
+    }
+  }
+  onSave.version = () => version;
+  return onSave;
+}
+
+/**
+ * Whether the open editor has lost its place: nobody presenter is signed in
+ * any more (a sign-out in another tab), or the case it was opened on is no
+ * longer the selected one. A re-read that drops the record for a moment
+ * keeps the selection, so it is not leaving.
+ */
+export function editorGone(state, caseId) {
+  return state?.principal?.access !== "presenter" || state?.selectedCaseId !== caseId;
+}
+
 // pdf.js's annotation layer wants a link service; the editing copy has no
 // links worth following, so every one goes nowhere.
 const NO_LINKS = Object.freeze({

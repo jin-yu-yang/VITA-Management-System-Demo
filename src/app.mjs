@@ -41,7 +41,7 @@ import {
   readFilledCopy,
 } from "./draft-pdf.mjs";
 import { readShaded } from "./shaded-fields.mjs";
-import { OPEN_FAILED, openShadedEditor } from "./shaded-editor.mjs";
+import { OPEN_FAILED, createShadedSave, editorGone, openShadedEditor } from "./shaded-editor.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -246,7 +246,14 @@ if (!config) {
     if (hadFocus) toggle?.focus();
   }
 
+  // The open shaded-section editor (design D7) and the case it was opened on.
+  let shadedEditor = null;
+  let shadedEditorCase = null;
+
   function render(focus = false) {
+    // Signed out in another tab, or the case left: the editor's session is
+    // gone, so it closes without asking, and #app is usable again.
+    if (shadedEditor && editorGone(controller.getState(), shadedEditorCase)) shadedEditor.close();
     if (quiet) return;
     // On the version-2 form a render waits for the press (or the composition)
     // to end; `flushHeld` draws it then, unless another render drew first.
@@ -1522,8 +1529,9 @@ if (!config) {
   //
   // A full-screen layer beside `#app` (shaded-editor.mjs), which `render()`
   // never touches, so the preparer's edits survive every redraw. `#app` is
-  // inert while it is open. pdf.js is loaded only now.
-  let shadedEditor = null;
+  // inert while it is open. pdf.js is loaded only now. (`shadedEditor` and
+  // `shadedEditorCase` are declared before render(), which closes the editor
+  // when its sign-in or case has gone.)
 
   async function loadPdfjs() {
     const pdfjs = await import("./vendor/pdfjs.mjs");
@@ -1548,8 +1556,17 @@ if (!config) {
     if (state.principal?.access !== "presenter" || !state.savedCase) return;
     const caseId = state.savedCase.id;
     if (shadedRefusal(caseId)) return;
-    // The stored version this copy shows, then each accepted save's.
-    let version = Number(savedShaded(state.savedCase)?.version ?? 0);
+    // Saves based on the stored version this copy shows, then + 1 per
+    // accepted save (createShadedSave).
+    const onSave = createShadedSave({
+      version: Number(savedShaded(state.savedCase)?.version ?? 0),
+      check: (raw) => {
+        const now = controller.getState();
+        return readShaded(raw, shadedRules(now.savedCase, now.workspace));
+      },
+      save: (values, basedOnVersion) => controller.saveShadedSection(values, basedOnVersion, { from: "editor" }),
+      storedVersion: () => Number(savedShaded(controller.getState().savedCase)?.version ?? 0),
+    });
     const bytes = editingCopy(state).then((made) => made.bytes);
     // A copy that couldn't be made fails the opening, through `ready`.
     bytes.catch(() => {});
@@ -1560,18 +1577,7 @@ if (!config) {
       loadPdfjs,
       bytes,
       explainRefusal: () => shadedRefusal(caseId),
-      async onSave(raw) {
-        const now = controller.getState();
-        const { values, errors } = readShaded(raw, shadedRules(now.savedCase, now.workspace));
-        if (errors.length) throw { code: "VALIDATION", message: errors.map((entry) => entry.message).join(" ") };
-        const receipt = await controller.saveShadedSection(values, version, { from: "editor" });
-        // Another shaded save (an upload) was still out: nothing was sent.
-        if (!receipt) throw { code: "NOT_SENT", message: "Nothing was saved. Press Save again." };
-        // The receipt carries the case's revision only; the re-read after the
-        // save carries the section's new version.
-        const stored = Number(savedShaded(controller.getState().savedCase)?.version);
-        version = Number.isFinite(stored) && stored > version ? stored : version + 1;
-      },
+      onSave,
       onClose() {
         shadedEditor = null;
         root.inert = false;
@@ -1581,6 +1587,7 @@ if (!config) {
       },
     });
     shadedEditor = editor;
+    shadedEditorCase = caseId;
     editor.ready.catch(() => {
       if (by !== signedInUserId()) return;
       controller.noteLocalFailure({ code: "EDITOR", message: OPEN_FAILED, place: SHADED_EDITOR }, () =>

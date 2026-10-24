@@ -5,6 +5,8 @@ import {
   DISCARD_QUESTION,
   OPEN_FAILED,
   createEditorSession,
+  createShadedSave,
+  editorGone,
   rawFromPdfjs,
 } from "../src/shaded-editor.mjs";
 
@@ -277,4 +279,128 @@ test("every change reaches the layer", () => {
   assert.equal(changes.at(-1).dirty, true);
   s.requestClose();
   assert.equal(changes.at(-1).asking, DISCARD_QUESTION);
+});
+
+// ---- The save behind the editor's Save (review fix round 1) ----------------
+
+// A stand-in for the server and the controller: the stored row's version, a
+// save that accepts only on that version (act_save_preparer_fields), and a
+// case revision that another window's unrelated action can move.
+function shadedServer({ stored = 1 } = {}) {
+  const server = {
+    stored,
+    revision: 10,
+    known: 10, // the revision this window last read
+    calls: [],
+    // The re-read a CONFLICT triggers (dispatch -> loadSelected).
+    reread() {
+      server.known = server.revision;
+    },
+    async save(values, basedOnVersion) {
+      server.calls.push({ values, basedOnVersion, revision: server.known });
+      if (server.known !== server.revision || basedOnVersion !== server.stored) {
+        server.reread();
+        throw Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+      }
+      server.stored = basedOnVersion + 1;
+      server.revision += 1;
+      server.known = server.revision;
+      return { revision: server.revision };
+    },
+  };
+  return server;
+}
+
+const accept = (raw) => ({ values: { ...raw }, errors: [] });
+
+test("after an accepted save the next is based on version + 1, never on a newer save read back", async () => {
+  const server = shadedServer({ stored: 1 });
+  const save = createShadedSave({
+    version: 1,
+    check: accept,
+    save: async (values, based) => {
+      const receipt = await server.save(values, based);
+      // Another window saves the section before this window's re-read lands.
+      server.stored += 1;
+      server.revision += 1;
+      server.known = server.revision;
+      return receipt;
+    },
+    storedVersion: () => server.stored,
+  });
+  await save({ incomeW2s: true });
+  assert.equal(save.version(), 2, "the editor's own save made version 2");
+  // The other window's save (version 3) is not this editor's: its next Save conflicts.
+  await assert.rejects(save({ incomeW2sCount: 2 }), (error) => error.code === "CONFLICT");
+  assert.equal(server.stored, 3, "the other window's save was not overwritten");
+});
+
+test("a CONFLICT that is only the case's revision is sent once more and saves", async () => {
+  const server = shadedServer({ stored: 1 });
+  // The office records materials: the case revision moves, the section does not.
+  server.revision += 1;
+  const save = createShadedSave({ version: 1, check: accept, save: server.save, storedVersion: () => server.stored });
+  await save({ incomeW2s: true });
+  assert.equal(server.calls.length, 2);
+  assert.equal(server.stored, 2);
+  assert.equal(save.version(), 2);
+});
+
+test("a CONFLICT on the section itself stays a conflict", async () => {
+  const server = shadedServer({ stored: 2 }); // saved elsewhere since the editor opened at 1
+  const save = createShadedSave({ version: 1, check: accept, save: server.save, storedVersion: () => server.stored });
+  await assert.rejects(save({ incomeW2s: true }), (error) => error.code === "CONFLICT");
+  assert.equal(server.calls.length, 1, "nothing is sent again");
+  assert.equal(server.stored, 2);
+  // Through the session: the conflict sentence, and Save off.
+  const { s, edit } = session({ onSave: save });
+  edit(W2, true);
+  await s.save();
+  assert.equal(s.view().status, CONFLICT_SENTENCE);
+  assert.equal(s.view().saveEnabled, false);
+});
+
+test("a revision CONFLICT twice in a row leaves Save offered, without the conflict sentence", async () => {
+  const server = shadedServer({ stored: 1 });
+  server.revision += 1;
+  const moving = async (values, based) => {
+    const result = server.save(values, based);
+    server.revision += 1; // the case keeps moving under every send
+    return result;
+  };
+  const save = createShadedSave({ version: 1, check: accept, save: moving, storedVersion: () => server.stored });
+  const { s, edit } = session({ onSave: save });
+  edit(W2, true);
+  await s.save();
+  assert.equal(server.calls.length, 2, "one more try only");
+  assert.notEqual(s.view().status, CONFLICT_SENTENCE);
+  assert.match(s.view().status, /Press Save again/);
+  assert.equal(s.view().saveEnabled, true);
+  assert.equal(save.version(), 1);
+});
+
+test("the editor's save refuses what the rules refuse, and a save nobody sent", async () => {
+  let sent = 0;
+  const refuse = createShadedSave({
+    version: 0,
+    check: () => ({ values: {}, errors: [{ message: "W-2s # must be a whole number from 0 to 99." }] }),
+    save: async () => void (sent += 1),
+    storedVersion: () => 0,
+  });
+  await assert.rejects(refuse({}), (error) => error.code === "VALIDATION" && /W-2s #/.test(error.message));
+  assert.equal(sent, 0);
+  const unsent = createShadedSave({ version: 0, check: accept, save: async () => null, storedVersion: () => 0 });
+  await assert.rejects(unsent({}), (error) => error.code === "NOT_SENT");
+  assert.equal(unsent.version(), 0);
+});
+
+test("the editor goes when the sign-in or the open case does", () => {
+  const open = { principal: { access: "presenter" }, selectedCaseId: "case-a" };
+  assert.equal(editorGone(open, "case-a"), false);
+  assert.equal(editorGone({ ...open, principal: null }, "case-a"), true, "signed out");
+  assert.equal(editorGone({ ...open, principal: { access: "client" } }, "case-a"), true);
+  assert.equal(editorGone({ ...open, selectedCaseId: null }, "case-a"), true, "the case was left");
+  assert.equal(editorGone({ ...open, selectedCaseId: "case-b" }, "case-a"), true);
+  // A re-read that drops the record for a moment is not leaving the case.
+  assert.equal(editorGone({ ...open, savedCase: null }, "case-a"), false);
 });
