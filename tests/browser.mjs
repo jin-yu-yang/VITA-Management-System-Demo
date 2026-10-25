@@ -1376,6 +1376,34 @@ async function runPermutation(t, roles) {
         .setInputFiles({ name: "13614-C-filled.pdf", mimeType: "application/pdf", buffer: filledCopy });
       await waitFor(
         staff,
+        "the review of what was read from the copy",
+        () =>
+          document.querySelector("#case-panel-intake .shaded-review h3")?.textContent.trim() ===
+          "Check what was read from this copy",
+        undefined,
+        ARRIVAL_MS,
+      );
+      const reviewText = await staff.evaluate(() => {
+        const box = document.querySelector("#case-panel-intake .shaded-review");
+        return {
+          count: box?.querySelector("p")?.textContent.trim(),
+          rows: [...(box?.querySelectorAll("li") ?? [])].map((li) => li.textContent.replace(/\s+/g, " ").trim()),
+        };
+      });
+      assert.equal(reviewText.count, "2 filled fields:", "the review does not count the two filled fields");
+      assert.deepEqual(reviewText.rows, ["W-2s: ticked", "W-2s #: 2"], "the review rows do not match what the copy holds");
+      assert.equal(
+        (await fixture.database.sql("select 1 from public.preparer_shaded_fields where case_id=$1", [classCase.id])).rows.length,
+        0,
+        "the upload saved before the preparer confirmed",
+      );
+      assert.ok(
+        ((await shadedTools.locator(".shaded-download-note").textContent()) ?? "").includes("not macOS Preview"),
+        "the Preview hint is not beside the Download button",
+      );
+      await staff.locator('#case-panel-intake [data-action="confirm-shaded-review"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
         "Saved beside the upload control",
         () => document.querySelector("#case-panel-intake #shaded-status")?.textContent.trim() === "Saved",
         undefined,

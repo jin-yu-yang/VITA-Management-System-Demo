@@ -373,15 +373,26 @@ both the volunteer and office pages; handlers in `src/app.mjs`):
   not. It also lists the browsers the editor works in: Chrome and Edge 125 or later, Firefox ESR
   or later, Safari 18 or later. In any other browser, download and upload still work.
 - `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
+- Beside the Download button the panel says to open the copy in Chrome or the free Adobe Acrobat
+  Reader, not macOS Preview (`.shaded-download-note`).
 - `uploadShadedCopy` reads the file with `readFilledCopy({ PDFLib, bytes, reference })`, which
-  returns `{ raw, version }` or throws an error with a `code` and a sentence for the preparer:
-  `NOT_A_PDF` (not a readable PDF), `NO_FIELDS` (none of the shaded fields: a printed copy, so it
-  says to use the download button, not Print) or `OTHER_CASE` (the Keywords name another case).
-  The values then go through `readShaded` with the case's household size and season, and into
-  `controller.saveShadedSection(values, version)`. A refusal or a failed save is shown in the
-  panel, beside the control (`SHADED_UPLOAD`), and "Saved" is shown there on success, so nothing is
-  lost behind a refusal. A `CONFLICT` there means the section was saved since the copy was
-  downloaded, and the sentence says to download a fresh copy.
+  returns `{ raw, version, preview }` or throws an error with a `code` and a sentence for the
+  preparer: `NOT_A_PDF` (not a readable PDF), `NO_FIELDS` (none of the shaded fields: a printed
+  copy, so it says to use the download button, not Print) or `OTHER_CASE` (the Keywords name
+  another case). The file is loaded with `updateMetadata: false`, so the Producer is the one the
+  copy was saved with, and `preview` is true when it names macOS Preview (which can drop filled
+  values). The values then go through `readShaded` with the case's household size and season. If
+  none are filled, the upload is refused after the other refusals, with the no-values message
+  (which adds a Preview note when `preview` is set).
+- Otherwise nothing is saved yet. The values are held in `state.shadedReview` (per case) and the
+  panel replaces the upload control with "Check what was read from this copy": a count, one row
+  per filled field, a Preview warning when `preview` is set, and "Save these values"
+  (`confirm-shaded-review`, which calls `controller.saveShadedSection(values, version)`) or
+  "Cancel" (`cancel-shaded-review`). The held review is dropped on a case switch, on sign-out and
+  when a new file is uploaded. A refusal or a failed save is shown in the panel, beside the control
+  (`SHADED_UPLOAD`), and "Saved" is shown there on success, so nothing is lost behind a refusal. A
+  `CONFLICT` there means the section was saved since the copy was downloaded, and the sentence says
+  to download a fresh copy.
 - The case's History tab lists a save as "saved the shaded section", followed by the labels of the
   fields that changed (never their values). A client sees nothing: no client event is written.
 
@@ -811,7 +822,7 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1400) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1418) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
 | Story (77) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
