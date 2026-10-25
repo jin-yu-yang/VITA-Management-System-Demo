@@ -51,7 +51,7 @@ import {
   CLOSING_REASON_NAMES,
 } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
-import { shadedLabel } from "./shaded-fields.mjs";
+import { shadedLabel, reviewRows, PREVIEW_WARNING } from "./shaded-fields.mjs";
 import { SHADED_EDITOR, SHADED_UPLOAD } from "./contracts.mjs";
 import {
   CONFIRMED_BY,
@@ -1148,6 +1148,8 @@ const draftTools = () =>
 const EDITOR_BROWSERS =
   "The editor works in Chrome and Edge 125 or later, Firefox ESR or later, and Safari 18 or later. In any other browser, download the copy and upload it.";
 
+const DOWNLOAD_NOTE = "Open it in Chrome or the free Adobe Acrobat Reader, not macOS Preview.";
+
 export function shadedPanel(record, rights, ui = {}) {
   const decision = rights?.shadedSection ?? refused(CHOOSE_PERSONA);
   const error = ui?.error?.place === SHADED_UPLOAD ? ui.error : null;
@@ -1177,6 +1179,24 @@ export function shadedPanel(record, rights, ui = {}) {
       ? esc(ui.shadedStatus.text)
       : "";
   const busy = ui?.busy ? "disabled" : "";
+  const held = ui?.shadedReview;
+  const reviewing = decision.allowed && held != null && held.caseId === record?.id;
+  const rows = reviewing ? reviewRows(held.values) : [];
+  const reviewBox = reviewing
+    ? `<div class="shaded-review" role="region" aria-labelledby="shaded-review-title"><h3 id="shaded-review-title" tabindex="-1">Check what was read from this copy</h3><p>${rows.length} filled ${
+        rows.length === 1 ? "field" : "fields"
+      }:</p><ul>${rows
+        .map(
+          (r) =>
+            `<li><span class="shaded-review-label">${esc(r.label)}:</span> <span class="shaded-review-value">${esc(r.value)}</span></li>`,
+        )
+        .join("")}</ul>${when(held.preview, `<p class="shaded-review-warning">${esc(PREVIEW_WARNING)}</p>`)}<div class="conflict-choices">${button(
+        "Save these values",
+        "confirm-shaded-review",
+        "primary",
+        busy,
+      )}${button("Cancel", "cancel-shaded-review", "secondary", busy)}</div></div>`
+    : "";
   const tools = decision.allowed
     ? `<div class="summary-tools shaded-tools">${button(
         `${icon("file")} Fill the shaded section`,
@@ -1188,9 +1208,13 @@ export function shadedPanel(record, rights, ui = {}) {
         "download-shaded-copy",
         "secondary",
         busy,
-      )}<label class="shaded-upload" for="shaded-upload">${icon("upload")} Upload the filled copy</label><input type="file" id="shaded-upload" accept="application/pdf" data-action="upload-shaded-copy"${
-        error ? ' aria-describedby="shaded-upload-error"' : ""
-      }${busy ? " disabled" : ""}><p id="shaded-status" class="draft-ready" role="status">${saved}</p></div><p class="field-note shaded-browsers">${esc(EDITOR_BROWSERS)}</p>`
+      )}<p class="field-note shaded-download-note">${esc(DOWNLOAD_NOTE)}</p>${
+        reviewing
+          ? reviewBox
+          : `<label class="shaded-upload" for="shaded-upload">${icon("upload")} Upload the filled copy</label><input type="file" id="shaded-upload" accept="application/pdf" data-action="upload-shaded-copy"${
+              error ? ' aria-describedby="shaded-upload-error"' : ""
+            }${busy ? " disabled" : ""}><p id="shaded-status" class="draft-ready" role="status">${saved}</p>`
+      }</div><p class="field-note shaded-browsers">${esc(EDITOR_BROWSERS)}</p>`
     : explain(decision);
   return `<section class="panel shaded-panel" aria-labelledby="shaded-title"><div class="section-head"><h2 id="shaded-title">Shaded section of the 13614-C</h2><span class="muted small">${esc(
     summary,

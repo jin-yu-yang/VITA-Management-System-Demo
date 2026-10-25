@@ -4619,6 +4619,31 @@ textarea::placeholder {
 .shaded-browsers {
   margin-top: 8px;
 }
+.shaded-download-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+.shaded-review {
+  flex-basis: 100%;
+  margin-top: 8px;
+}
+.shaded-review ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.shaded-review li + li {
+  margin-top: 4px;
+}
+.shaded-review-label {
+  font-weight: 600;
+}
+.shaded-review-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.shaded-review-warning {
+  font-weight: 600;
+}
 
 /* The shaded-section editor (design D7): a full-screen layer beside #app,
    with the toolbar on top and the form's pages below. */

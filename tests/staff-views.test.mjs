@@ -37,6 +37,7 @@ import {
   mayEditContact,
   taskContacts,
   outcomeGroup,
+  shadedPanel,
 } from "../src/staff-views.mjs";
 import { contactSummary, contactEntryFromForm, nowInput } from "../src/contact-log.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
@@ -3071,4 +3072,59 @@ test("history names changed fields", () => {
     historySentence({ action: "SAVE_PREPARER_FIELDS", actorName: "Alex", detail: { changed: [] } }),
     "Alex saved the shaded section · no fields changed.",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The shaded panel's Preview hint and review box (change guard-shaded-upload-against-preview)
+// ---------------------------------------------------------------------------
+
+const shadedFor = (ui = {}, record = staffCase({ stage: "preparing" })) =>
+  shadedPanel(record, staffEligibility(record, ALEX), ui);
+const review = (values, preview = false, caseId = staffCase().id) => ({ shadedReview: { caseId, values, version: 1, preview } });
+
+test("the download note", () => {
+  const html = shadedFor();
+  assert.match(
+    html,
+    /Download to fill elsewhere<\/button><p class="field-note shaded-download-note">Open it in Chrome or the free Adobe Acrobat Reader, not macOS Preview\.<\/p>/,
+  );
+});
+
+test("the review box", () => {
+  const html = shadedFor(review({ infoNotes: "n", infoLastReturnAvailable: true, household1OwnSupport: "yes" }));
+  assert.match(html, /<div class="shaded-review" role="region" aria-labelledby="shaded-review-title">/);
+  assert.match(html, /<h3 id="shaded-review-title" tabindex="-1">Check what was read from this copy<\/h3>/);
+  assert.match(html, /<p>3 filled fields:<\/p>/);
+  assert.match(html, /<span class="shaded-review-value">ticked<\/span>/);
+  assert.match(html, /data-action="confirm-shaded-review"[^>]*>Save these values<\/button>/);
+  assert.match(html, /data-action="cancel-shaded-review"[^>]*>Cancel<\/button>/);
+  assert.doesNotMatch(html, /id="shaded-upload"/);
+  const labels = [...html.matchAll(/shaded-review-label">([^<]*)</g)].map((m) => m[1]);
+  assert.equal(labels.length, 3);
+  assert.ok(labels[0].startsWith("Row 1"), labels[0]);
+  assert.match(shadedFor(review({ infoNotes: "n" })), /<p>1 filled field:<\/p>/);
+});
+
+test("review rows escape and keep line breaks", () => {
+  const html = shadedFor(review({ infoNotes: "<b>x</b>\nline 2" }));
+  assert.match(html, /<span class="shaded-review-value">&lt;b&gt;x&lt;\/b&gt;\nline 2<\/span>/);
+  assert.doesNotMatch(html, /<b>x/);
+});
+
+test("the Preview line", () => {
+  const warn = "This copy was saved by macOS Preview, which can drop or change values. Check them before saving.";
+  assert.ok(shadedFor(review({ infoNotes: "n" }, true)).includes(`<p class="shaded-review-warning">${warn}</p>`));
+  assert.ok(!shadedFor(review({ infoNotes: "n" }, false)).includes(warn));
+});
+
+test("a review for another case isn't shown", () => {
+  const html = shadedFor(review({ infoNotes: "n" }, false, "some-other-case"));
+  assert.doesNotMatch(html, /shaded-review"/);
+  assert.match(html, /id="shaded-upload"/);
+});
+
+test("busy disables the review buttons; a refused viewer sees no review", () => {
+  assert.match(shadedFor({ ...review({ infoNotes: "n" }), busy: true }), /confirm-shaded-review"[^>]*disabled/);
+  const record = staffCase({ stage: "review_ready" });
+  assert.doesNotMatch(shadedFor(review({ infoNotes: "n" }), record), /shaded-review"/);
 });
