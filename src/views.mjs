@@ -266,6 +266,8 @@ export function staffScreen(state) {
         retryable: state.retryable,
         // The shaded section's "Saved", beside its upload control.
         shadedStatus: state.shadedStatus,
+        // What was read from an uploaded copy, held until Save these values.
+        shadedReview: state.shadedReview,
         draftAnswers: state.draftAnswers,
         dirty: state.dirty,
         openPanels: state.openPanels,

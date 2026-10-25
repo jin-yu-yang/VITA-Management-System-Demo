@@ -361,6 +361,12 @@ export function createController({
     // said beside the upload control on that case's page until the next
     // upload or error.
     shadedStatus: null,
+    // `{caseId, values, version, preview}` while what was read from an
+    // uploaded copy waits for the preparer to confirm it (change
+    // guard-shaded-upload-against-preview, design D1). Kept across redraws;
+    // dropped on a case switch, sign-out, Cancel, Save and the next upload.
+    // Window-local only, never persisted.
+    shadedReview: null,
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -845,6 +851,8 @@ export function createController({
     pendingAction = null;
     screeningStart = null;
     state.retryable = false;
+    // A held upload read is the old case's: never saved to another.
+    state.shadedReview = null;
   }
 
   // ---- start / stop ------------------------------------------------------
@@ -1200,6 +1208,8 @@ export function createController({
     state.caseTab = "overview";
     state.boardSearchDraft = undefined;
     state.sidebarOpen = true;
+    state.shadedStatus = null;
+    state.shadedReview = null;
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -2499,6 +2509,44 @@ export function createController({
     }
   }
 
+  // What was read from an uploaded copy is held for the open case until the
+  // preparer confirms it (design D1): nothing is sent yet. A new upload
+  // replaces the one held, and starts this case's upload control afresh: its
+  // earlier error and "Saved" go.
+  function reviewShadedCopy({ values, version, preview }) {
+    const caseId = state.savedCase?.id ?? null;
+    if (caseId === null) return;
+    state.shadedReview = { caseId, values, version, preview: Boolean(preview) };
+    if (state.error?.place === SHADED_UPLOAD) {
+      state.error = null;
+      state.retryable = false;
+    }
+    state.shadedStatus = null;
+    show();
+  }
+
+  // Save these values: the held read goes through the upload's own save, with
+  // its single flight, stale-copy sentence and case-moved resend. A read held
+  // for a case no longer open is dropped unsent.
+  async function confirmShadedReview() {
+    const review = state.shadedReview;
+    if (!review) return null;
+    if (review.caseId !== state.savedCase?.id) {
+      state.shadedReview = null;
+      show();
+      return null;
+    }
+    if (shadedSaveInFlight) return null;
+    state.shadedReview = null;
+    return saveShadedSection(review.values, review.version);
+  }
+
+  // Cancel: the held read is dropped and nothing is sent.
+  function cancelShadedReview() {
+    state.shadedReview = null;
+    show();
+  }
+
   // Assistance items are not cases: they have their own RPC, their own revision
   // and their own list, so they get their own dispatch rather than a branch
   // inside `runAction`. The shape is deliberately the same — an unknown type is
@@ -2871,6 +2919,9 @@ export function createController({
     setDocumentCard,
     setDocumentGroup,
     saveShadedSection,
+    reviewShadedCopy,
+    confirmShadedReview,
+    cancelShadedReview,
     retryLast,
     navigate,
     togglePanel,

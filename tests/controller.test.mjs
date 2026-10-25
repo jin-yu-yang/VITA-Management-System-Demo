@@ -6057,6 +6057,135 @@ test("saveShadedSection sends the latest revision", async () => {
   controller.stop();
 });
 
+// The read of an uploaded copy is held until the preparer confirms
+// (change guard-shaded-upload-against-preview, design D1).
+
+const shadedSends = (store) => store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+
+async function openShadedCase({ withSecondCase = false } = {}) {
+  const store = shadedStore();
+  if (withSecondCase)
+    store.records.set("case-t", { ...store.records.get("case-s"), id: "case-t", reference: "VT-SHAD-ED33", revision: 3 });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  return { store, controller };
+}
+
+test("a reviewed upload is sent only on confirm", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  assert.equal(shadedSends(store).length, 0);
+  assert.deepEqual(controller.getState().shadedReview, {
+    caseId: "case-s",
+    values: { incomeW2s: true },
+    version: 0,
+    preview: false,
+  });
+  assert.ok(await controller.confirmShadedReview());
+  const sends = shadedSends(store);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].caseId, "case-s");
+  assert.deepEqual(sends[0].payload, { fields: { incomeW2s: true }, basedOnVersion: 0 });
+  const state = controller.getState();
+  assert.equal(state.shadedReview, null);
+  assert.deepEqual(state.shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("a new upload under review clears this case's upload error and Saved", async () => {
+  const { controller } = await openShadedCase();
+  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: SHADED_UPLOAD });
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: true });
+  const state = controller.getState();
+  assert.equal(state.error, null);
+  assert.equal(state.shadedStatus, null);
+  assert.equal(state.shadedReview.preview, true);
+  controller.stop();
+});
+
+test("cancel sends nothing", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  controller.cancelShadedReview();
+  assert.equal(shadedSends(store).length, 0);
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("a case switch drops the review", async () => {
+  const { store, controller } = await openShadedCase({ withSecondCase: true });
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  await controller.selectCase("case-t");
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("sign-out drops the review", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  await controller.signOut();
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("the review survives a state change", async () => {
+  const { store, controller } = await openShadedCase();
+  const values = { incomeW2s: true, incomeW2sCount: 2 };
+  controller.reviewShadedCopy({ values, version: 0, preview: false });
+  // The office logs a contact meanwhile: realtime brings the newer revision.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 9 });
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-s", caseId: "case-s" });
+  const state = controller.getState();
+  assert.equal(state.savedCase.revision, 9);
+  assert.equal(state.shadedReview.caseId, "case-s");
+  assert.deepEqual(state.shadedReview.values, values);
+  // Confirming then sends it on the newer revision.
+  await controller.confirmShadedReview();
+  assert.equal(shadedSends(store).at(-1).expectedRevision, 9);
+  controller.stop();
+});
+
+test("confirm is single-flight", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  const first = controller.confirmShadedReview();
+  assert.equal(await controller.confirmShadedReview(), null);
+  await first;
+  assert.equal(shadedSends(store).length, 1);
+  controller.stop();
+});
+
+test("a CONFLICT after confirm keeps the stale-copy sentence", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  // The section itself was saved since the copy was downloaded (version 0).
+  store.records.set("case-s", {
+    ...store.records.get("case-s"),
+    revision: 8,
+    preparerShadedFields: [{ version: 1, fields: {} }],
+  });
+  store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
+  await assert.rejects(controller.confirmShadedReview(), (error) => error.code === "CONFLICT");
+  assert.equal(shadedSends(store).length, 1);
+  const state = controller.getState();
+  assert.equal(state.error.place, SHADED_UPLOAD);
+  assert.equal(
+    state.error.message,
+    "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.",
+  );
+  assert.equal(state.shadedReview, null);
+  assert.equal(state.retryable, false);
+  controller.stop();
+});
+
 test("an upload refused only because the case moved is sent once more on the new revision", async () => {
   const store = shadedStore();
   let next = 0;

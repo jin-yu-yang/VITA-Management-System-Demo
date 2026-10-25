@@ -40,7 +40,7 @@ import {
   fieldsNeedFont,
   readFilledCopy,
 } from "./draft-pdf.mjs";
-import { readShaded } from "./shaded-fields.mjs";
+import { readShaded, uploadRefusal } from "./shaded-fields.mjs";
 import { OPEN_FAILED, createShadedSave, editorGone, openShadedEditor } from "./shaded-editor.mjs";
 import {
   describeFocus,
@@ -156,6 +156,10 @@ if (!config) {
   // re-read after an action, another window's change) leaves the caret where
   // the person is typing.
   let shownDialog = null;
+  // The held upload read (state.shadedReview) the last render drew. Only one
+  // that has just appeared takes the keyboard, to its heading; a redraw of
+  // the same one leaves the keyboard where it is.
+  let shownShadedReview = null;
   // A control inside the open dialog that its own action disabled while it was
   // in flight: the keyboard goes back to it once the action lands, rather than
   // being left on the dialog container.
@@ -341,6 +345,12 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+    // A held upload read that has just appeared takes the keyboard, to its
+    // heading (Task 3 draws it); a redraw of the same read leaves it be.
+    const review = state.shadedReview ?? null;
+    if (review && review !== shownShadedReview && !state.dialog)
+      root.querySelector("#shaded-review-title")?.focus();
+    shownShadedReview = review;
     // A render that removed the focused sidebar control (and whose restore
     // missed) must not leave the peek held.
     peek.focus(peekZone(document.activeElement) === "sidebar" && keyboardFocus(document.activeElement));
@@ -1485,16 +1495,20 @@ if (!config) {
     }
   }
 
-  // A filled copy, read and saved in the same press: the case's reference,
+  // A filled copy is read, then held for the preparer to check (change
+  // guard-shaded-upload-against-preview, design D1): the case's reference,
   // then the shaded fields by name into readShaded (with the case's household
-  // size and season), then SAVE_PREPARER_FIELDS on the copy's own version.
+  // size and season), then uploadRefusal (no values). Nothing is sent until
+  // Save these values (`confirm-shaded-review`), which sends
+  // SAVE_PREPARER_FIELDS on the copy's own version.
   async function uploadShadedCopy(input, by) {
     const file = input.files?.[0] ?? null;
     if (!file) return;
     const state = controller.getState();
     if (state.principal?.access !== "presenter" || !state.savedCase) return;
     const record = state.savedCase;
-    const shown = state.errorCount;
+    // A new upload replaces any read still held, even one this file's read refuses.
+    if (state.shadedReview) controller.cancelShadedReview();
     let read;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -1517,8 +1531,16 @@ if (!config) {
     if (now.savedCase?.id !== record.id) return;
     const { values, errors } = readShaded(read.raw, shadedRules(now.savedCase, now.workspace));
     if (errors.length) return shadedFailure(errors.map((entry) => entry.message).join(" "));
+    const refusal = uploadRefusal({ values, preview: read.preview });
+    if (refusal) return shadedFailure(refusal);
+    controller.reviewShadedCopy({ values, version: read.version, preview: read.preview });
+  }
+
+  // Save these values: the held read goes through the upload's own save.
+  async function confirmShadedReview() {
+    const shown = controller.getState().errorCount;
     try {
-      await controller.saveShadedSection(values, read.version);
+      await controller.confirmShadedReview();
     } catch (error) {
       // The controller said it beside the control; anything it did not is said there too.
       if (controller.getState().errorCount === shown) shadedFailure("Something went wrong.", error?.code ?? "SERVER_ERROR");
@@ -2014,6 +2036,14 @@ if (!config) {
         break;
       case "download-shaded-copy":
         await downloadShadedCopy(by);
+        break;
+      case "confirm-shaded-review":
+        await confirmShadedReview();
+        break;
+      case "cancel-shaded-review":
+        controller.cancelShadedReview();
+        // Back to the upload control, to choose another file.
+        root.querySelector("#shaded-upload")?.focus();
         break;
       case "open-shaded-editor":
         // A failure to open said earlier goes with the new try.
