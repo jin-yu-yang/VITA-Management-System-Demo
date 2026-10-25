@@ -1409,6 +1409,11 @@ async function runPermutation(t, roles) {
         undefined,
         ARRIVAL_MS,
       );
+      assert.equal(
+        await staff.evaluate(() => document.activeElement?.id),
+        "shaded-upload",
+        "focus did not return to the upload control after Save these values",
+      );
       const shadedRow = (
         await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [classCase.id])
       ).rows;

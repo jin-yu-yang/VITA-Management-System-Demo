@@ -1501,9 +1501,12 @@ if (!config) {
   // size and season), then uploadRefusal (no values). Nothing is sent until
   // Save these values (`confirm-shaded-review`), which sends
   // SAVE_PREPARER_FIELDS on the copy's own version.
+  let shadedUploadToken = 0;
   async function uploadShadedCopy(input, by) {
     const file = input.files?.[0] ?? null;
     if (!file) return;
+    // Only the latest upload may be reviewed or refused: a slow earlier read must not replace it.
+    const token = ++shadedUploadToken;
     const state = controller.getState();
     if (state.principal?.access !== "presenter" || !state.savedCase) return;
     const record = state.savedCase;
@@ -1515,7 +1518,7 @@ if (!config) {
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       read = await readFilledCopy({ PDFLib, bytes, reference: record.reference ?? "" });
     } catch (error) {
-      if (by !== signedInUserId()) return;
+      if (by !== signedInUserId() || token !== shadedUploadToken) return;
       return shadedFailure(
         ["NOT_A_PDF", "OTHER_CASE", "NO_FIELDS"].includes(error?.code)
           ? error.message
@@ -1525,7 +1528,7 @@ if (!config) {
       // The same file can be chosen again after a fix elsewhere.
       input.value = "";
     }
-    if (by !== signedInUserId()) return;
+    if (by !== signedInUserId() || token !== shadedUploadToken) return;
     // Another case was opened while the file was read: this copy was for the old one.
     const now = controller.getState();
     if (now.savedCase?.id !== record.id) return;
@@ -1544,6 +1547,10 @@ if (!config) {
     } catch (error) {
       // The controller said it beside the control; anything it did not is said there too.
       if (controller.getState().errorCount === shown) shadedFailure("Something went wrong.", error?.code ?? "SERVER_ERROR");
+    } finally {
+      // Save removed the focused button; the upload control was disabled while busy, so focus it now.
+      const active = document.activeElement;
+      if (!active || active === document.body || !root.contains(active)) root.querySelector("#shaded-upload")?.focus();
     }
   }
 

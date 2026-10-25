@@ -387,7 +387,8 @@ both the volunteer and office pages; handlers in `src/app.mjs`):
 - Otherwise nothing is saved yet. The values are held in `state.shadedReview` (per case) and the
   panel replaces the upload control with "Check what was read from this copy": a count, one row
   per filled field, a Preview warning when `preview` is set, and "Save these values"
-  (`confirm-shaded-review`, which calls `controller.saveShadedSection(values, version)`) or
+  (`confirm-shaded-review`, which calls `controller.confirmShadedReview()`; that re-checks the case, then calls
+  `saveShadedSection(values, version)`, and focus returns to the upload control) or
   "Cancel" (`cancel-shaded-review`). The held review is dropped on a case switch, on sign-out and
   when a new file is uploaded. A refusal or a failed save is shown in the panel, beside the control
   (`SHADED_UPLOAD`), and "Saved" is shown there on success, so nothing is lost behind a refusal. A
