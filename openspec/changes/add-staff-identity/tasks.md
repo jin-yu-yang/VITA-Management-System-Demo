@@ -1,4 +1,4 @@
-Before apply: agree the order against #73's lifecycle chain with the team (design.md, Open Questions), merge `main`, and confirm `032` is still the next free migration number.
+Before apply: confirm `038` is still the next free migration number, and take a fresh test baseline on `main`.
 
 Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's migration and can then run side by side. Group 6 needs 5. Group 7 can be written alongside, and is finished last.
 
@@ -8,7 +8,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 - [ ] 1.2 Write `tests/database-staff-identity.mjs` with `createDatabaseFixture`. It fails until group 2 exists. It checks the `sign-in` spec:
   - the three access values, and another value refused;
   - commit refused for a staff membership without a person, and for a person linked to a presenter;
-  - for each of `vitally_apply_action`, `vitally_assistance_action`, `vitally_create_case` (assisted), `vitally_log_contact` and `vitally_edit_contact`: a staff call with null and with its own id acts as its own person, and another person's id is `VT001` with no receipt stored;
+  - for each of `vitally_apply_action`, `vitally_close_unsigned`, `vitally_assistance_action`, `vitally_create_case` (assisted), `vitally_log_contact` and `vitally_edit_contact`: a staff call with null and with its own id acts as its own person, and another person's id is `VT001` with no receipt stored;
   - receipts record the resolved actor, and a replay with null or its own id returns the stored receipt;
   - capabilities still apply to staff;
   - a presenter naming a staff member's person is `VT001`, and naming Alex works as before;
@@ -23,23 +23,24 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
   - `add_staff_member` creates a linked staff member, and is a no-op on an identical repeat;
   - it refuses a reserved key (`alex`, `morgan`, `sam`), changed values, an unknown capability and a membership in another workspace;
   - `set_default_followup` assigns new escalations to the staff member, leaves Sam's open follow-up with Sam, and refuses a person without `followup`;
-  - `initialize_workspace` re-runs succeed on a workspace that has staff, and a workspace with no presenter works.
+  - `initialize_workspace` re-runs succeed on a workspace that has staff, and a workspace with no presenter works once a staff member is its default follow-up person.
 
 ## 2. Database migration
 
 - [ ] 2.1 List every `'presenter'` occurrence in `supabase/migrations/*.sql` with the newest definition of the function or policy holding it. Record each as "accepts staff" or "stays presenter-only" (design D5) in the migration's header comment.
-- [ ] 2.2 Add `supabase/migrations/032_staff_identity.sql`, part 1 (design D2):
+- [ ] 2.2 Add `supabase/migrations/038_staff_identity.sql`, part 1 (design D2):
   - `memberships.access` allows `staff`;
   - `people.user_id`, unique per workspace, with the composite foreign key to `memberships`;
   - the deferred constraint trigger: a linked membership is `staff`, and each `staff` membership has exactly one person.
 - [ ] 2.3 Part 2 (design D3, D4): `vitally_private.acting_person`, following the table in D3. Redefine each entry point from its newest version so it calls the helper right after the membership lookup, before the digest and receipt, and uses the resolved id everywhere it used `p_person_id`:
-  - `vitally_apply_action` (017);
+  - `vitally_apply_action` (036);
+  - `vitally_close_unsigned` (037);
   - `vitally_assistance_action` (005);
   - `vitally_create_case` (023);
   - `vitally_log_contact` and `vitally_edit_contact` (031).
 
   Do not redefine `check_authority`.
-- [ ] 2.4 Part 3 (design D5): redefine `check_operation_authority` (018), `lock_case` (003), `lock_assistance_item` (005) and `contact_person` (031) to accept `staff`. Drop and recreate each policy from 2.1 with `access in ('presenter','staff')`, its other conditions unchanged. Leave the demo tools presenter-only.
+- [ ] 2.4 Part 3 (design D5): redefine `check_operation_authority` (036), `lock_case` (003), `lock_assistance_item` (005) and `contact_person` (031) to accept `staff`. Drop and recreate each policy from 2.1 with `access in ('presenter','staff')`, its other conditions unchanged. This includes the questionnaire policies (033) and the filing policies (035); `filing_notes` gains a read policy only, with no write grant for staff. Leave the demo tools presenter-only.
 - [ ] 2.5 Part 4 (design D6, D7):
   - `vitally_private.add_staff_member` and `vitally_private.set_default_followup`, revoked from every browser role;
   - `initialize_workspace` redefined from 001 so re-runs check the three demo people instead of counting exactly 3, and accept any default person with `followup`.
@@ -51,7 +52,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 - [ ] 3.1 Tests first in `tests/roster.test.mjs`:
   - the optional `staff` list (field checks, reserved keys, duplicates across all lists, unknown capabilities);
   - an optional `presenters`, with at least one presenter or staff member;
-  - `defaultFollowup` naming a staff entry with `followup`;
+  - `defaultFollowup` naming a staff entry with `followup`, and required when the roster has no presenter;
   - no address is ever printed.
 - [ ] 3.2 `tools/admin/roster.mjs`: parse and validate as tested; create and confirm staff Auth accounts as for presenters; pass staff entries and `defaultFollowup` to `initializeWorkspace`.
 - [ ] 3.3 `tools/admin/workspace-setup.mjs`: inside the same serializable transaction, after `initialize_workspace`, call `add_staff_member` for each staff entry, then `set_default_followup` when given. Add a `staff` list and a commented `defaultFollowup` to `tools/admin/roster.example.json`.
@@ -85,7 +86,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 6. Documentation
 
-- [ ] 6.1 `docs/developer/database.md`: the `staff` access, `people.user_id`, `acting_person` and the D3 table, the two new private functions, and migration 032 in the migrations table.
+- [ ] 6.1 `docs/developer/database.md`: the `staff` access, `people.user_id`, `acting_person` and the D3 table, the two new private functions, and migration 038 in the migrations table.
 - [ ] 6.2 `docs/developer/architecture.md` and `docs/developer/frontend.md`: who can see what for staff, and the principal and controller changes.
 - [ ] 6.3 `docs/developer/backend.md`: the roster's `staff` list and `defaultFollowup`; fix "There is no CI" to describe `.github/workflows/ci.yml`. `docs/setup.md`: adding fictional staff rehearsal accounts.
 - [ ] 6.4 `docs/developer/production-roadmap.md` §1: real staff accounts exist; what remains (visibility, roles, presenter removal). `docs/developer/README.md`: the glossary entries Membership, Person / persona and Capability.
@@ -93,4 +94,4 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 ## 7. Final checks
 
 - [ ] 7.1 Run `npm test`, `npm run build:hant -- --check`, `npm run build:intake` (nothing to commit) and `npx openspec validate --all`.
-- [ ] 7.2 Run `npm run db:migrate:test` and `npm run test:database`, then `npm run test:auth-browser` and `npm run test:browser`. Compare with the baseline taken on `main` on 2026-10-18: unit 1120, database 272, sign-in 20, browser 61, each plus the new tests, with no failures.
+- [ ] 7.2 Run `npm run db:migrate:test` and `npm run test:database`, then `npm run test:auth-browser` and `npm run test:browser`. Compare with the baseline taken on `main` before apply (at #97: unit 1336, database 421, browser story 77; count sign-in then), each plus the new tests, with no failures.

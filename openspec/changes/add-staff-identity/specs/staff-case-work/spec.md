@@ -34,7 +34,7 @@ The independence rule SHALL hold between staff accounts: a staff member whose pe
 - **THEN** the claim succeeds
 
 ### Requirement: Staff see the same cases and rows as presenters
-A `staff` member SHALL be able to read exactly the rows a presenter in the same workspace can read, in every table the staff screens use: every case except a client's private draft, with its documents, requests, history, participation, follow-ups, assistance items, reviews, materials, document cards, contacts and contact log. A staff member SHALL receive the same Realtime changes a presenter receives. A staff member SHALL read nothing in another workspace.
+A `staff` member SHALL be able to read exactly the rows a presenter in the same workspace can read, in every table the staff screens use: every case except a client's private draft, with its documents, requests, history, participation, follow-ups, assistance items, reviews, preparer and reviewer questionnaires, filing attempts, returns and notes, materials, document cards, contacts and contact log. A staff member SHALL receive the same Realtime changes a presenter receives. A staff member SHALL read nothing in another workspace.
 
 #### Scenario: Same rows as a presenter
 - **WHEN** a presenter and a staff member in the same workspace each read every staff table

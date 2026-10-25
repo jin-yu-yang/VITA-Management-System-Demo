@@ -20,7 +20,7 @@ Every active membership SHALL have exactly one access type: `applicant` (a clien
 - **THEN** the commit is refused
 
 ### Requirement: A staff account always acts as its own person
-For a `staff` member, every public RPC that takes `p_person_id` (`vitally_apply_action`, `vitally_assistance_action`, `vitally_create_case`, `vitally_log_contact`, `vitally_edit_contact`) SHALL act as the person linked to the signed-in account. `p_person_id` SHALL be null or that person's id; any other value SHALL be refused with `FORBIDDEN` (`VT001`) before anything is written or a receipt is reserved. The acting person SHALL be resolved before the request digest and the receipt, so `action_receipts.actor_person_id` records the staff member's person whether the call sent null or its own id. The RPCs' signatures SHALL NOT change.
+For a `staff` member, every public RPC that takes `p_person_id` (`vitally_apply_action`, `vitally_close_unsigned`, `vitally_assistance_action`, `vitally_create_case`, `vitally_log_contact`, `vitally_edit_contact`) SHALL act as the person linked to the signed-in account. `p_person_id` SHALL be null or that person's id; any other value SHALL be refused with `FORBIDDEN` (`VT001`) before anything is written or a receipt is reserved. The acting person SHALL be resolved before the request digest and the receipt, so `action_receipts.actor_person_id` records the staff member's person whether the call sent null or its own id. The RPCs' signatures SHALL NOT change.
 
 #### Scenario: A staff call with no person named
 - **WHEN** a staff member whose person can prepare claims preparation with `p_person_id` null
@@ -35,7 +35,7 @@ For a `staff` member, every public RPC that takes `p_person_id` (`vitally_apply_
 - **THEN** the call is refused with `FORBIDDEN`, nothing changes, and no receipt is stored
 
 #### Scenario: Every entry point resolves the person
-- **WHEN** a staff member calls each of `vitally_apply_action`, `vitally_assistance_action`, `vitally_create_case` in assisted mode, `vitally_log_contact` and `vitally_edit_contact`, once with null and once with another person's id
+- **WHEN** a staff member calls each of `vitally_apply_action`, `vitally_close_unsigned`, `vitally_assistance_action`, `vitally_create_case` in assisted mode, `vitally_log_contact` and `vitally_edit_contact`, once with null and once with another person's id
 - **THEN** each null call acts as the staff member's own person, and each call naming another person is refused with `FORBIDDEN`
 
 #### Scenario: Capabilities still apply
@@ -96,18 +96,22 @@ The roster command SHALL never print an email address.
 - **THEN** the workspace also has Alex, Morgan and Sam, unlinked, with their usual capabilities
 
 ### Requirement: A workspace can have staff and no presenter
-A roster SHALL need at least one presenter or one staff member, and SHALL NOT require a presenter. A workspace with no presenter SHALL work for staff and clients. Nobody in it can reset sample cases or load checkpoints, because those stay presenter-only.
+A roster SHALL need at least one presenter or one staff member, and SHALL NOT require a presenter. A roster with no presenter SHALL name a `defaultFollowup`. A workspace with no presenter SHALL work for staff and clients. Nobody in it can reset sample cases or load checkpoints, because those stay presenter-only.
 
 #### Scenario: A staff-only roster
-- **WHEN** a roster lists staff members and clients and no presenters
-- **THEN** the roster command succeeds, and the staff members can sign in and work cases
+- **WHEN** a roster lists staff members and clients, no presenters, and a `defaultFollowup` naming a staff member with `followup`
+- **THEN** the roster command succeeds, the staff members can sign in and work cases, and new follow-ups go to that staff member
+
+#### Scenario: A staff-only roster without a follow-up person
+- **WHEN** a roster lists staff members and no presenters, and has no `defaultFollowup`
+- **THEN** the roster command refuses it, and nothing is created in the workspace
 
 #### Scenario: An empty staff side
 - **WHEN** a roster lists only clients
 - **THEN** the roster command refuses it
 
 ### Requirement: The roster can choose the default follow-up person
-The roster file SHALL accept an optional `defaultFollowup`, naming the `personKey` of a staff entry whose capabilities include `followup`. When given, the workspace's default follow-up person SHALL become that person, and follow-ups escalated afterwards SHALL be assigned to them. Follow-ups already open SHALL keep their assignee. When `defaultFollowup` is absent, the default SHALL stay as it is (Sam in a new workspace). The roster command SHALL refuse a `defaultFollowup` that names no staff entry, or a person without `followup`.
+The roster file SHALL accept an optional `defaultFollowup`, naming the `personKey` of a staff entry whose capabilities include `followup`. When given, the workspace's default follow-up person SHALL become that person, and follow-ups escalated afterwards SHALL be assigned to them. Follow-ups already open SHALL keep their assignee. When `defaultFollowup` is absent, which a roster with a presenter allows, the default SHALL stay as it is (Sam in a new workspace). Withdrawal notices SHALL go to the default follow-up person, as escalated follow-ups do. The roster command SHALL refuse a `defaultFollowup` that names no staff entry, or a person without `followup`.
 
 #### Scenario: A staff member takes new follow-ups
 - **WHEN** the roster sets `defaultFollowup` to a staff member with `followup`, and a document request then goes unanswered and is escalated
@@ -118,7 +122,7 @@ The roster file SHALL accept an optional `defaultFollowup`, naming the `personKe
 - **THEN** the open follow-up is still assigned to Sam
 
 #### Scenario: No default given
-- **WHEN** a roster with staff members has no `defaultFollowup`
+- **WHEN** a roster with a presenter and staff members has no `defaultFollowup`
 - **THEN** Sam stays the default follow-up person
 
 #### Scenario: A default without the capability

@@ -19,7 +19,7 @@ Staff sign in with a shared "presenter" account and pick a persona (Alex, Morgan
 **Staff accounts come from the roster**
 
 - From: the roster creates presenters and clients; the workspace always gets Alex, Morgan and Sam, with Sam as the default follow-up person; a roster with no presenter is refused.
-- To: the roster also takes a `staff` list (email, name, person key, capabilities) and an optional `defaultFollowup` naming one staff member with the `followup` capability. Presenters become optional, so a staff-only workspace works. The keys `alex`, `morgan` and `sam` stay reserved for the demo. Re-running a roster still creates nothing new.
+- To: the roster also takes a `staff` list (email, name, person key, capabilities) and an optional `defaultFollowup` naming one staff member with the `followup` capability. Presenters become optional, so a staff-only workspace works. A roster with no presenter must name a `defaultFollowup`, so office follow-ups never go to a demo persona nobody can act as. The keys `alex`, `morgan` and `sam` stay reserved for the demo. Re-running a roster still creates nothing new.
 - Impact: existing roster files keep working.
 
 **The staff screens for a staff account**
@@ -48,11 +48,11 @@ Staff sign in with a shared "presenter" account and pick a persona (Alex, Morgan
 
 ## Impact
 
-- **Database:** one hand-written migration, `032_staff_identity.sql`:
+- **Database:** one hand-written migration, `038_staff_identity.sql`:
   - schema: `memberships.access` gains `staff`; `people.user_id` links a person to a staff membership, with a commit-time check that each staff membership has exactly one person;
-  - a private helper that resolves the acting person, called first by each public RPC that takes `p_person_id` (`vitally_apply_action`, `vitally_assistance_action`, `vitally_create_case`, `vitally_log_contact`, `vitally_edit_contact`);
+  - a private helper that resolves the acting person, called first by each public RPC that takes `p_person_id` (`vitally_apply_action`, `vitally_close_unsigned`, `vitally_assistance_action`, `vitally_create_case`, `vitally_log_contact`, `vitally_edit_contact`);
   - redefined: `check_operation_authority`, `lock_case`, `lock_assistance_item`, `contact_person` and `initialize_workspace`;
-  - about 16 RLS policies recreated to accept `staff`;
+  - about 21 RLS policies recreated to accept `staff`, including the questionnaire and filing tables (`filing_notes` stays read-only and append-only);
   - private functions to create staff members and set the follow-up default;
   - fixtures, reset and checkpoints unchanged and presenter-only.
 - **Admin tools:** `tools/admin/roster.mjs`, `tools/admin/workspace-setup.mjs`, `tools/admin/roster.example.json`.
@@ -63,4 +63,4 @@ Staff sign in with a shared "presenter" account and pick a persona (Alex, Morgan
   - a two-staff-account scenario in the browser story;
   - existing suites otherwise unchanged.
 - **Docs:** `docs/developer/` (database, architecture, frontend, backend, roadmap, README glossary) and `docs/setup.md`.
-- **Related work:** #73's lifecycle chain redefines the same functions and policies. The two cannot be built at the same time without conflicts. The order is an open question in `design.md`.
+- **Related work:** #73's lifecycle chain (#91, #95–#97) redefined the same functions and policies and is now on `main`. This change builds on its newest definitions (036, 037).

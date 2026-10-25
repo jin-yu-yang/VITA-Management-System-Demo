@@ -5,7 +5,7 @@
 **Goal:** Add a `staff` membership linked to one person, so a staff member signs in as themselves and the database, not the browser, decides who is acting. Presenters and clients are unchanged.
 
 **Architecture:**
-- One hand-written migration, `032_staff_identity.sql`:
+- One hand-written migration, `038_staff_identity.sql`:
   - a new access value, `staff`, and a nullable `people.user_id`;
   - a resolver, `vitally_private.acting_person`, that every public RPC taking `p_person_id` calls first, before its digest and receipt;
   - every check that grants staff behaviour widened from `'presenter'` to `('presenter','staff')`.
@@ -20,10 +20,12 @@
 
 **Spec:** `openspec/changes/add-staff-identity/` — `design.md` (decisions D1–D10), `specs/sign-in/spec.md`, `specs/staff-case-work/spec.md`, `tasks.md`. Read `design.md` D3 (the resolver table) and D5 before any database task.
 
+**After the merge with `main` (2026-10-25):** the `src/` and `tools/` line numbers below date from 2026-10-18. Find each place by its function name, not its line.
+
 ## Global Constraints
 
-- **Migrations:** never edit an applied migration (`001`–`031`). Every changed function or policy is redefined in `032_staff_identity.sql`, copied from its **newest** `create or replace` in any migration, with only the intended lines changed.
-- **Unchanged signatures:** `vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb)`, `vitally_assistance_action(uuid,uuid,bigint,uuid,text,text)`, `vitally_create_case(uuid,text,uuid,jsonb)`, `vitally_log_contact(uuid,uuid,uuid,uuid,jsonb)`, `vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb)`.
+- **Migrations:** never edit an applied migration (`001`–`037`). Every changed function or policy is redefined in `038_staff_identity.sql`, copied from its **newest** `create or replace` in any migration, with only the intended lines changed.
+- **Unchanged signatures:** `vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb)`, `vitally_close_unsigned(uuid,uuid,jsonb,boolean)`, `vitally_assistance_action(uuid,uuid,bigint,uuid,text,text)`, `vitally_create_case(uuid,text,uuid,jsonb)`, `vitally_log_contact(uuid,uuid,uuid,uuid,jsonb)`, `vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb)`.
 - **Error codes:** `VT001` FORBIDDEN, `VT002` NOT_FOUND, `VT003` CONFLICT, `VT004` INVALID_TRANSITION, `VT007` VALIDATION. A refusal leaves no receipt.
 - **Values:**
   - access values: exactly `applicant`, `presenter`, `staff`;
@@ -42,7 +44,7 @@
 2. **Another account's action id:** a staff member replaying an action id that a presenter used must not get the presenter's receipt (receipts are keyed per `actor_user_id`). Test in Task 3.
 3. **A persona stored in a presenter window that now names a staff person** must produce a refusal the browser shows as an error, not a crash or a silent act-as-someone. Test in Task 9.
 4. **Roster addresses with different case or spaces** (`" Riley@Example.org"` and `"riley@example.org"`) are the same address across `presenters`, `applicants` and `staff`. Test in Task 6.
-5. **Sam's open follow-ups after a staff member becomes the default:** only the assignee may act on a follow-up (`lock_open_followup`, 004:356), so a staff member with `followup` acting on Sam's open follow-up is refused with `VT001`, exactly as a presenter acting as anyone but Sam is. That task stays Sam's until resolved. New escalations go to the staff member. Test in Task 5.
+5. **Sam's open follow-ups after a staff member becomes the default:** only the assignee may act on a follow-up (`lock_open_followup`, 004:349), so a staff member with `followup` acting on Sam's open follow-up is refused with `VT001`, exactly as a presenter acting as anyone but Sam is. That task stays Sam's until resolved. New escalations go to the staff member. Test in Task 5.
 
 ---
 
@@ -78,6 +80,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
     - access values (`insert ... access='admin'` fails with `23514`);
     - commit refused for a staff membership without a person, and for a person linked to a presenter: run both inside `begin ... commit` through `f.sql`, expecting an error at `commit`;
     - each entry point with null and with another person's id;
+    - `vitally_close_unsigned` as a staff member with `admin`: null closes as their own person, another person's id is `VT001` with no receipt;
     - capabilities still apply (Riley closing a case: `VT001`);
     - replay with null and then with its own id returns the same receipt;
     - a presenter naming Riley's person: `VT001`; a presenter naming `f.alex` still works;
@@ -93,7 +96,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
     - it refuses `sam` (`VT007`), changed name or capabilities (`VT007`), `["prepare","teach"]` (`VT007`), and a user with an active membership elsewhere (`VT007`);
     - `set_default_followup` refuses a person without `followup` (`VT007`);
     - after it, an `ESCALATE_CONTACT` assigns to the staff member, while Sam's existing open follow-up keeps `assignee_person_id = f.sam`;
-    - `initialize_workspace` re-run through `f.withSetupLock` succeeds once staff exist.
+    - `initialize_workspace` re-run through `f.withSetupLock` succeeds once staff exist, and a staff-only workspace's escalations and withdrawal notices go to the staff default.
   - **Review Focus 1:** set the staff membership `active=false` through `f.sql`; then any RPC is `VT001`, and `select` on `cases` returns `[]`.
 - [ ] **Step 3: Run it and confirm it fails.** Run `node --env-file=.env.test --test tests/database-staff-identity.mjs`. Expected: FAIL. `add_staff_member` does not exist (`42883`).
 - [ ] **Step 4: Commit:** `git add tests/support/database-fixture.mjs tests/database-staff-identity.mjs && git commit -m "Staff identity: database tests first (add-staff-identity 1.1-1.4)"`.
@@ -101,7 +104,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
 ### Task 2: Migration part 1 — the presenter inventory and the schema
 
 **Files:**
-- Create: `supabase/migrations/032_staff_identity.sql`
+- Create: `supabase/migrations/038_staff_identity.sql`
 
 **Interfaces:**
 - Produces:
@@ -109,52 +112,53 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
   - `memberships.access` check `in ('applicant','presenter','staff')`;
   - the constraint trigger function `vitally_private.check_staff_links() returns trigger`, attached as `deferrable initially deferred` `after insert or update` on `public.memberships` and `public.people`.
 
-- [ ] **Step 1: Run the inventory.** `grep -n "'presenter'" supabase/migrations/*.sql`. For each hit, find the newest definition holding it. Write a header comment listing each object as "accepts staff" or "stays presenter-only". Stays presenter-only: `vitally_reset_fixtures`, `vitally_load_checkpoint`, `seed_fixtures`.
+- [ ] **Step 1: Run the inventory.** `grep -n "'presenter'" supabase/migrations/*.sql`. For each hit, find the newest definition holding it. Write a header comment listing each object as "accepts staff" or "stays presenter-only". Stays presenter-only: `vitally_reset_fixtures`, `vitally_load_checkpoint`, `seed_fixtures`. Since 2026-10-18 the hits include `check_operation_authority` (036), the questionnaire policies (033) and the filing policies (035).
 - [ ] **Step 2: Write the schema section.** `check_staff_links` raises `VT007` VALIDATION when a person's `user_id` points at a membership whose access is not `staff`, or when a `staff` membership has zero linked people. More than one is already impossible, because of `unique(workspace_id,user_id)`.
 - [ ] **Step 3: Apply and run.** `npm run db:migrate:test`, then `node --env-file=.env.test --test tests/database-staff-identity.mjs`. Expected: the access-value and commit-refusal tests pass; the rest still fail.
-- [ ] **Step 4: Commit:** `"032 part 1: staff access and people.user_id (add-staff-identity 2.1-2.2)"`.
+- [ ] **Step 4: Commit:** `"038 part 1: staff access and people.user_id (add-staff-identity 2.1-2.2)"`.
 
 ### Task 3: Migration part 2 — resolve the acting person at every entry point
 
 **Files:**
-- Modify: `supabase/migrations/032_staff_identity.sql`
+- Modify: `supabase/migrations/038_staff_identity.sql`
 
 **Interfaces:**
 - Produces: `vitally_private.acting_person(p_member public.memberships, p_person_id uuid) returns public.people`. It returns a row of nulls for an applicant, and raises `VT001` per design D3's table.
   - A presenter: an existing person in `p_member.workspace_id` with `user_id is null`.
   - A staff member: the person `where workspace_id=p_member.workspace_id and user_id=p_member.user_id`, and `p_person_id` must be null or equal its id.
 - Redefined (copied from source; the only change is `v_person := vitally_private.acting_person(v_member, p_person_id)` right after `require_membership()`, then `v_person.id` in place of every later use of `p_person_id`, including the digest and `reserve_receipt`):
-  - `vitally_apply_action` (017:540);
-  - `vitally_assistance_action` (005:283; 017 only re-grants it);
-  - `vitally_create_case` (023, including the assisted branch's capability lookup);
+  - `vitally_apply_action` (036:727);
+  - `vitally_close_unsigned` (037:514). It already calls `check_operation_authority` first; after the change it calls `acting_person` before that, and uses `v_person.id` in the authority check, the digest's `personId` and `reserve_receipt`;
+  - `vitally_assistance_action` (005:283; later migrations only re-grant it);
+  - `vitally_create_case` (023:70, including the assisted branch's capability lookup);
   - `vitally_log_contact` and `vitally_edit_contact` (031). Their inline `access<>'presenter' or p_person_id is null` checks become `access not in ('presenter','staff') or v_person.id is null`.
 
 - [ ] **Step 1: Add the test** for Review Focus 2 to `tests/database-staff-identity.mjs`. Riley calls `vitally_apply_action` with an `action_id` the presenter already used. Riley's call is judged as Riley's own new request, and never returns the presenter's receipt.
-- [ ] **Step 2: Write `acting_person`** and the five redefinitions. Diff each against its source with `git diff --no-index` on extracted bodies; only the lines named above may differ.
+- [ ] **Step 2: Write `acting_person`** and the six redefinitions. Diff each against its source with `git diff --no-index` on extracted bodies; only the lines named above may differ.
 - [ ] **Step 3: Apply and run** the suite. Expected: the entry-point, replay, presenter and client tests pass.
-- [ ] **Step 4: Commit:** `"032 part 2: acting_person at every entry point (add-staff-identity 2.3)"`.
+- [ ] **Step 4: Commit:** `"038 part 2: acting_person at every entry point (add-staff-identity 2.3)"`.
 
 ### Task 4: Migration part 3 — staff behaviour in locks, authority and policies
 
 **Files:**
-- Modify: `supabase/migrations/032_staff_identity.sql`
+- Modify: `supabase/migrations/038_staff_identity.sql`
 
 **Interfaces:**
 - Redefined with `access in ('presenter','staff')` in place of `access='presenter'` (or `<>'presenter'` becomes `not in`), and nothing else changed:
-  - `check_operation_authority` (018:17);
+  - `check_operation_authority` (036:641);
   - `lock_case` (003:42);
   - `lock_assistance_item` (005:198);
   - `contact_person` (031:194).
-- Every policy the inventory marked "accepts staff": `drop policy` then `create policy` with the same name, the same `for select to authenticated`, and the widened condition.
+- Every policy the inventory marked "accepts staff": `drop policy` then `create policy` with the same name, the same `for select to authenticated`, and the widened condition. This includes `presenter_preparer_questionnaires`, `presenter_reviewer_questionnaires` (033), `presenter_filing_attempts`, `presenter_filing_returns` and `presenter_filing_notes` (035). Grant nothing new: `filing_notes` stays select-only for `authenticated`, and its append-only trigger stays.
 
 - [ ] **Step 1: Write the redefinitions and the policies.**
 - [ ] **Step 2: Apply.** Run `npm run db:migrate:test`, then `npm run test:database`. Expected: the visibility, Realtime, independence and attribution tests pass, and every existing database suite still passes.
-- [ ] **Step 3: Commit:** `"032 part 3: staff accepted by locks, authority and policies (add-staff-identity 2.4)"`.
+- [ ] **Step 3: Commit:** `"038 part 3: staff accepted by locks, authority and policies (add-staff-identity 2.4)"`.
 
 ### Task 5: Migration part 4 — staff creation, follow-up default, re-runnable setup
 
 **Files:**
-- Modify: `supabase/migrations/032_staff_identity.sql`
+- Modify: `supabase/migrations/038_staff_identity.sql`
 - Modify: `tests/support/rpc-signatures.mjs`
 
 **Interfaces:**
@@ -167,7 +171,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
 - [ ] **Step 2: Write the three functions.**
 - [ ] **Step 3: Update `tests/support/rpc-signatures.mjs`.** No public signature changed. Add assertions that `add_staff_member` and `set_default_followup` cannot be called by `f.anonymous` or `f.presenter` (`42501` or not found through PostgREST).
 - [ ] **Step 4: Apply and run.** `npm run db:migrate:test`, then `npm run test:database`. Expected: every test passes, the new suite included.
-- [ ] **Step 5: Commit:** `"032 part 4: add_staff_member, set_default_followup, re-runnable setup (add-staff-identity 2.5-2.7)"`.
+- [ ] **Step 5: Commit:** `"038 part 4: add_staff_member, set_default_followup, re-runnable setup (add-staff-identity 2.5-2.7)"`.
 
 ### Task 6: Roster and workspace setup
 
@@ -188,6 +192,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
   - a staff entry parses;
   - `presenters` may be absent when `staff` is non-empty;
   - clients only throws `"The roster needs at least one presenter or staff member."`;
+  - a roster with staff and no presenters but no `defaultFollowup` throws `"A roster with no presenter needs a defaultFollowup."`;
   - `personKey: "sam"` throws;
   - a duplicate `personKey` throws;
   - an address listed in both `presenters` and `staff` throws;
@@ -289,7 +294,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
   - the case History tab names Riley Park and Jordan Lee for their steps;
   - Riley's "Claim review" on a case Riley prepared is refused;
   - a `selectedPersonId` written into Riley's window storage before sign-in is ignored.
-- [ ] **Step 2: Run** `npm run test:auth-browser`, then `npm run test:browser` (about 17 minutes). Expected: every test passes; 61 existing plus the new phase's tests.
+- [ ] **Step 2: Run** `npm run test:auth-browser`, then `npm run test:browser` (about 17 minutes). Expected: every test passes; the existing story tests (77 at #97) plus the new phase's tests.
 - [ ] **Step 3: Commit:** `"Story: two staff accounts work one case (add-staff-identity 5.1-5.3)"`.
 
 ### Task 11: Documentation
@@ -298,7 +303,7 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
 - Modify: `docs/developer/database.md`, `docs/developer/architecture.md`, `docs/developer/frontend.md`, `docs/developer/backend.md`, `docs/developer/production-roadmap.md`, `docs/developer/README.md`, `docs/setup.md`
 
 - [ ] **Step 1: Write the docs.**
-  - `database.md`: the `staff` access, `people.user_id`, `acting_person` with design D3's table, the two private functions, the commit-time check, and a `032` row in the migrations table ("thirty-two" in its count sentence).
+  - `database.md`: the `staff` access, `people.user_id`, `acting_person` with design D3's table, the two private functions, the commit-time check, and a `038` row in the migrations table, with the count sentence saying thirty-eight (it says "thirty-two" today, already stale on `main`).
   - `architecture.md` and `frontend.md`: who can see what for staff; the principal's `personId` and `personName`; `staffWindow()` and `actingPersonId()`.
   - `backend.md`: the roster's `staff` list and `defaultFollowup`, and an example; replace "There is no CI" (line ≈151) with what `.github/workflows/ci.yml` runs.
   - `setup.md`: adding a fictional staff rehearsal account, and that its codes arrive in Mailpit.
@@ -310,5 +315,5 @@ test("a staff call naming someone else is FORBIDDEN with no receipt", async () =
 ### Task 12: Final checks
 
 - [ ] **Step 1: Run the build checks.** `npm test`, `npm run build:hant -- --check`, then `npm run build:intake` followed by `git status --porcelain` (expected empty), and `npx openspec validate --all`.
-- [ ] **Step 2: Run the stack suites.** `npm run db:migrate:test`, `npm run test:database`, `npm run test:auth-browser`, `npm run test:browser`. Record the counts against the baseline from `main` on 2026-10-18 (unit 1120, database 272, sign-in 20, browser 61): each total grows by the new tests, with zero failures.
+- [ ] **Step 2: Run the stack suites.** `npm run db:migrate:test`, `npm run test:database`, `npm run test:auth-browser`, `npm run test:browser`. Record the counts against the baseline taken on `main` before apply (at #97: unit 1336, database 421, browser story 77; count sign-in then): each total grows by the new tests, with zero failures.
 - [ ] **Step 3: Check off** tasks.md 7.1–7.2 and commit: `"tasks.md: final checks (add-staff-identity 7)"`.

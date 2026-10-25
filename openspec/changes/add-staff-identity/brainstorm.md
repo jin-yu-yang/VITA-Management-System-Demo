@@ -308,3 +308,12 @@ Membership, Person). No new documents under `docs/superpowers/`.
   every access type, so there is only one place to read.
 - **Migration number clash.** No other branch had migration 032 or later on 2026-10-18. Recheck
   before archive (CLAUDE.md step 8 merges `main` first).
+
+## Update after merging `main` (2026-10-25)
+
+The lifecycle chain (#91, #95–#97) merged to `main` after this brainstorm, so these points changed. The other decisions above stand.
+- The migration is `038_staff_identity.sql`; 032–037 are taken.
+- `vitally_close_unsigned` (037) takes `p_person_id`, so it resolves the acting person too: six entry points, not five.
+- Functions are copied from their newest definitions (`vitally_apply_action` and `check_operation_authority` are in 036).
+- The questionnaire (033) and filing (035) policies also accept `staff`; `filing_notes` stays read-only and append-only.
+- New (user, 2026-10-25): a roster with no presenter must name `defaultFollowup`, because escalated follow-ups and withdrawal notices (036) would otherwise go to Sam, whom nobody can act as in that workspace.
