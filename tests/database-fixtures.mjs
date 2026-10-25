@@ -113,6 +113,67 @@ const SCENARIOS = Object.freeze({
     events: 9,
     clientEvents: 9,
   },
+  // 035: the approved sample's nine steps, then ready to e-file, e-filed and the
+  // recorded answer.
+  rejected: {
+    stage: "rejected",
+    preparer: "alex",
+    reviewer: "morgan",
+    version: 2,
+    participants: 1,
+    requests: [],
+    documents: 0,
+    followups: [],
+    contacts: 0,
+    reviews: ["corrections_requested", "approved"],
+    events: 12,
+    clientEvents: 12,
+  },
+  accepted: {
+    stage: "accepted",
+    preparer: "alex",
+    reviewer: "morgan",
+    version: 2,
+    participants: 1,
+    requests: [],
+    documents: 0,
+    followups: [],
+    contacts: 0,
+    reviews: ["corrections_requested", "approved"],
+    events: 12,
+    clientEvents: 12,
+  },
+  // 036: asked for a Photo ID from Screening, then put on Hold; and a withdrawal
+  // from Filing in progress.
+  on_hold: {
+    stage: "on_hold",
+    preparer: null,
+    reviewer: null,
+    version: 0,
+    participants: 0,
+    requests: ["open"],
+    documents: 0,
+    followups: [],
+    contacts: 0,
+    reviews: [],
+    events: 3,
+    clientEvents: 3,
+    intakeVerified: false,
+  },
+  withdrawn: {
+    stage: "closed",
+    preparer: "alex",
+    reviewer: null,
+    version: 0,
+    participants: 1,
+    requests: [],
+    documents: 0,
+    followups: ["open"],
+    contacts: 0,
+    reviews: [],
+    events: 4,
+    clientEvents: 4,
+  },
 });
 
 // A reset seeds one history entry per recorded step plus the `FIXTURE_SEEDED`
@@ -155,7 +216,7 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   const [row] = (await f.sql("select * from public.cases where id=$1", [caseId])).rows;
   assert.ok(row, `${key} case exists`);
   assert.equal(row.stage, expected.stage, `${key} stage`);
-  assert.equal(row.intake_verified, true, `${key} intake`);
+  assert.equal(row.intake_verified, expected.intakeVerified ?? true, `${key} intake`);
   assert.equal(
     Number(row.preparation_version),
     expected.version,
@@ -201,7 +262,10 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   );
   for (const followup of followups) {
     assert.equal(followup.assignee_person_id, f.sam, `${key} follow-up assignee`);
-    assert.equal(followup.request_id, requests[0].id, `${key} follow-up request`);
+    if (key === "withdrawn") {
+      assert.equal(followup.purpose, "withdrawal_notice", `${key} follow-up purpose`);
+      assert.equal(followup.request_id, null, `${key} follow-up request`);
+    } else assert.equal(followup.request_id, requests[0].id, `${key} follow-up request`);
     assert.equal(followup.resolved_at, null, `${key} follow-up unresolved`);
   }
   // The sample follow-up's call is a linked contact log entry (OpenSpec
@@ -235,13 +299,14 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
     );
     assert.equal(
       review.client_contact_status,
-      review.status === "approved" ? "pending" : null,
+      review.status === "approved" ? "completed" : null,
       `${key} client contact`,
     );
   }
   // History: one entry per recorded step, oldest first, plus the single marker
   // that says where these records came from. Every detail is labelled
-  // simulated, and a seeded step names no acting account.
+  // simulated (034: a screening-checks entry records real checks, so it is not),
+  // and a seeded step names no acting account.
   const internal = await rowsFor(f, "case_events", caseId);
   const markers = internal.filter((entry) =>
     ["FIXTURE_SEEDED", "CHECKPOINT"].includes(entry.action),
@@ -252,7 +317,9 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
   assert.equal(markers.length, 1, `${key} one origin marker`);
   assert.equal(steps.length, expected.events, `${key} internal history`);
   for (const entry of internal)
-    assert.equal(entry.detail.simulated, true, `${key} ${entry.action} simulated`);
+    if (entry.action === "VERIFY_INTAKE")
+      assert.equal(entry.detail.simulated, undefined, `${key} VERIFY_INTAKE is not simulated`);
+    else assert.equal(entry.detail.simulated, true, `${key} ${entry.action} simulated`);
   for (const entry of steps)
     assert.equal(entry.actor_user_id, null, `${key} ${entry.action} actor user`);
   const times = internal.map((entry) => new Date(entry.created_at).getTime());
@@ -291,7 +358,7 @@ test("sample reset preserves class-created applications", async () => {
     assert.deepEqual(await f.readStableSetup(), stableSetup);
     assert.deepEqual(await f.readMembership(f.applicantAUserId), membership);
     const fixtures = await f.readFixtureCases();
-    assert.equal(fixtures.length, 6);
+    assert.equal(fixtures.length, 10);
     assert.deepEqual(
       fixtures.map((c) => c.fixtureKey).sort(),
       [...f.fixtureKeys].sort(),
@@ -325,6 +392,229 @@ test("the seeded workspace tells one coherent story", async (t) => {
         await assertScenario(f, byKey[key].id, key, { revision: seededRevision(key) });
     });
 
+    await t.test("seeded approved sample has answers", async () => {
+      const approved = (await fixtureByKey(f)).review_approved;
+      const prep = await rowsFor(
+        f,
+        "preparer_questionnaires",
+        approved.id,
+        "preparation_version",
+      );
+      assert.deepEqual(
+        prep.map((r) => [Number(r.preparation_version), r.confirmed_by, r.confirmed_method]),
+        [
+          [1, "client", "in_person"],
+          [2, "client", "phone"],
+        ],
+      );
+      const rev = await rowsFor(f, "reviewer_questionnaires", approved.id);
+      assert.equal(rev.length, 1);
+      assert.equal(rev[0].sign_method, "portal");
+      assert.equal(rev[0].went_over, true);
+      assert.equal(rev[0].went_over_how, "phone");
+      assert.equal(rev[0].exit_form.federal.amount, "412.00");
+      assert.equal(rev[0].exit_form.federal.refundBy, "direct_deposit");
+      assert.deepEqual(rev[0].exit_form.local, [
+        { type: "NPT", method: "paper", result: "none" },
+      ]);
+      for (const row of rev)
+        assert.equal(
+          (await f.sql("select vitally_private.check_exit_form($1::jsonb) as ok", [JSON.stringify(row.exit_form)]))
+            .rows[0].ok,
+          true,
+        );
+      assert.equal(rev[0].exit_form.state, null);
+      const [row] = (
+        await f.sql("select signing_plan,signing_appointment_at from public.cases where id=$1", [
+          approved.id,
+        ])
+      ).rows;
+      assert.equal(row.signing_plan, "portal");
+      assert.equal(row.signing_appointment_at, null);
+      const [review] = await rowsFor(f, "reviews", approved.id, "created_at,id").then((r) =>
+        r.filter((x) => x.status === "approved"),
+      );
+      assert.equal(review.client_contact_status, "completed");
+      assert.equal(review.client_contact_outcome, "reached");
+      assert.ok(review.client_contacted_at);
+      assert.equal(rev[0].review_id, review.id);
+    });
+
+    await t.test("the rejected and accepted samples hold their filing rows", async () => {
+      const byKey = await fixtureByKey(f);
+      const filing = async (key) => {
+        const id = byKey[key].id;
+        const [row] = (
+          await f.sql(
+            "select stage,federal_method,state_method,federal_result,state_result from public.cases where id=$1",
+            [id],
+          )
+        ).rows;
+        return {
+          row,
+          attempts: (await rowsFor(f, "filing_attempts", id, "attempt")).map((a) => [a.attempt, a.filed_by]),
+          returns: (await rowsFor(f, "filing_returns", id, "return_kind")).map((r) => [
+            r.return_kind,
+            r.method,
+            r.result,
+            r.reject_code,
+            r.recorded_by,
+          ]),
+          notes: await rowsFor(f, "filing_notes", id, "recorded_at"),
+        };
+      };
+      const rejected = await filing("rejected");
+      assert.deepEqual(rejected.row, {
+        stage: "rejected",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: "accepted",
+        state_result: "rejected",
+      });
+      assert.deepEqual(rejected.attempts, [[1, f.sam]]);
+      assert.deepEqual(rejected.returns, [
+        ["federal", "efile", "accepted", null, f.sam],
+        ["state", "efile", "rejected", "IND-031-04", f.sam],
+      ]);
+      assert.equal(rejected.notes.length, 1);
+      assert.equal(rejected.notes[0].attempt, 1);
+      assert.equal(rejected.notes[0].recorded_by, f.sam);
+      assert.equal(
+        rejected.notes[0].note,
+        "Fictional note: site coordinator to correct the dependent's SSN in TaxSlayer.",
+      );
+      const accepted = await filing("accepted");
+      assert.deepEqual(accepted.row, {
+        stage: "accepted",
+        federal_method: "efile",
+        state_method: "efile",
+        federal_result: "accepted",
+        state_result: "accepted",
+      });
+      assert.deepEqual(accepted.attempts, [[1, f.sam]]);
+      assert.deepEqual(accepted.returns, [
+        ["federal", "efile", "accepted", null, f.sam],
+        ["state", "efile", "accepted", null, f.sam],
+      ]);
+      assert.deepEqual(accepted.notes, []);
+      // The history lines are the ones the real moves write.
+      const lines = async (key) => (await f.clientMessages(byKey[key].id)).slice(-3);
+      assert.deepEqual(await lines("rejected"), [
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
+        "PCDC e-filed your return.",
+        "The IRS accepted your federal return. Your Pennsylvania return needs a correction before it can be accepted.",
+      ]);
+      assert.deepEqual(await lines("accepted"), [
+        "PCDC recorded that your return is ready. PCDC will take the next step.",
+        "PCDC e-filed your return.",
+        "The IRS and Pennsylvania accepted your returns.",
+      ]);
+      // Every other sample holds no filing at all.
+      for (const key of f.fixtureKeys.filter((k) => k !== "rejected" && k !== "accepted")) {
+        const other = await filing(key);
+        assert.deepEqual(other.attempts, [], key);
+        assert.equal(other.row.federal_method, null, key);
+      }
+    });
+
+    await t.test("the on_hold and withdrawn samples hold their origins, requests and lines", async () => {
+      const byKey = await fixtureByKey(f);
+      const caseRow = async (key) =>
+        (
+          await f.sql(
+            "select stage,hold_origin,documents_origin,closing_reason,preparer_id from public.cases where id=$1",
+            [byKey[key].id],
+          )
+        ).rows[0];
+      assert.deepEqual(await caseRow("on_hold"), {
+        stage: "on_hold",
+        hold_origin: "awaiting_documents",
+        documents_origin: "screening",
+        closing_reason: null,
+        preparer_id: null,
+      });
+      const requests = await rowsFor(f, "document_requests", byKey.on_hold.id);
+      assert.deepEqual(
+        requests.map((r) => [r.title, r.status]),
+        [["Photo ID", "open"]],
+      );
+      assert.deepEqual((await f.clientMessages(byKey.on_hold.id)).slice(-2), [
+        "PCDC asked for these documents: Photo ID.",
+        "PCDC is trying to reach you.",
+      ]);
+      assert.deepEqual(await caseRow("withdrawn"), {
+        stage: "closed",
+        hold_origin: null,
+        documents_origin: null,
+        closing_reason: "withdrawn",
+        preparer_id: f.alex,
+      });
+      const followups = await rowsFor(f, "admin_followups", byKey.withdrawn.id);
+      assert.deepEqual(
+        followups.map((x) => [x.purpose, x.status, x.request_id]),
+        [["withdrawal_notice", "open", null]],
+      );
+      assert.equal(
+        (await f.clientMessages(byKey.withdrawn.id)).at(-1),
+        "You withdrew your application. Your return was not filed.",
+      );
+      for (const key of f.fixtureKeys.filter((k) => k !== "on_hold" && k !== "withdrawn")) {
+        const other = await caseRow(key);
+        assert.equal(other.hold_origin, null, key);
+        assert.equal(other.closing_reason, null, key);
+      }
+    });
+
+    await t.test("a checkpoint on the new samples clears their requests and follow-ups", async () => {
+      const cases = await fixtureByKey(f);
+      for (const key of ["on_hold", "withdrawn"]) {
+        const target = cases[key];
+        const answered = await loadCheckpoint(f.presenter, target.id, target.revision, "ready_for_review");
+        assert.equal(answered.error, null, key);
+        const [row] = (
+          await f.sql(
+            "select stage,hold_origin,documents_origin,closing_reason from public.cases where id=$1",
+            [target.id],
+          )
+        ).rows;
+        assert.deepEqual(row, {
+          stage: "review_ready",
+          hold_origin: null,
+          documents_origin: null,
+          closing_reason: null,
+        });
+        assert.deepEqual(await rowsFor(f, "admin_followups", target.id, "id"), [], key);
+        assert.deepEqual(
+          (await rowsFor(f, "document_requests", target.id, "id")).map((r) => r.title),
+          ["Mileage record"],
+          key,
+        );
+      }
+      await f.seedFixtures();
+    });
+
+    await t.test("a checkpoint on a filed sample clears its filing rows", async () => {
+      const target = (await fixtureByKey(f)).rejected;
+      const answered = await loadCheckpoint(f.presenter, target.id, target.revision, "ready_for_review");
+      assert.equal(answered.error, null);
+      const [row] = (
+        await f.sql(
+          "select stage,federal_method,state_method,federal_result,state_result from public.cases where id=$1",
+          [target.id],
+        )
+      ).rows;
+      assert.deepEqual(row, {
+        stage: "review_ready",
+        federal_method: null,
+        state_method: null,
+        federal_result: null,
+        state_result: null,
+      });
+      for (const table of ["filing_attempts", "filing_returns", "filing_notes"])
+        assert.deepEqual(await rowsFor(f, table, target.id, "id"), [], table);
+      await f.seedFixtures();
+    });
+
     await t.test("every case carries a readable reference, answers and times", async () => {
       const rows = (
         await f.sql(
@@ -355,7 +645,10 @@ test("the seeded workspace tells one coherent story", async (t) => {
         assert.ok(row.created_at, `${row.fixture_key} created_at`);
         assert.ok(row.updated_at, `${row.fixture_key} updated_at`);
       }
-      assert.equal(references.size, 6, "every fixture reference is its own");
+      assert.equal(references.size, 10, "every fixture reference is its own");
+      // Each sample is its own fictional client.
+      const names = new Set(rows.map((row) => `${row.answers.tp_first_name} ${row.answers.tp_last_name}`));
+      assert.equal(names.size, 10, "every sample has its own name");
     });
 
     await t.test("one assistance request, on the case the office is chasing", async () => {
@@ -477,7 +770,7 @@ test("the seeded workspace tells one coherent story", async (t) => {
       for (const result of results) assert.equal(result.error, null);
       assert.equal(await generationOf(f), before + 2);
       const state = await f.readFixtureState();
-      assert.equal(state.caseIds.length, 6);
+      assert.equal(state.caseIds.length, 10);
       assert.equal(state.itemIds.length, 1);
       // The set on disk is the later of the two, whole and consistent.
       const byKey = await fixtureByKey(f);
@@ -489,6 +782,49 @@ test("the seeded workspace tells one coherent story", async (t) => {
       );
       assert.deepEqual(Object.values(winner.data.fixtureCaseIds).sort(), state.caseIds);
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("fixture checks by service", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    await f.seedFixtures();
+    const byKey = await fixtureByKey(f);
+    const SENTENCE =
+      "PCDC finished screening your application. A volunteer will start preparing your return next.";
+    // on_hold was asked for documents straight from Screening, so it never
+    // finished screening.
+    for (const key of f.fixtureKeys.filter((k) => k !== "on_hold")) {
+      const [event] = (
+        await f.sql(
+          "select detail from public.case_events where case_id=$1 and action='VERIFY_INTAKE'",
+          [byKey[key].id],
+        )
+      ).rows;
+      assert.ok(event, `${key} has a VERIFY_INTAKE event`);
+      assert.deepEqual(
+        Object.keys(event.detail.checks).sort(),
+        key === "review_ready"
+          ? ["documents", "identity", "in_scope", "phone"]
+          : ["documents", "in_scope", "phone"],
+        `${key} check keys`,
+      );
+      for (const value of Object.values(event.detail.checks))
+        assert.equal(value, true, `${key} checks are ticked`);
+      const lines = (
+        await f.sql(
+          "select message from public.client_events where case_id=$1 and message like 'PCDC finished%' or case_id=$1 and message like 'Simulated intake%'",
+          [byKey[key].id],
+        )
+      ).rows;
+      assert.deepEqual(
+        lines.map((row) => row.message),
+        [SENTENCE],
+        `${key} client line`,
+      );
+    }
   } finally {
     await f.close();
   }
@@ -598,6 +934,35 @@ test("receipts outlive the fixtures they targeted", async (t) => {
       assert.equal(wrong.error.code, "VT007");
       assert.deepEqual(await f.readFixtureState(), state);
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("checkpoint reset leaves no stale answers", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    await f.seedFixtures();
+    {
+      const approved = (await fixtureByKey(f)).review_approved;
+      const answered = await loadCheckpoint(
+        f.presenter,
+        approved.id,
+        approved.revision,
+        "ready_for_review",
+      );
+      assert.equal(answered.error, null);
+      const prep = await rowsFor(f, "preparer_questionnaires", approved.id);
+      assert.deepEqual(
+        prep.map((r) => Number(r.preparation_version)),
+        [1],
+      );
+      assert.equal((await rowsFor(f, "reviewer_questionnaires", approved.id)).length, 0);
+      const [row] = (
+        await f.sql("select signing_plan from public.cases where id=$1", [approved.id])
+      ).rows;
+      assert.equal(row.signing_plan, null);
+    }
   } finally {
     await f.close();
   }

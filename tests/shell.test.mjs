@@ -770,6 +770,8 @@ test("app.mjs applies the sidebar peek in place after every render and feeds it 
 // Toasts on staff-only paths stay English (spec 2026-10-05 §2: staff screens
 // are always English). Each is listed with the path that raises it.
 const STAFF_ONLY_TOASTS = Object.freeze([
+  // submitCloseUnsigned: the season-end close
+  "The unsigned cases were closed as Dismissed.",
   // fillAssistedIntake: the office's fill on Add a case
   "Fictional details filled in. Nothing is saved yet.",
   // runCaseAction SUBMIT, presenter branch only
@@ -1204,4 +1206,49 @@ test("app.mjs wires the Log contact form, Copy, Copy all and Edit", () => {
   assert.match(app, /`Copied \$\{n\} contacts\.`/);
   // The old attempt is gone from the browser, notice and all.
   assert.doesNotMatch(app, /RECORD_CONTACT/);
+});
+
+test("app.mjs opens, closes and announces the two e-file confirmations", () => {
+  const app = appSource();
+  // Both open from the case page or from a Follow-ups row. A row selects its
+  // case in place (no navigation, so screening never starts from the queue),
+  // and the dialog opens only once that case is the one loaded.
+  const opener = app.slice(app.indexOf('case "open-mark-ready-to-efile":'), app.indexOf('case "open-log-call":'));
+  assert.match(
+    opener,
+    /case "open-mark-ready-to-efile":\s+case "open-close-case":\s+case "open-mark-efiled":\s+case "open-record-filing-result":\s+case "open-return-to-signing":\s+case "open-request-documents":\s+case "open-put-on-hold":\s+case "open-resume-from-hold":\s+case "open-withdraw": \{/,
+  );
+  assert.match(app, /"open-close-case": "close-case"/);
+  assert.match(app, /"open-request-documents": "request-documents"/);
+  assert.match(app, /"open-put-on-hold": "put-on-hold"/);
+  assert.match(app, /"open-resume-from-hold": "resume-from-hold"/);
+  // The toasts of the intake-and-closing moves.
+  assert.match(app, /REQUEST_DOCUMENTS_AT_INTAKE: "The documents are requested\."/);
+  assert.match(app, /PUT_ON_HOLD: "The case is on hold\."/);
+  assert.match(app, /RESUME_FROM_HOLD: "The case is back in progress\."/);
+  assert.match(app, /CLOSE_CASE: "The case is closed\."/);
+  assert.match(dialog({ dialog: "request-documents", savedCase: { reference: "VT-X" } }), /Ask for documents\?/);
+  assert.match(dialog({ dialog: "put-on-hold", savedCase: { reference: "VT-X" } }), /Put this case on hold\?/);
+  assert.match(dialog({ dialog: "resume-from-hold", savedCase: { reference: "VT-X" } }), /Got in touch\?/);
+  assert.match(opener, /const opener = describeFocus\(target\);/);
+  assert.match(opener, /const caseId = target\.dataset\.caseId;/);
+  assert.match(opener, /const name = CASE_DIALOGS\[target\.dataset\.action\];/);
+  assert.match(app, /"open-mark-efiled": "mark-efiled"/);
+  assert.match(app, /"open-record-filing-result": "record-filing-result"/);
+  assert.match(app, /"open-return-to-signing": "return-to-signing"/);
+  assert.match(opener, /if \(caseId\) \{\s+controller\.dismissError\(\);\s+await controller\.selectCase\(caseId, \{ navigate: false \}\);\s+if \(controller\.getState\(\)\.savedCase\?\.id !== caseId\) break;\s+\}\s+openDialog\(name, null, opener\);/);
+  // After a confirm the keyboard goes back to the opener, or, when its row has
+  // left the queue, to the case title or the queue heading, whichever screen it is.
+  assert.match(app, /if \(type === "MARK_READY_TO_EFILE" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /if \(type === "MARK_EFILED" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /MARK_READY_TO_EFILE: "Marked ready to e-file\. The client was told\."/);
+  assert.match(app, /MARK_EFILED: "Marked e-filed\. The client was told\."/);
+  // The two moves after E-filed open from the same places and announce themselves.
+  assert.match(app, /if \(type === "RECORD_FILING_RESULT" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /if \(type === "RETURN_TO_SIGNING" && receipt\) closeDialog\("#case-title, #office-queue-title"\);/);
+  assert.match(app, /RECORD_FILING_RESULT: "The filing result is recorded\."/);
+  assert.match(app, /RETURN_TO_SIGNING: "The case is back at signing\."/);
+  // The shared modal frame places both.
+  assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
+  assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);
 });

@@ -25,7 +25,7 @@ foundation for production too; see [key decisions](#key-decisions-and-trade-offs
 | --- | --- | --- |
 | Browser app | `index.html`, `src/` | Screens, navigation, forms, live updates. Predicts permissions to hide buttons; decides nothing. |
 | Supabase Auth (GoTrue) | Supabase | Email one-time-code sign-in. Accounts exist only for approved addresses. |
-| PostgREST | Supabase | Exposes tables (read-only for browsers) and the seven RPC functions over HTTP. |
+| PostgREST | Supabase | Exposes tables (read-only for browsers) and the eight RPC functions over HTTP. |
 | PostgreSQL | Supabase | Schema, row-level security, and all workflow logic in `SECURITY DEFINER` functions. |
 | Realtime | Supabase | Pushes INSERT/UPDATE events on sixteen tables, filtered by the same row-level security. |
 | `server.mjs` | Local machine | Serves the static files and `/public-config.json` locally. Any static host can replace it. |
@@ -210,6 +210,7 @@ reload. Details in [Front end: sign-in](frontend.md#sign-in) and
 | Email one-time-code sign-in and sessions | Document upload: one fixed fictional file name, no file storage |
 | Shared state across browsers, live updates | Reminders: a timestamp, no message is sent |
 | Every permission, eligibility and independence rule | TaxSlayer milestones: recorded by hand, no integration |
-| Concurrency, idempotency, audit history | Intake checks (interview, identity, documents, consent): tick boxes |
+| Concurrency, idempotency, audit history | — |
+| Screening checks: a volunteer ticks what they confirmed | — |
 | Row-level privacy between clients | Client phone calls: outcomes are recorded, calls happen elsewhere |
 | Intake answer checks, in the browser and again in the database | Materials received: staff tick what they were shown; nothing is stored |

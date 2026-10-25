@@ -14,7 +14,7 @@ exists, what is missing, and where the change lands.
 | Roles (spec §6) | Client, and one "presenter" account acting as staff personas | Real per-person staff accounts and role-based visibility ([§1](#1-staff-identity)) |
 | Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted intake (steps 0–9 with sub-steps) is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
 | Documents (spec §5, §7.1) | Metadata for one fixed fictional file | Real upload, storage, scanning, retention ([§3](#3-documents)) |
-| State machine (spec §8.2) | Intake through review approval, corrections, closure | Signature, e-filing, unreachable client, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
+| State machine (spec §8.2) | Intake, screening, preparation, review, corrections, signature, e-filing, closure | Unreachable client, the IRS's answer after e-filing, amendments, waiting for documents and hold, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
 | Client portal (spec §8.3) | Status, requests, document response, progress history | Queue position, preparer/reviewer contact, print, withdraw, notifications |
 | Volunteer portal (spec §8.4) | Work board, filters, case detail, internal history | Profiles, certifications, contact details |
 | Admin dashboard (spec §8.5) | Office board, follow-ups, reminders, closure, assistance | Reassignment, workload, reports, reference materials ([§7](#7-admin-reporting-and-forms)) |
@@ -101,23 +101,28 @@ The demo's stages against the spec's state machine (spec §8.2):
 
 | Spec state | Demo | Notes |
 | --- | --- | --- |
-| Intake | `draft`, `received` | Demo adds an explicit office intake check (`VERIFY_INTAKE`) |
+| Intake | `draft`, `received`, `screening` | An admin opening a `received` case starts screening (`START_SCREENING`); the office's explicit intake check (`VERIFY_INTAKE`) then moves it on. An office-entered case starts in `screening` |
 | PendingPrepare | `preparation_ready` | |
 | InPrepare | `preparing` | |
-| Pending (missing documents) | Document requests beside `preparing` | **Design difference.** The demo keeps the preparer assigned while waiting; the spec returns the case to the pool. Decide which the site wants |
+| Pending (missing documents) | Document requests beside `preparing`; `awaiting_documents` at intake (036) | **Design difference.** In preparation the demo keeps the preparer assigned while waiting; the spec returns the case to the pool (§8.2's in-preparation Pending). Before preparation, an admin's request moves the case to Waiting for documents and back automatically when the last request is verified. Decide which the site wants for preparation |
+| Hold | `on_hold` (036) | Built. An admin puts a case on hold from Waiting for documents or Ready to exit; "Got in touch" resumes it |
 | PendingReview | `review_ready` | |
 | InReview | `reviewing` | |
 | (not in spec) | `corrections_required` | Reviewer sends back to the same preparer, who resubmits a new version |
 | ReadyToExit | `review_approved` | The reviewer records a follow-up conversation with the client |
-| NeedSign, CantFindClient, Efiled | Not built | Signing and filing are explicitly out of the demo's scope |
-| Cancelled | `closed` | Admin only, with a reason; no client withdrawal |
+| NeedSign | `review_approved`, then `ready_to_efile` | `review_approved` is the wait for the client's signature; once the reviewer's call is recorded, an admin records the signature (`MARK_READY_TO_EFILE`) |
+| Efiled | `efiled`, then `accepted` or `rejected` | An admin records the e-filing and each return's method (`MARK_EFILED`), then the IRS's and Pennsylvania's answers by hand (`RECORD_FILING_RESULT`). A rejection returns to signing (`RETURN_TO_SIGNING`) and is filed again; nothing is sent to or read from the IRS or Pennsylvania |
+| Amended | Not built | Amendments after acceptance are not modelled |
+| CantFindClient | `on_hold`, then `closed` as Dismissed (036) | Built: Hold, "Got in touch", and closing as Dismissed when the client stays unreachable |
+| Cancelled | `closed` | An admin closes with one of six reasons (and a note for Other); the client may withdraw at the stages the spec allows (036) |
 
 To build next:
 
-- **Signature and e-filing milestones** after `review_approved`, including the unreachable-client
-  loop. Model them as new stages and actions ([database recipe](database.md#add-a-workflow-action)).
-- **Client withdrawal** (spec §8.3): a client action that closes their own case.
-- **Release and reassignment** (spec §8.5, §13): an admin action to change a case's preparer or
+- **Amendments**, **same day** and **FSA**. Model them as new stages and actions
+  ([database recipe](database.md#add-a-workflow-action)). Waiting for documents, Hold, the
+  unreachable client and client withdrawal are built (036). The IRS's answer after e-filing
+  (accepted, rejected, paper) is built, recorded by hand; importing the real answers is not.
+- **Release and reassignment** (spec §8.5, §13), not built: an admin action to change a case's preparer or
   reviewer. The participation record must still block self-review after reassignment; the database
   already enforces that.
 - **The fast path** (spec §13): creating a case directly during peak season. The demo's assisted
@@ -233,7 +238,7 @@ Reviewed and accepted for the demo, and worth knowing about:
   The browser withholds it, so the server never receives one; the two checks are otherwise the
   same, and a database test compares them.
 - **A workspace whose version-1 samples migration 023 deleted has no samples** until a presenter
-  presses **Reset sample cases**, which seeds six version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
+  presses **Reset sample cases**, which seeds ten version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 
@@ -244,7 +249,7 @@ Reviewed and accepted for the demo, and worth knowing about:
    decisions for the fields the version-2 intake collects.
 5. **Document storage** (back end, database, front end).
 6. **Bilingual support** (front end, database); the intake's Chinese is part 4d of the redesign.
-7. **Workflow extensions**: withdrawal, reassignment, signature and e-filing milestones.
+7. **Workflow extensions**: withdrawal, reassignment, the unreachable client, the IRS's answer and amendments.
 8. **Admin reporting, notifications and form generation** (a new service).
 9. **Security review, accessibility audit, load testing**, then a pilot with fictional data before
    any real client.

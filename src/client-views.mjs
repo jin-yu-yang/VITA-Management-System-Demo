@@ -3,6 +3,8 @@ import {
   icon,
   button,
   caseButton,
+  caseSubmit,
+  confirmBody,
   input,
   stageBadge,
   formatTime,
@@ -14,7 +16,7 @@ import {
   emptyState,
   emptyLine,
 } from "./ui.mjs";
-import { describeStage } from "./domain.mjs";
+import { describeStage, holdKind, canWithdraw, mustContactToWithdraw } from "./domain.mjs";
 import { invalidAnswers, formatAnswer, sendable } from "./intake-form.mjs";
 import {
   stepsFor,
@@ -118,7 +120,7 @@ export function accessScreen(state) {
 // ---------------------------------------------------------------------------
 
 function applicationRow(entry, updatedAt, lang = "en") {
-  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage, lang)}</span><span class="application-when">${updatedAt ? esc(t("apps.updated", { when: updatedAt }, lang)) : esc(t("apps.no_updates", {}, lang))}</span>${icon("chevron")}</button>`;
+  return `<button class="application-row" data-action="open-case" data-case-id="${esc(entry.id)}"><span class="application-id"><span class="application-reference">${esc(entry.reference)}</span>${when(entry.clientNumber != null, `<span class="application-number">${esc(formatClientNumber(entry.clientNumber))}</span>`)}</span><span class="application-stage">${stageBadge(entry.stage, lang, { audience: "client", record: entry })}</span><span class="application-when">${updatedAt ? esc(t("apps.updated", { when: updatedAt }, lang)) : esc(t("apps.no_updates", {}, lang))}</span>${icon("chevron")}</button>`;
 }
 
 export function applicationsScreen(state) {
@@ -284,11 +286,12 @@ export function intakeScreen(state) {
 // Progress
 // ---------------------------------------------------------------------------
 
-const PROGRESS_STEPS = Object.freeze([
-  ["progress.step.intake", ["draft", "received"]],
-  ["progress.step.preparation", ["preparation_ready", "preparing"]],
-  ["progress.step.review", ["review_ready", "reviewing", "corrections_required"]],
-  ["progress.step.next", ["review_approved", "closed"]],
+export const PROGRESS_STEPS = Object.freeze([
+  ["progress.step.intake", ["draft", "received", "screening"]],
+  ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
+  ["progress.step.review", ["review_ready", "reviewing"]],
+  ["progress.step.signing", ["review_approved"]],
+  ["progress.step.filing", ["ready_to_efile", "efiled", "rejected"]],
 ]);
 
 const REVIEW_STAGES = Object.freeze([
@@ -296,10 +299,34 @@ const REVIEW_STAGES = Object.freeze([
   "reviewing",
   "corrections_required",
   "review_approved",
+  "ready_to_efile",
+  "efiled",
+  "rejected",
+  "accepted",
 ]);
 
-function progressTrack(stage, lang = "en") {
-  const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+// Waiting for documents belongs to Intake, and a Hold sits where it came from:
+// a documents Hold at Intake, a Hold from Ready to exit at Signing. A Hold with
+// no origin has no step, like a closed case.
+const STEP_BY_STAGE = Object.freeze({ awaiting_documents: "progress.step.intake" });
+const STEP_BY_HOLD = Object.freeze({
+  documents: "progress.step.intake",
+  signing: "progress.step.signing",
+});
+
+function stepIndex(record) {
+  const stage = record.stage;
+  if (stage === "accepted") return PROGRESS_STEPS.length;
+  const key = stage === "on_hold" ? STEP_BY_HOLD[holdKind(record)] : STEP_BY_STAGE[stage];
+  if (key) return PROGRESS_STEPS.findIndex(([label]) => label === key);
+  return PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+}
+
+function progressTrack(record, lang = "en") {
+  // An accepted case has finished every step, so none is current.
+  const current = stepIndex(record);
+  // A closed case has no current step: its notice says what happened instead.
+  if (current < 0) return "";
   return `<div class="progress-steps">${PROGRESS_STEPS.map(([label], index) => {
     const status = index < current ? "done" : index === current ? "current" : "";
     const state = index < current ? "progress.step.done" : index === current ? "progress.step.current" : "progress.step.waiting";
@@ -327,10 +354,41 @@ function documentRequest(request, state, lang = "en") {
   )}<small class="block">${say("progress.checks_first")}</small></div>`;
 }
 
-function reviewProgress(stage, lang = "en") {
+function reviewProgress(record, lang = "en") {
+  const stage = record.stage;
   if (!REVIEW_STAGES.includes(stage)) return "";
-  const described = describeStage(stage, lang);
-  return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang)}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
+  const described = describeStage(stage, lang, record);
+  return `<section class="panel review-panel"><div class="section-head"><h2>${esc(t("progress.review", {}, lang))}</h2>${stageBadge(stage, lang, { audience: "client", record })}</div><p>${esc(described.clientMessage)}</p><p class="field-note">${esc(t("progress.review_note", {}, lang))}</p></section>`;
+}
+
+// The Withdraw button where the client may withdraw, the contact line where
+// they must ask the office (mustContactToWithdraw), and nothing at Draft, E-filed,
+// Accepted, Closed or a Hold with no origin.
+function withdrawSection(record, lang = "en") {
+  const say = (key) => esc(t(key, {}, lang));
+  if (canWithdraw(record))
+    return `<div class="withdraw-card">${button(say("withdraw.button"), "open-withdraw", "text")}</div>`;
+  if (mustContactToWithdraw(record))
+    return `<p class="field-note withdraw-contact">${say("withdraw.contact")}</p>`;
+  return "";
+}
+
+/**
+ * The Withdraw dialog's body: one box to tick, then the confirm control. The
+ * box's name is the one the WITHDRAW builder reads (`withdraw-confirmed`).
+ */
+export function withdrawDialogBody(state = {}) {
+  const lang = viewLang(state);
+  const say = (key) => esc(t(key, {}, lang));
+  const id = fieldId("withdraw-confirmed", "withdraw");
+  return confirmBody({
+    lead: say("withdraw.body"),
+    form: {
+      fields: `<label class="checkbox-row" for="${id}"><input type="checkbox" id="${id}" name="withdraw-confirmed" value="true" required><span>${say("withdraw.box")}</span></label>`,
+    },
+    confirm: caseSubmit(say("withdraw.button"), "WITHDRAW", "primary full", state.busy ? "disabled" : ""),
+    keep: say("withdraw.keep"),
+  });
 }
 
 export function progressScreen(state) {
@@ -338,7 +396,7 @@ export function progressScreen(state) {
   if (!record) return applicationsScreen(state);
   const lang = viewLang(state);
   const say = (key) => esc(t(key, {}, lang));
-  const described = describeStage(record.stage, lang);
+  const described = describeStage(record.stage, lang, record);
   const answers = record.answers ?? {};
   const open = (record.requests ?? []).filter(
     (request) => request.status === "open",
@@ -346,7 +404,7 @@ export function progressScreen(state) {
   const documents = record.documents ?? [];
   const history = [...(record.history ?? [])].reverse();
   const firstName = answers.tp_first_name;
-  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang)}</div>${progressTrack(record.stage, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${progressDocumentsV2(state, lang)}${
+  return `<main id="main" class="dashboard" tabindex="-1"><div class="page-intro dashboard-intro"><div><span class="overline">${say("progress.overline")}</span><h1>${firstName ? esc(t("progress.hello", { name: firstName }, lang)) : say("progress.title")}</h1><p>${say("progress.intro")}</p></div><div class="id-pill">${icon("folder")}<div><small>${say("id.application_caps")}</small><strong>${esc(record.reference)}</strong></div>${when(record.clientNumber != null, `<div><small>${say("id.client_number_caps")}</small><strong>${esc(formatClientNumber(record.clientNumber))}</strong></div>`)}</div></div><div class="progress-grid"><section><div class="panel status-panel"><div class="section-head"><h2>${say("progress.your_progress")}</h2>${stageBadge(record.stage, lang, { audience: "client", record })}</div>${progressTrack(record, lang)}<p class="status-explanation">${esc(described.clientMessage)}</p></div>${progressDocumentsV2(state, lang)}${
     open.length
       ? open.map((request) => documentRequest(request, state, lang)).join("")
       : `<div class="next-card">${icon("shield")}<div><h3>${say("progress.all_set")}</h3><p>${say("progress.all_set_body")}</p></div></div>`
@@ -358,7 +416,7 @@ export function progressScreen(state) {
           `<div class="document-row">${icon("file")}<div><strong>${esc(document.filename)}</strong><small>${say("progress.sent_waiting")}</small></div><span class="document-check pending">${icon("clock")}</span></div>`,
       )
       .join("")}</section>`,
-  )}${reviewProgress(record.stage, lang)}<section class="panel history-panel"><div class="section-head"><h2>${say("progress.history")}</h2><span class="muted small">${say("progress.history_note")}</span></div>${
+  )}${reviewProgress(record, lang)}<section class="panel history-panel"><div class="section-head"><h2>${say("progress.history")}</h2><span class="muted small">${say("progress.history_note")}</span></div>${
     history.length
       ? `<div class="timeline">${history
           .map(
@@ -367,7 +425,7 @@ export function progressScreen(state) {
           )
           .join("")}</div>`
       : emptyLine(say("progress.history_empty"))
-  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">${say("progress.glance")}</span><h3>${say("progress.details")}</h3>${row(t("progress.tax_year", {}, lang), "2025")}${row(t("progress.service", {}, lang), serviceLabel(answers.service, lang))}${row(t("progress.language", {}, lang), languageNames(clientLanguages(answers), { lang, separator: t("form.list_separator", {}, lang) }))}${row(t("id.application", {}, lang), record.reference)}<div class="gentle-note">${icon("lock")} ${say("progress.private")}</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>${say("progress.here")}</h3><p>${say("progress.questions")}</p>${officeContact()}${button(say("progress.contact"), "open-help", "secondary")}</div>${button(say("progress.back"), "open-applications", "text")}</aside></div></main>`;
+  }</section></section><aside class="right-column"><div class="panel summary-panel"><span class="overline">${say("progress.glance")}</span><h3>${say("progress.details")}</h3>${row(t("progress.tax_year", {}, lang), "2025")}${row(t("progress.service", {}, lang), serviceLabel(answers.service, lang))}${row(t("progress.language", {}, lang), languageNames(clientLanguages(answers), { lang, separator: t("form.list_separator", {}, lang) }))}${row(t("id.application", {}, lang), record.reference)}<div class="gentle-note">${icon("lock")} ${say("progress.private")}</div></div><div class="help-card"><span class="help-card-icon">${icon("help")}</span><h3>${say("progress.here")}</h3><p>${say("progress.questions")}</p>${officeContact()}${button(say("progress.contact"), "open-help", "secondary")}</div>${withdrawSection(record, lang)}${button(say("progress.back"), "open-applications", "text")}</aside></div></main>`;
 }
 
 // ---------------------------------------------------------------------------

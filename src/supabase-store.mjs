@@ -39,6 +39,8 @@ const STAFF_TABLES = Object.freeze([
   "assistance_items",
   "reviews",
   "case_materials",
+  "preparer_questionnaires",
+  "reviewer_questionnaires",
 ]);
 export const SUBSCRIBED_TABLES = Object.freeze({
   applicant: CLIENT_TABLES,
@@ -92,7 +94,48 @@ export const mapCase = (row) => ({
   intakeVersion: Number(row.intake_version),
   // The sub-steps the client has opened (migration 017); [] before it.
   intakeVisited: Array.isArray(row.intake_visited) ? [...row.intake_visited] : [],
+  // How the client will sign Form 8879 and the appointment's wall-clock time
+  // (migration 033); null until a questionnaire approval sets them.
+  signingPlan: row.signing_plan ?? null,
+  signingAppointmentAt: row.signing_appointment_at ?? null,
+  // How each return was filed ('efile' or 'paper') and the answer to it
+  // (migration 035); null until the case is filed, and until answered.
+  federalMethod: row.federal_method ?? null,
+  stateMethod: row.state_method ?? null,
+  federalResult: row.federal_result ?? null,
+  stateResult: row.state_result ?? null,
+  // Where the case was when documents were asked for or it went on hold, and
+  // why it closed (migration 036); null when none applies.
+  documentsOrigin: row.documents_origin ?? null,
+  holdOrigin: row.hold_origin ?? null,
+  closingReason: row.closing_reason ?? null,
 });
+
+// The filing history (migration 035), staff only: one entry per time the case
+// was filed, newest first, with that filing's returns (federal then state) and
+// the fix notes recorded after a rejection (oldest first). The rows arrive in
+// those orders; this only groups them.
+export const mapFilingAttempts = (attempts = [], returns = [], notes = []) =>
+  attempts.map((row) => ({
+    attempt: Number(row.attempt),
+    filedAt: row.filed_at,
+    returns: returns
+      .filter((entry) => Number(entry.attempt) === Number(row.attempt))
+      .map((entry) => ({
+        returnKind: entry.return_kind,
+        method: entry.method,
+        result: entry.result ?? null,
+        answeredOn: entry.answered_on ?? null,
+        rejectCode: entry.reject_code ?? null,
+      })),
+    notes: notes
+      .filter((entry) => Number(entry.attempt) === Number(row.attempt))
+      .map((entry) => ({
+        note: entry.note,
+        recordedBy: entry.recorded_by,
+        recordedAt: entry.recorded_at,
+      })),
+  }));
 
 // The case's contact details (migration 011), or null when it has no row: a
 // case nobody has saved a contact for.
@@ -151,6 +194,7 @@ export const mapFollowup = (row) => ({
   id: row.id,
   requestId: row.request_id,
   assigneeId: row.assignee_person_id,
+  purpose: row.purpose ?? "request_documents",
   status: row.status,
   reason: row.reason,
   resolutionOutcome: row.resolution_outcome,
@@ -262,6 +306,11 @@ export const mapStaffCase = ({
   contacts = [],
   cards = [],
   materials = [],
+  preparerQuestionnaires = [],
+  reviewerQuestionnaires = [],
+  filingAttempts = [],
+  filingReturns = [],
+  filingNotes = [],
 }) => ({
   ...mapClientCase({ row, requests, documents, history, contacts, cards }),
   participants: participants.map((participant) => participant.person_id),
@@ -270,6 +319,9 @@ export const mapStaffCase = ({
   contacts: contactLog.map((entry) => mapContactEntry(entry, contactVersions)),
   materials: materials.map(mapMaterial),
   internalHistory: internalHistory.map(camelRow),
+  preparerQuestionnaires: preparerQuestionnaires.map(camelRow),
+  reviewerQuestionnaires: reviewerQuestionnaires.map(camelRow),
+  filingAttempts: mapFilingAttempts(filingAttempts, filingReturns, filingNotes),
 });
 
 export function createStore(client) {
@@ -382,10 +434,10 @@ export function createStore(client) {
     // A client's list is their own cases and nothing more. A presenter's list
     // is a work board, and a board that cannot say who is already on a case,
     // what is waiting on a client, or who owes somebody a call is only a list
-    // of references. Those three answers, and the client's phone for the
-    // masked column, come from four grouped reads over the same RLS-scoped
-    // tables the case screen uses — not from the rows themselves, which carry
-    // no related record at all (Ruling R56).
+    // of references. Those three answers, the client's phone for the masked
+    // column and the reviewer's call status come from five grouped reads over
+    // the same RLS-scoped tables the case screen uses — not from the rows
+    // themselves, which carry no related record at all (Ruling R56).
     async listCases() {
       const staff = (await access()) === "presenter";
       const cases = (
@@ -403,7 +455,7 @@ export function createStore(client) {
       const followups = await read(
         client
           .from("admin_followups")
-          .select("case_id,assignee_person_id")
+          .select("case_id,assignee_person_id,purpose,reason")
           .in("case_id", ids)
           .eq("status", "open"),
       );
@@ -422,6 +474,26 @@ export function createStore(client) {
           .select("case_id,phone")
           .in("case_id", ids),
       );
+      // The reviewer's call with the client, for Follow-ups' Mark ready to
+      // e-file (brainstorm Q12): the latest approved review's status alone.
+      const approvals = await read(
+        client
+          .from("reviews")
+          .select("case_id,client_contact_status,created_at")
+          .in("case_id", ids)
+          .eq("status", "approved")
+          .order("created_at"),
+      );
+      // The newest fix note of each case, for Follow-ups' Rejected row (staff
+      // only; the filing attempts themselves stay on the case page's read).
+      const fixNotes = await read(
+        client
+          .from("filing_notes")
+          .select("case_id,note")
+          .in("case_id", ids)
+          .order("recorded_at")
+          .order("id"),
+      );
       const forCase = (rows, id) => rows.filter((row) => row.case_id === id);
       return cases.map((record) => {
         const open = forCase(followups, record.id);
@@ -429,6 +501,12 @@ export function createStore(client) {
           ...record,
           participants: forCase(participants, record.id).map((row) => row.person_id),
           openFollowups: open.length,
+          // D13: Mark ready to e-file waits while the office's go-over is open.
+          goOverOpen: open.some((row) => row.purpose === "go_over_return"),
+          // Follow-ups' Withdrawn row: the office's own job, not a call.
+          openWithdrawalNotices: open.filter((row) => row.purpose === "withdrawal_notice").length,
+          // The first notice's own text, which says whom the office tells what.
+          withdrawalNoticeReason: open.find((row) => row.purpose === "withdrawal_notice")?.reason ?? null,
           // Who owes this client a call, without the tasks themselves: the
           // board names people, and the case screen holds the work.
           followupAssigneeIds: [
@@ -436,6 +514,10 @@ export function createStore(client) {
           ],
           openRequests: forCase(requests, record.id).length,
           phone: forCase(contacts, record.id)[0]?.phone ?? null,
+          // "pending", "completed", or null when no review has been approved.
+          reviewContactStatus:
+            forCase(approvals, record.id).at(-1)?.client_contact_status ?? null,
+          latestFixNote: forCase(fixNotes, record.id).at(-1)?.note ?? null,
         };
       });
     },
@@ -523,6 +605,34 @@ export function createStore(client) {
             .order("item"),
         ),
         internalHistory: await relatedRows("case_events", id),
+        // Staff only: the applicant path above never names these tables.
+        preparerQuestionnaires: await relatedRows("preparer_questionnaires", id),
+        reviewerQuestionnaires: await relatedRows("reviewer_questionnaires", id),
+        // Staff only (migration 035). These tables have no created_at, so they
+        // are ordered by their own keys rather than through relatedRows.
+        filingAttempts: await read(
+          client
+            .from("filing_attempts")
+            .select("*")
+            .eq("case_id", id)
+            .order("attempt", { ascending: false }),
+        ),
+        filingReturns: await read(
+          client
+            .from("filing_returns")
+            .select("*")
+            .eq("case_id", id)
+            .order("attempt")
+            .order("return_kind"),
+        ),
+        filingNotes: await read(
+          client
+            .from("filing_notes")
+            .select("*")
+            .eq("case_id", id)
+            .order("recorded_at")
+            .order("id"),
+        ),
       });
     },
 
@@ -553,6 +663,16 @@ export function createStore(client) {
         p_person_id: request.personId ?? null,
         p_followup_id: request.followupId ?? null,
         p_entry: request.entry,
+      });
+    },
+
+    // Season end: close every listed unsigned case as Dismissed, or none.
+    async closeUnsigned(request) {
+      return await call("vitally_close_unsigned", {
+        p_action_id: actionId(request),
+        p_person_id: request.personId ?? null,
+        p_cases: request.cases,
+        p_confirmed: request.confirmed === true,
       });
     },
 

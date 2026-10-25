@@ -1,5 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber, loadingLine, confirmBody } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
+import { withdrawDialogBody } from "./client-views.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
 import {
@@ -8,12 +9,23 @@ import {
   decorateStaffCase,
   correctionsDialogBody,
 } from "./staff-views.mjs";
-import { renderAdminCase, closeCaseDialogBody } from "./admin-views.mjs";
+import {
+  renderAdminCase,
+  closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
+  requestDocumentsDialogBody,
+  putOnHoldDialogBody,
+  resumeFromHoldDialogBody,
+} from "./admin-views.mjs";
 import {
   renderAddCaseV2,
   renderFollowups,
   logCallDrawerBody,
   resolveHelpDrawerBody,
+  closeUnsignedDialogBody,
 } from "./office-views.mjs";
 import { renderCasePool } from "./pool-views.mjs";
 import {
@@ -427,10 +439,46 @@ export function dialog(state) {
       keep: "Keep editing",
     });
   }
+  if (state.dialog === "withdraw") {
+    title = t("withdraw.title", {}, lang);
+    body = withdrawDialogBody(state);
+  }
   if (state.dialog === "close-case") {
     title = "Close this case?";
     // The office screens own their own copy; this frame only places it.
     body = closeCaseDialogBody(state);
+  }
+  if (state.dialog === "mark-ready-to-efile") {
+    title = "Mark ready to e-file?";
+    body = markReadyToEfileDialogBody(state);
+  }
+  if (state.dialog === "mark-efiled") {
+    title = "Mark e-filed?";
+    body = markEfiledDialogBody(state);
+  }
+  if (state.dialog === "record-filing-result") {
+    title = "Record the filing result?";
+    body = recordFilingResultDialogBody(state);
+  }
+  if (state.dialog === "return-to-signing") {
+    title = "Return to signing?";
+    body = returnToSigningDialogBody(state);
+  }
+  if (state.dialog === "request-documents") {
+    title = "Ask for documents?";
+    body = requestDocumentsDialogBody(state);
+  }
+  if (state.dialog === "put-on-hold") {
+    title = "Put this case on hold?";
+    body = putOnHoldDialogBody(state);
+  }
+  if (state.dialog === "resume-from-hold") {
+    title = "Got in touch?";
+    body = resumeFromHoldDialogBody(state);
+  }
+  if (state.dialog === "close-unsigned") {
+    title = "Close unsigned cases?";
+    body = closeUnsignedDialogBody({ cases: state.cases ?? [], now: Date.now() });
   }
   if (state.dialog === "request-corrections") {
     title = "Ask the preparer for corrections";

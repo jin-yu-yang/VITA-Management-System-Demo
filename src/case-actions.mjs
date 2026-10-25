@@ -9,13 +9,14 @@
 // file refuses only what it can know by itself: an unknown action, a missing
 // related id, an empty required field and an outcome outside its own list.
 
-import { CASE_ACTIONS } from "./contracts.mjs";
+import { CASE_ACTIONS, CLOSING_REASONS } from "./contracts.mjs";
 import {
   MATERIALS_ITEMS,
   checkValue,
   findQuestion,
   isAnswered,
 } from "./intake-catalogue.mjs";
+import { preparerQuestionnaire, reviewerQuestionnaire } from "./questionnaires.mjs";
 
 // The one fictional file the demo ever sends (Ruling R18); the database accepts
 // no other name.
@@ -34,17 +35,23 @@ export const FOLLOWUP_RESOLUTION_OUTCOMES = Object.freeze([
   "no_further_contact",
 ]);
 
-// The four simulated intake attestations. They are demo flags: ticking them
-// records that a volunteer said the step happened in the story, and asserts
-// nothing about a real interview, identity check, document check or consent
-// signature. The database accepts the payload only with all four set to true,
-// so a form that offers three of them offers nothing at all.
-export const INTAKE_CHECK_KEYS = Object.freeze([
-  "interview",
-  "identity",
-  "documents",
-  "consent",
-]);
+// The office's screening checks: what a volunteer really confirms before the
+// case goes to preparation. The database accepts exactly these keys, all true.
+// Identity is asked only for an online case; any other service, or none, gets
+// the three.
+const BASE_SCREENING_KEYS = Object.freeze(["phone", "documents", "in_scope"]);
+const ONLINE_SCREENING_KEYS = Object.freeze([...BASE_SCREENING_KEYS, "identity"]);
+export const screeningCheckKeys = (service) =>
+  service === "online" ? ONLINE_SCREENING_KEYS : BASE_SCREENING_KEYS;
+
+export const SCREENING_CHECK_LABELS = Object.freeze({
+  phone: "The client can be reached at the phone number on the application.",
+  documents:
+    "The basic documents are present (photo ID, Social Security or ITIN cards, the income documents on the list).",
+  in_scope: "The return is within VITA scope.",
+  identity:
+    "Identity confirmed: the client's face matches their photo ID (in person or on video), checked by a certified volunteer.",
+});
 
 function validation(message) {
   return Object.assign(new Error(message), { code: "VALIDATION" });
@@ -79,14 +86,14 @@ function outcome(values, allowed) {
 const TICKED = Object.freeze([true, "true", "on"]);
 const ticked = (values, key) => TICKED.includes(values?.[key]);
 
-// All four attestations, or none: the payload the database accepts has exactly
-// the four keys, all true, so a partly-filled form cannot build a smaller one
-// and cannot silently promote itself into a complete one either.
-function checks(values) {
+// Every shown check, or none: the payload has exactly the keys the service
+// calls for, all true. A tick left over from a hidden check (identity on a
+// case that is not online) is never sent.
+function checks(values, service) {
   const result = {};
-  for (const key of INTAKE_CHECK_KEYS) {
+  for (const key of screeningCheckKeys(service)) {
     if (!ticked(values, key))
-      throw validation("Tick all four simulated intake checks first.");
+      throw validation("Tick every check before recording them.");
     result[key] = true;
   }
   return result;
@@ -95,9 +102,8 @@ function checks(values) {
 // Closing a case is deliberate: a written reason and an explicit confirmation.
 // The flag that leaves is always the literal `true` the contract names — a form
 // can withhold the confirmation, never redefine it.
-function confirmation(values) {
-  if (!ticked(values, "confirmed"))
-    throw validation("Confirm that you want to close this case.");
+function confirmation(values, message = "Confirm that you want to close this case.") {
+  if (!ticked(values, "confirmed")) throw validation(message);
   return true;
 }
 
@@ -145,17 +151,103 @@ function materialsReceived(values) {
   return received;
 }
 
+// How the return was filed. A first filing picks one of the
+// combinations (the one `filing-combination` radio); filing again offers only
+// the returns that were rejected, one `method-federal` / `method-state` choice
+// each, and exactly those that arrive are sent. Whether a combination is one
+// the office uses is the database's to say.
+const FILING_COMBINATIONS = Object.freeze({
+  both_efile: { federal: "efile", state: "efile" },
+  efile_and_paper: { federal: "efile", state: "paper" },
+  paper_and_efile: { federal: "paper", state: "efile" },
+  both_paper: { federal: "paper", state: "paper" },
+});
+const FILING_METHODS = Object.freeze(["efile", "paper"]);
+const CHOOSE_METHODS = "Choose how each return was filed.";
+
+function filingMethods(values) {
+  const combination = String(values?.["filing-combination"] ?? "").trim();
+  if (combination) {
+    if (!Object.hasOwn(FILING_COMBINATIONS, combination)) throw validation(CHOOSE_METHODS);
+    return { ...FILING_COMBINATIONS[combination] };
+  }
+  const methods = {};
+  for (const kind of ["federal", "state"]) {
+    const value = String(values?.[`method-${kind}`] ?? "").trim();
+    if (!value) continue;
+    if (!FILING_METHODS.includes(value)) throw validation(CHOOSE_METHODS);
+    methods[kind] = value;
+  }
+  if (!Object.keys(methods).length) throw validation(CHOOSE_METHODS);
+  return methods;
+}
+
+// The answers to the returns waiting. A return left on "no answer yet" (or on a
+// value outside the list) is not sent; a rejection needs its reject code; every
+// answer needs its date. The date window and who may record are the database's.
+const FILING_RESULTS = Object.freeze(["accepted", "rejected"]);
+
+function filingResults(dataset, values) {
+  const results = {};
+  for (const kind of ["federal", "state"]) {
+    const result = String(values?.[`result-${kind}`] ?? "").trim();
+    if (!FILING_RESULTS.includes(result)) continue;
+    const date = String(values?.[`date-${kind}`] ?? "").trim();
+    if (!date) throw validation("A date is required.");
+    const entry = { result, date };
+    if (result === "rejected") {
+      const code = String(values?.[`code-${kind}`] ?? "").trim();
+      if (!code) throw validation("A reject code is required.");
+      entry.code = code;
+    }
+    results[kind] = entry;
+  }
+  if (!Object.keys(results).length)
+    throw validation("Record a result for at least one return.");
+  const payload = { confirmed: true, results };
+  const fixNote = String(values?.["fix-note"] ?? "").trim();
+  if (fixNote) {
+    // The submit control carries `data-stage`: a case already at Rejected may
+    // take a note with a later answer; otherwise the note needs a rejection.
+    const rejects = Object.values(results).some((entry) => entry.result === "rejected");
+    if (!rejects && dataset?.stage !== "rejected") throw validation("A fix note goes with a rejection.");
+    payload.fixNote = fixNote;
+  }
+  return payload;
+}
+
+// The documents the office asks for at intake: up to five title and message
+// rows. A row with neither is skipped; a title with no message and a message with
+// no title are refused (the database would). At least one row must remain.
+function intakeRequests(values) {
+  const requests = [];
+  for (let n = 1; n <= 5; n += 1) {
+    const title = String(values?.[`request-title-${n}`] ?? "").trim();
+    if (!title) {
+      if (String(values?.[`request-message-${n}`] ?? "").trim()) throw validation(`Add a title for document ${n}.`);
+      continue;
+    }
+    requests.push({ title, message: text(values, `request-message-${n}`, "A message for the client") });
+  }
+  if (!requests.length) throw validation("Ask for at least one document.");
+  return requests;
+}
+
 // SAVE_ANSWERS is deliberately absent: it is built by the controller from the
 // draft it holds and the revision the edits started at, not from a form.
 const BUILDERS = Object.freeze({
   SUBMIT: () => ({ confirmed: true }),
-  // Demo attestations, never a claim that a real identity check happened, and
-  // never built from a form where one of the four is still unticked.
-  VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values) }),
+  // The submit control carries `data-service`, like the approve button: it
+  // decides whether identity is one of the checks.
+  VERIFY_INTAKE: (dataset, values) => ({ checks: checks(values, dataset?.service) }),
+  START_SCREENING: () => ({}),
   CLAIM_PREPARATION: () => ({}),
-  SUBMIT_REVIEW: () => ({}),
+  SUBMIT_REVIEW: (dataset, values) => ({ questionnaire: preparerQuestionnaire(values) }),
   CLAIM_REVIEW: () => ({}),
-  APPROVE_REVIEW: () => ({}),
+  // The approve button carries `data-service`: the appointment rule needs it.
+  APPROVE_REVIEW: (dataset, values) => ({
+    questionnaire: reviewerQuestionnaire(values, dataset?.service),
+  }),
   REMIND: () => ({}),
   REQUEST_DOCUMENT: (dataset, values) => ({
     title: text(values, "title", "A short title"),
@@ -185,16 +277,47 @@ const BUILDERS = Object.freeze({
     findings: text(values, "findings", "The corrections to make"),
   }),
   RESUBMIT_REVIEW: (dataset, values) => ({
+    questionnaire: preparerQuestionnaire(values),
     resolution: text(values, "resolution", "What was corrected"),
   }),
   RECORD_REVIEW_CONTACT: (dataset, values) => ({
     outcome: outcome(values, CONTACT_OUTCOMES),
     note: text(values, "note", "A note"),
   }),
-  CLOSE_CASE: (dataset, values) => ({
-    reason: text(values, "reason", "A reason"),
-    confirmed: confirmation(values),
+  MARK_READY_TO_EFILE: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that the client signed Form 8879, or the return will be given to the client on paper."),
   }),
+  MARK_EFILED: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm how each return was filed."),
+    methods: filingMethods(values),
+  }),
+  RECORD_FILING_RESULT: (dataset, values) => filingResults(dataset, values),
+  RETURN_TO_SIGNING: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that the fix is done."),
+  }),
+  REQUEST_DOCUMENTS_AT_INTAKE: (dataset, values) => ({ requests: intakeRequests(values) }),
+  PUT_ON_HOLD: (dataset, values) => {
+    const note = String(values?.["hold-note"] ?? "").trim();
+    return {
+      confirmed: confirmation(values, "Confirm that you want to put this case on hold."),
+      ...(note ? { note } : {}),
+    };
+  },
+  RESUME_FROM_HOLD: (dataset, values) => ({
+    confirmed: confirmation(values, "Confirm that you got in touch with the client."),
+  }),
+  WITHDRAW: (dataset, values) => {
+    if (!ticked(values, "withdraw-confirmed"))
+      throw validation("Tick the box to withdraw this application.");
+    return { confirmed: true };
+  },
+  CLOSE_CASE: (dataset, values) => {
+    const reason = String(values?.["close-reason"] ?? "").trim();
+    if (!CLOSING_REASONS.includes(reason)) throw validation("Choose a reason.");
+    const note = String(values?.["close-note"] ?? "").trim();
+    if (reason === "other" && !note) throw validation("Add a note for Other.");
+    return { confirmed: confirmation(values), reason, ...(note ? { note } : {}) };
+  },
   UPDATE_CONTACT: (dataset, values) => contactUpdate(values),
   RECORD_MATERIALS: (dataset, values) => ({ received: materialsReceived(values) }),
 });

@@ -32,7 +32,9 @@ what that suite already verified, not a hoped-for behavior.
 | Documents | The "sample mileage record" is a fixed fictional filename, never a real upload | — |
 | Reminders | "No external message sent" — REMIND records an internal timestamp only | — |
 | TaxSlayer preparation milestones | Recorded manually as text; no tax-preparation software is integrated | — |
-| Intake/document checks | Recorded as demo attestations ("Simulated intake checks are recorded…") | — |
+| Filing results | The IRS's and Pennsylvania's answers (accepted or rejected for an e-filed return; a paper return is given to the client at Mark e-filed) are recorded by hand by an admin; nothing is sent to the IRS or Pennsylvania, and the refund sites are plain text | — |
+| Holds, withdrawal and closing | A hold's "Got in touch" is recorded by hand; nothing calls or messages the client, and a withdrawal notice is only a follow-up for the office to act on | A client's Withdraw button and an admin's close, hold and document requests are real database writes, shared with the other window |
+| Screening checks | — | A volunteer ticks what they confirmed (phone, documents, scope, and identity for an online client); the office records it |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
 Say this plainly during a presentation: **"The documents, reminders, and tax-preparation steps you
@@ -57,7 +59,7 @@ actions from anyone else regardless of what the screen shows). It has:
   `Waiting for a reviewer`, `Sent back for corrections`). The case keeps its Application ID and
   its bound client; only its recorded work changes. Use this to skip ahead without narrating every
   intermediate step.
-- **"Reset sample cases"**: rebuilds all six sample cases and the one sample assistance request
+- **"Reset sample cases"**: rebuilds all ten sample cases and the one sample assistance request
   from scratch, with fresh Application IDs. **Applications the class itself created are never
   touched, and neither is anyone's sign-in** — the reset only replaces `fixture=true` records.
 - **"Fill fictional details"**: fills a form with generated fictional answers (used both by an
@@ -71,7 +73,7 @@ application, and narrate the off-screen intake/tax-preparation work rather than 
 click live. Everything here is clearly labeled simulated on screen, and nothing about a checkpoint
 or a time jump is hidden from the audience.
 
-1. **Start on the staff board with six sample cases visible.** Point out `waiting_documents`
+1. **Start on the staff board with ten sample cases visible.** Point out `waiting_documents`
    (Alex is preparing it and is waiting on a document) or load the `admin_followup_needed`
    checkpoint directly to skip to "the office has a call to make."
 2. **Switch to Sam** and show the office board's "Follow-up needed" section: the task is assigned
@@ -80,12 +82,16 @@ or a time jump is hidden from the audience.
    follow-up never reassigns or removes the preparer.
 3. **Switch to the client window** for that same case (or narrate "the client would now send their
    document") and, if time allows, respond with the sample document.
-4. **Switch to Alex**, verify the document, and record preparation complete.
-5. **Switch to Morgan**, claim the review, and approve it directly (the short path — no
-   corrections needed for this pass).
-6. **Record the client conversation** and switch back to the client window: it now reads "Review
-   complete" and the next service step — nothing about a refund amount, routing number, or
-   deposit, and nothing from the reviewer's internal findings.
+4. **Switch to Alex**, verify the document, and fill in the preparer questionnaire on the case
+   page to send the return to review.
+5. **Switch to Morgan**, claim the review, fill in the reviewer questionnaire (it sits above
+   **Approve**) and approve (the short path — no corrections needed for this pass). There is no
+   separate "record the conversation" step: the approval settles it. If you answer **No** to
+   "went over the return with the client", the office gets a go-over task in Follow-ups, and
+   **Mark ready to e-file** waits for it.
+6. **Switch back to the client window**: it now reads "Ready to exit" with how and when to
+   sign — nothing about a refund amount, routing number, or deposit, and nothing from the
+   reviewer's internal findings.
 
 ## The full story, as the browser test runs it
 
@@ -94,14 +100,14 @@ coverage the automated story adds. Use this version for a longer walkthrough or 
 what the test suite actually proved.
 
 1. **Both windows sign in** with a real generated one-time code, verified through the real form.
-2. **The presenter resets the sample cases** so the board shows exactly six known cases.
+2. **The presenter resets the sample cases** so the board shows exactly ten known cases.
 3. **A new application is submitted** in the client window: sign in with an approved email, fill
    fictional details in one click, confirm, and submit. Its generated Application ID
    (`VT-XXXX-XXXX`) appears on the staff board in the other window/engine — nothing is copied by
    hand.
 4. **The office records intake readiness.** Sam opens the *newly arrived* case from the office
-   board's **"Intake checks needed"** section (a case that has been submitted but not yet checked
-   appears here, and nowhere else on the office board) and records the simulated intake checks.
+   board's Follow-ups queue (its **"Intake checks"** kind; a case that has been submitted but not yet checked
+   appears here, and nowhere else on the office board) and records the screening checks (the volunteer ticks each check before the button turns on).
    Meanwhile, the client window is shown to be unaffected by staff persona switches and page
    reloads: its selected case, screen, form step, and open panels stay exactly where the person
    left them, while the shared update it is actually waiting for (the case moving into
@@ -115,12 +121,28 @@ what the test suite actually proved.
 10. **Morgan reviews.** Extended branch: Morgan requests corrections with a specific finding; the
     client sees "Corrections in progress" but never the finding text itself; Alex resolves and
     resubmits with a note describing what was corrected in TaxSlayer; Morgan re-claims the fresh
-    submission and approves it. (Short branch: Morgan claims and approves directly, with no
-    corrections — the second sample case in the story takes exactly this path.)
-11. **Morgan records the client conversation.** The client's screen updates to "Review complete"
-    and a plain description of the next step. The story asserts, at this exact point, that none of
+    submission and approves it. Each hand-off carries a questionnaire filled in inline on the case
+    page: the preparer's when sending the return to review, and the reviewer's above **Approve**.
+    (Short branch: Morgan claims and approves directly, with no corrections — the second sample
+    case in the story takes exactly this path.)
+11. **The approval settles the client conversation.** There is no "Record this conversation" step
+    after a questionnaire approval. If Morgan answered **No** to going over the return, the office
+    has a go-over task in Follow-ups, and **Mark ready to e-file** waits until it is resolved. The
+    client's screen updates to "Ready to exit" with how and when to sign, which is needed before the return can be filed. The story asserts, at this exact point, that none of
     the reviewer's findings, the preparer's resolution note, the office's contact notes, or any
     `$`/refund/routing/deposit language appear anywhere in the client's window.
+12. **Filing, with the state return on paper.** Alex's case is marked ready to e-file once the client
+    has signed, then **Mark e-filed** records the federal return e-filed and the PA-40 as given to the
+    client on paper ("E-filed, PA on paper"). Nothing e-filed is left waiting, so the case goes straight
+    to Accepted ("Accepted, PA on paper") with no Record filing result. The client's badge reads
+    "Ready to mail", with the sentence that PCDC gave the Pennsylvania return on paper and the client
+    mails it themselves. (A separate case in the story is e-filed on both, rejected by the state, and
+    returned to signing; it shows the two filing results recorded by hand.)
+13. **Season-end close.** Sam puts one sample case on a signing Hold and returns another to signing,
+    then opens **Close unsigned cases…** on the office board. Both are listed, ticked, with their stage
+    and days waiting; the heading follows the ticks. With only the held case ticked, the confirmation
+    closes it as Dismissed, the client is told, and no TaxSlayer notice is raised. The case that was
+    left out does not move.
 
 ### The assisted-intake (walk-in) path
 
@@ -133,7 +155,7 @@ have email, or is standing at the desk?":
 2. Submitting creates a new case with **no client account attached** — it stays reachable only
    through the office board, not through anyone's "My applications" list, until (if ever) a real
    account is linked to it.
-3. Sam records the simulated intake checks. Alex claims preparation and requests a document.
+3. Sam records the screening checks. Alex claims preparation and requests a document.
 4. **Sam records that the office physically received the sample document** ("Record sample
    document received") — labeled explicitly as staff-recorded, distinct from a client's own
    upload, and it still leaves verification pending.
@@ -152,7 +174,7 @@ have email, or is standing at the desk?":
   document the office recorded on their behalf.
 - **A seeded history row names the person the scenario says did that step, and no account at
   all.** Every `case_events` row the scenario itself writes carries `actor_user_id = null` —
-  nobody performed it — and the scenario's own `actor_person_id`: Sam on the intake checks and the
+  nobody performed it — and the scenario's own `actor_person_id`: Sam on the screening checks and the
   recorded call, Alex on claiming preparation and the document request, Morgan on the review
   steps, and nobody at all on the client's own submission
   (`009_fixtures_and_realtime.sql:114-160`, `286-289`). The one exception is the single
@@ -190,7 +212,7 @@ What to say when a class member asks "what happens to my stuff":
   or public sign-up; an address not on the roster gets the same neutral response as anyone else
   (below), never an error that reveals whether it is or is not approved.
 - **Applications a class member creates are never touched by a presenter's reset.** A reset only
-  rebuilds the six `fixture=true` sample cases; anything a real signed-in person submitted keeps
+  rebuilds the ten `fixture=true` sample cases; anything a real signed-in person submitted keeps
   its Application ID, its stage, and its owner through any number of resets.
 - **A class member cannot act as staff**, no matter what is typed or clicked. The persona switcher
   is presenter-only UI; even if an applicant somehow reached a staff control, the server checks

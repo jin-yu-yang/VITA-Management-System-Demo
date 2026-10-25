@@ -3367,11 +3367,13 @@ textarea::placeholder {
   height: 14px;
   flex: none;
 }
-.kind-pill.intake {
+.kind-pill.intake,
+.kind-pill.screening {
   background: var(--vt-stage-intake-bg);
   color: var(--vt-stage-intake);
 }
-.kind-pill.call {
+.kind-pill.call,
+.kind-pill.rejected {
   background: var(--vt-stage-amend-bg);
   color: var(--vt-stage-amend);
 }
@@ -3379,7 +3381,10 @@ textarea::placeholder {
   background: var(--vt-primary-soft);
   color: var(--vt-primary-hover);
 }
-.kind-pill.unclaimed {
+.kind-pill.unclaimed,
+.kind-pill.signing,
+.kind-pill.result,
+.kind-pill.efiling {
   background: var(--vt-background);
   border-color: var(--vt-line);
   color: var(--vt-muted);
@@ -5476,4 +5481,72 @@ html:lang(zh-Hant) {
     padding: 0 10px;
     font-size: 13px;
   }
+}
+
+/* The preparer and reviewer questionnaires, inline in "Your next step".
+   Showing and hiding is CSS alone: the payload builders drop an answer that
+   is hidden, so a stale value is never sent. */
+.q-form .field,
+.q-form .check-group {
+  margin-top: 12px;
+}
+.q-when-yes,
+.q-when-in-person {
+  display: none;
+}
+.staff-form:has(input[name="wentOver"][value="yes"]:checked) .q-when-yes,
+.staff-form:has(input[name="signMethod"][value="in_person"]:checked) .q-when-in-person {
+  display: block;
+}
+.q-exit-group {
+  border: 1px solid var(--vt-line);
+  border-radius: 8px;
+  padding: 0 12px;
+  margin-top: 8px;
+}
+.q-exit-group > summary {
+  cursor: pointer;
+  min-height: var(--vt-tap);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+.q-exit-group-body {
+  padding-bottom: 12px;
+}
+.q-compare {
+  margin-bottom: 8px;
+  overflow-x: auto;
+}
+.q-compare table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.q-compare th,
+.q-compare td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vt-line);
+}
+.q-compare thead th {
+  color: var(--vt-muted);
+  font-weight: 600;
+}
+.q-changed {
+  background: var(--vt-stage-amend-bg);
+  color: var(--vt-stage-amend);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.review-attempt h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vt-muted);
 }

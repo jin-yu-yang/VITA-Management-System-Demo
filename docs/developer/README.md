@@ -49,7 +49,7 @@ flowchart LR
   end
   Auth --> GoTrue
   Store -- "SELECT (row-level security)" --> PostgREST
-  Store -- "7 RPC functions (all writes)" --> PostgREST
+  Store -- "8 RPC functions (all writes)" --> PostgREST
   PostgREST --> PG
   PG -- "INSERT/UPDATE events" --> Realtime
   Realtime -- "row ids only" --> Store
@@ -59,7 +59,7 @@ flowchart LR
 
 There is no application server. The browser talks to Supabase directly with the public
 (publishable) key. Every read goes through row-level security, and **every write goes through one
-of seven database functions** that check who may do what, in a fixed order, inside one
+of eight database functions** that check who may do what, in a fixed order, inside one
 transaction. The database is the back end.
 
 ## Repository map
@@ -71,7 +71,7 @@ src/
   app.mjs                  Bootstrap and DOM event wiring. No state, no HTML, no queries.
   controller.mjs           All browser state and every user-level operation.
   window-state.mjs         Per-window, per-user navigation memory (sessionStorage).
-  supabase-store.mjs       The only data adapter: reads, the 7 RPCs, Realtime, row mapping.
+  supabase-store.mjs       The only data adapter: reads, the 8 RPCs, Realtime, row mapping.
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
   contact-log.mjs          The contact log's summary line, labels and New York time helpers.
   contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
@@ -96,17 +96,17 @@ src/
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
 supabase/
-  migrations/001-031       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-034       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
   build.mjs                Rebuilds src/vendor/supabase.mjs.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1119.
-  database*.mjs            Database tests against the local stack: 272.
+  *.test.mjs               Unit tests (no network): 1235.
+  database*.mjs            Database tests against the local stack: 326.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
-  browser.mjs              The full demonstration story, two browsers, both directions: 57.
+  browser.mjs              The full demonstration story, two browsers, both directions: 63.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
 docs/
   setup.md                 How to run and test everything.
@@ -126,7 +126,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
    in PostgreSQL. The browser predicts what is allowed so it can hide buttons, but a prediction is
    never permission. See [Database: the action API](database.md#the-action-api).
 2. **Browser roles can read, never write, tables.** `authenticated` has `SELECT` only; all
-   changes go through the seven `SECURITY DEFINER` functions. See
+   changes go through the eight `SECURITY DEFINER` functions. See
    [Database: visibility](database.md#who-can-see-what).
 3. **Every write is idempotent and revision-fenced.** A write carries a client-generated action
    id and the revision the person saw. Replaying the same envelope returns the same receipt;
@@ -150,13 +150,13 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Person / persona | A staff member record in `people` (Alex, Morgan, Sam) with capabilities. In the demo, a presenter account can act as any of them. |
 | Capability | What a person may do: `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. |
 | Case | One client's tax-return application, with a readable reference such as `VT-ABCD-2345`. |
-| Stage | Where a case is in the workflow: `draft` through `review_approved`, or `closed`. |
+| Stage | Where a case is in the workflow: `draft` through `efiled` (with `screening` after `received` and `ready_to_efile` before `efiled`), or `closed`. |
 | Revision | A counter on each case (and assistance item) that moves on every accepted action. |
 | Action | A named workflow step (`CLAIM_PREPARATION`, `APPROVE_REVIEW`, ...) sent to the database as an envelope. |
 | Receipt | The stored result of an accepted action, keyed by its action id, returned again on replay. |
 | Preparation version | Which hand-off to review this is; it moves each time a preparer submits or resubmits. |
 | Participation | The permanent record that a person helped prepare a case. It blocks them from reviewing it. |
-| Fixture / sample case | One of six seeded demonstration cases, rebuilt by a presenter's reset. |
+| Fixture / sample case | One of ten seeded demonstration cases, rebuilt by a presenter's reset. |
 | Generation | `workspaces.fixture_generation`, the counter a reset moves so every window reloads. |
 | Client number | `#001`-style number a case gets when it is submitted, one sequence per workspace and season (migration 010). |
 | Intake version | Which intake a case uses, fixed when it is created. `2`, the catalogue form of steps 0–9 with sub-steps, is the only version since migration 023 (the original four-step version 1 was removed). New cases take `workspaces.default_intake_version`. |

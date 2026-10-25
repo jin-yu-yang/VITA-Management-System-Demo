@@ -204,16 +204,26 @@ export const officeContact = () =>
 const STAGE_TONES = Object.freeze({
   draft: "intake",
   received: "intake",
+  screening: "intake",
   preparation_ready: "prep",
   preparing: "prep",
   review_ready: "prep",
   reviewing: "prep",
   corrections_required: "amend",
   review_approved: "filing",
+  ready_to_efile: "filing",
+  efiled: "filing",
+  rejected: "amend",
+  accepted: "filing",
   closed: "neutral",
 });
-export const stageBadge = (stage, lang = "en") =>
-  `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(describeStage(stage, lang).label)}</span>`;
+// Staff see the staff name (English); a client sees the label in their language.
+// A `record` lets E-filed and Accepted carry the case's filing method.
+export const stageBadge = (stage, lang = "en", { audience = "staff", record = null } = {}) => {
+  const described = describeStage(stage, lang, record);
+  const text = audience === "client" ? described.clientLabel : described.label;
+  return `<span class="badge ${STAGE_TONES[stage] ?? "neutral"}"><i></i>${esc(text)}</span>`;
+};
 
 // Rebuilding the page loses the keyboard, so the wiring layer records where it
 // was first — by **id** before name, because a name is not unique on a page any

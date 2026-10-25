@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  closeUnsignedDialogBody,
+  closeUnsignedListKey,
+  unsignedCases,
   followupQueue,
   logCallDrawerBody,
   officeFilters,
@@ -113,10 +116,99 @@ test("an intake row opens the case and carries no workflow action", () => {
   assert.match(html, /<tr class="queue-row" data-kind="intake">/);
   const a = rowOf(html, "a");
   assert.match(a, /<button class="board-reference" data-action="open-case" data-case-id="a">VT-AAAA<\/button>/);
-  assert.match(a, /data-action="open-case" data-case-id="a"[^>]*>[^]*Record intake checks/);
+  assert.match(a, /<button type="button" class="btn primary" data-action="open-case" data-case-id="a">[^]*? Open<\/button>/);
+  assert.doesNotMatch(a, /Record intake checks/);
+  assert.match(a, /New application: open it to start screening\./);
   assert.deepEqual(actions(a), []);
   assert.match(rowOf(html, "b"), /Finish and send/);
   assert.match(html, /<h2 id="office-queue-title" tabindex="-1">Office queue<\/h2>/);
+});
+
+test("Follow-ups shows new applications, screening, signing and e-filing", () => {
+  const rec = (id, stage, reviewContactStatus = "completed") => ({
+    id,
+    reference: `VT-${id}`,
+    stage,
+    ownerUserId: "u",
+    reviewContactStatus,
+    updatedAt: "2026-10-18T10:00:00Z",
+  });
+  const now = Date.parse("2026-10-18T12:00:00Z");
+  const rows = followupQueue(
+    [rec("A", "received"), rec("B", "screening"), rec("C", "review_approved"), rec("D", "ready_to_efile"), rec("E", "efiled")],
+    [],
+    now,
+  );
+  const kinds = Object.fromEntries(rows.map((row) => [row.record.id, row.kind]));
+  assert.deepEqual(kinds, { A: "intake", B: "screening", C: "signing", D: "efiling", E: "result" });
+  // A received case whose intake checks were already recorded still waits
+  // for screening to start, so it stays a row.
+  const verified = followupQueue([{ ...rec("V", "received"), intakeVerified: true }], [], now);
+  assert.deepEqual(verified.map((row) => row.kind), ["intake"]);
+
+  const ui = { person: sam, filters: {}, busy: false, now };
+  const html = renderFollowups(
+    [rec("A", "received"), rec("B", "screening"), rec("C", "review_approved"), rec("D", "ready_to_efile")],
+    [],
+    ui,
+  );
+  assert.match(rowOf(html, "A"), /New application: open it to start screening\./);
+  assert.match(rowOf(html, "B"), /Finish screening\./);
+  assert.match(rowOf(html, "B"), /data-action="open-case" data-case-id="B">[^]*? Open<\/button>/);
+  assert.match(rowOf(html, "C"), /Waiting for the client to sign\./);
+  assert.match(rowOf(html, "D"), /Ready to e-file\./);
+  assert.match(
+    rowOf(html, "C"),
+    /<button type="button" class="btn primary" data-action="open-mark-ready-to-efile" data-case-id="C" >[^]*? Mark ready to e-file…<\/button>/,
+  );
+  assert.match(
+    rowOf(html, "D"),
+    /<button type="button" class="btn primary" data-action="open-mark-efiled" data-case-id="D" >[^]*? Mark e-filed…<\/button>/,
+  );
+  // Neither row offers the other's mark, and none carries a workflow action.
+  assert.doesNotMatch(rowOf(html, "C"), /open-mark-efiled/);
+  assert.doesNotMatch(rowOf(html, "D"), /open-mark-ready-to-efile/);
+  assert.deepEqual(actions(html), []);
+  // The reviewer hasn't recorded the call yet: the row explains instead of
+  // offering the mark, and says what it is waiting for.
+  for (const pending of ["pending", null]) {
+    const waiting = renderFollowups([rec("F", "review_approved", pending)], [], ui);
+    assert.doesNotMatch(waiting, /open-mark-ready-to-efile/);
+    assert.match(waiting, /The reviewer still needs to record the conversation with the client\./);
+    assert.match(waiting, /Waiting for the reviewer&#39;s call with the client\./); // esc() writes ' as &#39;
+    assert.doesNotMatch(waiting, /Waiting for the client to sign\./);
+  }
+  // D13: the reviewer's call is done but the office has not gone over the return.
+  const over = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: true }], [], ui);
+  assert.doesNotMatch(over, /open-mark-ready-to-efile/);
+  assert.match(over, /Waiting for the office to go over the return with the client\./);
+  assert.match(over, /The office still needs to go over the return with the client\./);
+  assert.doesNotMatch(over, /Waiting for the client to sign\./);
+  const overDone = renderFollowups([{ ...rec("G", "review_approved"), goOverOpen: false }], [], ui);
+  assert.match(overDone, /Waiting for the client to sign\./);
+  assert.match(overDone, /open-mark-ready-to-efile/);
+  // Only an administrator is offered the marks.
+  const forAlex = renderFollowups([rec("C", "review_approved"), rec("D", "ready_to_efile")], [], { ...ui, person: ALEX });
+  assert.doesNotMatch(forAlex, /open-mark-/);
+  assert.match(forAlex, /Needs office administrator access\./);
+  // The new kinds have their own icon and pill class, filter chips and counts.
+  for (const kind of ["screening", "signing", "efiling"]) {
+    assert.match(html, new RegExp(`<span class="kind-pill ${kind}">`));
+    assert.match(html, new RegExp(`data-filter="officeKind" data-value="${kind}" aria-pressed="false"`));
+  }
+  assert.match(html, /<span class="kind-pill screening"><svg[^]*?<\/svg> Screening<\/span>/);
+  assert.match(html, /Screening <span class="tab-count">1<\/span>/);
+  assert.match(html, /Signing <span class="tab-count">1<\/span>/);
+  assert.match(html, /E-filing <span class="tab-count">1<\/span>/);
+  assert.match(html, /Intake checks <span class="tab-count">1<\/span>/);
+  // Choosing a new kind narrows to it.
+  const signing = renderFollowups(
+    [rec("A", "received"), rec("C", "review_approved")],
+    [],
+    { ...ui, filters: { officeKind: "signing" } },
+  );
+  assert.match(signing, /data-kind="signing"/);
+  assert.doesNotMatch(signing, /data-kind="intake"/);
 });
 
 test("an unclaimed row offers a reminder to the office and a reason to everyone else", () => {
@@ -172,7 +264,7 @@ test("the task-type toggles narrow the rows and show counts", () => {
   assert.match(html, /role="group" aria-label="Task type"/);
   assert.equal(
     [...html.matchAll(/data-action="set-board-filter" data-filter="officeKind"/g)].length,
-    5,
+    13,
   );
   assert.match(html, /data-filter="officeKind" data-value="all" aria-pressed="true"/);
   const calls = page(cases, [], sam, { officeKind: "call" });
@@ -848,4 +940,356 @@ test("Follow-ups while the cases or help requests load, and when they couldn't",
     /Nothing is waiting on the office right now\./,
     "ready by default",
   );
+});
+
+// A go-over task has no request (design D5): no view may read one.
+const goOver = (over = {}) =>
+  task({
+    id: "g1",
+    purpose: "go_over_return",
+    requestId: null,
+    reason: "Go over the return with the client: the reviewer did not.",
+    ...over,
+  });
+
+test("follow-up with no request renders", () => {
+  const record = kase({
+    id: "c1",
+    reference: "VT-CALL",
+    stage: "preparing",
+    preparerId: "p-alex",
+    followups: [goOver()],
+    openFollowups: 1,
+    contacts: [],
+  });
+  const html = page([record]);
+  assert.match(rowOf(html, "c1"), /data-kind="call"/);
+  assert.match(rowOf(html, "c1"), /1 open/);
+  assert.equal(followupQueue([record], [], NOW).filter((row) => row.kind === "call").length, 1);
+  const drawer = logCallDrawerBody({ record, person: sam, ui: { now: NOW }, caseId: "c1" });
+  assert.match(drawer, /Go over the return with the client: the reviewer did not\./);
+  assert.doesNotMatch(drawer, /undefined|null/);
+  assert.doesNotMatch(drawer, /awaiting preparer verification|Request documents<\/h3>/);
+});
+
+test("a task's Log contact form starts with its purpose", () => {
+  const drawer = logCallDrawerBody({ record: called([goOver()]), person: sam, ui: {}, caseId: "c1" });
+  assert.match(drawer, /name="purpose" value="go_over_return" required checked/);
+  assert.doesNotMatch(drawer, /name="purpose" value="request_documents" required checked/);
+  const docs = logCallDrawerBody({
+    record: called([task({ purpose: "request_documents" })]),
+    person: sam,
+    ui: {},
+    caseId: "c1",
+  });
+  assert.match(docs, /name="purpose" value="request_documents" required checked/);
+});
+
+// ---------------------------------------------------------------------------
+// After E-filed: Filing result and Rejected rows
+// ---------------------------------------------------------------------------
+
+const filed = (id, stage, over = {}) =>
+  kase({ id, stage, ownerUserId: "u", reviewContactStatus: "completed", ...over });
+const E = { federalMethod: "efile", stateMethod: "efile", federalResult: null, stateResult: null };
+const P = { federalMethod: "paper", stateMethod: "paper", federalResult: null, stateResult: null };
+// The row of one kind for one case (a rejected case may have two rows).
+const kindRow = (html, id, kind) => {
+  const found = html
+    .split('<tr class="queue-row"')
+    .slice(1)
+    .find((row) => row.startsWith(` data-kind="${kind}"`) && row.includes(`data-case-id="${id}"`));
+  assert.ok(found, `no ${kind} row for ${id}`);
+  return found.slice(0, found.indexOf("</tr>"));
+};
+
+test("Follow-ups queue: Filing result and Rejected rows, none for Accepted", () => {
+  const rows = followupQueue(
+    [
+      filed("e", "efiled", E),
+      filed("r", "rejected", { ...E, federalResult: "rejected" }),
+      filed("done", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted" }),
+      filed("a", "accepted", { ...E, federalResult: "accepted", stateResult: "accepted" }),
+    ],
+    [],
+    NOW,
+  );
+  assert.deepEqual(
+    rows.map((row) => `${row.kind}:${row.record.id}`).sort(),
+    ["rejected:done", "rejected:r", "result:e", "result:r"],
+  );
+});
+
+test("Filing result row texts", () => {
+  const html = page([
+    filed("both", "efiled", E),
+    filed("pa", "efiled", { ...E, federalResult: "accepted" }),
+    filed("irs", "efiled", { ...E, stateResult: "accepted" }),
+    filed("paper", "efiled", P),
+    filed("pstate", "efiled", { federalMethod: "paper", stateMethod: "efile" }),
+    filed("old", "efiled", { federalMethod: null, stateMethod: null }),
+  ]);
+  assert.match(kindRow(html, "both", "result"), /Waiting for the IRS and Pennsylvania\./);
+  assert.match(kindRow(html, "pa", "result"), /Waiting for Pennsylvania(&#39;|')s answer\./);
+  assert.match(kindRow(html, "irs", "result"), /Waiting for the IRS(&#39;|')s answer\./);
+  // A stuck paper return (filed before the rule, no result) renders and never says mailed.
+  assert.doesNotMatch(kindRow(html, "paper", "result"), /mailed/i);
+  assert.match(kindRow(html, "pstate", "result"), /Waiting for Pennsylvania(&#39;|')s answer\./);
+  assert.doesNotMatch(html, /mailed/i);
+  assert.match(kindRow(html, "old", "result"), /Waiting for the IRS and Pennsylvania\./);
+  assert.match(
+    kindRow(html, "both", "result"),
+    /data-action="open-record-filing-result" data-case-id="both"[^>]*>[^]*? Record filing result…<\/button>/,
+  );
+});
+
+test("Filing result tone: amber at 3, red at 5, for any Filing result row", () => {
+  const html = page([
+    filed("amber", "efiled", { ...E, updatedAt: daysAgo(3) }),
+    filed("red", "efiled", { ...E, updatedAt: daysAgo(5) }),
+    filed("pstate", "efiled", { federalMethod: "paper", stateMethod: "efile", updatedAt: daysAgo(3) }),
+    filed("old", "efiled", { federalMethod: null, stateMethod: null, updatedAt: daysAgo(5) }),
+  ]);
+  assert.match(kindRow(html, "amber", "result"), /class="queue-waiting aging"/);
+  assert.match(kindRow(html, "red", "result"), /class="queue-waiting late"/);
+  assert.match(kindRow(html, "old", "result"), /class="queue-waiting late"/);
+  assert.match(kindRow(html, "pstate", "result"), /class="queue-waiting aging"/);
+});
+
+test("Rejected row: latest fix note, escaped; waiting text instead of the button; never coloured", () => {
+  const attempts = [
+    { notes: [{ note: "First note", recordedAt: "2026-09-20T10:00:00Z" }] },
+    { notes: [{ note: "Fix <b>SSN</b>", recordedAt: "2026-09-25T10:00:00Z" }] },
+  ];
+  const html = page([
+    filed("fix", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted", filingAttempts: attempts, updatedAt: daysAgo(6) }),
+    filed("wait", "rejected", { ...E, federalResult: "rejected" }),
+    filed("waitp", "rejected", { ...E, federalResult: "rejected", stateMethod: "paper" }),
+    filed("nonote", "rejected", { ...E, federalResult: "rejected", stateResult: "accepted" }),
+  ]);
+  const fix = kindRow(html, "fix", "rejected");
+  assert.match(fix, /Rejected: contact the client to fix and sign again\./);
+  assert.match(fix, /Fix &lt;b&gt;SSN&lt;\/b&gt;/);
+  assert.doesNotMatch(fix, /First note|<b>SSN/);
+  assert.match(fix, /data-action="open-return-to-signing" data-case-id="fix"[^>]*>[^]*? Return to signing…<\/button>/);
+  assert.match(fix, /class="queue-waiting "/);
+  assert.doesNotMatch(kindRow(html, "nonote", "rejected"), /Fix &lt;|<small/);
+  const wait = kindRow(html, "wait", "rejected");
+  assert.match(wait, /Waiting for Pennsylvania(&#39;|')s answer before the return can go back to signing\./);
+  assert.doesNotMatch(wait, /Return to signing…/);
+  const waitp = kindRow(html, "waitp", "rejected");
+  assert.match(waitp, /Return to signing…/);
+  assert.doesNotMatch(waitp, /mailed/i);
+});
+
+test("A returned case's Signing row reads for signing again", () => {
+  const html = page([filed("back", "review_approved", { ...E, federalResult: "rejected", stateResult: "accepted" })]);
+  assert.match(kindRow(html, "back", "signing"), /Waiting for the client to sign again\./);
+});
+
+test("a Follow-ups row and the Log contact drawer name E-filed by the filing method", () => {
+  const record = filed("m", "efiled", { federalMethod: "efile", stateMethod: "paper", federalResult: null, stateResult: null });
+  assert.match(kindRow(page([record]), "m", "result"), /<i><\/i>E-filed, PA on paper</);
+  const drawer = logCallDrawerBody({ record, person: sam, ui: {}, caseId: "m" });
+  assert.match(drawer, /<i><\/i>E-filed, PA on paper</);
+});
+
+test("the Follow-ups filter lists the two new kinds before Call the client", () => {
+  const html = page([filed("e", "efiled", E)]);
+  const order = [...html.matchAll(/data-filter="officeKind" data-value="([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, [
+    "all", "intake", "screening", "documents", "hold", "withdrawn", "signing", "efiling", "result", "rejected", "call", "help", "unclaimed",
+  ]);
+});
+
+test("Waiting for documents row: the sentence, Put on hold…, amber at 3 days and red at 5", () => {
+  const html = page([
+    filed("d0", "awaiting_documents", { documentsOrigin: "screening", updatedAt: daysAgo(2) }),
+    filed("d3", "awaiting_documents", { documentsOrigin: "screening", updatedAt: daysAgo(3) }),
+    filed("d5", "awaiting_documents", { documentsOrigin: "preparation_ready", updatedAt: daysAgo(5) }),
+  ]);
+  const row = kindRow(html, "d3", "documents");
+  assert.match(row, /Waiting for the client(&#39;|')s documents\./);
+  assert.match(row, /data-action="open-put-on-hold" data-case-id="d3"[^>]*>[^]*? Put on hold…<\/button>/);
+  assert.match(row, /class="queue-waiting aging"/);
+  assert.match(kindRow(html, "d0", "documents"), /class="queue-waiting "/);
+  assert.match(kindRow(html, "d5", "documents"), /class="queue-waiting late"/);
+  assert.match(row, /<span class="kind-pill documents">[^]*Waiting for documents/);
+});
+
+test("Hold rows: the two sentences, Got in touch… and Close…, never coloured", () => {
+  const html = page([
+    filed("hd", "on_hold", { holdOrigin: "awaiting_documents", documentsOrigin: "screening", updatedAt: daysAgo(10) }),
+    filed("hs", "on_hold", { holdOrigin: "review_approved", updatedAt: daysAgo(10) }),
+  ]);
+  const docs = kindRow(html, "hd", "hold");
+  assert.match(docs, /Can(&#39;|')t reach the client about documents\./);
+  assert.match(docs, /data-action="open-resume-from-hold" data-case-id="hd"[^>]*>[^]*? Got in touch…<\/button>/);
+  assert.match(docs, /data-action="open-close-case" data-case-id="hd"[^>]*>[^]*? Close…<\/button>/);
+  assert.match(docs, /class="queue-waiting "/);
+  const signing = kindRow(html, "hs", "hold");
+  assert.match(signing, /Can(&#39;|')t reach the client to sign\./);
+  assert.match(signing, /class="queue-waiting "/);
+  // A held signing case has no Signing row.
+  assert.doesNotMatch(html, /data-kind="signing"/);
+});
+
+test("Withdrawn row: names the volunteer, escaped, from an open withdrawal notice; never coloured", () => {
+  const closed = (id, over) =>
+    filed(id, "closed", { closingReason: "withdrawn", preparerId: "p-alex", preparerName: "Alex Rivera", updatedAt: daysAgo(9), ...over });
+  // A list row carries the count; an opened case carries the follow-ups.
+  const html = page([
+    closed("w1", { openFollowups: 1, openWithdrawalNotices: 1 }),
+    closed("w2", { followups: [{ id: "f1", status: "open", purpose: "withdrawal_notice" }] }),
+    closed("w3", { openFollowups: 0, openWithdrawalNotices: 0 }),
+    closed("w4", { openFollowups: 1, openWithdrawalNotices: 1, preparerName: "<b>Alex</b>" }),
+  ]);
+  for (const id of ["w1", "w2"]) {
+    const row = kindRow(html, id, "withdrawn");
+    assert.match(row, /The client withdrew; tell Alex Rivera to stop work\./);
+    assert.match(row, /data-action="open-log-call" data-case-id="[a-z0-9]+"[^>]*>[^]*? Resolve<\/button>/);
+    assert.match(row, /class="queue-waiting "/);
+  }
+  assert.match(kindRow(html, "w4", "withdrawn"), /tell &lt;b&gt;Alex&lt;\/b&gt; to stop work/);
+  // Withdrawn at Review in progress: the reviewer is set, and is the one told.
+  const review = page([
+    closed("w5", { openFollowups: 1, openWithdrawalNotices: 1, reviewerId: "p-morgan", reviewerName: "Morgan Lee" }),
+  ]);
+  assert.match(kindRow(review, "w5", "withdrawn"), /tell Morgan Lee to stop work/);
+  assert.doesNotMatch(kindRow(review, "w5", "withdrawn"), /Alex Rivera/);
+  // The notice is the office's own job: it is not also a "Call the client" task, and a
+  // closed case without one has no row.
+  assert.doesNotMatch(html, /data-kind="call"/);
+  assert.doesNotMatch(html, /data-case-id="w3"/);
+});
+
+test("Withdrawn row: an admin's withdrawn close before filing reads the TaxSlayer sentence", () => {
+  const TRANSMIT = "The client withdrew; make sure the return is not transmitted in TaxSlayer.";
+  const STOP = "The client withdrew the application: tell the volunteer to stop work.";
+  const closed = (id, over) =>
+    filed(id, "closed", { closingReason: "withdrawn", preparerId: "p-alex", preparerName: "Alex Rivera", updatedAt: daysAgo(9), ...over });
+  const html = page([
+    // A list row carries the first open notice's text; an opened case carries the follow-ups.
+    closed("t1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("t2", { followups: [{ id: "f1", status: "open", purpose: "withdrawal_notice", reason: TRANSMIT }] }),
+    closed("t3", { preparerName: null, preparerId: null, openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: TRANSMIT }),
+    closed("s1", { openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: STOP }),
+    closed("s2", { followups: [{ id: "f2", status: "open", purpose: "withdrawal_notice", reason: STOP }] }),
+  ]);
+  for (const id of ["t1", "t2", "t3"]) {
+    const row = kindRow(html, id, "withdrawn");
+    assert.match(row, /The client withdrew; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /to stop work/);
+  }
+  for (const id of ["s1", "s2"])
+    assert.match(kindRow(html, id, "withdrawn"), /The client withdrew; tell Alex Rivera to stop work\./);
+  // A signing hold closed for another reason stores its own sentence, shown as stored.
+  const BEFORE = "The case was closed before filing; make sure the return is not transmitted in TaxSlayer.";
+  const other = page([
+    closed("b1", { closingReason: "dismissed", openFollowups: 1, openWithdrawalNotices: 1, withdrawalNoticeReason: BEFORE }),
+    closed("b2", { closingReason: "dismissed", followups: [{ id: "f3", status: "open", purpose: "withdrawal_notice", reason: BEFORE }] }),
+  ]);
+  for (const id of ["b1", "b2"]) {
+    const row = kindRow(other, id, "withdrawn");
+    assert.match(row, /The case was closed before filing; make sure the return is not transmitted in TaxSlayer\./);
+    assert.doesNotMatch(row, /The client withdrew/);
+  }
+});
+
+test("a case on hold with a call task keeps its Call the client row beside the Hold row", () => {
+  const html = page([filed("h", "on_hold", { holdOrigin: "awaiting_documents", openFollowups: 1 })]);
+  assert.match(kindRow(html, "h", "hold"), /Can(&#39;|')t reach/);
+  assert.match(kindRow(html, "h", "call"), /1 open task/);
+});
+
+// ---------------------------------------------------------------------------
+// The season-end dialog (change adjust-filing-to-pcdc, Close unsigned cases)
+// ---------------------------------------------------------------------------
+const waitingCase = (id, stage, updatedAt, over = {}) => ({
+  id,
+  reference: `VT-${id}`,
+  stage,
+  revision: 4,
+  answers: { tp_first_name: "Mei", tp_last_name: `Client ${id}` },
+  updatedAt,
+  ...over,
+});
+
+test("unsignedCases picks Ready to exit and Hold from Ready to exit, oldest first", () => {
+  const picked = unsignedCases([
+    waitingCase("new", "review_approved", daysAgo(2)),
+    waitingCase("other", "on_hold", daysAgo(30), { holdOrigin: "awaiting_documents" }),
+    waitingCase("hold", "on_hold", daysAgo(9), { holdOrigin: "review_approved" }),
+    waitingCase("old", "review_approved", daysAgo(20)),
+    waitingCase("done", "closed", daysAgo(40)),
+  ]);
+  assert.deepEqual(picked.map((r) => r.id), ["old", "hold", "new"]);
+});
+
+test("Follow-ups shows Close unsigned cases for an admin only", () => {
+  const some = [waitingCase("a", "review_approved", daysAgo(3))];
+  const html = page(some);
+  assert.match(html, /Close unsigned cases…/);
+  assert.doesNotMatch(html.match(/<button[^>]*open-close-unsigned[^>]*>/)[0], /disabled/);
+  const none = page([]);
+  assert.match(none.match(/<button[^>]*open-close-unsigned[^>]*>/)[0], /disabled/);
+  assert.match(none, /No case is waiting for a signature\./);
+  assert.doesNotMatch(page(some, [], ALEX), /open-close-unsigned|Close unsigned cases/);
+});
+
+test("closeUnsignedDialogBody lists each case ticked, with the heading and the box", () => {
+  const cases = [
+    waitingCase("a", "review_approved", daysAgo(6)),
+    waitingCase("b", "on_hold", daysAgo(4), { holdOrigin: "review_approved" }),
+    waitingCase("c", "review_approved", daysAgo(1)),
+  ];
+  const html = closeUnsignedDialogBody({ cases, now: NOW });
+  assert.match(html, /Close 3 cases that are waiting for a signature, as Dismissed\?/);
+  for (const id of ["a", "b", "c"])
+    assert.match(html, new RegExp(`id="close-unsigned-${id}"[^>]*checked`));
+  assert.match(html, /VT-a/);
+  assert.match(html, /Mei Client a/);
+  assert.match(html, /Ready to exit/);
+  assert.match(html, /Hold/);
+  assert.match(html, /6 days/);
+  assert.match(html, /id="field-close-unsigned-confirmed"/);
+  assert.match(
+    html,
+    /These clients didn(&#39;|')t come back to sign\. None of these returns will be transmitted in TaxSlayer\./,
+  );
+  assert.match(html, /id="close-unsigned-submit"[^>]*disabled/);
+  const one = closeUnsignedDialogBody({ cases, now: NOW, unticked: ["b"] });
+  assert.match(one, /Close 2 of 3 cases that are waiting for a signature, as Dismissed\?/);
+  assert.doesNotMatch(one, /id="close-unsigned-b"[^>]*checked/);
+});
+
+test("closeUnsignedDialogBody words the wait as 1 day, N days, 0 days or a dash", () => {
+  const cases = [
+    waitingCase("a", "review_approved", daysAgo(1)),
+    waitingCase("b", "review_approved", daysAgo(0)),
+    waitingCase("c", "review_approved", daysAgo(3)),
+    waitingCase("d", "review_approved", undefined),
+  ];
+  const html = closeUnsignedDialogBody({ cases, now: NOW });
+  assert.match(html, /<td>1 day<\/td>/);
+  assert.match(html, /<td>0 days<\/td>/);
+  assert.match(html, /<td>3 days<\/td>/);
+  assert.doesNotMatch(html, /1 days|null/);
+  assert.match(html, /<td>—<\/td>/);
+});
+
+test("closeUnsignedDialogBody has no count heading when no case is waiting", () => {
+  const html = closeUnsignedDialogBody({ cases: [waitingCase("x", "received", daysAgo(2))], now: NOW });
+  assert.doesNotMatch(html, /close-unsigned-heading|Close 0 cases/);
+  assert.match(html, /No case is waiting for a signature\./);
+});
+
+test("closeUnsignedListKey changes with the listed cases and their revisions", () => {
+  const a = waitingCase("a", "review_approved", daysAgo(2));
+  const b = waitingCase("b", "review_approved", daysAgo(1));
+  const key = closeUnsignedListKey([a, b]);
+  assert.notEqual(closeUnsignedListKey([a]), key);
+  assert.notEqual(closeUnsignedListKey([a, { ...b, revision: 5 }]), key);
+  assert.notEqual(closeUnsignedListKey([a, b, waitingCase("c", "review_approved", daysAgo(3))]), key);
+  assert.equal(closeUnsignedListKey([b, a, waitingCase("z", "received", daysAgo(1))]), key);
 });

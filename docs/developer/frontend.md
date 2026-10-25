@@ -17,6 +17,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
+- [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
 - [Feedback](#feedback)
@@ -315,6 +316,148 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
 
+## Stages and their words
+
+A case has one of sixteen stages, in chain order: `draft`, `received`, `screening`,
+`awaiting_documents`, `on_hold`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`, `corrections_required`,
+`review_approved`, `ready_to_efile`, `efiled`, `rejected`, `accepted`, `closed`. The browser decides
+none of the moves (the database does, see the [state machine](database.md#the-case-state-machine));
+it only names what it shows. `describeStage(stage, lang, record)` in
+[`domain.mjs`](../../src/domain.mjs) is the one place the words live. The `record` (a case) is
+needed only for `efiled`, `rejected` and `accepted`, whose words depend on how each return was
+filed. For each stage it returns three texts:
+
+| Field | Who reads it | Where it comes from |
+| --- | --- | --- |
+| `label` | Staff | `STAGE_DESCRIPTIONS`; always English (for example `screening` is "Screening in progress", `review_approved` is "Ready to exit") |
+| `clientLabel` | The client | `STAGE_DESCRIPTIONS` in English; the `stage.<stage>.label` key of `TEXT` in the other languages (`received` is "Sent to PCDC", `screening` is "Being reviewed", `review_approved` is "Ready to sign", `ready_to_efile` is "Ready") |
+| `clientMessage` | The client | The same, `stage.<stage>.client` |
+
+Two stages are new (036). `awaiting_documents` is "Waiting for documents" for staff and "Documents
+needed" for the client; `on_hold` is "Hold" and "Waiting for you". A Hold's client message depends
+on where it came from (`holdKind(record)` in `domain.mjs`: `documents` or `signing`), and a closed
+case's message depends on `closingReason` (`stage.closed.client.<reason>`); a case closed with no
+reason, or with Other, gets the generic message. At Ready to exit, a Hold from Ready to exit, Ready
+to e-file and Rejected (`mustContactToWithdraw(record)` in `domain.mjs`), the client reads a
+"contact PCDC" line in place of the Withdraw button; E-filed, Accepted and Closed show neither.
+
+A stage that is not in the table gets neutral wording. A client message names no milestone the case
+has not reached, and no client text names a phone number.
+
+**Names by filing method.** From the case's `federal_method` and `state_method`:
+
+| Stage | Staff name (both e-filed / PA on paper / federal on paper / both paper) | Client label |
+| --- | --- | --- |
+| `efiled` | Both e-filed / E-filed, PA on paper / E-filed, federal on paper / (Both paper, not reached now) | E-filed / Filed / Filed / Filed |
+| `rejected` | Rejected | Needs a correction |
+| `accepted` | Accepted / Accepted, PA on paper / Accepted, federal on paper / Paper | Complete / Ready to mail / Ready to mail / Ready to mail |
+
+A case e-filed before the methods existed (null methods) is "E-filed" for staff and the client.
+PCDC never mails a return: a paper return is given to the client at Mark e-filed, so a case with
+nothing e-filed waiting goes straight to Accepted, and "Ready to mail" tells the client to sign the
+paper return and mail it themselves. A paper return filed under 035 that is still waiting for a
+result reads as given to the client too (`returnState`), so such a case still renders.
+`filingMessage` composes the client's message: a sentence for each return (one combined sentence
+when both returns are in the same state), then the stage's closing sentence. It never names a
+reject code or a fix note, which a client session does not receive. A case at `review_approved`
+that has methods was returned to signing, and its message asks the client to sign again.
+
+- **The badge.** `stageBadge(stage, lang, { audience })` in [`ui.mjs`](../../src/ui.mjs) shows
+  `label` for `audience: "staff"` (the default) and `clientLabel` for `audience: "client"`. The
+  client's screens (the applications list, the progress page and its review panel) pass
+  `"client"`; every staff, office and presenter screen leaves the default.
+- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists eleven steps with staff
+  labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
+  `review_approved`, `ready_to_efile`, `efiled`, `accepted`, `closed`. A case in
+  `corrections_required` shows on the `preparing` step, marked as an amendment; a `rejected` case
+  shows on the `efiled` step the same way. A case at Waiting for documents shows on the step it
+  was asked from (`documentsOrigin`), and a Hold on the step it came from (`holdOrigin`), both
+  marked like an amendment with their own label.
+- **The client's progress track** (`PROGRESS_STEPS` in `client-views.mjs`) has five steps, each
+  holding the stages that belong to it: intake (`draft`, `received`, `screening`, and Waiting for
+  documents or a documents Hold; a Hold from Ready to exit sits on signing), preparation
+  (`preparation_ready`, `preparing`, `corrections_required`), review (`review_ready`, `reviewing`),
+  signing (`review_approved`) and filing (`ready_to_efile`, `efiled`, `rejected`). A `rejected`
+  case therefore sits on Filing. An `accepted` case shows every step done, with the "done"
+  screen-reader text. A `closed` case shows no current step.
+- **History lines.** The three lines the database writes for the new actions ("PCDC started
+  reviewing your application. We may call you.", the signing line and "PCDC e-filed your
+  return.") are entries in `SENTENCES`, so the client reads them in their own language.
+
+### Screening starts when an admin opens the case
+
+An admin opening a `received` case's page starts its screening. `startScreeningIfDue` in
+[`controller.mjs`](../../src/controller.mjs) sends `START_SCREENING` (empty payload) when all of
+these hold: the open case is at `received`, the screen is `staff-case`, the selected persona has
+the `admin` capability, and nothing else is busy or pending. It runs after a case is opened
+(`selectCase`), after a reload on a case page, after the persona changes (`selectPerson`), after a
+refresh or reconnect, and when a busy action ends. Nothing is pressed, so:
+
+- **No refusal is shown.** A race ("another admin got there first", a stale revision) re-reads the
+  case, and one retry runs at the new revision. Any other refusal gives up on that case in this
+  window until it is opened again.
+- **An offline start is held whole** and resent unchanged on the next refresh, so the database
+  replays its receipt instead of acting twice.
+- **A case action pressed meanwhile waits** for the start (`runAction`), so it carries the revision
+  the start leaves behind.
+
+The other two new actions are the office's buttons on a case page, "Mark ready to e-file…" and
+"Mark e-filed…" (`admin-views.mjs`). Each opens a confirm dialog with a "this is true" checkbox and
+sends its payload through `payloadFor` (`{confirmed: true}` for "Mark ready to e-file…";
+`{confirmed, methods}` for "Mark e-filed…"), like any [workflow button](#events-and-actions).
+`adminEligibility` (`admin-views.mjs`) allows the first only for an admin on a `review_approved` case
+whose reviewer has recorded a completed call with the client (the database checks the same), and
+the second only for an admin on a `ready_to_efile` case. The Follow-ups signing and e-filing rows
+offer the same two marks, selecting the case in place.
+
+After E-filed, three more admin buttons record the IRS's and Pennsylvania's answers by hand
+(nothing is sent to either). "Mark e-filed…" asks how each return was filed with four choices
+(both e-filed, federal e-filed and Pennsylvania on paper, the reverse, or both on paper, each paper
+choice "given to the client to mail") and sends `{confirmed, methods}`; filing again offers only the
+rejected returns and lists the rest as done. "Record filing result…" (`efiled`, or `rejected` while an
+e-filed return is waiting) asks for e-filed returns only, never a paper one, and sends each waiting
+return's result, date and, when rejected, a code, plus an optional fix note. "Return to signing…" (`rejected`
+with every return answered) sends `{confirmed: true}`; "Close case…" is also offered at `rejected`.
+A staff-only Filing panel on the case page lists every attempt, newest first, with each return's
+method, result, date and code, and the fix notes in the order recorded. The case pool has two more
+tabs, Needs attention (`rejected`) and Done (`accepted`), and Follow-ups gains the kinds "Filing
+result" and "Rejected".
+
+Hold and closing (036) add admin buttons: "Ask for documents…" (Screening, Pending intake / filing;
+one to five requests), "Put on hold…" (Waiting for documents or Ready to exit; an optional staff
+note), "Got in touch…" (Hold), and "Close case…" with a reason list (Out of scope, No need to file,
+Duplicate, Dismissed, Withdrawn, Other; a note is required for Other), which is also offered at
+Waiting for documents and Hold, and at Ready to exit and Ready to e-file with only Withdrawn
+selectable (a note in the dialog says why). An admin records and verifies documents at Waiting for documents
+and a documents Hold. In the case pool, Waiting for documents sits under Waiting on client, Hold
+under Needs attention, and Closed has a reason filter (with "No reason" for older cases).
+Follow-ups gains the kinds "Waiting for documents", "Hold" and "Withdrawn" (the
+`withdrawal_notice` task, "The client withdrew; tell <name> to stop work.", or, for an admin's
+close before filing, "The client withdrew; make sure the return is not transmitted in TaxSlayer."
+(reason Withdrawn) or "The case was closed before filing; make sure the return is not transmitted
+in TaxSlayer." (any other reason from a signing hold), told apart by the notice's stored text, which the list summary carries as
+`withdrawalNoticeReason`). Notes are escaped in
+the staff history and never reach a client screen.
+
+On the client's side, the progress page shows a **Withdraw this application** button at the stages
+in `WITHDRAW_STAGES` (and on a documents Hold), which opens a dialog with one box to tick and sends
+`{confirmed: true}`. It is not shown from Ready to exit on; at the stages in
+`mustContactToWithdraw` the client reads the contact line instead.
+
+### The season-end dialog
+
+For an admin, the Follow-ups queue has a **Close unsigned cases…** button (`open-close-unsigned`),
+disabled with its reason when no case is waiting for a signature. Its dialog
+(`closeUnsignedDialogBody` in `office-views.mjs`) lists every case at Ready to exit or on a Hold from
+Ready to exit (`unsignedCases`), oldest first, each ticked with its reference, client name, stage
+and days waiting. The heading follows the ticks ("Close 2 of 5 cases that are waiting for a
+signature, as Dismissed?"), and **Close as Dismissed** opens only with a case ticked and the "didn't
+come back to sign" box ticked. It calls `controller.closeUnsigned(cases)`, which sends one
+`vitally_close_unsigned` with each ticked case's id and the revision the dialog showed
+([Season-end close](database.md#season-end-close)). On a `CONFLICT` the list is re-read and the dialog
+reopens without the case that moved, with nothing closed. On success it closes the dialog and
+toasts "The unsigned cases were closed as Dismissed."
+
 ## Events and actions
 
 `app.mjs` listens once on the root for `click`, `input`, `change` and `submit` (and on the document
@@ -565,9 +708,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1119) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1160) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (61) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in

@@ -15,8 +15,12 @@ const KEYS = [
   "review_ready",
   "corrections_required",
   "review_approved",
+  "rejected",
+  "accepted",
+  "on_hold",
+  "withdrawn",
 ];
-const NAMES = ["Mei", "Jordan", "Linh", "Dana", "Wei", "Tomas"];
+const NAMES = ["Mei", "Jordan", "Linh", "Dana", "Wei", "Tomas", "Priya", "Marcus", "Hana", "Omar"];
 const CONTACT_KEYS = ["tp_phone", "sp_phone", "best_contact_time", "best_contact_note"];
 
 const versionsOf = async (f) =>
@@ -109,7 +113,7 @@ test("the switch-over (020): new applications are version 2", async (t) => {
     try {
       await f.seedFixtures();
       const rows = await samples(f);
-      assert.equal(rows.length, 6);
+      assert.equal(rows.length, 10);
       for (const row of rows) assert.equal(row.intake_version, 2, row.fixture_key);
     } finally {
       await f.close();
@@ -136,9 +140,9 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
 
     await f.seedFixtures();
 
-    await t.test("six version-2 samples whose answers pass the field checks", async () => {
+    await t.test("ten version-2 samples whose answers pass the field checks", async () => {
       const rows = await samples(f);
-      assert.equal(rows.length, 6);
+      assert.equal(rows.length, 10);
       assert.deepEqual(
         rows.map((row) => row.fixture_key),
         KEYS,
@@ -177,20 +181,20 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
       );
       assert.deepEqual(
         rows.map((row) => row.answers.service),
-        ["drop_off", "drop_off", "same_day", "online", "drop_off", "same_day"],
+        ["drop_off", "drop_off", "same_day", "online", "drop_off", "same_day", "same_day", "drop_off", "drop_off", "same_day"],
       );
       assert.deepEqual(
         rows.map((row) => row.answers.language),
-        ["mandarin", "cantonese", "cantonese", "english", "mandarin", "english"],
+        ["mandarin", "cantonese", "cantonese", "english", "mandarin", "english", "english", "english", "english", "english"],
       );
       assert.deepEqual(
         rows.map((row) => row.answers.addr_zip),
-        ["19107", "19123", "19148", "19130", "19104", "19146"],
+        ["19107", "19123", "19148", "19130", "19104", "19146", "19147", "19143", "19145", "19120"],
       );
       for (const [index, row] of rows.entries()) {
         const contact = (await f.sql("select * from public.case_contacts where case_id=$1", [row.id])).rows;
         assert.equal(contact.length, 1, row.fixture_key);
-        assert.equal(contact[0].phone, `215555010${index + 1}`);
+        assert.equal(contact[0].phone, `2155550${100 + index + 1}`);
         assert.deepEqual(contact[0].best_contact_time, ["weekday_evening"]);
         assert.equal(contact[0].best_contact_note, "Fictional sample; call any weekday evening.");
         assert.deepEqual(row.answers.vc_agree, ["yes"], row.fixture_key);
@@ -258,7 +262,8 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
       });
       await f.act(f.presenter, caseId, f.sam, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];
-      assert.equal(row.stage, "received");
+      // The office has already screened a client it entered itself.
+      assert.equal(row.stage, "screening");
       assert.ok(Number.isInteger(Number(row.client_number)) && Number(row.client_number) > 0);
     });
   } finally {

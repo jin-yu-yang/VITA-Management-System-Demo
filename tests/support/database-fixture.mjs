@@ -11,12 +11,15 @@ import { extendTestWorkspace } from "./workspace-overrides.mjs";
 // and these tests share one snake_case → camelCase mapping (Ruling R32). A
 // second copy here could drift from the shapes the application actually shows.
 import { createStore, camelRow } from "../../src/supabase-store.mjs";
-const INTAKE_CHECKS = Object.freeze({
-  interview: true,
-  identity: true,
+// The screening checks the office records (design D2): three for every case,
+// and identity only for an online one.
+export const screeningChecks = (service) => ({
+  phone: true,
   documents: true,
-  consent: true,
+  in_scope: true,
+  ...(service === "online" ? { identity: true } : {}),
 });
+const INTAKE_CHECKS = Object.freeze(screeningChecks("drop_off"));
 // The one fictional document request and the single simulated file the demo
 // accepts (contracts.mjs payload table, Ruling R18).
 const SAMPLE_REQUEST = Object.freeze({
@@ -31,8 +34,9 @@ const SAMPLE_ASSISTANCE = Object.freeze({
   language: "Mandarin",
   contactPreference: "Prefers calls from the main office",
 });
-// The six scenario keys the private binding table and `cases.fixture_key`
-// already constrain (migration 001). They are stable names, never case ids.
+// The ten scenario keys the private binding table and `cases.fixture_key`
+// constrain (migration 001, widened to eight in 035 and ten in 036). They are stable names,
+// never case ids.
 const FIXTURE_KEYS = Object.freeze([
   "preparation_ready",
   "waiting_documents",
@@ -40,6 +44,10 @@ const FIXTURE_KEYS = Object.freeze([
   "review_ready",
   "corrections_required",
   "review_approved",
+  "rejected",
+  "accepted",
+  "on_hold",
+  "withdrawn",
 ]);
 // The one key this fixture binds to applicant A through the shared
 // initializer, so a reset has a durable client binding to reapply.
@@ -88,6 +96,24 @@ const options = {
   },
 };
 // An assert.rejects predicate for one mapped domain code.
+// Valid questionnaires for SUBMIT_REVIEW / RESUBMIT_REVIEW and APPROVE_REVIEW (fictional).
+const TODAY = () => new Date().toISOString().slice(0, 10);
+export const PREPARER = Object.freeze({
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: TODAY(),
+});
+export const REVIEWER = Object.freeze({
+  completedOn: TODAY(),
+  paForgiveness: "eligible",
+  wentOver: true,
+  wentOverOn: TODAY(),
+  wentOverHow: "phone",
+  signMethod: "portal",
+  exitForm: Object.freeze({ federal: null, state: null, local: [] }),
+});
 export const rejected = (code) => (error) => error.code === code;
 // Fully specified immutable arguments for a direct vitally_apply_action call,
 // so replays and races reuse one envelope and a payload can omit the related
@@ -231,7 +257,14 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     // The receipt is the create's (revision 1); the case is one ahead, at 2.
     return created;
   };
+  // The drop-off set only; use f.checksFor(caseId) for an arbitrary case.
   f.intakeChecks = INTAKE_CHECKS;
+  // The checks that suit one case: its service answer decides the set.
+  f.checksFor = async (caseId) =>
+    screeningChecks(
+      (await f.sql("select answers->>'service' as service from public.cases where id=$1", [caseId]))
+        .rows[0]?.service,
+    );
   // A row the caller cannot see is NOT_FOUND, never a raw SDK row-count error.
   const visibleRow = async (client, table, id) => {
     const { data, error } = await client.from(table).select("*").eq("id", id);
@@ -309,6 +342,22 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     if (error) throw createAppError(error);
     return data;
   };
+  // The season-end close: `cases` is [{caseId, revision}].
+  f.closeUnsigned = async (
+    client,
+    personId,
+    cases,
+    { actionId = randomUUID(), confirmed = true } = {},
+  ) => {
+    const { data, error } = await client.rpc("vitally_close_unsigned", {
+      p_action_id: actionId,
+      p_person_id: personId,
+      p_cases: cases,
+      p_confirmed: confirmed,
+    });
+    if (error) throw createAppError(error);
+    return data;
+  };
   // An edit against the entry's current revision, as the caller reads it.
   f.editContact = async (client, contactId, personId, entry) => {
     const current = await visibleRow(client, "contact_log", contactId);
@@ -330,8 +379,9 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
       confirmed: true,
     });
+    await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(created.caseId),
     });
     return created.caseId;
   };
@@ -345,7 +395,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       confirmed: true,
     });
     await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(created.caseId),
     });
     await f.act(f.presenter, created.caseId, f.alex, "CLAIM_PREPARATION", {});
     await f.act(
@@ -362,7 +412,49 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   f.preparedCase = async () => {
     const caseId = await f.readyCase();
     await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+    await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
+    return caseId;
+  };
+  // A client case just submitted: stage received, no screening yet.
+  f.submittedClientCase = async () => {
+    const created = await f.draftCase(f.applicantA);
+    await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
+      confirmed: true,
+    });
+    return { caseId: created.caseId };
+  };
+  // The client's history lines for a case, oldest first (client_events.message).
+  f.clientMessages = async (caseId) =>
+    (
+      await f.sql(
+        "select message from public.client_events where case_id=$1 order by created_at, id",
+        [caseId],
+      )
+    ).rows.map((row) => row.message);
+  // A case at review_approved, approved with a valid Yes questionnaire: the
+  // review-contact step is completed by the approval itself (design D10).
+  // `wentOver: false` approves with "no" (portal signing), which opens the
+  // office's go-over follow-up (design D5).
+  f.approvedCase = async ({ wentOver = true } = {}) => {
+    const caseId = await f.preparedCase();
+    await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+    const { wentOverOn, wentOverHow, ...rest } = REVIEWER;
+    await f.act(f.presenter, caseId, f.morgan, "APPROVE_REVIEW", {
+      questionnaire: wentOver ? REVIEWER : { ...rest, wentOver: false },
+    });
+    return caseId;
+  };
+  // A case at review_approved as an approval from before the questionnaires
+  // left it: the review is approved with its contact step pending and no
+  // questionnaire. No action produces this any more, so it is inserted directly.
+  f.legacyApprovedCase = async () => {
+    const caseId = await f.preparedCase();
+    await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+    await f.sql(
+      "update public.reviews set status='approved',decided_at=now(),client_contact_status='pending' where case_id=$1 and status='active'",
+      [caseId],
+    );
+    await f.sql("update public.cases set stage='review_approved' where id=$1", [caseId]);
     return caseId;
   };
   // Test-only additive people and capabilities on this run's own workspace
@@ -484,8 +576,9 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         answers: makeSampleAnswers(),
       });
     await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+    await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
-      checks: INTAKE_CHECKS,
+      checks: await f.checksFor(caseId),
     });
     await f.act(f.presenter, caseId, preparerId, "CLAIM_PREPARATION", {});
     return caseId;

@@ -4,6 +4,7 @@ import {
   createStore,
   mapCase,
   mapAssistance,
+  mapFollowup,
   SUBSCRIBED_TABLES,
 } from "../src/supabase-store.mjs";
 
@@ -21,6 +22,11 @@ const STAFF_ONLY_TABLES = [
   "assistance_items",
   "action_receipts",
   "case_materials",
+  "preparer_questionnaires",
+  "reviewer_questionnaires",
+  "filing_attempts",
+  "filing_returns",
+  "filing_notes",
 ];
 
 const CASE_ROW = Object.freeze({
@@ -518,6 +524,15 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
       updatedAt: "2026-09-12T16:30:00.000Z",
       intakeVersion: 2,
       intakeVisited: ["about.you", "before.ready"],
+      signingPlan: null,
+      signingAppointmentAt: null,
+      federalMethod: null,
+      stateMethod: null,
+      federalResult: null,
+      stateResult: null,
+      documentsOrigin: null,
+      holdOrigin: null,
+      closingReason: null,
     },
   ]);
   assert.deepEqual(cases[0], mapCase(CASE_ROW));
@@ -537,33 +552,46 @@ test("listCases maps rows to the Case scalars with no related tables", async () 
 test("a presenter list carries the summaries a work board reads", async () => {
   const client = fakeClient({ access: "presenter" });
   const [row] = await createStore(client).listCases();
-  // The Case scalars, unchanged, plus exactly five summary fields.
+  // The Case scalars, unchanged, plus exactly eight summary fields (the
+  // eighth, the newest fix note, is read from filing_notes for Follow-ups).
   assert.deepEqual(
     Object.keys(row).toSorted(),
     [
       ...Object.keys(mapCase(CASE_ROW)),
       "followupAssigneeIds",
+      "goOverOpen",
+      "latestFixNote",
       "openFollowups",
       "openRequests",
+      "openWithdrawalNotices",
       "participants",
       "phone",
+      "reviewContactStatus",
+      "withdrawalNoticeReason",
     ].toSorted(),
   );
   assert.deepEqual(row.participants, ["person-alex"]);
   assert.equal(row.openFollowups, 1);
+  // The fake client's one open task is not a withdrawal notice.
+  assert.equal(row.openWithdrawalNotices, 0);
+  assert.equal(row.withdrawalNoticeReason, null);
   assert.deepEqual(row.followupAssigneeIds, ["person-sam"]);
   assert.equal(row.openRequests, 1);
   // The client's phone for the list's masked column (D5), and nothing else
   // of the contact row.
   assert.equal(row.phone, "2155550100");
-  // Four grouped reads, each scoped to the cases this list actually holds,
+  // Five grouped reads, each scoped to the cases this list actually holds,
   // and each asking only for the columns the board needs.
   const summaries = client.reads.filter((read) =>
-    ["preparation_participants", "admin_followups", "document_requests", "case_contacts"].includes(
-      read.table,
-    ),
+    [
+      "preparation_participants",
+      "admin_followups",
+      "document_requests",
+      "case_contacts",
+      "reviews",
+    ].includes(read.table),
   );
-  assert.equal(summaries.length, 4);
+  assert.equal(summaries.length, 5);
   for (const read of summaries) assert.deepEqual(read.within, ["case_id", ["case-1"]]);
   assert.ok(!summaries.some((read) => read.columns === "*"), "no whole rows");
   // Only the open work is counted: a resolved task is not a task.
@@ -576,6 +604,47 @@ test("a presenter list carries the summaries a work board reads", async () => {
   const phoneRead = summaries.find((read) => read.table === "case_contacts");
   assert.equal(phoneRead.columns, "case_id,phone");
   assert.deepEqual(phoneRead.filters, []);
+  // The reviewer's call is read from the approved reviews alone, and only
+  // the status column (no note, outcome or findings) reaches a list.
+  const approvalRead = summaries.find((read) => read.table === "reviews");
+  assert.equal(approvalRead.columns, "case_id,client_contact_status,created_at");
+  assert.deepEqual(approvalRead.filters, [["status", "approved"]]);
+  assert.deepEqual(approvalRead.orders, ["created_at"]);
+  // This case has only an active review, so no call status yet.
+  assert.equal(row.reviewContactStatus, null);
+  assert.equal(row.latestFixNote, null);
+});
+
+test("a listed case carries its latest approved review's call status", async () => {
+  const review = (id, caseId, status, contact, createdAt) => ({
+    ...RELATED_ROWS.reviews[0],
+    id,
+    case_id: caseId,
+    status,
+    client_contact_status: contact,
+    created_at: createdAt,
+  });
+  const rows = {
+    cases: [
+      CASE_ROW,
+      { ...CASE_ROW, id: "case-2", reference: "VT-WXYZ-6789" },
+      { ...CASE_ROW, id: "case-3", reference: "VT-QRST-1234" },
+    ],
+    reviews: [
+      // case-1: an older approval whose call is pending, then a newer one
+      // that is completed. The newer wins (the read is ordered by created_at).
+      review("r-1", "case-1", "approved", "pending", "2026-09-05T00:00:00Z"),
+      review("r-2", "case-1", "approved", "completed", "2026-09-08T00:00:00Z"),
+      // case-2: approved, call still pending.
+      review("r-3", "case-2", "approved", "pending", "2026-09-06T00:00:00Z"),
+      // case-3: only an active review, so no approval at all.
+      review("r-4", "case-3", "active", null, "2026-09-07T00:00:00Z"),
+    ],
+  };
+  const client = fakeClient({ access: "presenter", rows });
+  const list = await createStore(client).listCases();
+  const byId = Object.fromEntries(list.map((row) => [row.id, row.reviewContactStatus]));
+  assert.deepEqual(byId, { "case-1": "completed", "case-2": "pending", "case-3": null });
 });
 
 test("a listed case with no contact row has no phone", async () => {
@@ -664,12 +733,17 @@ test("an applicant case read asks for no staff table at all", async () => {
   assert.deepEqual(Object.keys(found).toSorted(), [
     "answers",
     "clientNumber",
+    "closingReason",
     "contact",
     "createdAt",
     "documentCards",
     "documents",
+    "documentsOrigin",
+    "federalMethod",
+    "federalResult",
     "fixture",
     "history",
+    "holdOrigin",
     "id",
     "intakeVerified",
     "intakeVersion",
@@ -684,7 +758,11 @@ test("an applicant case read asks for no staff table at all", async () => {
     "reviewerId",
     "revision",
     "season",
+    "signingAppointmentAt",
+    "signingPlan",
     "stage",
+    "stateMethod",
+    "stateResult",
     "updatedAt",
     "workspaceId",
   ]);
@@ -754,8 +832,13 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "contact_log_versions",
       "document_requests",
       "documents",
+      "filing_attempts",
+      "filing_notes",
+      "filing_returns",
       "memberships",
       "preparation_participants",
+      "preparer_questionnaires",
+      "reviewer_questionnaires",
       "reviews",
     ],
   );
@@ -798,6 +881,7 @@ test("a presenter case read adds exactly the staff sections", async () => {
       id: "followup-1",
       requestId: "request-1",
       assigneeId: "person-sam",
+      purpose: "request_documents",
       status: "open",
       reason: "No response to the document request.",
       resolutionOutcome: null,
@@ -808,6 +892,39 @@ test("a presenter case read adds exactly the staff sections", async () => {
     },
   ]);
   assert.equal(found.internalHistory[0].action, "VERIFY_INTAKE");
+});
+
+test("a list row says whether the office's go-over is open (D13)", async () => {
+  const task = (purpose) => ({ ...RELATED_ROWS.admin_followups[0], purpose });
+  const goOverOf = async (admin_followups) => {
+    const client = fakeClient({ access: "presenter", rows: { admin_followups } });
+    const [row] = await createStore(client).listCases();
+    const read = client.reads.find((entry) => entry.table === "admin_followups");
+    assert.match(String(read.columns), /purpose/);
+    return row.goOverOpen;
+  };
+  assert.equal(await goOverOf([task("go_over_return")]), true);
+  assert.equal(await goOverOf([task("request_documents")]), false);
+  assert.equal(await goOverOf([]), false);
+});
+
+test("a list row carries the first open withdrawal notice's own text", async () => {
+  const task = (purpose, reason) => ({ ...RELATED_ROWS.admin_followups[0], purpose, reason });
+  const reasonOf = async (admin_followups) => {
+    const client = fakeClient({ access: "presenter", rows: { admin_followups } });
+    const [row] = await createStore(client).listCases();
+    const read = client.reads.find((entry) => entry.table === "admin_followups");
+    assert.match(String(read.columns), /reason/);
+    return row.withdrawalNoticeReason;
+  };
+  assert.equal(await reasonOf([task("withdrawal_notice", "Stop work text.")]), "Stop work text.");
+  assert.equal(await reasonOf([task("request_documents", "Other."), task("withdrawal_notice", "Notice.")]), "Notice.");
+  assert.equal(await reasonOf([task("request_documents", "Other.")]), null);
+});
+
+test("a follow-up row with no purpose reads as a document request", () => {
+  assert.equal(mapFollowup({ id: "f" }).purpose, "request_documents");
+  assert.equal(mapFollowup({ id: "f", purpose: "go_over_return" }).purpose, "go_over_return");
 });
 
 test("the staff case carries its contacts with their versions", async () => {
@@ -1224,6 +1341,8 @@ test("a subscription watches only the tables its principal may read", async () =
     "assistance_items",
     "reviews",
     "case_materials",
+    "preparer_questionnaires",
+    "reviewer_questionnaires",
   ]);
   // The applicant's channel never names a staff-only table.
   for (const staffTable of STAFF_ONLY_TABLES)
@@ -1340,4 +1459,135 @@ test("both principals read the card rows by named columns and map them", async (
   }
   const empty = fakeClient({ access: "applicant", rows: { case_document_cards: [] } });
   assert.deepEqual((await createStore(empty).getCase("case-1")).documentCards, []);
+});
+
+test("mapCase carries the signing plan and appointment, null until approval", () => {
+  const plain = mapCase(CASE_ROW);
+  assert.equal(plain.signingPlan, null);
+  assert.equal(plain.signingAppointmentAt, null);
+  const planned = mapCase({ ...CASE_ROW, signing_plan: "appointment", signing_appointment_at: "2026-11-02T14:30:00" });
+  assert.equal(planned.signingPlan, "appointment");
+  assert.equal(planned.signingAppointmentAt, "2026-11-02T14:30:00");
+});
+
+test("mapCase carries the filing methods and results, null before a filing", () => {
+  const filed = mapCase({
+    ...CASE_ROW,
+    federal_method: "efile",
+    state_method: "paper",
+    federal_result: "accepted",
+    state_result: "mailed",
+  });
+  assert.deepEqual(
+    [filed.federalMethod, filed.stateMethod, filed.federalResult, filed.stateResult],
+    ["efile", "paper", "accepted", "mailed"],
+  );
+});
+
+test("mapCase carries the documents origin, hold origin and closing reason, null when unset", () => {
+  const plain = mapCase(CASE_ROW);
+  assert.deepEqual([plain.documentsOrigin, plain.holdOrigin, plain.closingReason], [null, null, null]);
+  const held = mapCase({
+    ...CASE_ROW,
+    documents_origin: "screening",
+    hold_origin: "awaiting_documents",
+    closing_reason: "dismissed",
+  });
+  assert.deepEqual(
+    [held.documentsOrigin, held.holdOrigin, held.closingReason],
+    ["screening", "awaiting_documents", "dismissed"],
+  );
+});
+
+test("a staff case read carries the filing attempts, newest first; an applicant read none of them", async () => {
+  const rows = {
+    // In the order the database returns them: attempts newest first.
+    filing_attempts: [
+      { id: "a2", case_id: "case-1", attempt: 2, filed_at: "2026-10-05T10:00:00Z", filed_by: "person-sam" },
+      { id: "a1", case_id: "case-1", attempt: 1, filed_at: "2026-10-01T10:00:00Z", filed_by: "person-sam" },
+    ],
+    filing_returns: [
+      { id: "r1", case_id: "case-1", attempt: 1, return_kind: "federal", method: "efile", result: "accepted", answered_on: "2026-10-02", reject_code: null, recorded_by: "person-sam" },
+      { id: "r2", case_id: "case-1", attempt: 1, return_kind: "state", method: "efile", result: "rejected", answered_on: "2026-10-02", reject_code: "PA-1", recorded_by: "person-sam" },
+      { id: "r3", case_id: "case-1", attempt: 2, return_kind: "state", method: "paper", result: null, answered_on: null, reject_code: null, recorded_by: null },
+    ],
+    filing_notes: [
+      { id: "n1", case_id: "case-1", attempt: 1, note: "First fix", recorded_by: "person-sam", recorded_at: "2026-10-03T10:00:00Z" },
+      { id: "n2", case_id: "case-1", attempt: 1, note: "Second fix", recorded_by: "person-alex", recorded_at: "2026-10-04T10:00:00Z" },
+    ],
+  };
+  const client = fakeClient({ access: "presenter", rows });
+  const staff = await createStore(client).getCase("case-1");
+  assert.deepEqual(staff.filingAttempts, [
+    {
+      attempt: 2,
+      filedAt: "2026-10-05T10:00:00Z",
+      returns: [{ returnKind: "state", method: "paper", result: null, answeredOn: null, rejectCode: null }],
+      notes: [],
+    },
+    {
+      attempt: 1,
+      filedAt: "2026-10-01T10:00:00Z",
+      returns: [
+        { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-02", rejectCode: null },
+        { returnKind: "state", method: "efile", result: "rejected", answeredOn: "2026-10-02", rejectCode: "PA-1" },
+      ],
+      notes: [
+        { note: "First fix", recordedBy: "person-sam", recordedAt: "2026-10-03T10:00:00Z" },
+        { note: "Second fix", recordedBy: "person-alex", recordedAt: "2026-10-04T10:00:00Z" },
+      ],
+    },
+  ]);
+  // Each read is scoped to the case, and the tables are ordered without a created_at.
+  for (const table of ["filing_attempts", "filing_returns", "filing_notes"]) {
+    const [read] = client.reads.filter((entry) => entry.table === table);
+    assert.deepEqual(read.filters, [["case_id", "case-1"]], table);
+    assert.ok(!read.orders.includes("created_at"), `${table} has no created_at`);
+  }
+  const ordered = (table) => client.reads.find((entry) => entry.table === table).orders;
+  assert.deepEqual(ordered("filing_attempts"), ["attempt"]);
+  assert.deepEqual(ordered("filing_returns"), ["attempt", "return_kind"]);
+  assert.deepEqual(ordered("filing_notes"), ["recorded_at", "id"]);
+  assert.deepEqual((await createStore(fakeClient({ access: "presenter" })).getCase("case-1")).filingAttempts, []);
+
+  const applicantClient = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(applicantClient).getCase("case-1");
+  assert.ok(!("filingAttempts" in applicant), "an applicant's Case carries no filing section");
+  assert.ok(!applicantClient.reads.some((read) => read.table.startsWith("filing_")));
+});
+
+test("a staff case read carries both questionnaire tables, an applicant read neither", async () => {
+  const rows = {
+    preparer_questionnaires: [
+      { id: "pq-1", case_id: "case-1", preparation_version: 1, confirmed_by: "client", confirmed_method: "phone", ready_for_review_on: "2026-10-16" },
+    ],
+    reviewer_questionnaires: [
+      { id: "rq-1", case_id: "case-1", review_id: "review-1", completed_on: "2026-10-17", went_over: true, exit_form: { federal: null, state: null, local: [] } },
+    ],
+  };
+  const staff = await createStore(fakeClient({ access: "presenter", rows })).getCase("case-1");
+  assert.deepEqual(staff.preparerQuestionnaires, [
+    { id: "pq-1", caseId: "case-1", preparationVersion: 1, confirmedBy: "client", confirmedMethod: "phone", readyForReviewOn: "2026-10-16" },
+  ]);
+  assert.equal(staff.reviewerQuestionnaires[0].reviewId, "review-1");
+  assert.deepEqual(staff.reviewerQuestionnaires[0].exitForm, { federal: null, state: null, local: [] });
+  const client = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(client).getCase("case-1");
+  assert.ok(!("preparerQuestionnaires" in applicant));
+  assert.ok(!client.reads.some((read) => read.table.endsWith("_questionnaires")));
+});
+
+test("closeUnsigned calls vitally_close_unsigned", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const cases = [{ caseId: "case-1", revision: 4 }];
+  await createStore(client).closeUnsigned({
+    actionId: "action-9",
+    personId: "person-sam",
+    cases,
+    confirmed: true,
+  });
+  assert.deepEqual(client.rpcCalls.at(-1), {
+    name: "vitally_close_unsigned",
+    args: { p_action_id: "action-9", p_person_id: "person-sam", p_cases: cases, p_confirmed: true },
+  });
 });

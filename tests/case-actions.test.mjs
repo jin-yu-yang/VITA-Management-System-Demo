@@ -6,8 +6,9 @@ import {
   SAMPLE_DOCUMENT_FILENAME,
   CONTACT_OUTCOMES,
   FOLLOWUP_RESOLUTION_OUTCOMES,
+  screeningCheckKeys,
 } from "../src/case-actions.mjs";
-import { CASE_ACTIONS } from "../src/contracts.mjs";
+import { CASE_ACTIONS, CLOSING_REASONS } from "../src/contracts.mjs";
 import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 
 // The payload rules are a pure function, so these tests are the payload table
@@ -15,27 +16,58 @@ import { MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 
 const invalid = (error) => error.code === "VALIDATION";
 
+const PREPARER_FORM = {
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: "yes",
+  stateForgivenessSet: "yes",
+  readyForReviewOn: "2026-10-16",
+};
+const PREPARER_QUESTIONNAIRE = {
+  confirmedBy: "client",
+  confirmedMethod: "phone",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: "2026-10-16",
+};
+const REVIEWER_FORM = {
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: "no",
+  signMethod: "portal",
+};
+const REVIEWER_QUESTIONNAIRE = {
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: false,
+  signMethod: "portal",
+  exitForm: { federal: null, state: null, local: [] },
+};
+
 test("every action builds exactly the payload the contract names", () => {
   const cases = [
     ["SUBMIT", {}, {}, { confirmed: true }],
     [
       "VERIFY_INTAKE",
-      {},
-      // Four ticked checkboxes, exactly as a form reports them.
-      { interview: "true", identity: "true", documents: "true", consent: "true" },
-      {
-        checks: {
-          interview: true,
-          identity: true,
-          documents: true,
-          consent: true,
-        },
-      },
+      { service: "drop_off" },
+      // Three ticked checkboxes, exactly as a form reports them.
+      { phone: "true", documents: "true", in_scope: "true" },
+      { checks: { phone: true, documents: true, in_scope: true } },
     ],
     ["CLAIM_PREPARATION", {}, {}, {}],
-    ["SUBMIT_REVIEW", {}, {}, {}],
+    [
+      "SUBMIT_REVIEW",
+      {},
+      PREPARER_FORM,
+      { questionnaire: PREPARER_QUESTIONNAIRE },
+    ],
     ["CLAIM_REVIEW", {}, {}, {}],
-    ["APPROVE_REVIEW", {}, {}, {}],
+    [
+      "APPROVE_REVIEW",
+      { service: "online" },
+      REVIEWER_FORM,
+      { questionnaire: REVIEWER_QUESTIONNAIRE },
+    ],
     ["REMIND", {}, {}, {}],
     [
       "REQUEST_DOCUMENT",
@@ -77,8 +109,8 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "RESUBMIT_REVIEW",
       {},
-      { resolution: "Household size corrected" },
-      { resolution: "Household size corrected" },
+      { ...PREPARER_FORM, resolution: "Household size corrected" },
+      { questionnaire: PREPARER_QUESTIONNAIRE, resolution: "Household size corrected" },
     ],
     [
       "RECORD_REVIEW_CONTACT",
@@ -89,9 +121,57 @@ test("every action builds exactly the payload the contract names", () => {
     [
       "CLOSE_CASE",
       {},
-      { reason: "Client moved away", confirmed: "true" },
-      { reason: "Client moved away", confirmed: true },
+      { "close-reason": "duplicate", confirmed: "true" },
+      { confirmed: true, reason: "duplicate" },
     ],
+    [
+      "CLOSE_CASE",
+      {},
+      { "close-reason": "other", "close-note": " Moved away ", confirmed: "true" },
+      { confirmed: true, reason: "other", note: "Moved away" },
+    ],
+    [
+      "PUT_ON_HOLD",
+      {},
+      { "hold-note": " Called twice ", confirmed: "true" },
+      { confirmed: true, note: "Called twice" },
+    ],
+    ["PUT_ON_HOLD", {}, { confirmed: "true" }, { confirmed: true }],
+    ["RESUME_FROM_HOLD", {}, { confirmed: "true" }, { confirmed: true }],
+    ["WITHDRAW", {}, { "withdraw-confirmed": "on" }, { confirmed: true }],
+    [
+      "REQUEST_DOCUMENTS_AT_INTAKE",
+      {},
+      {
+        "request-title-1": " Photo ID ",
+        "request-message-1": " Please upload it ",
+        "request-title-2": "",
+        "request-message-2": "  ",
+        "request-title-3": "W-2",
+        "request-message-3": "From your employer",
+      },
+      {
+        requests: [
+          { title: "Photo ID", message: "Please upload it" },
+          { title: "W-2", message: "From your employer" },
+        ],
+      },
+    ],
+    ["START_SCREENING", {}, {}, {}],
+    ["MARK_READY_TO_EFILE", {}, { confirmed: "true" }, { confirmed: true }],
+    [
+      "MARK_EFILED",
+      {},
+      { confirmed: "true", "filing-combination": "efile_and_paper" },
+      { confirmed: true, methods: { federal: "efile", state: "paper" } },
+    ],
+    [
+      "RECORD_FILING_RESULT",
+      {},
+      { "result-federal": "accepted", "date-federal": "2026-10-20" },
+      { confirmed: true, results: { federal: { result: "accepted", date: "2026-10-20" } } },
+    ],
+    ["RETURN_TO_SIGNING", {}, { confirmed: "true" }, { confirmed: true }],
     [
       "UPDATE_CONTACT",
       {},
@@ -110,7 +190,7 @@ test("every action builds exactly the payload the contract names", () => {
   // Every action in the table is covered, and the table is every action this
   // module claims to build.
   assert.deepEqual(
-    cases.map(([type]) => type).toSorted(),
+    [...new Set(cases.map(([type]) => type))].toSorted(),
     [...PAYLOAD_ACTIONS].toSorted(),
   );
 });
@@ -173,27 +253,37 @@ test("a missing required field refuses before anything is sent", () => {
     ["REQUEST_CORRECTIONS", {}, {}],
     ["REQUEST_CORRECTIONS", {}, { findings: "\n\t " }],
     ["RESUBMIT_REVIEW", {}, {}],
+    ["RESUBMIT_REVIEW", {}, { resolution: "Fixed" }],
+    ["RESUBMIT_REVIEW", {}, { ...PREPARER_FORM }],
+    ["SUBMIT_REVIEW", {}, {}],
+    ["APPROVE_REVIEW", {}, {}],
+    ["APPROVE_REVIEW", { service: "drop_off" }, { ...REVIEWER_FORM, signMethod: "in_person" }],
     ["RECORD_REVIEW_CONTACT", {}, { note: "A note" }],
     ["RECORD_REVIEW_CONTACT", {}, { outcome: "reached" }],
     ["CLOSE_CASE", {}, {}],
-    ["CLOSE_CASE", {}, { reason: "Client moved away" }],
+    ["CLOSE_CASE", {}, { "close-reason": "duplicate" }],
+    ["CLOSE_CASE", {}, { "close-reason": "bogus", confirmed: "true" }],
+    ["CLOSE_CASE", {}, { "close-reason": "other", confirmed: "true" }],
     ["CLOSE_CASE", {}, { confirmed: "true" }],
-    // Three of the four attestations is not an attestation.
-    ["VERIFY_INTAKE", {}, {}],
+    ["PUT_ON_HOLD", {}, {}],
+    ["RESUME_FROM_HOLD", {}, {}],
+    ["WITHDRAW", {}, {}],
+    ["WITHDRAW", {}, { "withdraw-confirmed": "no" }],
+    ["REQUEST_DOCUMENTS_AT_INTAKE", {}, {}],
+    ["REQUEST_DOCUMENTS_AT_INTAKE", {}, { "request-title-1": "ID", "request-message-1": " " }],
+    // Two of the three checks is not a screening.
+    ["VERIFY_INTAKE", { service: "drop_off" }, {}],
+    ["VERIFY_INTAKE", { service: "drop_off" }, { phone: "true", documents: "true" }],
     [
       "VERIFY_INTAKE",
-      {},
-      { interview: "true", identity: "true", documents: "true" },
+      { service: "drop_off" },
+      { phone: "true", documents: "true", in_scope: "false" },
     ],
+    // An online case also needs identity.
     [
       "VERIFY_INTAKE",
-      {},
-      {
-        interview: "true",
-        identity: "true",
-        documents: "true",
-        consent: "false",
-      },
+      { service: "online" },
+      { phone: "true", documents: "true", in_scope: "true" },
     ],
   ];
   for (const [type, dataset, values] of missing)
@@ -246,36 +336,35 @@ test("a form value never overrides the file name or the confirmation flag", () =
   // literal `true` the contract names: a form can withhold it, never redefine
   // it as something else.
   assert.throws(
-    () => payloadFor("CLOSE_CASE", {}, { reason: "r", confirmed: "no" }),
+    () => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate", confirmed: "no" }),
     invalid,
   );
   const closure = payloadFor("CLOSE_CASE", {}, {
-    reason: "r",
+    "close-reason": "duplicate",
     confirmed: "on",
   }).payload;
   assert.deepEqual(Object.keys(closure).toSorted(), ["confirmed", "reason"]);
   assert.equal(closure.confirmed, true);
-  // The same for the intake checks: a "false" checkbox value is not a tick, and
-  // no extra field can join the four the database accepts.
+  // The same for the screening checks: a "no" checkbox value is not a tick, and
+  // no extra field can join the keys the database accepts.
   assert.throws(
     () =>
-      payloadFor("VERIFY_INTAKE", {}, {
-        interview: "true",
-        identity: "true",
+      payloadFor("VERIFY_INTAKE", { service: "online" }, {
+        phone: "true",
         documents: "true",
-        consent: "no",
+        in_scope: "true",
+        identity: "no",
       }),
     invalid,
   );
   assert.deepEqual(
-    payloadFor("VERIFY_INTAKE", {}, {
-      interview: "true",
-      identity: "true",
+    payloadFor("VERIFY_INTAKE", { service: "drop_off" }, {
+      phone: "true",
       documents: "true",
-      consent: "true",
+      in_scope: "true",
       smuggled: "true",
     }).payload,
-    { checks: { interview: true, identity: true, documents: true, consent: true } },
+    { checks: { phone: true, documents: true, in_scope: true } },
   );
 });
 
@@ -371,5 +460,188 @@ test("RECORD_CONTACT is no longer a case action the browser can build", () => {
   assert.throws(
     () => payloadFor("RECORD_CONTACT", { followupId: "t" }, { outcome: "reached", note: "n" }),
     invalid,
+  );
+});
+
+test("the 8879 and e-file actions need their own confirmation sentence", () => {
+  assert.deepEqual(payloadFor("START_SCREENING", {}, {}), { type: "START_SCREENING", payload: {} });
+  for (const type of ["START_SCREENING", "MARK_READY_TO_EFILE", "MARK_EFILED"])
+    assert.ok(PAYLOAD_ACTIONS.includes(type), type);
+  const sentences = {
+    MARK_READY_TO_EFILE: "Confirm that the client signed Form 8879, or the return will be given to the client on paper.",
+    MARK_EFILED: "Confirm how each return was filed.",
+  };
+  for (const [type, message] of Object.entries(sentences)) {
+    assert.throws(() => payloadFor(type, {}, {}), (error) => error.code === "VALIDATION" && error.message === message, type);
+    assert.throws(() => payloadFor(type, {}, { confirmed: "no" }), (error) => error.message === message, type);
+  }
+  // Closing keeps its own sentence.
+  assert.throws(() => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate" }), (error) => error.message === "Confirm that you want to close this case.");
+});
+
+test("hold and closing builders refuse with their own sentences", () => {
+  refused("CLOSE_CASE", { confirmed: "true" }, "Choose a reason.");
+  refused("CLOSE_CASE", { "close-reason": "nope", confirmed: "true" }, "Choose a reason.");
+  refused("CLOSE_CASE", { "close-reason": "other", "close-note": "  ", confirmed: "true" }, "Add a note for Other.");
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", {}, "Ask for at least one document.");
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": " " }, "Ask for at least one document.");
+  // A message with no title is refused, not dropped; N counts from 1.
+  refused("REQUEST_DOCUMENTS_AT_INTAKE", { "request-title-1": " ", "request-message-1": "x" }, "Add a title for document 1.");
+  refused(
+    "REQUEST_DOCUMENTS_AT_INTAKE",
+    { "request-title-1": "ID", "request-message-1": "x", "request-title-3": "", "request-message-3": "Please send it" },
+    "Add a title for document 3.",
+  );
+  for (const type of ["PUT_ON_HOLD", "RESUME_FROM_HOLD", "WITHDRAW"])
+    assert.ok(PAYLOAD_ACTIONS.includes(type), type);
+  assert.deepEqual(CLOSING_REASONS, ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn", "other"]);
+});
+
+const refused = (type, values, message) =>
+  assert.throws(
+    () => payloadFor(type, {}, values),
+    (error) => error.code === "VALIDATION" && error.message === message,
+    `${type} ${JSON.stringify(values)}`,
+  );
+
+test("MARK_EFILED carries the methods: one combination on a first filing, or the returns being filed again", () => {
+  const sure = { confirmed: "true" };
+  for (const [combination, methods] of [
+    ["both_efile", { federal: "efile", state: "efile" }],
+    ["efile_and_paper", { federal: "efile", state: "paper" }],
+    ["paper_and_efile", { federal: "paper", state: "efile" }],
+    ["both_paper", { federal: "paper", state: "paper" }],
+  ])
+    assert.deepEqual(
+      payloadFor("MARK_EFILED", {}, { ...sure, "filing-combination": combination }).payload,
+      { confirmed: true, methods },
+      combination,
+    );
+  // A second filing sends exactly the returns the dialog offered.
+  assert.deepEqual(
+    payloadFor("MARK_EFILED", {}, { ...sure, "method-state": "paper" }).payload,
+    { confirmed: true, methods: { state: "paper" } },
+  );
+  assert.deepEqual(
+    payloadFor("MARK_EFILED", {}, { ...sure, "method-federal": "efile", "method-state": "efile" }).payload,
+    { confirmed: true, methods: { federal: "efile", state: "efile" } },
+  );
+  refused("MARK_EFILED", sure, "Choose how each return was filed.");
+  refused("MARK_EFILED", { ...sure, "filing-combination": "carrier_pigeon" }, "Choose how each return was filed.");
+  refused("MARK_EFILED", { ...sure, "method-federal": "fax" }, "Choose how each return was filed.");
+  refused("MARK_EFILED", { "filing-combination": "both_efile" }, "Confirm how each return was filed.");
+});
+
+test("RECORD_FILING_RESULT builds the results of the returns answered", () => {
+  assert.deepEqual(
+    payloadFor("RECORD_FILING_RESULT", {}, {
+      "result-federal": "accepted",
+      "date-federal": " 2026-10-20 ",
+      "code-federal": "ignored on an accepted return",
+      "result-state": "rejected",
+      "date-state": "2026-10-21",
+      "code-state": " PA-123 ",
+      "fix-note": " Corrected the SSN. ",
+    }).payload,
+    {
+      confirmed: true,
+      results: {
+        federal: { result: "accepted", date: "2026-10-20" },
+        state: { result: "rejected", date: "2026-10-21", code: "PA-123" },
+      },
+      fixNote: "Corrected the SSN.",
+    },
+  );
+  // A return left on "no answer yet" is not sent; a blank note is not sent.
+  assert.deepEqual(
+    payloadFor("RECORD_FILING_RESULT", {}, {
+      "result-federal": "",
+      "result-state": "accepted",
+      "date-state": "2026-10-22",
+      "fix-note": "  ",
+    }).payload,
+    { confirmed: true, results: { state: { result: "accepted", date: "2026-10-22" } } },
+  );
+  // PCDC records no answer for a paper return: "mailed" is not a result any more.
+  refused("RECORD_FILING_RESULT", { "result-state": "mailed", "date-state": "2026-10-22" }, "Record a result for at least one return.");
+  refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20" }, "A reject code is required.");
+  refused("RECORD_FILING_RESULT", { "result-federal": "rejected", "date-federal": "2026-10-20", "code-federal": "  " }, "A reject code is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "accepted" }, "A date is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "accepted", "date-state": " " }, "A date is required.");
+  refused("RECORD_FILING_RESULT", { "result-state": "lost", "date-state": "2026-10-20" }, "Record a result for at least one return.");
+  refused("RECORD_FILING_RESULT", {}, "Record a result for at least one return.");
+});
+
+test("RECORD_FILING_RESULT keeps a fix note for a rejection", () => {
+  const accepted = { "result-federal": "accepted", "date-federal": "2026-10-20", "fix-note": "Fictional note." };
+  // At E-filed with nothing rejected, a note has nothing to attach to.
+  assert.throws(
+    () => payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, accepted),
+    (error) => error.message === "A fix note goes with a rejection.",
+  );
+  assert.throws(
+    () => payloadFor("RECORD_FILING_RESULT", {}, accepted),
+    (error) => error.message === "A fix note goes with a rejection.",
+  );
+  // Rejected in the move, or already at Rejected: the note goes.
+  assert.equal(
+    payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, {
+      ...accepted,
+      "result-federal": "rejected",
+      "code-federal": "C1",
+    }).payload.fixNote,
+    "Fictional note.",
+  );
+  assert.equal(payloadFor("RECORD_FILING_RESULT", { stage: "rejected" }, accepted).payload.fixNote, "Fictional note.");
+  // A blank note is no note.
+  assert.equal(
+    payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, { ...accepted, "fix-note": "  " }).payload.fixNote,
+    undefined,
+  );
+});
+
+test("RETURN_TO_SIGNING needs the fix confirmed", () => {
+  assert.deepEqual(payloadFor("RETURN_TO_SIGNING", {}, { confirmed: "on" }), {
+    type: "RETURN_TO_SIGNING",
+    payload: { confirmed: true },
+  });
+  refused("RETURN_TO_SIGNING", {}, "Confirm that the fix is done.");
+  refused("RETURN_TO_SIGNING", { confirmed: "no" }, "Confirm that the fix is done.");
+});
+
+test("screeningCheckKeys by service", () => {
+  assert.deepEqual(screeningCheckKeys("drop_off"), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("same_day"), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("online"), ["phone", "documents", "in_scope", "identity"]);
+  assert.ok(Object.isFrozen(screeningCheckKeys("online")));
+});
+
+test("screeningCheckKeys: unknown service", () => {
+  assert.deepEqual(screeningCheckKeys(undefined), ["phone", "documents", "in_scope"]);
+  assert.deepEqual(screeningCheckKeys("x"), ["phone", "documents", "in_scope"]);
+});
+
+test("drops identity unless online", () => {
+  const all = { phone: "true", documents: "true", in_scope: "true", identity: "true", interview: "true" };
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", { service: "drop_off" }, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true },
+  });
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", {}, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true },
+  });
+  assert.deepEqual(payloadFor("VERIFY_INTAKE", { service: "online" }, all).payload, {
+    checks: { phone: true, documents: true, in_scope: true, identity: true },
+  });
+});
+
+test("VERIFY_INTAKE needs every shown check", () => {
+  assert.throws(
+    () =>
+      payloadFor("VERIFY_INTAKE", { service: "online" }, {
+        phone: "true",
+        documents: "true",
+        in_scope: "true",
+      }),
+    (error) => error.code === "VALIDATION" && error.message === "Tick every check before recording them.",
   );
 });

@@ -1,21 +1,53 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { POOL_STAGES, poolPhase, poolFilters, filterPool, poolCounts, renderCasePool } from "../src/pool-views.mjs";
+import { POOL_STAGES, POOL_TABS, poolPhase, poolFilters, filterPool, poolCounts, renderCasePool } from "../src/pool-views.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { STAGES } from "../src/contracts.mjs";
 
 test("every stage lands on exactly one pool phase", () => {
   const expected = {
-    draft: "intake", received: "intake",
+    draft: "intake", received: "intake", screening: "intake",
+    awaiting_documents: "signing", on_hold: "attention",
     preparation_ready: "available", preparing: "preparation", corrections_required: "preparation",
     review_ready: "review", reviewing: "review",
-    review_approved: "done", closed: "closed",
+    review_approved: "signing", ready_to_efile: "filing", efiled: "filing",
+    rejected: "attention", accepted: "done", closed: "closed",
   };
-  assert.deepEqual(POOL_STAGES, Object.keys(expected));
+  assert.deepEqual([...POOL_STAGES].sort(), Object.keys(expected).sort());
+  assert.deepEqual(POOL_STAGES, STAGES);
   for (const [stage, phase] of Object.entries(expected))
     assert.equal(poolPhase({ stage, preparerId: null }), phase, stage);
   assert.equal(poolPhase({ stage: "preparation_ready", preparerId: "p1" }), "preparation");
   assert.equal(poolPhase({ stage: "made_up" }), null);
   for (const stage of POOL_STAGES) assert.notEqual(describeStage(stage).label, "Application");
+});
+
+test("the pool's tabs, in order: Needs attention and Done before Closed", () => {
+  assert.deepEqual(POOL_TABS, [
+    ["all", "All cases"],
+    ["intake", "Intake"],
+    ["available", "Available"],
+    ["preparation", "Waiting for preparation"],
+    ["review", "Waiting for review"],
+    ["signing", "Waiting on client"],
+    ["filing", "Filing"],
+    ["attention", "Needs attention"],
+    ["done", "Done"],
+    ["closed", "Closed"],
+  ]);
+  assert.equal(poolFilters({ poolPhase: "done" }).poolPhase, "done");
+  assert.equal(poolFilters({ poolPhase: "filing" }).poolPhase, "filing");
+  // Every stage is counted on a tab, so the tab counts add up to All.
+  const mapped = [...POOL_STAGES];
+  const cases = mapped.map((stage, i) => ({ id: String(i), stage, preparerId: null, answers: {} }));
+  const counts = poolCounts(cases, poolFilters({}));
+  const { all, ...tabs } = counts;
+  assert.equal(all, mapped.length);
+  assert.equal(Object.values(tabs).reduce((a, b) => a + b, 0), all);
+  assert.deepEqual(tabs, { intake: 3, available: 1, preparation: 2, review: 2, signing: 2, filing: 2, attention: 2, done: 1, closed: 1 });
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "attention" })).map((c) => c.stage), ["on_hold", "rejected"]);
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "done" })).map((c) => c.stage), ["accepted"]);
+  assert.deepEqual(filterPool(cases, poolFilters({ poolPhase: "filing" })).map((c) => c.stage), ["ready_to_efile", "efiled"]);
 });
 
 test("unknown saved values fall back to All, and volunteer keys are ignored", () => {
@@ -77,11 +109,25 @@ const CASES = [
 const render = (filters = {}, cases = CASES) =>
   renderCasePool(cases, PEOPLE, { filters, now: NOW });
 
-test("the pool shows seven phase tabs with counts and pressed state", () => {
+test("a pool row names E-filed and Accepted by the filing method", () => {
+  const html = render({}, [
+    rec("M", "efiled", { federalMethod: "efile", stateMethod: "paper" }),
+    rec("O", "efiled"),
+  ]);
+  assert.match(html, /<i><\/i>E-filed, PA on paper</);
+  assert.match(html, /<i><\/i>E-filed</);
+});
+
+test("the pool's stage filter keeps the plain stage names", () => {
+  assert.match(render(), /<option value="efiled">E-filed<\/option>/);
+}
+);
+
+test("the pool shows ten phase tabs with counts and pressed state", () => {
   const html = render({ poolPhase: "review" });
   assert.match(html, /role="group" aria-label="Case phase"/);
   const tabs = html.match(/<button[^>]*data-filter="poolPhase"[^>]*>/g) ?? [];
-  assert.equal(tabs.length, 7);
+  assert.equal(tabs.length, 10);
   for (const tab of tabs) assert.match(tab, /data-action="set-board-filter"/);
   assert.match(html, /data-value="review"[^>]*aria-pressed="true"/);
   assert.match(html, /data-value="all"[^>]*aria-pressed="false"/);
@@ -276,4 +322,44 @@ test("an empty pool says whether nothing exists or nothing matches", () => {
   });
   assert.match(both, /<p>No case matches these filters\.<\/p>/);
   assert.equal([...both.matchAll(/data-action="clear-pool-filters"/g)].length, 1, "Clear filters shows once");
+});
+
+test("the Closed tab filters by reason: each of the six, and No reason", () => {
+  const closed = (id, closingReason) => ({
+    id, reference: `VT-${id}`, stage: "closed", closingReason, answers: {}, updatedAt: "2026-10-01T12:00:00Z",
+  });
+  const cases = [
+    closed("a", "withdrawn"),
+    closed("b", "duplicate"),
+    closed("c", null), // closed before reasons existed
+    closed("d", undefined),
+    { id: "e", reference: "VT-e", stage: "preparing", answers: {} },
+  ];
+  const ids = (filters) => filterPool(cases, poolFilters(filters)).map((r) => r.id).sort();
+  assert.deepEqual(ids({ poolPhase: "closed" }), ["a", "b", "c", "d"]);
+  assert.deepEqual(ids({ poolPhase: "closed", poolReason: "withdrawn" }), ["a"]);
+  assert.deepEqual(ids({ poolPhase: "closed", poolReason: "duplicate" }), ["b"]);
+  assert.deepEqual(ids({ poolPhase: "closed", poolReason: "none" }), ["c", "d"]);
+  assert.deepEqual(ids({ poolPhase: "closed", poolReason: "other" }), []);
+  // The filter belongs to the Closed tab, and an unknown value is All.
+  assert.equal(poolFilters({ poolPhase: "all", poolReason: "withdrawn" }).poolReason, "all");
+  assert.equal(poolFilters({ poolPhase: "closed", poolReason: "nonsense" }).poolReason, "all");
+  // The tab counts ignore it.
+  assert.equal(poolCounts(cases, poolFilters({ poolPhase: "closed", poolReason: "withdrawn" })).closed, 4);
+});
+
+test("the Closed reason filter shows on the Closed tab only, with the staff names", () => {
+  const closedTab = renderCasePool([], [], { filters: { poolPhase: "closed" } });
+  assert.match(closedTab, /id="field-poolReason" data-board-filter="poolReason"/);
+  const select = closedTab.slice(closedTab.indexOf('id="field-poolReason"'));
+  assert.deepEqual(
+    [...select.slice(0, select.indexOf("</select>")).matchAll(/<option value="[a-z_]+"[^>]*>([^<]*)<\/option>/g)].map((m) => m[1]),
+    ["Any reason", "Out of scope", "No need to file", "Duplicate", "Dismissed (client unreachable)", "Withdrawn", "Other", "No reason"],
+  );
+  assert.doesNotMatch(renderCasePool([], [], { filters: {} }), /poolReason/);
+  // A closed row names its reason; one closed before reasons existed says "Closed".
+  const row = (closingReason) =>
+    renderCasePool([{ id: "x", reference: "VT-X", stage: "closed", closingReason, answers: {} }], [], { filters: { poolPhase: "closed" } });
+  assert.match(row("duplicate"), /Closed · Duplicate/);
+  assert.doesNotMatch(row(null), /Closed ·/);
 });

@@ -140,26 +140,73 @@ export const TEXT = Object.freeze({
   // The version-2 form: the select's blank option and the separator between picked choices
   "form.select_option": { en: "Select an option", zh: "请选择" },
   "form.list_separator": { en: ", ", zh: "、" },
-  // Stage names and the client's status message (domain.mjs describeStage; the English is
-  // STAGE_DESCRIPTIONS there, kept in step by tests/domain.test.mjs)
+  // Stage labels and the client's status message (domain.mjs describeStage; the English is
+  // STAGE_DESCRIPTIONS there, kept in step by tests/domain.test.mjs). The label is the
+  // client's badge; the staff name lives in domain.mjs and stays English.
   "stage.draft.label": { en: "Draft", zh: "草稿" },
   "stage.draft.client": { en: "Your application is saved and has not been sent to the office yet.", zh: "您的申请已保存，尚未发送给办公室。" },
-  "stage.received.label": { en: "Received", zh: "已收到" },
-  "stage.received.client": { en: "Your application is with the office. A volunteer will check your information and documents.", zh: "办公室已收到您的申请。志愿者会核对您的信息和文件。" },
-  "stage.preparation_ready.label": { en: "Waiting for preparation", zh: "等待志愿者接手" },
-  "stage.preparation_ready.client": { en: "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation.", zh: "模拟的登记核查已记录。您的申请正在等待志愿者开始准备报税表。" },
-  "stage.preparing.label": { en: "In preparation", zh: "准备中" },
+  "stage.received.label": { en: "Sent to PCDC", zh: "已发送给 PCDC" },
+  "stage.received.client": { en: "Your application is with PCDC. The office will review it soon and may call you.", zh: "PCDC 已收到您的申请。办公室会尽快查看，并可能致电您。" },
+  "stage.screening.label": { en: "Being reviewed", zh: "审核中" },
+  "stage.screening.client": { en: "PCDC is reviewing your application. We may call you to confirm your information and documents.", zh: "PCDC 正在审核您的申请。我们可能会致电您，核对您的信息和文件。" },
+  "stage.preparation_ready.label": { en: "Waiting for a volunteer", zh: "等待志愿者" },
+  "stage.preparation_ready.client": { en: "Your application has been checked. It is waiting for a volunteer to start preparing your return.", zh: "您的申请已核对完毕，正在等待志愿者开始准备您的报税表。" },
+  "stage.preparing.label": { en: "Being prepared", zh: "准备中" },
   "stage.preparing.client": { en: "A volunteer is preparing your return.", zh: "报税志愿者正在准备您的报税表。" },
-  "stage.review_ready.label": { en: "Waiting for review", zh: "等待审核" },
-  "stage.review_ready.client": { en: "Preparation is complete in the tax software. Your return is waiting for an independent reviewer.", zh: "报税软件中的准备工作已完成。您的报税表正在等待审核志愿者检查。" },
-  "stage.reviewing.label": { en: "In review", zh: "审核中" },
+  "stage.review_ready.label": { en: "Waiting for review", zh: "等待检查" },
+  "stage.review_ready.client": { en: "Your return is prepared and is waiting for an independent reviewer.", zh: "您的报税表已准备好，正在等待审核志愿者检查。" },
+  "stage.reviewing.label": { en: "Being checked", zh: "检查中" },
   "stage.reviewing.client": { en: "An independent reviewer is checking your return.", zh: "审核志愿者正在检查您的报税表。" },
-  "stage.corrections_required.label": { en: "Corrections in progress", zh: "正在更正" },
+  "stage.corrections_required.label": { en: "Being corrected", zh: "正在更正" },
   "stage.corrections_required.client": { en: "The reviewer asked your preparer to make corrections. No action is needed from you right now.", zh: "审核志愿者已请报税志愿者进行更正。您目前无需做任何事。" },
-  "stage.review_approved.label": { en: "Review complete", zh: "审核完成" },
-  "stage.review_approved.client": { en: "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.", zh: "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。" },
+  "stage.review_approved.label": { en: "Ready to sign", zh: "等待签名" },
+  "stage.review_approved.client": { en: "Your return has been checked. PCDC will contact you to sign it. Your return can't be filed until you sign.", zh: "您的报税表已检查完毕。PCDC 会联系您签署报税表。您签署后才能递交报税表。" },
+  // Ready to exit, by how the client will sign Form 8879 (design D11; domain.mjs describeStage picks one by the case's signing plan)
+  "stage.review_approved.client.appointment": { en: "Your return has been checked. Please come to PCDC on {when} to sign it. Your return can't be filed until you sign.", zh: "您的报税表已检查完毕。请于 {when} 到 PCDC 签署报税表。您签署后才能递交报税表。" },
+  "stage.review_approved.client.same_day": { en: "Your return has been checked. Please sign it with a volunteer before you leave today. Your return can't be filed until you sign.", zh: "您的报税表已检查完毕。请在今天离开前与志愿者一起签署报税表。您签署后才能递交报税表。" },
+  "stage.review_approved.client.portal": { en: "Your return has been checked. Please e-sign Form 8879 in the TaxSlayer Customer Portal. Your return can't be filed until you sign.", zh: "您的报税表已检查完毕。请在 TaxSlayer 客户门户（Customer Portal）以电子方式签署 8879 表。您签署后才能递交报税表。（门户为英文页面，可用浏览器翻译）" },
+  "stage.review_approved.client.go_over_first": { en: "Your return has been checked. PCDC will contact you to go over your return together. After that, you will sign it. Your return can't be filed until you sign.", zh: "您的报税表已检查完毕。PCDC 会联系您，先和您一起查看报税表，再请您签署。您签署后才能递交报税表。" },
+  "stage.ready_to_efile.label": { en: "Ready", zh: "已准备好" },
+  "stage.ready_to_efile.client": { en: "Your return is ready. PCDC will take the next step.", zh: "您的报税表已准备好。PCDC 会进行下一步。" },
+  "stage.efiled.label": { en: "E-filed", zh: "已电子递交" },
+  "stage.efiled.client": { en: "Your return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的报税表已电子递交。国税局会确认是否接受。" },
+  // E-filed by filing method (domain.mjs describeStage): one return e-filed and the other on paper
+  "stage.efiled.filed.label": { en: "Filed", zh: "已递交" },
+  // Accepted with any return on paper: the client still has to mail it
+  "stage.accepted.paper.label": { en: "Ready to mail", zh: "待邮寄" },
+  "stage.rejected.label": { en: "Needs a correction", zh: "需要更正" },
+  "stage.accepted.label": { en: "Complete", zh: "已完成" },
+  // Ready to exit after Return to signing (replaces every signing variant)
+  "stage.review_approved.client.resign": { en: "PCDC corrected your return. Please sign it again so PCDC can file it. PCDC will contact you to arrange this.", zh: "PCDC 已更正您的报税表。请再次签名，以便 PCDC 递交。PCDC 会联系您安排签名。" },
+  // E-filed, Rejected and Accepted: one sentence per return by its state, the combined one when both are the same (domain.mjs filingMessage)
+  "filing.federal.waiting": { en: "Your federal return was e-filed. The IRS will confirm whether it is accepted.", zh: "您的联邦报税表已电子递交。国税局会确认是否接受。" },
+  "filing.federal.accepted": { en: "The IRS accepted your federal return.", zh: "国税局已接受您的联邦报税表。" },
+  "filing.federal.rejected": { en: "Your federal return needs a correction before it can be accepted.", zh: "您的联邦报税表需要更正后才能被接受。" },
+  "filing.federal.given_to_client": { en: "PCDC gave your federal return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.", zh: "PCDC 已将您的联邦报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。" },
+  "filing.state.waiting": { en: "Your Pennsylvania return was e-filed. Pennsylvania will confirm whether it is accepted.", zh: "您的宾州报税表已电子递交。宾州税务局会确认是否接受。" },
+  "filing.state.accepted": { en: "Pennsylvania accepted your Pennsylvania return.", zh: "宾州税务局已接受您的宾州报税表。" },
+  "filing.state.rejected": { en: "Your Pennsylvania return needs a correction before it can be accepted.", zh: "您的宾州报税表需要更正后才能被接受。" },
+  "filing.state.given_to_client": { en: "PCDC gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.", zh: "PCDC 已将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。" },
+  "filing.both.waiting": { en: "Your federal and Pennsylvania returns were e-filed. The IRS and Pennsylvania will each confirm whether they are accepted.", zh: "您的联邦和宾州报税表已电子递交。国税局和宾州税务局会分别确认是否接受。" },
+  "filing.both.accepted": { en: "The IRS and Pennsylvania accepted your returns.", zh: "国税局和宾州税务局都已接受您的报税表。" },
+  "filing.both.rejected": { en: "Your federal and Pennsylvania returns need a correction before they can be accepted.", zh: "您的联邦和宾州报税表需要更正后才能被接受。" },
+  "filing.both.given_to_client": { en: "PCDC gave your federal and Pennsylvania returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.", zh: "PCDC 已将您的联邦和宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。" },
+  "filing.closing.rejected": { en: "PCDC will contact you about the correction.", zh: "PCDC 会就更正事宜联系您。" },
+  "filing.closing.accepted": { en: "If you are due a refund, you can check on it with \"Where's My Refund?\" at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.", zh: "如果您有退税，可以在 irs.gov/refunds 使用 \"Where's My Refund?\" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）" },
   "stage.closed.label": { en: "Closed", zh: "已关闭" },
   "stage.closed.client": { en: "This application was closed by the office. This does not change any return filed elsewhere.", zh: "此申请已由办公室关闭。这不影响在其他地方递交的任何报税表。" },
+  // Waiting for documents and Hold (change add-hold-and-closing); a Hold is told by where it came from (domain.mjs holdKind)
+  "stage.awaiting_documents.label": { en: "Documents needed", zh: "需要文件" },
+  "stage.awaiting_documents.client": { en: "PCDC needs more documents from you before your return can be prepared. See the requests below.", zh: "PCDC 需要您提供更多文件，才能准备您的报税表。请查看下方的文件请求。" },
+  "stage.on_hold.label": { en: "Waiting for you", zh: "等待您的回复" },
+  "stage.on_hold.client": { en: "PCDC has been trying to reach you about the documents we need. Please upload them below or contact PCDC.", zh: "PCDC 一直在设法联系您，询问所需的文件。请在下方上传，或联系 PCDC。" },
+  "stage.on_hold.client.signing": { en: "PCDC has been trying to reach you to sign your return. Please contact PCDC. Your return can't be filed until you sign.", zh: "PCDC 一直在设法联系您签署报税表。请联系 PCDC。您签署后才能递交报税表。" },
+  // Closed, by the reason it recorded (domain.mjs describeStage); 'other' and no reason use stage.closed.client
+  "stage.closed.client.out_of_scope": { en: "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.", zh: "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。" },
+  "stage.closed.client.no_need_to_file": { en: "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.", zh: "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。" },
+  "stage.closed.client.duplicate": { en: "This application was closed. Your return continues under your other application with PCDC.", zh: "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。" },
+  "stage.closed.client.dismissed": { en: "PCDC could not reach you, so this application was closed. Your return was not filed.", zh: "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。" },
+  "stage.closed.client.withdrawn": { en: "You withdrew this application. Your return was not filed.", zh: "您已撤回此申请。您的报税表未递交。" },
   "stage.unknown.label": { en: "Application", zh: "申请" },
   "stage.unknown.client": { en: "This application is with the office. Contact PCDC if you have questions.", zh: "此申请正在办公室处理。如有疑问，请联系 PCDC。" },
   // Days on lists (ui.mjs relativeDay); older dates use the language's own month and day
@@ -225,7 +272,8 @@ export const TEXT = Object.freeze({
   "progress.step.intake": { en: "Intake", zh: "登记" },
   "progress.step.preparation": { en: "Preparation", zh: "准备" },
   "progress.step.review": { en: "Review", zh: "审核" },
-  "progress.step.next": { en: "Next steps", zh: "后续步骤" },
+  "progress.step.signing": { en: "Signing", zh: "签名" },
+  "progress.step.filing": { en: "Filing", zh: "递交" },
   "progress.step.done": { en: "complete", zh: "已完成" },
   "progress.step.current": { en: "in progress", zh: "进行中" },
   "progress.step.waiting": { en: "not started", zh: "未开始" },
@@ -258,8 +306,17 @@ export const TEXT = Object.freeze({
   "progress.questions": { en: "Questions about your application? Our volunteers can help.", zh: "对申请有疑问？我们的志愿者可以帮助您。" },
   "progress.contact": { en: "Contact the office", zh: "联系办公室" },
   "progress.back": { en: "Back to my applications", zh: "返回我的申请" },
+  // Withdraw (change add-hold-and-closing): the button, its dialog, and the line from Ready to exit on
+  "withdraw.button": { en: "Withdraw this application", zh: "撤回此申请" },
+  "withdraw.title": { en: "Withdraw this application?", zh: "撤回此申请？" },
+  "withdraw.body": { en: "If you withdraw, PCDC will close this application and your return will not be filed.", zh: "撤回后，PCDC 将关闭此申请，您的报税表将不会被递交。" },
+  "withdraw.box": { en: "I want to withdraw this application. My return will not be filed.", zh: "我要撤回此申请。我的报税表将不会被递交。" },
+  "withdraw.keep": { en: "Keep my application", zh: "保留我的申请" },
+  "withdraw.contact": { en: "To withdraw now, contact PCDC.", zh: "如需撤回，请联系 PCDC。" },
+  "toast.withdrawn": { en: "You withdrew your application.", zh: "您已撤回申请。" },
   // The application history: a request line keeps the office's title as typed (spec §3.3)
   "history.requested": { en: "A volunteer requested a document: {title}", zh: "志愿者请求了一份文件：{title}" },
+  "history.requested_documents": { en: "PCDC asked for these documents: {titles}.", zh: "PCDC 请您提供以下文件：{titles}。" },
   // Document cards on the client's screens (intake-views.mjs docCard, bringList,
   // progressDocumentsV2); the office's card words (Add a case) stay English
   "doc.bring": { en: "Bring these to your visit", zh: "请携带以下文件" },
@@ -383,6 +440,14 @@ export const TEXT = Object.freeze({
 // required.", "Choose what happened on the call.") for staff-only actions;
 // those stay English (plan 4d Task 6). The client's own actions, SUBMIT and
 // RESPOND_DOCUMENT, refuse only with the fixed sentences below.
+// 035's mailed sentences, frozen: filing_line wrote them before 037 renamed the
+// paper result to given_to_client, and those history rows keep their words.
+const LEGACY_MAILED = Object.freeze({
+  federal: { en: "Your federal return was mailed. A reply to a mailed return can take several weeks.", zh: "您的联邦报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+  state: { en: "Your Pennsylvania return was mailed. A reply to a mailed return can take several weeks.", zh: "您的宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+  both: { en: "Your federal and Pennsylvania returns were mailed. A reply to a mailed return can take several weeks.", zh: "您的联邦和宾州报税表已邮寄。邮寄的报税表可能需要几周才会有回复。" },
+});
+
 export const SENTENCES = Object.freeze({
   // errors.mjs: one sentence per code (SAFE_MESSAGES)
   "You do not have access to this step.": "您无权进行这一步。",
@@ -394,6 +459,8 @@ export const SENTENCES = Object.freeze({
   "Please check the information and try again.": "请检查信息后再试一次。",
   "Network error. Please try again later.": "网络连接失败，请稍后再试。",
   "Something went wrong. Please try again.": "出了点问题。请再试一次。",
+  // case-actions.mjs: the client's Withdraw refuses without its box ticked (draft translation, for the group's wording review)
+  "Tick the box to withdraw this application.": "请勾选方框以撤回此申请。", // 036
   // app.mjs: a refused action with no message of its own; the save chip's default
   "Something went wrong.": "出了点问题。",
   "Please try again.": "请再试一次。",
@@ -428,6 +495,8 @@ export const SENTENCES = Object.freeze({
   // the request line ("A volunteer requested a document: …") is historyLine's
   "Application received. A volunteer will check your information and documents.": "已收到申请。志愿者会核对您的信息和文件。",
   "Simulated intake checks are recorded. Your application is waiting for a volunteer to start preparation.": "模拟的登记核查已记录。您的申请正在等待志愿者开始准备报税表。",
+  // Migration 034: the real screening checks replace the simulated line above (kept for old rows).
+  "PCDC finished screening your application. A volunteer will start preparing your return next.": "PCDC 已完成对您申请的审核。接下来会有志愿者开始准备您的报税表。",
   "A volunteer has started preparing your return.": "志愿者已开始准备您的报税表。",
   "Your document was received and is waiting for a volunteer to verify it.": "已收到您的文件，正在等待志愿者核实。",
   "A sample document was recorded by staff and is awaiting verification.": "工作人员已登记一份示例文件，正在等待核实。",
@@ -441,6 +510,33 @@ export const SENTENCES = Object.freeze({
   "Independent review is complete. A volunteer will contact you about next steps. Signing and filing are later milestones and are not done yet.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "Your return has been checked by the reviewer. A volunteer will contact you soon to sign and file.": "审核志愿者已检查完您的报税表，很快会有志愿者联系您办理签名和递交。",
   "A volunteer spoke with you about the next service step.": "志愿者已与您沟通下一步的服务。",
+  // Migration 032: the main chain's new stages.
+  "PCDC started reviewing your application. We may call you.": "PCDC 已开始审核您的申请。我们可能会致电您。",
+  "PCDC recorded that you signed Form 8879. Your return is ready to e-file.": "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。", // 032, kept for stored rows
+  "PCDC e-filed your return.": "PCDC 已电子递交您的报税表。",
+  "PCDC is working on your application again.": "PCDC 已继续处理您的申请。", // 036
+  "PCDC is trying to reach you.": "PCDC 正在设法联系您。", // 036
+  "This application was closed because the return is outside what VITA volunteers can prepare. Your return was not filed by PCDC.": "此申请已关闭，因为该报税表超出了 VITA 志愿者可以准备的范围。PCDC 未递交您的报税表。", // 036
+  "A PCDC volunteer confirmed with you that you don't need to file a return this year, so this application was closed.": "PCDC 志愿者已与您确认，您今年无需递交报税表，因此此申请已关闭。", // 036
+  "This application was closed. Your return continues under your other application with PCDC.": "此申请已关闭。您的报税表将在您在 PCDC 的另一份申请中继续处理。", // 036
+  "PCDC could not reach you, so this application was closed. Your return was not filed.": "PCDC 无法联系到您，因此此申请已关闭。您的报税表未递交。", // 036
+  "You withdrew this application. Your return was not filed.": "您已撤回此申请。您的报税表未递交。", // 036
+  "You withdrew your application. Your return was not filed.": "您已撤回申请。您的报税表未递交。", // 036
+  // Migration 035: Return to signing, Mark e-filed, and Record filing result.
+  "PCDC corrected your return. You need to sign it again.": "PCDC 已更正您的报税表，您需要再次签名。",
+  "PCDC e-filed your federal return and mailed your Pennsylvania return.": "PCDC 已电子递交您的联邦报税表，并邮寄了您的宾州报税表。",
+  "PCDC mailed your returns.": "PCDC 已邮寄您的报税表。",
+  "PCDC e-filed your federal return.": "PCDC 已电子递交您的联邦报税表。",
+  "PCDC mailed your federal return.": "PCDC 已邮寄您的联邦报税表。",
+  "PCDC e-filed your Pennsylvania return.": "PCDC 已电子递交您的宾州报税表。",
+  "PCDC mailed your Pennsylvania return.": "PCDC 已邮寄您的宾州报税表。",
+  // Migration 037: Mark ready to e-file no longer claims a signature, and a paper return is given to the client.
+  "PCDC recorded that your return is ready. PCDC will take the next step.": "PCDC 已记录您的报税表已准备好。PCDC 会进行下一步。",
+  "PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent. If it isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.": "PCDC 已电子递交您的联邦报税表，并将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。",
+  "PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return. If the federal return isn't signed yet, sign it, then mail it yourself. A reply can take about 3 months after you mail it.": "PCDC 已将您的联邦报税表纸本交给您或您委托的人，并电子递交了您的宾州报税表。如果联邦报税表还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。",
+  "PCDC gave your returns on paper to you or the person you sent. If they aren't signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.": "PCDC 已将您的报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。",
+  // Record filing result and a second filing: every combination filing_line and efiled_line can write
+  ...filingLines(),
   // The version-2 form: checkValue's fixed messages (intake-catalogue.mjs), shown in the note
   "Enter a valid email address.": "请输入有效的电子邮箱。",
   "Enter a 10-digit phone number.": "请输入 10 位数字的电话号码。",
@@ -475,6 +571,44 @@ export function t(key, params = {}, lang = "en") {
   return fill(zh, given);
 }
 
+// What the client reads about their returns: one sentence for each, federal
+// first, or the combined sentence when both are in the same state. A null state
+// leaves that return out. Chinese sentences run together without a space.
+export function filingSentences(federal, state, lang = "en") {
+  const parts =
+    federal === state
+      ? federal ? [t(`filing.both.${federal}`, {}, lang)] : []
+      : [federal && t(`filing.federal.${federal}`, {}, lang), state && t(`filing.state.${state}`, {}, lang)];
+  return parts.filter(Boolean).join(!isLang(lang) || lang === "en" ? " " : "");
+}
+
+// Every history line filing_line can write (035's mailed ones included), English to 简体.
+function filingLines() {
+  const lines = {};
+  const states = [null, "waiting", "accepted", "rejected", "given_to_client"];
+  for (const federal of states)
+    for (const state of states)
+      if (federal || state) lines[filingSentences(federal, state)] = filingSentences(federal, state, "zh-Hans");
+  // The same pairs with 035's mailed sentence standing for given_to_client.
+  const legacy = (kind, state) => (state === "given_to_client" ? LEGACY_MAILED[kind] : null);
+  const sentenceOf = (kind, state, lang) =>
+    legacy(kind, state)?.[lang] ?? t(`filing.${kind}.${state}`, {}, lang === "zh" ? "zh-Hans" : "en");
+  const mailed = [...states.slice(1)];
+  for (const federal of [null, ...mailed])
+    for (const state of [null, ...mailed]) {
+      if (!federal && !state) continue;
+      if (federal !== "given_to_client" && state !== "given_to_client") continue;
+      const both = federal === state;
+      const parts = (lang) =>
+        (both
+          ? [sentenceOf("both", federal, lang)]
+          : [federal && sentenceOf("federal", federal, lang), state && sentenceOf("state", state, lang)]
+        ).filter(Boolean).join(lang === "en" ? " " : "");
+      lines[parts("en")] = parts("zh");
+    }
+  return lines;
+}
+
 export function sentence(text, lang = "en") {
   if (typeof text !== "string") return "";
   if (!isLang(lang) || lang === "en" || !Object.hasOwn(SENTENCES, text)) return text;
@@ -485,8 +619,16 @@ export function sentence(text, lang = "en") {
 // prefix is replaced and the office's title kept as typed; every other line is
 // a sentence, and an unknown one stays English.
 const REQUEST_PREFIX = "A volunteer requested a document: ";
+// Migration 036: the office's request at intake. The titles are typed by the
+// office, so the rest of the line (minus its final ".") fills {titles}.
+const DOCUMENTS_PREFIX = "PCDC asked for these documents: ";
 export function historyLine(message, lang = "en") {
   if (typeof message !== "string") return "";
+  if (message.startsWith(DOCUMENTS_PREFIX)) {
+    if (!isLang(lang) || lang === "en") return message;
+    const rest = message.slice(DOCUMENTS_PREFIX.length);
+    return t("history.requested_documents", { titles: rest.endsWith(".") ? rest.slice(0, -1) : rest }, lang);
+  }
   if (!message.startsWith(REQUEST_PREFIX)) return sentence(message, lang);
   if (!isLang(lang) || lang === "en") return message;
   return t("history.requested", { title: message.slice(REQUEST_PREFIX.length) }, lang);

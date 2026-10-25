@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDatabaseFixture, rejected } from "./support/database-fixture.mjs";
+import {
+  createDatabaseFixture,
+  rejected,
+  PREPARER,
+} from "./support/database-fixture.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
 import { missingToSubmit, isVisible } from "../src/intake-catalogue.mjs";
 import { RULE_TYPES } from "../src/document-cards.mjs";
@@ -108,9 +112,10 @@ async function submittedCase(f) {
 // A submitted version-2 case Alex prepares and Morgan reviews.
 async function claimedCase(f) {
   const caseId = await submittedCase(f);
+  await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", { checks: f.intakeChecks });
   await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-  await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+  await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
   await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
   return caseId;
 }
@@ -348,7 +353,7 @@ test("visits and document cards on the server", async (t) => {
 
     await t.test("the preparer is refused once the case is closed", async () => {
       const caseId = await claimedCase(f);
-      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "Test close." });
+      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "other", note: "Test close." });
       await assert.rejects(
         card(f, f.presenter, caseId, f.alex, "w2.household", "later"),
         rejected("INVALID_TRANSITION"),
@@ -418,7 +423,7 @@ test("visits and document cards on the server", async (t) => {
     await t.test("both actions are refused on a closed case", async () => {
       const caseId = await submittedCase(f);
       await group(f, f.presenter, caseId, f.sam, "w2.household", "needed");
-      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "Test close." });
+      await f.act(f.presenter, caseId, f.sam, "CLOSE_CASE", { confirmed: true, reason: "other", note: "Test close." });
       assert.equal((await caseRow(f, caseId)).stage, "closed");
       await assert.rejects(
         card(f, f.presenter, caseId, f.sam, "ssn.tp", "none"),

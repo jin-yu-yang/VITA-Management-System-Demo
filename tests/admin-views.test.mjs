@@ -3,14 +3,22 @@ import assert from "node:assert/strict";
 import {
   renderAdminCase,
   closeCaseDialogBody,
+  markReadyToEfileDialogBody,
+  markEfiledDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
+  requestDocumentsDialogBody,
+  putOnHoldDialogBody,
+  resumeFromHoldDialogBody,
   adminEligibility,
 } from "../src/admin-views.mjs";
-import { decorateStaffCase } from "../src/staff-views.mjs";
+import { decorateStaffCase, renderStaffCase } from "../src/staff-views.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS } from "../src/intake-catalogue.mjs";
 import { staffScreen, dialog } from "../src/views.mjs";
 import { payloadFor } from "../src/case-actions.mjs";
 import { describeStage } from "../src/domain.mjs";
+import { nowInput } from "../src/contact-log.mjs";
 
 // The admin screens are pure functions of records and one persona, so these
 // tests read the HTML string itself. No DOM library, and nothing here may reach
@@ -171,59 +179,62 @@ const caseActions = (html) => [
 // Intake checks
 // ---------------------------------------------------------------------------
 
-test("the intake checks are offered once, as four simulated attestations", () => {
-  const arrived = officeCase({ stage: "received", intakeVerified: false });
+const LABELS = {
+  phone: "The client can be reached at the phone number on the application.",
+  documents:
+    "The basic documents are present (photo ID, Social Security or ITIN cards, the income documents on the list).",
+  in_scope: "The return is within VITA scope.",
+  identity:
+    "Identity confirmed: the client's face matches their photo ID (in person or on video), checked by a certified volunteer.",
+};
+const screeningPanel = (html) => {
+  const start = html.indexOf('<section class="panel" aria-labelledby="checks-title">');
+  return html.slice(start, html.indexOf("</section>", start));
+};
+const onlineCase = (overrides = {}) =>
+  officeCase({
+    stage: "screening",
+    intakeVerified: false,
+    answers: { service: "online", language: "Cantonese", firstName: "Mei" },
+    ...overrides,
+  });
+
+test("screening checks panel: drop-off shows three", () => {
+  const arrived = officeCase({ stage: "screening", intakeVerified: false });
   const none = renderAdminCase(arrived, { person: SAM });
   assert.match(none, /data-case-action="VERIFY_INTAKE"/);
-  for (const key of ["interview", "identity", "documents", "consent"]) {
-    assert.match(none, new RegExp(`id="field-intake-${key}"`));
-    assert.match(none, new RegExp(`name="${key}" value="true"`));
+  const panel = screeningPanel(none);
+  assert.match(panel, /<h2 id="checks-title">Screening checks<\/h2>/);
+  for (const key of ["phone", "documents", "in_scope"]) {
+    assert.match(panel, new RegExp(`id="field-intake-${key}"`));
+    assert.match(panel, new RegExp(`name="${key}" value="true"`));
+    assert.ok(panel.includes(`<span>${LABELS[key].replace("'", "&#39;")}</span>`) || panel.includes(`<span>${LABELS[key]}</span>`), key);
   }
-  // Nothing is claimed about a real check.
-  assert.match(none, /simulated/i);
-  assert.match(none, /it is not an interview, an identity check/i);
-  // Without all four ticked the button is disabled.
-  assert.match(none, /data-case-action="VERIFY_INTAKE" disabled>/);
-  const all = renderAdminCase(arrived, {
-    person: SAM,
-    openPanels: [
-      "intake-check-interview",
-      "intake-check-identity",
-      "intake-check-documents",
-      "intake-check-consent",
-    ],
-  });
-  assert.doesNotMatch(all, /data-case-action="VERIFY_INTAKE" disabled/);
-  // Counted outside the Contacts tab, whose form draws its own defaults.
-  const outsideContacts = all.slice(0, all.indexOf('id="case-panel-contacts"'));
-  assert.equal((outsideContacts.match(/checked/g) ?? []).length, 4);
-  // The payload the form's four ticked boxes build is exactly the contract's.
+  assert.doesNotMatch(panel, /field-intake-identity/);
+  assert.match(panel, /Record the screening checks/);
+  // The payload the form's ticked boxes build is exactly the contract's.
   assert.deepEqual(
-    payloadFor("VERIFY_INTAKE", {}, {
-      interview: "true",
-      identity: "true",
+    payloadFor("VERIFY_INTAKE", { service: "drop_off" }, {
+      phone: "true",
       documents: "true",
-      consent: "true",
+      in_scope: "true",
     }).payload,
-    { checks: { interview: true, identity: true, documents: true, consent: true } },
-  );
-  assert.throws(
-    () =>
-      payloadFor("VERIFY_INTAKE", {}, {
-        interview: "true",
-        identity: "true",
-        documents: "true",
-      }),
-    (error) => error.code === "VALIDATION",
+    { checks: { phone: true, documents: true, in_scope: true } },
   );
   // At every other stage it is explained rather than offered.
   const already = renderAdminCase(officeCase(), { person: SAM });
   assert.doesNotMatch(already, /data-case-action="VERIFY_INTAKE"/);
-  assert.match(already, /The simulated intake checks are already recorded\./);
+  assert.match(already, /The screening checks are already recorded\./);
   const draft = renderAdminCase(officeCase({ stage: "draft", intakeVerified: false }), {
     person: SAM,
   });
   assert.match(draft, /The client has not sent this application yet\./);
+  // A request that has not been opened yet waits for screening.
+  const waiting = renderAdminCase(officeCase({ stage: "received", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.doesNotMatch(waiting, /data-case-action="VERIFY_INTAKE"/);
+  assert.match(waiting, /Screening starts when an admin opens the case\./);
   // And it is an office action: a preparer sees the reason, not the form.
   const forAlex = renderAdminCase(arrived, { person: ALEX });
   assert.doesNotMatch(forAlex, /data-case-action="VERIFY_INTAKE"/);
@@ -233,6 +244,45 @@ test("the intake checks are offered once, as four simulated attestations", () =>
 // ---------------------------------------------------------------------------
 // Follow-up
 // ---------------------------------------------------------------------------
+
+test("screening checks panel: online shows identity", () => {
+  const panel = screeningPanel(renderAdminCase(onlineCase(), { person: SAM }));
+  for (const key of ["phone", "documents", "in_scope", "identity"])
+    assert.match(panel, new RegExp(`id="field-intake-${key}"`));
+  assert.ok(panel.includes("Identity confirmed: the client&#39;s face matches") || panel.includes("Identity confirmed: the client's face matches"));
+  assert.match(panel, /data-case-action="VERIFY_INTAKE"[^>]*data-service="online"/);
+});
+
+test("the button waits for every shown check", () => {
+  const two = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents"],
+  });
+  assert.match(screeningPanel(two), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+  assert.match(screeningPanel(two), /Tick every check before recording them\./);
+  const three = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents", "intake-check-in_scope"],
+  });
+  assert.doesNotMatch(screeningPanel(three), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+  assert.doesNotMatch(screeningPanel(three), /Tick every check/);
+  assert.equal((screeningPanel(three).match(/checked/g) ?? []).length, 3);
+  // An online case still waits for identity.
+  const online = renderAdminCase(onlineCase(), {
+    person: SAM,
+    openPanels: ["intake-check-phone", "intake-check-documents", "intake-check-in_scope"],
+  });
+  assert.match(screeningPanel(online), /data-case-action="VERIFY_INTAKE"[^>]*disabled/);
+});
+
+test("no simulated wording in the panel", () => {
+  for (const record of [
+    officeCase({ stage: "screening", intakeVerified: false }),
+    onlineCase(),
+    officeCase(),
+  ])
+    assert.doesNotMatch(screeningPanel(renderAdminCase(record, { person: SAM })), /simulat/i);
+});
 
 test("each open task has the shared form and Resolve", () => {
   const record = officeCase({
@@ -468,7 +518,7 @@ test("closure is offered before approval only, and is confirmed in a dialog", ()
   assert.match(html, /in ViTally<\/strong>. It does not cancel, withdraw or amend/);
 
   for (const [stage, reason] of [
-    ["review_approved", /An approved case is not closed from here\./],
+    ["efiled", /An approved case is not closed from here\./],
     ["closed", /This case is already closed\./],
   ]) {
     const late = renderAdminCase(officeCase({ stage }), { person: SAM });
@@ -494,7 +544,14 @@ test("closure is offered before approval only, and is confirmed in a dialog", ()
 test("the close dialog asks for a reason and an explicit confirmation", () => {
   const html = closeCaseDialogBody({ savedCase: officeCase() });
   assert.match(html, /data-case-action="CLOSE_CASE"/);
-  assert.match(html, /<textarea id="field-close-reason" name="reason" required/);
+  // The six reasons are one choice, and the note is a text box.
+  assert.deepEqual(
+    [...html.matchAll(/<input type="radio" id="[^"]+" name="close-reason" value="([a-z_]+)" required>/g)].map((m) => m[1]),
+    ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn", "other"],
+  );
+  assert.match(html, /<span>Dismissed \(client unreachable\)<\/span>/);
+  assert.match(html, /<textarea id="field-close-close-note" name="close-note" maxlength="1000"/);
+  assert.doesNotMatch(html, /name="reason"/);
   assert.match(
     html,
     /<input type="checkbox" id="field-close-confirmed" name="confirmed" value="true" required>/,
@@ -504,14 +561,208 @@ test("the close dialog asks for a reason and an explicit confirmation", () => {
   assert.match(html, /data-action="close-dialog"/);
   // The confirmation is what the payload needs; a reason alone is refused.
   assert.throws(
-    () => payloadFor("CLOSE_CASE", {}, { reason: "Client moved away" }),
+    () => payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate" }),
     (error) => error.code === "VALIDATION",
   );
   assert.deepEqual(
-    payloadFor("CLOSE_CASE", {}, { reason: "Client moved away", confirmed: "true" })
+    payloadFor("CLOSE_CASE", {}, { "close-reason": "duplicate", confirmed: "true" })
       .payload,
-    { reason: "Client moved away", confirmed: true },
+    { reason: "duplicate", confirmed: true },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Screening, Form 8879 and e-filing
+// ---------------------------------------------------------------------------
+
+const CALLED = [
+  { id: "r1", status: "approved", clientContactStatus: "completed", preparationVersion: 1 },
+];
+const WAITING = [
+  { id: "r1", status: "approved", clientContactStatus: "pending", preparationVersion: 1 },
+];
+
+test("the intake checks wait for screening; the e-file marks wait for their stages", () => {
+  const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
+  const called = [{ status: "approved", clientContactStatus: "completed" }];
+  const at = (stage, reviews = called, followups = []) =>
+    adminEligibility({ caseRecord: { stage, ownerUserId: "u1", reviews, followups } }, sam);
+  assert.equal(at("screening").verifyIntake.allowed, true);
+  assert.equal(at("received").verifyIntake.allowed, false);
+  assert.equal(at("review_approved").markReadyToEfile.allowed, true);
+  assert.equal(at("ready_to_efile").markReadyToEfile.allowed, false);
+  assert.equal(at("ready_to_efile").markEfiled.allowed, true);
+  assert.equal(at("efiled").markEfiled.allowed, false);
+  assert.equal(at("review_approved").markEfiled.allowed, false);
+  // A list row has no reviews, only the summary a later task adds.
+  const listRow = (status) =>
+    adminEligibility(
+      { caseRecord: { stage: "review_approved", ownerUserId: "u1", reviewContactStatus: status } },
+      sam,
+    ).markReadyToEfile.allowed;
+  assert.equal(listRow("completed"), true);
+  assert.equal(listRow("pending"), false);
+  const waiting = at("review_approved", [
+    { status: "approved", clientContactStatus: "pending" },
+  ]).markReadyToEfile;
+  assert.equal(waiting.allowed, false);
+  assert.equal(
+    waiting.reason,
+    "The reviewer still needs to record the conversation with the client.",
+  );
+  // No review at all is not a completed call.
+  assert.equal(at("review_approved", []).markReadyToEfile.allowed, false);
+  // The latest approved review decides, not an earlier one.
+  assert.equal(
+    at("review_approved", [
+      { status: "approved", clientContactStatus: "completed" },
+      { status: "approved", clientContactStatus: "pending" },
+    ]).markReadyToEfile.allowed,
+    false,
+  );
+  // D13: then the office's go-over, until that task is resolved, whatever the outcome.
+  const GO_OVER = "The office still needs to go over the return with the client.";
+  const withTask = (task) => at("review_approved", called, [task]).markReadyToEfile;
+  assert.equal(withTask({ purpose: "go_over_return", status: "open" }).reason, GO_OVER);
+  assert.equal(withTask({ purpose: "request_documents", status: "open" }).allowed, true);
+  for (const resolutionOutcome of ["reached", "no_further_contact"])
+    assert.equal(
+      withTask({ purpose: "go_over_return", status: "resolved", resolutionOutcome }).allowed,
+      true,
+      resolutionOutcome,
+    );
+  const overRow = (goOverOpen) =>
+    adminEligibility(
+      { caseRecord: { stage: "review_approved", ownerUserId: "u1", reviewContactStatus: "completed", goOverOpen } },
+      sam,
+    ).markReadyToEfile;
+  assert.equal(overRow(true).reason, GO_OVER);
+  assert.equal(overRow(false).allowed, true);
+  // The reviewer's call stays first: a legacy pending call still gives its own sentence.
+  assert.equal(
+    at("review_approved", [{ status: "approved", clientContactStatus: "pending" }], [
+      { purpose: "go_over_return", status: "open" },
+    ]).markReadyToEfile.reason,
+    "The reviewer still needs to record the conversation with the client.",
+  );
+  assert.equal(at("screening").closeCase.allowed, true);
+  // Before filing a case can be closed (as withdrawn only); after filing it cannot.
+  for (const stage of ["review_approved", "ready_to_efile"]) assert.equal(at(stage).closeCase.allowed, true, stage);
+  {
+    const refusal = at("efiled").closeCase;
+    assert.equal(refusal.allowed, false);
+    assert.equal(refusal.reason, "An approved case is not closed from here.");
+  }
+  const alex = { id: "p-alex", name: "Alex", capabilities: ["prepare"] };
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "review_approved", reviews: called } }, alex)
+      .markReadyToEfile.allowed,
+    false,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "ready_to_efile" } }, alex).markEfiled.allowed,
+    false,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "ready_to_efile" } }, null).markEfiled.allowed,
+    false,
+  );
+});
+
+test("the admin page: the intake form at screening, the marks at their stages", () => {
+  const received = renderAdminCase(officeCase({ stage: "received", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.ok(!caseActions(received).includes("VERIFY_INTAKE"));
+  assert.match(received, /Screening starts when an admin opens the case\./);
+  const screening = renderAdminCase(officeCase({ stage: "screening", intakeVerified: false }), {
+    person: SAM,
+  });
+  assert.ok(caseActions(screening).includes("VERIFY_INTAKE"));
+
+  const approved = renderAdminCase(officeCase({ stage: "review_approved", reviews: CALLED }), {
+    person: SAM,
+  });
+  assert.match(
+    approved,
+    /<button[^>]*data-action="open-mark-ready-to-efile"[^>]*>[^]*?Mark ready to e-file…<\/button>/,
+  );
+  assert.doesNotMatch(approved, /data-action="open-mark-efiled"/);
+  // The control opens a dialog; it is never itself a workflow action.
+  assert.ok(!caseActions(approved).some((action) => action.startsWith("MARK_")));
+
+  const signed = renderAdminCase(officeCase({ stage: "ready_to_efile", reviews: CALLED }), {
+    person: SAM,
+  });
+  assert.match(
+    signed,
+    /<button[^>]*data-action="open-mark-efiled"[^>]*>[^]*?Mark e-filed…<\/button>/,
+  );
+  assert.doesNotMatch(signed, /data-action="open-mark-ready-to-efile"/);
+
+  const pending = renderAdminCase(officeCase({ stage: "review_approved", reviews: WAITING }), {
+    person: SAM,
+  });
+  assert.doesNotMatch(pending, /data-action="open-mark-ready-to-efile"/);
+  assert.match(pending, /The reviewer still needs to record the conversation with the client\./);
+
+  const filed = renderAdminCase(officeCase({ stage: "efiled", reviews: CALLED }), { person: SAM });
+  assert.doesNotMatch(filed, /data-action="open-mark-/);
+  // Only an admin is offered either mark.
+  for (const person of [ALEX, MORGAN]) {
+    const html = renderAdminCase(officeCase({ stage: "review_approved", reviews: CALLED }), {
+      person,
+    });
+    assert.doesNotMatch(html, /data-action="open-mark-/);
+    assert.match(html, /Needs office administrator access\./);
+  }
+});
+
+test("a volunteer's case page never offers the e-file marks", () => {
+  for (const stage of ["review_approved", "ready_to_efile"]) {
+    for (const person of [ALEX, MORGAN]) {
+      const html = renderStaffCase(officeCase({ stage, reviews: CALLED }), person);
+      assert.doesNotMatch(html, /open-mark-ready-to-efile/, `${stage} ${person.name}`);
+      assert.doesNotMatch(html, /open-mark-efiled/, `${stage} ${person.name}`);
+      assert.doesNotMatch(html, /MARK_/, `${stage} ${person.name}`);
+    }
+  }
+});
+
+test("the e-file dialogs name the client and the application", () => {
+  const state = {
+    busy: false,
+    savedCase: {
+      reference: "VT-AAAA-BBBB",
+      answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+    },
+  };
+  const ready = markReadyToEfileDialogBody(state);
+  assert.match(ready, /Mei Chen/);
+  assert.match(ready, /VT-AAAA-BBBB/);
+  assert.match(ready, /data-case-action="MARK_READY_TO_EFILE"/);
+  assert.match(ready, /name="confirmed" value="true" required/);
+  assert.match(ready, /<span>The client signed Form 8879, or the return will be given to the client on paper\.<\/span>/);
+  const filed = markEfiledDialogBody(state);
+  assert.match(filed, /data-case-action="MARK_EFILED"/);
+  assert.match(filed, /The client will be told how their return was filed/);
+  assert.match(filed, /<span>Each return was e-filed, or given to the client on paper, as chosen above\.<\/span>/);
+  assert.match(
+    markEfiledDialogBody({ savedCase: { reference: "VT-X", answers: {} } }),
+    /this client/,
+  );
+  assert.match(markReadyToEfileDialogBody({}), /this case<\/strong> for <strong>this client/);
+  assert.match(
+    markEfiledDialogBody({ busy: true, savedCase: state.savedCase }),
+    /data-case-action="MARK_EFILED" disabled/,
+  );
+  // Keeping it as it is sends nothing: the keep control is confirmBody's close
+  // control and carries no case action.
+  for (const html of [ready, filed]) {
+    assert.match(html, /Keep it as it is/);
+    assert.match(html, /data-action="close-dialog"/);
+    assert.equal((html.match(/data-case-action=/g) ?? []).length, 1, "only the confirm button sends");
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -649,7 +900,7 @@ test("the persona decides which workspace a presenter is in", () => {
   const onCase = {
     ...state,
     screen: "staff-case",
-    savedCase: officeCase({ stage: "received", intakeVerified: false }),
+    savedCase: officeCase({ stage: "screening", intakeVerified: false }),
   };
   assert.match(staffScreen(onCase), /data-case-action="VERIFY_INTAKE"/);
   assert.doesNotMatch(
@@ -675,7 +926,7 @@ test("the office case page uses the same header and five tabs", () => {
   assert.match(html, /<h2 id="case-title" tabindex="-1">/);
   assert.match(html, /<ol class="lifecycle"/);
   assert.match(html, /id="case-tab-followup" aria-controls="case-panel-followup" aria-selected="true"/);
-  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*How this case reached the office[\s\S]*Simulated intake checks[\s\S]*Case details/);
+  assert.match(html, /id="case-panel-overview"[^>]*hidden>[\s\S]*How this case reached the office[\s\S]*Screening checks[\s\S]*Case details/);
   // "Stage" used to appear twice on Overview: once in the origin section and
   // once in Case details. Only the Case details row is left.
   assert.equal((html.match(/<span>Stage<\/span>/g) ?? []).length, 1);
@@ -866,4 +1117,436 @@ test("an office draft continues in Add a case, and a client's own case is read-o
   assert.doesNotMatch(owned, /continue-add-case/);
   assert.match(owned, /<span>How it started<\/span><strong>The client&#39;s own application/);
   assert.match(owned, /What the client told us/);
+});
+
+test("follow-up with no request renders", () => {
+  const goOver = openTask({
+    id: "task-go",
+    purpose: "go_over_return",
+    requestId: null,
+    reason: "Go over the return with the client: the reviewer did not.",
+  });
+  const html = renderAdminCase(officeCase({ requests: [openRequest()], followups: [goOver] }), { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /<h3>Go over the return with the client<\/h3>/);
+  assert.match(followup, /Go over the return with the client: the reviewer did not\./);
+  assert.doesNotMatch(followup, /Contact the client|awaiting preparer verification/);
+  assert.match(followup, linkedForm("task-go"));
+  assert.match(followup, /<h4>Resolve this task<\/h4>/);
+  assert.match(followup, /name="purpose" value="go_over_return" required checked/);
+});
+
+test("a task's Log contact form starts with its purpose; the Contacts tab chooses none", () => {
+  const record = officeCase({
+    requests: [openRequest()],
+    followups: [openTask({ id: "task-d", purpose: "request_documents" })],
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  const followup = html.slice(html.indexOf('id="case-panel-followup"'), html.indexOf('id="case-panel-contacts"'));
+  assert.match(followup, /name="purpose" value="request_documents" required checked/);
+  const contacts = html.slice(html.indexOf('id="case-panel-contacts"'));
+  assert.doesNotMatch(contacts, /name="purpose"[^>]* checked/);
+});
+
+// ---------------------------------------------------------------------------
+// After E-filed (change add-post-efiling-stages)
+// ---------------------------------------------------------------------------
+const BOTH_EFILED = { federalMethod: "efile", stateMethod: "efile" };
+const rejectedFederal = (over = {}) =>
+  officeCase({
+    stage: "rejected",
+    ...BOTH_EFILED,
+    federalResult: "rejected",
+    stateResult: "accepted",
+    reviews: CALLED,
+    ...over,
+  });
+
+test("at E-filed an admin is offered Record filing result…; volunteers see none of the new buttons", () => {
+  const filed = officeCase({ stage: "efiled", ...BOTH_EFILED, reviews: CALLED });
+  const html = renderAdminCase(filed, { person: SAM });
+  assert.match(
+    html,
+    /<button[^>]*data-action="open-record-filing-result"[^>]*>[^]*?Record filing result…<\/button>/,
+  );
+  assert.doesNotMatch(html, /open-return-to-signing/);
+  for (const person of [ALEX, MORGAN]) {
+    const other = renderAdminCase(filed, { person });
+    assert.doesNotMatch(other, /open-record-filing-result|open-return-to-signing/);
+    const staff = renderStaffCase(filed, person);
+    assert.doesNotMatch(staff, /open-record-filing-result|open-return-to-signing/);
+  }
+  // A case e-filed before methods existed is offered it too.
+  const old = renderAdminCase(officeCase({ stage: "efiled", reviews: CALLED }), { person: SAM });
+  assert.match(old, /open-record-filing-result/);
+  // Nothing leaves Accepted.
+  const accepted = renderAdminCase(
+    officeCase({ stage: "accepted", ...BOTH_EFILED, federalResult: "accepted", stateResult: "accepted" }),
+    { person: SAM },
+  );
+  assert.doesNotMatch(accepted, /open-record-filing-result|open-return-to-signing|open-close-case/);
+});
+
+test("at Rejected: Return to signing… and Close, or the wait", () => {
+  const done = renderAdminCase(rejectedFederal(), { person: SAM });
+  assert.match(done, /data-action="open-return-to-signing"[^>]*>[^]*?Return to signing…<\/button>/);
+  assert.match(done, /data-action="open-close-case"/);
+  assert.doesNotMatch(done, /open-record-filing-result/);
+  assert.doesNotMatch(done, /answer before the return can go back to signing/);
+
+  const waiting = renderAdminCase(rejectedFederal({ stateResult: null }), { person: SAM });
+  assert.doesNotMatch(waiting, /data-action="open-return-to-signing"/);
+  assert.match(
+    waiting,
+    /Waiting for Pennsylvania(&#39;|')s answer before the return can go back to signing\./,
+  );
+  assert.match(waiting, /open-record-filing-result/);
+  const irs = renderAdminCase(
+    rejectedFederal({ federalResult: null, stateResult: "rejected" }),
+    { person: SAM },
+  );
+  assert.match(irs, /Waiting for the IRS(&#39;|')s answer before the return can go back to signing\./);
+  for (const person of [ALEX, MORGAN])
+    assert.doesNotMatch(renderAdminCase(rejectedFederal(), { person }), /open-return-to-signing/);
+});
+
+test("the eligibility of the new office moves", () => {
+  const sam = (record) => adminEligibility({ caseRecord: record }, SAM);
+  const answered = { ...BOTH_EFILED, federalResult: "rejected", stateResult: "accepted" };
+  const waitingState = { ...BOTH_EFILED, federalResult: "rejected" };
+  assert.equal(sam({ stage: "efiled", ...BOTH_EFILED }).recordFilingResult.allowed, true);
+  assert.equal(sam({ stage: "ready_to_efile" }).recordFilingResult.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...answered }).recordFilingResult.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...waitingState }).recordFilingResult.allowed, true);
+  assert.equal(sam({ stage: "rejected", ...answered }).returnToSigning.allowed, true);
+  assert.equal(sam({ stage: "rejected", ...waitingState }).returnToSigning.allowed, false);
+  assert.equal(sam({ stage: "efiled", ...BOTH_EFILED }).returnToSigning.allowed, false);
+  assert.equal(sam({ stage: "rejected", ...answered }).closeCase.allowed, true);
+  // Back at signing, Mark ready to e-file is offered without the reviewer's call or the go-over.
+  assert.equal(
+    sam({ stage: "review_approved", ...answered, reviews: WAITING, goOverOpen: true }).markReadyToEfile.allowed,
+    true,
+  );
+  assert.equal(
+    adminEligibility({ caseRecord: { stage: "efiled", ...BOTH_EFILED } }, ALEX).recordFilingResult.allowed,
+    false,
+  );
+});
+
+test("a case returned to signing says this is the client's second signing", () => {
+  const record = officeCase({
+    stage: "review_approved",
+    ...BOTH_EFILED,
+    federalResult: "rejected",
+    stateResult: "accepted",
+    reviews: CALLED,
+  });
+  const html = renderAdminCase(record, { person: SAM });
+  assert.match(html, /data-action="open-mark-ready-to-efile"/);
+  assert.match(markReadyToEfileDialogBody({ savedCase: record }), /second signing/);
+  assert.doesNotMatch(
+    markReadyToEfileDialogBody({ savedCase: officeCase({ stage: "review_approved" }) }),
+    /second signing/,
+  );
+});
+
+const radios = (html, name) =>
+  [...html.matchAll(new RegExp(`<input[^>]*type="radio"[^>]*name="${name}"[^>]*value="([a-z_]+)"`, "g"))].map(
+    (m) => m[1],
+  );
+
+test("Mark e-filed offers four choices on a first filing, each with what the client is told", () => {
+  const html = markEfiledDialogBody({
+    savedCase: officeCase({ stage: "ready_to_efile", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } }),
+  });
+  assert.deepEqual(radios(html, "filing-combination"), ["both_efile", "efile_and_paper", "paper_and_efile", "both_paper"]);
+  assert.match(html, /Both returns e-filed/);
+  assert.match(html, /Federal e-filed, Pennsylvania on paper \(given to the client to mail\)/);
+  assert.match(html, /Federal on paper \(given to the client to mail\), Pennsylvania e-filed/);
+  assert.match(html, /Both returns on paper \(given to the client to mail\)/);
+  assert.match(html, /PCDC e-filed your return\./);
+  assert.match(html, /PCDC e-filed your federal return and gave your Pennsylvania return on paper to you or the person you sent\. If it isn(&#39;|')t signed yet, sign it, then mail it yourself\. A reply can take about 3 months after you mail it\./);
+  assert.match(html, /PCDC gave your federal return on paper to you or the person you sent, and e-filed your Pennsylvania return\./);
+  assert.match(html, /PCDC gave your returns on paper to you or the person you sent\./);
+  assert.doesNotMatch(html, /mailed your/);
+  assert.match(html, /data-case-action="MARK_EFILED"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  assert.doesNotMatch(html, /name="method-federal"|name="method-state"/);
+});
+
+test("Mark e-filed after a rejection offers only the rejected return, and lists the accepted one as done", () => {
+  const record = officeCase({
+    stage: "ready_to_efile",
+    ...BOTH_EFILED,
+    federalResult: "accepted",
+    stateResult: "rejected",
+    answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+  });
+  const html = markEfiledDialogBody({ savedCase: record });
+  assert.deepEqual(radios(html, "method-state"), ["efile", "paper"]);
+  assert.deepEqual(radios(html, "method-federal"), []);
+  assert.doesNotMatch(html, /filing-combination/);
+  assert.match(html, /Federal return[^]*?accepted/i);
+  assert.match(html, /PCDC e-filed your Pennsylvania return\./);
+  assert.match(html, /On paper \(given to the client to mail\)/);
+  assert.match(html, /PCDC gave your Pennsylvania return on paper to you or the person you sent\./);
+  assert.doesNotMatch(html, /mailed your/);
+  // Both rejected: both choices, with the combination lines.
+  const both = markEfiledDialogBody({
+    savedCase: officeCase({ stage: "ready_to_efile", ...BOTH_EFILED, federalResult: "rejected", stateResult: "rejected" }),
+  });
+  assert.deepEqual(radios(both, "method-federal"), ["efile", "paper"]);
+  assert.deepEqual(radios(both, "method-state"), ["efile", "paper"]);
+  assert.match(both, /PCDC e-filed your return\./);
+});
+
+test("the Record filing result dialog names the client and the application, and builds its payload", () => {
+  const record = officeCase({
+    stage: "efiled",
+    ...BOTH_EFILED,
+    reference: "VT-AAAA-BBBB",
+    answers: { tp_first_name: "Mei", tp_last_name: "Chen" },
+  });
+  const html = recordFilingResultDialogBody({ savedCase: record });
+  assert.match(html, /Mei Chen/);
+  assert.match(html, /VT-AAAA-BBBB/);
+  assert.match(html, /data-case-action="RECORD_FILING_RESULT"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  for (const field of ["result-federal", "date-federal", "code-federal", "result-state", "date-state", "code-state", "fix-note"])
+    assert.match(html, new RegExp(`name="${field}"`), field);
+  // No answer is dated after PCDC's today, and the submit control carries the stage.
+  const today = nowInput().slice(0, 10);
+  assert.equal(html.match(new RegExp(`name="date-(federal|state)" type="date"[^>]*max="${today}"`, "g")).length, 2);
+  assert.match(html, /data-case-action="RECORD_FILING_RESULT"[^>]*data-stage="efiled"/);
+  // A paper return has no answer to record: no fieldset, no mailing words.
+  const paper = recordFilingResultDialogBody({
+    savedCase: officeCase({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" }),
+  });
+  assert.match(paper, /name="result-federal"/);
+  assert.doesNotMatch(paper, /name="result-state"|name="date-state"|name="code-state"/);
+  assert.doesNotMatch(html + paper, /mailed|Date mailed|value="mailed"/i);
+  assert.match(html, /Fix note \(only when a return is rejected\): what needs fixing in TaxSlayer/);
+  const stuck = recordFilingResultDialogBody({
+    savedCase: officeCase({ stage: "efiled", federalMethod: "paper", stateMethod: "paper" }),
+  });
+  assert.doesNotMatch(stuck, /name="result-|mailed/i);
+  // At Rejected, only the returns still waiting are offered.
+  const waiting = recordFilingResultDialogBody({ savedCase: rejectedFederal({ stateResult: null }) });
+  assert.match(waiting, /name="result-state"/);
+  assert.doesNotMatch(waiting, /name="result-federal"/);
+  const built = payloadFor("RECORD_FILING_RESULT", {}, {
+    confirmed: "true",
+    "result-federal": "rejected",
+    "date-federal": "2026-10-05",
+    "code-federal": "IND-031-04",
+    "fix-note": "Preparer to fix",
+  });
+  assert.deepEqual(built.payload, {
+    confirmed: true,
+    results: { federal: { result: "rejected", date: "2026-10-05", code: "IND-031-04" } },
+    fixNote: "Preparer to fix",
+  });
+});
+
+test("the Return to signing dialog names the client and reads 'The fix is done.'", () => {
+  const html = returnToSigningDialogBody({
+    savedCase: { reference: "VT-AAAA-BBBB", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } },
+  });
+  assert.match(html, /Mei Chen/);
+  assert.match(html, /VT-AAAA-BBBB/);
+  assert.match(html, /<span>The fix is done\.<\/span>/);
+  assert.match(html, /data-case-action="RETURN_TO_SIGNING"/);
+  assert.match(html, /name="confirmed" value="true" required/);
+  assert.match(returnToSigningDialogBody({}), /this client/);
+});
+
+// ---------------------------------------------------------------------------
+// Hold and closing (change add-hold-and-closing)
+// ---------------------------------------------------------------------------
+
+const MEI = { tp_first_name: "Mei", tp_last_name: "Chen" };
+const page = (overrides, person = SAM) =>
+  renderAdminCase(officeCase({ answers: { service: "Drop-off", language: "Cantonese", ...MEI }, ...overrides }), { person });
+const opens = (html) => [...html.matchAll(/data-action="(open-[a-z-]+)"/g)].map((m) => m[1]);
+
+test("the office panel offers Ask for documents… at Screening and Pending intake / filing", () => {
+  for (const stage of ["screening", "preparation_ready"])
+    assert.ok(opens(page({ stage, preparerId: null })).includes("open-request-documents"), stage);
+  // More can be asked while the case waits, or sits on a documents Hold.
+  assert.ok(opens(page({ stage: "awaiting_documents", documentsOrigin: "screening" })).includes("open-request-documents"));
+  assert.ok(
+    opens(page({ stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" })).includes("open-request-documents"),
+  );
+  for (const stage of ["received", "preparing", "review_approved", "efiled"])
+    assert.ok(!opens(page({ stage })).includes("open-request-documents"), stage);
+});
+
+test("the office panel offers Put on hold… at Waiting for documents and Ready to exit", () => {
+  const withDocs = page({ stage: "awaiting_documents", documentsOrigin: "screening" });
+  assert.ok(opens(withDocs).includes("open-put-on-hold"));
+  assert.match(withDocs, /Put on hold…/);
+  assert.ok(opens(page({ stage: "review_approved" })).includes("open-put-on-hold"));
+  for (const stage of ["screening", "preparing", "on_hold", "ready_to_efile"])
+    assert.ok(!opens(page({ stage, holdOrigin: "review_approved" })).includes("open-put-on-hold"), stage);
+});
+
+test("the office panel offers Got in touch… at a Hold, and Close… from it", () => {
+  for (const hold of [
+    { holdOrigin: "review_approved" },
+    { holdOrigin: "awaiting_documents", documentsOrigin: "screening" },
+  ]) {
+    const html = page({ stage: "on_hold", ...hold });
+    assert.ok(opens(html).includes("open-resume-from-hold"));
+    assert.match(html, /Got in touch…/);
+    assert.ok(opens(html).includes("open-close-case"), "Close… from a Hold, whatever it came from");
+  }
+  assert.ok(!opens(page({ stage: "preparing" })).includes("open-resume-from-hold"));
+  assert.match(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign\./);
+  assert.doesNotMatch(page({ stage: "on_hold", holdOrigin: "review_approved" }), /could not reach the client to sign Form/);
+});
+
+test("volunteers see none of the intake-and-hold buttons", () => {
+  for (const person of [ALEX, MORGAN]) {
+    for (const overrides of [
+      { stage: "screening" },
+      { stage: "awaiting_documents", documentsOrigin: "screening" },
+      { stage: "review_approved" },
+      { stage: "on_hold", holdOrigin: "review_approved" },
+    ]) {
+      const html = page(overrides, person);
+      for (const name of ["open-request-documents", "open-put-on-hold", "open-resume-from-hold"])
+        assert.ok(!opens(html).includes(name), `${person.name} ${overrides.stage} ${name}`);
+    }
+  }
+  const rights = adminEligibility({ caseRecord: { stage: "screening" } }, ALEX);
+  assert.equal(rights.requestDocuments.allowed, false);
+  assert.equal(rights.putOnHold.allowed, false);
+  assert.equal(rights.resumeFromHold.allowed, false);
+});
+
+test("the screening checks panel offers Ask for documents… until the documents box is ticked", () => {
+  const record = officeCase({ stage: "screening", intakeVerified: false, answers: { service: "Drop-off", ...MEI } });
+  const panel = (openPanels) => {
+    const html = renderAdminCase(record, { person: SAM, openPanels });
+    const checks = html.slice(html.indexOf('id="checks-title"'), html.indexOf('id="receipt-title"'));
+    return checks;
+  };
+  assert.match(panel([]), /data-action="open-request-documents"/);
+  assert.doesNotMatch(panel(["intake-check-documents"]), /open-request-documents/);
+  // Only during screening, and only for an admin.
+  const later = renderAdminCase(officeCase({ stage: "preparation_ready" }), { person: SAM });
+  assert.doesNotMatch(later.slice(later.indexOf('id="checks-title"'), later.indexOf('id="receipt-title"')), /open-request-documents/);
+  const volunteer = renderAdminCase(record, { person: ALEX });
+  assert.doesNotMatch(volunteer, /open-request-documents/);
+});
+
+test("an admin records and verifies documents at Waiting for documents and at a documents Hold", () => {
+  const request = { id: "r1", title: "Photo ID", message: "Send a photo", status: "open", createdAt: "2026-10-01T12:00:00Z" };
+  const docs = { stage: "awaiting_documents", documentsOrigin: "screening", ownerUserId: null, requests: [request] };
+  assert.match(page(docs), /data-case-action="RECORD_DOCUMENT_RESPONSE"/);
+  const received = { ...docs, requests: [{ ...request, status: "awaiting_verification" }] };
+  assert.match(page(received), /data-case-action="VERIFY_DOCUMENT"/);
+  const hold = { ...received, stage: "on_hold", holdOrigin: "awaiting_documents" };
+  assert.match(page(hold), /data-case-action="VERIFY_DOCUMENT"/);
+  assert.match(page({ ...hold, requests: [request] }), /data-case-action="RECORD_DOCUMENT_RESPONSE"/);
+  // A signing hold has no document work, and a volunteer cannot verify at intake.
+  assert.doesNotMatch(page({ ...received, stage: "on_hold", holdOrigin: "review_approved" }), /VERIFY_DOCUMENT/);
+  assert.doesNotMatch(page(received, ALEX), /VERIFY_DOCUMENT/);
+});
+
+test("the close dialog's choices reach the CLOSE_CASE payload", () => {
+  const html = closeCaseDialogBody({ savedCase: officeCase({ answers: MEI }) });
+  assert.match(html, /<strong>VT-AB2C-DE3F<\/strong> for <strong>Mei Chen<\/strong>/);
+  assert.deepEqual(
+    payloadFor("CLOSE_CASE", {}, { "close-reason": "other", "close-note": "Client chose another preparer", confirmed: "true" }).payload,
+    { confirmed: true, reason: "other", note: "Client chose another preparer" },
+  );
+  assert.throws(() => payloadFor("CLOSE_CASE", {}, { "close-reason": "other", confirmed: "true" }), (e) => e.code === "VALIDATION");
+  // An older close: stages the office closes now include the two chase stages.
+  for (const stage of ["awaiting_documents", "on_hold"])
+    assert.equal(adminEligibility({ caseRecord: { stage } }, SAM).closeCase.allowed, true, stage);
+});
+
+test("before filing the close dialog offers only Withdrawn, with a note saying why", () => {
+  const radios = (html) => [...html.matchAll(/name="close-reason" value="([a-z_]+)"/g)].map((m) => m[1]);
+  const NOTE = "Before filing, a case can only be closed because the client withdrew.";
+  for (const savedCase of [
+    officeCase({ stage: "review_approved" }),
+    officeCase({ stage: "ready_to_efile" }),
+  ]) {
+    const html = closeCaseDialogBody({ savedCase });
+    assert.deepEqual(radios(html), ["withdrawn"], savedCase.stage);
+    assert.match(html, new RegExp(NOTE.replaceAll(".", "\\.")));
+  }
+  // A Hold from signing, and every earlier stage, keeps all six reasons and no note.
+  for (const savedCase of [officeCase({ stage: "on_hold", holdOrigin: "review_approved" }), officeCase()]) {
+    const html = closeCaseDialogBody({ savedCase });
+    assert.equal(radios(html).length, 6);
+    assert.doesNotMatch(html, /only be closed because the client withdrew/);
+  }
+  // Close… is offered on the case page at both stages.
+  for (const stage of ["review_approved", "ready_to_efile"])
+    assert.ok(opens(page({ stage })).includes("open-close-case"), stage);
+});
+
+test("the three new dialogs name the client and the application, with the shared confirmation body", () => {
+  const savedCase = { reference: "VT-TEST-0009", answers: MEI };
+  const ask = requestDocumentsDialogBody({ savedCase });
+  assert.match(ask, /<strong>Mei Chen<\/strong>[\s\S]*<strong>VT-TEST-0009<\/strong>/);
+  for (let n = 1; n <= 5; n += 1) {
+    assert.match(ask, new RegExp(`name="request-title-${n}"`));
+    assert.match(ask, new RegExp(`name="request-message-${n}"`));
+  }
+  assert.match(ask, /data-case-action="REQUEST_DOCUMENTS_AT_INTAKE"/);
+  assert.match(ask, /data-action="close-dialog"/);
+  assert.deepEqual(
+    payloadFor("REQUEST_DOCUMENTS_AT_INTAKE", {}, {
+      "request-title-1": "W-2", "request-message-1": "Send every W-2",
+      "request-title-2": "", "request-message-2": "",
+      "request-title-3": "Photo ID", "request-message-3": "Front and back",
+    }).payload,
+    { requests: [{ title: "W-2", message: "Send every W-2" }, { title: "Photo ID", message: "Front and back" }] },
+  );
+  const hold = putOnHoldDialogBody({ savedCase });
+  assert.match(hold, /<strong>VT-TEST-0009<\/strong> for <strong>Mei Chen<\/strong>/);
+  assert.match(hold, /<textarea id="field-hold-hold-note" name="hold-note" maxlength="1000"/);
+  assert.match(hold, /name="confirmed" value="true" required/);
+  assert.match(hold, /data-case-action="PUT_ON_HOLD"/);
+  assert.deepEqual(
+    payloadFor("PUT_ON_HOLD", {}, { "hold-note": " no answer ", confirmed: "true" }).payload,
+    { confirmed: true, note: "no answer" },
+  );
+  const back = resumeFromHoldDialogBody({ savedCase });
+  assert.match(back, /<strong>Mei Chen<\/strong>[\s\S]*<strong>VT-TEST-0009<\/strong>/);
+  assert.match(back, /data-case-action="RESUME_FROM_HOLD"/);
+  assert.match(back, /name="confirmed" value="true" required/);
+  assert.match(requestDocumentsDialogBody({}), /this client/);
+  // What staff typed is escaped when it is shown back (a dialog only holds empty boxes,
+  // but the client name and reference are data).
+  assert.match(putOnHoldDialogBody({ savedCase: { reference: "<b>x</b>", answers: {} } }), /&lt;b&gt;x&lt;\/b&gt;/);
+});
+
+test("the shared frame places the two new dialogs", () => {
+  const savedCase = { reference: "VT-X", answers: {}, stage: "efiled" };
+  assert.match(dialog({ dialog: "record-filing-result", savedCase }), /Record the filing result\?/);
+  assert.match(dialog({ dialog: "return-to-signing", savedCase }), /Return to signing\?/);
+});
+
+test("the signing panel is headed Signing, with neutral wording", () => {
+  const before = page({ stage: "review_approved", reviews: CALLED });
+  assert.match(before, /<h3>Signing<\/h3><p class="field-note">Record that the client signed\./);
+  assert.doesNotMatch(before, /<h3>Form 8879<\/h3>/);
+  const rights = (record) => adminEligibility({ caseRecord: record }, SAM);
+  assert.equal(rights({ stage: "preparing" }).markEfiled.reason, "This is recorded once the client has signed.");
+  assert.equal(rights({ stage: "ready_to_efile" }).markEfiled.allowed, true);
+});
+
+test("Return to signing is never held back by a paper return, and stays refused while an e-filed return waits", () => {
+  const sam = (record) => adminEligibility({ caseRecord: record }, SAM);
+  const paper = { stage: "rejected", federalMethod: "efile", stateMethod: "paper", federalResult: "rejected" };
+  assert.equal(sam(paper).returnToSigning.allowed, true);
+  const stuck = { stage: "rejected", federalMethod: "paper", stateMethod: "efile", stateResult: "rejected" };
+  assert.equal(sam(stuck).returnToSigning.allowed, true);
+  const waiting = { stage: "rejected", federalMethod: "efile", stateMethod: "efile", federalResult: "rejected" };
+  assert.match(sam(waiting).returnToSigning.reason, /^Waiting for Pennsylvania's answer/);
 });

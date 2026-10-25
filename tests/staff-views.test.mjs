@@ -13,6 +13,7 @@ import {
   DEFAULT_BOARD_FILTERS,
   caseTabs,
   lifecycleBar,
+  filingPanel,
   caseHeader,
   caseDetails,
   CASE_TABS,
@@ -20,6 +21,7 @@ import {
   correctionsDialogBody,
   problemNotice,
   historySentence,
+  stageWork,
   EVENT_SENTENCES,
   historyPanel,
   answersPanel,
@@ -324,6 +326,24 @@ test("the board shows one tab at a time, and search reaches every stage", () => 
     preparation: 1,
     review: 1,
   });
+});
+
+test("the board's tabs are unchanged, and its search finds a case at e-filed", () => {
+  const efiled = boardCase({ id: "case-9", reference: "VT-FILE-9999", stage: "efiled", preparerId: "alex" });
+  const signing = boardCase({ id: "case-8", reference: "VT-SIGN-8888", stage: "review_approved" });
+  // None of the three new stages is on a tab, so no tab shows them.
+  for (const status of ["available", "preparation", "review"])
+    assert.deepEqual(
+      filterCases([efiled, signing], { status }, ALEX).map((c) => c.id),
+      [],
+      status,
+    );
+  assert.deepEqual(boardCounts([efiled, signing], {}, ALEX), { available: 0, preparation: 0, review: 0 });
+  // A search ignores the tab, so it reaches every stage.
+  assert.deepEqual(filterCases([efiled, signing], { search: "FILE-9999" }, ALEX).map((c) => c.id), ["case-9"]);
+  assert.deepEqual(filterCases([efiled, signing], { search: "VT-SIGN" }, ALEX).map((c) => c.id), ["case-8"]);
+  const html = renderStaffBoard([efiled], PEOPLE, { person: ALEX, filters: { search: "VT-FILE" } });
+  assert.match(html, /VT-FILE-9999/);
 });
 
 test("the board's Language cell lists every language, preferred first, and the filter matches any of them", () => {
@@ -1166,14 +1186,251 @@ test("case tabs follow the ARIA tab pattern and keep every panel in the page", (
 test("the lifecycle bar marks done, current and still-to-come steps", () => {
   const steps = (stage) =>
     [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(steps("preparing"), ["done", "done", "done", "current", "todo", "todo", "todo", "todo"]);
-  assert.deepEqual(steps("draft")[0], "current");
+  assert.deepEqual(steps("preparing"), [
+    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo", "todo",
+  ]);
+  assert.deepEqual(steps("received")[0], "current");
+  assert.deepEqual(steps("screening").slice(0, 3), ["done", "current", "todo"]);
   assert.deepEqual(steps("corrections_required")[3], "current amend");
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
-  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?In review/);
+  assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?Review in progress/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
+  // A draft is not on the path: it marks nothing, and does not claim a step.
+  assert.ok(steps("draft").every((s) => s === "todo"));
+  assert.doesNotMatch(lifecycleBar("draft"), /aria-current/);
   // Closed can happen at any stage, so nothing before it is claimed as done.
-  assert.deepEqual(steps("closed"), ["todo", "todo", "todo", "todo", "todo", "todo", "todo", "current"]);
+  assert.deepEqual(steps("closed"), [
+    "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "current",
+  ]);
+});
+
+test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
+  const steps = (stage) =>
+    [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const ready = steps("ready_to_efile");
+  assert.deepEqual(ready.slice(0, 7), Array(7).fill("done"));
+  assert.equal(ready[7], "current");
+  assert.deepEqual(ready.slice(8), ["todo", "todo", "todo"]);
+  const bar = lifecycleBar("ready_to_efile");
+  assert.match(bar, /Ready to e-file/);
+  assert.match(bar, /E-filed/);
+  assert.deepEqual(steps("efiled").slice(0, 8), Array(8).fill("done"));
+  assert.equal(steps("efiled")[8], "current");
+  assert.match(lifecycleBar("efiled"), /aria-current="step"[^>]*>[\s\S]*?E-filed/);
+});
+
+test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the method's name", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const labels = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  assert.deepEqual(labels({ stage: "efiled" }).slice(7), [
+    "Ready to e-file", "E-filed", "Accepted", "Closed",
+  ]);
+  // Rejected shows on the E-filed step, marked like Corrections on Filing in progress.
+  const rejected = steps({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" });
+  assert.deepEqual(rejected.slice(0, 8), Array(8).fill("done"));
+  assert.equal(rejected[8], "current amend");
+  assert.equal(rejected[9], "todo");
+  assert.equal(
+    labels({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" })[8],
+    "Rejected",
+  );
+  assert.match(
+    lifecycleBar({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" }),
+    /aria-current="step"/,
+  );
+  // Accepted is the current step; the rest before it are done.
+  const accepted = steps({ stage: "accepted", federalMethod: "efile", stateMethod: "efile" });
+  assert.equal(accepted[9], "current");
+  assert.deepEqual(accepted.slice(0, 9), Array(9).fill("done"));
+  // The method's staff name; a case e-filed before methods keeps "E-filed".
+  assert.equal(
+    labels({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" })[8],
+    "E-filed, PA on paper",
+  );
+  assert.equal(labels({ stage: "efiled", federalMethod: null, stateMethod: null })[8], "E-filed");
+  assert.equal(labels({ stage: "efiled" })[8], "E-filed");
+});
+
+test("the lifecycle bar shows Waiting for documents and Hold on the step they came from", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const labels = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  // Asked for at Screening: Screening is the current step, named for the wait.
+  const screening = { stage: "awaiting_documents", documentsOrigin: "screening" };
+  assert.deepEqual(steps(screening).slice(0, 3), ["done", "current amend", "todo"]);
+  assert.equal(labels(screening)[1], "Waiting for documents");
+  // Asked for at Pending intake / filing.
+  const filing = { stage: "awaiting_documents", documentsOrigin: "preparation_ready" };
+  assert.equal(steps(filing)[2], "current amend");
+  assert.equal(labels(filing)[2], "Waiting for documents");
+  // A Hold from Ready to exit marks Ready to exit.
+  const signing = { stage: "on_hold", holdOrigin: "review_approved" };
+  assert.deepEqual(steps(signing).slice(0, 8), [...Array(6).fill("done"), "current amend", "todo"]);
+  assert.equal(labels(signing)[6], "Hold");
+  // A Hold from Waiting for documents marks the stage the documents were asked from.
+  const chasing = { stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" };
+  assert.equal(steps(chasing)[1], "current amend");
+  assert.equal(labels(chasing)[1], "Hold");
+  assert.match(lifecycleBar(chasing), /aria-current="step"/);
+  // With no origin on the record nothing is claimed.
+  assert.ok(steps({ stage: "on_hold" }).every((s) => s === "todo"));
+});
+
+test("Waiting for documents and Hold have staff sentences for the volunteer's next step", () => {
+  assert.equal(stageWork("awaiting_documents").work, "The office is waiting for the client's documents.");
+  assert.equal(stageWork("on_hold").work, "The office is trying to reach the client.");
+  assert.equal(stageWork("awaiting_documents").needs, null);
+  assert.equal(stageWork("on_hold").needs, null);
+  const html = renderStaffCase(
+    { id: "c", reference: "VT-W", stage: "awaiting_documents", documentsOrigin: "screening", participants: [], reviews: [], answers: {} },
+    { id: "alex", name: "Alex", capabilities: ["prepare"] },
+    {},
+  );
+  assert.match(html, /Your next step[\s\S]*The office is waiting for the client&#39;s documents\./);
+});
+
+test("an admin verifies the documents at Waiting for documents and at a documents Hold", () => {
+  const sam = { id: "sam", name: "Sam", capabilities: ["admin"] };
+  const alex = { id: "alex", name: "Alex", capabilities: ["prepare"], };
+  const base = {
+    id: "c", reference: "VT-W", participants: [], reviews: [], answers: {}, followups: [],
+    requests: [{ id: "r1", title: "Photo ID", message: "Send it", status: "awaiting_verification", createdAt: "2026-10-01T12:00:00Z" }],
+  };
+  const verify = (record, person) =>
+    renderStaffCase({ ...base, ...record }, person, {}).includes('data-case-action="VERIFY_DOCUMENT"');
+  assert.equal(verify({ stage: "awaiting_documents", documentsOrigin: "screening" }, sam), true);
+  assert.equal(verify({ stage: "on_hold", holdOrigin: "awaiting_documents", documentsOrigin: "screening" }, sam), true);
+  // Not at a signing hold, not for a volunteer.
+  assert.equal(verify({ stage: "on_hold", holdOrigin: "review_approved" }, sam), false);
+  assert.equal(verify({ stage: "awaiting_documents", documentsOrigin: "screening" }, alex), false);
+  assert.equal(staffEligibility({ stage: "awaiting_documents" }, sam).verifyIntakeDocument.allowed, true);
+  assert.equal(staffEligibility({ stage: "preparing", preparerId: "sam" }, sam).verifyIntakeDocument.allowed, false);
+});
+
+test("a hold note or a close note renders escaped in the staff history", () => {
+  const history = (action, detail) => ({ action, actorName: "Sam", detail, createdAt: "2026-10-01T12:00:00Z" });
+  assert.equal(
+    historySentence(history("PUT_ON_HOLD", { note: "<b>x</b>" })),
+    "Sam put the case on hold. Note: <b>x</b>",
+  );
+  assert.equal(
+    historySentence(history("CLOSE_CASE", { reason: "duplicate", note: "Same as VT-OTHER" })),
+    "Sam closed the case. Reason: Duplicate. Note: Same as VT-OTHER",
+  );
+  // A close from before reasons existed has neither.
+  assert.equal(historySentence(history("CLOSE_CASE", { reason: "free text from long ago" })), "Sam closed the case.");
+  const html = historyPanel(
+    {
+      internalHistory: [history("PUT_ON_HOLD", { note: "<b>x</b>" }), history("CLOSE_CASE", { reason: "other", note: "<script>1</script>" })],
+      history: [{ message: "PCDC is trying to reach you.", createdAt: "2026-10-01T12:00:00Z" }],
+    },
+    true,
+  );
+  assert.match(html, /Note: &lt;b&gt;x&lt;\/b&gt;/);
+  assert.match(html, /Note: &lt;script&gt;1&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<b>x<\/b>|<script>/);
+  // The client's own list never carries the note.
+  const clientList = html.slice(html.indexOf("What the client sees"));
+  assert.doesNotMatch(clientList, /Note:/);
+});
+
+test("the stage work sentences name who does the next thing", () => {
+  assert.equal(stageWork("screening").work, "The office is screening this application.");
+  assert.equal(stageWork("received").work, "The office starts screening when an admin opens the case.");
+  assert.equal(stageWork("ready_to_efile").work, "The office e-files the return.");
+  assert.equal(
+    stageWork("efiled").work,
+    "The office records the answers from the IRS and Pennsylvania.",
+  );
+  assert.equal(
+    stageWork("rejected").work,
+    "A return was rejected. The site coordinator fixes it in TaxSlayer, and the office contacts the client.",
+  );
+  assert.equal(
+    stageWork("accepted").work,
+    "The returns are accepted or given to the client on paper. Nothing more is needed here.",
+  );
+  assert.equal(
+    stageWork("review_approved").work,
+    "The reviewer records the conversation with the client; the office records the client's signature.",
+  );
+  for (const stage of ["received", "screening", "ready_to_efile", "efiled", "rejected", "accepted"])
+    assert.equal(stageWork(stage).needs, null, stage);
+});
+
+const ATTEMPTS = [
+  {
+    attempt: 2,
+    filedAt: "2026-10-12T15:00:00.000Z",
+    returns: [
+      { returnKind: "state", method: "efile", result: null, answeredOn: null, rejectCode: null },
+    ],
+    notes: [],
+  },
+  {
+    attempt: 1,
+    filedAt: "2026-10-01T15:00:00.000Z",
+    returns: [
+      { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-03", rejectCode: null },
+      { returnKind: "state", method: "efile", result: "rejected", answeredOn: "2026-10-04", rejectCode: "PA-INV-7" },
+    ],
+    notes: [
+      { note: "Site coordinator to correct the SSN", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-05T14:00:00.000Z" },
+      { note: "<b>x</b> Client to bring the card", recordedBy: "sam", recordedByName: "Sam", recordedAt: "2026-10-06T14:00:00.000Z" },
+    ],
+  },
+];
+
+test("the Filing panel shows each filing, newest first, with its notes oldest first", () => {
+  const html = filingPanel(staffCase({ stage: "rejected", filingAttempts: ATTEMPTS }));
+  assert.match(html, /<h2[^>]*>Filing<\/h2>/);
+  assert.ok(html.indexOf("Filing 2") < html.indexOf("Filing 1"));
+  assert.match(html, /PA-INV-7/);
+  assert.match(html, /2026-10-03/);
+  assert.match(html, /Accepted/);
+  assert.match(html, /Rejected/);
+  assert.match(html, /Waiting for an answer/);
+  assert.ok(html.indexOf("Site coordinator to correct the SSN") < html.indexOf("Client to bring the card"));
+  assert.match(html, /Sam/);
+  // A fix note is escaped, never parsed (Review Focus 3).
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt; Client to bring the card/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+test("the Filing panel renders nothing before E-filed, and reads a client-shaped record", () => {
+  assert.equal(filingPanel(staffCase({ stage: "ready_to_efile" })), "");
+  assert.equal(filingPanel(staffCase({ stage: "preparing" })), "");
+  // The key is absent on a client record: it must not throw.
+  const bare = filingPanel(staffCase({ stage: "efiled", federalMethod: "efile", stateMethod: "efile" }));
+  assert.match(bare, /Filing/);
+  assert.match(bare, /Waiting for an answer/);
+});
+
+test("the staff case page puts the Filing panel after the next step", () => {
+  const html = renderStaffCase(
+    staffCase({ stage: "rejected", filingAttempts: ATTEMPTS }),
+    ALEX,
+  );
+  assert.ok(html.indexOf('id="next-step-title"') < html.indexOf(">Filing</h2>"));
+  assert.match(html, /Site coordinator to correct the SSN/);
+});
+
+test("the new actions have their history sentences", () => {
+  assert.equal(EVENT_SENTENCES.START_SCREENING, "started screening");
+  assert.equal(EVENT_SENTENCES.MARK_READY_TO_EFILE, "recorded the client's signature");
+  assert.equal(EVENT_SENTENCES.MARK_EFILED, "recorded that the return was e-filed");
+  assert.equal(
+    historySentence({ action: "MARK_EFILED", actorName: "Sam" }),
+    "Sam recorded that the return was e-filed.",
+  );
+});
+
+test("the filing actions have their history sentences", () => {
+  assert.equal(EVENT_SENTENCES.RECORD_FILING_RESULT, "recorded the filing result");
+  assert.equal(EVENT_SENTENCES.RETURN_TO_SIGNING, "returned the case to signing");
 });
 
 test("the case header names the case, its stage and its people", () => {
@@ -1237,6 +1494,14 @@ test("your next step offers the one action that fits, or says who the case waits
   assert.match(step({ stage: "received" }, ALEX), /<h2 id="next-step-title" tabindex="-1">Your next step<\/h2>/);
   // No persona.
   assert.match(step({ stage: "preparing" }, null), /Choose a volunteer persona to act as\./);
+  // A case returned to signing after a rejection: no review conversation is due.
+  const returned = step({ stage: "review_approved", federalMethod: "efile", stateMethod: "efile" }, MORGAN);
+  assert.match(returned, /The client signs again\. The office then marks it ready to e-file\./);
+  assert.doesNotMatch(returned, /reviewer records the conversation/);
+  assert.match(
+    step({ stage: "review_approved", federalMethod: null }, MORGAN),
+    /The reviewer records the conversation with the client/,
+  );
 });
 
 test("the staff case page is five tabs, with each action in exactly one place", () => {
@@ -1286,9 +1551,39 @@ test("internal history reads as sentences, with who did it", () => {
   // An event this table does not know still reads as words, never as a code.
   assert.equal(historySentence(record.internalHistory[1]), "Load something new.");
   for (const action of CASE_ACTIONS) assert.ok(EVENT_SENTENCES[action], action);
+  assert.equal(
+    historySentence({ action: "RECORD_FILING_RESULT", actorName: "Sam" }),
+    "Sam recorded the filing result.",
+  );
+  assert.equal(
+    historySentence({ action: "RETURN_TO_SIGNING", actorName: "Sam" }),
+    "Sam returned the case to signing.",
+  );
+  // Design D12's four sentences. The client's withdrawal has no staff actor.
+  assert.equal(historySentence({ action: "REQUEST_DOCUMENTS_AT_INTAKE", actorName: "Sam" }), "Sam asked for documents.");
+  assert.equal(historySentence({ action: "PUT_ON_HOLD", actorName: "Sam" }), "Sam put the case on hold.");
+  assert.equal(historySentence({ action: "RESUME_FROM_HOLD", actorName: "Sam" }), "Sam recorded that the office got in touch.");
+  assert.equal(historySentence({ action: "WITHDRAW", actorName: null }), "The client withdrew the application.");
   const html = historyPanel(record, true);
   assert.match(html, /Alex claimed preparation\./);
   assert.doesNotMatch(html, /CLAIM_PREPARATION/);
+});
+
+test("decorateStaffCase names who recorded each fix note, from the same people lookup", () => {
+  const people = [{ id: "person-alex", name: "Alex" }];
+  const record = decorateStaffCase(
+    {
+      id: "case-1",
+      filingAttempts: [
+        { attempt: 1, notes: [{ note: "Fixed", recordedBy: "person-alex" }, { note: "Again", recordedBy: "gone" }], returns: [] },
+      ],
+    },
+    people,
+  );
+  assert.deepEqual(record.filingAttempts[0].notes.map((n) => n.recordedByName), ["Alex", "Unknown person"]);
+  assert.equal(record.filingAttempts[0].notes[0].note, "Fixed");
+  // A case without the section (an applicant's, a board row) gains none.
+  assert.ok(!("filingAttempts" in decorateStaffCase({ id: "case-2" }, people)));
 });
 
 // ---------------------------------------------------------------------------
@@ -2305,4 +2600,362 @@ test("switching method after picking an outcome sends only the shown group", () 
   assert.equal(outcomeGroup("video", "outgoing"), "voice");
   assert.equal(outcomeGroup("phone", "incoming"), null);
   assert.equal(outcomeGroup("in_person", "outgoing"), null);
+});
+
+// ---------------------------------------------------------------------------
+// The preparer and reviewer questionnaires (add-preparer-and-reviewer-questionnaires, Task 7)
+// ---------------------------------------------------------------------------
+
+const NOON = new Date(2026, 9, 19, 12, 0, 0).getTime(); // 2026-10-19 in the browser's zone
+const prepQ = (over = {}) => ({
+  id: "pq-1",
+  caseId: "case-a",
+  preparationVersion: 1,
+  confirmedBy: "client",
+  confirmedByName: null,
+  confirmedMethod: "in_person",
+  shadedPartsCompleted: true,
+  stateForgivenessSet: true,
+  readyForReviewOn: "2026-10-10",
+  ...over,
+});
+const revQ = (over = {}) => ({
+  id: "rq-1",
+  caseId: "case-a",
+  reviewId: "review-1",
+  completedOn: "2026-10-17",
+  paForgiveness: "eligible",
+  wentOver: true,
+  wentOverOn: "2026-10-16",
+  wentOverHow: "phone",
+  signMethod: "portal",
+  signAppointmentAt: null,
+  exitForm: {
+    federal: { method: "efile", result: "refund", amount: "120.00", refundBy: "direct_deposit" },
+    state: null,
+    local: [{ type: "NPT", method: "paper", result: "none" }],
+  },
+  remarks: "Looks right.",
+  ...over,
+});
+const reviewRow = (over = {}) => ({
+  id: "review-1",
+  preparationVersion: 1,
+  reviewerId: "morgan",
+  status: "active",
+  findings: null,
+  resolution: null,
+  clientContactStatus: null,
+  createdAt: "2026-09-12T16:00:00.000Z",
+  decidedAt: null,
+  ...over,
+});
+const stepFor = (overrides, person, ui = {}) => {
+  const record = staffCase(overrides);
+  return nextStep(record, staffEligibility(record, person), { now: NOON, ...ui });
+};
+const REVIEWING = { stage: "reviewing", preparerId: "alex", reviewerId: "morgan", participants: ["alex"], preparationVersion: 1, reviews: [reviewRow()] };
+const checkedOf = (html, name) =>
+  [...html.matchAll(new RegExp(`<input[^>]*name="${name.replaceAll(".", "\\.")}"[^>]*>`, "g"))]
+    .filter((m) => / checked/.test(m[0]))
+    .map((m) => /value="([^"]*)"/.exec(m[0])[1]);
+
+test("Filing in progress shows the preparer form inline with today's date", () => {
+  const html = stepFor({ stage: "preparing" }, ALEX);
+  assert.match(html, /<form class="staff-form q-form">[\s\S]*name="confirmedBy"[\s\S]*data-case-action="SUBMIT_REVIEW"/);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+  assert.doesNotMatch(html, /<dialog|role="dialog"|aria-modal/);
+  assert.deepEqual(checkedOf(html, "confirmedBy"), []);
+});
+
+test("resubmit is prefilled from the latest submission", () => {
+  const html = stepFor(
+    {
+      stage: "corrections_required",
+      preparationVersion: 1,
+      preparerQuestionnaires: [prepQ({ readyForReviewOn: "2026-10-10" })],
+      reviews: [{ id: "r1", status: "corrections_requested", findings: "Fix it.", preparationVersion: 1 }],
+    },
+    ALEX,
+  );
+  assert.deepEqual(checkedOf(html, "confirmedBy"), ["client"]);
+  assert.deepEqual(checkedOf(html, "confirmedMethod"), ["in_person"]);
+  assert.deepEqual(checkedOf(html, "shadedPartsCompleted"), ["yes"]);
+  assert.deepEqual(checkedOf(html, "stateForgivenessSet"), ["yes"]);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+  assert.match(html, /name="resolution"[\s\S]*name="confirmedBy"[\s\S]*data-case-action="RESUBMIT_REVIEW"/);
+});
+
+test("resubmit with no earlier questionnaire", () => {
+  const html = stepFor(
+    { stage: "corrections_required", reviews: [{ id: "r1", status: "corrections_requested", findings: "Fix it.", preparationVersion: 1 }] },
+    ALEX,
+  );
+  assert.deepEqual(checkedOf(html, "confirmedBy"), []);
+  assert.deepEqual(checkedOf(html, "shadedPartsCompleted"), []);
+  assert.match(html, /name="readyForReviewOn" type="date" value="2026-10-19"/);
+});
+
+test("the reviewer form sits above Approve", () => {
+  const html = stepFor({ ...REVIEWING, answers: { service: "online" } }, MORGAN);
+  const at = (needle) => html.indexOf(needle);
+  assert.ok(at('name="completedOn"') > 0);
+  assert.ok(at('name="completedOn"') < at('name="remarks"'));
+  assert.ok(at('name="remarks"') < at('data-case-action="APPROVE_REVIEW"'));
+  assert.ok(at('data-case-action="APPROVE_REVIEW"') < at('data-action="open-request-corrections"'));
+  assert.match(html, /data-case-action="APPROVE_REVIEW"[^>]*data-service="online"/);
+  assert.match(html, /Approve this review/);
+  assert.match(html, /Ask the preparer for corrections/);
+  assert.doesNotMatch(html, /<dialog|aria-modal/);
+});
+
+test("reviewer form defaults signing from service", () => {
+  const sign = (service) => checkedOf(stepFor({ ...REVIEWING, answers: { service } }, MORGAN), "signMethod");
+  assert.deepEqual(sign("online"), ["portal"]);
+  assert.deepEqual(sign("drop_off"), []);
+  assert.deepEqual(sign("same_day"), ["in_person"]);
+});
+
+test("reviewer form prefills going over from the contact log", () => {
+  const html = stepFor({ ...REVIEWING, contacts: [contactEntry()] }, MORGAN);
+  assert.deepEqual(checkedOf(html, "wentOver"), ["yes"]);
+  assert.deepEqual(checkedOf(html, "wentOverHow"), ["phone"]);
+  assert.match(html, /name="wentOverOn" type="date" value="2026-10-17"/);
+  const none = stepFor(REVIEWING, MORGAN);
+  assert.deepEqual(checkedOf(none, "wentOver"), []);
+  assert.match(none, /name="wentOverOn" type="date" value=""/);
+});
+
+test("same-day reviewer form has no appointment block", () => {
+  assert.doesNotMatch(stepFor({ ...REVIEWING, answers: { service: "same_day" } }, MORGAN), /signAppointmentAt|q-when-in-person/);
+  assert.match(stepFor({ ...REVIEWING, answers: { service: "drop_off" } }, MORGAN), /name="signAppointmentAt" type="datetime-local"/);
+});
+
+test("Exit Form groups are collapsed details", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const groups = html.match(/<details class="q-exit-group"[^>]*>/g);
+  assert.equal(groups.length, 7);
+  assert.ok(groups.every((tag) => !/ open/.test(tag)));
+  for (const type of ["NPT", "BIRT", "EET", "SIT", "PAIBWTR"]) assert.match(html, new RegExp(`name="local\\.${type}\\.amount"`));
+  assert.match(html, /name="federal\.method"/);
+  assert.match(html, /name="state\.result"/);
+});
+
+test("every Exit Form group has a Clear control", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const keys = ["federal", "state", "local.NPT", "local.BIRT", "local.EET", "local.SIT", "local.PAIBWTR"];
+  for (const key of keys)
+    assert.match(
+      html,
+      new RegExp(`<button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${key.replace(".", "\.")}">Clear this section</button>`),
+    );
+  assert.equal((html.match(/data-action="clear-exit-group"/g) ?? []).length, 7);
+});
+
+test("the seeded Ready to exit sample's answers render", () => {
+  // The sample's shape: Federal refund and a Local NPT entry in a list.
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviews: [reviewRow({ status: "approved", clientContactStatus: "completed", clientContactOutcome: "reached" })],
+    preparerQuestionnaires: [prepQ()],
+    reviewerQuestionnaires: [
+      revQ({
+        exitForm: {
+          federal: { method: "efile", result: "refund", amount: "412.00", refundBy: "direct_deposit" },
+          state: null,
+          local: [{ type: "NPT", method: "paper", result: "none" }],
+        },
+      }),
+    ],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.match(html, /<span>Exit Form, Federal<\/span><strong>E-file, refund 412\.00 by direct deposit<\/strong>/);
+  assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
+});
+
+test("the ready-for-review date is marked Changed only when it differs", () => {
+  const compare = (nextDate) =>
+    stepFor(
+      {
+        ...REVIEWING,
+        preparationVersion: 2,
+        reviews: [reviewRow({ preparationVersion: 2 })],
+        preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, readyForReviewOn: nextDate })],
+      },
+      MORGAN,
+    );
+  const dateRow = /<th scope="row">Ready for review in TaxSlayer on<\/th>[^]*?<\/tr>/;
+  assert.doesNotMatch(compare("2026-10-10").match(dateRow)[0], /Changed/);
+  assert.match(compare("2026-10-17").match(dateRow)[0], /<td>10\/17\/2026 <mark class="q-changed">Changed<\/mark>/);
+});
+
+test("Review in progress shows previous and current with changes marked", () => {
+  const html = stepFor(
+    {
+      ...REVIEWING,
+      preparationVersion: 2,
+      reviews: [reviewRow({ preparationVersion: 2 })],
+      preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, confirmedMethod: "phone" })],
+    },
+    MORGAN,
+  );
+  assert.equal((html.match(/Changed<\/mark>/g) ?? []).length, 1);
+  assert.match(html, /<th scope="row">How it was confirmed<\/th><td>In person<\/td><td>Phone <mark class="q-changed">Changed<\/mark>/);
+  assert.ok(html.indexOf("q-compare") < html.indexOf('name="completedOn"'));
+  // The first version has nothing to compare.
+  assert.doesNotMatch(stepFor({ ...REVIEWING, preparerQuestionnaires: [prepQ()] }, MORGAN), /q-compare/);
+});
+
+test("questionnaire dates on staff screens read MM/DD/YYYY", () => {
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [reviewRow({ id: "review-1", status: "approved", clientContactStatus: "completed", clientContactOutcome: "reached" })],
+    preparerQuestionnaires: [prepQ()],
+    reviewerQuestionnaires: [
+      revQ({
+        signMethod: "in_person",
+        signAppointmentAt: "2026-11-02T14:30:00",
+        exitForm: {
+          federal: null,
+          state: { method: "efile", result: "owe", amount: "45.50", oweBy: "direct_debit", debitOn: "2027-04-15" },
+          local: [],
+        },
+      }),
+    ],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.match(html, /<span>Ready for review in TaxSlayer on<\/span><strong>10\/10\/2026<\/strong>/);
+  assert.match(html, /<span>Completed in TaxSlayer on<\/span><strong>10\/17\/2026<\/strong>/);
+  assert.match(html, /<span>Exit Form, State<\/span><strong>E-file, owes 45\.50 by direct debit on 04\/15\/2027<\/strong>/);
+  assert.match(html, /<span>Form 8879 signing<\/span><strong>In person, appointment 11\/02\/2026 14:30<\/strong>/);
+  assert.doesNotMatch(html, /20\d\d-\d\d-\d\d<\/strong>/);
+});
+
+test("review panel shows answers per version", () => {
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 2,
+    reviews: [
+      reviewRow({ id: "review-0", preparationVersion: 1, status: "corrections_requested", findings: "Fix it." }),
+      reviewRow({ id: "review-1", preparationVersion: 2, status: "approved", decidedAt: "2026-09-13T16:00:00.000Z", clientContactStatus: "completed", clientContactOutcome: "reached", clientContactedAt: "2026-09-13T16:00:00.000Z" }),
+    ],
+    preparerQuestionnaires: [prepQ(), prepQ({ id: "pq-2", preparationVersion: 2, confirmedMethod: "phone" })],
+    reviewerQuestionnaires: [revQ()],
+  });
+  const html = renderStaffCase(record, MORGAN);
+  assert.equal((html.match(/<h4>Preparer's answers<\/h4>/g) ?? []).length, 2);
+  assert.match(html, /<span>How it was confirmed<\/span><strong>In person<\/strong>/);
+  assert.match(html, /<span>How it was confirmed<\/span><strong>Phone<\/strong>/);
+  assert.match(html, /<span>Exit Form, Federal<\/span><strong>E-file, refund 120\.00 by direct deposit<\/strong>/);
+  assert.match(html, /<span>Exit Form, Local: NPT<\/span><strong>Paper, no refund or amount owed<\/strong>/);
+  assert.match(html, /<span>Remarks<\/span><strong>Looks right\.<\/strong>/);
+  assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 10\/16\/2026\.<\/strong>/);
+  assert.match(html, /<span>Went over the return with the client<\/span><strong>Yes, on 10\/16\/2026/);
+});
+
+test("no questionnaire recorded line", () => {
+  const html = renderStaffCase(staffCase({ stage: "review_ready", preparationVersion: 1, reviews: [reviewRow({ status: "approved" })] }), MORGAN);
+  assert.match(html, /<p class="muted">No questionnaire was recorded for this version\.<\/p>/);
+});
+
+const approvedWith = (q) =>
+  staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [reviewRow({ status: "approved", clientContactStatus: q ? "completed" : "pending" })],
+    reviewerQuestionnaires: q ? [q] : [],
+  });
+const approvedStep = (record) => nextStep(record, staffEligibility(record, MORGAN), {});
+
+test("approved with yes offers no conversation form", () => {
+  const html = approvedStep(approvedWith(revQ()));
+  assert.doesNotMatch(html, /RECORD_REVIEW_CONTACT/);
+  assert.match(html, /The reviewer went over the return with the client on 10\/16\/2026\./);
+});
+
+test("approved with no says the office takes over", () => {
+  const html = approvedStep(approvedWith(revQ({ wentOver: false, wentOverOn: null, wentOverHow: null })));
+  assert.doesNotMatch(html, /RECORD_REVIEW_CONTACT/);
+  assert.match(html, /The office will go over the return with the client\./);
+});
+
+test("legacy pending approval still shows the conversation form", () => {
+  assert.match(approvedStep(approvedWith(null)), /data-case-action="RECORD_REVIEW_CONTACT"/);
+});
+
+test("logContactForm: purpose preselects on a new entry, never overrides an edit", () => {
+  const checked = (html) => [...html.matchAll(/name="purpose" value="([a-z_]+)" required checked/g)].map((m) => m[1]);
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {}, { followupId: "t", purpose: "go_over_return" })), ["go_over_return"]);
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {})), []);
+  const entry = staffCase({ contacts: [contactEntry({ purpose: "ask_question" })] }).contacts[0];
+  assert.deepEqual(checked(logContactForm(staffCase(), SAM, {}, { contact: entry, purpose: "go_over_return" })), ["ask_question"]);
+});
+
+test("old VERIFY_INTAKE event renders", () => {
+  const html = renderStaffCase(
+    staffCase({
+      internalHistory: [
+        {
+          id: "e1",
+          action: "VERIFY_INTAKE",
+          detail: { simulated: true, checks: { interview: true, identity: true, documents: true, consent: true } },
+          createdAt: "2026-09-12T17:00:00.000Z",
+        },
+      ],
+    }),
+    ALEX,
+  );
+  assert.match(html, /recorded the screening checks/i);
+  assert.doesNotMatch(html, /simulat/i);
+});
+
+test("the case page header names Accepted by the filing method", () => {
+  const html = renderStaffCase(
+    staffCase({ stage: "accepted", federalMethod: "paper", stateMethod: "paper", federalResult: "given_to_client", stateResult: "given_to_client" }),
+    SAM,
+  );
+  assert.match(html, /<i><\/i>Paper<\/span>/);
+  assert.doesNotMatch(html, /Mailed/);
+});
+
+test("a paper return in the Filing panel reads Paper · Given to the client, with no date, and none waits for a mailing", () => {
+  const html = filingPanel(
+    staffCase({
+      stage: "accepted",
+      filingAttempts: [
+        {
+          attempt: 1,
+          filedAt: "2026-10-01T15:00:00.000Z",
+          returns: [
+            { returnKind: "federal", method: "efile", result: "accepted", answeredOn: "2026-10-03", rejectCode: null },
+            { returnKind: "state", method: "paper", result: "given_to_client", answeredOn: null, rejectCode: null },
+          ],
+          notes: [],
+        },
+      ],
+    }),
+  );
+  assert.match(html, /Pennsylvania return[^]*?Paper · Given to the client/);
+  assert.doesNotMatch(html, /Paper · Given to the client · /);
+  assert.doesNotMatch(html, /mailed|Mailed/);
+  // A paper return filed before the rule, with no result, reads the same.
+  const stuck = filingPanel(staffCase({ stage: "efiled", federalMethod: "paper", stateMethod: "paper" }));
+  assert.match(stuck, /Paper · Given to the client/);
+  assert.doesNotMatch(stuck, /mailed|Mailed|Waiting for/);
+});
+
+test("a season-end close reads as one", () => {
+  assert.equal(
+    historySentence({
+      action: "CLOSE_CASE",
+      actorName: "Sam",
+      detail: { reason: "dismissed", seasonEnd: true },
+      createdAt: "2026-10-01T12:00:00Z",
+    }),
+    "Sam closed the case at season end · Dismissed.",
+  );
 });

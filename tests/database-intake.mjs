@@ -4,6 +4,7 @@ import {
   createDatabaseFixture,
   applyArgs,
   rejected,
+  PREPARER,
 } from "./support/database-fixture.mjs";
 import { INTAKE_VALUE_CASES } from "./support/intake-value-cases.mjs";
 import CATALOGUE from "../src/intake-catalogue-data.mjs";
@@ -382,7 +383,7 @@ test("version-2 intake: versions, answers, submit and contacts", async (t) => {
       // An office-filled application meets the same rule (act_submit runs intake_missing for both).
       const byOffice = (answers) => submitted(answers, f.presenter, f.sam, { mode: "assisted", personId: f.sam });
       await assert.rejects(byOffice(noPrimary), rejected("VALIDATION"));
-      assert.equal((await caseRow(f, await byOffice(signedSingle))).stage, "received");
+      assert.equal((await caseRow(f, await byOffice(signedSingle))).stage, "screening");
     });
 
     await t.test("a household member's middle name is saved", async () => {
@@ -765,6 +766,7 @@ test("contact and materials actions", async (t) => {
   // The same, verified by the office and waiting for a preparer.
   const readyV2 = async () => {
     const caseId = await submittedV2();
+    await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
     await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
       checks: f.intakeChecks,
     });
@@ -892,7 +894,7 @@ test("contact and materials actions", async (t) => {
         update(caseId, { bestContactNote: "Not yet" }, f.presenter, f.morgan),
         rejected("FORBIDDEN"),
       );
-      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", {});
+      await f.act(f.presenter, caseId, f.alex, "SUBMIT_REVIEW", { questionnaire: PREPARER });
       await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
       await update(caseId, { bestContactTime: ["weekend"] }, f.presenter, f.morgan);
       assert.deepEqual((await contactRow(f, caseId)).best_contact_time, ["weekend"]);

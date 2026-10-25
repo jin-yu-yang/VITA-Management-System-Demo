@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { checkDrafts, formValuesWithLists, isCheckable, restoreDraft, textDraft } from "./form-values.mjs";
+import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
 import {
@@ -24,6 +24,8 @@ import {
   addCaseCountText,
   addCasePartStatus,
   addCaseSendOff,
+  closeUnsignedHeading,
+  closeUnsignedListKey,
 } from "./office-views.mjs";
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
@@ -174,6 +176,8 @@ if (!config) {
   // another case opened (by any path), starts with none, so nothing can
   // reappear where it does not belong.
   const formDrafts = new Map();
+  // The season-end dialog's list as last drawn (closeUnsignedListKey), or null.
+  let unsignedListShown = null;
   // Whose unsent entries formDrafts holds, and the case they were typed on
   // (the last case open; null before any), both checked on every render
   // (restoreFormDrafts), like the draft link's maker.
@@ -273,6 +277,7 @@ if (!config) {
     const v2Place = wasV2 || v2OnPage();
     restoreFormDrafts();
     syncContactForms();
+    syncCloseUnsigned();
     showDraftLink();
     markPressed(state);
     tickCooldown(state);
@@ -409,6 +414,18 @@ if (!config) {
     else formDrafts.set(id, draft);
   }
 
+  // The season-end confirmation covers the list the admin saw. If the list
+  // changed under the open dialog (a conflict re-read, a realtime redraw),
+  // the box is not carried over: the new list is confirmed afresh.
+  function dropStaleCloseConfirmation() {
+    const key = root.querySelector("#close-unsigned-form")
+      ? closeUnsignedListKey(controller.getState().cases ?? [])
+      : null;
+    if (key !== null && unsignedListShown !== null && key !== unsignedListShown)
+      formDrafts.delete("field-close-unsigned-confirmed");
+    unsignedListShown = key;
+  }
+
   // Staff form fields are not rendered from controller state — they are blank
   // boxes for text that only exists until it is sent, and boxes drawn from
   // what is saved — so what was typed is put back by hand after a rebuild:
@@ -421,6 +438,7 @@ if (!config) {
   // with no case open changes nothing, so the board's own forms keep theirs
   // and a list and back to the same case keeps the case's.
   function restoreFormDrafts() {
+    dropStaleCloseConfirmation();
     const userId = signedInUserId();
     if (userId !== draftsOwner) formDrafts.clear();
     draftsOwner = userId;
@@ -430,6 +448,11 @@ if (!config) {
     if (caseId !== null) draftsCase = caseId;
     for (const [id, value] of formDrafts)
       restoreDraft(root.querySelector(`#${CSS.escape(id)}`), value);
+    // A collapsed Exit Form group holding something typed is opened again, so
+    // the field a refusal names is in view (design D7).
+    const exitGroups = [...root.querySelectorAll("details.q-exit-group:not([open])")];
+    const ids = exitGroups.map((group) => [...group.querySelectorAll("[id]")].map((field) => field.id));
+    for (const index of groupsToOpen(ids, formDrafts)) exitGroups[index].open = true;
   }
 
   // Every field the page rebuilds is rendered from state, so the value is back
@@ -632,7 +655,12 @@ if (!config) {
     // `shown` is the count of recorded errors when the press began: the
     // error itself is cloned by getState, so it cannot be compared.
     if (state.errorCount !== shown) return;
-    const known = typeof error?.message === "string" && Object.hasOwn(SENTENCES, error.message);
+    // The payload builders' own VALIDATION sentences (case-actions.mjs,
+    // questionnaires.mjs) are fixed, staff-facing text that names what to fix;
+    // a refused form must show them rather than "Something went wrong."
+    const known =
+      typeof error?.message === "string" &&
+      (Object.hasOwn(SENTENCES, error.message) || error.code === "VALIDATION");
     controller.noteLocalFailure({ code: error?.code ?? "SERVER_ERROR", message: known ? error.message : "Something went wrong." });
   }
 
@@ -996,12 +1024,19 @@ if (!config) {
   // already shows the new state; this is the confirmation that it was this
   // click that changed it.
   const STAFF_NOTICES = Object.freeze({
-    VERIFY_INTAKE: "The simulated intake checks are recorded.",
+    VERIFY_INTAKE: "The screening checks are recorded.",
     REMIND: "Reminder recorded. No external message sent.",
     RESOLVE_FOLLOWUP: "The contact task is resolved. Nothing else changed.",
     RECORD_DOCUMENT_RESPONSE:
       "Recorded as staff-recorded, awaiting preparer verification.",
-    CLOSE_CASE: "The case is closed and its pending work is cancelled.",
+    CLOSE_CASE: "The case is closed.",
+    REQUEST_DOCUMENTS_AT_INTAKE: "The documents are requested.",
+    PUT_ON_HOLD: "The case is on hold.",
+    RESUME_FROM_HOLD: "The case is back in progress.",
+    MARK_READY_TO_EFILE: "Marked ready to e-file. The client was told.",
+    MARK_EFILED: "Marked e-filed. The client was told.",
+    RECORD_FILING_RESULT: "The filing result is recorded.",
+    RETURN_TO_SIGNING: "The case is back at signing.",
     CLAIM_PREPARATION: "This case is yours to prepare.",
     CLAIM_REVIEW: "This review is yours.",
     REQUEST_DOCUMENT: "The client was asked for this document.",
@@ -1014,6 +1049,18 @@ if (!config) {
     REQUEST_CORRECTIONS: "The preparer was asked for corrections.",
     APPROVE_REVIEW: "The review result is recorded.",
     RECORD_REVIEW_CONTACT: "The conversation is recorded.",
+  });
+  // The confirmation each office opener shows (the dialog names in views.mjs).
+  const CASE_DIALOGS = Object.freeze({
+    "open-mark-ready-to-efile": "mark-ready-to-efile",
+    "open-mark-efiled": "mark-efiled",
+    "open-record-filing-result": "record-filing-result",
+    "open-return-to-signing": "return-to-signing",
+    "open-close-case": "close-case",
+    "open-request-documents": "request-documents",
+    "open-put-on-hold": "put-on-hold",
+    "open-resume-from-hold": "resume-from-hold",
+    "open-withdraw": "withdraw",
   });
   const CLAIMS = Object.freeze(["CLAIM_PREPARATION", "CLAIM_REVIEW"]);
   // Actions whose form holds a checkbox group (contact best time, materials).
@@ -1091,8 +1138,24 @@ if (!config) {
       controller.togglePanel("edit-contact");
     }
     // Closing is confirmed in a dialog, so the dialog closes when it lands.
-    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title");
+    if (type === "CLOSE_CASE" && receipt) closeDialog("#case-title, #office-queue-title");
+    // From a Follow-ups row the opener has left the queue (the case moved on)
+    // and there is no #case-title, so the queue's heading takes the keyboard.
+    if (type === "MARK_READY_TO_EFILE" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (type === "MARK_EFILED" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (type === "RECORD_FILING_RESULT" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (type === "RETURN_TO_SIGNING" && receipt) closeDialog("#case-title, #office-queue-title");
+    if (["REQUEST_DOCUMENTS_AT_INTAKE", "PUT_ON_HOLD", "RESUME_FROM_HOLD"].includes(type) && receipt)
+      closeDialog("#case-title, #office-queue-title");
     if (type === "REQUEST_CORRECTIONS" && receipt) closeDialog("#next-step-title");
+    // The client's own withdrawal: the dialog closes, the page now reads Closed.
+    if (type === "WITHDRAW") {
+      if (receipt) {
+        closeDialog("#main");
+        notify("success", t("toast.withdrawn", {}, screenLang()), by);
+      }
+      return;
+    }
     // Resolving the task finishes the drawer's work; recording an attempt does
     // not, and the new attempt shows in it because the action re-read the case.
     if (type === "RESOLVE_FOLLOWUP" && receipt && controller.getState().dialog === "log-call")
@@ -1187,6 +1250,33 @@ if (!config) {
   }
   function syncContactForms() {
     for (const form of root.querySelectorAll("form.contact-form")) syncContactForm(form);
+  }
+
+  // The season-end dialog: its heading counts the ticked cases, and its button
+  // opens only with a case ticked and the box ticked. Drawn here too, after a
+  // re-draw has put the ticks back.
+  function syncCloseUnsigned() {
+    const form = root.querySelector("#close-unsigned-form");
+    if (!form) return;
+    const boxes = [...form.querySelectorAll('input[name="caseId"]')];
+    const ticked = boxes.filter((box) => box.checked).length;
+    const heading = form.parentElement?.querySelector("#close-unsigned-heading");
+    if (heading) heading.textContent = closeUnsignedHeading(ticked, boxes.length);
+    const sure = form.querySelector("#field-close-unsigned-confirmed")?.checked === true;
+    const submit = form.querySelector("#close-unsigned-submit");
+    if (submit) submit.disabled = !ticked || !sure || controller.getState().busy === true;
+  }
+
+  async function submitCloseUnsigned(form, by) {
+    const cases = [...form.querySelectorAll('input[name="caseId"]:checked')].map((box) => ({
+      caseId: box.value,
+      revision: Number(box.dataset.revision),
+    }));
+    if (!cases.length) return;
+    await controller.closeUnsigned(cases);
+    clearFormDrafts(form);
+    closeDialog("#office-queue-title");
+    notify("success", "The unsigned cases were closed as Dismissed.", by);
   }
 
   async function submitContact(form, by) {
@@ -1426,6 +1516,22 @@ if (!config) {
         if (leaveAddCaseFirst("open-cases", target)) break;
         EXITS["open-cases"]();
         break;
+      case "clear-exit-group": {
+        // An Exit Form group is emptied in place: every field unticked or
+        // blank, and no draft left to put them back (design D7).
+        const group = target.closest("details.q-exit-group");
+        if (!group) break;
+        const fields = [...group.querySelectorAll("input")];
+        for (const field of fields) {
+          if (isCheckable(field)) field.checked = false;
+          else field.value = "";
+        }
+        forgetDrafts(
+          formDrafts,
+          fields.map((field) => field.id).filter(Boolean),
+        );
+        break;
+      }
       case "clear-pool-filters":
         controller.clearBoardFilters(POOL_FILTER_KEYS);
         // "Clear filters" goes once nothing is narrowed; the keyboard goes to
@@ -1492,8 +1598,35 @@ if (!config) {
         // The page is rebuilt around the checkbox, so give it back the focus.
         root.querySelector(`#field-intake-${target.dataset.check}`)?.focus();
         break;
+      case "open-mark-ready-to-efile":
       case "open-close-case":
-        openDialog("close-case");
+      case "open-mark-efiled":
+      case "open-record-filing-result":
+      case "open-return-to-signing":
+      case "open-request-documents":
+      case "open-put-on-hold":
+      case "open-resume-from-hold":
+      case "open-withdraw": {
+        // From the case page the button carries no case id and the dialog
+        // opens at once. From a Follow-ups row it does: that case is read in
+        // place (no navigation, so screening never starts from the queue)
+        // and the dialog opens only if it is the one now loaded.
+        const opener = describeFocus(target);
+        const caseId = target.dataset.caseId;
+        const name = CASE_DIALOGS[target.dataset.action];
+        if (caseId) {
+          controller.dismissError();
+          await controller.selectCase(caseId, { navigate: false });
+          if (controller.getState().savedCase?.id !== caseId) break;
+        }
+        openDialog(name, null, opener);
+        break;
+      }
+      case "open-close-unsigned":
+        // The list is already loaded (it is the Follow-ups page's own), so
+        // the dialog opens at once; a CONFLICT re-reads it in place.
+        controller.dismissError();
+        openDialog("close-unsigned", null, describeFocus(target));
         break;
       case "open-log-call": {
         // Described before the await: by the time the case has loaded, the
@@ -1890,6 +2023,10 @@ if (!config) {
       root.querySelector("#field-confirmed")?.focus();
       return;
     }
+    if (field.closest?.("#close-unsigned-form")) {
+      syncCloseUnsigned();
+      return;
+    }
     if (field.closest?.("form.contact-form") && ["direction", "method", "withWhom"].includes(field.name)) {
       syncContactForm(field.form);
       return;
@@ -1943,6 +2080,8 @@ if (!config) {
         await runCaseAction(caseControl, form, by);
       } else if (assistControl) {
         await runAssistanceAction(assistControl, form, by);
+      } else if (form.id === "close-unsigned-form") {
+        await submitCloseUnsigned(form, by);
       } else if (form.id === "checkpoint-form") {
         // The choice and its confirmation are the same submit: the dialog says
         // what a checkpoint does, and this button is the person agreeing to it.

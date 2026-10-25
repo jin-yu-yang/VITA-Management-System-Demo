@@ -179,6 +179,7 @@ const assertHealthy = (...watches) => {
 async function preparedCase(f, client) {
   const created = await f.draftCase(client);
   await f.act(client, created.caseId, null, "SUBMIT", { confirmed: true });
+  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
   await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
   });
@@ -434,6 +435,37 @@ const INTERNAL = Object.freeze([
       await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
       const [row] = (
         await f.sql("select id from public.reviews where case_id=$1", [caseId])
+      ).rows;
+      return { id: row.id };
+    },
+  },
+  {
+    table: "preparer_questionnaires",
+    identity: (row) => row.id,
+    commit: async (f) => {
+      const caseId = await f.preparedCase();
+      // SUBMIT_REVIEW stored the row.
+      const [row] = (
+        await f.sql("select id from public.preparer_questionnaires where case_id=$1", [caseId])
+      ).rows;
+      return { id: row.id };
+    },
+  },
+  {
+    table: "reviewer_questionnaires",
+    identity: (row) => row.id,
+    commit: async (f) => {
+      const caseId = await f.preparedCase();
+      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      const [review] = (
+        await f.sql("select id from public.reviews where case_id=$1", [caseId])
+      ).rows;
+      const [row] = (
+        await f.sql(
+          `insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on,pa_forgiveness,went_over,sign_method,exit_form)
+           values($1,$2,$3,$4,'2026-02-11','eligible',false,'portal','{"federal":null,"state":null,"local":[]}') returning id`,
+          [f.workspaceId, caseId, review.id, f.morgan],
+        )
       ).rows;
       return { id: row.id };
     },
@@ -937,6 +969,85 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
     });
   } finally {
     keepalive?.stop();
+    await f.close();
+  }
+});
+
+// A client subscribed to its own case sees the stage and the result columns
+// move, and never a reject code or a fix note: the filing tables are not in the
+// publication, and the history lines name neither.
+test("realtime carries no code", async () => {
+  const f = await createDatabaseFixture();
+  const CODE = "IND-031-04";
+  const NOTE = "Fictional note: preparer to correct the dependent's SSN in TaxSlayer.";
+  let watch = null;
+  try {
+    const caseId = await f.approvedCase();
+    const act = (type, payload) => f.act(f.presenter, caseId, f.sam, type, payload);
+    await act("MARK_READY_TO_EFILE", { confirmed: true });
+    await act("MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+    watch = watchTable(
+      f.applicantA,
+      [
+        { event: "UPDATE", table: "cases" },
+        { event: "INSERT", table: "client_events" },
+      ],
+      "A/filing",
+    );
+    // The filing tables are not in the publication at all, so nothing could
+    // carry a code or a note from them.
+    const published = (
+      await f.sql(
+        "select tablename from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename like 'filing_%'",
+      )
+    ).rows;
+    assert.deepEqual(published, []);
+    await withDeadline(watch.subscribed, "A never subscribed");
+    // Warm the channel: repeat an ordinary change until it arrives.
+    await controlUntilSeen(
+      watch,
+      async () => {
+        const marked = marker();
+        await f.sql("update public.cases set updated_at=now() where id=$1", [caseId]);
+        return { id: caseId, marker: marked };
+      },
+      (change) => (row) => row.id === change.id && row.stage === "efiled",
+      "the warm-up change",
+    );
+    const day = (
+      await f.sql("select (now() at time zone 'America/New_York')::date::text d")
+    ).rows[0].d;
+    await act("RECORD_FILING_RESULT", {
+      confirmed: true,
+      results: {
+        federal: { result: "accepted", date: day },
+        state: { result: "rejected", date: day, code: CODE },
+      },
+      fixNote: NOTE,
+    });
+    // The client sees the case move to rejected, with its result columns...
+    const moved = await watch.waitFor(
+      (row) => row.id === caseId && row.stage === "rejected",
+      "the rejection update",
+    );
+    assert.equal(moved.new.state_result, "rejected");
+    // ...and a later fence proves everything before it was offered.
+    await act("RETURN_TO_SIGNING", { confirmed: true });
+    await watch.waitFor(
+      (row) => row.id === caseId && row.stage === "review_approved",
+      "the fence update",
+    );
+    assert.ok(
+      watch.rows().some((row) => row.message && row.message.includes("needs a correction")),
+      "the client line arrived",
+    );
+    assertHealthy(watch);
+    const everything = JSON.stringify(watch.payloads);
+    assert.ok(!everything.includes(CODE), "a reject code reached the client");
+    assert.ok(!everything.includes("TaxSlayer"), "a fix note reached the client");
+    assert.ok(!everything.includes(NOTE));
+  } finally {
+    watch?.stop();
     await f.close();
   }
 });

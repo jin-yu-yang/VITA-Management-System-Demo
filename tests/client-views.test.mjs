@@ -6,6 +6,7 @@ import {
   referenceScreen,
   intakeScreen,
   progressScreen,
+  PROGRESS_STEPS,
   conflictForm,
   saveStatus,
 } from "../src/client-views.mjs";
@@ -333,8 +334,8 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   const html = applicationsScreen(baseState({ cases }));
   assert.ok(html.includes("VT-AB2C-DE3F"));
   assert.ok(html.includes("VT-KK44-MM55"));
-  assert.ok(html.includes(describeStage("draft").label));
-  assert.ok(html.includes(describeStage("reviewing").label));
+  assert.ok(html.includes(describeStage("draft").clientLabel));
+  assert.ok(html.includes(describeStage("reviewing").clientLabel));
   assert.ok(hasButton(html, "Start a new application"));
   assert.match(html, /data-action="start-application"/);
   assert.match(html, /data-action="open-case"[^>]*data-case-id="case-b"|data-case-id="case-b"[^>]*data-action="open-case"/);
@@ -353,6 +354,14 @@ test("My applications lists owned cases, looks up only those, and starts one exp
   assert.ok(!missing.includes("VT-AB2C-DE3F"));
   assert.ok(!missing.includes("VT-KK44-MM55"));
   assert.ok(!/registered|email address on file/i.test(missing));
+});
+
+test("a 简体 applications list names a screening case in Chinese, never the staff name", () => {
+  const html = applicationsScreen(
+    baseState({ lang: "zh-Hans", cases: [caseRecord({ id: "case-s", stage: "screening" })] }),
+  );
+  assert.ok(html.includes("审核中"));
+  assert.ok(!html.includes("Screening in progress"));
 });
 
 test("the reference card can be copied and printed and starts the form", () => {
@@ -429,7 +438,7 @@ test("progress names the stage, shows client history and answers a document requ
     }),
   });
   const html = progressScreen(state);
-  assert.ok(html.includes(describeStage("preparing").label));
+  assert.ok(html.includes(describeStage("preparing").clientLabel));
   assert.ok(html.includes(describeStage("preparing").clientMessage));
   assert.ok(html.includes("Application received."));
   assert.ok(html.includes("2025 mileage record"));
@@ -501,8 +510,8 @@ test("review progress is plain and never carries findings", () => {
         savedCase: caseRecord({ stage, revision: 8, intakeVerified: true }),
       }),
     );
-    assert.ok(html.includes(describeStage(stage).label), stage);
-    assert.ok(html.includes(describeStage(stage).clientMessage), stage);
+    assert.ok(html.includes(describeStage(stage).clientLabel), stage);
+    assert.ok(html.includes(escHtml(describeStage(stage).clientMessage)), stage);
     for (const word of ["findings", "refund", "routing", "deposit", "$"])
       assert.ok(!html.toLowerCase().includes(word), `${stage} must not say ${word}`);
   }
@@ -714,6 +723,388 @@ test("a version-2 chip counts the revealed invalid answers of visible questions"
   assert.match(text(saveStatus(v2({ ...shown, saveState: "saving" }))), /Saving/);
   assert.match(text(saveStatus(v2({ ...shown, saveState: "failed", dirty: true }))), /Not saved/);
   assert.equal(text(saveStatus(v2({ ...shown, saveState: "unsaved", dirty: true }))), "Unsaved changes");
+});
+
+const progressAt = (stage, lang = "en", overrides = {}) =>
+  progressScreen(
+    baseState({
+      screen: "progress",
+      lang,
+      savedCase: caseRecord({ stage, revision: 8, intakeVerified: true, ...overrides }),
+    }),
+  );
+
+// What the five steps of the track read, in order, as "name: status".
+const trackOf = (html) =>
+  [...html.matchAll(/<div class="(done|current|)"><span>[\s\S]*?<small>([^<]*)<\/small><em class="sr-only">([^<]*)<\/em><\/div>/g)].map(
+    ([, , name, status]) => `${name}: ${status}`,
+  );
+
+test("the client's progress has five steps", () => {
+  assert.deepEqual(
+    PROGRESS_STEPS.map(([key, stages]) => [key, stages]),
+    [
+      ["progress.step.intake", ["draft", "received", "screening"]],
+      ["progress.step.preparation", ["preparation_ready", "preparing", "corrections_required"]],
+      ["progress.step.review", ["review_ready", "reviewing"]],
+      ["progress.step.signing", ["review_approved"]],
+      ["progress.step.filing", ["ready_to_efile", "efiled", "rejected"]],
+    ],
+  );
+  assert.equal(t("progress.step.signing", {}, "zh-Hans"), "签名");
+  assert.equal(t("progress.step.filing", {}, "zh-Hans"), "递交");
+  assert.equal(trackOf(progressAt("preparing")).length, 5);
+});
+
+test("at Ready to exit, intake to review are done and signing is current", () => {
+  assert.deepEqual(trackOf(progressAt("review_approved")), [
+    "Intake: complete",
+    "Preparation: complete",
+    "Review: complete",
+    "Signing: in progress",
+    "Filing: not started",
+  ]);
+  assert.deepEqual(trackOf(progressAt("screening")), [
+    "Intake: in progress",
+    "Preparation: not started",
+    "Review: not started",
+    "Signing: not started",
+    "Filing: not started",
+  ]);
+  assert.deepEqual(trackOf(progressAt("efiled")).slice(3), ["Signing: complete", "Filing: in progress"]);
+});
+
+test("the client sees their own label, never the staff name", () => {
+  const signing = progressAt("review_approved");
+  assert.ok(signing.includes("Ready to sign"));
+  assert.ok(signing.includes(escHtml(describeStage("review_approved").clientMessage)));
+  assert.ok(!signing.includes("Ready to exit"));
+  const screening = progressAt("screening", "zh-Hans");
+  assert.ok(screening.includes("审核中"));
+  assert.ok(!screening.includes("Screening in progress"));
+  const filed = progressAt("efiled");
+  assert.ok(filed.includes("E-filed"));
+  assert.match(
+    filed,
+    /<p class="status-explanation">Your return was e-filed\. The IRS will confirm whether it is accepted\.<\/p>/,
+  );
+  const signed = progressAt("ready_to_efile", "zh-Hans");
+  assert.ok(signed.includes("已准备好"));
+  assert.ok(!signed.includes("Ready to e-file"));
+});
+
+test("a closed case shows its closed notice, not a step", () => {
+  for (const [lang, badge] of [["en", "Closed"], ["zh-Hans", "已关闭"]]) {
+    const html = progressAt("closed", lang);
+    assert.ok(!html.includes("progress-steps"), lang);
+    assert.ok(!html.includes('class="current"'), lang);
+    assert.ok(html.includes(`<i></i>${badge}</span>`), lang);
+    assert.match(
+      html,
+      new RegExp(`<p class="status-explanation">${reEsc(describeStage("closed", lang).clientMessage)}</p>`),
+      lang,
+    );
+  }
+});
+
+test("the stepper: Filing is current at Rejected, and Accepted completes all five", () => {
+  assert.deepEqual(trackOf(progressAt("rejected")).slice(3), ["Signing: complete", "Filing: in progress"]);
+  const accepted = trackOf(progressAt("accepted"));
+  assert.equal(accepted.length, 5);
+  for (const step of accepted) assert.match(step, /: complete$/, step);
+  assert.ok(!progressAt("accepted").includes('class="current"'));
+});
+
+const statusOf = (html) => /<p class="status-explanation">([^<]*)<\/p>/.exec(html)?.[1];
+const BOTH_EFILE = { federalMethod: "efile", stateMethod: "efile", federalResult: null, stateResult: null };
+const REFUNDS_EN =
+  'If you are due a refund, you can check on it with &quot;Where&#39;s My Refund?&quot; at irs.gov/refunds for your federal return, and with myPATH at mypath.pa.gov for your Pennsylvania return.';
+
+test("the client's filing messages, per return", () => {
+  assert.equal(
+    statusOf(progressAt("efiled", "en", BOTH_EFILE)),
+    "Your federal and Pennsylvania returns were e-filed. The IRS and Pennsylvania will each confirm whether they are accepted.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "en", { ...BOTH_EFILE, federalResult: "accepted" })),
+    "The IRS accepted your federal return. Your Pennsylvania return was e-filed. Pennsylvania will confirm whether it is accepted.",
+  );
+  assert.equal(
+    statusOf(progressAt("rejected", "zh-Hans", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "rejected" })),
+    "国税局已接受您的联邦报税表。您的宾州报税表需要更正后才能被接受。PCDC 会就更正事宜联系您。",
+  );
+  assert.equal(
+    statusOf(progressAt("rejected", "en", { ...BOTH_EFILE, federalResult: "rejected", stateResult: "rejected" })),
+    "Your federal and Pennsylvania returns need a correction before they can be accepted. PCDC will contact you about the correction.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "en", { federalMethod: "paper", stateMethod: "paper" })),
+    "PCDC gave your federal and Pennsylvania returns on paper to you or the person you sent. If they aren&#39;t signed yet, sign them, then mail them yourself. A reply can take about 3 months after you mail them.",
+  );
+  assert.equal(
+    statusOf(progressAt("efiled", "zh-Hans", { federalMethod: "efile", stateMethod: "paper" })),
+    "您的联邦报税表已电子递交。国税局会确认是否接受。PCDC 已将您的宾州报税表纸本交给您或您委托的人。如果还没有签名，请先签名，然后自行邮寄。邮寄后可能需要约 3 个月才会有回复。",
+  );
+});
+
+test("Complete: the refund sites are plain text, not links", () => {
+  const html = progressAt("accepted", "en", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "accepted" });
+  assert.equal(statusOf(html), `The IRS and Pennsylvania accepted your returns. ${REFUNDS_EN}`);
+  const zh = progressAt("accepted", "zh-Hans", { ...BOTH_EFILE, federalResult: "accepted", stateResult: "accepted" });
+  assert.equal(
+    statusOf(zh),
+    '国税局和宾州税务局都已接受您的报税表。如果您有退税，可以在 irs.gov/refunds 使用 "Where&#39;s My Refund?" 查询联邦退税，在 mypath.pa.gov 使用 myPATH 查询宾州退税。（网站为英文页面，可用浏览器翻译）'.replace(
+      '"Where&#39;s My Refund?"',
+      "&quot;Where&#39;s My Refund?&quot;",
+    ),
+  );
+  for (const page of [html, zh]) assert.ok(!/<a[ >]/.test(statusOf(page) ?? "") && !/<a [^>]*irs\.gov/.test(page));
+});
+
+test("clients see the filing method's label on the list and the progress page", () => {
+  const cases = [
+    [{ federalMethod: "efile", stateMethod: "paper" }, "Filed", "已递交"],
+    [{ federalMethod: "paper", stateMethod: "paper" }, "Filed", "已递交"],
+    [{ federalMethod: "paper", stateMethod: "efile" }, "Filed", "已递交"],
+    [{ federalMethod: "efile", stateMethod: "efile" }, "E-filed", "已电子递交"],
+    [{ federalMethod: null, stateMethod: null }, "E-filed", "已电子递交"],
+  ];
+  for (const [methods, en, zh] of cases)
+    for (const [lang, label] of [["en", en], ["zh-Hans", zh]]) {
+      const record = caseRecord({ stage: "efiled", revision: 8, ...methods });
+      const list = applicationsScreen(baseState({ lang, cases: [record] }));
+      assert.ok(list.includes(`<i></i>${label}</span>`), `list ${lang} ${label}`);
+      const page = progressAt("efiled", lang, methods);
+      assert.equal(page.split(`<i></i>${label}</span>`).length - 1, 2, `progress ${lang} ${label}`);
+    }
+});
+
+test("a case e-filed before filing methods keeps its message", () => {
+  for (const [lang, text] of [
+    ["en", "Your return was e-filed. The IRS will confirm whether it is accepted."],
+    ["zh-Hans", "您的报税表已电子递交。国税局会确认是否接受。"],
+  ])
+    assert.equal(statusOf(progressAt("efiled", lang, { federalMethod: null, stateMethod: null })), text);
+});
+
+test("Sign again: the re-sign message replaces the approval's variant", () => {
+  const record = { signingPlan: "portal", ...BOTH_EFILE, federalResult: "rejected", stateResult: null };
+  assert.equal(
+    statusOf(progressAt("review_approved", "en", record)),
+    "PCDC corrected your return. Please sign it again so PCDC can file it. PCDC will contact you to arrange this.",
+  );
+  assert.equal(
+    statusOf(progressAt("review_approved", "zh-Hans", record)),
+    "PCDC 已更正您的报税表。请再次签名，以便 PCDC 递交。PCDC 会联系您安排签名。",
+  );
+});
+
+test("no client page shows a reject code or a fix note", () => {
+  const filingAttempts = [
+    { attempt: 1, notes: [{ note: "Fix the zebra SSN", recordedAt: "2026-01-02T00:00:00Z" }], codes: ["IND-031-04"] },
+  ];
+  for (const stage of ["efiled", "rejected", "review_approved", "accepted"])
+    for (const lang of ["en", "zh-Hans"]) {
+      const html = progressAt(stage, lang, { ...BOTH_EFILE, federalResult: "rejected", filingAttempts, rejectCode: "IND-031-04" });
+      assert.ok(!html.includes("IND-031-04") && !html.includes("Fix the zebra SSN"), `${stage} ${lang}`);
+    }
+});
+
+test("the history shows the new lines in 简体", () => {
+  const history = [
+    { id: "h1", action: "SUBMIT", message: "Application received. A volunteer will check your information and documents.", createdAt: "2026-01-02T15:04:05Z" },
+    { id: "h2", action: "START_SCREENING", message: "PCDC started reviewing your application. We may call you.", createdAt: "2026-01-03T15:04:05Z" },
+    { id: "h3", action: "MARK_READY_TO_EFILE", message: "PCDC recorded that you signed Form 8879. Your return is ready to e-file.", createdAt: "2026-01-04T15:04:05Z" },
+    { id: "h4", action: "MARK_EFILED", message: "PCDC e-filed your return.", createdAt: "2026-01-05T15:04:05Z" },
+    { id: "h5", action: "MARK_READY_TO_EFILE", message: "PCDC recorded that your return is ready. PCDC will take the next step.", createdAt: "2026-01-06T15:04:05Z" },
+    { id: "h6", action: "MARK_EFILED", message: "PCDC mailed your returns.", createdAt: "2026-01-07T15:04:05Z" },
+  ];
+  const html = progressAt("efiled", "zh-Hans", { history });
+  for (const line of [
+    "PCDC 已开始审核您的申请。我们可能会致电您。",
+    "PCDC 已记录您签署了 8879 表。您的报税表可以电子递交了。",
+    "PCDC 已电子递交您的报税表。",
+    "已收到申请。志愿者会核对您的信息和文件。",
+    "PCDC 已记录您的报税表已准备好。PCDC 会进行下一步。",
+    "PCDC 已邮寄您的报税表。",
+  ])
+    assert.ok(html.includes(line), line);
+  assert.ok(!html.includes("PCDC e-filed your return."));
+  assert.ok(!html.includes("Application received."));
+});
+
+// ---------------------------------------------------------------------------
+// Hold and closing (change add-hold-and-closing)
+// ---------------------------------------------------------------------------
+
+const WAITING = { holdOrigin: "awaiting_documents" };
+const SIGNING_HOLD = { holdOrigin: "review_approved" };
+const escHtml = (text) => text.replace(/&/g, "&amp;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+
+test("the stepper: Intake is current while waiting for documents, Signing at a signing hold", () => {
+  const intake = [
+    "Intake: in progress",
+    "Preparation: not started",
+    "Review: not started",
+    "Signing: not started",
+    "Filing: not started",
+  ];
+  assert.deepEqual(trackOf(progressAt("awaiting_documents")), intake);
+  assert.deepEqual(trackOf(progressAt("on_hold", "en", WAITING)), intake);
+  assert.deepEqual(trackOf(progressAt("on_hold", "en", SIGNING_HOLD)), [
+    "Intake: complete",
+    "Preparation: complete",
+    "Review: complete",
+    "Signing: in progress",
+    "Filing: not started",
+  ]);
+  assert.equal(trackOf(progressAt("on_hold", "en", {})).length, 0);
+});
+
+test("the status panels: Waiting for documents and each Hold", () => {
+  const waiting = progressAt("awaiting_documents", "zh-Hans");
+  assert.ok(waiting.includes("需要文件"));
+  assert.equal(statusOf(waiting), t("stage.awaiting_documents.client", {}, "zh-Hans"));
+  for (const lang of ["en", "zh-Hans"]) {
+    assert.equal(
+      statusOf(progressAt("on_hold", lang, WAITING)),
+      escHtml(t("stage.on_hold.client", {}, lang)),
+      lang,
+    );
+    assert.equal(
+      statusOf(progressAt("on_hold", lang, SIGNING_HOLD)),
+      escHtml(t("stage.on_hold.client.signing", {}, lang)),
+      lang,
+    );
+  }
+  assert.ok(progressAt("on_hold", "zh-Hans", WAITING).includes("等待您的回复"));
+});
+
+test("each closed message, and the generic one for older closed cases", () => {
+  for (const lang of ["en", "zh-Hans"]) {
+    for (const reason of ["out_of_scope", "no_need_to_file", "duplicate", "dismissed", "withdrawn"])
+      assert.equal(
+        statusOf(progressAt("closed", lang, { closingReason: reason })),
+        escHtml(t(`stage.closed.client.${reason}`, {}, lang)),
+        `${lang} ${reason}`,
+      );
+    for (const overrides of [{}, { closingReason: "other" }, { closingReason: null }])
+      assert.equal(
+        statusOf(progressAt("closed", lang, overrides)),
+        escHtml(t("stage.closed.client", {}, lang)),
+        `${lang} ${JSON.stringify(overrides)}`,
+      );
+  }
+  const duplicate = statusOf(progressAt("closed", "en", { closingReason: "duplicate", reference: "VT-AB2C-DE3F" }));
+  assert.ok(!/VT-[A-Z0-9]{4}-[A-Z0-9]{4}/.test(duplicate), duplicate);
+});
+
+test("the Withdraw button shows at exactly the stages the client may withdraw from", () => {
+  const withdrawable = [
+    ["received", {}],
+    ["screening", {}],
+    ["awaiting_documents", {}],
+    ["preparation_ready", {}],
+    ["preparing", {}],
+    ["corrections_required", {}],
+    ["review_ready", {}],
+    ["reviewing", {}],
+    ["on_hold", WAITING],
+  ];
+  const notWithdrawable = [
+    ["draft", {}],
+    ["review_approved", {}],
+    ["ready_to_efile", {}],
+    ["efiled", {}],
+    ["rejected", {}],
+    ["accepted", {}],
+    ["closed", {}],
+    ["on_hold", SIGNING_HOLD],
+    ["on_hold", {}],
+  ];
+  const OPENER = 'data-action="open-withdraw"';
+  for (const [stage, overrides] of withdrawable)
+    for (const [lang, name] of [["en", "Withdraw this application"], ["zh-Hans", "撤回此申请"]]) {
+      const html = progressAt(stage, lang, overrides);
+      assert.ok(html.includes(OPENER), `${stage} ${lang}`);
+      assert.ok(hasButton(html, name), `${stage} ${lang}`);
+      assert.ok(!html.includes("To withdraw now, contact PCDC.") && !html.includes("如需撤回，请联系 PCDC。"), stage);
+    }
+  for (const [stage, overrides] of notWithdrawable) {
+    assert.ok(!progressAt(stage, "en", overrides).includes(OPENER), `${stage} ${JSON.stringify(overrides)}`);
+  }
+});
+
+test("from Ready to exit on, and at a signing hold, the client is told to contact PCDC", () => {
+  for (const [stage, overrides] of [
+    ["review_approved", {}],
+    ["ready_to_efile", {}],
+    ["rejected", {}],
+    ["on_hold", SIGNING_HOLD],
+  ]) {
+    assert.ok(progressAt(stage, "en", overrides).includes("To withdraw now, contact PCDC."), stage);
+    assert.ok(progressAt(stage, "zh-Hans", overrides).includes("如需撤回，请联系 PCDC。"), stage);
+  }
+  // Once the return is filed or accepted there is nothing to withdraw: no line.
+  for (const [stage, overrides] of [
+    ["efiled", {}],
+    ["accepted", {}],
+    ["draft", {}],
+    ["preparing", {}],
+    ["closed", {}],
+    ["on_hold", WAITING],
+    ["on_hold", {}],
+  ])
+    assert.ok(!progressAt(stage, "en", overrides).includes("To withdraw now, contact PCDC."), stage);
+});
+
+test("the withdraw dialog: the box, the confirm control and the way out, in both languages", () => {
+  for (const [lang, box, confirm, title] of [
+    ["en", "I want to withdraw this application. My return will not be filed.", "Withdraw this application", "Withdraw this application?"],
+    ["zh-Hans", "我要撤回此申请。我的报税表将不会被递交。", "撤回此申请", "撤回此申请？"],
+  ]) {
+    const html = dialog(baseState({ dialog: "withdraw", lang, savedCase: caseRecord({ stage: "preparing" }) }));
+    assert.ok(html.includes(title), lang);
+    const control = labelledControl(html, reEsc(box));
+    assert.match(control, /name="withdraw-confirmed"/);
+    assert.match(control, /type="checkbox"/);
+    assert.match(html, new RegExp(`<button type="submit"[^>]*data-case-action="WITHDRAW"[^>]*>[^<]*${confirm}`));
+    assert.match(html, /data-action="close-dialog"/);
+    assert.ok(!/\d{3}\D{0,2}\d{3}\D{0,2}\d{4}/.test(html));
+  }
+});
+
+test("no client page shows a hold note or a close note", () => {
+  const NOTE = "<b>Left two voicemails</b> zebra-note";
+  const history = [
+    { id: "h1", action: "PUT_ON_HOLD", message: "PCDC is trying to reach you.", createdAt: "2026-01-02T15:04:05Z" },
+  ];
+  for (const [stage, overrides] of [
+    ["on_hold", WAITING],
+    ["on_hold", SIGNING_HOLD],
+    ["closed", { closingReason: "other" }],
+    ["closed", { closingReason: "dismissed" }],
+    ["preparing", {}],
+  ])
+    for (const lang of ["en", "zh-Hans"]) {
+      const record = { holdNote: NOTE, closeNote: NOTE, closingNote: NOTE, note: NOTE, history, ...overrides };
+      const html = progressAt(stage, lang, record);
+      assert.ok(!html.includes("zebra-note") && !html.includes("Left two voicemails"), `${stage} ${lang}`);
+      const list = applicationsScreen(baseState({ lang, cases: [caseRecord({ stage, ...record })] }));
+      assert.ok(!list.includes("zebra-note"), `list ${stage} ${lang}`);
+    }
+});
+
+test("the document requests show at Waiting for documents and at a documents Hold", () => {
+  const requests = [{ id: "req-9", caseId: "case-a", title: "W-2 from Acme", message: "Please send it", status: "open" }];
+  for (const [stage, overrides] of [
+    ["awaiting_documents", {}],
+    ["on_hold", WAITING],
+  ]) {
+    const html = progressAt(stage, "en", { ...overrides, requests });
+    assert.ok(html.includes("W-2 from Acme"), stage);
+    assert.match(html, /data-case-action="RESPOND_DOCUMENT"/, stage);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1711,4 +2102,15 @@ test("the client's applications while they load, and when they couldn't", () => 
   const failed = applicationsScreen(baseState({ cases: [], lists: { cases: "failed", assistance: "ready" }, lang: "zh-Hans" }));
   assert.match(failed, /无法载入您的申请。/);
   assert.match(applicationsScreen(baseState({ cases: [] })), /No applications yet/, "no lists means loaded");
+});
+
+test("the status panel shows the variant", () => {
+  const record = caseRecord({ stage: "review_approved", revision: 8, intakeVerified: true, signingPlan: "portal", signingAppointmentAt: null });
+  const html = progressScreen(baseState({ screen: "progress", savedCase: record }));
+  const message = describeStage("review_approved", "en", record).clientMessage;
+  assert.ok(message.includes("TaxSlayer Customer Portal"));
+  // shown in the status panel and in the review panel
+  assert.equal(html.split(escHtml(message)).length - 1, 2);
+  const legacy = progressScreen(baseState({ screen: "progress", savedCase: { ...record, signingPlan: null } }));
+  assert.ok(!legacy.includes("Customer Portal"));
 });

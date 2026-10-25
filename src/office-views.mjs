@@ -33,6 +33,8 @@ import {
   unloadedLine,
   emptyState,
   emptyLine,
+  fieldId,
+  confirmBody,
 } from "./ui.mjs";
 import {
   adminEligibility,
@@ -41,7 +43,9 @@ import {
   openFollowups,
   openFollowupCount,
   remindedNote,
+  waitingKinds,
 } from "./admin-views.mjs";
+import { returnedToSigning, latestFixNote, holdKind, BEFORE_FILING_NOTICE_REASONS } from "./domain.mjs";
 import {
   when,
   explain,
@@ -69,13 +73,34 @@ import {
 
 export const QUEUE_KINDS = Object.freeze([
   ["intake", "Intake checks"],
+  ["screening", "Screening"],
+  ["documents", "Waiting for documents"],
+  ["hold", "Hold"],
+  ["withdrawn", "Withdrawn"],
+  ["signing", "Signing"],
+  ["efiling", "E-filing"],
+  ["result", "Filing result"],
+  ["rejected", "Rejected"],
   ["call", "Call the client"],
   ["help", "Help request"],
   ["unclaimed", "Unclaimed work"],
 ]);
 const KIND_VALUES = Object.freeze(QUEUE_KINDS.map(([value]) => value));
 const KIND_LABELS = Object.freeze(Object.fromEntries(QUEUE_KINDS));
-const KIND_ICONS = Object.freeze({ intake: "shield", call: "phone", help: "help", unclaimed: "user" });
+const KIND_ICONS = Object.freeze({
+  intake: "shield",
+  screening: "clock",
+  documents: "file",
+  hold: "phone",
+  withdrawn: "close",
+  signing: "file",
+  efiling: "check",
+  result: "clock",
+  rejected: "help",
+  call: "phone",
+  help: "help",
+  unclaimed: "user",
+});
 
 const calendarDay = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
 export function waitingDays(value, now = Date.now()) {
@@ -89,18 +114,59 @@ export const waitingLabel = (days) =>
 // same fact, so the color is never the only signal.
 const waitingTone = (days) => (days >= 5 ? "late" : days >= 3 ? "aging" : "");
 
+// A Hold row, a Withdrawn row and a Rejected row are never coloured.
+const NEVER_COLOURED = Object.freeze(["rejected", "hold", "withdrawn"]);
+const rowTone = (row) =>
+  NEVER_COLOURED.includes(row.kind) ? "" : waitingTone(row.days);
+
+// The open withdrawal notice follow-ups of a case: a full record carries the
+// follow-ups themselves, a list row only the count its summary attaches.
+const isOpenNotice = (task) => task?.status === "open" && task?.purpose === "withdrawal_notice";
+export const openWithdrawalNotices = (record) =>
+  Array.isArray(record?.followups)
+    ? record.followups.filter(isOpenNotice).length
+    : Number(record?.openWithdrawalNotices ?? 0);
+// The stored text of the case's first open notice: from the follow-ups, or the list summary.
+const noticeReason = (record) =>
+  Array.isArray(record?.followups)
+    ? (record.followups.find(isOpenNotice)?.reason ?? null)
+    : (record?.withdrawalNoticeReason ?? null);
+// The tasks that are calls to the client: the notice is the office's own job.
+const callTasks = (record) => Math.max(0, openFollowupCount(record) - openWithdrawalNotices(record));
+
 export function followupQueue(cases = [], assistance = [], now = Date.now()) {
   const records = Array.isArray(cases) ? cases : [];
   const rows = [];
   for (const record of records) {
-    if (record?.stage === "received" && !record?.intakeVerified)
+    // A sent application waits here until an admin opens it, which starts
+    // screening; the stage, not the intake checks, says it is still new.
+    if (record?.stage === "received")
       rows.push({ kind: "intake", record, item: null, draft: false, since: record.updatedAt });
     else if (record?.stage === "draft" && record?.ownerUserId === null)
       rows.push({ kind: "intake", record, item: null, draft: true, since: record.updatedAt });
+    else if (record?.stage === "screening")
+      rows.push({ kind: "screening", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "awaiting_documents")
+      rows.push({ kind: "documents", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "on_hold")
+      rows.push({ kind: "hold", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "review_approved")
+      rows.push({ kind: "signing", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "ready_to_efile")
+      rows.push({ kind: "efiling", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "efiled")
+      rows.push({ kind: "result", record, item: null, draft: false, since: record.updatedAt });
+    else if (record?.stage === "rejected") {
+      if (waitingKinds(record).length)
+        rows.push({ kind: "result", record, item: null, draft: false, since: record.updatedAt });
+      rows.push({ kind: "rejected", record, item: null, draft: false, since: record.updatedAt });
+    }
     if (isAvailableWork(record))
       rows.push({ kind: "unclaimed", record, item: null, draft: false, since: record.updatedAt });
-    if (openFollowupCount(record))
+    if (callTasks(record))
       rows.push({ kind: "call", record, item: null, draft: false, since: record.updatedAt });
+    if (openWithdrawalNotices(record))
+      rows.push({ kind: "withdrawn", record, item: null, draft: false, since: record.updatedAt });
   }
   for (const item of Array.isArray(assistance) ? assistance : [])
     if (item?.status === "open" || item?.status === "assigned")
@@ -149,17 +215,64 @@ export function queueCounts(rows, chosen) {
 // The Follow-ups page
 // ---------------------------------------------------------------------------
 
+const WAITS = Object.freeze({ federal: "the IRS's answer", state: "Pennsylvania's answer" });
+
+// What a Filing result row is waiting for: an e-filed return's answer. A paper
+// return is never waited for. A case filed on paper before that rule, with
+// nothing e-filed, has no answer to wait for.
+function resultText(record) {
+  const waiting = waitingKinds(record);
+  if (waiting.length === 2) return "Waiting for the IRS and Pennsylvania.";
+  if (waiting.length === 1) return `Waiting for ${WAITS[waiting[0]]}.`;
+  return "No e-filed return is waiting for an answer.";
+}
+
 function needed(row) {
   const { kind, record, item } = row;
+  if (kind === "result") return esc(resultText(record));
+  if (kind === "rejected") {
+    const note = latestFixNote(record);
+    return `${esc("Rejected: contact the client to fix and sign again.")}${when(note, `<small>${esc(note)}</small>`)}`;
+  }
   if (kind === "intake")
     return esc(
       row.draft
         ? "The office started this one and has not sent it yet. Finish the answers and send it."
-        : stageWork(record.stage).work,
+        : "New application: open it to start screening.",
     );
+  if (kind === "screening") return esc("Finish screening.");
+  if (kind === "documents") return esc("Waiting for the client's documents.");
+  if (kind === "hold")
+    return esc(
+      holdKind(record) === "signing"
+        ? "Can't reach the client to sign."
+        : "Can't reach the client about documents.",
+    );
+  if (kind === "withdrawn")
+    return esc(
+      // An admin's close before filing stores its own sentence (withdrawn, or any other
+      // reason from a signing hold). The client's own notice names the volunteer:
+      // reviewer_id is set on a closed case with that notice only when the client
+      // withdrew at Review in progress.
+      BEFORE_FILING_NOTICE_REASONS.includes(noticeReason(record))
+        ? noticeReason(record)
+        : `The client withdrew; tell ${record.reviewerName ?? record.preparerName ?? "the volunteer"} to stop work.`,
+    );
+  if (kind === "signing")
+    return esc(
+      // A list row carries only the reviewer's call status, never the reviews.
+      returnedToSigning(record)
+        ? "Waiting for the client to sign again."
+        : record.reviewContactStatus !== "completed"
+          ? "Waiting for the reviewer's call with the client."
+          : record.goOverOpen
+            ? "Waiting for the office to go over the return with the client."
+            : "Waiting for the client to sign.",
+    );
+  if (kind === "efiling") return esc("Ready to e-file.");
   if (kind === "unclaimed") return `${esc(stageWork(record.stage).work)}${remindedNote(record)}`;
   if (kind === "call") {
-    const n = openFollowupCount(record);
+    const n = callTasks(record);
     const owed = record?.followupAssigneeNames ?? [];
     return `${esc(n)} open ${n === 1 ? "task" : "tasks"}${when(owed.length, ` · waiting on ${esc(owed.join(", "))}`)}`;
   }
@@ -170,13 +283,58 @@ function rowAction(row, person, ui) {
   const busy = ui.busy ? "disabled" : "";
   const { kind, record, item } = row;
   const id = esc(record?.id ?? "");
-  if (kind === "intake")
+  if (kind === "intake" || kind === "screening")
     return button(
-      `${icon("arrow")} ${row.draft ? "Finish and send" : "Record intake checks"}`,
+      `${icon("arrow")} ${row.draft ? "Finish and send" : "Open"}`,
       "open-case",
       "primary",
       `data-case-id="${id}"`,
     );
+  if (kind === "documents" || kind === "hold") {
+    // List rows: each button opens the case in place, then its confirmation.
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const attrs = `data-case-id="${id}" ${busy}`;
+    if (kind === "documents")
+      return rights.putOnHold.allowed
+        ? button(`${icon("clock")} Put on hold…`, "open-put-on-hold", "primary", attrs)
+        : explain(rights.putOnHold);
+    return `${
+      rights.resumeFromHold.allowed
+        ? button(`${icon("phone")} Got in touch…`, "open-resume-from-hold", "primary", attrs)
+        : explain(rights.resumeFromHold)
+    }${
+      rights.closeCase.allowed
+        ? button(`${icon("close")} Close…`, "open-close-case", "secondary", attrs)
+        : explain(rights.closeCase)
+    }`;
+  }
+  if (kind === "withdrawn") {
+    // The notice is resolved in the Log contact drawer, which holds the
+    // follow-up's Resolve form.
+    return button(`${icon("check")} Resolve`, "open-log-call", "primary", `data-case-id="${id}" ${busy}`);
+  }
+  if (kind === "signing" || kind === "efiling") {
+    // The rows are list rows: the marks open the case in place, then their
+    // confirmation (app.mjs), so nothing here sends or changes anything.
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const [decision, action, label] =
+      kind === "signing"
+        ? [rights.markReadyToEfile, "open-mark-ready-to-efile", "Mark ready to e-file…"]
+        : [rights.markEfiled, "open-mark-efiled", "Mark e-filed…"];
+    return decision.allowed
+      ? button(`${icon("check")} ${label}`, action, "primary", `data-case-id="${id}" ${busy}`)
+      : explain(decision);
+  }
+  if (kind === "result" || kind === "rejected") {
+    const rights = adminEligibility({ caseRecord: record }, person);
+    const [decision, action, label] =
+      kind === "result"
+        ? [rights.recordFilingResult, "open-record-filing-result", "Record filing result…"]
+        : [rights.returnToSigning, "open-return-to-signing", "Return to signing…"];
+    return decision.allowed
+      ? button(`${icon("check")} ${label}`, action, "primary", `data-case-id="${id}" ${busy}`)
+      : explain(decision);
+  }
   if (kind === "unclaimed") {
     const rights = adminEligibility({ caseRecord: record }, person);
     return rights.remind.allowed
@@ -200,11 +358,11 @@ function queueRow(row, person, ui) {
   // A help request can name a case this window's list doesn't hold; say so
   // rather than claiming there is no case.
   const client = record
-    ? `${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference ?? "This case")}</button>${stageBadge(record.stage)}`
+    ? `${clientNumberTag(record)}<button class="board-reference" data-action="open-case" data-case-id="${esc(record.id)}">${esc(record.reference ?? "This case")}</button>${stageBadge(record.stage, "en", { record })}`
     : item?.caseId
       ? '<span class="muted">A case in this workspace</span>'
       : '<span class="muted">No case yet</span>';
-  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${languageCell(languageSummary(rowLanguages(row)))}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${waitingTone(row.days)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
+  return `<tr class="queue-row" data-kind="${kind}"><td><span class="kind-pill ${kind}">${icon(KIND_ICONS[kind])} ${esc(KIND_LABELS[kind])}</span></td><th scope="row">${client}</th><td class="queue-needed">${needed(row)}</td><td>${languageCell(languageSummary(rowLanguages(row)))}</td><td>${esc(item?.contactPreference || "—")}</td><td class="queue-waiting ${rowTone(row)}">${esc(waitingLabel(row.days))}</td><td class="queue-action">${rowAction(row, person, ui)}</td></tr>`;
 }
 
 /**
@@ -275,10 +433,112 @@ export function renderFollowups(cases = [], assistance = [], ui = {}) {
     .map((row) => queueRow(row, person, view))
     .join("")}</tbody></table></div>`;
 
-  return `<section class="panel office-queue" aria-labelledby="office-queue-title"><div class="section-head"><div><h2 id="office-queue-title" tabindex="-1">Office queue</h2> <span class="muted small">most urgent first</span></div><span class="muted small">${esc(counts.all)} open · ${esc(over3)} over 3 days</span></div>${toggles}${chips}${when(
+  // The season-end close: for an admin, disabled (with its reason) when no
+  // case is waiting for a signature.
+  const waitingSignature = unsignedCases(cases).length;
+  const seasonEnd = isAdminPerson(person)
+    ? `<div class="season-end">${button(
+        "Close unsigned cases…",
+        "open-close-unsigned",
+        "secondary",
+        waitingSignature ? "" : 'disabled aria-describedby="close-unsigned-none"',
+      )}${when(
+        !waitingSignature,
+        `<span class="muted small" id="close-unsigned-none">No case is waiting for a signature.</span>`,
+      )}</div>`
+    : "";
+
+  return `<section class="panel office-queue" aria-labelledby="office-queue-title"><div class="section-head"><div><h2 id="office-queue-title" tabindex="-1">Office queue</h2> <span class="muted small">most urgent first</span></div><span class="muted small">${esc(counts.all)} open · ${esc(over3)} over 3 days</span></div>${seasonEnd}${toggles}${chips}${when(
     !person,
     `<p class="staff-reason" role="note">${icon("user")} ${esc(CHOOSE_PERSONA)} Until then this queue is read-only.</p>`,
   )}${shown.length ? table : empty}<p class="field-note board-note">Waiting turns amber at 3 days and red at 5. This queue shows workflow only: no taxpayer names, no addresses and no document contents.</p></section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Season end: close the cases that are still waiting for a signature
+// ---------------------------------------------------------------------------
+
+const isAdminPerson = (person) => Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
+
+/**
+ * The cases the season-end close may take: Ready to exit, or on Hold from
+ * Ready to exit. Oldest first, so the longest wait is at the top.
+ */
+export function unsignedCases(cases = []) {
+  return cases
+    .filter(
+      (record) =>
+        record?.stage === "review_approved" ||
+        (record?.stage === "on_hold" && record?.holdOrigin === "review_approved"),
+    )
+    .sort((a, b) => String(a.updatedAt ?? "").localeCompare(String(b.updatedAt ?? "")));
+}
+
+/**
+ * What the dialog lists, as one string: the case ids and revisions. When it
+ * changes under an open dialog, the admin has not confirmed the new list.
+ */
+export const closeUnsignedListKey = (cases = []) =>
+  unsignedCases(cases)
+    .map((record) => `${record.id}:${record.revision}`)
+    .join("|");
+
+// "0 days", "1 day", "N days"; a missing date is a dash.
+const unsignedWaiting = (days) => (days === null || days === undefined ? "—" : `${days} ${days === 1 ? "day" : "days"}`);
+
+/** The dialog's heading, kept in step with the ticks. */
+export const closeUnsignedHeading = (ticked, total) =>
+  `Close ${ticked === total ? total : `${ticked} of ${total}`} ${
+    total === 1 ? "case that is" : "cases that are"
+  } waiting for a signature, as Dismissed?`;
+
+const unsignedName = (record) =>
+  [record?.answers?.tp_first_name, record?.answers?.tp_last_name]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ") || "—";
+
+/**
+ * The season-end confirmation. `state.cases` is the loaded list; `unticked`
+ * names cases to draw unticked. The confirm button is drawn disabled: the page
+ * script opens it once a case and the box are both ticked.
+ */
+export function closeUnsignedDialogBody(state = {}) {
+  const list = unsignedCases(state.cases ?? []);
+  const unticked = new Set(state.unticked ?? []);
+  const ticked = list.filter((record) => !unticked.has(record.id)).length;
+  const rows = list
+    .map((record) => {
+      const id = `close-unsigned-${esc(record.id)}`;
+      const where = record.stage === "on_hold" ? "Hold" : "Ready to exit";
+      return `<tr><td><input type="checkbox" id="${id}" name="caseId" value="${esc(record.id)}" data-revision="${esc(
+        record.revision,
+      )}" aria-label="Close ${esc(record.reference)}"${unticked.has(record.id) ? "" : " checked"}></td><th scope="row"><label for="${id}">${esc(
+        record.reference,
+      )}</label></th><td>${esc(unsignedName(record))}</td><td>${where}</td><td>${esc(
+        unsignedWaiting(waitingDays(record.updatedAt, state.now ?? Date.now())),
+      )}</td></tr>`;
+    })
+    .join("");
+  const table = list.length
+    ? `<div class="board-table-wrap"><table class="board-table"><thead><tr><th scope="col"><span class="sr-only">Close</span></th><th scope="col">Case</th><th scope="col">Client</th><th scope="col">Now</th><th scope="col">Waiting</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<p class="muted">No case is waiting for a signature.</p>`;
+  return confirmBody({
+    lead: list.length
+      ? `<span id="close-unsigned-heading">${esc(closeUnsignedHeading(ticked, list.length))}</span>`
+      : "",
+    form: {
+      attrs: 'class="staff-form" id="close-unsigned-form"',
+      fields: `${table}<label class="checkbox-row" for="${fieldId("confirmed", "close-unsigned")}"><input type="checkbox" id="${fieldId(
+        "confirmed",
+        "close-unsigned",
+      )}" name="confirmed" value="true" required><span>${esc(
+        "These clients didn't come back to sign. None of these returns will be transmitted in TaxSlayer.",
+      )}</span></label>`,
+    },
+    confirm: `<button type="submit" class="btn primary full" id="close-unsigned-submit" disabled>${icon("check")} Close as Dismissed</button>`,
+    keep: "Keep them open",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +571,7 @@ export function logCallDrawerBody({ record, person, ui = {}, caseId } = {}) {
   if (!record || record.id !== caseId)
     return `${drawerError(ui)}<p>This case could not be opened. Close this and try again.</p>${button("Close", "close-dialog", "secondary")}`;
   const tasks = openFollowups(record);
-  const head = `<div class="drawer-case">${esc(clientNumberLabel(record))} · ${esc(record.reference)} ${stageBadge(record.stage)}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
+  const head = `<div class="drawer-case">${esc(clientNumberLabel(record))} · ${esc(record.reference)} ${stageBadge(record.stage, "en", { record })}${button("Open the case", "open-case", "text", `data-case-id="${esc(record.id)}"`)}</div>`;
   if (!tasks.length)
     return `${head}${drawerError(ui)}${emptyLine("No open follow-up is left on this case.")}${button("Close", "close-dialog", "secondary")}`;
   return `${head}${drawerError(ui)}${tasks
