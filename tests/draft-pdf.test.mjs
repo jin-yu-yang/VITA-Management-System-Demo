@@ -819,6 +819,15 @@ test("the copy round-trips through the reader", async () => {
   assert.deepEqual(readShaded(raw, { form: "en" }), { values: { incomeW2s: true, incomeW2sCount: 2 }, errors: [] });
 });
 
+test("the reader reports a Preview Producer", async () => {
+  const plain = await readFilledCopy({ PDFLib, bytes: await editingCopy(BASE), reference: "VT-ABCD-EFGH" });
+  assert.equal(plain.preview, false);
+  const doc = await PDFDocument.load(await editingCopy(BASE), { updateMetadata: false });
+  doc.setProducer("macOS Version 14.5 (Build 23F79) Quartz PDFContext");
+  const saved = await readFilledCopy({ PDFLib, bytes: await doc.save(), reference: "VT-ABCD-EFGH" });
+  assert.equal(saved.preview, true);
+});
+
 test("the reader takes any box export value but Off as ticked", async () => {
   // Another PDF tool may tick with its own on-state name (/1, /On) or a string,
   // or leave /V unset and say it only in the widget's /AS.

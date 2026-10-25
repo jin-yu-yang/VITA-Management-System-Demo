@@ -591,7 +591,7 @@ function boxExport(box) {
 export async function readFilledCopy({ PDFLib, bytes, reference }) {
   let doc;
   try {
-    doc = await PDFLib.PDFDocument.load(bytes);
+    doc = await PDFLib.PDFDocument.load(bytes, { updateMetadata: false }); // keep the Producer as the file has it
   } catch {
     throw fail("NOT_A_PDF", "This file isn't a PDF the editor can read.");
   }
@@ -614,7 +614,9 @@ export async function readFilledCopy({ PDFLib, bytes, reference }) {
   if (!keywords.includes(`case:${reference}`))
     throw fail("OTHER_CASE", "This copy was made for a different case. Download the copy from this case and fill that one.");
   const tag = keywords.find((word) => /^version:\d+$/.test(word));
-  return { raw, version: tag ? Number(tag.slice(8)) : 0 };
+  // macOS Preview can drop or change values; its Producer is a hint, never a refusal.
+  const preview = /Quartz PDFContext/i.test(String(doc.getProducer() ?? ""));
+  return { raw, version: tag ? Number(tag.slice(8)) : 0, preview };
 }
 
 // ---------------------------------------------------------------------------

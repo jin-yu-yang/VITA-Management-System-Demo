@@ -5,6 +5,7 @@ import { PDFDocument, PDFCheckBox, PDFTextField } from "pdf-lib";
 import { FORM_FILES } from "../src/draft-form.mjs";
 import {
   SHADED_FIELDS, SHADED_PAIRS, shadedName, shadedNames, readShaded, checkShaded, shadedPrint, shadedLabel,
+  NO_VALUES_MESSAGE, PREVIEW_SAVED_NOTE, PREVIEW_WARNING, uploadRefusal, reviewRows,
 } from "../src/shaded-fields.mjs";
 
 const read = (raw, opts) => readShaded({ [shadedName("household1QualifyingChild")]: raw }, opts);
@@ -157,4 +158,28 @@ test("stored text counts characters, not UTF-16 units, and is never blank", () =
     for (const blank of ["", " ", "\n", " \t\r\n "])
       assert.equal(checkShaded({ [key]: blank }).length, 1, `${key} ${JSON.stringify(blank)}`);
   }
+});
+
+test("uploadRefusal says no values were found, with the Preview note when it applies", () => {
+  assert.equal(uploadRefusal({ values: {}, preview: false }), NO_VALUES_MESSAGE);
+  assert.equal(uploadRefusal({ values: {}, preview: true }), NO_VALUES_MESSAGE + " This copy was saved by macOS Preview.");
+  assert.equal(PREVIEW_SAVED_NOTE, " This copy was saved by macOS Preview.");
+  assert.match(PREVIEW_WARNING, /^This copy was saved by macOS Preview, which can drop or change values\. Check them before saving\.$/);
+  assert.equal(uploadRefusal({ values: { incomeW2s: true } }), null);
+});
+
+test("zero is a value, blank is not", () => {
+  const count = readShaded({ [shadedName("incomeW2sCount")]: "0" });
+  assert.deepEqual(count.values, { incomeW2sCount: 0 });
+  assert.equal(uploadRefusal({ values: count.values }), null);
+  const note = readShaded({ [shadedName("incomeNotes")]: "   " });
+  assert.deepEqual(note.values, {});
+  assert.equal(uploadRefusal({ values: note.values }), NO_VALUES_MESSAGE);
+});
+
+test("reviewRows lists the values in table order with plain words", () => {
+  const rows = reviewRows({ incomeNotes: "a\nb", incomeW2sCount: 2, household1QualifyingChild: "na", incomeW2s: true });
+  assert.deepEqual(rows.map((r) => r.key), ["household1QualifyingChild", "incomeW2s", "incomeW2sCount", "incomeNotes"]);
+  assert.deepEqual(rows.map((r) => r.value), ["N/A", "ticked", "2", "a\nb"]);
+  assert.deepEqual(rows.map((r) => r.label), rows.map((r) => shadedLabel(r.key)));
 });

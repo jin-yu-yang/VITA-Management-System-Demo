@@ -305,3 +305,28 @@ export function readShaded(raw, { form = "en", householdSize, season } = {}) {
   errors.push(...checkShaded(values, { householdSize, season }));
   return { values, errors };
 }
+
+// ---------------------------------------------------------------------------
+// The upload's refusal and review words (staff text)
+// ---------------------------------------------------------------------------
+
+export const NO_VALUES_MESSAGE =
+  "No filled values were found in this copy. If you filled it in macOS Preview, fill it again in Chrome or Adobe Acrobat Reader.";
+export const PREVIEW_SAVED_NOTE = " This copy was saved by macOS Preview.";
+export const PREVIEW_WARNING =
+  "This copy was saved by macOS Preview, which can drop or change values. Check them before saving.";
+
+// The sentence that refuses a copy with nothing filled in; null when it has a value.
+export function uploadRefusal({ values, preview } = {}) {
+  if (Object.keys(values ?? {}).length > 0) return null;
+  return NO_VALUES_MESSAGE + (preview ? PREVIEW_SAVED_NOTE : "");
+}
+
+// The values as the review lists them, in the table's order.
+export function reviewRows(values) {
+  return SHADED_FIELDS.filter((f) => Object.hasOwn(values ?? {}, f.key)).map((f) => ({
+    key: f.key,
+    label: f.label,
+    value: f.kind === "box" ? "ticked" : shadedPrint(f.key, values[f.key]),
+  }));
+}
