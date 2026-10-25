@@ -4,8 +4,8 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 1. Database tests first
 
-- [ ] 1.1 Add a staff helper to `tests/support/database-fixture.mjs`: `f.staff({ key, name, capabilities })` creates a confirmed test account, calls `vitally_private.add_staff_member` inside the setup lock, and returns a signed-in client plus the person id; the run manifest records the account so cleanup deletes it.
-- [ ] 1.2 Write `tests/database-staff-identity.mjs` with `createDatabaseFixture`. It fails until group 2 exists. It checks the `sign-in` spec:
+- [x] 1.1 Add a staff helper to `tests/support/database-fixture.mjs`: `f.staff({ key, name, capabilities })` creates a confirmed test account, calls `vitally_private.add_staff_member` inside the setup lock, and returns a signed-in client plus the person id; the run manifest records the account so cleanup deletes it.
+- [x] 1.2 Write `tests/database-staff-identity.mjs` with `createDatabaseFixture`. It fails until group 2 exists. It checks the `sign-in` spec:
   - the three access values, and another value refused;
   - commit refused for a staff membership without a person, and for a person linked to a presenter;
   - for each of `vitally_apply_action`, `vitally_close_unsigned`, `vitally_assistance_action`, `vitally_create_case` (assisted), `vitally_log_contact` and `vitally_edit_contact`: a staff call with null and with its own id acts as its own person, and another person's id is `VT001` with no receipt stored;
@@ -14,12 +14,12 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
   - a presenter naming a staff member's person is `VT001`, and naming Alex works as before;
   - a client naming a person is `VT001`;
   - `vitally_reset_fixtures` and `vitally_load_checkpoint` refuse staff.
-- [ ] 1.3 In the same file, check the `staff-case-work` spec:
+- [x] 1.3 In the same file, check the `staff-case-work` spec:
   - Riley prepares and Jordan reviews one case, and history, receipts, participation and the review name each of them;
   - a staff member with `prepare` and `review` cannot claim review of their own case, and another reviewer can;
   - for every table in `STAFF_TABLES`, a staff member and a presenter in the same workspace read the same rows, a client's private draft is invisible to both, and nothing in the foreign workspace is visible;
   - a staff member receives the Realtime change a presenter receives (follow the pattern in `tests/database-realtime.mjs`).
-- [ ] 1.4 In the same file, check the roster-side database functions:
+- [x] 1.4 In the same file, check the roster-side database functions:
   - `add_staff_member` creates a linked staff member, and is a no-op on an identical repeat;
   - it refuses a reserved key (`alex`, `morgan`, `sam`), changed values, an unknown capability and a membership in another workspace;
   - `set_default_followup` assigns new escalations to the staff member, leaves Sam's open follow-up with Sam, and refuses a person without `followup`;
