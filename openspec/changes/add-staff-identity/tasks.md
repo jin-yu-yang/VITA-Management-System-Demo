@@ -27,8 +27,8 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 2. Database migration
 
-- [ ] 2.1 List every `'presenter'` occurrence in `supabase/migrations/*.sql` with the newest definition of the function or policy holding it. Record each as "accepts staff" or "stays presenter-only" (design D5) in the migration's header comment.
-- [ ] 2.2 Add `supabase/migrations/038_staff_identity.sql`, part 1 (design D2):
+- [x] 2.1 List every `'presenter'` occurrence in `supabase/migrations/*.sql` with the newest definition of the function or policy holding it. Record each as "accepts staff" or "stays presenter-only" (design D5) in the migration's header comment.
+- [x] 2.2 Add `supabase/migrations/038_staff_identity.sql`, part 1 (design D2):
   - `memberships.access` allows `staff`;
   - `people.user_id`, unique per workspace, with the composite foreign key to `memberships`;
   - the deferred constraint trigger: a linked membership is `staff`, and each `staff` membership has exactly one person.
