@@ -759,11 +759,13 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
   // the one private function the roster command uses. `personKey` is `key`; a
   // repeat with changed values for the same key is refused, so each member a
   // file needs has a key of its own.
-  f.staff = async ({ key, name, capabilities }) => {
+  // `workspaceId` names another workspace of this run (see f.initializeOwned).
+  f.provision = provision;
+  f.staff = async ({ key, name, capabilities, workspaceId = f.workspaceId }) => {
     const { client, userId, email } = await provision();
     await f.withSetupLock(() =>
       f.sql("select vitally_private.add_staff_member($1,$2,$3,$4,$5::text[])", [
-        f.workspaceId,
+        workspaceId,
         userId,
         key,
         name,
@@ -772,7 +774,7 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     );
     const { rows } = await f.sql(
       "select id from public.people where workspace_id=$1 and person_key=$2",
-      [f.workspaceId, key],
+      [workspaceId, key],
     );
     return { client, userId, personId: rows[0].id, email };
   };
@@ -847,6 +849,8 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         });
       return people;
     };
+    // Another workspace of this run, owned and cleaned up like the foreign one.
+    f.initializeOwned = initializeOwned;
     f.people = await initializeVerified(f.setup);
     ({ alex: f.alex, morgan: f.morgan, sam: f.sam } = f.people);
     f.foreignPeople = await initializeVerified({

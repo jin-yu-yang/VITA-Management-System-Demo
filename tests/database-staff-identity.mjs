@@ -127,14 +127,20 @@ async function updateReaches(client, commit) {
 test("staff identity against real Supabase", async (t) => {
   const f = await createDatabaseFixture();
   try {
-    const riley = await f.staff({ key: "riley", name: "Riley Park", capabilities: ["prepare"] });
-    const jordan = await f.staff({ key: "jordan", name: "Jordan Lee", capabilities: ["review"] });
-    const robin = await f.staff({
+    const made = [];
+    const hire = async (spec) => {
+      const member = await f.staff(spec);
+      made.push(member);
+      return member;
+    };
+    const riley = await hire({ key: "riley", name: "Riley Park", capabilities: ["prepare"] });
+    const jordan = await hire({ key: "jordan", name: "Jordan Lee", capabilities: ["review"] });
+    const robin = await hire({
       key: "robin",
       name: "Robin Hale",
       capabilities: ["prepare", "review"],
     });
-    const casey = await f.staff({
+    const casey = await hire({
       key: "casey",
       name: "Casey Moore",
       capabilities: ALL_CAPABILITIES,
@@ -517,7 +523,7 @@ test("staff identity against real Supabase", async (t) => {
       }
     });
 
-    await t.test("a staff member's board shows a claim live", async () => {
+    await t.test("a staff channel receives a case update live", async () => {
       const caseId = await f.readyCase();
       await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
       const seen = await updateReaches(riley.client, async () => {
@@ -567,8 +573,9 @@ test("staff identity against real Supabase", async (t) => {
       }
     });
 
+    let frankie;
     await t.test("a deactivated staff membership loses all access", async () => {
-      const parker = await f.staff({ key: "parker", name: "Parker Quinn", capabilities: ALL_CAPABILITIES });
+      const parker = await hire({ key: "parker", name: "Parker Quinn", capabilities: ALL_CAPABILITIES });
       const caseId = await f.readyCase();
       const revision = await revisionOf(f, caseId);
       assert.ok(
@@ -640,7 +647,7 @@ test("staff identity against real Supabase", async (t) => {
       // Sam's follow-up exists before the default moves.
       const [samFollowup] = await escalate();
       assert.equal(samFollowup.assignee_person_id, f.sam);
-      const frankie = await f.staff({
+      frankie = await hire({
         key: "frankie",
         name: "Frankie Doyle",
         capabilities: ["followup"],
@@ -688,7 +695,89 @@ test("staff identity against real Supabase", async (t) => {
           [f.workspaceId],
         )
       ).rows[0].count;
-      assert.ok(Number(staff) >= 4);
+      assert.equal(Number(staff), made.length);
+      // The default follow-up person and every staff link survive the re-run.
+      const workspace = (
+        await f.sql("select default_followup_person_id from public.workspaces where id=$1", [
+          f.workspaceId,
+        ])
+      ).rows[0];
+      assert.equal(workspace.default_followup_person_id, frankie.personId);
+      for (const member of made) {
+        const link = (
+          await f.sql(
+            `select m.access,p.id as person_id from public.memberships m
+             join public.people p on p.workspace_id=m.workspace_id and p.user_id=m.user_id
+             where m.workspace_id=$1 and m.user_id=$2`,
+            [f.workspaceId, member.userId],
+          )
+        ).rows;
+        assert.deepEqual(link, [{ access: "staff", person_id: member.personId }]);
+      }
+    });
+
+    await t.test("a workspace with staff and no presenter works for staff and clients", async () => {
+      const workspaceId = randomUUID();
+      const client = await f.provision();
+      const people = await f.initializeOwned({
+        workspaceId,
+        presenterUserIds: [],
+        applicantUserIds: [client.userId],
+        fixtureClientBindings: {},
+      }).then((result) => result.people);
+      const lead = await f.staff({
+        key: "lead",
+        name: "Lee Adams",
+        capabilities: ["admin", "followup"],
+        workspaceId,
+      });
+      const preparer = await f.staff({
+        key: "preparer",
+        name: "Pat Rowe",
+        capabilities: ["prepare"],
+        workspaceId,
+      });
+      await f.withSetupLock(() =>
+        f.sql("select vitally_private.set_default_followup($1,$2)", [workspaceId, "lead"]),
+      );
+      const presenters = await f.sql(
+        "select count(*) as count from public.memberships where workspace_id=$1 and access='presenter'",
+        [workspaceId],
+      );
+      assert.equal(presenters.rows[0].count, "0");
+      // A case worked by staff alone: the client submits, the lead screens it,
+      // the preparer claims it and asks for a document.
+      const started = async () => {
+        const created = await f.draftCase(client.client);
+        await f.act(client.client, created.caseId, null, "SUBMIT", { confirmed: true });
+        await f.act(lead.client, created.caseId, null, "START_SCREENING", {});
+        await f.act(lead.client, created.caseId, null, "VERIFY_INTAKE", {
+          checks: await f.checksFor(created.caseId),
+        });
+        await f.act(preparer.client, created.caseId, null, "CLAIM_PREPARATION", {});
+        return created.caseId;
+      };
+      const escalated = await started();
+      await f.act(preparer.client, escalated, null, "REQUEST_DOCUMENT", f.sampleRequest);
+      await f.act(preparer.client, escalated, null, "ESCALATE_CONTACT", {
+        reason: "No response to the document request.",
+      });
+      assert.equal((await caseRow(f, escalated)).preparer_id, preparer.personId);
+      const followups = (
+        await f.sql("select assignee_person_id from public.admin_followups where case_id=$1", [escalated])
+      ).rows;
+      assert.deepEqual(followups, [{ assignee_person_id: lead.personId }]);
+      // A withdrawal notice goes to the staff default, not to Sam.
+      const withdrawn = await started();
+      await f.act(client.client, withdrawn, null, "WITHDRAW", { confirmed: true });
+      const notices = (
+        await f.sql(
+          "select assignee_person_id from public.admin_followups where case_id=$1 and purpose='withdrawal_notice'",
+          [withdrawn],
+        )
+      ).rows;
+      assert.deepEqual(notices, [{ assignee_person_id: lead.personId }]);
+      assert.notEqual(lead.personId, people.sam);
     });
   } finally {
     await f.close();
