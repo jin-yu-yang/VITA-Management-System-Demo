@@ -32,7 +32,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
   - `memberships.access` allows `staff`;
   - `people.user_id`, unique per workspace, with the composite foreign key to `memberships`;
   - the deferred constraint trigger: a linked membership is `staff`, and each `staff` membership has exactly one person.
-- [ ] 2.3 Part 2 (design D3, D4): `vitally_private.acting_person`, following the table in D3. Redefine each entry point from its newest version so it calls the helper right after the membership lookup, before the digest and receipt, and uses the resolved id everywhere it used `p_person_id`:
+- [x] 2.3 Part 2 (design D3, D4): `vitally_private.acting_person`, following the table in D3. Redefine each entry point from its newest version so it calls the helper right after the membership lookup, before the digest and receipt, and uses the resolved id everywhere it used `p_person_id`:
   - `vitally_apply_action` (036);
   - `vitally_close_unsigned` (037);
   - `vitally_assistance_action` (005);
