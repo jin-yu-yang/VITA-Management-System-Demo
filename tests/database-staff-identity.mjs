@@ -377,6 +377,50 @@ test("staff identity against real Supabase", async (t) => {
       assert.equal(claims.length, 1);
     });
 
+    await t.test("a staff member reusing a presenter's action id makes a new request", async () => {
+      // Receipts belong to the account that reserved them: Riley's call with the
+      // presenter's action id is judged as Riley's own request, never as a
+      // replay of the presenter's.
+      const presenterCase = await f.readyCase();
+      const rileyCase = await f.readyCase();
+      const actionId = randomUUID();
+      const presenterCall = await f.presenter.rpc(
+        "vitally_apply_action",
+        applyArgs({
+          actionId,
+          caseId: presenterCase,
+          revision: await revisionOf(f, presenterCase),
+          personId: f.alex,
+          type: "CLAIM_PREPARATION",
+        }),
+      );
+      assert.equal(presenterCall.error, null);
+      const rileyCall = await riley.client.rpc(
+        "vitally_apply_action",
+        applyArgs({
+          actionId,
+          caseId: rileyCase,
+          revision: await revisionOf(f, rileyCase),
+          type: "CLAIM_PREPARATION",
+        }),
+      );
+      assert.equal(rileyCall.error, null);
+      assert.notDeepEqual(rileyCall.data, presenterCall.data);
+      assert.equal(rileyCall.data.caseId, rileyCase);
+      assert.equal((await caseRow(f, rileyCase)).preparer_id, riley.personId);
+      assert.equal((await caseRow(f, presenterCase)).preparer_id, f.alex);
+      const receipts = (
+        await f.sql(
+          "select actor_user_id,actor_person_id from public.action_receipts where action_id=$1",
+          [actionId],
+        )
+      ).rows;
+      const byAccount = Object.fromEntries(receipts.map((row) => [row.actor_user_id, row.actor_person_id]));
+      assert.equal(receipts.length, 2);
+      assert.equal(byAccount[f.presenterUserId], f.alex);
+      assert.equal(byAccount[riley.userId], riley.personId);
+    });
+
     await t.test("a presenter chooses a demo persona", async () => {
       const caseId = await f.readyCase();
       const receipt = await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});

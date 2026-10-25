@@ -180,3 +180,476 @@ create constraint trigger memberships_staff_links after insert or update on publ
 drop trigger if exists people_staff_links on public.people;
 create constraint trigger people_staff_links after insert or update on public.people
  deferrable initially deferred for each row execute function vitally_private.check_staff_links();
+
+-- Part 2: the acting person (design D3, D4) -------------------------------
+
+-- 4. Who is acting, decided by the database. Every public RPC that takes
+-- `p_person_id` calls this right after finding the membership, before its
+-- request digest and its receipt, and uses the returned id wherever it used
+-- `p_person_id`. So a staff call looks exactly like a presenter call with a
+-- valid persona, and the receipt records the staff member's own person.
+--
+--   | Access    | p_person_id                                | Result                |
+--   |-----------|--------------------------------------------|-----------------------|
+--   | applicant | null                                       | nulls (the client)    |
+--   | applicant | anything                                   | FORBIDDEN (see below) |
+--   | presenter | a person of the workspace with no user_id  | that person           |
+--   | presenter | a staff member's person, or unknown        | FORBIDDEN             |
+--   | staff     | null, or its own person's id               | its own person        |
+--   | staff     | anyone else                                | FORBIDDEN             |
+--
+-- A presenter sending null gets nulls, as before: the checks after this one
+-- refuse it exactly as they do today (no staff action accepts a presenter
+-- without a persona), so their order of errors is unchanged.
+--
+-- An applicant naming a person is still refused with FORBIDDEN, but by the
+-- same later checks as today, not here: the id is handed on unchanged, so the
+-- target is looked up first and a forged persona on a case or item the client
+-- cannot see is the same NOT_FOUND as before (tests/database-assistance.mjs,
+-- tests/database-review.mjs). Every entry point refuses an applicant with a
+-- person: check_operation_authority's guard, vitally_create_case's client and
+-- assisted checks, and the contact RPCs' inline check. An applicant is never
+-- given nulls for a named person, which would make the call the client's own.
+create or replace function vitally_private.acting_person(p_member public.memberships,p_person_id uuid)
+returns public.people language plpgsql stable security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ if p_member.access='staff' then
+  select * into v_person from public.people
+   where workspace_id=p_member.workspace_id and user_id=p_member.user_id;
+  if not found or (p_person_id is not null and p_person_id<>v_person.id) then
+   raise sqlstate 'VT001' using message='FORBIDDEN';
+  end if;
+ elsif p_person_id is null then
+  null;
+ elsif p_member.access='presenter' then
+  select * into v_person from public.people
+   where workspace_id=p_member.workspace_id and id=p_person_id and user_id is null;
+  if not found then
+   raise sqlstate 'VT001' using message='FORBIDDEN';
+  end if;
+ elsif p_member.access='applicant' then
+  v_person.id=p_person_id;
+ else
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ return v_person;
+end;
+$$;
+revoke all on function vitally_private.acting_person(public.memberships,uuid) from public,anon,authenticated,service_role;
+
+-- 5. The six entry points, each copied from its newest definition with its
+-- revoke and grant. The only changes: `v_person` is resolved by acting_person
+-- right after the membership lookup, and `v_person.id` replaces every later
+-- `p_person_id` (the digest's personId, reserve_receipt, the authority checks
+-- and the rows written). Where the function had no `v_person`, its declaration
+-- is added. The signatures are unchanged.
+--   * vitally_apply_action: from 036.
+--   * vitally_close_unsigned: from 037. acting_person runs before its
+--     check_operation_authority, which now gets the resolved id.
+--   * vitally_assistance_action: from 005 (later migrations only re-grant it).
+--   * vitally_create_case: from 023. It finds its membership inline, so the
+--     person is resolved right after that lookup. Assisted mode accepts staff
+--     (`access not in ('presenter','staff')`, inventory above).
+--   * vitally_log_contact and vitally_edit_contact: from 031. Their inline
+--     check becomes `access not in ('presenter','staff') or v_person.id is null`.
+
+create or replace function public.vitally_apply_action(p_action_id uuid,p_case_id uuid,p_expected_revision bigint,p_person_id uuid,p_type text,p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_receipt public.action_receipts;
+ v_case public.cases;
+ v_person public.people;
+ v_outcome jsonb;
+ v_digest text;
+begin
+ v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ -- A malformed envelope cannot be digested or reserved; payload contents are
+ -- still whitelisted at step 5, after the target and authority checks.
+ if p_action_id is null or p_case_id is null or p_expected_revision is null or p_type is null
+  or p_payload is null or jsonb_typeof(p_payload)<>'object' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation',p_type,'caseId',p_case_id,'expectedRevision',p_expected_revision,'personId',v_person.id,'payload',p_payload)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,p_type,v_digest,v_person.id);
+ -- An identical accepted replay returns its receipt after the current membership
+ -- and operation-authority checks, without repeating the mutation and without
+ -- reaching the target, which may since have been deleted.
+ if v_receipt.receipt is not null then
+  perform vitally_private.check_operation_authority(v_member,v_person.id,p_type);
+  return v_receipt.receipt;
+ end if;
+ v_case=vitally_private.lock_case(v_member,p_case_id);
+ v_person=vitally_private.check_authority(v_member,v_case,v_person.id,p_type);
+ if v_case.revision<>p_expected_revision then
+  raise sqlstate 'VT003' using message='CONFLICT';
+ end if;
+ perform vitally_private.check_payload(p_type,p_payload);
+ perform vitally_private.check_related(v_case,p_type,p_payload);
+ case p_type
+  when 'SAVE_ANSWERS' then v_outcome=vitally_private.act_save_answers(v_member,v_case,v_person,p_payload);
+  when 'SUBMIT' then v_outcome=vitally_private.act_submit(v_member,v_case,v_person,p_payload);
+  when 'VERIFY_INTAKE' then v_outcome=vitally_private.act_verify_intake(v_member,v_case,v_person,p_payload);
+  when 'CLAIM_PREPARATION' then v_outcome=vitally_private.act_claim_preparation(v_member,v_case,v_person,p_payload);
+  when 'REQUEST_DOCUMENT' then v_outcome=vitally_private.act_request_document(v_member,v_case,v_person,p_payload);
+  when 'RESPOND_DOCUMENT' then v_outcome=vitally_private.act_respond_document(v_member,v_case,v_person,p_payload);
+  when 'RECORD_DOCUMENT_RESPONSE' then v_outcome=vitally_private.act_record_document_response(v_member,v_case,v_person,p_payload);
+  when 'VERIFY_DOCUMENT' then v_outcome=vitally_private.act_verify_document(v_member,v_case,v_person,p_payload);
+  when 'ESCALATE_CONTACT' then v_outcome=vitally_private.act_escalate_contact(v_member,v_case,v_person,p_payload);
+  when 'RECORD_CONTACT' then v_outcome=vitally_private.act_record_contact(v_member,v_case,v_person,p_payload);
+  when 'RESOLVE_FOLLOWUP' then v_outcome=vitally_private.act_resolve_followup(v_member,v_case,v_person,p_payload);
+  when 'SUBMIT_REVIEW' then v_outcome=vitally_private.act_submit_review(v_member,v_case,v_person,p_payload);
+  when 'CLAIM_REVIEW' then v_outcome=vitally_private.act_claim_review(v_member,v_case,v_person,p_payload);
+  when 'REQUEST_CORRECTIONS' then v_outcome=vitally_private.act_request_corrections(v_member,v_case,v_person,p_payload);
+  when 'RESUBMIT_REVIEW' then v_outcome=vitally_private.act_resubmit_review(v_member,v_case,v_person,p_payload);
+  when 'APPROVE_REVIEW' then v_outcome=vitally_private.act_approve_review(v_member,v_case,v_person,p_payload);
+  when 'RECORD_REVIEW_CONTACT' then v_outcome=vitally_private.act_record_review_contact(v_member,v_case,v_person,p_payload);
+  when 'REMIND' then v_outcome=vitally_private.act_remind(v_member,v_case,v_person,p_payload);
+  when 'CLOSE_CASE' then v_outcome=vitally_private.act_close_case(v_member,v_case,v_person,p_payload);
+  when 'START_SCREENING' then v_outcome=vitally_private.act_start_screening(v_member,v_case,v_person,p_payload); -- 032
+  when 'MARK_READY_TO_EFILE' then v_outcome=vitally_private.act_mark_ready_to_efile(v_member,v_case,v_person,p_payload); -- 032
+  when 'MARK_EFILED' then v_outcome=vitally_private.act_mark_efiled(v_member,v_case,v_person,p_payload); -- 032
+  when 'RECORD_FILING_RESULT' then v_outcome=vitally_private.act_record_filing_result(v_member,v_case,v_person,p_payload); -- 035
+  when 'RETURN_TO_SIGNING' then v_outcome=vitally_private.act_return_to_signing(v_member,v_case,v_person,p_payload); -- 035
+  when 'REQUEST_DOCUMENTS_AT_INTAKE' then v_outcome=vitally_private.act_request_documents_at_intake(v_member,v_case,v_person,p_payload); -- 036
+  when 'PUT_ON_HOLD' then v_outcome=vitally_private.act_put_on_hold(v_member,v_case,v_person,p_payload); -- 036
+  when 'RESUME_FROM_HOLD' then v_outcome=vitally_private.act_resume_from_hold(v_member,v_case,v_person,p_payload); -- 036
+  when 'WITHDRAW' then v_outcome=vitally_private.act_withdraw(v_member,v_case,v_person,p_payload); -- 036
+  when 'UPDATE_CONTACT' then v_outcome=vitally_private.act_update_contact(v_member,v_case,v_person,p_payload);
+  when 'RECORD_MATERIALS' then v_outcome=vitally_private.act_record_materials(v_member,v_case,v_person,p_payload);
+  when 'SET_DOCUMENT_CARD' then v_outcome=vitally_private.act_set_document_card(v_member,v_case,v_person,p_payload);
+  when 'SET_DOCUMENT_GROUP' then v_outcome=vitally_private.act_set_document_group(v_member,v_case,v_person,p_payload);
+  else raise sqlstate 'VT007' using message='VALIDATION';
+ end case;
+ return vitally_private.commit_action(v_member,v_case,v_person,p_action_id,p_type,v_outcome,v_receipt);
+end;
+$$;
+revoke all on function public.vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb) to authenticated;
+
+create or replace function public.vitally_close_unsigned(p_action_id uuid,p_person_id uuid,p_cases jsonb,p_confirmed boolean)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_person public.people;
+ v_receipt public.action_receipts;
+ v_case public.cases;
+ v_item jsonb;
+ v_ids uuid[]:='{}';
+ v_id uuid;
+ v_revisions jsonb:='{}'::jsonb;
+ v_digest text;
+ v_cases jsonb:='[]'::jsonb;
+ v_revision bigint;
+ v_result jsonb;
+begin
+ v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ -- Admin only: a null person and a person without `admin` are FORBIDDEN.
+ perform vitally_private.check_operation_authority(v_member,v_person.id,'CLOSE_CASE');
+ if p_action_id is null or p_confirmed is not true or p_cases is null or jsonb_typeof(p_cases)<>'array'
+  or jsonb_array_length(p_cases)=0 then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ for v_item in select value from jsonb_array_elements(p_cases) loop
+  if jsonb_typeof(v_item)<>'object'
+   or (select count(*) from jsonb_object_keys(v_item))<>2
+   or not (v_item ? 'caseId') or not (v_item ? 'revision')
+   or jsonb_typeof(v_item->'caseId')<>'string'
+   or (v_item->>'caseId')!~'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+   or jsonb_typeof(v_item->'revision')<>'number'
+   or (v_item->>'revision')::numeric<>trunc((v_item->>'revision')::numeric) then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+  v_id=(v_item->>'caseId')::uuid;
+  if v_id=any(v_ids) then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+  v_ids=array_append(v_ids,v_id);
+  v_revisions=v_revisions||jsonb_build_object(v_id::text,v_item->'revision');
+ end loop;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation','CLOSE_UNSIGNED','cases',p_cases,
+  'personId',v_person.id)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,'CLOSE_UNSIGNED',v_digest,v_person.id);
+ if v_receipt.receipt is not null then
+  return v_receipt.receipt;
+ end if;
+ -- Lock in a fixed order so two closes cannot deadlock, and check every case
+ -- before changing any.
+ select array_agg(x order by x) into v_ids from unnest(v_ids) as x;
+ foreach v_id in array v_ids loop
+  v_case=vitally_private.lock_case(v_member,v_id);
+  if v_case.revision<>(v_revisions->>(v_id::text))::numeric
+   or not (v_case.stage='review_approved' or (v_case.stage='on_hold' and v_case.hold_origin='review_approved')) then
+   raise sqlstate 'VT003' using message='CONFLICT';
+  end if;
+ end loop;
+ foreach v_id in array v_ids loop
+  select * into v_case from public.cases where id=v_id;
+  perform vitally_private.close_case_steps(v_case,'dismissed');
+  insert into public.case_events(workspace_id,case_id,actor_user_id,actor_person_id,action,detail)
+  values(v_case.workspace_id,v_case.id,v_member.user_id,v_person.id,'CLOSE_CASE',
+   jsonb_build_object('reason','dismissed','seasonEnd',true));
+  insert into public.client_events(workspace_id,case_id,action,message)
+  values(v_case.workspace_id,v_case.id,'CLOSE_CASE',vitally_private.closed_line('dismissed'));
+  update public.cases set revision=revision+1,updated_at=now() where id=v_id returning revision into v_revision;
+  v_cases=v_cases||jsonb_build_array(jsonb_build_object('caseId',v_id,'reference',v_case.reference,'revision',v_revision));
+ end loop;
+ v_result=jsonb_build_object('actionId',p_action_id,'cases',v_cases);
+ update public.action_receipts set target_id=null,target_reference=null,receipt=v_result where id=v_receipt.id;
+ return v_result;
+end;
+$$;
+revoke all on function public.vitally_close_unsigned(uuid,uuid,jsonb,boolean) from public,anon,authenticated;
+grant execute on function public.vitally_close_unsigned(uuid,uuid,jsonb,boolean) to authenticated;
+
+create or replace function public.vitally_assistance_action(p_action_id uuid,p_item_id uuid,p_expected_revision bigint,p_person_id uuid,p_type text,p_note text)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_receipt public.action_receipts;
+ v_item public.assistance_items;
+ v_person public.people;
+ v_operation text;
+ v_digest text;
+ v_revision bigint;
+begin
+ v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ -- A malformed envelope cannot be digested or reserved; the note is still
+ -- checked at step 5, after the target and authority checks.
+ if p_action_id is null or p_item_id is null or p_expected_revision is null or p_type is null then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ v_operation='ASSISTANCE:'||p_type;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation',v_operation,'itemId',p_item_id,'expectedRevision',p_expected_revision,'personId',v_person.id,'note',p_note)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,v_operation,v_digest,v_person.id);
+ -- An identical accepted replay returns its receipt after the current membership
+ -- and operation-authority checks, without repeating the mutation and without
+ -- reaching the target.
+ if v_receipt.receipt is not null then
+  perform vitally_private.check_operation_authority(v_member,v_person.id,v_operation);
+  return v_receipt.receipt;
+ end if;
+ v_item=vitally_private.lock_assistance_item(v_member,p_item_id);
+ v_person=vitally_private.check_operation_authority(v_member,v_person.id,v_operation);
+ if v_item.revision<>p_expected_revision then
+  raise sqlstate 'VT003' using message='CONFLICT';
+ end if;
+ perform vitally_private.check_assistance_note(p_type,p_note);
+ case p_type
+  when 'CLAIM' then v_revision=vitally_private.act_assistance_claim(v_item,v_person);
+  when 'RESOLVE' then v_revision=vitally_private.act_assistance_resolve(v_item,v_person,p_note);
+  else raise sqlstate 'VT007' using message='VALIDATION';
+ end case;
+ return vitally_private.commit_assistance(p_action_id,v_item,v_revision,v_receipt);
+end;
+$$;
+revoke all on function public.vitally_assistance_action(uuid,uuid,bigint,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.vitally_assistance_action(uuid,uuid,bigint,uuid,text,text) to authenticated;
+
+create or replace function public.vitally_create_case(p_action_id uuid,p_mode text,p_person_id uuid,p_answers jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_person public.people;
+ v_user uuid=auth.uid();
+ v_digest text;
+ v_receipt public.action_receipts;
+ v_case uuid;
+ v_reference text;
+ v_result jsonb;
+ v_generation bigint;
+ v_random bytea;
+ v_constraint text;
+ v_owner uuid;
+ v_capabilities text[];
+begin
+ select * into v_member from public.memberships where user_id=v_user and active for share;
+ if v_user is null or not found then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ if p_mode='client' then
+  if v_member.access<>'applicant' or v_person.id is not null then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+  v_owner=v_user;
+ elsif p_mode='assisted' then
+  if v_member.access not in ('presenter','staff') then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+  select capabilities into v_capabilities from public.people where id=v_person.id and workspace_id=v_member.workspace_id;
+  if not found then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+  if not ('admin'=any(v_capabilities)) then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ else raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if p_action_id is null or p_answers is null or jsonb_typeof(p_answers)<>'object' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if p_answers<>'{}'::jsonb then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation','CREATE_CASE','mode',p_mode,'personId',v_person.id,'answers',p_answers)::text,'sha256'),'hex');
+ select fixture_generation into v_generation from public.workspaces where id=v_member.workspace_id;
+ insert into public.action_receipts(workspace_id,actor_user_id,action_id,operation,request_digest,actor_person_id,generation)
+ values(v_member.workspace_id,v_user,p_action_id,'CREATE_CASE',v_digest,v_person.id,v_generation) on conflict(workspace_id,actor_user_id,action_id) do nothing;
+ select * into v_receipt from public.action_receipts where workspace_id=v_member.workspace_id and actor_user_id=v_user and action_id=p_action_id for update;
+ if v_receipt.operation<>'CREATE_CASE' or v_receipt.request_digest<>v_digest then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if v_receipt.receipt is not null then return v_receipt.receipt;
+ end if;
+ loop
+  v_random=extensions.gen_random_bytes(8);v_reference='VT-';
+  for i in 0..7 loop
+   if i=4 then v_reference=v_reference||'-';
+ end if;
+   v_reference=v_reference||substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',get_byte(v_random,i)%32+1,1);
+  end loop;
+  begin
+   insert into public.cases(reference,workspace_id,owner_user_id,fixture,origin,created_by_user_id,created_by_person_id,answers)
+   values(v_reference,v_member.workspace_id,v_owner,false,p_mode,v_user,v_person.id,p_answers) returning id into v_case;
+   exit;
+  exception when unique_violation then
+   get stacked diagnostics v_constraint=constraint_name;
+   if v_constraint<>'cases_reference_key' then raise;
+ end if;
+  end;
+ end loop;
+ v_result=jsonb_build_object('actionId',p_action_id,'caseId',v_case,'reference',v_reference,'revision',1);
+ update public.action_receipts set target_id=v_case,target_reference=v_reference,receipt=v_result where id=v_receipt.id;
+ return v_result;
+end;
+$$;
+revoke all on function public.vitally_create_case(uuid,text,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.vitally_create_case(uuid,text,uuid,jsonb) to authenticated;
+
+create or replace function public.vitally_log_contact(p_action_id uuid,p_case_id uuid,p_person_id uuid,p_followup_id uuid,p_entry jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_receipt public.action_receipts;
+ v_case public.cases;
+ v_person public.people;
+ v_entry jsonb;
+ v_digest text;
+ v_id uuid;
+ v_result jsonb;
+begin
+ v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ if p_action_id is null or p_case_id is null or p_entry is null or jsonb_typeof(p_entry)<>'object' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ -- Staff only: an applicant is refused before any target is read.
+ if v_member.access not in ('presenter','staff') or v_person.id is null then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation','LOG_CONTACT','caseId',p_case_id,'personId',v_person.id,
+  'followupId',p_followup_id,'entry',p_entry)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,'LOG_CONTACT',v_digest,v_person.id);
+ -- An identical accepted replay returns its receipt after re-checking the
+ -- persona, without reaching the target.
+ if v_receipt.receipt is not null then
+  perform vitally_private.contact_person(v_member,v_person.id);
+  return v_receipt.receipt;
+ end if;
+ v_case=vitally_private.lock_case(v_member,p_case_id);
+ v_person=vitally_private.contact_person(v_member,v_person.id);
+ -- A contact linked to a follow-up task keeps RECORD_CONTACT's rule: the
+ -- task's assignee, holding `followup`, on an open task.
+ if p_followup_id is not null then
+  if not ('followup'=any(v_person.capabilities)) then
+   raise sqlstate 'VT001' using message='FORBIDDEN';
+  end if;
+  perform vitally_private.lock_open_followup(v_case,v_person,jsonb_build_object('followupId',p_followup_id));
+ end if;
+ v_entry=vitally_private.check_contact_entry(p_entry);
+ insert into public.contact_log(workspace_id,case_id,followup_id,logged_by_user_id,logged_by_person_id,
+   direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+ values(v_case.workspace_id,v_case.id,p_followup_id,v_member.user_id,v_person.id,
+   v_entry->>'direction',(v_entry->>'contactedAt')::timestamptz,v_entry->>'withWhom',v_entry->>'otherName',
+   v_entry->>'method',v_entry->>'purpose',v_entry->>'outcome',v_entry->>'note')
+ returning id into v_id;
+ insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
+   direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+ select l.id,1,l.workspace_id,l.case_id,l.logged_by_user_id,l.logged_by_person_id,l.logged_at,
+   l.direction,l.contacted_at,l.with_whom,l.other_name,l.method,l.purpose,l.outcome,l.note
+ from public.contact_log l where l.id=v_id;
+ v_result=jsonb_build_object('actionId',p_action_id,'contactId',v_id,'caseId',v_case.id,'revision',1);
+ update public.action_receipts set target_id=v_id,receipt=v_result where id=v_receipt.id;
+ return v_result;
+end;
+$$;
+revoke all on function public.vitally_log_contact(uuid,uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.vitally_log_contact(uuid,uuid,uuid,uuid,jsonb) to authenticated;
+
+create or replace function public.vitally_edit_contact(p_action_id uuid,p_contact_id uuid,p_expected_revision bigint,p_person_id uuid,p_entry jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_receipt public.action_receipts;
+ v_contact public.contact_log;
+ v_case public.cases;
+ v_person public.people;
+ v_entry jsonb;
+ v_digest text;
+ v_revision bigint;
+ v_result jsonb;
+begin
+ v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
+ if p_action_id is null or p_contact_id is null or p_expected_revision is null
+  or p_entry is null or jsonb_typeof(p_entry)<>'object' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if v_member.access not in ('presenter','staff') or v_person.id is null then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ v_digest=encode(extensions.digest(jsonb_build_object('operation','EDIT_CONTACT','contactId',p_contact_id,
+  'expectedRevision',p_expected_revision,'personId',v_person.id,'entry',p_entry)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,'EDIT_CONTACT',v_digest,v_person.id);
+ if v_receipt.receipt is not null then
+  perform vitally_private.contact_person(v_member,v_person.id);
+  return v_receipt.receipt;
+ end if;
+ -- The case first, then the entry, in the same order as every case action;
+ -- the entry is re-read under its lock and must still be on that case.
+ select * into v_contact from public.contact_log
+  where id=p_contact_id and workspace_id=v_member.workspace_id;
+ if not found then
+  raise sqlstate 'VT002' using message='NOT_FOUND';
+ end if;
+ v_case=vitally_private.lock_case(v_member,v_contact.case_id);
+ select * into v_contact from public.contact_log
+  where id=p_contact_id and workspace_id=v_member.workspace_id and case_id=v_case.id for update;
+ if not found then
+  raise sqlstate 'VT002' using message='NOT_FOUND';
+ end if;
+ v_person=vitally_private.contact_person(v_member,v_person.id);
+ if v_contact.logged_by_person_id is distinct from v_person.id and not ('admin'=any(v_person.capabilities)) then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ if v_contact.revision<>p_expected_revision then
+  raise sqlstate 'VT003' using message='CONFLICT';
+ end if;
+ v_entry=vitally_private.check_contact_entry(p_entry);
+ v_revision=v_contact.revision+1;
+ insert into public.contact_log_versions(contact_id,version,workspace_id,case_id,edited_by_user_id,edited_by_person_id,created_at,
+   direction,contacted_at,with_whom,other_name,method,purpose,outcome,note)
+ values(v_contact.id,v_revision,v_contact.workspace_id,v_contact.case_id,v_member.user_id,v_person.id,now(),
+   v_entry->>'direction',(v_entry->>'contactedAt')::timestamptz,v_entry->>'withWhom',v_entry->>'otherName',
+   v_entry->>'method',v_entry->>'purpose',v_entry->>'outcome',v_entry->>'note');
+ update public.contact_log set direction=v_entry->>'direction',contacted_at=(v_entry->>'contactedAt')::timestamptz,
+   with_whom=v_entry->>'withWhom',other_name=v_entry->>'otherName',method=v_entry->>'method',
+   purpose=v_entry->>'purpose',outcome=v_entry->>'outcome',note=v_entry->>'note',
+   revision=v_revision,edited_at=now()
+  where id=v_contact.id;
+ v_result=jsonb_build_object('actionId',p_action_id,'contactId',v_contact.id,'caseId',v_contact.case_id,'revision',v_revision);
+ update public.action_receipts set target_id=v_contact.id,receipt=v_result where id=v_receipt.id;
+ return v_result;
+end;
+$$;
+revoke all on function public.vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb) to authenticated;
