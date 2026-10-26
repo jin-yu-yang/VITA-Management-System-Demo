@@ -86,10 +86,10 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 6. Documentation
 
-- [ ] 6.1 `docs/developer/database.md`: the `staff` access, `people.user_id`, `acting_person` and the D3 table, the two new private functions, and migration 038 in the migrations table.
-- [ ] 6.2 `docs/developer/architecture.md` and `docs/developer/frontend.md`: who can see what for staff, and the principal and controller changes.
-- [ ] 6.3 `docs/developer/backend.md`: the roster's `staff` list and `defaultFollowup`; fix "There is no CI" to describe `.github/workflows/ci.yml`. `docs/setup.md`: adding fictional staff rehearsal accounts.
-- [ ] 6.4 `docs/developer/production-roadmap.md` §1: real staff accounts exist; what remains (visibility, roles, presenter removal). `docs/developer/README.md`: the glossary entries Membership, Person / persona and Capability.
+- [x] 6.1 `docs/developer/database.md`: the `staff` access, `people.user_id`, `acting_person` and the D3 table, the two new private functions, and migration 038 in the migrations table.
+- [x] 6.2 `docs/developer/architecture.md` and `docs/developer/frontend.md`: who can see what for staff, and the principal and controller changes.
+- [x] 6.3 `docs/developer/backend.md`: the roster's `staff` list and `defaultFollowup`; fix "There is no CI" to describe `.github/workflows/ci.yml`. `docs/setup.md`: adding fictional staff rehearsal accounts.
+- [x] 6.4 `docs/developer/production-roadmap.md` §1: real staff accounts exist; what remains (visibility, roles, presenter removal). `docs/developer/README.md`: the glossary entries Membership, Person / persona and Capability.
 
 ## 7. Final checks
 
