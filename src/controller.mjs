@@ -2227,7 +2227,8 @@ export function createController({
       // A client answers for themselves. The office answering for a walk-in
       // client sends its own persona: the database accepts SAVE_ANSWERS from a
       // presenter only with an `admin` person on an owner-less draft, and
-      // refuses a presenter who sends no person at all.
+      // refuses a presenter who sends no person at all. A staff account sends
+      // its linked person here too, and the store nulls it.
       personId: actingPersonId(),
       type: "SAVE_ANSWERS",
       // A save never sends an invalid value (spec §2.5): every field's

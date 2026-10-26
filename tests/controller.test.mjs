@@ -4,6 +4,7 @@ import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
+import { staffScreen } from "../src/views.mjs";
 import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
 import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
@@ -6046,6 +6047,50 @@ test("a staff start loads the staff landing and acts as the staff person", async
   assert.equal(state.selectedPersonId, "person-riley");
   await controller.selectCase("case-a");
   assert.equal(controller.getState().screen, "staff-case");
+  controller.stop();
+});
+
+// The staff twin of staff-views' "the viewer's own case ... show the
+// revealable phone" and "someone else's case show the locked phone": the board
+// is drawn from the controller's own state, so the viewer is whatever person
+// the controller says this window acts as.
+test("a staff board reveals the phone of the staff person's own case and locks another's", async () => {
+  const boardRow = (html, reference) =>
+    html.split('<tr class="board-row').slice(1).find((row) => row.includes(reference))?.split("</tr>")[0] ?? "";
+  const onBoard = (overrides) => ({
+    stage: "preparing",
+    revision: 3,
+    preparationVersion: 0,
+    answers: { service: "Drop-off", language: "English" },
+    intakeVerified: true,
+    reviewerId: null,
+    lastRemindedAt: null,
+    updatedAt: "2026-09-12T16:30:00.000Z",
+    phone: "2155550123",
+    ...overrides,
+  });
+  const store = staffStore({
+    // Riley is a volunteer here: office staff see every phone, which would
+    // hide the rule.
+    people: [
+      { id: "person-riley", name: "Riley Park", capabilities: ["prepare"] },
+      { id: "person-sam", name: "Sam", capabilities: ["prepare"] },
+    ],
+    cases: [
+      onBoard({ id: "riley-1", reference: "VT-PHON-0001", preparerId: "person-riley" }),
+      onBoard({ id: "sam-1", reference: "VT-PHON-0002", preparerId: "person-sam" }),
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.setBoardFilter("search", "VT-PHON");
+  const html = staffScreen(controller.getState());
+  const mine = boardRow(html, "VT-PHON-0001");
+  assert.match(mine, /<span class="phone-mask" id="board-phone-riley-1" tabindex="0">/);
+  assert.ok(mine.includes('<span class="phone-full">(215) 555-0123</span>'));
+  const theirs = boardRow(html, "VT-PHON-0002");
+  assert.match(theirs, /<span class="phone-mask is-locked" title="Claim this case to see the full number">/);
+  assert.doesNotMatch(theirs, /555/, "the number reached Riley's locked row");
   controller.stop();
 });
 
