@@ -110,8 +110,9 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    "$VITALLY_NODE" -e "console.log(crypto.randomUUID())"
    ```
 
-3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, and two
-   clients, `client-a@example.org` (who owns one sample case) and `client-b@example.org`.
+3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one staff
+   member, `staff-a@example.org` (Riley Park, a preparer), and two clients, `client-a@example.org`
+   (who owns one sample case) and `client-b@example.org`.
 
    ```sh
    PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
@@ -130,7 +131,13 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
 3. Open <http://127.0.0.1:54324> in another tab, open the newest message, and copy the code.
 4. Paste it into **Verification code** and press **Verify and continue**. You are signed in as the
    presenter, with the presenter panel and every staff persona.
-5. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
+5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
+   code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
+   persona picker, sample reset, checkpoints or "Fill fictional details": the account acts only as
+   its own person, with that person's capabilities. To add another fictional staff rehearsal
+   account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
+   [Rosters](#rosters)) with a fictional address and run the roster command again.
+6. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
    second browser) and repeat steps 2–4 with `client-a@example.org`.
 
 A new code for the same address can be requested only about once a minute; the form shows a
@@ -307,7 +314,7 @@ check failed. Check, in this order:
 
 ## 4. Migrations
 
-Thirty-four migrations, applied in order. 020, the version-2 switch-over, was added after 021 and 022: a stack that already has them applies it last, and a new one applies it in number order. Both give the same result. Re-running the migrator on an already-migrated stack is safe,
+Thirty-eight migrations, applied in order. 020, the version-2 switch-over, was added after 021 and 022: a stack that already has them applies it last, and a new one applies it in number order. Both give the same result. Re-running the migrator on an already-migrated stack is safe,
 but not because the files themselves are re-runnable — `001` and `002` create their tables with a
 plain `create table`, which fails the second time. What makes it safe is the ledger
 `tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
@@ -502,7 +509,10 @@ git reset --hard
 
 If such a clone ever ran `npm run db:migrate:test` from CRLF files, its test stack recorded CRLF
 digests, and the migrator now refuses with `MIGRATION_CHANGED`: recreate that stack from scratch
-(section 3).
+(section 3). The same thing happens in the other direction: a stack whose digests were recorded from
+CRLF checkouts reports `MIGRATION_CHANGED` for files that have not changed once it is migrated from an
+LF checkout. The cause is the line endings, not an edit, so recreate the stack rather than hunting for
+a changed file.
 
 ### Known, intentional behaviors these tests pin (not defects)
 
@@ -619,12 +629,14 @@ matching `.vitally-roster*.json` and are never committed.
 | Field | Meaning |
 | --- | --- |
 | `workspaceId` | A lower-case UUID. Generate it once and keep it: re-running the same roster with more addresses adds them to the same workspace. |
-| `presenters` | Group members who run the demonstration. They get the presenter panel and every staff persona. At least one is required. |
+| `presenters` | Group members who run the demonstration. They get the presenter panel and every staff persona. Optional, but the roster needs at least one presenter or one staff member. |
+| `staff` | Optional. Real staff members, each `{ "email", "name", "personKey", "capabilities" }`. Each gets a `staff` account linked to its own new person, which it always acts as, with the staff screens and no demo tools. `capabilities` is non-empty, from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`; `personKey` is unique and not `alex`, `morgan` or `sam`. Re-running is harmless, but an existing member's values cannot be changed. For a rehearsal, use fictional names and addresses. |
+| `defaultFollowup` | Optional: the `personKey` of a `staff` entry with `followup`, who then gets new follow-ups. Required when the roster has no presenter. See [Back end: the roster](developer/backend.md#the-roster). |
 | `applicants` | Classmates who play clients. Each sees only their own applications. |
 | `sampleCaseOwners` | Optional. Maps a sample case (`preparation_ready`, `waiting_documents`, `admin_followup`, `review_ready`, `corrections_required`, `review_approved`, `rejected`, `accepted`) to an applicant address, which then owns that seeded case after every reset. |
 
 For each address the command finds the existing Auth account or creates one already confirmed
-and without a password (sign-in is by one-time code only), then grants presenter or applicant
+and without a password (sign-in is by one-time code only), then grants presenter, staff or applicant
 access through the shared `initializeWorkspace` routine. Addresses are matched exactly, ignoring
 case. One account belongs to one workspace with one role; the routine refuses a roster that would
 move someone or change their role (`VALIDATION`). The command never removes anyone, and its

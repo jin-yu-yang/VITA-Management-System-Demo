@@ -24,7 +24,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is thirty-two plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is thirty-eight plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -66,6 +66,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `035_post_efiling_stages.sql` | Hand-written: the `rejected` and `accepted` stages; `cases.federal_method`, `state_method`, `federal_result` and `state_result`; the staff-only `filing_attempts`, `filing_returns` and append-only `filing_notes`; `MARK_EFILED` records each return's method; `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`; `CLOSE_CASE` from `rejected`; the `rejected` and `accepted` sample cases |
 | `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages; `cases.documents_origin`, `hold_origin` and `closing_reason`; `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and the client's `WITHDRAW`; `CLOSE_CASE` takes one of six reasons and an optional note, and is also allowed from the two new stages; an admin may record and verify documents there; the `withdrawal_notice` follow-up purpose; the `on_hold` and `withdrawn` sample cases |
 | `037_adjust_filing_to_pcdc.sql` | Hand-written: a paper return is "given to the client" at `MARK_EFILED` (stored result `given_to_client`, no date; the old `mailed` is renamed and its date dropped); all four federal/state method pairs are allowed; `RECORD_FILING_RESULT` takes e-filed returns only and `MARK_EFILED` moves the case straight to `accepted` when no e-filed return waits; the client line of `MARK_READY_TO_EFILE` no longer names Form 8879; the new RPC `vitally_close_unsigned`; the `rejected` sample's fix note is the site coordinator's |
+| `038_staff_identity.sql` | Hand-written: the `staff` membership access and `people.user_id`, with a commit-time check that links them; `vitally_private.acting_person`, which the six entry points that take a person now call first; `staff` accepted wherever staff behaviour is decided (21 policies, `lock_case`, `lock_assistance_item`, `contact_person`, `check_operation_authority`'s guard, assisted mode and the two contact-log checks); the private `add_staff_member` and `set_default_followup`; `initialize_workspace` re-runs once staff exist. The header holds the inventory of every `'presenter'` check and what was decided for each |
 
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
@@ -107,22 +108,25 @@ version of a function, use the **last** file that defines it:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `036_hold_and_closing.sql` |
+| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `038_staff_identity.sql` |
+| `vitally_private.acting_person`, `check_staff_links`, `add_staff_member`, `set_default_followup` | `038_staff_identity.sql` |
+| `vitally_private.lock_case`, `lock_assistance_item`, `contact_person`, `initialize_workspace` | `038_staff_identity.sql` |
+| `public.vitally_log_contact`, `vitally_edit_contact` | `038_staff_identity.sql` |
 | `vitally_private.check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
 | `vitally_private.act_verify_intake` | `034_screening_checks.sql` |
 | `vitally_private.act_submit_review`, `act_resubmit_review`, `act_approve_review`, `act_resolve_followup` | `033_review_questionnaires.sql` |
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
-| `vitally_private.initialize_workspace` | `001_identity_and_cases.sql` |
-| `public.vitally_create_case` (answers must be `{}`), `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
+| `public.vitally_create_case` (answers must be `{}`) | `038_staff_identity.sql` |
+| `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_update_contact` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
 | `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
 | `vitally_private.check_payload`, `act_mark_ready_to_efile`, `apply_fixture_scenario`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.act_return_to_signing` | `035_post_efiling_stages.sql` |
-| `public.vitally_close_unsigned` | `037_adjust_filing_to_pcdc.sql` |
+| `public.vitally_close_unsigned` | `038_staff_identity.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
@@ -130,7 +134,7 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.fixture_contact_v2` | `019_fixtures_v2.sql` |
 | `vitally_private.fixture_keys` | `036_hold_and_closing.sql` |
 | `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
-| `public.vitally_assistance_action` | `005_assistance_closure.sql` |
+| `public.vitally_assistance_action` | `038_staff_identity.sql` |
 
 To list every function with its file and line:
 
@@ -180,8 +184,8 @@ erDiagram
 | Table | Purpose | Notable columns and rules |
 | --- | --- | --- |
 | `workspaces` | One site's data set | `default_followup_person_id` (who gets escalations), `fixture_generation` (moves on every sample reset), `current_season` (010), `default_intake_version` (011; new cases take it; default 2 since 020, and only 2 since 023) |
-| `memberships` | Account access to a workspace | `access` is `applicant` or `presenter`; `active`; **one active membership per account** (unique index) |
-| `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist` |
+| `memberships` | Account access to a workspace | `access` is `applicant`, `presenter` or `staff` (038); `active`; **one active membership per account** (unique index). A `staff` membership has exactly one linked `people` row |
+| `people` | Staff members | `person_key` (`alex`, `morgan`, `sam`, or a roster staff member's own key), `name`, `capabilities` from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`, `user_id` (038; the staff account that is this person, null for the three demo personas; unique per workspace; composite foreign key to `memberships(workspace_id, user_id)`) |
 | `cases` | One client application | `reference` (`VT-XXXX-XXXX`, unique), `origin` (`client`, `assisted`, `fixture`), `owner_user_id` (the client account; null for assisted and unbound sample cases), `answers` (JSON object: the catalogue ids with structured values: strings, arrays, household member objects; never the contact fields), `stage`, `revision`, `preparation_version`, `intake_verified`, `preparer_id`, `reviewer_id`, `last_reminded_*`, `created_at`, `updated_at`, `season` and `client_number` (010; assigned on submit, never changed), `intake_version` (011; copied from the workspace on insert, never changed; only 2 since 023), `intake_visited` (017; the sub-steps the client has opened, a union of what each save sends), `signing_plan` and `signing_appointment_at` (033; the only part of a questionnaire a client reads: how and when to sign), `federal_method` and `state_method` (035; `efile` or `paper`; both null or any of the four pairs, 037), `federal_result` and `state_result` (035; `accepted` or `rejected` for an e-filed return, `given_to_client` (037, was `mailed`) for a paper one; null until its method is set and answered). A client reads these four columns and nothing else about a filing, `documents_origin` and `hold_origin` (036; the stage a documents request came from and the case returns to, `screening` or `preparation_ready`, and where a hold came from, `awaiting_documents` or `review_approved`; both null otherwise, and both cleared when the case returns), `closing_reason` (036; one of `out_of_scope`, `no_need_to_file`, `duplicate`, `dismissed`, `withdrawn`, `other`; null for a case closed before 036 and for any open case. A client reads the reason's key and never a note) |
 | `action_receipts` | One row per accepted or in-flight action | Unique `(workspace_id, actor_user_id, action_id)`; `request_digest` (SHA-256 of the envelope); `receipt` (the stored result). No foreign key to the target, so receipts outlive deleted cases |
 | `preparation_participants` | Who ever prepared a case | Primary key `(case_id, person_id)`. Written on a preparation claim and never removed. Blocks self-review |
@@ -227,14 +231,20 @@ Row-level security is enabled on every `public` table. Browsers have `SELECT` on
 `INSERT`, `UPDATE` or `DELETE` grant for `anon` or `authenticated` on any table, and `anon` has no
 grants at all.
 
-| Table | Applicant (client) | Presenter (staff) |
+A `staff` account (038) sees exactly what a `presenter` sees: the 21 presenter policies and the
+presenter branch of each `visible_*` policy accept `access in ('presenter','staff')`, with every other
+condition unchanged, and Realtime follows the same policies. `filing_notes` is widened for reading
+only; it stays append-only, with no staff write grant. Narrowing what staff see (to their own and
+claimable cases) is a later change; see the [roadmap](production-roadmap.md#1-staff-identity).
+
+| Table | Applicant (client) | Presenter or staff |
 | --- | --- | --- |
 | `cases` | Own cases | All cases except client drafts not yet submitted |
 | `document_requests`, `documents`, `client_events`, `case_contacts`, `case_document_cards` | On own cases | On visible cases (so a client's own draft's cards only after submit) |
 | `case_materials` | Nothing | On visible cases |
 | `case_events`, `preparation_participants`, `admin_followups`, `contact_log`, `contact_log_versions`, `reviews` | Nothing | On visible cases |
 | `contact_attempts` | Nothing | On visible cases (empty) |
-| `preparer_questionnaires`, `reviewer_questionnaires` | Nothing | Presenters only, on visible cases |
+| `preparer_questionnaires`, `reviewer_questionnaires` | Nothing | On visible cases |
 | `assistance_items` | Nothing | All unlinked items, and items on visible cases |
 | `people` | Nothing | Everyone in the workspace |
 | `memberships` | Own active membership | Own active membership |
@@ -248,7 +258,7 @@ exists (select 1 from memberships m
         where m.workspace_id = <row>.workspace_id
           and m.user_id = (select auth.uid()) and m.active
           and ((m.access = 'applicant' and <case>.owner_user_id = m.user_id)
-            or (m.access = 'presenter' and (<case>.origin <> 'client' or <case>.stage <> 'draft'))))
+            or (m.access in ('presenter','staff') and (<case>.origin <> 'client' or <case>.stage <> 'draft'))))
 ```
 
 It is repeated rather than put in a helper function because a helper would need `EXECUTE` granted
@@ -272,11 +282,59 @@ caller itself, and returns a JSON receipt.
 | `vitally_close_unsigned(p_action_id uuid, p_person_id uuid, p_cases jsonb, p_confirmed boolean)` | Season end (037): close the listed signing cases as Dismissed, all or nothing ([below](#season-end-close)) | `{actionId, cases: [{caseId, reference, revision}]}` |
 
 `p_person_id` is the staff person the caller acts as. Applicants must send `null`. Presenters send
-the persona they chose.
+the persona they chose. A staff account sends `null` (or its own person's id); the database
+decides who it is ([below](#who-is-acting)).
 
 The exact signatures are pinned by a test ([`tests/support/rpc-signatures.mjs`](../../tests/support/rpc-signatures.mjs)),
 so adding a ninth function or changing an argument fails the database suite until the list is
 updated.
+
+### Who is acting
+
+Six entry points take `p_person_id`: `vitally_apply_action`, `vitally_close_unsigned`,
+`vitally_assistance_action`, `vitally_create_case` (assisted mode), `vitally_log_contact` and
+`vitally_edit_contact`. Each calls the private `vitally_private.acting_person(member, p_person_id)`
+right after it finds the membership, **before** it computes the request digest and reserves the
+receipt, then uses the person it returns wherever it used `p_person_id`. So a staff call looks like a
+presenter call with a valid persona, and the receipt, case history, participation, reviews and
+contact log all name the staff member's own person.
+
+| Access | `p_person_id` | Result |
+| --- | --- | --- |
+| `applicant` | null | null (the client acts) |
+| `applicant` | a person | Passed through unchanged; the later checks refuse it (`FORBIDDEN`, or `NOT_FOUND` first when the case is not visible), as before 038 |
+| `presenter` | null | null (no staff action accepts a presenter without a persona, so the later checks refuse it as before) |
+| `presenter` | a person of the workspace with no `user_id` | that person |
+| `presenter` | a staff member's person, or an unknown id | `FORBIDDEN` |
+| `staff` | null, or its own person's id | its own person |
+| `staff` | anyone else | `FORBIDDEN` |
+
+A presenter cannot act as a staff member's person: otherwise presenter mode would be a way around
+real identity in a workspace that has both. `vitally_reset_fixtures`, `vitally_load_checkpoint` and
+`seed_fixtures` stay presenter-only; a staff account gets `FORBIDDEN`.
+
+**The link.** `people.user_id` joins a person to the `staff` account that is that person (unique per
+workspace; the demo personas stay null). A deferred constraint trigger,
+`vitally_private.check_staff_links`, runs at commit and enforces both directions: a linked
+membership must be `staff`, and every `staff` membership must have a linked person. Being deferred,
+it lets one transaction insert the membership and the person in either order, and a half-made staff
+member can never be saved (`VT007`).
+
+**Creating staff.** Two private functions, run only by the roster command's connection inside its
+transaction (no browser role may execute them):
+
+- `vitally_private.add_staff_member(workspace, user, person_key, name, capabilities)` inserts the
+  `staff` membership and the linked person. Repeating identical values changes nothing and returns
+  the existing person, so a roster re-run succeeds. It refuses (`VT007`) a reserved key (`alex`,
+  `morgan`, `sam`), a capability outside the known set, different values for an existing key or
+  account, and an account with a membership in another workspace.
+- `vitally_private.set_default_followup(workspace, person_key)` moves
+  `workspaces.default_followup_person_id`, and refuses a person who is not a staff member's or lacks
+  `followup`. Open follow-ups keep their assignee; new ones go to the new default.
+
+`initialize_workspace` was redefined so that a re-run succeeds once staff exist: it checks that Alex,
+Morgan and Sam are unchanged, ignores linked staff, accepts any default whose person has `followup`,
+and sets Sam as default only for a new workspace.
 
 ### Calling it
 
@@ -408,7 +466,7 @@ admin-only actions and one submit rule shape the earlier stages:
 
 ## Action catalogue
 
-"Presenter + person" means a presenter account acting as a staff person. Capabilities in step 7
+"Presenter + person" means a presenter account acting as a staff person; a `staff` account (038) is the same thing with its own person, so every "Presenter + person" row also admits staff. Capabilities in step 7
 are checked after the stage, so a wrong stage is reported before a missing qualification. Two
 shorthands in the table:
 
@@ -564,9 +622,9 @@ learning about records they may not see.
 | Step | Check | Error |
 | --- | --- | --- |
 | 1 | Signed in with an active membership | `VT001` `FORBIDDEN` |
-| 2 | Reserve the receipt for this action id; identical replay returns the stored receipt; changed envelope refused | `VT007` `VALIDATION` |
+| 2 | Resolve the acting person (`acting_person`, [above](#who-is-acting)), then reserve the receipt for this action id; identical replay returns the stored receipt; changed envelope refused | `VT007` `VALIDATION` |
 | 3 | Lock the case through the visibility rule; missing, other workspace and another client's case look identical | `VT002` `NOT_FOUND` |
-| 4 | Operational authority: applicant vs presenter, the person belongs to this workspace, operational capabilities (`admin`, `followup`, `receive_documents`, `assist`); unknown action type | `VT001` `FORBIDDEN`, `VT007` |
+| 4 | Operational authority: applicant vs staff window (presenter or staff), the person belongs to this workspace, operational capabilities (`admin`, `followup`, `receive_documents`, `assist`); unknown action type | `VT001` `FORBIDDEN`, `VT007` |
 | 5 | Expected revision, then payload shape, then related records belong to this case | `VT003` `CONFLICT`, then `VT007` |
 | 6 | Stage window | `VT004` `INVALID_TRANSITION` |
 | 7 | Self-review, then `prepare`/`review` qualification, then current assignment, then readiness | `VT005` `SELF_REVIEW`, `VT006` `INELIGIBLE`, `VT001`, `VT004` |
@@ -685,14 +743,14 @@ Example: a reviewer can "release" a review they claimed by mistake.
 
 1. **Vocabulary.** Add `RELEASE_REVIEW` to `CASE_ACTIONS` in [`src/contracts.mjs`](../../src/contracts.mjs).
 2. **Migration `NNN_release_review.sql`:**
-   - `create or replace vitally_private.check_operation_authority` (current definition: 032) with
+   - `create or replace vitally_private.check_operation_authority` (current definition: 038) with
      the new type in the right authority group.
    - `create or replace vitally_private.check_payload` (current definition: 034) with the payload
      shape.
    - A new `vitally_private.act_release_review(p_member, p_case, p_person, p_payload)`: stage check
      first (`VT004`), then `require_case_reviewer`, then the change. Return
      `{detail: {...}}` and, if the client should be told, `message`.
-   - `create or replace public.vitally_apply_action` (current definition: 032) with one new `when`
+   - `create or replace public.vitally_apply_action` (current definition: 038) with one new `when`
      branch.
    - Re-apply grants (see above).
 3. **Browser.** A payload builder in [`src/case-actions.mjs`](../../src/case-actions.mjs), an
