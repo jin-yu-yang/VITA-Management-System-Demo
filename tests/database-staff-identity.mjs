@@ -546,20 +546,39 @@ test("staff identity against real Supabase", async (t) => {
       await f.act(f.presenter, caseId, f.alex, "REQUEST_DOCUMENT", f.sampleRequest);
       await f.logContact(f.presenter, caseId, f.alex, SAMPLE_CONTACT());
       const draft = await f.draftCase(f.applicantA);
+      // A submitted case in the foreign workspace, which a staff member of this
+      // workspace must never read (nor its people, nor the workspace itself).
+      const foreignCase = await f.draftCase(f.outsider);
+      await f.act(f.outsider, foreignCase.caseId, null, "SUBMIT", { confirmed: true });
+      const foreignRows = (
+        await f.sql(
+          `select (select count(*) from public.people where workspace_id=$1) as people,
+            (select count(*) from public.cases where workspace_id=$1) as cases`,
+          [f.foreignWorkspaceId],
+        )
+      ).rows[0];
+      assert.ok(Number(foreignRows.people) > 0 && Number(foreignRows.cases) > 0, "foreign rows exist");
       const read = async (client, table) => {
         const { data, error } = await client.from(table).select("*");
         assert.equal(error, null, `${table} read`);
-        return data.map((row) => JSON.stringify(row)).sort();
+        return data;
       };
+      const asJson = (rows) => rows.map((row) => JSON.stringify(row)).sort();
+      const workspaceOf = (table, row) => (table === "workspaces" ? row.id : row.workspace_id);
       for (const table of STAFF_READ_TABLES) {
-        const asPresenter = await read(f.presenter, table);
-        assert.deepEqual(await read(riley.client, table), asPresenter, `${table} rows`);
+        const presenterRows = await read(f.presenter, table);
+        const staffRows = await read(riley.client, table);
+        const asPresenter = asJson(presenterRows);
+        assert.deepEqual(asJson(staffRows), asPresenter, `${table} rows`);
         if (["cases", "case_events", "people", "document_requests", "contact_log"].includes(table))
           assert.ok(asPresenter.length > 0, `${table} has rows to compare`);
         assert.ok(
           !asPresenter.some((row) => row.includes(draft.caseId)),
           `${table} shows a private draft`,
         );
+        // Nothing in another workspace: every row is this workspace's.
+        for (const row of staffRows)
+          assert.equal(workspaceOf(table, row), f.workspaceId, `${table} shows another workspace's row`);
       }
       for (const client of [f.presenter, riley.client]) {
         const { data } = await client.from("cases").select("id").eq("id", draft.caseId);
@@ -601,8 +620,18 @@ test("staff identity against real Supabase", async (t) => {
       // Different values for an existing key or account.
       await refused(riley.userId, "riley", "Riley Parker", ["prepare"]);
       await refused(riley.userId, "riley", "Riley Park", ["prepare", "review"]);
-      // A capability outside the known set.
+      // The same account under another key, and the key of another account.
+      await refused(riley.userId, "riley_two", "Riley Park", ["prepare"]);
+      await refused(f.unapprovedUserId, "riley", "Riley Park", ["prepare"]);
+      // A key outside the person-key pattern, a name outside 1-80 characters.
+      await refused(f.unapprovedUserId, "Quinn-Ross", "Quinn Ross", ["prepare"]);
+      await refused(f.unapprovedUserId, "quinn", "", ["prepare"]);
+      await refused(f.unapprovedUserId, "quinn", "Q".repeat(81), ["prepare"]);
+      // A capability outside the known set, or a repeated one.
       await refused(f.unapprovedUserId, "quinn", "Quinn Ross", ["prepare", "teach"]);
+      await refused(f.unapprovedUserId, "quinn", "Quinn Ross", ["prepare", "prepare"]);
+      // Nothing was created for the account.
+      assert.deepEqual(await f.readMembership(f.unapprovedUserId), []);
       // An account with an active membership in another workspace.
       await refused(f.outsiderUserId, "zed", "Zed Moss", ["prepare"]);
       const riley2 = await personRow(f, "riley");
@@ -661,13 +690,17 @@ test("staff identity against real Supabase", async (t) => {
     });
 
     await t.test("set_default_followup refuses a person without followup", async () => {
-      await assert.rejects(
-        () =>
-          f.withSetupLock(() =>
-            f.sql("select vitally_private.set_default_followup($1,$2)", [f.workspaceId, "riley"]),
-          ),
-        rejected("VALIDATION"),
-      );
+      // Riley lacks `followup`; Sam has it but is no staff member's person; and
+      // no person has the last key.
+      for (const key of ["riley", "sam", "nobody"])
+        await assert.rejects(
+          () =>
+            f.withSetupLock(() =>
+              f.sql("select vitally_private.set_default_followup($1,$2)", [f.workspaceId, key]),
+            ),
+          rejected("VALIDATION"),
+          key,
+        );
       const { default_followup_person_id } = (
         await f.sql("select default_followup_person_id from public.workspaces where id=$1", [
           f.workspaceId,
@@ -685,7 +718,9 @@ test("staff identity against real Supabase", async (t) => {
           reason: "No response to the document request.",
         });
         return (
-          await f.sql("select id,assignee_person_id from public.admin_followups where case_id=$1", [caseId])
+          await f.sql("select id,case_id,assignee_person_id from public.admin_followups where case_id=$1", [
+            caseId,
+          ])
         ).rows;
       };
       // Sam's follow-up exists before the default moves.
@@ -706,6 +741,38 @@ test("staff identity against real Supabase", async (t) => {
         await f.sql("select assignee_person_id from public.admin_followups where id=$1", [samFollowup.id])
       ).rows[0];
       assert.equal(kept.assignee_person_id, f.sam);
+      // Review Focus 5: the new default cannot take over Sam's open task, and
+      // Sam (through the presenter) still resolves it.
+      const resolvePayload = {
+        followupId: samFollowup.id,
+        outcome: "reached",
+        note: "Spoke with the client.",
+      };
+      await refuse(
+        f,
+        frankie.client,
+        "vitally_apply_action",
+        applyArgs({
+          caseId: samFollowup.case_id,
+          revision: await revisionOf(f, samFollowup.case_id),
+          type: "RESOLVE_FOLLOWUP",
+          payload: resolvePayload,
+        }),
+      );
+      const statusOf = async () =>
+        (
+          await f.sql("select status,assignee_person_id from public.admin_followups where id=$1", [
+            samFollowup.id,
+          ])
+        ).rows[0];
+      assert.deepEqual(await statusOf(), { status: "open", assignee_person_id: f.sam });
+      await f.act(f.presenter, samFollowup.case_id, f.sam, "RESOLVE_FOLLOWUP", resolvePayload);
+      const resolved = await statusOf();
+      assert.notEqual(resolved.status, "open");
+      assert.equal(resolved.assignee_person_id, f.sam);
+      // A further escalation still goes to the new default.
+      const [later] = await escalate();
+      assert.equal(later.assignee_person_id, frankie.personId);
       // A withdrawal notice goes to the same person.
       const caseId = await f.readyCase();
       await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
@@ -803,7 +870,13 @@ test("staff identity against real Supabase", async (t) => {
       };
       const escalated = await started();
       await f.act(preparer.client, escalated, null, "REQUEST_DOCUMENT", f.sampleRequest);
+      // The request is named explicitly: f.act's default lookup reads through
+      // the fixture's presenter, who is not a member of this workspace.
+      const [request] = (
+        await f.sql("select id from public.document_requests where case_id=$1", [escalated])
+      ).rows;
       await f.act(preparer.client, escalated, null, "ESCALATE_CONTACT", {
+        requestId: request.id,
         reason: "No response to the document request.",
       });
       assert.equal((await caseRow(f, escalated)).preparer_id, preparer.personId);
