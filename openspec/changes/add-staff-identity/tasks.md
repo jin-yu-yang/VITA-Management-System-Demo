@@ -68,7 +68,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
   - reset and checkpoint stay presenter-only.
 
   Update `tests/store.test.mjs`.
-- [ ] 4.2 `src/controller.mjs`: one helper says "this window is staff" (presenter or staff) and replaces `presenter()` wherever staff behaviour is decided. For staff, the acting person is the principal's `personId`; `selectPerson`, reset and checkpoint are refused. `src/window-state.mjs` never saves or restores `selectedPersonId` for staff. Update `tests/controller.test.mjs` and `tests/window-state.test.mjs`.
+- [x] 4.2 `src/controller.mjs`: one helper says "this window is staff" (presenter or staff) and replaces `presenter()` wherever staff behaviour is decided. For staff, the acting person is the principal's `personId`; `selectPerson`, reset and checkpoint are refused. `src/window-state.mjs` never saves or restores `selectedPersonId` for staff. Update `tests/controller.test.mjs` and `tests/window-state.test.mjs`.
 - [ ] 4.3 `src/views.mjs` and `src/app.mjs`: route staff to the staff screens; the staff toast style and staff-only draft buttons apply to staff. `src/language.mjs`: staff screens are English. `src/presenter-views.mjs`: for staff, show "Signed in as <name>" and no picker, reset or checkpoint controls. Update `tests/presenter.test.mjs`, `tests/shell.test.mjs`, `tests/language.test.mjs` and `tests/client-language.test.mjs`.
 - [ ] 4.4 Run `npm test`.
 
