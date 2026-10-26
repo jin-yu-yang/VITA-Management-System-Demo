@@ -49,14 +49,14 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 3. Admin tools
 
-- [ ] 3.1 Tests first in `tests/roster.test.mjs`:
+- [x] 3.1 Tests first in `tests/roster.test.mjs`:
   - the optional `staff` list (field checks, reserved keys, duplicates across all lists, unknown capabilities);
   - an optional `presenters`, with at least one presenter or staff member;
   - `defaultFollowup` naming a staff entry with `followup`, and required when the roster has no presenter;
   - no address is ever printed.
-- [ ] 3.2 `tools/admin/roster.mjs`: parse and validate as tested; create and confirm staff Auth accounts as for presenters; pass staff entries and `defaultFollowup` to `initializeWorkspace`.
-- [ ] 3.3 `tools/admin/workspace-setup.mjs`: inside the same serializable transaction, after `initialize_workspace`, call `add_staff_member` for each staff entry, then `set_default_followup` when given. Add a `staff` list and a commented `defaultFollowup` to `tools/admin/roster.example.json`.
-- [ ] 3.4 Run `npm test`, then run the roster command twice against the test stack with a fictional staff roster. The second run creates nothing.
+- [x] 3.2 `tools/admin/roster.mjs`: parse and validate as tested; create and confirm staff Auth accounts as for presenters; pass staff entries and `defaultFollowup` to `initializeWorkspace`.
+- [x] 3.3 `tools/admin/workspace-setup.mjs`: inside the same serializable transaction, after `initialize_workspace`, call `add_staff_member` for each staff entry, then `set_default_followup` when given. Add a `staff` list and a commented `defaultFollowup` to `tools/admin/roster.example.json`.
+- [x] 3.4 Run `npm test`, then run the roster command twice against the test stack with a fictional staff roster. The second run creates nothing.
 
 ## 4. Browser
 
