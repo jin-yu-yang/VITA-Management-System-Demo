@@ -217,3 +217,56 @@ test("a reset somebody else ran is said plainly, and dismissed", () => {
   assert.ok(!/notice-banner[^>]*role="alert"/.test(html));
   assert.ok(!page({ ...state, notice: null }, "").includes("notice-banner"));
 });
+
+const staffView = (overrides = {}) => ({
+  ...presenterView({
+    principal: {
+      userId: "user-3",
+      workspaceId: "3f2a91c7-1111-2222-3333-444455556666",
+      access: "staff",
+      email: "riley@example.org",
+      personId: "person-riley",
+      personName: "Riley Park",
+    },
+    people: [...PEOPLE, { id: "person-riley", name: "Riley Park", capabilities: ["prepare"] }],
+    selectedPersonId: "person-riley",
+  }),
+  screen: "staff",
+  savedCase: null,
+  assistance: [],
+  boardFilters: {},
+  openPanels: [],
+  error: null,
+  notice: null,
+  dialog: null,
+  ...overrides,
+});
+
+test("a staff account gets the staff shell, named, with no demo tools", () => {
+  const state = staffView();
+  assert.equal(renderPresenterPanel(state), "");
+  const html = page(state, staffScreen(state));
+  assert.match(html, /class="app-sidebar"/);
+  const row = html.match(/<div class="account-row">[\s\S]*?<\/span><\/div>/)[0];
+  assert.match(row.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), /Signed in as Riley Park/);
+  assert.doesNotMatch(html, /Presenter controls|No persona chosen|Acting as/);
+  for (const control of PRIVILEGED) assert.ok(!html.includes(control), control);
+  assert.ok(!html.includes("Fill fictional details"));
+});
+
+test("a refused stored persona shows in the error banner and the window stays usable", () => {
+  const state = presenterView({
+    screen: "staff",
+    savedCase: null,
+    assistance: [],
+    boardFilters: {},
+    openPanels: [],
+    notice: null,
+    dialog: null,
+    error: { code: "FORBIDDEN", message: "You do not have access to that." },
+  });
+  const html = page(state, staffScreen(state));
+  assert.match(html, /class="problem-banner"[\s\S]*You do not have access to that\./);
+  assert.match(html, /data-action="dismiss-error"/);
+  assert.match(html, /data-action="select-person"/, "the picker is still there to choose again");
+});
