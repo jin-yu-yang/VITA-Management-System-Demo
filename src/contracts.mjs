@@ -117,7 +117,10 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
   VT007: "VALIDATION",
 });
 
-// Principal: { userId, workspaceId, access: 'applicant'|'presenter', email }
+// Principal: { userId, workspaceId, access: 'applicant'|'presenter'|'staff',
+//              email, personId, personName }
+//   personId and personName are the staff member's own roster person, linked
+//   through their account; null for an applicant or a presenter.
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
