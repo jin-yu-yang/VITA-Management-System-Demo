@@ -40,7 +40,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
   - `vitally_log_contact` and `vitally_edit_contact` (031).
 
   Do not redefine `check_authority`.
-- [ ] 2.4 Part 3 (design D5): redefine `check_operation_authority` (036), `lock_case` (003), `lock_assistance_item` (005) and `contact_person` (031) to accept `staff`. Drop and recreate each policy from 2.1 with `access in ('presenter','staff')`, its other conditions unchanged. This includes the questionnaire policies (033) and the filing policies (035); `filing_notes` gains a read policy only, with no write grant for staff. Leave the demo tools presenter-only.
+- [x] 2.4 Part 3 (design D5): redefine `check_operation_authority` (036), `lock_case` (003), `lock_assistance_item` (005) and `contact_person` (031) to accept `staff`. Drop and recreate each policy from 2.1 with `access in ('presenter','staff')`, its other conditions unchanged. This includes the questionnaire policies (033) and the filing policies (035); `filing_notes` gains a read policy only, with no write grant for staff. Leave the demo tools presenter-only.
 - [ ] 2.5 Part 4 (design D6, D7):
   - `vitally_private.add_staff_member` and `vitally_private.set_default_followup`, revoked from every browser role;
   - `initialize_workspace` redefined from 001 so re-runs check the three demo people instead of counting exactly 3, and accept any default person with `followup`.
