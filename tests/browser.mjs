@@ -7221,21 +7221,23 @@ async function runPermutation(t, roles) {
           { badge: "Ready to exit" },
           { caseId },
         );
-        // Both staff windows are on this case's page now: neither says
-        // "Acting as" anywhere, hidden tabs included.
-        assert.equal(
-          (await jordan.locator(".staff-header .field-note").innerText()).trim(),
-          "Signed in as Jordan Lee.",
-        );
+        // Both staff windows are on this case's page now: each header names
+        // its own account, and neither page says "Acting as" anywhere,
+        // hidden tabs included.
         for (const [page, name] of [
-          [riley, "Riley"],
-          [jordan, "Jordan"],
-        ])
+          [riley, "Riley Park"],
+          [jordan, "Jordan Lee"],
+        ]) {
           assert.equal(
-            await page.evaluate(() => (document.querySelector("#app")?.textContent ?? "").includes("Acting as")),
-            false,
-            `${name}'s page says "Acting as"`,
+            (await page.locator(".staff-header .field-note").innerText()).trim(),
+            `Signed in as ${name}.`,
           );
+          assert.equal(
+            await page.evaluate(() => /acting as/i.test(document.querySelector("#app")?.textContent ?? "")),
+            false,
+            `${name}'s page says "acting as"`,
+          );
+        }
         const approved = await caseById(fixture, caseId);
         assert.equal(approved.stage, "review_approved");
         assert.equal(approved.preparer_id, rileyAccount.personId);

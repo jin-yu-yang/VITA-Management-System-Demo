@@ -290,7 +290,10 @@ export function staffScreen(state) {
         : frame(
             "VOLUNTEER WORKSPACE",
             "One case",
-            "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+            // A staff account acts as no one but itself.
+            state.principal?.access === "staff"
+              ? "Everything this case holds, and the work you may do on it."
+              : "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
             "Back to the work board",
             renderStaffCase(record, person, ui),
           );

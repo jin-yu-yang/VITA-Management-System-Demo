@@ -254,6 +254,29 @@ test("a staff account gets the staff shell, named, with no demo tools", () => {
   assert.ok(!html.includes("Fill fictional details"));
 });
 
+test("a staff account's case page acts as no one; a presenter's keeps its sentence", () => {
+  const onCase = {
+    screen: "staff-case",
+    savedCase: { id: "case-1", reference: "VT-AB2C-DE3F", stage: "preparation_ready", answers: {} },
+    cases: [],
+  };
+  const staffHtml = staffScreen(staffView(onCase));
+  assert.match(staffHtml, /Everything this case holds, and the work you may do on it\.</);
+  assert.match(staffHtml, /Signed in as Riley Park\./);
+  assert.doesNotMatch(staffHtml, /acting as/i);
+  // A presenter acting as a volunteer (not the office) gets the volunteer page.
+  const presenterHtml = staffScreen(
+    presenterView({ ...staffView(onCase), principal: presenterView().principal, selectedPersonId: "person-riley" }),
+  );
+  assert.match(presenterHtml, /Acting as Riley Park\./);
+  assert.ok(
+    presenterHtml.includes(
+      "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+    ),
+    "the presenter's case page lost its sentence",
+  );
+});
+
 // A view-level guard: it passed before this task, since the banner already shows state.error.
 test("a refused stored persona shows in the error banner and the window stays usable", () => {
   const state = presenterView({
