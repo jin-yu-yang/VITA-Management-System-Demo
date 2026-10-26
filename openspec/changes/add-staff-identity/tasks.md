@@ -60,7 +60,7 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 4. Browser
 
-- [ ] 4.1 `src/contracts.mjs`: the principal's `access` adds `staff` and carries `personId` and `personName` for staff. `src/supabase-store.mjs`:
+- [x] 4.1 `src/contracts.mjs`: the principal's `access` adds `staff` and carries `personId` and `personName` for staff. `src/supabase-store.mjs`:
   - read the access type and, for staff, the linked person;
   - `SUBSCRIBED_TABLES.staff` is `STAFF_TABLES`;
   - wherever `access() === "presenter"` grants staff reads, it also grants them to staff;
