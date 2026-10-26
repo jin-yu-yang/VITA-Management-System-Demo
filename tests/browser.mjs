@@ -7014,8 +7014,9 @@ async function runPermutation(t, roles) {
     // between the accounts. Last before the console check, so the two new
     // people in the roster reach no earlier phase.
     await phase("two staff accounts work one case, each signed in as themselves", async () => {
-      // A call made from this process has no timeout of its own; a stuck one
-      // fails here by name rather than running the permutation out of time.
+      // A call made from this test process (not a page wait, which has its
+      // own timeout) has no timeout of its own; a stuck one fails here by
+      // name rather than running the permutation out of time.
       const within = async (what, promise, ms = ARRIVAL_MS * 3) => {
         let timer = null;
         try {
@@ -7065,6 +7066,8 @@ async function runPermutation(t, roles) {
           ([key, personId]) => sessionStorage.setItem(key, JSON.stringify({ selectedPersonId: personId })),
           [fixture.sessionStateKey(rileyAccount.userId), sam],
         );
+        // Really there before the sign-in, so what follows proves it ignored.
+        assert.equal((await readWindowState(riley, rileyAccount.userId))?.selectedPersonId, sam);
         await loginTestUser({ page: riley, actor: rileyActor, fixture, heading: WORK_BOARD_HEADING });
         await loginTestUser({ page: jordan, actor: jordanActor, fixture, heading: WORK_BOARD_HEADING });
         await watchAlerts(riley);
@@ -7125,6 +7128,12 @@ async function runPermutation(t, roles) {
 
         // Riley claims and hands the case to review, as Riley — never as Sam.
         await openCaseByReference(riley, reference);
+        // The case header says who is signed in, where a presenter's says
+        // who it acts as.
+        assert.equal(
+          (await riley.locator(".staff-header .field-note").innerText()).trim(),
+          "Signed in as Riley Park.",
+        );
         await act(riley, "CLAIM_PREPARATION", { detail: { label: "Preparer", value: "Riley Park" } }, { caseId });
         assert.equal((await caseById(fixture, caseId)).preparer_id, rileyAccount.personId);
         // Live updates: the claim reaches Jordan's board without a reload.
@@ -7212,6 +7221,21 @@ async function runPermutation(t, roles) {
           { badge: "Ready to exit" },
           { caseId },
         );
+        // Both staff windows are on this case's page now: neither says
+        // "Acting as" anywhere, hidden tabs included.
+        assert.equal(
+          (await jordan.locator(".staff-header .field-note").innerText()).trim(),
+          "Signed in as Jordan Lee.",
+        );
+        for (const [page, name] of [
+          [riley, "Riley"],
+          [jordan, "Jordan"],
+        ])
+          assert.equal(
+            await page.evaluate(() => (document.querySelector("#app")?.textContent ?? "").includes("Acting as")),
+            false,
+            `${name}'s page says "Acting as"`,
+          );
         const approved = await caseById(fixture, caseId);
         assert.equal(approved.stage, "review_approved");
         assert.equal(approved.preparer_id, rileyAccount.personId);

@@ -266,6 +266,8 @@ export function staffScreen(state) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
         person,
+        // The case header says "Signed in as" for a staff account.
+        principal: state.principal,
         busy: state.busy,
         // A dialog opened from the case page holds the only copy of the error.
         error: state.dialog ? null : state.error,
