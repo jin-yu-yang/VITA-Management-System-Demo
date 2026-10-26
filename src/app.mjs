@@ -988,6 +988,8 @@ if (!config) {
   // is in the boxes first, then its blank answers, through the draft like the
   // client's own.
   function fillAssistedIntake() {
+    // A demo tool: a staff account never fills, even if the button appeared.
+    if (controller.getState().principal?.access !== "presenter") return;
     sampleSeed += 1;
     if (!root.querySelector("#add-case-v2-form")) {
       controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });

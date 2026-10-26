@@ -254,6 +254,7 @@ test("a staff account gets the staff shell, named, with no demo tools", () => {
   assert.ok(!html.includes("Fill fictional details"));
 });
 
+// A view-level guard: it passed before this task, since the banner already shows state.error.
 test("a refused stored persona shows in the error banner and the window stays usable", () => {
   const state = presenterView({
     screen: "staff",
@@ -269,4 +270,17 @@ test("a refused stored persona shows in the error banner and the window stays us
   assert.match(html, /class="problem-banner"[\s\S]*You do not have access to that\./);
   assert.match(html, /data-action="dismiss-error"/);
   assert.match(html, /data-action="select-person"/, "the picker is still there to choose again");
+});
+
+test("the add-case page's Fill fictional details pill is a presenter's only", () => {
+  const add = { screen: "office-add-case", workspace: { defaultIntakeVersion: 2 }, officeDraft: true, draftAnswers: {} };
+  const asStaff = staffView({ ...add, selectedPersonId: "person-sam" });
+  asStaff.principal.personId = "person-sam";
+  asStaff.principal.personName = "Sam";
+  const staffHtml = staffScreen(asStaff);
+  assert.match(staffHtml, /id="add-case-v2-form"/, "the form is there");
+  assert.ok(!staffHtml.includes("Fill fictional details"));
+  assert.ok(!staffHtml.includes("fill-assisted-intake"));
+  const presenterHtml = staffScreen(presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam" }));
+  assert.match(presenterHtml, /data-action="fill-assisted-intake"/);
 });

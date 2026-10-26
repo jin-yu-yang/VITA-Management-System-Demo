@@ -381,6 +381,7 @@ function addCasePage(state, person, people) {
     error: state.error,
     retryable: state.retryable,
     people,
+    demoTools: state.principal?.access === "presenter",
   });
 }
 
