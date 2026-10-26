@@ -74,15 +74,15 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 5. Browser story
 
-- [ ] 5.1 `tests/support/browser-fixture.mjs` and `tests/support/story-pages.mjs`: sign in a staff account (reuse `loginTestUser`) and read the "Signed in as" line.
-- [ ] 5.2 `tests/browser.mjs`, a staff-identity phase:
+- [x] 5.1 `tests/support/browser-fixture.mjs` and `tests/support/story-pages.mjs`: sign in a staff account (reuse `loginTestUser`) and read the "Signed in as" line.
+- [x] 5.2 `tests/browser.mjs`, a staff-identity phase:
   - two fictional staff accounts (Riley, `prepare`; Jordan, `review`), each in its own window and engine, with no persona picker and no reset or checkpoint controls;
   - Riley claims and submits a case; Jordan's board updates live, Jordan claims and approves it, and the case history names each of them;
   - Riley cannot claim review of a case Riley prepared;
   - a persona left in browser storage from a presenter window is ignored.
 
   The existing presenter story stays unchanged.
-- [ ] 5.3 Run `npm run test:auth-browser` and `npm run test:browser`.
+- [x] 5.3 Run `npm run test:auth-browser` and `npm run test:browser`.
 
 ## 6. Documentation
 
