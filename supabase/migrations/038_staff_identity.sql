@@ -20,8 +20,12 @@
 -- definition. Every older hit is superseded and needs no decision.
 --
 -- Decision "accepts staff": the check becomes `access in ('presenter','staff')`
--- with every other condition copied unchanged. Part 3 redefines the object,
--- copied from the newest migration named here.
+-- with every other condition copied unchanged, from the newest migration named
+-- here. Part 3 redefines the four helper functions and the 21 policies. The
+-- three public entry points that hold their own inline check
+-- (vitally_create_case in assisted mode, vitally_log_contact and
+-- vitally_edit_contact) were redefined in part 2, together with the
+-- acting-person change to the same functions.
 --
 -- A. Functions
 --
@@ -47,12 +51,16 @@
 --   * lock_case (003): `p_member.access='presenter' and (c.origin<>'client' or
 --     c.stage<>'draft')`. lock_assistance_item (005): `p_member.access='presenter'`
 --     in its visibility test.
---   * contact_person (031) and the two inline checks in vitally_log_contact and
---     vitally_edit_contact (031): `p_member.access<>'presenter' or
---     p_person_id is null` becomes `p_member.access not in
---     ('presenter','staff') or p_person_id is null`.
+--   * contact_person (031): `p_member.access<>'presenter' or p_person_id is
+--     null` becomes `p_member.access not in ('presenter','staff') or
+--     p_person_id is null` (part 3).
+--   * The two inline checks in vitally_log_contact and vitally_edit_contact
+--     (031) test the resolved person, so in part 2 `v_member.access<>
+--     'presenter' or p_person_id is null` became `v_member.access not in
+--     ('presenter','staff') or v_person.id is null`.
 --   * vitally_create_case (023): the assisted-mode test `v_member.access<>
---     'presenter'`. The 001 copy of the same line is superseded.
+--     'presenter'` became `v_member.access not in ('presenter','staff')` in
+--     part 2. The 001 copy of the same line is superseded.
 --   * Stays presenter-only, on purpose, because these are classroom demo tools
 --     and must not be reachable by a real staff account: vitally_reset_fixtures
 --     and vitally_load_checkpoint (009, check `v_member.access<>'presenter'`),
@@ -653,3 +661,216 @@ end;
 $$;
 revoke all on function public.vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.vitally_edit_contact(uuid,uuid,bigint,uuid,jsonb) to authenticated;
+
+-- Part 3: staff accepted by the locks, the authority check and the policies --
+-- (design D5)
+
+-- 6. The four helper functions, each copied from its newest definition (the
+-- inventory above names the migration). The only change in each is the access
+-- test: `access='presenter'` becomes `access in ('presenter','staff')` and
+-- `access<>'presenter'` becomes `access not in ('presenter','staff')`. None of
+-- them is granted to a client role, as before.
+--   * check_operation_authority: from 036 (the guard on a named person).
+--   * lock_case: from 003.
+--   * lock_assistance_item: from 005.
+--   * contact_person: from 031.
+
+create or replace function vitally_private.check_operation_authority(p_member public.memberships,p_person_id uuid,p_type text)
+returns public.people language plpgsql security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ -- Client actions carry no staff person; a selected one must exist in this workspace.
+ if p_person_id is not null then
+  if p_member.access not in ('presenter','staff') then
+   raise sqlstate 'VT001' using message='FORBIDDEN';
+  end if;
+  select * into v_person from public.people where workspace_id=p_member.workspace_id and id=p_person_id;
+  if not found then
+   raise sqlstate 'VT001' using message='FORBIDDEN';
+  end if;
+ end if;
+ case p_type
+  when 'SAVE_ANSWERS','SUBMIT' then
+   -- Client-permitted: an applicant answers for themselves, or a presenter
+   -- assists with an admin-capable person.
+   if p_person_id is null then
+    if p_member.access<>'applicant' then
+     raise sqlstate 'VT001' using message='FORBIDDEN';
+    end if;
+   elsif not ('admin'=any(v_person.capabilities)) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'VERIFY_INTAKE','REMIND','CLOSE_CASE','START_SCREENING','MARK_READY_TO_EFILE','MARK_EFILED','RECORD_FILING_RESULT','RETURN_TO_SIGNING','REQUEST_DOCUMENTS_AT_INTAKE','PUT_ON_HOLD','RESUME_FROM_HOLD' then -- 036
+   if p_person_id is null or not ('admin'=any(v_person.capabilities)) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'CLAIM_PREPARATION','REQUEST_DOCUMENT','VERIFY_DOCUMENT','ESCALATE_CONTACT',
+       'SUBMIT_REVIEW','RESUBMIT_REVIEW','CLAIM_REVIEW','REQUEST_CORRECTIONS',
+       'APPROVE_REVIEW','RECORD_REVIEW_CONTACT' then
+   if p_person_id is null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RESPOND_DOCUMENT','WITHDRAW' then -- 036
+   -- The client answers or withdraws for themselves: no staff persona at all.
+   if p_person_id is not null or p_member.access<>'applicant' then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RECORD_DOCUMENT_RESPONSE' then
+   if p_person_id is null or not ('receive_documents'=any(v_person.capabilities)) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RECORD_CONTACT','RESOLVE_FOLLOWUP' then
+   if p_person_id is null or not ('followup'=any(v_person.capabilities)) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'UPDATE_CONTACT' then
+   -- The client for themselves, or a selected staff person. Which staff person
+   -- may depends on the case, so that half is check_authority's.
+   if p_person_id is null and p_member.access<>'applicant' then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'RECORD_MATERIALS' then
+   -- Staff only; which staff person may depends on the case (check_authority).
+   if p_person_id is null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'SET_DOCUMENT_CARD' then
+   -- The client for themselves, or a selected staff person; which staff person
+   -- may depends on the case, so that half is check_authority's.
+   if p_person_id is null and p_member.access<>'applicant' then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'SET_DOCUMENT_GROUP' then
+   -- Staff only; which staff person may depends on the case (check_authority).
+   if p_person_id is null then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  when 'ASSISTANCE:CLAIM','ASSISTANCE:RESOLVE' then
+   -- Helping a client with their own forms is its own capability; holding it
+   -- is still not holding the item, which is a step-7 rule on the target.
+   if p_person_id is null or not ('assist'=any(v_person.capabilities)) then
+    raise sqlstate 'VT001' using message='FORBIDDEN';
+   end if;
+  -- Unknown or not-yet-implemented actions never reach a handler.
+  else raise sqlstate 'VT007' using message='VALIDATION';
+ end case;
+ return v_person;
+end;
+$$;
+
+create or replace function vitally_private.lock_case(p_member public.memberships,p_case_id uuid)
+returns public.cases language plpgsql security definer set search_path='' as $$
+declare v_case public.cases;
+begin
+ select * into v_case from public.cases c
+  where c.id=p_case_id and c.workspace_id=p_member.workspace_id
+   and ((p_member.access='applicant' and c.owner_user_id=p_member.user_id)
+     or (p_member.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))
+  for update;
+ if not found then
+  raise sqlstate 'VT002' using message='NOT_FOUND';
+ end if;
+ return v_case;
+end;
+$$;
+
+create or replace function vitally_private.lock_assistance_item(p_member public.memberships,p_item_id uuid)
+returns public.assistance_items language plpgsql security definer set search_path='' as $$
+declare v_item public.assistance_items;
+begin
+ select * into v_item from public.assistance_items i
+  where i.id=p_item_id and i.workspace_id=p_member.workspace_id and p_member.access in ('presenter','staff')
+   and (i.case_id is null or exists(select 1 from public.cases c
+    where c.workspace_id=i.workspace_id and c.id=i.case_id and (c.origin<>'client' or c.stage<>'draft')))
+  for update;
+ if not found then
+  raise sqlstate 'VT002' using message='NOT_FOUND';
+ end if;
+ return v_item;
+end;
+$$;
+
+create or replace function vitally_private.contact_person(p_member public.memberships,p_person_id uuid)
+returns public.people language plpgsql stable security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ if p_member.access not in ('presenter','staff') or p_person_id is null then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ select * into v_person from public.people where workspace_id=p_member.workspace_id and id=p_person_id;
+ if not found then
+  raise sqlstate 'VT001' using message='FORBIDDEN';
+ end if;
+ return v_person;
+end;
+$$;
+
+-- 7. The 21 policies of inventory section B, each dropped and created again
+-- with the same name, the same `for select to authenticated` and the condition
+-- of its newest definition, with only the presenter access test widened. The
+-- applicant branch of the `visible_*` policies is unchanged. Nothing is
+-- granted: filing_notes stays select-only for `authenticated` and 035's
+-- append-only trigger stays.
+
+drop policy if exists presenter_people on public.people;
+create policy presenter_people on public.people for select to authenticated using(exists(select 1 from public.memberships m where m.workspace_id=people.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff')));
+
+drop policy if exists visible_cases on public.cases;
+create policy visible_cases on public.cases for select to authenticated using(exists(select 1 from public.memberships m where m.workspace_id=cases.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and cases.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (cases.origin<>'client' or cases.stage<>'draft')))));
+
+drop policy if exists visible_document_requests on public.document_requests;
+create policy visible_document_requests on public.document_requests for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=document_requests.case_id where m.workspace_id=document_requests.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and c.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))));
+
+drop policy if exists visible_documents on public.documents;
+create policy visible_documents on public.documents for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=documents.case_id where m.workspace_id=documents.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and c.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))));
+
+drop policy if exists visible_client_events on public.client_events;
+create policy visible_client_events on public.client_events for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=client_events.case_id where m.workspace_id=client_events.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and c.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))));
+
+drop policy if exists presenter_preparation_participants on public.preparation_participants;
+create policy presenter_preparation_participants on public.preparation_participants for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=preparation_participants.case_id where m.workspace_id=preparation_participants.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_admin_followups on public.admin_followups;
+create policy presenter_admin_followups on public.admin_followups for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=admin_followups.case_id where m.workspace_id=admin_followups.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_contact_attempts on public.contact_attempts;
+create policy presenter_contact_attempts on public.contact_attempts for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=contact_attempts.case_id where m.workspace_id=contact_attempts.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_case_events on public.case_events;
+create policy presenter_case_events on public.case_events for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=case_events.case_id where m.workspace_id=case_events.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_assistance_items on public.assistance_items;
+create policy presenter_assistance_items on public.assistance_items for select to authenticated using(exists(select 1 from public.memberships m where m.workspace_id=assistance_items.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff')) and (assistance_items.case_id is null or exists(select 1 from public.cases c where c.workspace_id=assistance_items.workspace_id and c.id=assistance_items.case_id and (c.origin<>'client' or c.stage<>'draft'))));
+
+drop policy if exists presenter_reviews on public.reviews;
+create policy presenter_reviews on public.reviews for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=reviews.case_id where m.workspace_id=reviews.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists visible_case_contacts on public.case_contacts;
+create policy visible_case_contacts on public.case_contacts for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=case_contacts.case_id where m.workspace_id=case_contacts.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and c.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))));
+
+drop policy if exists presenter_case_materials on public.case_materials;
+create policy presenter_case_materials on public.case_materials for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=case_materials.case_id where m.workspace_id=case_materials.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists visible_case_document_cards on public.case_document_cards;
+create policy visible_case_document_cards on public.case_document_cards for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=case_document_cards.case_id where m.workspace_id=case_document_cards.workspace_id and m.user_id=(select auth.uid()) and m.active and ((m.access='applicant' and c.owner_user_id=m.user_id) or (m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')))));
+
+drop policy if exists presenter_contact_log on public.contact_log;
+create policy presenter_contact_log on public.contact_log for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=contact_log.case_id where m.workspace_id=contact_log.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_contact_log_versions on public.contact_log_versions;
+create policy presenter_contact_log_versions on public.contact_log_versions for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=contact_log_versions.case_id where m.workspace_id=contact_log_versions.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_preparer_questionnaires on public.preparer_questionnaires;
+create policy presenter_preparer_questionnaires on public.preparer_questionnaires for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=preparer_questionnaires.case_id where m.workspace_id=preparer_questionnaires.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_reviewer_questionnaires on public.reviewer_questionnaires;
+create policy presenter_reviewer_questionnaires on public.reviewer_questionnaires for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=reviewer_questionnaires.case_id where m.workspace_id=reviewer_questionnaires.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_filing_attempts on public.filing_attempts;
+create policy presenter_filing_attempts on public.filing_attempts for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_attempts.case_id where m.workspace_id=filing_attempts.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_filing_returns on public.filing_returns;
+create policy presenter_filing_returns on public.filing_returns for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_returns.case_id where m.workspace_id=filing_returns.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+drop policy if exists presenter_filing_notes on public.filing_notes;
+create policy presenter_filing_notes on public.filing_notes for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_notes.case_id where m.workspace_id=filing_notes.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
