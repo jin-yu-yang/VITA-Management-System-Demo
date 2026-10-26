@@ -874,3 +874,197 @@ create policy presenter_filing_returns on public.filing_returns for select to au
 
 drop policy if exists presenter_filing_notes on public.filing_notes;
 create policy presenter_filing_notes on public.filing_notes for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=filing_notes.case_id where m.workspace_id=filing_notes.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
+
+-- Part 4: staff creation, the follow-up default, re-runnable setup ---------
+-- (design D6, D7, D8)
+--
+-- The roster command calls the two new functions inside initializeWorkspace's
+-- one serializable transaction, after initialize_workspace, so memberships,
+-- people and the default are saved together or not at all (D8). All three are
+-- private: no client role may run them; only the roster command's and the test
+-- fixture's database connection reaches them. Each takes the same per-workspace
+-- advisory lock as initialize_workspace (re-entrant within one transaction).
+
+-- 8. A staff member: the `staff` membership and its new linked person (D6).
+-- Values identical to what already exists return the existing person's id and
+-- change nothing, so a roster re-run succeeds. Everything else is VT007, raised
+-- before anything is written:
+--   * a key reserved for the demonstration personas (alex, morgan, sam), a key
+--     outside the person-key pattern, or a name outside 1-80 characters;
+--   * a capability outside the known set, a repeated capability, or a null;
+--   * an existing key or account in the workspace with different values (name,
+--     capabilities, or the other of key and account), or an account whose
+--     membership here is not an active `staff` one;
+--   * an account with an active membership in another workspace;
+--   * a workspace or account that does not exist, or a test workspace whose
+--     overrides are applied (as initialize_workspace refuses it).
+-- Capabilities compare as a set and are stored as given.
+create or replace function vitally_private.add_staff_member(p_workspace_id uuid,p_user_id uuid,p_person_key text,p_name text,p_capabilities text[])
+returns uuid language plpgsql security definer set search_path='' as $$
+declare v_member public.memberships;
+ v_has_member boolean;
+ v_person_id uuid;
+begin
+ if p_workspace_id is null or p_user_id is null or p_person_key is null or p_name is null or p_capabilities is null
+  or p_person_key in ('alex','morgan','sam') or p_person_key !~ '^[a-z][a-z0-9_]{0,39}$'
+  or length(p_name) not between 1 and 80
+  or array_position(p_capabilities,null) is not null
+  or not (p_capabilities <@ array['prepare','review','admin','followup','receive_documents','assist']::text[])
+  or cardinality(p_capabilities)<>(select count(distinct c) from unnest(p_capabilities) c) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_workspace_id::text,0));
+ if not exists(select 1 from public.workspaces where id=p_workspace_id)
+  or not exists(select 1 from auth.users a where a.id=p_user_id)
+  or exists(select 1 from vitally_private.test_workspaces where workspace_id=p_workspace_id and test_overrides_applied) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if exists(select 1 from public.memberships where user_id=p_user_id and active and workspace_id<>p_workspace_id) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ select * into v_member from public.memberships where workspace_id=p_workspace_id and user_id=p_user_id;
+ v_has_member=found;
+ if v_has_member and (v_member.access<>'staff' or not v_member.active) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ -- Any person of the workspace with this key or this account must be exactly
+ -- this staff member.
+ if exists(select 1 from public.people p where p.workspace_id=p_workspace_id
+  and (p.person_key=p_person_key or p.user_id=p_user_id)
+  and not (p.person_key=p_person_key and p.user_id is not distinct from p_user_id and p.name=p_name
+   and p.capabilities<@p_capabilities and p.capabilities@>p_capabilities)) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ select p.id into v_person_id from public.people p where p.workspace_id=p_workspace_id and p.person_key=p_person_key;
+ if found then
+  -- Both already exist with these values: the identical re-run.
+  if not v_has_member then
+   raise sqlstate 'VT007' using message='VALIDATION';
+  end if;
+  return v_person_id;
+ end if;
+ if v_has_member then
+  -- A staff membership with no person is not a state this function completes.
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ insert into public.memberships(workspace_id,user_id,access) values(p_workspace_id,p_user_id,'staff');
+ insert into public.people(workspace_id,person_key,name,capabilities,user_id)
+  values(p_workspace_id,p_person_key,p_name,p_capabilities,p_user_id) returning id into v_person_id;
+ return v_person_id;
+end;
+$$;
+revoke all on function vitally_private.add_staff_member(uuid,uuid,text,text,text[]) from public,anon,authenticated,service_role;
+
+-- 9. The workspace's default follow-up person (D6): the person with this key,
+-- who must be a staff member's person (`user_id` set) with `followup`. Only the
+-- default moves; open follow-ups and withdrawal notices keep their assignee,
+-- and new ones go to the new default (004, 036 and 037 read the default when
+-- they assign). Anything else is VT007 and changes nothing.
+create or replace function vitally_private.set_default_followup(p_workspace_id uuid,p_person_key text)
+returns uuid language plpgsql security definer set search_path='' as $$
+declare v_person public.people;
+begin
+ if p_workspace_id is null or p_person_key is null then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_workspace_id::text,0));
+ select * into v_person from public.people where workspace_id=p_workspace_id and person_key=p_person_key;
+ if not found or v_person.user_id is null or not ('followup'=any(v_person.capabilities)) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ update public.workspaces set default_followup_person_id=v_person.id where id=p_workspace_id;
+ return v_person.id;
+end;
+$$;
+revoke all on function vitally_private.set_default_followup(uuid,text) from public,anon,authenticated,service_role;
+
+-- 10. initialize_workspace, copied from 001 (its only definition) with three
+-- changes for D7, so a re-run succeeds once staff exist:
+--   * The re-run check `count(*)<>3` counts only unlinked people: Alex, Morgan
+--     and Sam must still be the workspace's only unlinked people, and the loop
+--     below checks each one's name and capabilities and, new, that it is
+--     unlinked. Linked staff people are ignored.
+--   * The re-run default check accepts any current default whose person has
+--     `followup`, instead of only Sam.
+--   * The default is set to Sam only for a new workspace, so a re-run never
+--     overwrites a default the roster moved.
+-- An empty presenter list is accepted, as in 001 (D6: a workspace may have staff
+-- and no presenter); the "at least one presenter or staff member" rule is the
+-- roster command's.
+create or replace function vitally_private.initialize_workspace(p_workspace_id uuid,p_presenters uuid[],p_applicants uuid[],p_bindings jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_new boolean;
+ v_person record;
+ v_existing public.people;
+ v_id uuid;
+ v_access text;
+ v_member record;
+ v_binding record;
+ v_people jsonb='{}'::jsonb;
+ v_default uuid;
+begin
+ if p_workspace_id is null or p_presenters is null or p_applicants is null or p_bindings is null or jsonb_typeof(p_bindings)<>'object' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_workspace_id::text,0));
+ if exists(select 1 from vitally_private.test_workspaces where workspace_id=p_workspace_id and test_overrides_applied) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if exists(select 1 from unnest(p_presenters||p_applicants) u where u is null) or cardinality(p_presenters||p_applicants)<>(select count(distinct u) from unnest(p_presenters||p_applicants) u) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ if exists(select 1 from unnest(p_presenters||p_applicants) u where not exists(select 1 from auth.users a where a.id=u)) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ select not exists(select 1 from public.workspaces where id=p_workspace_id) into v_new;
+ insert into public.workspaces(id) values(p_workspace_id) on conflict do nothing;
+ if not v_new and (select count(*) from public.people where workspace_id=p_workspace_id and user_id is null)<>3 then -- 038
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ for v_person in select * from (values ('alex','Alex',array['prepare']),('morgan','Morgan',array['review']),('sam','Sam',array['admin','assist','followup','receive_documents'])) x(key,name,caps) loop
+  select * into v_existing from public.people where workspace_id=p_workspace_id and person_key=v_person.key;
+  if found then
+   if v_existing.name<>v_person.name or v_existing.capabilities<>v_person.caps or v_existing.user_id is not null then -- 038
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+   v_id=v_existing.id;
+  else
+   if not v_new then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+   insert into public.people(workspace_id,person_key,name,capabilities) values(p_workspace_id,v_person.key,v_person.name,v_person.caps) returning id into v_id;
+  end if;
+  v_people=v_people||jsonb_build_object(v_person.key,v_id);
+ end loop;
+ select default_followup_person_id into v_default from public.workspaces where id=p_workspace_id;
+ if not v_new and not exists(select 1 from public.people p where p.workspace_id=p_workspace_id and p.id=v_default and 'followup'=any(p.capabilities)) then -- 038
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+ for v_member in select u as id,'presenter' as access from unnest(p_presenters) u union all select u,'applicant' from unnest(p_applicants) u loop
+  if exists(select 1 from public.memberships where user_id=v_member.id and active and workspace_id<>p_workspace_id) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+  if exists(select 1 from public.memberships where user_id=v_member.id and workspace_id=p_workspace_id and (access<>v_member.access or not active)) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+  insert into public.memberships(workspace_id,user_id,access) values(p_workspace_id,v_member.id,v_member.access) on conflict do nothing;
+ end loop;
+ for v_binding in select * from jsonb_each_text(p_bindings) loop
+  if v_binding.key not in ('preparation_ready','waiting_documents','admin_followup','review_ready','corrections_required','review_approved') or v_binding.value is null or v_binding.value !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+  if not exists(select 1 from public.memberships where workspace_id=p_workspace_id and user_id=v_binding.value::uuid and active and access='applicant') then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+  if exists(select 1 from vitally_private.fixture_client_bindings where workspace_id=p_workspace_id and fixture_key=v_binding.key and owner_user_id<>v_binding.value::uuid) then
+  raise sqlstate 'VT007' using message='VALIDATION';
+ end if;
+  insert into vitally_private.fixture_client_bindings values(p_workspace_id,v_binding.key,v_binding.value::uuid) on conflict do nothing;
+ end loop;
+ if v_new then -- 038
+  update public.workspaces set default_followup_person_id=(v_people->>'sam')::uuid where id=p_workspace_id;
+ end if; -- 038
+ return jsonb_build_object('workspaceId',p_workspace_id,'people',v_people);
+end;
+$$;
+revoke all on function vitally_private.initialize_workspace(uuid,uuid[],uuid[],jsonb) from public,anon,authenticated,service_role;
