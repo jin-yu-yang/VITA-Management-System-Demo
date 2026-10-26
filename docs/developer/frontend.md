@@ -143,7 +143,7 @@ Three rules the controller keeps:
 | Staff window, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
 | Staff window, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
-| Staff account | The same staff screens, with no persona picker: the panel says "Signed in as <name>", and the person is the account's own (its capabilities pick the volunteer or office screens). No sample reset, no checkpoints, and no "Fill fictional details" pill, including the office's Add a case. Always English |
+| Staff account | The same staff screens, with no persona picker: the sidebar and the case page header say "Signed in as <name>", and the person is the account's own (`staffScreen` in `views.mjs` picks the office screens when that person has `admin`, and the volunteer work board otherwise, exactly as for a persona). No sample reset, no checkpoints, and no "Fill fictional details" pill (a presenter-only tool, including the office's Add a case pill). Always English |
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
