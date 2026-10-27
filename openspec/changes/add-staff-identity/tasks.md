@@ -93,5 +93,5 @@ Groups 1–2 come first, and group 3 needs them. Groups 4 and 5 need group 2's m
 
 ## 7. Final checks
 
-- [ ] 7.1 Run `npm test`, `npm run build:hant -- --check`, `npm run build:intake` (nothing to commit) and `npx openspec validate --all`.
-- [ ] 7.2 Run `npm run db:migrate:test` and `npm run test:database`, then `npm run test:auth-browser` and `npm run test:browser`. Compare with the baseline taken on `main` before apply (at #97: unit 1336, database 421, browser story 77; count sign-in then), each plus the new tests, with no failures.
+- [x] 7.1 Run `npm test`, `npm run build:hant -- --check`, `npm run build:intake` (nothing to commit) and `npx openspec validate --all`.
+- [x] 7.2 Run `npm run db:migrate:test` and `npm run test:database`, then `npm run test:auth-browser` and `npm run test:browser`. Compare with the baseline taken on `main` before apply (at #97: unit 1336, database 421, browser story 77; count sign-in then), each plus the new tests, with no failures.
