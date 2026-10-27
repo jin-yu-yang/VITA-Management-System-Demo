@@ -87,7 +87,7 @@ const STAFF_CONTACT_CONFLICT_MESSAGE =
   "Someone else changed this contact. The newest version is shown — check it and try again.";
 // A staff account has no persona picker; this is only ever a staff screen's.
 const STAFF_PERSONA_MESSAGE = "A staff account always acts as its own person.";
-const LINKED_PERSONA_MESSAGE = "That person acts through their own staff account.";
+const STAFF_LINKED_PERSONA_MESSAGE = "That person acts through their own staff account.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 // What a window says when the demonstration set is rebuilt underneath it. The
@@ -1280,7 +1280,7 @@ export function createController({
   function selectPerson(id) {
     if (state.principal?.access === "staff")
       throw refuse("FORBIDDEN", STAFF_PERSONA_MESSAGE);
-    if (isLinkedPerson(id)) throw refuse("FORBIDDEN", LINKED_PERSONA_MESSAGE);
+    if (isLinkedPerson(id)) throw refuse("FORBIDDEN", STAFF_LINKED_PERSONA_MESSAGE);
     state.selectedPersonId = id ?? null;
     // Another persona has another next step, so the case page starts over.
     state.caseTab = "overview";

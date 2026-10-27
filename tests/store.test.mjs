@@ -1205,7 +1205,7 @@ test("an invisible or absent case is one NOT_FOUND", async () => {
 test("the roster and the assistance list are presenter reads", async () => {
   const presenter = createStore(fakeClient({ access: "presenter" }));
   assert.deepEqual(await presenter.listPeople(), [
-    { id: "person-alex", name: "Alex", capabilities: ["prepare"] },
+    { id: "person-alex", name: "Alex", capabilities: ["prepare"], linked: false },
   ]);
   assert.deepEqual(await presenter.listAssistance(), [
     mapAssistance(RELATED_ROWS.assistance_items[0]),
