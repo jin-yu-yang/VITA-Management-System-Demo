@@ -4,11 +4,10 @@
 -- the database can say who is acting instead of trusting a persona the browser
 -- names. `presenter` is unchanged.
 --
--- This file is built in parts. Part 1 (this section) holds the inventory below
--- and the schema. Later parts append to the same file: the `acting_person`
--- resolver and the six entry points, then the widened locks, authority check and
--- policies, then `add_staff_member`, `set_default_followup` and
--- `initialize_workspace`.
+-- The file has four parts, in this order. Part 1 is the schema, after the
+-- inventory below. Part 2 is the `acting_person` resolver and the six entry
+-- points. Part 3 is the widened locks, authority check and policies. Part 4 is
+-- `add_staff_member`, `set_default_followup` and `initialize_workspace`.
 --
 -- The 'presenter' inventory (design D5)
 -- -------------------------------------

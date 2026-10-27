@@ -310,8 +310,8 @@ contact log all name the staff member's own person.
 | `staff` | anyone else | `FORBIDDEN` |
 
 A presenter cannot act as a staff member's person: otherwise presenter mode would be a way around
-real identity in a workspace that has both. `vitally_reset_fixtures`, `vitally_load_checkpoint` and
-`seed_fixtures` stay presenter-only; a staff account gets `FORBIDDEN`.
+real identity in a workspace that has both. `vitally_reset_fixtures` and `vitally_load_checkpoint`
+stay presenter-only; a staff account gets `FORBIDDEN`. (`seed_fixtures` is private: no browser role can call it.)
 
 **The link.** `people.user_id` joins a person to the `staff` account that is that person (unique per
 workspace; the demo personas stay null). A deferred constraint trigger,
