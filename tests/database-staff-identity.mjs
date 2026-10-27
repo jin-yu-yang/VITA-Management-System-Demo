@@ -346,6 +346,45 @@ test("staff identity against real Supabase", async (t) => {
       }
     });
 
+    await t.test("a staff member's contact log entry: only its logger or an admin edits it", async () => {
+      const logCase = await f.readyCase();
+      const { contactId } = await f.logContact(riley.client, logCase, null, SAMPLE_CONTACT());
+      const versions = async () =>
+        (
+          await f.sql(
+            "select version,edited_by_person_id from public.contact_log_versions where contact_id=$1 order by version",
+            [contactId],
+          )
+        ).rows;
+      const before = await versions();
+      assert.equal(before.length, 1);
+
+      // Jordan has no `admin` capability and did not log it.
+      const refused = editContactArgs({
+        contactId,
+        revision: 1,
+        personId: null,
+        entry: { ...SAMPLE_CONTACT(), note: "Jordan's fictional edit." },
+      });
+      await refuse(f, jordan.client, "vitally_edit_contact", refused);
+      assert.deepEqual(await versions(), before, "the entry changed");
+
+      // A staff member with `admin` may, and the version names them.
+      const dana = await hire({ key: "dana", name: "Dana Ortiz", capabilities: ["admin"] });
+      const allowed = editContactArgs({
+        contactId,
+        revision: 1,
+        personId: null,
+        entry: { ...SAMPLE_CONTACT(), note: "Dana's fictional edit." },
+      });
+      const { error } = await dana.client.rpc("vitally_edit_contact", allowed);
+      assert.equal(error, null, "an admin's edit");
+      assert.equal(await receiptActor(f, allowed.p_action_id), dana.personId);
+      const after = await versions();
+      assert.equal(after.length, 2);
+      assert.equal(after[1].edited_by_person_id, dana.personId);
+    });
+
     await t.test("capabilities still apply", async () => {
       const caseId = await f.readyCase();
       await f.act(riley.client, caseId, null, "CLAIM_PREPARATION", {});
