@@ -174,6 +174,9 @@ export const mapPerson = (row) => ({
   id: row.id,
   name: row.name,
   capabilities: row.capabilities,
+  // A person a staff account has claimed acts only through that account, so a
+  // presenter may not choose them as a persona (staff identity, D9).
+  linked: row.user_id != null,
 });
 
 // Review attempts oldest first. Findings and resolutions are internal staff

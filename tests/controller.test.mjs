@@ -1065,6 +1065,42 @@ test("a presenter's selected person travels with the action", async () => {
   controller.stop();
 });
 
+test("a presenter cannot choose a person a staff account has claimed", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      { id: "alex", name: "Alex", capabilities: ["prepare"], linked: false },
+      { id: "riley", name: "Riley Park", capabilities: ["admin"], linked: true },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.throws(() => controller.selectPerson("riley"), { code: "FORBIDDEN" });
+  assert.equal(controller.getState().selectedPersonId, null);
+  controller.selectPerson("alex");
+  assert.equal(controller.getState().selectedPersonId, "alex");
+  controller.stop();
+});
+
+test("a restored persona that a staff account has since claimed is dropped", async () => {
+  const shared = fakeSession();
+  const people = [
+    { id: "alex", name: "Alex", capabilities: ["prepare"], linked: false },
+    { id: "riley", name: "Riley Park", capabilities: ["admin"], linked: false },
+  ];
+  const principal = { userId: "p1", workspaceId: "w1", access: "presenter" };
+  const first = build({ store: fakeStore({ principal, people }), sessionStorage: shared });
+  await first.controller.start();
+  first.controller.selectPerson("riley");
+  first.controller.stop();
+
+  const linked = people.map((p) => (p.id === "riley" ? { ...p, linked: true } : p));
+  const again = build({ store: fakeStore({ principal, people: linked }), sessionStorage: shared });
+  await again.controller.start();
+  assert.equal(again.controller.getState().selectedPersonId, null);
+  again.controller.stop();
+});
+
 test("a presenter opens a case on the staff workspace and claims it as the chosen person", async () => {
   const store = fakeStore({
     principal: { userId: "p1", workspaceId: "w1", access: "presenter" },

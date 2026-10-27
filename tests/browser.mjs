@@ -7295,6 +7295,19 @@ async function runPermutation(t, roles) {
         await rileyWin.context.close();
         await jordanWin.context.close();
       }
+      // The two accounts' people are claimed now, so a presenter's picker (read
+      // again on a reload) offers neither: choosing one could only be refused.
+      await staff.reload();
+      await staff.locator('[data-action="select-person"]').first().waitFor({ timeout: ARRIVAL_MS });
+      const claimed = await staff.evaluate(() =>
+        [...document.querySelectorAll('[data-action="select-person"]')].map((button) => button.textContent),
+      );
+      assert.ok(claimed.length > 0, "the presenter's picker emptied");
+      for (const name of ["Riley Park", "Jordan Lee"])
+        assert.ok(
+          !claimed.some((text) => text.includes(name)),
+          `the presenter's picker still offers ${name}`,
+        );
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {

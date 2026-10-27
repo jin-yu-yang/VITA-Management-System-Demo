@@ -68,6 +68,14 @@ test("an applicant is offered no presenter control at all", () => {
   assert.equal(renderPresenterPanel({}), "");
 });
 
+test("the persona picker leaves out a person a staff account has claimed", () => {
+  const riley = { id: "person-riley", name: "Riley Park", capabilities: ["admin"], linked: true };
+  const html = renderPresenterPanel(presenterView({ people: [...PEOPLE, riley] }));
+  assert.ok(!html.includes("Riley Park"), "no button for the linked person");
+  assert.ok(!html.includes('data-person-id="person-riley"'));
+  for (const person of PEOPLE) assert.ok(html.includes(person.name), person.name);
+});
+
 test("a presenter gets the reset, the checkpoints and the persona choice", () => {
   const html = renderPresenterPanel(presenterView());
   for (const control of PRIVILEGED) assert.ok(html.includes(control), control);

@@ -87,6 +87,7 @@ const STAFF_CONTACT_CONFLICT_MESSAGE =
   "Someone else changed this contact. The newest version is shown — check it and try again.";
 // A staff account has no persona picker; this is only ever a staff screen's.
 const STAFF_PERSONA_MESSAGE = "A staff account always acts as its own person.";
+const LINKED_PERSONA_MESSAGE = "That person acts through their own staff account.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 // What a window says when the demonstration set is rebuilt underneath it. The
@@ -923,10 +924,16 @@ export function createController({
   // `dataLoaded` is true once one whole pass has succeeded; until then a
   // refresh reads everything, not only the lists.
   let dataLoaded = false;
+  const isLinkedPerson = (id) =>
+    id != null && state.people.some((person) => person?.id === id && person.linked);
   async function loadData() {
     await loadList();
     if (staffWindow()) {
       state.people = await store.listPeople();
+      // A persona restored from this window's storage may have been claimed by
+      // a staff account since; it is dropped like a persona never chosen.
+      if (state.principal?.access === "presenter" && isLinkedPerson(state.selectedPersonId))
+        state.selectedPersonId = null;
       await loadAssistance();
       await loadWorkspace();
     } else {
@@ -1273,6 +1280,7 @@ export function createController({
   function selectPerson(id) {
     if (state.principal?.access === "staff")
       throw refuse("FORBIDDEN", STAFF_PERSONA_MESSAGE);
+    if (isLinkedPerson(id)) throw refuse("FORBIDDEN", LINKED_PERSONA_MESSAGE);
     state.selectedPersonId = id ?? null;
     // Another persona has another next step, so the case page starts over.
     state.caseTab = "overview";

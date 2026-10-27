@@ -41,7 +41,9 @@ const CONNECTION_LABELS = Object.freeze({
 // enough to tell two class workspaces apart on a projector.
 const shortWorkspace = (id) => String(id ?? "").split("-")[0] || "unknown";
 
-function personaPicker(people = [], selectedPersonId = null) {
+function personaPicker(roster = [], selectedPersonId = null) {
+  // A person a staff account has claimed is that account's alone to act as.
+  const people = roster.filter((person) => !person?.linked);
   if (!people.length) return "";
   return `<div class="persona-block"><h3 id="persona-title">Acting as</h3><p class="field-note">Choose the volunteer this window is working as. The choice is local to this window and travels with staff actions only.</p><div class="persona-row" role="group" aria-labelledby="persona-title">${people
     .map((person) =>
