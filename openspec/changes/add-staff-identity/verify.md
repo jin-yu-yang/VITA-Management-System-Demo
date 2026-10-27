@@ -70,6 +70,8 @@ Both are expected before archive. CLAUDE.md step 8 syncs them through `/opsx:arc
 - D4 assumed no workspace mixes presenters and staff. `roster.example.json` and docs/setup.md now create that mix, so the presenter's persona picker hides staff-linked people and `selectPerson` refuses them (ruling F-a, from the final review). The spec already said a presenter chooses only unlinked people.
 - D6's roster rules gained one refusal the design doesn't list: an empty capabilities list (ruling T5-a).
 
+**Resolved after verify:** design.md (D2, D3, D4, D6, D9, Risks, Migration Plan) and the sign-in spec's roster refusals now describe all three as built, so no drift remains.
+
 ---
 
 ## 5. Implementation Signal
@@ -125,6 +127,6 @@ ls docs/superpowers/specs/*.md   # 8 files
 
 ## Overall Decision
 
-- [x] ⚠️ PASS WITH WARNINGS. Ready for retrospective, archive and finish. The warnings are the three design drifts in §4, each a recorded ruling that the specs already allow; none needs an artifact change before archive.
+- [x] ✅ PASS. Ready for retrospective, archive and finish. The three design drifts first recorded in §4 were folded into design.md and the sign-in spec after verify.
 
 **Next step**: write `retrospective.md` with the ledger summary, then delete the SDD workspace. Merge `main` into the branch, run `/opsx:archive add-staff-identity`, then push and update PR #90.

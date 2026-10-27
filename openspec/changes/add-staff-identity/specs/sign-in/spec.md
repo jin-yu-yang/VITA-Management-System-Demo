@@ -70,7 +70,7 @@ The roster file SHALL accept an optional `staff` list. Each entry SHALL have an 
 - a key or address that appears twice;
 - an address that is also listed as a presenter or a client;
 - an address with an active membership in another workspace;
-- a capability outside the list above;
+- a capability outside the list above, or a staff entry with no capabilities;
 - a re-run that gives an existing staff member a different name, key or capabilities.
 
 The roster command SHALL never print an email address.

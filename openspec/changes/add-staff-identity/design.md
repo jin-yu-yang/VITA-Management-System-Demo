@@ -63,7 +63,7 @@
   - Linking several people to one presenter account: an account could still act as several people.
 
 ### D2: Link people to accounts with `people.user_id`
-- **Choice:** `people.user_id uuid null`, unique per workspace, with a composite foreign key to `memberships(workspace_id, user_id)`.
+- **Choice:** `people.user_id uuid null`, unique per workspace, with a composite foreign key to `memberships(workspace_id, user_id)`, deferrable and checked at commit so the creation function can insert in either order.
   - A deferred constraint trigger enforces, at commit, that a linked membership is `staff` and that every `staff` membership has exactly one linked person.
   - The demo people stay unlinked.
 - **Reason:**
@@ -79,23 +79,28 @@
   | Access | `p_person_id` | Result |
   | --- | --- | --- |
   | `applicant` | null | null (the client acts) |
-  | `applicant` | anything | `FORBIDDEN` (today's rule) |
+  | `applicant` | anything | passed through unchanged; the existing checks refuse it as today (`FORBIDDEN`, or `NOT_FOUND` first for a case the client can't see) |
   | `presenter` | a person in the workspace with no `user_id` | that person |
-  | `presenter` | a staff member's person, or unknown | `FORBIDDEN` |
+  | `presenter` | a staff member's person, or unknown | `FORBIDDEN`, here, before checks that used to answer `NOT_FOUND` or `VALIDATION` |
   | `staff` | null, or its own person's id | its own person |
   | `staff` | anyone else | `FORBIDDEN` |
 
 - **Reason:**
   - The receipt and digest are computed before any authority check, and `check_authority` treats a null person as the client. So the swap must happen at the top of each entry point.
   - After the swap, a staff call looks exactly like a presenter call with a valid persona. `check_authority` and every action branch then work unchanged.
+  - Passing a client's value through, instead of refusing it in the helper, keeps clients' errors exactly as before, including `NOT_FOUND` before `FORBIDDEN` on a case the client can't see.
 - **Alternatives considered:**
   - Resolving inside `check_operation_authority` only: receipts would record no actor, and a staff call sending null would be judged as the client.
   - Requiring staff to send their own id: the browser would still be claiming an identity, for no extra safety.
 
 ### D4: Presenters cannot act as staff people
-- **Choice:** the helper refuses a presenter whose `p_person_id` names a linked person.
-- **Reason:** otherwise presenter mode is a way around real identity in any workspace that has both.
-- **Alternatives considered:** allowing it in "demo" workspaces would need a workspace flag. No workspace mixes them yet, so the stricter rule costs nothing.
+- **Choice:**
+  - The helper refuses a presenter whose `p_person_id` names a linked person.
+  - In the browser, the presenter's persona picker lists only unlinked people, `selectPerson` refuses a linked one, and a restored persona that is now linked is dropped. Name lookups keep every person.
+- **Reason:**
+  - Otherwise presenter mode is a way around real identity in any workspace that has both.
+  - The example roster and docs/setup.md create workspaces with both, so the picker must not offer people a presenter can't act as.
+- **Alternatives considered:** allowing it in "demo" workspaces would need a workspace flag. Rejected: the stricter rule costs nothing a presenter needs.
 
 ### D5: Accept `staff` wherever staff behaviour is decided
 - **Choice:**
@@ -112,7 +117,7 @@
   - `presenters` becomes optional; a roster needs at least one presenter or one staff member.
   - A roster with no presenter must give `defaultFollowup`, or Sam would get follow-ups and withdrawal notices (036) that nobody can act on.
   - `roster.mjs` creates and confirms each Auth account as it does today. Then, inside `initializeWorkspace`'s transaction, it calls `vitally_private.add_staff_member(workspace, user, key, name, capabilities)` for each staff entry and `vitally_private.set_default_followup(workspace, key)` when given.
-  - `add_staff_member` inserts the `staff` membership and the linked person, or confirms both if they already exist with identical values. It refuses different values for an existing key or account, a reserved key (`alex`, `morgan`, `sam`), a membership in another workspace, and capabilities outside the known set.
+  - `add_staff_member` inserts the `staff` membership and the linked person, or confirms both if they already exist with identical values. It refuses different values for an existing key or account, a reserved key (`alex`, `morgan`, `sam`), a membership in another workspace, capabilities outside the known set, and an empty capabilities list. The roster checks the same rules first, so the operator gets a clear message before any account is created, and it de-duplicates a repeated capability.
   - `set_default_followup` refuses a person without `followup`. It moves only the default; open follow-ups keep their assignee.
 - **Reason:**
   - The roster is already how accounts exist (public sign-up is off).
@@ -134,11 +139,11 @@
 
 ### D9: The browser treats `staff` as staff with a fixed person
 - **Choice:**
-  - `contracts.mjs`: the principal's `access` adds `staff` and carries `personId`.
-  - `supabase-store.mjs`: reads the access type and the linked person; staff share `STAFF_TABLES`, subscriptions and case lists with presenters; staff calls send `p_person_id: null`; reset and checkpoint stay presenter-only.
+  - `contracts.mjs`: the principal's `access` adds `staff` and carries `personId` and `personName`.
+  - `supabase-store.mjs`: reads the access type and the linked person; staff share `STAFF_TABLES`, subscriptions and case lists with presenters; staff calls send `p_person_id: null`; reset and checkpoint stay presenter-only, and the store refuses them before any call.
   - `controller.mjs`: where today's `presenter()` decides staff behaviour, it means presenter or staff. For staff, the acting person comes from the principal, and the persona actions are refused.
   - `views.mjs` and `app.mjs`: route staff to the staff screens.
-  - `presenter-views.mjs`: for staff, shows "Signed in as <name>" and no picker, reset or checkpoints.
+  - `presenter-views.mjs`, `views.mjs` and `staff-views.mjs`: for staff, "Signed in as <name>" in the sidebar and the case page header, and a case intro that names no one being acted as; no picker, reset, checkpoints or "Fill fictional details", including the office add-case button. For presenters, the picker follows D4.
   - `window-state.mjs`: never saves a persona for staff.
   - `language.mjs`: staff screens are English.
 - **Reason:** staff use the same screens and data, and only who is acting differs. Sending null means the browser never claims an identity (D3).
@@ -155,17 +160,18 @@
 - [Risk] **A policy or check copied by hand changes a condition, or one is missed.** → Mitigation:
   - the new database suite compares the rows a staff account and a presenter can read in every staff table, and checks each public RPC as staff;
   - the `'presenter'` search (D5) records a decision for every hit;
-  - the existing database, sign-in and browser suites must pass unchanged.
+  - the existing database, sign-in and browser suites must pass; the only changed assertion is one that pins the deparsed policy text this change alters.
 - [Risk] **A redefined function is copied from a stale version and undoes a later change.** → Mitigation: copy each one from its newest `create or replace`, found by searching all migrations, and diff the copy against its source in review.
 - [Risk] **The lifecycle chain (#91, #95–#97) redefined the same functions and policies after this plan was written.** → Mitigation: copy from the newest definitions listed in Context, and recheck with a search of every migration before writing 038. Merge `main` again before archive and renumber if another branch takes 038. Keep this change's redefinitions to the minimum D3 and D5 need.
 - [Trade-off] **Two staff paths (presenter and staff) until presenter mode is removed.** → Accepted: one helper decides the acting person for every access type, so there is one place to read, and the demo keeps working.
 - [Trade-off] **Staff see every submitted case, as presenters do.** → Accepted for this round. Visibility is the next change, and no real client data is allowed before it (roadmap: sections 1, 3 and 8).
+- [Risk] **038 was only applied over its own earlier versions during development.** → Mitigation: applied once to an empty stack (001–038 from scratch) before archive, with the database and sign-in suites passing on it.
 - [Risk] **Orphaned Auth accounts after a failed roster run.** → Accepted (D8): unchanged behaviour; a re-run completes them.
 
 ## Migration Plan
 
 1. Merge `main` into the branch. Confirm `038` is still the next free migration number; renumber if not.
-2. `npm run db:migrate:test` applies `038_staff_identity.sql` to the local stack. Then run `npm run test:database`, `npm test`, `npm run test:auth-browser` and `npm run test:browser`.
+2. `npm run db:migrate:test` applies `038_staff_identity.sql` to the local stack, and once to an empty stack before archive (done 2026-10-26). Then run `npm run test:database`, `npm test`, `npm run test:auth-browser` and `npm run test:browser`.
 3. Existing workspaces need nothing:
    - no membership becomes `staff` by itself;
    - presenters and clients behave as before;
