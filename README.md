@@ -16,6 +16,38 @@ case uses invented names with no address or other routable contact detail.
 
 ## Current status
 
+### Planned vs delivered (M4)
+
+What we promised in the M1 spec (§8) and the plan since, checked against `main` on 2026-10-29.
+Rows are things a person using ViTally can see or do.
+
+| Planned | Status | Where in the app |
+| --- | --- | --- |
+| A client fills the intake form at home in English, 简体 or 繁體 | Delivered | Client intake, steps 0–9, with standard and senior wording and a language switch |
+| A client signs the consent forms (15080, 14446) and can print the 14446 | Delivered | Signatures inside the intake; "View Draft Form 14446" in English or 繁體 on the summary page |
+| A client sees their own case's progress | Delivered | Client progress page |
+| A client sees their place in the queue and their preparer's and reviewer's contact | Cut | Progress page shows the stage, not queue position or volunteer contact; moves to M5 |
+| A client starts the form without an account and gets one on submit | Shrunk | Clients sign in with a one-time email code instead of a password; only invited addresses for now |
+| The office checks new requests against a checklist | Delivered | Screening stage with screening checks on the office case page |
+| A volunteer claims a case and works it, answering a short questionnaire at each hand-off | Delivered | Work board and case pool; preparer and reviewer questionnaires |
+| A reviewer can never review their own preparation | Delivered | Enforced by the database, so no screen can skip it |
+| Every staff member signs in as themselves | Due by 10/31 | #90 (Cody), replacing the presenter's persona picker |
+| A case reaches E-filed, then Accepted or Rejected, and can be closed | Delivered | Mark e-filed, filing result (IRS and Pennsylvania), close with a reason |
+| Hold, waiting for documents, same-day signing and client withdrawal | Delivered | Waiting for documents and Hold stages, same-day signing plan, Withdraw on the client's progress page |
+| FSA (facilitated self-assistance) path | Cut | Not built; moves to M5 |
+| The office sees who is waiting and what needs attention | Shrunk | Follow-ups queue and case pool tabs; reports and charts cut to M5 |
+| An admin moves a case to a different preparer or reviewer | Cut | Not built; the database already keeps a preparer from reviewing their own case after any future move |
+| An admin posts reference materials for volunteers | Cut | Not built; moves to M5 |
+| A volunteer has a profile with certifications and contact details | Cut | Not built; depends on staff accounts (#90) |
+| A draft 13614-C is generated from the client's answers | Shrunk | Draft for staff; clients cannot print an unfinished form on purpose; the volunteer-shaded section moves to M5 |
+| An audit trail of who did what, and when | Delivered | Case history and the contact log on the staff case page |
+| Email or text notifications | Cut | Clients distrust texts from unknown numbers; needs a service beside the database |
+| Document upload | Cut | Needs private storage, scanning and retention rules first; no real client data until then |
+| Appointment scheduling | Cut | An open question in M1, never promised; the reviewer records the signing time by hand |
+| Hosted deployment for PCDC | Cut | Not a feature; the M5 target for a November pilot |
+
+### Implementation detail
+
 The full workflow described in the [approved design](docs/superpowers/specs/2026-09-15-vitally-shared-demo-design.md)
 is implemented and tested against an isolated local Supabase stack: identity and case ownership,
 every workflow action (intake through closure, documents, admin follow-up, assistance, independent
