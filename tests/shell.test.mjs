@@ -342,7 +342,7 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(draft, /writeTab\(tab, t\("draft\.preparing", \{\}, screenLang\(\)\), kind\)/);
   assert.match(draft, /writeTab\(tab, t\("draft\.failed", \{\}, screenLang\(\)\), kind\)/);
   // Only staff make a 13614-C (hide-draft-13614c-from-clients): refused before any tab opens.
-  const staffGuard = draft.search(/kind !== "14446" && [^\n]*principal\?\.access !== "presenter"[^\n]*\)\s*return/);
+  const staffGuard = draft.search(/kind !== "14446" && [^\n]*!isStaffWindow\(controller\.getState\(\)\.principal\)[^\n]*\)\s*return/);
   assert.ok(staffGuard > 0, "viewDraft refuses a 13614-C for anyone but staff");
   assert.ok(staffGuard < draft.indexOf('window.open("", "_blank")'), "before any tab opens");
   assert.match(app, /kind === "14446" \? "draft14446\.tab_title" : "draft\.tab_title"/);

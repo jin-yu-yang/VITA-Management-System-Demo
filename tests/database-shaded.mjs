@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createDatabaseFixture, applyArgs, rejected } from "./support/database-fixture.mjs";
 import { SHADED_FIELDS } from "../src/shaded-fields.mjs";
 
-const MIGRATION = new URL("../supabase/migrations/038_preparer_shaded_fields.sql", import.meta.url);
+const MIGRATION = new URL("../supabase/migrations/039_preparer_shaded_fields.sql", import.meta.url);
 const ASTRAL = "\u{1F600}"; // one character, two UTF-16 units
 
 const insertShaded = (f, caseId, fields, overrides = {}) => {

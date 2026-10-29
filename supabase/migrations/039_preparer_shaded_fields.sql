@@ -1,4 +1,4 @@
--- 038: the shaded section of Form 13614-C, filled by the preparer (OpenSpec
+-- 039: the shaded section of Form 13614-C, filled by the preparer (OpenSpec
 -- change add-preparer-13614c-fields, design D2 and D3).
 --
 --   * D3: `preparer_shaded_fields` holds one row per case: a flat, sparse jsonb
@@ -69,7 +69,8 @@ revoke all on function vitally_private.check_preparer_fields(jsonb) from public,
 
 -- ---------------------------------------------------------------------------
 -- 2. preparer_shaded_fields (D3): one row per case. Only the action RPC
--- writes it; the select policy is 033's presenter-only one.
+-- writes it; the select policy is 033's presenter-only one, widened to
+-- `staff` as 038 widened 033's own (staff see what presenters see).
 
 create table if not exists public.preparer_shaded_fields (
  id uuid primary key default gen_random_uuid(),
@@ -87,7 +88,7 @@ alter table public.preparer_shaded_fields drop constraint if exists preparer_sha
 alter table public.preparer_shaded_fields add constraint preparer_shaded_fields_fields_shape check(vitally_private.check_preparer_fields(fields));
 alter table public.preparer_shaded_fields enable row level security;
 drop policy if exists presenter_preparer_shaded_fields on public.preparer_shaded_fields;
-create policy presenter_preparer_shaded_fields on public.preparer_shaded_fields for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=preparer_shaded_fields.case_id where m.workspace_id=preparer_shaded_fields.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access='presenter' and (c.origin<>'client' or c.stage<>'draft')));
+create policy presenter_preparer_shaded_fields on public.preparer_shaded_fields for select to authenticated using(exists(select 1 from public.memberships m join public.cases c on c.workspace_id=m.workspace_id and c.id=preparer_shaded_fields.case_id where m.workspace_id=preparer_shaded_fields.workspace_id and m.user_id=(select auth.uid()) and m.active and m.access in ('presenter','staff') and (c.origin<>'client' or c.stage<>'draft')));
 revoke all on public.preparer_shaded_fields from public, anon, authenticated, service_role;
 grant select on public.preparer_shaded_fields to authenticated;
 -- Not 033's insert and update: the shape check calls check_preparer_fields,
@@ -96,7 +97,7 @@ grant select on public.preparer_shaded_fields to authenticated;
 grant select, delete on public.preparer_shaded_fields to service_role;
 
 -- Realtime, with 033's pattern: INSERT and UPDATE only, under the same RLS (a
--- presenter receives the change, an applicant never does).
+-- presenter or staff member receives the change, an applicant never does).
 do $$
 declare v_table text;
 begin
@@ -389,15 +390,15 @@ begin
      raise sqlstate 'VT007' using message='VALIDATION'; -- 035
     end; -- 035
    end loop; -- 035
-  when 'SAVE_PREPARER_FIELDS' then -- 038
-   -- The whole set, based on the version the preparer last saw (a whole number, 0 for none). -- 038
-   if vitally_private.payload_keys(p_payload)<>array['basedOnVersion','fields'] -- 038
-    or jsonb_typeof(p_payload->'basedOnVersion')<>'number' -- 038
-    or (p_payload->>'basedOnVersion') !~ '^[0-9]{1,15}$' -- 038
-    or jsonb_typeof(p_payload->'fields')<>'object' -- 038
-    or not coalesce(vitally_private.check_preparer_fields(p_payload->'fields'),false) then -- 038
-    raise sqlstate 'VT007' using message='VALIDATION'; -- 038
-   end if; -- 038
+  when 'SAVE_PREPARER_FIELDS' then -- 039
+   -- The whole set, based on the version the preparer last saw (a whole number, 0 for none). -- 039
+   if vitally_private.payload_keys(p_payload)<>array['basedOnVersion','fields'] -- 039
+    or jsonb_typeof(p_payload->'basedOnVersion')<>'number' -- 039
+    or (p_payload->>'basedOnVersion') !~ '^[0-9]{1,15}$' -- 039
+    or jsonb_typeof(p_payload->'fields')<>'object' -- 039
+    or not coalesce(vitally_private.check_preparer_fields(p_payload->'fields'),false) then -- 039
+    raise sqlstate 'VT007' using message='VALIDATION'; -- 039
+   end if; -- 039
   else raise sqlstate 'VT007' using message='VALIDATION';
  end case;
 end;
@@ -405,8 +406,9 @@ $$;
 
 
 -- ---------------------------------------------------------------------------
--- 5. check_operation_authority, verbatim from 036 with SAVE_PREPARER_FIELDS in
--- the staff-person group. Which person may is the handler's (require_case_preparer).
+-- 5. check_operation_authority, verbatim from 038 (staff identity: the guard
+-- accepts staff) with SAVE_PREPARER_FIELDS in the staff-person group, the one
+-- line marked -- 039. Which person may is the handler's (require_case_preparer).
 
 create or replace function vitally_private.check_operation_authority(p_member public.memberships,p_person_id uuid,p_type text)
 returns public.people language plpgsql security definer set search_path='' as $$
@@ -414,7 +416,7 @@ declare v_person public.people;
 begin
  -- Client actions carry no staff person; a selected one must exist in this workspace.
  if p_person_id is not null then
-  if p_member.access<>'presenter' then
+  if p_member.access not in ('presenter','staff') then
    raise sqlstate 'VT001' using message='FORBIDDEN';
   end if;
   select * into v_person from public.people where workspace_id=p_member.workspace_id and id=p_person_id;
@@ -439,7 +441,7 @@ begin
    end if;
   when 'CLAIM_PREPARATION','REQUEST_DOCUMENT','VERIFY_DOCUMENT','ESCALATE_CONTACT',
        'SUBMIT_REVIEW','RESUBMIT_REVIEW','CLAIM_REVIEW','REQUEST_CORRECTIONS',
-       'APPROVE_REVIEW','RECORD_REVIEW_CONTACT','SAVE_PREPARER_FIELDS' then -- 038
+       'APPROVE_REVIEW','RECORD_REVIEW_CONTACT','SAVE_PREPARER_FIELDS' then -- 039
    if p_person_id is null then
     raise sqlstate 'VT001' using message='FORBIDDEN';
    end if;
@@ -491,10 +493,10 @@ begin
 end;
 $$;
 
-
 -- ---------------------------------------------------------------------------
--- 6. vitally_apply_action, verbatim from 036 with the dispatch line for
--- SAVE_PREPARER_FIELDS; the grants end the section as they end 036.
+-- 6. vitally_apply_action, verbatim from 038 (staff identity: `acting_person`
+-- resolves the person first) with the dispatch line for SAVE_PREPARER_FIELDS,
+-- marked -- 039; the grants end the section as they end 038.
 
 create or replace function public.vitally_apply_action(p_action_id uuid,p_case_id uuid,p_expected_revision bigint,p_person_id uuid,p_type text,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
@@ -506,23 +508,24 @@ declare v_member public.memberships;
  v_digest text;
 begin
  v_member=vitally_private.require_membership();
+ v_person=vitally_private.acting_person(v_member,p_person_id);
  -- A malformed envelope cannot be digested or reserved; payload contents are
  -- still whitelisted at step 5, after the target and authority checks.
  if p_action_id is null or p_case_id is null or p_expected_revision is null or p_type is null
   or p_payload is null or jsonb_typeof(p_payload)<>'object' then
   raise sqlstate 'VT007' using message='VALIDATION';
  end if;
- v_digest=encode(extensions.digest(jsonb_build_object('operation',p_type,'caseId',p_case_id,'expectedRevision',p_expected_revision,'personId',p_person_id,'payload',p_payload)::text,'sha256'),'hex');
- v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,p_type,v_digest,p_person_id);
+ v_digest=encode(extensions.digest(jsonb_build_object('operation',p_type,'caseId',p_case_id,'expectedRevision',p_expected_revision,'personId',v_person.id,'payload',p_payload)::text,'sha256'),'hex');
+ v_receipt=vitally_private.reserve_receipt(v_member,p_action_id,p_type,v_digest,v_person.id);
  -- An identical accepted replay returns its receipt after the current membership
  -- and operation-authority checks, without repeating the mutation and without
  -- reaching the target, which may since have been deleted.
  if v_receipt.receipt is not null then
-  perform vitally_private.check_operation_authority(v_member,p_person_id,p_type);
+  perform vitally_private.check_operation_authority(v_member,v_person.id,p_type);
   return v_receipt.receipt;
  end if;
  v_case=vitally_private.lock_case(v_member,p_case_id);
- v_person=vitally_private.check_authority(v_member,v_case,p_person_id,p_type);
+ v_person=vitally_private.check_authority(v_member,v_case,v_person.id,p_type);
  if v_case.revision<>p_expected_revision then
   raise sqlstate 'VT003' using message='CONFLICT';
  end if;
@@ -561,18 +564,17 @@ begin
   when 'RECORD_MATERIALS' then v_outcome=vitally_private.act_record_materials(v_member,v_case,v_person,p_payload);
   when 'SET_DOCUMENT_CARD' then v_outcome=vitally_private.act_set_document_card(v_member,v_case,v_person,p_payload);
   when 'SET_DOCUMENT_GROUP' then v_outcome=vitally_private.act_set_document_group(v_member,v_case,v_person,p_payload);
-  when 'SAVE_PREPARER_FIELDS' then v_outcome=vitally_private.act_save_preparer_fields(v_member,v_case,v_person,p_payload); -- 038
+  when 'SAVE_PREPARER_FIELDS' then v_outcome=vitally_private.act_save_preparer_fields(v_member,v_case,v_person,p_payload); -- 039
   else raise sqlstate 'VT007' using message='VALIDATION';
  end case;
  return vitally_private.commit_action(v_member,v_case,v_person,p_action_id,p_type,v_outcome,v_receipt);
 end;
 $$;
-
 revoke all on function public.vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb) from public,anon,authenticated;
 grant execute on function public.vitally_apply_action(uuid,uuid,bigint,uuid,text,jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 7. apply_fixture_scenario, verbatim from 037 with the lines marked -- 038: a
+-- 7. apply_fixture_scenario, verbatim from 037 with the lines marked -- 039: a
 -- checkpoint clears the case's shaded row, and each sample that has a preparer
 -- questionnaire gets a fictional shaded row beside it.
 
@@ -593,7 +595,7 @@ declare v_alex uuid;
  v_signed boolean=p_scenario in ('review_approved','rejected','accepted');
  v_filed boolean=p_scenario in ('rejected','accepted');
  v_assignee uuid; -- 036
- v_hh int; -- 038
+ v_hh int; -- 039
 begin
  if p_scenario is null or not (p_scenario=any(vitally_private.fixture_keys())) then
   raise sqlstate 'VT007' using message='VALIDATION';
@@ -617,7 +619,7 @@ begin
  delete from public.documents where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.document_requests where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.preparation_participants where workspace_id=p_case.workspace_id and case_id=p_case.id;
- delete from public.preparer_shaded_fields where workspace_id=p_case.workspace_id and case_id=p_case.id; -- 038
+ delete from public.preparer_shaded_fields where workspace_id=p_case.workspace_id and case_id=p_case.id; -- 039
  delete from public.reviewer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.preparer_questionnaires where workspace_id=p_case.workspace_id and case_id=p_case.id;
  delete from public.reviews where workspace_id=p_case.workspace_id and case_id=p_case.id;
@@ -734,16 +736,16 @@ begin
     confirmed_by,confirmed_method,shaded_parts_completed,state_forgiveness_set,ready_for_review_on)
   values(p_case.workspace_id,p_case.id,1,v_alex,'client',
    case when v_signed then 'in_person' else 'phone' end,true,true,current_date);
-  -- The shaded section the preparer completed, with fictional values. The -- 038
-  -- household row is filled only when the sample has a household member. -- 038
-  select jsonb_array_length(c.answers->'hh') into v_hh from public.cases c where c.id=p_case.id and jsonb_typeof(c.answers->'hh')='array'; -- 038
-  insert into public.preparer_shaded_fields(workspace_id,case_id,fields,version,updated_by_person_id) -- 038
-  values(p_case.workspace_id,p_case.id, -- 038
-   jsonb_build_object('incomeW2s',true,'incomeW2sCount',1,'income1099Int',true,'income1099IntCount',1,'deductionStandard',true, -- 038
-    'incomeNotes','Fictional: one W-2 from a part-time job.') -- 038
-   || case when coalesce(v_hh,0)>=1 then jsonb_build_object('household1QualifyingChild','yes','household1OwnSupport','no', -- 038
-    'household1LowIncome','yes','household1SupportProvided','na','household1CostOfHome','yes') else '{}'::jsonb end, -- 038
-   1,v_alex); -- 038
+  -- The shaded section the preparer completed, with fictional values. The -- 039
+  -- household row is filled only when the sample has a household member. -- 039
+  select jsonb_array_length(c.answers->'hh') into v_hh from public.cases c where c.id=p_case.id and jsonb_typeof(c.answers->'hh')='array'; -- 039
+  insert into public.preparer_shaded_fields(workspace_id,case_id,fields,version,updated_by_person_id) -- 039
+  values(p_case.workspace_id,p_case.id, -- 039
+   jsonb_build_object('incomeW2s',true,'incomeW2sCount',1,'income1099Int',true,'income1099IntCount',1,'deductionStandard',true, -- 039
+    'incomeNotes','Fictional: one W-2 from a part-time job.') -- 039
+   || case when coalesce(v_hh,0)>=1 then jsonb_build_object('household1QualifyingChild','yes','household1OwnSupport','no', -- 039
+    'household1LowIncome','yes','household1SupportProvided','na','household1CostOfHome','yes') else '{}'::jsonb end, -- 039
+   1,v_alex); -- 039
  end if;
  if v_signed then
   insert into public.preparer_questionnaires(workspace_id,case_id,preparation_version,submitted_by_person_id,

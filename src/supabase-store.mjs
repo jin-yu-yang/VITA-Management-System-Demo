@@ -46,7 +46,12 @@ const STAFF_TABLES = Object.freeze([
 export const SUBSCRIBED_TABLES = Object.freeze({
   applicant: CLIENT_TABLES,
   presenter: STAFF_TABLES,
+  // Staff read exactly what presenters read (migration 038, D9).
+  staff: STAFF_TABLES,
 });
+
+// The two accesses that work cases: a presenter, and a signed-in staff member.
+const isStaffAccess = (access) => access === "presenter" || access === "staff";
 
 // INSERT and UPDATE only. A deleted row is never announced: fixture reset
 // removes cases wholesale, and a refresh is how the browser learns that.
@@ -170,6 +175,9 @@ export const mapPerson = (row) => ({
   id: row.id,
   name: row.name,
   capabilities: row.capabilities,
+  // A person a staff account has claimed acts only through that account, so a
+  // presenter may not choose them as a persona (staff identity, D9).
+  linked: row.user_id != null,
 });
 
 // Review attempts oldest first. Findings and resolutions are internal staff
@@ -369,9 +377,22 @@ export function createStore(client) {
 
   const access = async () => (await membership()).access;
 
+  // Presenter only: the demonstration's own controls.
   const requirePresenter = async () => {
     if ((await access()) !== "presenter") throw createAppError({ code: "VT001" });
   };
+
+  // Presenter or staff: the work board's reads.
+  const requireStaffAccess = async () => {
+    if (!isStaffAccess(await access())) throw createAppError({ code: "VT001" });
+  };
+
+  // The person an RPC names. A staff member names nobody: the database
+  // resolves them from the signed-in account and refuses any other id (D3).
+  // Everyone else passes the person the request carries. The one place this
+  // is decided, so no call can forget it.
+  const actingPerson = async (request) =>
+    (await access()) === "staff" ? null : (request.personId ?? null);
 
   // The action id is the server's replay key. The caller normally supplies it;
   // when it does not, one is minted and kept **on the caller's action object**,
@@ -402,11 +423,20 @@ export function createStore(client) {
       // has no access, and nothing about the workspace is revealed.
       if (!user) throw createAppError({ code: "VT001" });
       const row = await membership();
+      // A staff member is one person of the roster, linked through their
+      // account; the screens act as, and show, that person.
+      let person = null;
+      if (row.access === "staff")
+        person =
+          (await read(client.from("people").select("*").eq("user_id", user.id)))[0] ??
+          null;
       return {
         userId: user.id,
         workspaceId: row.workspace_id,
         access: row.access,
         email: user.email ?? null,
+        personId: person?.id ?? null,
+        personName: person?.name ?? null,
       };
     },
 
@@ -429,21 +459,21 @@ export function createStore(client) {
     },
 
     async listPeople() {
-      await requirePresenter();
+      await requireStaffAccess();
       return (
         await read(client.from("people").select("*").order("person_key"))
       ).map(mapPerson);
     },
 
-    // A client's list is their own cases and nothing more. A presenter's list
-    // is a work board, and a board that cannot say who is already on a case,
+    // A client's list is their own cases and nothing more. A presenter's or staff
+    // member's list is a work board, and a board that cannot say who is already on a case,
     // what is waiting on a client, or who owes somebody a call is only a list
     // of references. Those three answers, the client's phone for the masked
     // column and the reviewer's call status come from five grouped reads over
     // the same RLS-scoped tables the case screen uses — not from the rows
     // themselves, which carry no related record at all (Ruling R56).
     async listCases() {
-      const staff = (await access()) === "presenter";
+      const staff = isStaffAccess(await access());
       const cases = (
         await read(client.from("cases").select("*").order("reference"))
       ).map(mapCase);
@@ -527,7 +557,7 @@ export function createStore(client) {
     },
 
     async getCase(id) {
-      const staff = (await access()) === "presenter";
+      const staff = isStaffAccess(await access());
       const rows = await read(client.from("cases").select("*").eq("id", id));
       const row = rows[0];
       // Absent, another workspace's and another applicant's case are one
@@ -646,7 +676,7 @@ export function createStore(client) {
       return await call("vitally_create_case", {
         p_action_id: actionId(request),
         p_mode: request.mode,
-        p_person_id: request.personId ?? null,
+        p_person_id: await actingPerson(request),
         p_answers: request.answers,
       });
     },
@@ -656,7 +686,7 @@ export function createStore(client) {
         p_action_id: actionId(action),
         p_case_id: action.caseId,
         p_expected_revision: action.expectedRevision,
-        p_person_id: action.personId ?? null,
+        p_person_id: await actingPerson(action),
         p_type: action.type,
         p_payload: action.payload,
       });
@@ -666,7 +696,7 @@ export function createStore(client) {
       return await call("vitally_log_contact", {
         p_action_id: actionId(request),
         p_case_id: request.caseId,
-        p_person_id: request.personId ?? null,
+        p_person_id: await actingPerson(request),
         p_followup_id: request.followupId ?? null,
         p_entry: request.entry,
       });
@@ -676,7 +706,7 @@ export function createStore(client) {
     async closeUnsigned(request) {
       return await call("vitally_close_unsigned", {
         p_action_id: actionId(request),
-        p_person_id: request.personId ?? null,
+        p_person_id: await actingPerson(request),
         p_cases: request.cases,
         p_confirmed: request.confirmed === true,
       });
@@ -687,13 +717,13 @@ export function createStore(client) {
         p_action_id: actionId(request),
         p_contact_id: request.contactId,
         p_expected_revision: request.expectedRevision,
-        p_person_id: request.personId ?? null,
+        p_person_id: await actingPerson(request),
         p_entry: request.entry,
       });
     },
 
     async listAssistance() {
-      await requirePresenter();
+      await requireStaffAccess();
       return (
         await read(
           client
@@ -710,17 +740,19 @@ export function createStore(client) {
         p_action_id: actionId(request),
         p_item_id: request.itemId,
         p_expected_revision: request.expectedRevision,
-        p_person_id: request.personId ?? null,
+        p_person_id: await actingPerson(request),
         p_type: request.type,
         p_note: request.note ?? null,
       });
     },
 
     async resetFixtures(request) {
+      await requirePresenter();
       await call("vitally_reset_fixtures", { p_action_id: actionId(request) });
     },
 
     async loadCheckpoint(request) {
+      await requirePresenter();
       await call("vitally_load_checkpoint", {
         p_action_id: actionId(request),
         p_case_id: request.caseId,

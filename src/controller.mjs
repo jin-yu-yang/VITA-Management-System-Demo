@@ -97,6 +97,9 @@ const ASSISTANCE_CONFLICT_MESSAGE =
 const STAFF_CONTACT_GONE_MESSAGE = "This contact is no longer on screen.";
 const STAFF_CONTACT_CONFLICT_MESSAGE =
   "Someone else changed this contact. The newest version is shown — check it and try again.";
+// A staff account has no persona picker; this is only ever a staff screen's.
+const STAFF_PERSONA_MESSAGE = "A staff account always acts as its own person.";
+const STAFF_LINKED_PERSONA_MESSAGE = "That person acts through their own staff account.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
 // What a window says when the demonstration set is rebuilt underneath it. The
@@ -457,8 +460,7 @@ export function createController({
   // here.
 
   // Screens the current principal may be on, first entry first.
-  const screens = () =>
-    state.principal?.access === "presenter" ? STAFF_SCREENS : CLIENT_SCREENS;
+  const screens = () => (staffWindow() ? STAFF_SCREENS : CLIENT_SCREENS);
 
   // Where "back to the list" goes for whoever is signed in.
   const homeScreen = () => screens()[0];
@@ -471,9 +473,12 @@ export function createController({
     if (CASE_SCREENS.includes(state.screen)) state.screen = homeScreen();
   }
 
+  // A staff window has no persona of its own to keep: the collaborator drops
+  // `selectedPersonId` both ways when it is told the access.
   function persistSession() {
     if (!state.principal) return;
-    windowState.write(state.principal.userId, {
+    const { userId, access } = state.principal;
+    windowState.write(userId, {
       screen: state.screen,
       selectedCaseId: state.selectedCaseId,
       selectedPersonId: state.selectedPersonId,
@@ -486,12 +491,12 @@ export function createController({
       revealedAnswers: state.selectedCaseId
         ? { caseId: state.selectedCaseId, ids: state.revealed }
         : undefined,
-    });
+    }, { access });
   }
 
   function restoreSession() {
     const saved = state.principal
-      ? windowState.read(state.principal.userId)
+      ? windowState.read(state.principal.userId, { access: state.principal.access })
       : null;
     if (!saved) return;
     // Every field has already been checked for its shape; the screen is checked
@@ -735,14 +740,21 @@ export function createController({
     noteConnected();
   }
 
-  // Only a presenter may read the assistance table at all, so only a presenter
-  // ever asks: the adapter would refuse an applicant, and asking is already a
-  // mistake (`supabase-store.mjs`, "an applicant read never names a staff
-  // table").
+  // Two questions, kept apart (add-staff-identity, D9). `presenter()` is the
+  // demonstration's own: the persona picker, the reset and the checkpoints.
+  // `staffWindow()` is everything a staff screen does — its reads, its rules
+  // and its actions — which a presenter and a staff account share; only who
+  // is acting differs (`actingPersonId`).
   const presenter = () => state.principal?.access === "presenter";
+  const staffWindow = () =>
+    state.principal?.access === "presenter" || state.principal?.access === "staff";
 
+  // Only a staff window may read the assistance table at all, so only a staff
+  // window ever asks: the adapter would refuse an applicant, and asking is
+  // already a mistake (`supabase-store.mjs`, "an applicant read never names a
+  // staff table").
   async function loadAssistance() {
-    if (!presenter()) {
+    if (!staffWindow()) {
       state.lists.assistance = "ready";
       return;
     }
@@ -752,10 +764,11 @@ export function createController({
   }
 
   // The workspace row carries the fixture generation, which is the number the
-  // presenter panel shows and the signal a reset moves. Only a presenter has a
-  // panel, so only a presenter reads it.
+  // presenter panel shows and the signal a reset moves, and what the staff
+  // screens need of the office: the default follow-up person, the season and
+  // the intake version a new case starts at. Only a staff window reads it.
   async function loadWorkspace() {
-    if (!presenter() || !store.getWorkspace) return;
+    if (!staffWindow() || !store.getWorkspace) return;
     state.workspace = await store.getWorkspace();
     noteConnected();
     enterOfficeDraftIfNeeded();
@@ -936,15 +949,21 @@ export function createController({
     show();
   }
 
-  // Everything the first load reads (design D6): the cases, and for a
-  // presenter the people, the help requests and the workspace.
+  // Everything the first load reads (design D6): the cases, and for a staff
+  // window the people, the help requests and the workspace.
   // `dataLoaded` is true once one whole pass has succeeded; until then a
   // refresh reads everything, not only the lists.
   let dataLoaded = false;
+  const isLinkedPerson = (id) =>
+    id != null && state.people.some((person) => person?.id === id && person.linked);
   async function loadData() {
     await loadList();
-    if (state.principal?.access === "presenter") {
+    if (staffWindow()) {
       state.people = await store.listPeople();
+      // A persona restored from this window's storage may have been claimed by
+      // a staff account since; it is dropped like a persona never chosen.
+      if (state.principal?.access === "presenter" && isLinkedPerson(state.selectedPersonId))
+        state.selectedPersonId = null;
       await loadAssistance();
       await loadWorkspace();
     } else {
@@ -1287,8 +1306,13 @@ export function createController({
   }
 
   // The selected persona is a window-local view choice. It reaches the server
-  // only through `runAction`, and only for a presenter.
+  // only through `runAction`, and only for a presenter. A staff account is its
+  // own person and has no persona to choose (D9): it is refused, and nothing
+  // changes.
   function selectPerson(id) {
+    if (state.principal?.access === "staff")
+      throw refuse("FORBIDDEN", STAFF_PERSONA_MESSAGE);
+    if (isLinkedPerson(id)) throw refuse("FORBIDDEN", STAFF_LINKED_PERSONA_MESSAGE);
     state.selectedPersonId = id ?? null;
     // Another persona has another next step, so the case page starts over.
     state.caseTab = "overview";
@@ -1383,7 +1407,7 @@ export function createController({
       state.error = null;
       if (move)
         state.screen =
-          state.principal?.access === "presenter"
+          staffWindow()
             ? "staff-case"
             : next.stage === "draft"
               ? "intake"
@@ -1412,8 +1436,9 @@ export function createController({
   const SCREENING_RACES = Object.freeze(["INVALID_TRANSITION", "CONFLICT"]);
 
   function actingAdmin() {
-    if (state.principal?.access !== "presenter") return false;
-    const person = (state.people ?? []).find((entry) => entry?.id === state.selectedPersonId);
+    if (!staffWindow()) return false;
+    const acting = actingPersonId();
+    const person = (state.people ?? []).find((entry) => entry?.id === acting);
     return Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
   }
 
@@ -1427,7 +1452,7 @@ export function createController({
           actionId: newActionId(),
           caseId: record.id,
           expectedRevision: Number(record.revision),
-          personId: state.selectedPersonId,
+          personId: actingPersonId(),
           type: "START_SCREENING",
           payload: {},
         },
@@ -1557,7 +1582,7 @@ export function createController({
   // page. Without, a new office draft starts. Before the workspace row has
   // loaded, the draft starts when it arrives (`enterOfficeDraftIfNeeded`).
   async function openAddCase({ caseId = null } = {}) {
-    requirePresenter("Only a volunteer can start an assisted application.");
+    requireStaffWindow("Only a volunteer can start an assisted application.");
     if (caseId) {
       await selectCase(caseId, { navigate: false });
       state.officeDraft = false;
@@ -1662,7 +1687,7 @@ export function createController({
       !state.selectedCaseId;
     if (!state.officeDraftCaseId) {
       const receipt = await startCase(
-        { mode: "assisted", personId: state.selectedPersonId, answers: {} },
+        { mode: "assisted", personId: actingPersonId(), answers: {} },
         null,
         { select: false },
       );
@@ -2106,7 +2131,7 @@ export function createController({
           error?.code === "CONFLICT"
             ? {
                 message:
-                  state.principal?.access === "presenter"
+                  staffWindow()
                     ? STAFF_CONFLICT_MESSAGE
                     : CONFLICT_MESSAGE,
               }
@@ -2138,11 +2163,16 @@ export function createController({
       markDirty();
   }
 
-  // Who this window is acting as, for an action that carries a persona. A
-  // client acts as themselves and sends none; a presenter sends the persona it
-  // chose, and the server refuses one from anybody else anyway.
-  const actingPersonId = (personId) =>
-    presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
+  // Who this window is acting as, for an action that carries a persona, and
+  // for every staff rule about "the chosen persona" (D9). A client acts as
+  // themselves and sends none; a presenter sends the persona it chose (or the
+  // one an action names); a staff account is always its own person, whatever
+  // is passed in. The server refuses anything else anyway, and the store sends
+  // no person at all for staff.
+  function actingPersonId(personId) {
+    if (state.principal?.access === "staff") return state.principal.personId ?? null;
+    return presenter() ? (personId ?? state.selectedPersonId ?? null) : null;
+  }
 
   // The one-save-at-a-time flag, which sub-step changes, card marks, the
   // office's Save draft, a version-2 Retry and a Save all hold.
@@ -2237,7 +2267,8 @@ export function createController({
       // A client answers for themselves. The office answering for a walk-in
       // client sends its own persona: the database accepts SAVE_ANSWERS from a
       // presenter only with an `admin` person on an owner-less draft, and
-      // refuses a presenter who sends no person at all.
+      // refuses a presenter who sends no person at all. A staff account sends
+      // its linked person here too, and the store nulls it.
       personId: actingPersonId(),
       type: "SAVE_ANSWERS",
       // A save never sends an invalid value (spec §2.5): every field's
@@ -2566,7 +2597,7 @@ export function createController({
       actionId: newActionId(),
       itemId: item.id,
       expectedRevision: Number(item.revision),
-      personId: state.selectedPersonId ?? null,
+      personId: actingPersonId(),
       type,
       // A claim carries no note at all; a resolution says what was done.
       note: type === "RESOLVE" ? note : null,
@@ -2647,7 +2678,7 @@ export function createController({
       {
         actionId: newActionId(),
         caseId,
-        personId: state.selectedPersonId ?? null,
+        personId: actingPersonId(),
         followupId,
         entry,
       },
@@ -2666,7 +2697,7 @@ export function createController({
     try {
       await store.closeUnsigned({
         actionId: newActionId(),
-        personId: state.selectedPersonId ?? null,
+        personId: actingPersonId(),
         cases: cases.map(({ caseId, revision }) => ({ caseId, revision })),
         confirmed: true,
       });
@@ -2705,7 +2736,7 @@ export function createController({
         actionId: newActionId(),
         contactId: contact.id,
         expectedRevision: Number(contact.revision),
-        personId: state.selectedPersonId ?? null,
+        personId: actingPersonId(),
         entry,
       },
       (request) => store.editContact(request),
@@ -2720,10 +2751,16 @@ export function createController({
   // envelope is kept while the outcome is unknown, so pressing the button
   // again re-sends the same action id and the server answers with its stored
   // receipt instead of resetting twice. A refusal is final, so its envelope is
-  // dropped and the next attempt is a new request.
+  // dropped and the next attempt is a new request. A staff account is refused
+  // both, as a client is: they belong to the demonstration, not to staff work.
 
   function requirePresenter(message) {
     if (!presenter()) throw refuse("FORBIDDEN", message);
+  }
+
+  // Staff work, which a presenter and a staff account share (Add a case).
+  function requireStaffWindow(message) {
+    if (!staffWindow()) throw refuse("FORBIDDEN", message);
   }
 
   // Everything this window holds about the demonstration set, read again. The
@@ -2854,6 +2891,11 @@ export function createController({
   function getState() {
     return {
       ...state,
+      // The persona the screens act as: for staff, the account's own person,
+      // so every view that reads it (phone masking, "Logged by", the board's
+      // "mine") agrees with what the actions send. Never stored for staff.
+      selectedPersonId:
+        state.principal?.access === "staff" ? actingPersonId() : state.selectedPersonId,
       cases: [...state.cases],
       lists: { ...state.lists },
       people: [...state.people],

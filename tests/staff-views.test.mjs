@@ -1445,6 +1445,24 @@ test("the case header names the case, its stage and its people", () => {
   assert.match(caseHeader(staffCase(), null), /Choose a volunteer persona to act as\./);
 });
 
+test("a staff account's case header says who is signed in, a presenter's who it acts as", () => {
+  const riley = { id: "riley", name: "Riley Park", capabilities: ["prepare"] };
+  const staff = caseHeader(staffCase(), riley, { access: "staff", personId: "riley", personName: "Riley Park" });
+  assert.match(staff, /Signed in as Riley Park\./);
+  assert.doesNotMatch(staff, /Acting as/);
+  // The principal's own name stands in when the roster has not loaded yet.
+  assert.match(
+    caseHeader(staffCase(), null, { access: "staff", personId: "riley", personName: "Riley Park" }),
+    /Signed in as Riley Park\./,
+  );
+  // A presenter's header is as it was, with or without the principal.
+  const presenter = { access: "presenter" };
+  assert.equal(caseHeader(staffCase(), MORGAN, presenter), caseHeader(staffCase(), MORGAN));
+  assert.match(caseHeader(staffCase(), MORGAN, presenter), /Acting as Morgan\./);
+  assert.doesNotMatch(caseHeader(staffCase(), MORGAN, presenter), /Signed in as/);
+  assert.match(caseHeader(staffCase(), null, presenter), /Choose a volunteer persona to act as\./);
+});
+
 test("case details keep the rows the story and the office read", () => {
   const html = caseDetails(staffCase({ intakeVerified: true, lastRemindedAt: "2026-09-11T14:00:00.000Z", lastRemindedByPersonId: "sam" }));
   for (const label of ["Stage", "Preparation version", "Intake checks", "Preparer", "Reviewer", "Last reminded", "Updated"])

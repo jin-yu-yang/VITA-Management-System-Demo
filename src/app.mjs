@@ -1,7 +1,7 @@
 import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
-import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD } from "./contracts.mjs";
+import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaffWindow } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
@@ -214,7 +214,7 @@ if (!config) {
       if (state.session !== "none") return views.unreachableScreen(state);
       return client.accessScreen(state);
     }
-    if (state.principal.access === "presenter") return views.staffScreen(state);
+    if (isStaffWindow(state.principal)) return views.staffScreen(state);
     return client.clientScreen(state);
   }
 
@@ -640,7 +640,7 @@ if (!config) {
   // On a staff screen bottom right; above Add a case's bar while it is sticky
   // and on screen. Re-measured on scroll and resize while the toast shows.
   function placeToast() {
-    toastHost.classList.toggle("toast-staff", controller.getState().principal?.access === "presenter");
+    toastHost.classList.toggle("toast-staff", isStaffWindow(controller.getState().principal));
     const bar = root.querySelector(".add-case-bar");
     let lift = 0;
     if (bar && getComputedStyle(bar).position === "sticky") {
@@ -1016,6 +1016,8 @@ if (!config) {
   // is in the boxes first, then its blank answers, through the draft like the
   // client's own.
   function fillAssistedIntake() {
+    // A demo tool: a staff account never fills, even if the button appeared.
+    if (controller.getState().principal?.access !== "presenter") return;
     sampleSeed += 1;
     if (!root.querySelector("#add-case-v2-form")) {
       controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
@@ -1191,7 +1193,7 @@ if (!config) {
     if (type === "SUBMIT") {
       // The office submits an assisted application from the case workspace and
       // stays there; "progress" is a client screen and a presenter has none.
-      if (controller.getState().principal?.access === "presenter") {
+      if (isStaffWindow(controller.getState().principal)) {
         notify("success", "The application is with the office. Record the intake checks next.", by);
         return;
       }
@@ -1208,7 +1210,7 @@ if (!config) {
     // A claim opens the case that was just taken on.
     if (
       CLAIMS.includes(type) &&
-      controller.getState().principal?.access === "presenter"
+      isStaffWindow(controller.getState().principal)
     )
       controller.navigate("staff-case");
     if (receipt && STAFF_NOTICES[type]) notify("success", STAFF_NOTICES[type], by);
@@ -1627,7 +1629,7 @@ if (!config) {
 
   async function viewDraft(form, by, kind = "13614c") {
     // A client's 13614-C is half finished (hide-draft-13614c-from-clients): only staff make one.
-    if (kind !== "14446" && controller.getState().principal?.access !== "presenter") return;
+    if (kind !== "14446" && !isStaffWindow(controller.getState().principal)) return;
     const files = kind === "14446" ? FORM_14446_FILES : FORM_FILES;
     if (!Object.hasOwn(files, form)) return;
     const tab = window.open("", "_blank");

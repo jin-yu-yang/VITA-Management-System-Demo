@@ -1,5 +1,6 @@
 import { esc, icon, button, officeContact, formatClientNumber, loadingLine, confirmBody } from "./ui.mjs";
 import { viewLang } from "./language.mjs";
+import { isStaffWindow } from "./contracts.mjs";
 import { withdrawDialogBody } from "./client-views.mjs";
 import { t, sentence } from "./client-text.mjs";
 import { TOAST_ICONS } from "./toast.mjs";
@@ -137,9 +138,9 @@ export function appShell({ sidebar = "", body = "", open = true } = {}) {
 }
 
 export function page(state, body) {
-  // Presenters work in the staff frame, whose sidebar carries the brand, help
-  // and sign-out. Everyone else gets the client frame.
-  const presenter = state?.principal?.access === "presenter";
+  // Presenters and staff accounts work in the staff frame, whose sidebar
+  // carries the brand, help and sign-out. Everyone else gets the client frame.
+  const presenter = isStaffWindow(state?.principal);
   const top = presenter ? "" : clientHeader(state);
   const main = presenter ? body : `<div class="client-shell">${body}</div>`;
   return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}`;
@@ -193,6 +194,13 @@ const isAdmin = (person) =>
 // screen this persona can go to, and who this window is acting as. Screens that
 // do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
+  // A staff account is its own person and chooses no one: "Signed in as".
+  const staffAccount = state?.principal?.access === "staff";
+  const accountRow = staffAccount
+    ? `<small>Signed in as</small> <strong>${esc(person?.name ?? state.principal.personName ?? "")}</strong>`
+    : `<strong>${esc(person?.name ?? "No persona chosen")}</strong><small>${esc(
+        person ? "Acting as this volunteer" : "Choose one in the presenter controls",
+      )}</small>`;
   const onBoard = state?.screen === "staff";
   const onPool = state?.screen === "office-cases";
   const label = office ? "Follow-ups" : "Work board";
@@ -209,9 +217,7 @@ export function staffSidebar(state, person, office) {
     "open-board",
     `nav-link${onBoard ? " current" : ""}`,
     onBoard ? 'aria-current="page"' : "",
-  )}${pool}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span><strong>${esc(
-    person?.name ?? "No persona chosen",
-  )}</strong><small>${esc(person ? "Acting as this volunteer" : "Choose one in the presenter controls")}</small></span></div>${button(
+  )}${pool}</nav><div class="sidebar-account"><div class="account-row">${icon("user")}<span>${accountRow}</span></div>${button(
     `${icon("help")} Need help?`,
     "open-help",
     "text",
@@ -260,6 +266,8 @@ export function staffScreen(state) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
         person,
+        // The case header says "Signed in as" for a staff account.
+        principal: state.principal,
         busy: state.busy,
         // A dialog opened from the case page holds the only copy of the error.
         error: state.dialog ? null : state.error,
@@ -286,7 +294,10 @@ export function staffScreen(state) {
         : frame(
             "VOLUNTEER WORKSPACE",
             "One case",
-            "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+            // A staff account acts as no one but itself.
+            state.principal?.access === "staff"
+              ? "Everything this case holds, and the work you may do on it."
+              : "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
             "Back to the work board",
             renderStaffCase(record, person, ui),
           );
@@ -379,6 +390,7 @@ function addCasePage(state, person, people) {
     error: state.error,
     retryable: state.retryable,
     people,
+    demoTools: state.principal?.access === "presenter",
   });
 }
 

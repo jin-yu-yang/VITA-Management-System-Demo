@@ -346,7 +346,7 @@ const MATRIX = Object.freeze([
 // table they may read, keeps delivering.
 const INTERNAL = Object.freeze([
   {
-    // 038: the preparer's shaded section is staff work. Each attempt clears the
+    // 039: the preparer's shaded section is staff work. Each attempt clears the
     // case's row first (a delete is never published), so every attempt is a
     // fresh INSERT.
     table: "preparer_shaded_fields",

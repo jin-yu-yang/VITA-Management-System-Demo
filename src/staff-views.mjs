@@ -846,9 +846,18 @@ export function lifecycleBar(subject) {
 const namePill = (role, id, name, personId) =>
   `<span class="name-pill"><small>${role}</small> ${who(id, name, personId)}</span>`;
 
-export function caseHeader(record, person) {
+// Who this window is: a staff account is its own person and reads "Signed in
+// as" (add-staff-identity, D9); a presenter reads the persona it acts as.
+const whoThisWindowIs = (person, principal) =>
+  principal?.access === "staff"
+    ? `Signed in as ${person?.name ?? principal.personName ?? ""}.`
+    : person?.name
+      ? `Acting as ${person.name}.`
+      : CHOOSE_PERSONA;
+
+export function caseHeader(record, person, principal = null) {
   return `<section class="panel staff-header" aria-labelledby="case-title"><div class="case-title-row"><h2 id="case-title" tabindex="-1">${esc(record.reference ?? "This case")}</h2><div class="case-client-number">${esc(record.clientNumber == null ? clientNumberLabel(record) : `Client ${formatClientNumber(record.clientNumber)}`)}</div>${stageBadge(record.stage, "en", { record })}<span class="case-people">${namePill("Preparer", record.preparerId, record.preparerName, person?.id)}${namePill("Reviewer", record.reviewerId, record.reviewerName, person?.id)}</span></div>${lifecycleBar(record)}<p class="field-note">${esc(
-    person?.name ? `Acting as ${person.name}.` : CHOOSE_PERSONA,
+    whoThisWindowIs(person, principal),
   )}</p></section>`;
 }
 
@@ -2224,7 +2233,7 @@ export function renderStaffCase(caseRecord, person, ui = {}) {
   ];
   return [
     problemNotice(view),
-    caseHeader(record, person),
+    caseHeader(record, person, view.principal),
     caseTabs(panels, view.caseTab, {
       documents: (record.requests ?? []).length,
       contacts: (record.contacts ?? []).length,

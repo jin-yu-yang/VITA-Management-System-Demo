@@ -54,6 +54,8 @@ import {
   readClientPlace,
   readFixtureIndicator,
   readPersona,
+  readSignedInAs,
+  readWindowState,
   rebuiltBy,
   redactAddresses,
   resetSampleCases,
@@ -7270,6 +7272,308 @@ async function runPermutation(t, roles) {
       );
       evidence.story.seasonEndClose =
         "a held signer closed as Dismissed from Close unsigned cases…; the case left out stayed at Ready to exit; the client was told; no TaxSlayer notice";
+    });
+
+    // OpenSpec change add-staff-identity: two real staff accounts, each its own
+    // person, work one case in two engines. Neither chooses a persona; the
+    // server names whoever is signed in, and the independence rule holds
+    // between the accounts. Last before the console check, so the two new
+    // people in the roster reach no earlier phase.
+    await phase("two staff accounts work one case, each signed in as themselves", async () => {
+      // A call made from this test process (not a page wait, which has its
+      // own timeout) has no timeout of its own; a stuck one fails here by
+      // name rather than running the permutation out of time.
+      const within = async (what, promise, ms = ARRIVAL_MS * 3) => {
+        let timer = null;
+        try {
+          return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error(`${what} did not answer within ${ms} ms`)), ms);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      // Riley prepares and could review; Jordan reviews. Fictional people,
+      // fresh accounts of this run, removed with the rest by fixture.close().
+      const rileyAccount = await within(
+        "adding Riley Park",
+        fixture.database.staff({ key: "riley", name: "Riley Park", capabilities: ["prepare", "review"] }),
+      );
+      const jordanAccount = await within(
+        "adding Jordan Lee",
+        fixture.database.staff({ key: "jordan", name: "Jordan Lee", capabilities: ["review"] }),
+      );
+      const rileyActor = { key: "riley", email: rileyAccount.email, userId: rileyAccount.userId };
+      const jordanActor = { key: "jordan", email: jordanAccount.email, userId: jordanAccount.userId };
+      // A case waiting for a preparer, built through the public actions.
+      const caseId = await within("building a case ready for preparation", fixture.database.readyCase());
+      const { reference } = await caseById(fixture, caseId);
+
+      // The presenter's own screens are as they were (A presenter's screens
+      // are unchanged): the picker, the reset and the checkpoints.
+      for (const action of ["select-person", "open-reset-fixtures", "open-checkpoint"])
+        assert.ok(
+          (await staff.locator(`[data-action="${action}"]`).count()) > 0,
+          `the presenter window lost its ${action} control`,
+        );
+      assert.equal(await readSignedInAs(staff), null, "the presenter window reads as a staff account");
+
+      const rileyWin = await openWindow(staffEngine);
+      const jordanWin = await openWindow(clientEngine);
+      const riley = rileyWin.page;
+      const jordan = jordanWin.page;
+      try {
+        // A leftover persona: this window's storage says Sam before Riley
+        // signs in, as a presenter window acting as Sam would have left it.
+        await riley.evaluate(
+          ([key, personId]) => sessionStorage.setItem(key, JSON.stringify({ selectedPersonId: personId })),
+          [fixture.sessionStateKey(rileyAccount.userId), sam],
+        );
+        // Really there before the sign-in, so what follows proves it ignored.
+        assert.equal((await readWindowState(riley, rileyAccount.userId))?.selectedPersonId, sam);
+        await loginTestUser({ page: riley, actor: rileyActor, fixture, heading: WORK_BOARD_HEADING });
+        await loginTestUser({ page: jordan, actor: jordanActor, fixture, heading: WORK_BOARD_HEADING });
+        await watchAlerts(riley);
+        await watchAlerts(jordan);
+
+        // A staff member signs in: "Signed in as", no persona buttons, no
+        // reset and no checkpoint.
+        for (const [page, name] of [
+          [riley, "Riley Park"],
+          [jordan, "Jordan Lee"],
+        ]) {
+          assert.equal(await readSignedInAs(page), name);
+          const controls = await page.evaluate(() => ({
+            personas: document.querySelectorAll('[data-action="select-person"]').length,
+            actingAs: document.querySelectorAll("#persona-title").length,
+            reset: document.querySelectorAll('[data-action="open-reset-fixtures"]').length,
+            checkpoint: document.querySelectorAll('[data-action="open-checkpoint"]').length,
+          }));
+          assert.deepEqual(
+            controls,
+            { personas: 0, actingAs: 0, reset: 0, checkpoint: 0 },
+            `${name}'s window shows a presenter control`,
+          );
+        }
+        assert.equal(await readPersona(riley), null);
+        // The stored persona was never restored, and is not written back.
+        assert.equal(
+          (await readWindowState(riley, rileyAccount.userId))?.selectedPersonId,
+          undefined,
+          "Riley's window kept the leftover persona",
+        );
+        // How the staff row reads beside the board, for the design check.
+        const sidebarShot = path.join(SHOTS, `${tag}--staff-signed-in-as.png`);
+        await riley.screenshot({ path: sidebarShot });
+        evidence.screenshots.push(path.relative(ROOT, sidebarShot));
+
+        // Jordan watches the case from the board; nothing here reloads it.
+        await findOnBoard(jordan, reference);
+        await jordan.evaluate(() => {
+          window.__staffPhaseNoReload = true;
+        });
+        const jordanRow = (wanted) =>
+          waitFor(
+            jordan,
+            `Jordan's board row for ${reference} to show ${wanted}`,
+            ([ref, what]) => {
+              const row = [...document.querySelectorAll("tr.board-row")].find((tr) =>
+                tr.querySelector("button.board-reference")?.textContent.includes(ref),
+              );
+              if (!row) return false;
+              return what === "claim-review"
+                ? Boolean(row.querySelector('[data-case-action="CLAIM_REVIEW"]'))
+                : row.textContent.includes(what);
+            },
+            [reference, wanted],
+            ARRIVAL_MS,
+          );
+
+        // Riley claims and hands the case to review, as Riley — never as Sam.
+        await openCaseByReference(riley, reference);
+        // The case header says who is signed in, where a presenter's says
+        // who it acts as.
+        assert.equal(
+          (await riley.locator(".staff-header .field-note").innerText()).trim(),
+          "Signed in as Riley Park.",
+        );
+        await act(riley, "CLAIM_PREPARATION", { detail: { label: "Preparer", value: "Riley Park" } }, { caseId });
+        assert.equal((await caseById(fixture, caseId)).preparer_id, rileyAccount.personId);
+        // Live updates: the claim reaches Jordan's board without a reload.
+        await jordanRow("Riley Park");
+        await actQuestionnaire(
+          riley,
+          "SUBMIT_REVIEW",
+          () =>
+            fillPreparer(riley, {
+              confirmedBy: "other",
+              confirmedByName: "Pat Example",
+              confirmedMethod: "phone",
+              shaded: true,
+              state: true,
+              readyForReviewOn: todayIso(),
+            }),
+          { badge: "Pending review" },
+          { caseId },
+        );
+        await jordanRow("claim-review");
+        assert.equal(
+          await jordan.evaluate(() => window.__staffPhaseNoReload === true),
+          true,
+          "Jordan's window reloaded to see the case",
+        );
+
+        // A preparer who can also review: the page offers Riley no claim and
+        // says why, and the server refuses the claim sent anyway.
+        await waitForText(riley, "You prepared this case, so you cannot review it.", RENDER_MS);
+        assert.equal(await caseActionCount(riley, "CLAIM_REVIEW"), 0, "Riley is offered a review of their own case");
+        const before = await caseById(fixture, caseId);
+        const selfReviewId = randomUUID();
+        const selfReview = await within(
+          "Riley's own claim of the review",
+          rileyAccount.client.rpc(
+            "vitally_apply_action",
+            applyArgs({
+              actionId: selfReviewId,
+              caseId,
+              revision: Number(before.revision),
+              type: "CLAIM_REVIEW",
+            }),
+          ),
+        );
+        assert.ok(selfReview.error, "Riley claimed the review of a case Riley prepared");
+        assert.equal(domainCode(selfReview.error), "SELF_REVIEW");
+        assert.equal(await receiptsForActionId(fixture, selfReviewId), 0);
+        const after = await caseById(fixture, caseId);
+        assert.deepEqual(
+          { stage: after.stage, revision: after.revision, reviewer: after.reviewer_id },
+          { stage: "review_ready", revision: before.revision, reviewer: null },
+        );
+
+        // Another reviewer can claim it: Jordan, from the board row.
+        record(
+          "CLAIM_REVIEW",
+          await pressUntilEffect(jordan, {
+            press: async () => {
+              await waitForQuiet(jordan);
+              await jordan
+                .locator(`.board-row:has(button.board-reference:has-text("${reference}"))`)
+                .first()
+                .locator('[data-case-action="CLAIM_REVIEW"]')
+                .click({ timeout: CLICK_MS });
+            },
+            ready: HAS_DETAIL,
+            arg: { label: "Reviewer", value: "Jordan Lee" },
+            what: "Jordan's claimed review, in its own case workspace",
+            safeToRepeat: await unmovedSince(caseId),
+          }),
+        );
+        await waitForCaseWorkspace(jordan, reference);
+        await actQuestionnaire(
+          jordan,
+          "APPROVE_REVIEW",
+          () =>
+            fillReviewer(jordan, {
+              completedOn: todayIso(),
+              paForgiveness: "not_eligible",
+              wentOver: "yes",
+              wentOverOn: todayIso(),
+              wentOverHow: "phone",
+              signMethod: "portal",
+            }),
+          { badge: "Ready to exit" },
+          { caseId },
+        );
+        // Both staff windows are on this case's page now: each header names
+        // its own account, and neither page says "Acting as" anywhere,
+        // hidden tabs included.
+        for (const [page, name] of [
+          [riley, "Riley Park"],
+          [jordan, "Jordan Lee"],
+        ]) {
+          assert.equal(
+            (await page.locator(".staff-header .field-note").innerText()).trim(),
+            `Signed in as ${name}.`,
+          );
+          assert.equal(
+            await page.evaluate(() => /acting as/i.test(document.querySelector("#app")?.textContent ?? "")),
+            false,
+            `${name}'s page says "acting as"`,
+          );
+        }
+        const approved = await caseById(fixture, caseId);
+        assert.equal(approved.stage, "review_approved");
+        assert.equal(approved.preparer_id, rileyAccount.personId);
+        assert.equal(approved.reviewer_id, jordanAccount.personId);
+
+        // Two staff members share a case: the History tab names each for
+        // their own steps, and each step's receipt and event name the same
+        // person and account.
+        const steps = {
+          CLAIM_PREPARATION: ["Riley Park claimed preparation.", rileyAccount],
+          SUBMIT_REVIEW: ["Riley Park recorded that preparation is complete.", rileyAccount],
+          CLAIM_REVIEW: ["Jordan Lee claimed the review.", jordanAccount],
+          APPROVE_REVIEW: ["Jordan Lee approved the review.", jordanAccount],
+        };
+        await openCaseTab(jordan, "history");
+        await waitFor(
+          jordan,
+          "the internal history to name Riley Park and Jordan Lee for their steps",
+          (wanted) => {
+            const seen = [...document.querySelectorAll('[data-role="internal-history"] .timeline-item p')].map(
+              (entry) => entry.textContent.trim(),
+            );
+            return wanted.every((line) => seen.includes(line));
+          },
+          Object.values(steps).map(([line]) => line),
+          ARRIVAL_MS,
+        );
+        for (const [operation, [, account]] of Object.entries(steps)) {
+          const expected = [{ actor_user_id: account.userId, actor_person_id: account.personId }];
+          const receipts = (
+            await fixture.database.sql(
+              "select actor_user_id, actor_person_id from public.action_receipts where target_id=$1 and operation=$2",
+              [caseId, operation],
+            )
+          ).rows;
+          assert.deepEqual(receipts, expected, `the ${operation} receipt names someone else`);
+          const events = (
+            await fixture.database.sql(
+              "select actor_user_id, actor_person_id from public.case_events where case_id=$1 and action=$2",
+              [caseId, operation],
+            )
+          ).rows;
+          assert.deepEqual(events, expected, `the ${operation} event names someone else`);
+        }
+        assert.equal(
+          (await readWindowState(riley, rileyAccount.userId))?.selectedPersonId,
+          undefined,
+          "Riley's window saved a persona while working",
+        );
+        assertConsoleQuiet(rileyWin, { name: "Riley's staff window", allow: REFUSAL_LINES });
+        assertConsoleQuiet(jordanWin, { name: "Jordan's staff window", allow: REFUSAL_LINES });
+        evidence.story.staffAccounts =
+          "Riley Park (prepare, review) and Jordan Lee (review) signed in through the real form in two engines; Signed in as, no presenter controls; a leftover Sam persona ignored; Riley prepared, Jordan's board followed live, Riley's own review refused (SELF_REVIEW), Jordan claimed and approved; history, receipts and events name each";
+      } finally {
+        await rileyWin.context.close();
+        await jordanWin.context.close();
+      }
+      // The two accounts' people are claimed now, so a presenter's picker (read
+      // again on a reload) offers neither: choosing one could only be refused.
+      await staff.reload();
+      await staff.locator('[data-action="select-person"]').first().waitFor({ timeout: ARRIVAL_MS });
+      const claimed = await staff.evaluate(() =>
+        [...document.querySelectorAll('[data-action="select-person"]')].map((button) => button.textContent),
+      );
+      assert.ok(claimed.length > 0, "the presenter's picker emptied");
+      for (const name of ["Riley Park", "Jordan Lee"])
+        assert.ok(
+          !claimed.some((text) => text.includes(name)),
+          `the presenter's picker still offers ${name}`,
+        );
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {
