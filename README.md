@@ -43,7 +43,7 @@ Rows are things a person using ViTally can see or do.
 | An audit trail of who did what, and when | Delivered | Case history and the contact log on the staff case page |
 | The case records its service method: drop-off, same-day or online | Delivered | The intake's `service` answer; it drives the screening checks (identity only for online clients) and the signing plan |
 | A client gets their completed return from the app once filing is done | Cut | Not built; PCDC hands the client a paper copy when the return is marked e-filed (#97) |
-| Email or text notifications | Cut | The contact log covers day one; needs a service beside the database; after the Feb pilot |
+| Email or text notifications | Cut | Clients don't trust texts or voicemails from an unfamiliar number (site coordinator, pre-survey in `docs/spec.md` §4); the contact log covers day one; needs a service beside the database; after the Feb pilot |
 | Document upload | Cut | Not reached by the Oct 29 gate; needs private storage, scanning and retention rules first (Feb roadmap); meanwhile online clients send documents to PCDC's own storage and the case keeps the link |
 | Appointment scheduling | Cut | An open question in M1, never promised; the reviewer records the signing time by hand |
 | Hosted deployment for PCDC | Cut | Not a feature; the target is the **February PCDC pilot** (Dec–Jan work: hosting, real accounts, backup-restore drill, security review); why it moved from November is in `docs/m4-tradeoffs.md` |
