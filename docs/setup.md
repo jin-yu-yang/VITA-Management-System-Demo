@@ -200,6 +200,17 @@ automated fixtures provision many independent password sessions from one loopbac
 single run — this override must never be copied to a classroom/hosted project, which keeps the
 CLI/hosted default).
 
+**The sign-in email must carry the code.** The CLI's default Magic Link template sends a link and
+no code, so the sign-in form, which asks for a code, cannot be used, and only the automated suites
+(which read the code through the admin API) would work. Copy the example's
+`[auth.email.template.magic_link]` section into the stack's `config.toml` and put the template file
+it names next to it: copy this repository's
+[`supabase/templates/magic_link.html`](../supabase/templates/magic_link.html) (one line,
+`<p>Your ViTally code is {{ .Token }}</p>`) to `$VITALLY_STACK/supabase/templates/magic_link.html`.
+A stack that is already running picks the template up after `supabase stop` (without
+`--no-backup`, which would delete its accounts) and `supabase start`. The hosted project needs the
+same template, set in its dashboard ([section 6](#6-classroom-and-hosted-setup-pending)).
+
 `supabase init` writes the CLI's default ports: API 54321, PostgreSQL 54322, mail catcher web UI
 54324, and so on. Keep them if nothing else on this machine uses them, or change every enabled
 service's port in the stack's `config.toml` to an unused set, such as the one below that this
