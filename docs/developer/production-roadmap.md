@@ -46,6 +46,15 @@ get the staff screens without the persona picker or demo tools, and staff-only w
   `receive_documents`, `assist`), and decide who may grant them. Today a roster entry sets a staff
   member's capabilities once; changing them, or deactivating a staff member, is not built, and
   there is no admin screen.
+- **One person, two workspaces** ([#104](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/104)).
+  The screens are chosen by the acting person's capabilities (ruling R55): `admin` gets the office
+  workspace, everyone else the preparation/review one. A presenter switches persona to move between
+  them; a staff account is one person and cannot. So a staff member with `admin` and `prepare` or
+  `review` — PCDC's site coordinator, who runs the office and also reviews — reaches only the office
+  workspace and never sees *Claim review*. Found on 2026-10-30 rehearsing with real accounts; the
+  rehearsal gives the reviewer `review` alone. Needed on day 1 of the pilot: a switch between the two
+  workspaces for such a person (a view change; the database already checks every action), decided
+  together with the role mapping above.
 - **Presenter removal.** Presenter access, the persona picker and `p_person_id` stay for the
   classroom demonstration. Once the demo no longer needs them (§5), remove them and rename or split
   the remaining access into real roles.
