@@ -135,6 +135,13 @@ To build next:
   ([database recipe](database.md#add-a-workflow-action)). Waiting for documents, Hold, the
   unreachable client and client withdrawal are built (036). The IRS's answer after e-filing
   (accepted, rejected, paper) is built, recorded by hand; importing the real answers is not.
+- **The signing method, asked at the right moment**
+  ([#106](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/106)). The reviewer
+  questionnaire requires how the client will sign Form 8879 even when the reviewer answered No to
+  going over the return with them; nobody can know it before that conversation. The go-over
+  follow-up's resolution is where the office learns it, so ask it there and choose the signing-plan
+  client text then. Changes `APPROVE_REVIEW`'s validation, `RESOLVE_FOLLOWUP`'s payload and the
+  client text. Found on 2026-10-30 rehearsing the demo; PCDC's own practice.
 - **Release and reassignment** (spec §8.5, §13), not built: an admin action to change a case's preparer or
   reviewer. The participation record must still block self-review after reassignment; the database
   already enforces that.
