@@ -37,12 +37,13 @@ import {
   mayEditContact,
   taskContacts,
   outcomeGroup,
+  shadedPanel,
 } from "../src/staff-views.mjs";
 import { contactSummary, contactEntryFromForm, nowInput } from "../src/contact-log.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 import { CONTACT_FIELDS, MATERIALS_ITEMS } from "../src/intake-catalogue.mjs";
 import { describeStage } from "../src/domain.mjs";
-import { CASE_ACTIONS } from "../src/contracts.mjs";
+import { CASE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD } from "../src/contracts.mjs";
 
 // The staff screens are pure functions of one record and one persona, so these
 // tests operate on the HTML string itself. No DOM library, and nothing here may
@@ -1442,6 +1443,24 @@ test("the case header names the case, its stage and its people", () => {
   assert.match(html, /Reviewer<\/small> <strong class="you">You<\/strong>/);
   assert.match(html, /Acting as Morgan\./);
   assert.match(caseHeader(staffCase(), null), /Choose a volunteer persona to act as\./);
+});
+
+test("a staff account's case header says who is signed in, a presenter's who it acts as", () => {
+  const riley = { id: "riley", name: "Riley Park", capabilities: ["prepare"] };
+  const staff = caseHeader(staffCase(), riley, { access: "staff", personId: "riley", personName: "Riley Park" });
+  assert.match(staff, /Signed in as Riley Park\./);
+  assert.doesNotMatch(staff, /Acting as/);
+  // The principal's own name stands in when the roster has not loaded yet.
+  assert.match(
+    caseHeader(staffCase(), null, { access: "staff", personId: "riley", personName: "Riley Park" }),
+    /Signed in as Riley Park\./,
+  );
+  // A presenter's header is as it was, with or without the principal.
+  const presenter = { access: "presenter" };
+  assert.equal(caseHeader(staffCase(), MORGAN, presenter), caseHeader(staffCase(), MORGAN));
+  assert.match(caseHeader(staffCase(), MORGAN, presenter), /Acting as Morgan\./);
+  assert.doesNotMatch(caseHeader(staffCase(), MORGAN, presenter), /Signed in as/);
+  assert.match(caseHeader(staffCase(), null, presenter), /Choose a volunteer persona to act as\./);
 });
 
 test("case details keep the rows the story and the office read", () => {
@@ -2958,4 +2977,172 @@ test("a season-end close reads as one", () => {
     }),
     "Sam closed the case at season end · Dismissed.",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The shaded section (change add-preparer-13614c-fields, design D4 and D8)
+// ---------------------------------------------------------------------------
+
+test("shaded tools only for the case's preparer at the two stages", () => {
+  for (const stage of ["preparing", "corrections_required"]) {
+    const rights = staffEligibility(staffCase({ stage }), ALEX);
+    assert.deepEqual(rights.shadedSection, { allowed: true, reason: "" }, stage);
+    const html = renderStaffCase(staffCase({ stage }), ALEX);
+    assert.match(html, /data-action="download-shaded-copy"[^>]*>(?:<svg.*?<\/svg>)? Download to fill elsewhere<\/button>/, stage);
+    // The editor first, with download / upload always beside it (D7, D8).
+    assert.match(html, /data-action="open-shaded-editor"[^>]*>(?:<svg.*?<\/svg>)? Fill the shaded section<\/button>/, stage);
+    assert.ok(html.indexOf("open-shaded-editor") < html.indexOf("download-shaded-copy"), stage);
+    assert.match(html, /Chrome and Edge 125 or later, Firefox ESR or later, and Safari 18 or later/, stage);
+    assert.match(html, /<input type="file" id="shaded-upload" accept="application\/pdf" data-action="upload-shaded-copy"/, stage);
+    assert.match(html, /<label[^>]*for="shaded-upload"[^>]*>(?:<svg.*?<\/svg>)? Upload the filled copy<\/label>/, stage);
+  }
+  // Refused with the preparationWork sentences otherwise.
+  const refusals = [
+    [staffCase({ stage: "review_ready" }), ALEX],
+    [staffCase({ stage: "reviewing", reviewerId: "morgan" }), ALEX],
+    [staffCase({ stage: "on_hold" }), ALEX],
+    [staffCase({ stage: "preparing" }), MORGAN],
+    [staffCase({ stage: "corrections_required", reviewerId: "morgan" }), MORGAN],
+    [staffCase({ stage: "preparing" }), { id: "casey", name: "Casey", capabilities: ["prepare"] }],
+    [staffCase({ stage: "preparing", preparerId: null, participants: [] }), ALEX],
+    [staffCase({ stage: "preparing" }), null],
+  ];
+  for (const [record, person] of refusals) {
+    const rights = staffEligibility(record, person);
+    assert.equal(rights.shadedSection.allowed, false, `${record.stage} ${person?.id}`);
+    assert.deepEqual(rights.shadedSection, rights.preparationWork);
+    const html = renderStaffCase(record, person);
+    assert.doesNotMatch(html, /download-shaded-copy|upload-shaded-copy|open-shaded-editor/);
+    assert.match(html, /aria-labelledby="shaded-title"/, "the panel says why, in place");
+    assert.ok(html.includes(rights.preparationWork.reason.replace("'", "&#39;")), rights.preparationWork.reason);
+  }
+});
+
+test("the shaded panel says Saved and its upload error in place, with Dismiss only", () => {
+  const record = staffCase({
+    preparerShadedFields: [{ caseId: "case-a", fields: { incomeW2s: true }, version: 2 }],
+  });
+  const saved = renderStaffCase(record, ALEX, { shadedStatus: { caseId: "case-a", text: "Saved" } });
+  assert.match(saved, /id="shaded-status"[^>]*>Saved</);
+  // Another case's Saved is not this case's.
+  assert.doesNotMatch(
+    renderStaffCase(record, ALEX, { shadedStatus: { caseId: "case-b", text: "Saved" } }),
+    /id="shaded-status"[^>]*>Saved</,
+  );
+  const error = { code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: "shaded-upload" };
+  const html = renderStaffCase(record, ALEX, { error, retryable: true, shadedStatus: { caseId: "case-a", text: "Saved" } });
+  // Once, beside the upload control, and not at the top of the page.
+  assert.equal(html.match(/role="alert"/g).length, 1);
+  assert.match(html, /<div class="notice error" role="alert" id="shaded-upload-error">.*This file isn&#39;t a PDF the editor can read\./);
+  const panel = html.slice(html.indexOf('aria-labelledby="shaded-title"'));
+  assert.match(panel, /id="shaded-upload-error"/);
+  assert.match(panel, /<input type="file"[^>]*aria-describedby="shaded-upload-error"/);
+  assert.match(panel, /data-action="dismiss-error"/);
+  assert.doesNotMatch(panel.slice(0, panel.indexOf("</section>")), /retry-action/, "Dismiss only");
+  assert.doesNotMatch(html, /id="shaded-status"[^>]*>Saved</, "the error replaces Saved");
+  // A copy that couldn't be made says so, in its own words, and offers no
+  // control it doesn't have.
+  const download = renderStaffCase(record, ALEX, {
+    error: { code: "DRAFT", message: "The copy could not be made. Press Download to fill elsewhere again.", place: SHADED_UPLOAD },
+  });
+  assert.match(download, /id="shaded-upload-error">.*<h3>The copy was not downloaded<\/h3><p>The copy could not be made\. Press Download to fill elsewhere again\.<\/p>/);
+  assert.doesNotMatch(download, /The filled copy was not saved|retry-action/);
+  // Any other error stays at the top of the page, as before.
+  const other = renderStaffCase(record, ALEX, { error: { code: "SERVER_ERROR", message: "Something went wrong." } });
+  assert.doesNotMatch(other, /id="shaded-upload-error"/);
+  assert.match(other, /That step did not go through/);
+});
+
+test("an editor that couldn't be opened is said in the shaded panel, with Try again and Dismiss", () => {
+  assert.equal(SHADED_EDITOR, "shaded-editor");
+  const record = staffCase({});
+  const error = {
+    code: "EDITOR",
+    message: "The editor could not be opened. Try again, or use Download to fill elsewhere.",
+    place: SHADED_EDITOR,
+  };
+  const html = renderStaffCase(record, ALEX, { error, retryable: true });
+  // Once, in the panel, not at the top of the page.
+  assert.equal(html.match(/role="alert"/g).length, 1);
+  assert.doesNotMatch(html, /That step did not go through/);
+  const panel = html.slice(html.indexOf('aria-labelledby="shaded-title"'));
+  const own = panel.slice(0, panel.indexOf("</section>"));
+  assert.match(
+    own,
+    /<div class="notice error" role="alert" id="shaded-editor-error">.*<h3>The editor did not open<\/h3><p>The editor could not be opened\. Try again, or use Download to fill elsewhere\.<\/p>/,
+  );
+  assert.match(own, /data-action="retry-action"/);
+  assert.match(own, /data-action="dismiss-error"/);
+  // The download and upload tools are still offered beside it.
+  assert.match(own, /data-action="download-shaded-copy"/);
+  assert.match(own, /data-action="upload-shaded-copy"/);
+  assert.match(own, /data-action="open-shaded-editor"/);
+  assert.doesNotMatch(own, /id="shaded-upload-error"/);
+});
+
+test("history names changed fields", () => {
+  assert.equal(EVENT_SENTENCES.SAVE_PREPARER_FIELDS, "saved the shaded section");
+  assert.equal(
+    historySentence({ action: "SAVE_PREPARER_FIELDS", actorName: "Alex", detail: { changed: ["incomeW2sCount", "incomeNotes"] } }),
+    "Alex saved the shaded section · W-2s #, Income notes.",
+  );
+  assert.equal(
+    historySentence({ action: "SAVE_PREPARER_FIELDS", actorName: "Alex", detail: { changed: [] } }),
+    "Alex saved the shaded section · no fields changed.",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The shaded panel's Preview hint and review box (change guard-shaded-upload-against-preview)
+// ---------------------------------------------------------------------------
+
+const shadedFor = (ui = {}, record = staffCase({ stage: "preparing" })) =>
+  shadedPanel(record, staffEligibility(record, ALEX), ui);
+const review = (values, preview = false, caseId = staffCase().id) => ({ shadedReview: { caseId, values, version: 1, preview } });
+
+test("the download note", () => {
+  const html = shadedFor();
+  assert.match(
+    html,
+    /Download to fill elsewhere<\/button><p class="field-note shaded-download-note">Open it in Chrome or the free Adobe Acrobat Reader, not macOS Preview\.<\/p>/,
+  );
+});
+
+test("the review box", () => {
+  const html = shadedFor(review({ infoNotes: "n", infoLastReturnAvailable: true, household1OwnSupport: "yes" }));
+  assert.match(html, /<div class="shaded-review" role="region" aria-labelledby="shaded-review-title">/);
+  assert.match(html, /<h3 id="shaded-review-title" tabindex="-1">Check what was read from this copy<\/h3>/);
+  assert.match(html, /<p>3 filled fields:<\/p>/);
+  assert.match(html, /<span class="shaded-review-value">ticked<\/span>/);
+  assert.match(html, /data-action="confirm-shaded-review"[^>]*>Save these values<\/button>/);
+  assert.match(html, /data-action="cancel-shaded-review"[^>]*>Cancel<\/button>/);
+  assert.doesNotMatch(html, /id="shaded-upload"/);
+  const labels = [...html.matchAll(/shaded-review-label">([^<]*)</g)].map((m) => m[1]);
+  assert.equal(labels.length, 3);
+  assert.ok(labels[0].startsWith("Row 1"), labels[0]);
+  assert.match(shadedFor(review({ infoNotes: "n" })), /<p>1 filled field:<\/p>/);
+});
+
+test("review rows escape and keep line breaks", () => {
+  const html = shadedFor(review({ infoNotes: "<b>x</b>\nline 2" }));
+  assert.match(html, /<span class="shaded-review-value">&lt;b&gt;x&lt;\/b&gt;\nline 2<\/span>/);
+  assert.doesNotMatch(html, /<b>x/);
+});
+
+test("the Preview line", () => {
+  const warn = "This copy was saved by macOS Preview, which can drop or change values. Check them before saving.";
+  assert.ok(shadedFor(review({ infoNotes: "n" }, true)).includes(`<p class="shaded-review-warning">${warn}</p>`));
+  assert.ok(!shadedFor(review({ infoNotes: "n" }, false)).includes(warn));
+});
+
+test("a review for another case isn't shown", () => {
+  const html = shadedFor(review({ infoNotes: "n" }, false, "some-other-case"));
+  assert.doesNotMatch(html, /shaded-review"/);
+  assert.match(html, /id="shaded-upload"/);
+});
+
+test("busy disables the review buttons; a refused viewer sees no review", () => {
+  assert.match(shadedFor({ ...review({ infoNotes: "n" }), busy: true }), /confirm-shaded-review"[^>]*disabled/);
+  const record = staffCase({ stage: "review_ready" });
+  assert.doesNotMatch(shadedFor(review({ infoNotes: "n" }), record), /shaded-review"/);
 });

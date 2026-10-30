@@ -54,6 +54,8 @@ import {
   readClientPlace,
   readFixtureIndicator,
   readPersona,
+  readSignedInAs,
+  readWindowState,
   rebuiltBy,
   redactAddresses,
   resetSampleCases,
@@ -1319,6 +1321,272 @@ async function runPermutation(t, roles) {
         assert.deepEqual(stray, [], "the staff draft fetched a font");
       }
       evidence.story.staffDraft = staffDraft;
+
+      // ---- The 13614-C shaded section: download, fill elsewhere, upload --
+      // (change add-preparer-13614c-fields, design D8). The copy is filled
+      // here with npm pdf-lib, as another PDF program would, and uploaded
+      // from a buffer: nothing reaches the server but the values.
+      const shadedTools = staff.locator("#case-panel-intake .shaded-panel");
+      await waitForQuiet(staff);
+      const downloaded = staff.waitForEvent("download", { timeout: ARRIVAL_MS });
+      await shadedTools.locator('[data-action="download-shaded-copy"]').click({ timeout: CLICK_MS });
+      const download = await downloaded;
+      const copy = await PDFDocument.load(await readFile(await download.path()));
+      assert.ok(
+        String(copy.getKeywords() ?? "").split(/\s+/).includes(`case:${classCase.reference}`),
+        "the editing copy does not carry the case's reference",
+      );
+      const copyForm = copy.getForm();
+      assert.equal(copyForm.getFields().length, 106, "the editing copy does not keep exactly the 106 shaded fields");
+      copyForm.getCheckBox("form1[0].page2[0].incomeIncluded[0].formW2s[0]").check();
+      copyForm.getTextField("form1[0].page2[0].incomeIncluded[0].formW2sNumber[0]").setText("2");
+      const filledCopy = Buffer.from(await copy.save());
+      // First, a file that is not a PDF: refused in place, nothing saved.
+      await waitForQuiet(staff);
+      await shadedTools
+        .locator('input[type="file"][data-action="upload-shaded-copy"]')
+        .setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a pdf") });
+      await waitFor(
+        staff,
+        "the not-a-PDF refusal beside the upload control",
+        () =>
+          document.querySelector("#case-panel-intake .shaded-panel #shaded-upload-error")?.textContent.includes(
+            "This file isn't a PDF the editor can read.",
+          ) ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        await staff.evaluate(
+          () =>
+            document.querySelectorAll('[role="alert"]').length === 1 &&
+            !document.querySelector(".problem-banner") &&
+            !(document.querySelector("#toast")?.textContent ?? "").includes("PDF"),
+        ),
+        true,
+        "the upload refusal was said somewhere else too",
+      );
+      assert.equal(
+        (await fixture.database.sql("select 1 from public.preparer_shaded_fields where case_id=$1", [classCase.id])).rows.length,
+        0,
+        "a refused upload saved something",
+      );
+      await shadedTools.locator('[data-action="dismiss-error"]').click({ timeout: CLICK_MS });
+      await waitForQuiet(staff);
+      await shadedTools
+        .locator('input[type="file"][data-action="upload-shaded-copy"]')
+        .setInputFiles({ name: "13614-C-filled.pdf", mimeType: "application/pdf", buffer: filledCopy });
+      await waitFor(
+        staff,
+        "the review of what was read from the copy",
+        () =>
+          document.querySelector("#case-panel-intake .shaded-review h3")?.textContent.trim() ===
+          "Check what was read from this copy",
+        undefined,
+        ARRIVAL_MS,
+      );
+      const reviewText = await staff.evaluate(() => {
+        const box = document.querySelector("#case-panel-intake .shaded-review");
+        return {
+          count: box?.querySelector("p")?.textContent.trim(),
+          rows: [...(box?.querySelectorAll("li") ?? [])].map((li) => li.textContent.replace(/\s+/g, " ").trim()),
+        };
+      });
+      assert.equal(reviewText.count, "2 filled fields:", "the review does not count the two filled fields");
+      assert.deepEqual(reviewText.rows, ["W-2s: ticked", "W-2s #: 2"], "the review rows do not match what the copy holds");
+      assert.equal(
+        (await fixture.database.sql("select 1 from public.preparer_shaded_fields where case_id=$1", [classCase.id])).rows.length,
+        0,
+        "the upload saved before the preparer confirmed",
+      );
+      assert.ok(
+        ((await shadedTools.locator(".shaded-download-note").textContent()) ?? "").includes("not macOS Preview"),
+        "the Preview hint is not beside the Download button",
+      );
+      await staff.locator('#case-panel-intake [data-action="confirm-shaded-review"]').click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "Saved beside the upload control",
+        () => document.querySelector("#case-panel-intake #shaded-status")?.textContent.trim() === "Saved",
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal(
+        await staff.evaluate(() => document.activeElement?.id),
+        "shaded-upload",
+        "focus did not return to the upload control after Save these values",
+      );
+      const shadedRow = (
+        await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [classCase.id])
+      ).rows;
+      assert.deepEqual(
+        shadedRow.map((row) => ({ fields: row.fields, version: Number(row.version) })),
+        [{ fields: { incomeW2s: true, incomeW2sCount: 2 }, version: 1 }],
+      );
+      await openCaseTab(staff, "history");
+      await waitFor(
+        staff,
+        "the shaded save in the internal history",
+        () =>
+          document
+            .querySelector('#case-panel-history [data-role="internal-history"]')
+            ?.textContent.includes("Alex saved the shaded section · W-2s, W-2s #.") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.doesNotMatch(
+        (await staff.locator('#case-panel-history [data-role="client-history"]').textContent()) ?? "",
+        /shaded/i,
+        "the client's history names the shaded section",
+      );
+      await openCaseTab(staff, "intake");
+      // The English draft prints the saved count on page 2 and the new stamp.
+      let shadedDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      // Page 1's "Yes" strings before the editor's save, to count the new one.
+      let shadedYesBefore = null;
+      if (roles.staff === "chrome") {
+        await waitForQuiet(staff);
+        const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
+        const popup = await opened;
+        const bytes = await draftBytes(popup);
+        await popup.close();
+        const page2 = await draftPageText(bytes, 1);
+        const page1 = await draftPageText(bytes, 0);
+        assert.ok(page2.strings.includes("2"), `page 2 of the English draft does not print 2: ${JSON.stringify(page2.strings)}`);
+        assert.ok(
+          page1.strings.some((text) => text.includes("online answers and preparer entries")),
+          `the English draft's stamp does not name the preparer entries: ${JSON.stringify(page1.strings)}`,
+        );
+        shadedDraft = "page 2 prints 2; the stamp names the preparer entries";
+        shadedYesBefore = page1.strings.filter((text) => text === "Yes").length;
+      }
+      evidence.story.shadedSection = { saved: "Saved", draft: shadedDraft };
+
+      // ---- The 13614-C shaded section: the editor (design D7) ----------
+      // The same copy in the pdf.js layer beside #app: only the shaded
+      // fields are fields, Save keeps it open, and Escape with an unsaved
+      // change asks first. Selectors are the spike's (tasks 1.3).
+      const ROW1_CHILD = "form1[0].page1[0].namesOf[0].Row1[0].qualifyingChildDependent[0]";
+      const W2S = "form1[0].page2[0].incomeIncluded[0].formW2s[0]";
+      const W2S_COUNT = "form1[0].page2[0].incomeIncluded[0].formW2sNumber[0]";
+      const INCOME_NOTES = "form1[0].page2[0].IncomeIncludedComment[0].IncomeIncludedComments[0]";
+      const EDITOR_NOTE = "Fictional note: the second W-2 is from a summer job.";
+      const editorField = (name) => staff.locator(`.shaded-editor [name="${name}"]`);
+      const editorButton = (which) => staff.locator(`.shaded-editor [data-editor="${which}"]`);
+      await waitForQuiet(staff);
+      await shadedTools.locator('[data-action="open-shaded-editor"]').click({ timeout: CLICK_MS });
+      // The pages are drawn one after another: wait for all of them.
+      await staff.locator('.shaded-editor[data-ready="true"]').waitFor({ timeout: ARRIVAL_MS });
+      assert.equal(
+        await staff.evaluate(
+          () =>
+            document.querySelector("#app").inert &&
+            document.querySelector('body > .shaded-editor[role="dialog"][aria-modal="true"]') !== null,
+        ),
+        true,
+        "the editor is a modal layer beside an inert #app",
+      );
+      assert.equal(
+        await staff.locator(".shaded-editor .annotationLayer :is(input, textarea, select)").count(),
+        106,
+        "the editor offers other fields than the 106 shaded ones",
+      );
+      assert.equal(await editorButton("save").isDisabled(), true, "Save is offered before any change");
+      // The saved section is what the editor opens on.
+      assert.equal(await editorField(W2S).isChecked(), true);
+      assert.equal(await editorField(W2S_COUNT).inputValue(), "2");
+      await editorField(ROW1_CHILD).fill("Yes");
+      await editorField(W2S).check();
+      await editorField(W2S_COUNT).fill("2");
+      await editorField(INCOME_NOTES).fill(EDITOR_NOTE);
+      await editorField(INCOME_NOTES).press("Escape");
+      await waitFor(
+        staff,
+        "the editor asks before Escape discards a change",
+        () => document.querySelector(".shaded-editor-confirm:not([hidden])")?.textContent.includes("Discard your changes?") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      await editorButton("keep").click({ timeout: CLICK_MS });
+      assert.equal(await editorField(ROW1_CHILD).inputValue(), "Yes", "keeping the edits lost one");
+      await editorButton("save").click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "Saved in the editor",
+        () => document.querySelector(".shaded-editor #shaded-editor-status")?.textContent.trim() === "Saved",
+        undefined,
+        ARRIVAL_MS,
+      );
+      assert.equal(await staff.locator(".shaded-editor").count(), 1, "the editor closed on Save");
+      assert.equal(await editorButton("save").isDisabled(), true, "Save is offered again before a new change");
+      assert.deepEqual(
+        (
+          await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [classCase.id])
+        ).rows.map((row) => ({ fields: row.fields, version: Number(row.version) })),
+        [
+          {
+            fields: { household1QualifyingChild: "yes", incomeW2s: true, incomeW2sCount: 2, incomeNotes: EDITOR_NOTE },
+            version: 2,
+          },
+        ],
+      );
+      // Nothing unsaved: Close closes, and the keyboard is back on the button.
+      await editorButton("close").click({ timeout: CLICK_MS });
+      await waitFor(
+        staff,
+        "the editor closed, with the keyboard on Fill the shaded section",
+        () =>
+          !document.querySelector(".shaded-editor") &&
+          !document.querySelector("#app").inert &&
+          document.activeElement?.dataset?.action === "open-shaded-editor",
+        undefined,
+        ARRIVAL_MS,
+      );
+      await openCaseTab(staff, "history");
+      await waitFor(
+        staff,
+        "the editor's save in the internal history",
+        () =>
+          document
+            .querySelector('#case-panel-history [data-role="internal-history"]')
+            ?.textContent.includes("Alex saved the shaded section · Row 1: Qualifying child or dependent, Income notes.") ?? false,
+        undefined,
+        ARRIVAL_MS,
+      );
+      await openCaseTab(staff, "intake");
+      // The English draft prints the editor's values and the preparer-entries stamp.
+      let editorDraft = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      if (roles.staff === "chrome") {
+        await waitForQuiet(staff);
+        const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+        await staff
+          .locator('#case-panel-intake [data-action="view-draft"]:not([data-draft])[data-form="en"]')
+          .click({ timeout: CLICK_MS });
+        const popup = await opened;
+        const bytes = await draftBytes(popup);
+        await popup.close();
+        const page1 = await draftPageText(bytes, 0);
+        const page2 = await draftPageText(bytes, 1);
+        assert.equal(
+          page1.strings.filter((text) => text === "Yes").length,
+          shadedYesBefore + 1,
+          `page 1 of the English draft does not print row 1's Yes: ${JSON.stringify(page1.strings)}`,
+        );
+        assert.ok(page2.strings.includes("2"), `page 2 of the English draft does not print 2: ${JSON.stringify(page2.strings)}`);
+        assert.ok(
+          page2.strings.some((text) => text.includes("Fictional note:")),
+          `page 2 of the English draft does not print the note: ${JSON.stringify(page2.strings)}`,
+        );
+        assert.ok(
+          page1.strings.some((text) => text.includes("online answers and preparer entries")),
+          `the English draft's stamp does not name the preparer entries: ${JSON.stringify(page1.strings)}`,
+        );
+        editorDraft = "page 1 prints Yes; page 2 prints 2 and the note; the stamp names the preparer entries";
+      }
+      evidence.story.shadedEditor = { saved: "Saved", escape: "Discard your changes?", draft: editorDraft };
 
       // Materials: two boxes, one save.
       const materials = staff.locator("#case-panel-intake #materials-form");
@@ -7004,6 +7272,308 @@ async function runPermutation(t, roles) {
       );
       evidence.story.seasonEndClose =
         "a held signer closed as Dismissed from Close unsigned cases…; the case left out stayed at Ready to exit; the client was told; no TaxSlayer notice";
+    });
+
+    // OpenSpec change add-staff-identity: two real staff accounts, each its own
+    // person, work one case in two engines. Neither chooses a persona; the
+    // server names whoever is signed in, and the independence rule holds
+    // between the accounts. Last before the console check, so the two new
+    // people in the roster reach no earlier phase.
+    await phase("two staff accounts work one case, each signed in as themselves", async () => {
+      // A call made from this test process (not a page wait, which has its
+      // own timeout) has no timeout of its own; a stuck one fails here by
+      // name rather than running the permutation out of time.
+      const within = async (what, promise, ms = ARRIVAL_MS * 3) => {
+        let timer = null;
+        try {
+          return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error(`${what} did not answer within ${ms} ms`)), ms);
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      // Riley prepares and could review; Jordan reviews. Fictional people,
+      // fresh accounts of this run, removed with the rest by fixture.close().
+      const rileyAccount = await within(
+        "adding Riley Park",
+        fixture.database.staff({ key: "riley", name: "Riley Park", capabilities: ["prepare", "review"] }),
+      );
+      const jordanAccount = await within(
+        "adding Jordan Lee",
+        fixture.database.staff({ key: "jordan", name: "Jordan Lee", capabilities: ["review"] }),
+      );
+      const rileyActor = { key: "riley", email: rileyAccount.email, userId: rileyAccount.userId };
+      const jordanActor = { key: "jordan", email: jordanAccount.email, userId: jordanAccount.userId };
+      // A case waiting for a preparer, built through the public actions.
+      const caseId = await within("building a case ready for preparation", fixture.database.readyCase());
+      const { reference } = await caseById(fixture, caseId);
+
+      // The presenter's own screens are as they were (A presenter's screens
+      // are unchanged): the picker, the reset and the checkpoints.
+      for (const action of ["select-person", "open-reset-fixtures", "open-checkpoint"])
+        assert.ok(
+          (await staff.locator(`[data-action="${action}"]`).count()) > 0,
+          `the presenter window lost its ${action} control`,
+        );
+      assert.equal(await readSignedInAs(staff), null, "the presenter window reads as a staff account");
+
+      const rileyWin = await openWindow(staffEngine);
+      const jordanWin = await openWindow(clientEngine);
+      const riley = rileyWin.page;
+      const jordan = jordanWin.page;
+      try {
+        // A leftover persona: this window's storage says Sam before Riley
+        // signs in, as a presenter window acting as Sam would have left it.
+        await riley.evaluate(
+          ([key, personId]) => sessionStorage.setItem(key, JSON.stringify({ selectedPersonId: personId })),
+          [fixture.sessionStateKey(rileyAccount.userId), sam],
+        );
+        // Really there before the sign-in, so what follows proves it ignored.
+        assert.equal((await readWindowState(riley, rileyAccount.userId))?.selectedPersonId, sam);
+        await loginTestUser({ page: riley, actor: rileyActor, fixture, heading: WORK_BOARD_HEADING });
+        await loginTestUser({ page: jordan, actor: jordanActor, fixture, heading: WORK_BOARD_HEADING });
+        await watchAlerts(riley);
+        await watchAlerts(jordan);
+
+        // A staff member signs in: "Signed in as", no persona buttons, no
+        // reset and no checkpoint.
+        for (const [page, name] of [
+          [riley, "Riley Park"],
+          [jordan, "Jordan Lee"],
+        ]) {
+          assert.equal(await readSignedInAs(page), name);
+          const controls = await page.evaluate(() => ({
+            personas: document.querySelectorAll('[data-action="select-person"]').length,
+            actingAs: document.querySelectorAll("#persona-title").length,
+            reset: document.querySelectorAll('[data-action="open-reset-fixtures"]').length,
+            checkpoint: document.querySelectorAll('[data-action="open-checkpoint"]').length,
+          }));
+          assert.deepEqual(
+            controls,
+            { personas: 0, actingAs: 0, reset: 0, checkpoint: 0 },
+            `${name}'s window shows a presenter control`,
+          );
+        }
+        assert.equal(await readPersona(riley), null);
+        // The stored persona was never restored, and is not written back.
+        assert.equal(
+          (await readWindowState(riley, rileyAccount.userId))?.selectedPersonId,
+          undefined,
+          "Riley's window kept the leftover persona",
+        );
+        // How the staff row reads beside the board, for the design check.
+        const sidebarShot = path.join(SHOTS, `${tag}--staff-signed-in-as.png`);
+        await riley.screenshot({ path: sidebarShot });
+        evidence.screenshots.push(path.relative(ROOT, sidebarShot));
+
+        // Jordan watches the case from the board; nothing here reloads it.
+        await findOnBoard(jordan, reference);
+        await jordan.evaluate(() => {
+          window.__staffPhaseNoReload = true;
+        });
+        const jordanRow = (wanted) =>
+          waitFor(
+            jordan,
+            `Jordan's board row for ${reference} to show ${wanted}`,
+            ([ref, what]) => {
+              const row = [...document.querySelectorAll("tr.board-row")].find((tr) =>
+                tr.querySelector("button.board-reference")?.textContent.includes(ref),
+              );
+              if (!row) return false;
+              return what === "claim-review"
+                ? Boolean(row.querySelector('[data-case-action="CLAIM_REVIEW"]'))
+                : row.textContent.includes(what);
+            },
+            [reference, wanted],
+            ARRIVAL_MS,
+          );
+
+        // Riley claims and hands the case to review, as Riley — never as Sam.
+        await openCaseByReference(riley, reference);
+        // The case header says who is signed in, where a presenter's says
+        // who it acts as.
+        assert.equal(
+          (await riley.locator(".staff-header .field-note").innerText()).trim(),
+          "Signed in as Riley Park.",
+        );
+        await act(riley, "CLAIM_PREPARATION", { detail: { label: "Preparer", value: "Riley Park" } }, { caseId });
+        assert.equal((await caseById(fixture, caseId)).preparer_id, rileyAccount.personId);
+        // Live updates: the claim reaches Jordan's board without a reload.
+        await jordanRow("Riley Park");
+        await actQuestionnaire(
+          riley,
+          "SUBMIT_REVIEW",
+          () =>
+            fillPreparer(riley, {
+              confirmedBy: "other",
+              confirmedByName: "Pat Example",
+              confirmedMethod: "phone",
+              shaded: true,
+              state: true,
+              readyForReviewOn: todayIso(),
+            }),
+          { badge: "Pending review" },
+          { caseId },
+        );
+        await jordanRow("claim-review");
+        assert.equal(
+          await jordan.evaluate(() => window.__staffPhaseNoReload === true),
+          true,
+          "Jordan's window reloaded to see the case",
+        );
+
+        // A preparer who can also review: the page offers Riley no claim and
+        // says why, and the server refuses the claim sent anyway.
+        await waitForText(riley, "You prepared this case, so you cannot review it.", RENDER_MS);
+        assert.equal(await caseActionCount(riley, "CLAIM_REVIEW"), 0, "Riley is offered a review of their own case");
+        const before = await caseById(fixture, caseId);
+        const selfReviewId = randomUUID();
+        const selfReview = await within(
+          "Riley's own claim of the review",
+          rileyAccount.client.rpc(
+            "vitally_apply_action",
+            applyArgs({
+              actionId: selfReviewId,
+              caseId,
+              revision: Number(before.revision),
+              type: "CLAIM_REVIEW",
+            }),
+          ),
+        );
+        assert.ok(selfReview.error, "Riley claimed the review of a case Riley prepared");
+        assert.equal(domainCode(selfReview.error), "SELF_REVIEW");
+        assert.equal(await receiptsForActionId(fixture, selfReviewId), 0);
+        const after = await caseById(fixture, caseId);
+        assert.deepEqual(
+          { stage: after.stage, revision: after.revision, reviewer: after.reviewer_id },
+          { stage: "review_ready", revision: before.revision, reviewer: null },
+        );
+
+        // Another reviewer can claim it: Jordan, from the board row.
+        record(
+          "CLAIM_REVIEW",
+          await pressUntilEffect(jordan, {
+            press: async () => {
+              await waitForQuiet(jordan);
+              await jordan
+                .locator(`.board-row:has(button.board-reference:has-text("${reference}"))`)
+                .first()
+                .locator('[data-case-action="CLAIM_REVIEW"]')
+                .click({ timeout: CLICK_MS });
+            },
+            ready: HAS_DETAIL,
+            arg: { label: "Reviewer", value: "Jordan Lee" },
+            what: "Jordan's claimed review, in its own case workspace",
+            safeToRepeat: await unmovedSince(caseId),
+          }),
+        );
+        await waitForCaseWorkspace(jordan, reference);
+        await actQuestionnaire(
+          jordan,
+          "APPROVE_REVIEW",
+          () =>
+            fillReviewer(jordan, {
+              completedOn: todayIso(),
+              paForgiveness: "not_eligible",
+              wentOver: "yes",
+              wentOverOn: todayIso(),
+              wentOverHow: "phone",
+              signMethod: "portal",
+            }),
+          { badge: "Ready to exit" },
+          { caseId },
+        );
+        // Both staff windows are on this case's page now: each header names
+        // its own account, and neither page says "Acting as" anywhere,
+        // hidden tabs included.
+        for (const [page, name] of [
+          [riley, "Riley Park"],
+          [jordan, "Jordan Lee"],
+        ]) {
+          assert.equal(
+            (await page.locator(".staff-header .field-note").innerText()).trim(),
+            `Signed in as ${name}.`,
+          );
+          assert.equal(
+            await page.evaluate(() => /acting as/i.test(document.querySelector("#app")?.textContent ?? "")),
+            false,
+            `${name}'s page says "acting as"`,
+          );
+        }
+        const approved = await caseById(fixture, caseId);
+        assert.equal(approved.stage, "review_approved");
+        assert.equal(approved.preparer_id, rileyAccount.personId);
+        assert.equal(approved.reviewer_id, jordanAccount.personId);
+
+        // Two staff members share a case: the History tab names each for
+        // their own steps, and each step's receipt and event name the same
+        // person and account.
+        const steps = {
+          CLAIM_PREPARATION: ["Riley Park claimed preparation.", rileyAccount],
+          SUBMIT_REVIEW: ["Riley Park recorded that preparation is complete.", rileyAccount],
+          CLAIM_REVIEW: ["Jordan Lee claimed the review.", jordanAccount],
+          APPROVE_REVIEW: ["Jordan Lee approved the review.", jordanAccount],
+        };
+        await openCaseTab(jordan, "history");
+        await waitFor(
+          jordan,
+          "the internal history to name Riley Park and Jordan Lee for their steps",
+          (wanted) => {
+            const seen = [...document.querySelectorAll('[data-role="internal-history"] .timeline-item p')].map(
+              (entry) => entry.textContent.trim(),
+            );
+            return wanted.every((line) => seen.includes(line));
+          },
+          Object.values(steps).map(([line]) => line),
+          ARRIVAL_MS,
+        );
+        for (const [operation, [, account]] of Object.entries(steps)) {
+          const expected = [{ actor_user_id: account.userId, actor_person_id: account.personId }];
+          const receipts = (
+            await fixture.database.sql(
+              "select actor_user_id, actor_person_id from public.action_receipts where target_id=$1 and operation=$2",
+              [caseId, operation],
+            )
+          ).rows;
+          assert.deepEqual(receipts, expected, `the ${operation} receipt names someone else`);
+          const events = (
+            await fixture.database.sql(
+              "select actor_user_id, actor_person_id from public.case_events where case_id=$1 and action=$2",
+              [caseId, operation],
+            )
+          ).rows;
+          assert.deepEqual(events, expected, `the ${operation} event names someone else`);
+        }
+        assert.equal(
+          (await readWindowState(riley, rileyAccount.userId))?.selectedPersonId,
+          undefined,
+          "Riley's window saved a persona while working",
+        );
+        assertConsoleQuiet(rileyWin, { name: "Riley's staff window", allow: REFUSAL_LINES });
+        assertConsoleQuiet(jordanWin, { name: "Jordan's staff window", allow: REFUSAL_LINES });
+        evidence.story.staffAccounts =
+          "Riley Park (prepare, review) and Jordan Lee (review) signed in through the real form in two engines; Signed in as, no presenter controls; a leftover Sam persona ignored; Riley prepared, Jordan's board followed live, Riley's own review refused (SELF_REVIEW), Jordan claimed and approved; history, receipts and events name each";
+      } finally {
+        await rileyWin.context.close();
+        await jordanWin.context.close();
+      }
+      // The two accounts' people are claimed now, so a presenter's picker (read
+      // again on a reload) offers neither: choosing one could only be refused.
+      await staff.reload();
+      await staff.locator('[data-action="select-person"]').first().waitFor({ timeout: ARRIVAL_MS });
+      const claimed = await staff.evaluate(() =>
+        [...document.querySelectorAll('[data-action="select-person"]')].map((button) => button.textContent),
+      );
+      assert.ok(claimed.length > 0, "the presenter's picker emptied");
+      for (const name of ["Riley Park", "Jordan Lee"])
+        assert.ok(
+          !claimed.some((text) => text.includes(name)),
+          `the presenter's picker still offers ${name}`,
+        );
     });
 
     await phase("nothing threw, and every console line was one we asked for", async () => {

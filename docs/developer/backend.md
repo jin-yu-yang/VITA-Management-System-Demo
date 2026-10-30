@@ -108,12 +108,46 @@ so each tool must prove it is pointed at the intended target before doing anythi
 | `classroom-target.mjs` | Approves the classroom project: HTTPS, the session pooler (or a verified direct connection) with `sslmode=verify-full`, a project ref the operator typed in by hand, and nothing that matches the test target |
 | `database.mjs` | `openDatabase(target)`: guard first, then connect; maps database errors |
 | `migrate.mjs` | Applies pending migrations with a SHA-256 ledger. `--target test` (default) or `--target classroom` |
-| `workspace-setup.mjs` | `initializeWorkspace`: creates a workspace, its three staff people, memberships and sample-case bindings |
-| `roster.mjs` | Reads a roster file, creates confirmed password-free accounts, and calls `initializeWorkspace`. Never prints an address |
+| `workspace-setup.mjs` | `initializeWorkspace`: creates a workspace, its three demo people, memberships, staff members (038) and sample-case bindings |
+| `roster.mjs` | Reads a roster file, creates confirmed password-free accounts, and calls `initializeWorkspace`. Never prints an address ([roster format](#the-roster)) |
 
 A guard failure is always `TARGET_REJECTED` and deliberately does not say which check failed;
 [`docs/setup.md`](../setup.md#private-test-configuration) lists what to check. The guards are unit
 tested in [`tests/targets.test.mjs`](../../tests/targets.test.mjs).
+
+### The roster
+
+The roster is a JSON file (a `.vitally-roster*.json` file, ignored by version control; the template is
+[`tools/admin/roster.example.json`](../../tools/admin/roster.example.json), and the base fields are in
+[`docs/setup.md`](../setup.md#rosters)). Since 038 it can also create staff accounts:
+
+```json
+{
+  "workspaceId": "replace-with-a-uuid",
+  "presenters": ["presenter@example.org"],
+  "staff": [
+    { "email": "staff-a@example.org", "name": "Riley Park", "personKey": "riley", "capabilities": ["prepare"] },
+    { "email": "staff-b@example.org", "name": "Jordan Lee", "personKey": "jordan", "capabilities": ["admin", "followup"] }
+  ],
+  "defaultFollowup": "jordan",
+  "applicants": ["client-a@example.org"]
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `staff` | Optional list. Each entry has `email`, `name`, `personKey` and `capabilities`. `capabilities` is non-empty, from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. `personKey` is lower-case letters, digits and underscores, unique on the roster, and not `alex`, `morgan` or `sam` |
+| `defaultFollowup` | Optional: the `personKey` of a `staff` entry that has `followup`. It becomes the workspace's default follow-up person (who new follow-ups and withdrawal notices go to). **Required when the roster has no presenter**, because Sam, the default otherwise, would get work nobody can act on |
+| `presenters` | Now optional, but the roster needs at least one presenter or one staff member |
+
+For each staff entry the command creates the Auth account as it does for any address, then, inside
+`initializeWorkspace`'s one serializable transaction, calls `add_staff_member` (and
+`set_default_followup` once, when given). Staff are always **new** people: the demo personas are never
+linked. Re-running the same roster is safe; different values for an existing key or account are
+refused, and changing a staff member's capabilities is not supported. Memberships, people and the
+default are atomic, but the Auth account is created first, outside the transaction: a failed run can
+leave a confirmed account with no membership, and a re-run completes it. The command never prints an
+address; a problem is reported by position, such as `staff[1].capabilities`.
 
 **Never run test cleanup against a real project.** The test fixtures create and delete their own
 workspaces and accounts; they only ever accept the test target.
@@ -124,7 +158,7 @@ Two scripts generate committed files. Neither needs a key or touches a database.
 
 | Command | Writes | When |
 | --- | --- | --- |
-| `npm run build:vendor` (`tools/build.mjs`) | `src/vendor/supabase.mjs`, the pinned SDK bundle | After upgrading `@supabase/supabase-js` |
+| `npm run build:vendor` (`tools/build.mjs`) | `src/vendor/supabase.mjs` (the SDK), `src/vendor/pdf-lib.mjs` (pdf-lib and fontkit) and `src/vendor/pdfjs.mjs` with `src/vendor/pdfjs-worker.mjs` (pdf.js, copied), each pinned | After upgrading `@supabase/supabase-js`, `pdf-lib`, `@pdf-lib/fontkit` or `pdfjs-dist` |
 | `npm run build:intake` (`tools/build-intake-catalogue.mjs`) | `src/intake-catalogue-data.mjs`, and a new `supabase/migrations/NNN_intake_catalogue_<hash8>.sql` when the catalogue's hash changed | After editing `docs/intake-questions/` ([database recipe](database.md#change-the-intake-questions)) |
 
 The catalogue data is a JavaScript module rather than JSON because the local server (and the
@@ -148,8 +182,12 @@ staging and production rather than reusing one set of credentials.
 
 None of this exists yet; it is the list to work through.
 
-- **Continuous integration.** There is no CI. Start with `npm test` on every pull request; add
-  the database and browser suites with a Supabase CLI stack in the CI job.
+- **Continuous integration.** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every
+  pull request into `main` and every push to `main`: it fails on any text file committed with CRLF
+  line endings, then runs `npm test`, `npm run build:hant -- --check`, `npm run build:intake` (failing if
+  it leaves anything to commit), and `npx openspec validate --all`. None needs a database or a
+  browser. The database and browser suites are not in CI yet: add each as its own job, with a Supabase
+  CLI stack for the database and Playwright for the browser.
 - **Backups and restore.** Decide what the plan's backups provide, and practise a restore.
 - **Secrets.** Secret keys only in the hosting provider's secret store and operators' private
   files. Rotate them when someone leaves the team.

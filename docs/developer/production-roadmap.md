@@ -11,7 +11,7 @@ exists, what is missing, and where the change lands.
 
 | Product spec area | Demo today | Gap |
 | --- | --- | --- |
-| Roles (spec §6) | Client, and one "presenter" account acting as staff personas | Real per-person staff accounts and role-based visibility ([§1](#1-staff-identity)) |
+| Roles (spec §6) | Client; real per-person `staff` accounts (038); and a "presenter" account acting as staff personas for the demo | Role-based visibility, role-to-capability mapping, presenter removal ([§1](#1-staff-identity)) |
 | Client accounts (spec §8.1) | Rostered email addresses only, one-time codes; the drafted intake (steps 0–9 with sub-steps) is built but not switched on yet | Open client sign-up; the intake-first flow the spec describes ([§2](#2-client-accounts-and-intake)) |
 | Documents (spec §5, §7.1) | Metadata for one fixed fictional file | Real upload, storage, scanning, retention ([§3](#3-documents)) |
 | State machine (spec §8.2) | Intake, screening, preparation, review, corrections, signature, e-filing, closure | Unreachable client, the IRS's answer after e-filing, amendments, waiting for documents and hold, withdrawal, reassignment ([§4](#4-workflow-coverage)) |
@@ -24,31 +24,35 @@ exists, what is missing, and where the change lands.
 
 ## 1. Staff identity
 
-**Today.** `people` rows (Alex, Morgan, Sam) are not linked to accounts. Any `presenter` account
-chooses a persona in the browser and sends it as `p_person_id`; the database checks that
-persona's capabilities but not whether this account is that person. Presenters see every case.
+**Built (add-staff-identity, migration 038).** A third membership access, `staff`, is linked to
+exactly one `people` row (`people.user_id`). The database decides the acting person from
+`auth.uid()` at every entry point that takes `p_person_id`: a staff account always acts as its own
+person, and receipts, case history, participation, reviews and the contact log name it. The
+independence rule holds across real accounts, and a presenter can no longer act as a staff member's
+person. The roster command creates staff accounts (`staff` list, optional `defaultFollowup`), staff
+get the staff screens without the persona picker or demo tools, and staff-only workspaces work. See
+[Database: who is acting](database.md#who-is-acting) and
+[Back end: privileged tooling](backend.md#privileged-tooling).
 
-**Needed.** Each staff member signs in as themselves.
+**Still to do.**
 
-- **Database.** Link people to accounts (for example `people.user_id` referencing the membership,
-  unique per workspace). In `check_operation_authority` and the other entry points, derive the
-  acting person from `auth.uid()` instead of trusting `p_person_id`; keep the argument only while
-  the browser migrates, then remove it. Rename or split the `presenter` access into real roles.
-- **Visibility.** The spec says volunteers see the cases they prepare or review and admins see
-  everything. Volunteers also need to see unclaimed work to claim it. Decide the rule, then change
-  every policy and `lock_case` together (see
-  [Database: who can see what](database.md#who-can-see-what)).
+- **Visibility.** Staff see exactly what presenters see: every case except other people's unsubmitted
+  drafts. The spec says volunteers see the cases they prepare or review and admins see everything.
+  Volunteers also need to see unclaimed work to claim it. Decide the rule, then change every policy
+  and `lock_case` together (see
+  [Database: who can see what](database.md#who-can-see-what)). Until then, no real client data.
 - **Roles and certifications.** Spec §8.1 lists volunteer roles (Site Coordinator, VITA Volunteer,
   and others). Map them to the existing capabilities (`prepare`, `review`, `admin`, `followup`,
-  `receive_documents`, `assist`), and decide who may grant them. Today capabilities are set only by
-  the workspace initializer.
-- **Front end.** Remove the persona picker; the acting person is the signed-in person.
-- **Tooling.** The roster command already creates accounts for a list of addresses; extend it (or
-  add an admin screen) to link staff accounts to people and set capabilities.
+  `receive_documents`, `assist`), and decide who may grant them. Today a roster entry sets a staff
+  member's capabilities once; changing them, or deactivating a staff member, is not built, and
+  there is no admin screen.
+- **Presenter removal.** Presenter access, the persona picker and `p_person_id` stay for the
+  classroom demonstration. Once the demo no longer needs them (§5), remove them and rename or split
+  the remaining access into real roles.
+- **Tooling.** Staff can be added only as new people; linking an existing person (including the
+  demo personas) is not supported.
 
-This change touches every action, so do it first and keep the database tests green throughout.
-The independence rule (a preparer can never review their own case) already works on person ids
-and carries over unchanged.
+Do the visibility change next and keep the database tests green throughout.
 
 ## 2. Client accounts and intake
 
@@ -212,7 +216,7 @@ The demo is sized for a classroom: a handful of cases per workspace.
 - The staff case list reads every visible case plus per-case summaries, with no pagination.
 - Child tables (`documents`, `contact_log`, `case_events`, `client_events`) have no index on
   `case_id`; add them before real volumes.
-- Each staff window keeps one Realtime channel over sixteen tables and re-reads on each event. With many
+- Each staff window keeps one Realtime channel over nineteen tables and re-reads on each event. With many
   staff online at once, measure and consider narrower subscriptions.
 - One account has one active membership, so one person cannot work at two sites. Revisit if PCDC
   runs several sites.

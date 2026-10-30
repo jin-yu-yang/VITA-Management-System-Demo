@@ -657,6 +657,20 @@ export const readPersona = (page) =>
         ?.getAttribute("data-person-id") ?? null,
   );
 
+/**
+ * The name a staff account's sidebar says it is signed in as (OpenSpec change
+ * add-staff-identity): its account row reads "Signed in as" in a `<small>`
+ * and the person's name in a `<strong>`. Null when the row says anything else
+ * (a presenter's row reads "Acting as this volunteer"), so a presenter window
+ * can never pass for a staff one.
+ */
+export const readSignedInAs = (page) =>
+  page.evaluate(() => {
+    const row = document.querySelector(".sidebar-account .account-row");
+    if (row?.querySelector("small")?.textContent.trim() !== "Signed in as") return null;
+    return row.querySelector("strong")?.textContent.trim() ?? "";
+  });
+
 export const readFixtureIndicator = (page) =>
   page.locator('[data-role="fixture-indicator"]').innerText();
 

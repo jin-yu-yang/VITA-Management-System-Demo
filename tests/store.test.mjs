@@ -24,6 +24,7 @@ const STAFF_ONLY_TABLES = [
   "case_materials",
   "preparer_questionnaires",
   "reviewer_questionnaires",
+  "preparer_shaded_fields",
   "filing_attempts",
   "filing_returns",
   "filing_notes",
@@ -454,11 +455,107 @@ test("the principal is the caller's own membership plus their identity", async (
     workspaceId: "workspace-1",
     access: "applicant",
     email: "student@example.com",
+    personId: null,
+    personName: null,
   });
   assert.deepEqual(
     client.reads.map((read) => read.table),
     ["memberships"],
   );
+});
+
+const STAFF_PERSON = {
+  id: "person-sam",
+  workspace_id: "workspace-1",
+  person_key: "sam",
+  name: "Sam",
+  capabilities: ["prepare"],
+  user_id: "user-1",
+};
+
+test("a staff principal carries the person linked to the signed-in account", async () => {
+  const client = fakeClient({
+    access: "staff",
+    rows: { people: [{ ...STAFF_PERSON, id: "person-other", user_id: "user-9" }, STAFF_PERSON] },
+  });
+  const principal = await createStore(client).getPrincipal();
+  assert.equal(principal.access, "staff");
+  assert.equal(principal.personId, "person-sam");
+  assert.equal(principal.personName, "Sam");
+  assert.deepEqual(client.reads.at(-1).filters, [["user_id", "user-1"]]);
+});
+
+test("a presenter principal reads no person", async () => {
+  const client = fakeClient({ access: "presenter" });
+  const principal = await createStore(client).getPrincipal();
+  assert.equal(principal.personId, null);
+  assert.equal(principal.personName, null);
+  assert.ok(!client.reads.some((read) => read.table === "people"));
+});
+
+test("a staff case list reads what a presenter's does, filing notes included", async () => {
+  const tables = async (access) => {
+    const client = fakeClient({ access });
+    await createStore(client).listCases();
+    return client.reads.map((read) => read.table).filter((name) => name !== "memberships");
+  };
+  const presenter = await tables("presenter");
+  assert.ok(presenter.includes("filing_notes"));
+  assert.deepEqual(await tables("staff"), presenter);
+});
+
+test("a staff case read adds exactly the staff sections, filing tables too", async () => {
+  const tables = async (access) => {
+    const client = fakeClient({ access });
+    await createStore(client).getCase("case-1");
+    return client.reads.map((read) => read.table);
+  };
+  const presenter = await tables("presenter");
+  for (const name of ["filing_attempts", "filing_returns", "filing_notes", "reviews"])
+    assert.ok(presenter.includes(name), name);
+  assert.deepEqual(await tables("staff"), presenter);
+});
+
+test("staff subscribe to the staff tables, and read the roster and assistance list", async () => {
+  assert.equal(SUBSCRIBED_TABLES.staff, SUBSCRIBED_TABLES.presenter);
+  const client = fakeClient({ access: "staff" });
+  const store = createStore(client);
+  store.subscribe();
+  await settle();
+  const watched = new Set(client.channels[0].bindings.map((b) => b.filter.table));
+  assert.deepEqual([...watched].sort(), [...SUBSCRIBED_TABLES.staff].sort());
+  assert.equal((await store.listPeople()).length, 1);
+  assert.equal((await store.listAssistance()).length, 1);
+});
+
+test("a staff call names no person, whatever the request says", async () => {
+  const client = fakeClient({ access: "staff" });
+  const store = createStore(client);
+  await store.createCase({ mode: "x", personId: "person-x", answers: {} });
+  await store.act({ caseId: "c", expectedRevision: 1, personId: "person-x", type: "t", payload: {} });
+  await store.logContact({ caseId: "c", personId: "person-x", entry: {} });
+  await store.editContact({ contactId: "k", expectedRevision: 1, personId: "person-x", entry: {} });
+  await store.actAssistance({ itemId: "i", expectedRevision: 1, personId: "person-x", type: "t" });
+  await store.closeUnsigned({ personId: "person-x", cases: [], confirmed: true });
+  assert.equal(client.rpcCalls.length, 6);
+  for (const call of client.rpcCalls) assert.equal(call.args.p_person_id, null, call.name);
+});
+
+test("a presenter's call still names the person the request carries", async () => {
+  const client = fakeClient({ access: "presenter" });
+  await createStore(client).closeUnsigned({ personId: "person-x", cases: [], confirmed: true });
+  assert.equal(client.rpcCalls[0].args.p_person_id, "person-x");
+});
+
+test("a staff member cannot reset fixtures or load a checkpoint", async () => {
+  const client = fakeClient({ access: "staff" });
+  const store = createStore(client);
+  await assert.rejects(() => store.resetFixtures({}), { code: "FORBIDDEN" });
+  await assert.rejects(
+    () => store.loadCheckpoint({ caseId: "c", expectedRevision: 1, checkpoint: "p" }),
+    { code: "FORBIDDEN" },
+  );
+  assert.equal(client.rpcCalls.length, 0);
 });
 
 test("no membership and no session are both FORBIDDEN", async () => {
@@ -838,6 +935,7 @@ test("a presenter case read adds exactly the staff sections", async () => {
       "memberships",
       "preparation_participants",
       "preparer_questionnaires",
+      "preparer_shaded_fields",
       "reviewer_questionnaires",
       "reviews",
     ],
@@ -1109,7 +1207,7 @@ test("an invisible or absent case is one NOT_FOUND", async () => {
 test("the roster and the assistance list are presenter reads", async () => {
   const presenter = createStore(fakeClient({ access: "presenter" }));
   assert.deepEqual(await presenter.listPeople(), [
-    { id: "person-alex", name: "Alex", capabilities: ["prepare"] },
+    { id: "person-alex", name: "Alex", capabilities: ["prepare"], linked: false },
   ]);
   assert.deepEqual(await presenter.listAssistance(), [
     mapAssistance(RELATED_ROWS.assistance_items[0]),
@@ -1343,6 +1441,7 @@ test("a subscription watches only the tables its principal may read", async () =
     "case_materials",
     "preparer_questionnaires",
     "reviewer_questionnaires",
+    "preparer_shaded_fields",
   ]);
   // The applicant's channel never names a staff-only table.
   for (const staffTable of STAFF_ONLY_TABLES)
@@ -1575,6 +1674,26 @@ test("a staff case read carries both questionnaire tables, an applicant read nei
   const applicant = await createStore(client).getCase("case-1");
   assert.ok(!("preparerQuestionnaires" in applicant));
   assert.ok(!client.reads.some((read) => read.table.endsWith("_questionnaires")));
+});
+
+test("a staff case read carries the shaded section, an applicant read never names it", async () => {
+  const rows = {
+    preparer_shaded_fields: [
+      { id: "ps-1", case_id: "case-1", fields: { incomeW2s: true, incomeW2sCount: 2 }, version: 3, updated_by_person_id: "person-alex" },
+    ],
+  };
+  const staffClient = fakeClient({ access: "presenter", rows });
+  const staff = await createStore(staffClient).getCase("case-1");
+  assert.deepEqual(staff.preparerShadedFields, [
+    { id: "ps-1", caseId: "case-1", fields: { incomeW2s: true, incomeW2sCount: 2 }, version: 3, updatedByPersonId: "person-alex" },
+  ]);
+  const [read] = staffClient.reads.filter((entry) => entry.table === "preparer_shaded_fields");
+  assert.deepEqual(read.filters, [["case_id", "case-1"]]);
+  assert.deepEqual((await createStore(fakeClient({ access: "presenter" })).getCase("case-1")).preparerShadedFields, []);
+  const client = fakeClient({ access: "applicant", rows });
+  const applicant = await createStore(client).getCase("case-1");
+  assert.ok(!("preparerShadedFields" in applicant));
+  assert.ok(!client.reads.some((entry) => entry.table === "preparer_shaded_fields"));
 });
 
 test("closeUnsigned calls vitally_close_unsigned", async () => {

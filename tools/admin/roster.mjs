@@ -5,7 +5,7 @@
 //
 // Every address becomes a confirmed Auth account with no password (the app
 // signs in with one-time codes only), then the shared initializer grants each
-// account presenter or applicant access. The target is approved by the same
+// account presenter, staff or applicant access. The target is approved by the same
 // fail-closed guards as every other privileged tool before anything is read.
 // Re-running with a longer roster adds the new people; nobody is removed.
 // Addresses are never printed: errors name a roster position instead.
@@ -44,6 +44,64 @@ function addresses(raw, field, { required = false } = {}) {
   });
 }
 
+// Mirrors vitally_private.add_staff_member (migration 038) so the operator gets
+// a clear message before any account is created; the database refuses them again.
+export const STAFF_CAPABILITIES = Object.freeze([
+  "prepare",
+  "review",
+  "admin",
+  "followup",
+  "receive_documents",
+  "assist",
+]);
+const RESERVED_PERSON_KEYS = Object.freeze(["alex", "morgan", "sam"]);
+const PERSON_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+
+function parseStaff(raw) {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw invalid("staff must be a list of staff entries.");
+  const keys = new Set();
+  return raw.map((entry, index) => {
+    const where = `staff[${index}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      throw invalid(`${where} must be an object with email, name, personKey and capabilities.`);
+    const [email] = addresses([entry.email], where);
+    const { personKey, name, capabilities } = entry;
+    if (
+      typeof personKey !== "string" ||
+      !PERSON_KEY.test(personKey) ||
+      RESERVED_PERSON_KEYS.includes(personKey)
+    )
+      throw invalid(
+        `${where}.personKey must be lower-case letters, digits and underscores, start with a letter, ` +
+          `be at most 40 characters, and not be ${RESERVED_PERSON_KEYS.join(", ")}.`,
+      );
+    if (typeof name !== "string" || name.length < 1 || name.length > 80)
+      throw invalid(`${where}.name must be 1 to 80 characters.`);
+    if (
+      !Array.isArray(capabilities) ||
+      capabilities.length === 0 ||
+      capabilities.some((capability) => !STAFF_CAPABILITIES.includes(capability))
+    )
+      throw invalid(
+        `${where}.capabilities must be a non-empty list of: ${STAFF_CAPABILITIES.join(", ")}.`,
+      );
+    if (keys.has(personKey)) throw invalid(`${where}.personKey is already on the roster.`);
+    keys.add(personKey);
+    return { email, name, personKey, capabilities: [...new Set(capabilities)] };
+  });
+}
+
+function parseDefaultFollowup(raw, staff) {
+  if (raw === undefined || raw === null) return null;
+  const member = typeof raw === "string" ? staff.find((entry) => entry.personKey === raw) : undefined;
+  if (!member)
+    throw invalid("defaultFollowup must name the personKey of a staff entry on this roster.");
+  if (!member.capabilities.includes("followup"))
+    throw invalid("defaultFollowup must name a staff entry that has the followup capability.");
+  return raw;
+}
+
 export function parseRoster(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw invalid("The roster must be a JSON object.");
@@ -51,12 +109,20 @@ export function parseRoster(raw) {
     throw invalid(
       "workspaceId must be a lower-case UUID. Generate one once and keep it: node -e \"console.log(crypto.randomUUID())\"",
     );
-  const presenters = addresses(raw.presenters, "presenters", { required: true });
-  if (presenters.length === 0)
-    throw invalid("The roster needs at least one presenter.");
+  const presenters = addresses(raw.presenters, "presenters");
   const applicants = addresses(raw.applicants, "applicants");
+  const staff = parseStaff(raw.staff);
+  if (presenters.length === 0 && staff.length === 0)
+    throw invalid("The roster needs at least one presenter or staff member.");
+  const defaultFollowup = parseDefaultFollowup(raw.defaultFollowup, staff);
+  if (presenters.length === 0 && defaultFollowup === null)
+    throw invalid("A roster with no presenter needs a defaultFollowup.");
   const seen = new Set();
-  for (const [field, list] of [["presenters", presenters], ["applicants", applicants]])
+  for (const [field, list] of [
+    ["presenters", presenters],
+    ["staff", staff.map((member) => member.email)],
+    ["applicants", applicants],
+  ])
     list.forEach((address, index) => {
       if (seen.has(address))
         throw invalid(`${field}[${index}] is already on the roster.`);
@@ -74,7 +140,14 @@ export function parseRoster(raw) {
       throw invalid(`sampleCaseOwners.${key} must name an applicant on this roster.`);
     sampleCaseOwners[key] = address;
   }
-  return { workspaceId: raw.workspaceId, presenters, applicants, sampleCaseOwners };
+  return {
+    workspaceId: raw.workspaceId,
+    presenters,
+    applicants,
+    staff,
+    defaultFollowup,
+    sampleCaseOwners,
+  };
 }
 
 export function parseRosterArgs(argv) {
@@ -115,7 +188,11 @@ export async function applyRoster(
   const ids = new Map();
   let created = 0,
     confirmed = 0;
-  for (const [field, list] of [["presenters", roster.presenters], ["applicants", roster.applicants]])
+  for (const [field, list] of [
+    ["presenters", roster.presenters],
+    ["staff", roster.staff.map((member) => member.email)],
+    ["applicants", roster.applicants],
+  ])
     for (const [index, address] of list.entries()) {
       const where = `${field}[${index}]`;
       const account = accounts.get(address);
@@ -144,6 +221,13 @@ export async function applyRoster(
     workspaceId: roster.workspaceId,
     presenterUserIds: roster.presenters.map((address) => ids.get(address)),
     applicantUserIds: roster.applicants.map((address) => ids.get(address)),
+    staff: roster.staff.map(({ email, personKey, name, capabilities }) => ({
+      userId: ids.get(email),
+      personKey,
+      name,
+      capabilities,
+    })),
+    defaultFollowup: roster.defaultFollowup,
     fixtureClientBindings: Object.fromEntries(
       Object.entries(roster.sampleCaseOwners).map(([key, address]) => [key, ids.get(address)]),
     ),
@@ -152,6 +236,7 @@ export async function applyRoster(
     workspaceId: roster.workspaceId,
     presenters: roster.presenters.length,
     applicants: roster.applicants.length,
+    staff: roster.staff.length,
     created,
     confirmed,
   };
@@ -185,7 +270,7 @@ async function main() {
   });
   console.log(
     `Roster applied to workspace ${result.workspaceId} on the ${target.kind} target: ` +
-      `${result.presenters} presenter(s), ${result.applicants} applicant(s); ` +
+      `${result.presenters} presenter(s), ${result.staff} staff, ${result.applicants} applicant(s); ` +
       `${result.created} account(s) created, ${result.confirmed} confirmed.`,
   );
 }

@@ -110,8 +110,9 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    "$VITALLY_NODE" -e "console.log(crypto.randomUUID())"
    ```
 
-3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, and two
-   clients, `client-a@example.org` (who owns one sample case) and `client-b@example.org`.
+3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one staff
+   member, `staff-a@example.org` (Riley Park, a preparer), and two clients, `client-a@example.org`
+   (who owns one sample case) and `client-b@example.org`.
 
    ```sh
    PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
@@ -130,7 +131,13 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
 3. Open <http://127.0.0.1:54324> in another tab, open the newest message, and copy the code.
 4. Paste it into **Verification code** and press **Verify and continue**. You are signed in as the
    presenter, with the presenter panel and every staff persona.
-5. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
+5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
+   code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
+   persona picker, sample reset, checkpoints or "Fill fictional details": the account acts only as
+   its own person, with that person's capabilities. To add another fictional staff rehearsal
+   account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
+   [Rosters](#rosters)) with a fictional address and run the roster command again.
+6. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
    second browser) and repeat steps 2–4 with `client-a@example.org`.
 
 A new code for the same address can be requested only about once a minute; the form shows a
@@ -142,17 +149,25 @@ database suite and the sign-in gate pass with it present.
 
 ### The vendor bundle
 
-`src/app.mjs` imports the Supabase JS SDK from a committed file, not a CDN or a runtime build
+`src/app.mjs` imports its browser libraries from committed files, not a CDN or a runtime build
 step:
 
 ```sh
 PATH="$VITALLY_NODE_BIN:$PATH" "$VITALLY_NODE" tools/build.mjs   # npm run build:vendor
 ```
 
-This bundles `@supabase/supabase-js` alone (via `tools/vendor-entry.mjs`, which re-exports only
-`createClient`) into minified ESM at `src/vendor/supabase.mjs`, with a banner naming the SDK and
-esbuild versions. Rebuild and commit it whenever the SDK's pinned version changes; there is no
-other build step, and a static host serves this file as-is.
+This writes four files under `src/vendor/`, each with a banner naming its library version:
+
+- `supabase.mjs`: `@supabase/supabase-js` alone (via `tools/vendor-entry.mjs`, which re-exports
+  only `createClient`), bundled into minified ESM with esbuild.
+- `pdf-lib.mjs`: `pdf-lib` and `@pdf-lib/fontkit` (via `tools/vendor-pdf-entry.mjs`), bundled the
+  same way, for the draft Form 13614-C and Form 14446.
+- `pdfjs.mjs` and `pdfjs-worker.mjs`: `pdfjs-dist`'s legacy build, copied rather than bundled
+  (it is already minified ESM and its worker must stay a separate file), for the shaded-section
+  editor. The editor loads them only when it opens.
+
+Rebuild and commit them whenever one of those pinned versions changes; there is no other build
+step, and a static host serves these files as-is.
 
 ## 3. Isolated local Supabase test stack
 
@@ -307,7 +322,7 @@ check failed. Check, in this order:
 
 ## 4. Migrations
 
-Thirty-four migrations, applied in order. 020, the version-2 switch-over, was added after 021 and 022: a stack that already has them applies it last, and a new one applies it in number order. Both give the same result. Re-running the migrator on an already-migrated stack is safe,
+Thirty-nine migrations, applied in order. 020, the version-2 switch-over, was added after 021 and 022: a stack that already has them applies it last, and a new one applies it in number order. Both give the same result. Re-running the migrator on an already-migrated stack is safe,
 but not because the files themselves are re-runnable — `001` and `002` create their tables with a
 plain `create table`, which fails the second time. What makes it safe is the ledger
 `tools/admin/migrate.mjs` keeps: `vitally_private.schema_migrations`, one row per file with a
@@ -352,6 +367,8 @@ already applied, so **the migrations are run only through the migrator, never by
 | `034_screening_checks.sql` | Hand-written: `VERIFY_INTAKE` records the real screening checks, `phone`, `documents` and `in_scope`, plus `identity` only when the case's `service` answer is `online`; the client's history line says PCDC finished screening the application; `check_payload`, `act_verify_intake` and `fixture_history` replaced, and the sample cases record the new checks |
 | `035_post_efiling_stages.sql` | Hand-written: the `rejected` and `accepted` stages, each return's filing method and result on `cases`, the staff-only `filing_attempts`, `filing_returns` and append-only `filing_notes`, `MARK_EFILED` with methods, `RECORD_FILING_RESULT` and `RETURN_TO_SIGNING`, and the `rejected` and `accepted` sample cases |
 | `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages, `cases.documents_origin`, `hold_origin` and `closing_reason`, the `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and `WITHDRAW` actions, `CLOSE_CASE` with a reason, the `withdrawal_notice` follow-up purpose, and the `on_hold` and `withdrawn` sample cases |
+| `037_adjust_filing_to_pcdc.sql` | Hand-written: PCDC never mails a return, so a paper return is `given_to_client` at Mark e-filed and the stored `mailed` result is renamed; all four federal/state method pairs are allowed; the `vitally_close_unsigned` RPC closes signing cases at season end |
+| `038_staff_identity.sql` | Hand-written: the `staff` membership access, `people.user_id` linking a person to its staff account, the database's own `acting_person` resolver for the six entry points, staff accepted by the locks, authority check and policies, and `add_staff_member`, `set_default_followup` and a re-runnable `initialize_workspace` |
 
 Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one. The build writes one only when the catalogue's hash differs from the
@@ -410,21 +427,19 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is below. The unit and database
-counts were last verified on the real screening checks (2026-10-20, change
-`replace-simulated-screening-checks`, with migration 034 applied). The story count is from the same
-change's run (2026-10-20, with migration 034 applied; in one run, see the note below the table). The auth-gate count is still from
+suite's **last-verified count** is below. The unit, database and story
+counts were last verified on the preparer's shaded section (2026-10-24, change
+`add-preparer-13614c-fields`, with migration 038 applied; the story in one run, see the note below the table). The auth-gate count is still from
 the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording`, with migration
 025 applied). Re-run the commands yourself for the current number, since new work changes these counts.
 
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
-| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 1235/1235 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the client text in three languages (every client screen swept in 简体 and 繁體, and the Traditional map checked against `opencc-js`), the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
-| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 326/326 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
+| Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 1418/1418 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the client text in three languages (every client screen swept in 简体 and 繁體, and the Traditional map checked against `opencc-js`), the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
+| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 434/434 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~20–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
-| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 63/63, ~11–16 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2, the only intake version (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
-
-The story passed 63/63 in one run on 2026-10-20, on change `replace-simulated-screening-checks`, with migration 034 applied, run from a worktree on D: (not under OneDrive). Before that it passed 63/63 in one run on 2026-10-19, on change `add-preparer-and-reviewer-questionnaires`, with migration 033 applied, run from a worktree on D: (not under OneDrive); a worktree outside OneDrive works, while one under OneDrive fails it. Before that it passed 63/63 in one run on 2026-10-19, on change `add-screening-and-efiling-stages`, with migration 032 applied, run from the main checkout. Before that it passed 61/61 in one run on 2026-10-18, on change `add-contact-log`. Before that it passed 57/57 in one run on 2026-10-16 (about 16.6 minutes), on change `add-form-14446-consent`. Before that
+| Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 77/77, ~11–26 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2, the only intake version (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); one phase signs two real staff accounts in through the form, in separate windows (Riley Park, who prepares and reviews, and Jordan Lee, who reviews): the board updates live, Riley cannot review a case Riley prepared, and a persona left in storage is ignored; and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
+The story passed 77/77 in one run on 2026-10-24 (about 25.6 minutes; an earlier run that day took about 20.7), on change `add-preparer-13614c-fields`, with migration 038 applied, run from a worktree on D: (not under OneDrive). History: it passed 63/63 in one run on 2026-10-20, on change `replace-simulated-screening-checks`, with migration 034 applied, run from a worktree on D: (not under OneDrive). Before that it passed 63/63 in one run on 2026-10-19, on change `add-preparer-and-reviewer-questionnaires`, with migration 033 applied, run from a worktree on D: (not under OneDrive); a worktree outside OneDrive works, while one under OneDrive fails it. Before that it passed 63/63 in one run on 2026-10-19, on change `add-screening-and-efiling-stages`, with migration 032 applied, run from the main checkout. Before that it passed 61/61 in one run on 2026-10-18, on change `add-contact-log`. Before that it passed 57/57 in one run on 2026-10-16 (about 16.6 minutes), on change `add-form-14446-consent`. Before that
 it passed 57/57 in one run on 2026-10-16 (about 14 minutes), on change `add-widowed-spouse-rules`. Before that
 it passed 57/57 in one run on 2026-10-15 (about 12.5 minutes), on change
 `allow-multiple-service-languages`. Before that it passed 57/57 in one run on 2026-10-14 (about 13
@@ -502,7 +517,10 @@ git reset --hard
 
 If such a clone ever ran `npm run db:migrate:test` from CRLF files, its test stack recorded CRLF
 digests, and the migrator now refuses with `MIGRATION_CHANGED`: recreate that stack from scratch
-(section 3).
+(section 3). The same thing happens in the other direction: a stack whose digests were recorded from
+CRLF checkouts reports `MIGRATION_CHANGED` for files that have not changed once it is migrated from an
+LF checkout. The cause is the line endings, not an edit, so recreate the stack rather than hunting for
+a changed file.
 
 ### Known, intentional behaviors these tests pin (not defects)
 
@@ -619,12 +637,14 @@ matching `.vitally-roster*.json` and are never committed.
 | Field | Meaning |
 | --- | --- |
 | `workspaceId` | A lower-case UUID. Generate it once and keep it: re-running the same roster with more addresses adds them to the same workspace. |
-| `presenters` | Group members who run the demonstration. They get the presenter panel and every staff persona. At least one is required. |
+| `presenters` | Group members who run the demonstration. They get the presenter panel and every staff persona. Optional, but the roster needs at least one presenter or one staff member. |
+| `staff` | Optional. Real staff members, each `{ "email", "name", "personKey", "capabilities" }`. Each gets a `staff` account linked to its own new person, which it always acts as, with the staff screens and no demo tools. `capabilities` is non-empty, from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`; `personKey` is unique and not `alex`, `morgan` or `sam`. Re-running is harmless, but an existing member's values cannot be changed. For a rehearsal, use fictional names and addresses. |
+| `defaultFollowup` | Optional: the `personKey` of a `staff` entry with `followup`, who then gets new follow-ups. Required when the roster has no presenter. See [Back end: the roster](developer/backend.md#the-roster). |
 | `applicants` | Classmates who play clients. Each sees only their own applications. |
 | `sampleCaseOwners` | Optional. Maps a sample case (`preparation_ready`, `waiting_documents`, `admin_followup`, `review_ready`, `corrections_required`, `review_approved`, `rejected`, `accepted`) to an applicant address, which then owns that seeded case after every reset. |
 
 For each address the command finds the existing Auth account or creates one already confirmed
-and without a password (sign-in is by one-time code only), then grants presenter or applicant
+and without a password (sign-in is by one-time code only), then grants presenter, staff or applicant
 access through the shared `initializeWorkspace` routine. Addresses are matched exactly, ignoring
 case. One account belongs to one workspace with one role; the routine refuses a roster that would
 move someone or change their role (`VALIDATION`). The command never removes anyone, and its
