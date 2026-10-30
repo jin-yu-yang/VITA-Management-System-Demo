@@ -16,6 +16,40 @@ case uses invented names with no address or other routable contact detail.
 
 ## Current status
 
+### Planned vs delivered (M4)
+
+What we promised in the M1 spec (§8) and the plan since, checked against `main` on 2026-10-29.
+Rows are things a person using ViTally can see or do.
+
+| Planned | Status | Where in the app |
+| --- | --- | --- |
+| A client fills the intake form at home in English, 简体 or 繁體 | Delivered | Client intake, steps 0–9, with standard and senior wording and a language switch |
+| A client signs the consent forms (15080, 14446) and can print the 14446 | Delivered | Signatures inside the intake; "View Draft Form 14446" in English or 繁體 on the summary page |
+| A client sees their own case's progress | Delivered | Client progress page |
+| A client sees their place in the queue and their preparer's and reviewer's contact | Cut | Progress page shows the stage, not queue position or volunteer contact; on the roadmap after the Feb pilot |
+| A client starts the form without an account and gets one on submit | Shrunk | Clients sign in with a one-time email code instead of a password; only invited addresses for now |
+| The office checks new requests against a checklist | Delivered | Screening stage with screening checks on the office case page |
+| A volunteer claims a case and works it, answering a short questionnaire at each hand-off | Delivered | Work board and case pool; preparer and reviewer questionnaires |
+| A reviewer can never review their own preparation | Delivered | Enforced by the database, so no screen can skip it |
+| Every staff member signs in as themselves | Delivered | Staff accounts from the roster sign in by email code and act as themselves ("Signed in as …"), enforced by the database (#90, 10/29); the presenter persona picker stays for the demo account only |
+| A case reaches E-filed, then Accepted or Rejected, and can be closed | Delivered | Mark e-filed, filing result (IRS and Pennsylvania), close with a reason |
+| Hold, waiting for documents, same-day signing and client withdrawal | Delivered | Waiting for documents and Hold stages, same-day signing plan, Withdraw on the client's progress page |
+| FSA (facilitated self-assistance) path | Cut | Not built; after the Feb pilot |
+| The office sees who is waiting and what needs attention | Shrunk | Follow-ups queue and case pool tabs (Needs attention, Done); reports and charts are on the roadmap after the Feb pilot |
+| An admin moves a case to a different preparer or reviewer | Cut | Not built; the database already keeps a preparer from reviewing their own case after any future move |
+| An admin posts reference materials for volunteers | Cut | Not built; on the roadmap after the Feb pilot |
+| A volunteer has a profile with certifications and contact details | Cut | Not built; depends on staff accounts (#90) |
+| A draft 13614-C is generated from the client's answers, and the preparer completes it | Delivered | Draft for staff from the client's answers; the preparer fills the shaded section in ViTally (form or PDF editor) and the generated 13614-C carries those values (#98, 10/29); clients cannot print an unfinished form on purpose |
+| An audit trail of who did what, and when | Delivered | Case history and the contact log on the staff case page |
+| The case records its service method: drop-off, same-day or online | Delivered | The intake's `service` answer; it drives the screening checks (identity only for online clients) and the signing plan |
+| A client gets their completed return from the app once filing is done | Cut | Not built; PCDC hands the client a paper copy when the return is marked e-filed (#97) |
+| Email or text notifications | Cut | The contact log covers day one; needs a service beside the database; after the Feb pilot |
+| Document upload | Cut | Not reached by the Oct 29 gate; needs private storage, scanning and retention rules first (Feb roadmap); meanwhile online clients send documents to PCDC's own storage and the case keeps the link |
+| Appointment scheduling | Cut | An open question in M1, never promised; the reviewer records the signing time by hand |
+| Hosted deployment for PCDC | Cut | Not a feature; the target is the **February PCDC pilot** (Dec–Jan work: hosting, real accounts, backup-restore drill, security review); why it moved from November is in `docs/m4-tradeoffs.md` |
+
+### Implementation detail
+
 The full workflow described in the [approved design](docs/superpowers/specs/2026-09-15-vitally-shared-demo-design.md)
 is implemented and tested against an isolated local Supabase stack: identity and case ownership,
 every workflow action (intake through closure, documents, admin follow-up, assistance, independent
