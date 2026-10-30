@@ -88,9 +88,9 @@ fields:
 
 | Field | Meaning |
 | --- | --- |
-| `session`, `principal` | Sign-in status (`unknown`, `none`, `present`) and `{userId, workspaceId, access, email}` |
+| `session`, `principal` | Sign-in status (`unknown`, `none`, `present`) and `{userId, workspaceId, access, email, personId, personName}`. `access` is `applicant`, `presenter` or `staff`; `personId` and `personName` are a staff account's own roster person, null for the other two |
 | `connection` | `online`, `reconnecting`, `offline` |
-| `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
+| `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for staff windows only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
 | `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once, plus `review.submit` once Continue on 9.2 has earned it (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
@@ -111,6 +111,16 @@ sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSign
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
 `dismissError`, `clearError`).
 
+Two questions are kept apart (add-staff-identity D9). `presenter()` is the demonstration's own:
+the persona picker, sample reset and checkpoints. **`staffWindow()`** is everything a staff screen
+does (its reads, its eligibility rules and its actions), true for a `presenter` or a `staff`
+account (`isStaffWindow` in [`src/contracts.mjs`](../../src/contracts.mjs) says the same for the
+views). Only who is acting differs, and **`actingPersonId(personId)`** decides it: a staff account
+is always `principal.personId`, whatever is passed in; a presenter sends the persona it chose (or
+the one an action names); a client sends none. The persona actions (`selectPerson`) are refused for
+a staff account, and the store sends `p_person_id: null` for staff, so the browser never claims an
+identity; the database resolves it ([Database: who is acting](database.md#who-is-acting)).
+
 Three rules the controller keeps:
 
 1. **Saved and draft are different.** A live update replaces `savedCase` but never rewrites what
@@ -130,9 +140,10 @@ Three rules the controller keeps:
 | --- | --- |
 | Signed out | Email and code form ([`client-views.mjs`](../../src/client-views.mjs) `accessScreen`); "cannot reach the server" and "no access" screens ([`views.mjs`](../../src/views.mjs)) |
 | Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the sub-step form, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
-| Presenter, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
-| Presenter, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
+| Staff window, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
+| Staff window, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
+| Staff account | The same staff screens, with no persona picker: the sidebar and the case page header say "Signed in as <name>", and the person is the account's own (`staffScreen` in `views.mjs` picks the office screens when that person has `admin`, and the volunteer work board otherwise, exactly as for a persona). No sample reset, no checkpoints, and no "Fill fictional details" pill (a presenter-only tool, including the office's Add a case pill). Always English |
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
@@ -286,7 +297,7 @@ volunteer and office pages):
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
   anyone who passes `canSeeContact`, read-only for everyone else.
 - **The draft** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
-  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a presenter (`principal.access === "presenter"`); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
+  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a staff window (`isStaffWindow`: a presenter or a staff account); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
 
 The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
 (`src/form-values.mjs`); `Object.fromEntries(new FormData(form))` would keep only the last box.
@@ -631,13 +642,13 @@ case, form step, persona, board filters, case tab, whether the sidebar is open, 
 case's visited steps and revealed errors) in `sessionStorage` under a key that includes the user
 id. Each field has its own shape check (`FIELDS`); a malformed one is dropped, and the visited
 steps are ignored unless they belong to the open case. Two windows can show different things; two accounts in one browser never share a view; signing
-out clears it. It never stores codes, tokens or answers.
+out clears it. It never stores codes, tokens or answers. It never keeps a persona for a staff account, which has no choice to remember.
 
 ## Client languages
 
 Every client screen is in English, Simplified Chinese (简体) or Traditional Chinese (繁體), chosen
 with the switch in the client bar and saved per browser in `localStorage["vitally.lang"]`. A first
-visit takes its language from `navigator.languages`. Staff and presenter screens are always
+visit takes its language from `navigator.languages`. Staff screens (a presenter's or a staff account's) are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
 character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
 a staff member makes the 繁體 draft 13614-C, which leaves the screen's language as it is (the Form 14446 never loads it). A saved 繁體 waits at
@@ -653,7 +664,7 @@ The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-scree
 | [`zh-hant.mjs`](../../src/zh-hant.mjs) | the generated map, Simplified source string → Traditional; never edit it by hand |
 
 - **The screen's language** is `viewLang(state)`: `state.lang` for a client and for every screen
-  before sign-in, and `"en"` for a presenter. A renderer reads it once and passes `lang` down.
+  before sign-in, and `"en"` for a staff window. A renderer reads it once and passes `lang` down.
   `app.mjs` sets `<html lang>` and `document.title` after each render.
 - **Screen text** is a `TEXT` key, `t(key, params, lang)`. An entry is `{ en, zh }`; `{name}`
   placeholders are filled from `params`, and `en` may be `{ one, other }`, chosen by `params.n`.

@@ -3,6 +3,7 @@
 // the screen only through sourceText, so no module indexes the catalogue with
 // a screen language.
 import { toHant } from "./hant.mjs";
+import { isStaffWindow } from "./contracts.mjs";
 
 export const LANGS = Object.freeze(["en", "zh-Hans", "zh-Hant"]);
 export const STORAGE_KEY = "vitally.lang";
@@ -39,7 +40,7 @@ export function writeLanguage(lang, { storage }) {
 
 // Staff and presenter screens are English whatever this browser chose.
 export const viewLang = (state) =>
-  state?.principal?.access === "presenter" ? "en" : isLang(state?.lang) ? state.lang : "en";
+  isStaffWindow(state?.principal) ? "en" : isLang(state?.lang) ? state.lang : "en";
 
 // null params mean none. One pass, so a value that holds braces is never re-read.
 export const fill = (template, params) => {

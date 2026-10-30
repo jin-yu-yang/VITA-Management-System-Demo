@@ -117,7 +117,17 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
   VT007: "VALIDATION",
 });
 
-// Principal: { userId, workspaceId, access: 'applicant'|'presenter', email }
+// True for a presenter or a staff account: the principals that get the staff
+// screens. Demo tools and the persona picker test `access === "presenter"`.
+export const isStaffWindow = (principal) =>
+  principal?.access === "presenter" || principal?.access === "staff";
+
+// Principal: { userId, workspaceId, access: 'applicant'|'presenter'|'staff',
+//              email, personId, personName }
+//   personId and personName are the staff member's own roster person, linked
+//   through their account; null for an applicant or a presenter.
+//   A staff window is a presenter's or a staff account's: both get the staff
+//   screens. Only a presenter also gets the demo tools and the persona picker.
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,

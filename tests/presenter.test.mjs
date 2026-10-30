@@ -68,6 +68,14 @@ test("an applicant is offered no presenter control at all", () => {
   assert.equal(renderPresenterPanel({}), "");
 });
 
+test("the persona picker leaves out a person a staff account has claimed", () => {
+  const riley = { id: "person-riley", name: "Riley Park", capabilities: ["admin"], linked: true };
+  const html = renderPresenterPanel(presenterView({ people: [...PEOPLE, riley] }));
+  assert.ok(!html.includes("Riley Park"), "no button for the linked person");
+  assert.ok(!html.includes('data-person-id="person-riley"'));
+  for (const person of PEOPLE) assert.ok(html.includes(person.name), person.name);
+});
+
 test("a presenter gets the reset, the checkpoints and the persona choice", () => {
   const html = renderPresenterPanel(presenterView());
   for (const control of PRIVILEGED) assert.ok(html.includes(control), control);
@@ -216,4 +224,94 @@ test("a reset somebody else ran is said plainly, and dismissed", () => {
   // It is not an alert: nothing failed.
   assert.ok(!/notice-banner[^>]*role="alert"/.test(html));
   assert.ok(!page({ ...state, notice: null }, "").includes("notice-banner"));
+});
+
+const staffView = (overrides = {}) => ({
+  ...presenterView({
+    principal: {
+      userId: "user-3",
+      workspaceId: "3f2a91c7-1111-2222-3333-444455556666",
+      access: "staff",
+      email: "riley@example.org",
+      personId: "person-riley",
+      personName: "Riley Park",
+    },
+    people: [...PEOPLE, { id: "person-riley", name: "Riley Park", capabilities: ["prepare"] }],
+    selectedPersonId: "person-riley",
+  }),
+  screen: "staff",
+  savedCase: null,
+  assistance: [],
+  boardFilters: {},
+  openPanels: [],
+  error: null,
+  notice: null,
+  dialog: null,
+  ...overrides,
+});
+
+test("a staff account gets the staff shell, named, with no demo tools", () => {
+  const state = staffView();
+  assert.equal(renderPresenterPanel(state), "");
+  const html = page(state, staffScreen(state));
+  assert.match(html, /class="app-sidebar"/);
+  const row = html.match(/<div class="account-row">[\s\S]*?<\/span><\/div>/)[0];
+  assert.match(row.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), /Signed in as Riley Park/);
+  assert.doesNotMatch(html, /Presenter controls|No persona chosen|Acting as/);
+  for (const control of PRIVILEGED) assert.ok(!html.includes(control), control);
+  assert.ok(!html.includes("Fill fictional details"));
+});
+
+test("a staff account's case page acts as no one; a presenter's keeps its sentence", () => {
+  const onCase = {
+    screen: "staff-case",
+    savedCase: { id: "case-1", reference: "VT-AB2C-DE3F", stage: "preparation_ready", answers: {} },
+    cases: [],
+  };
+  const staffHtml = staffScreen(staffView(onCase));
+  assert.match(staffHtml, /Everything this case holds, and the work you may do on it\.</);
+  assert.match(staffHtml, /Signed in as Riley Park\./);
+  assert.doesNotMatch(staffHtml, /acting as/i);
+  // A presenter acting as a volunteer (not the office) gets the volunteer page.
+  const presenterHtml = staffScreen(
+    presenterView({ ...staffView(onCase), principal: presenterView().principal, selectedPersonId: "person-riley" }),
+  );
+  assert.match(presenterHtml, /Acting as Riley Park\./);
+  assert.ok(
+    presenterHtml.includes(
+      "Everything this case holds, and the work you may do on it as the volunteer you are acting as.",
+    ),
+    "the presenter's case page lost its sentence",
+  );
+});
+
+// A view-level guard: it passed before this task, since the banner already shows state.error.
+test("a refused stored persona shows in the error banner and the window stays usable", () => {
+  const state = presenterView({
+    screen: "staff",
+    savedCase: null,
+    assistance: [],
+    boardFilters: {},
+    openPanels: [],
+    notice: null,
+    dialog: null,
+    error: { code: "FORBIDDEN", message: "You do not have access to that." },
+  });
+  const html = page(state, staffScreen(state));
+  assert.match(html, /class="problem-banner"[\s\S]*You do not have access to that\./);
+  assert.match(html, /data-action="dismiss-error"/);
+  assert.match(html, /data-action="select-person"/, "the picker is still there to choose again");
+});
+
+test("the add-case page's Fill fictional details pill is a presenter's only", () => {
+  const add = { screen: "office-add-case", workspace: { defaultIntakeVersion: 2 }, officeDraft: true, draftAnswers: {} };
+  const asStaff = staffView({ ...add, selectedPersonId: "person-sam" });
+  asStaff.principal.personId = "person-sam";
+  asStaff.principal.personName = "Sam";
+  const staffHtml = staffScreen(asStaff);
+  assert.match(staffHtml, /id="add-case-v2-form"/, "the form is there");
+  assert.ok(!staffHtml.includes("Fill fictional details"));
+  assert.ok(!staffHtml.includes("fill-assisted-intake"));
+  const presenterHtml = staffScreen(presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam" }));
+  assert.match(presenterHtml, /data-action="fill-assisted-intake"/);
 });

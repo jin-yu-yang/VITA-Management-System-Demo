@@ -4,6 +4,7 @@ import { createController } from "../src/controller.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
+import { staffScreen } from "../src/views.mjs";
 import { CONTACT_FIELDS, findQuestion, isMemberId } from "../src/intake-catalogue.mjs";
 import { newMemberId, renderQuestion, reviewAlerts, valuesFromControls, withholdInvalid } from "../src/intake-form.mjs";
 import { fictionalAnswers, fillBlankAnswers, makeSampleAnswers } from "../src/sample-data.mjs";
@@ -1062,6 +1063,42 @@ test("a presenter's selected person travels with the action", async () => {
   assert.equal(store.writes[0].personId, "person-1");
   assert.equal(store.writes[0].expectedRevision, 2);
   controller.stop();
+});
+
+test("a presenter cannot choose a person a staff account has claimed", async () => {
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [
+      { id: "alex", name: "Alex", capabilities: ["prepare"], linked: false },
+      { id: "riley", name: "Riley Park", capabilities: ["admin"], linked: true },
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  assert.throws(() => controller.selectPerson("riley"), { code: "FORBIDDEN" });
+  assert.equal(controller.getState().selectedPersonId, null);
+  controller.selectPerson("alex");
+  assert.equal(controller.getState().selectedPersonId, "alex");
+  controller.stop();
+});
+
+test("a restored persona that a staff account has since claimed is dropped", async () => {
+  const shared = fakeSession();
+  const people = [
+    { id: "alex", name: "Alex", capabilities: ["prepare"], linked: false },
+    { id: "riley", name: "Riley Park", capabilities: ["admin"], linked: false },
+  ];
+  const principal = { userId: "p1", workspaceId: "w1", access: "presenter" };
+  const first = build({ store: fakeStore({ principal, people }), sessionStorage: shared });
+  await first.controller.start();
+  first.controller.selectPerson("riley");
+  first.controller.stop();
+
+  const linked = people.map((p) => (p.id === "riley" ? { ...p, linked: true } : p));
+  const again = build({ store: fakeStore({ principal, people: linked }), sessionStorage: shared });
+  await again.controller.start();
+  assert.equal(again.controller.getState().selectedPersonId, null);
+  again.controller.stop();
 });
 
 test("a presenter opens a case on the staff workspace and claims it as the chosen person", async () => {
@@ -6008,5 +6045,193 @@ test("closeUnsigned conflict re-reads", async () => {
   const html = closeUnsignedDialogBody({ cases: state.cases });
   assert.doesNotMatch(html, /id="field-close-unsigned-confirmed"[^>]*checked/);
   assert.match(html, /id="close-unsigned-submit"[^>]*disabled/);
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
+// A staff account acts as its own person (add-staff-identity, design D9)
+// ---------------------------------------------------------------------------
+
+const STAFF_PRINCIPAL = Object.freeze({
+  userId: "user-riley",
+  workspaceId: "w1",
+  access: "staff",
+  email: "riley.park@example.test",
+  personId: "person-riley",
+  personName: "Riley Park",
+});
+const staffPeople = [
+  { id: "person-riley", name: "Riley Park", capabilities: ["prepare", "admin", "followup"] },
+  { id: "person-sam", name: "Sam", capabilities: ["admin", "followup"] },
+];
+const staffStore = (overrides = {}) =>
+  fakeStore({ principal: { ...STAFF_PRINCIPAL }, people: staffPeople, ...overrides });
+
+test("a staff start loads the staff landing and acts as the staff person", async () => {
+  const store = staffStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparing", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  const state = controller.getState();
+  assert.equal(state.screen, "staff");
+  assert.ok(store.calls.includes("listPeople"));
+  assert.ok(store.calls.includes("listAssistance"));
+  assert.ok(state.workspace, "the workspace is read");
+  // The screens read the acting person from here (phone masking, "Logged by",
+  // the board's "mine"): for staff it is the account's own person.
+  assert.equal(state.selectedPersonId, "person-riley");
+  await controller.selectCase("case-a");
+  assert.equal(controller.getState().screen, "staff-case");
+  controller.stop();
+});
+
+// The staff twin of staff-views' "the viewer's own case ... show the
+// revealable phone" and "someone else's case show the locked phone": the board
+// is drawn from the controller's own state, so the viewer is whatever person
+// the controller says this window acts as.
+test("a staff board reveals the phone of the staff person's own case and locks another's", async () => {
+  const boardRow = (html, reference) =>
+    html.split('<tr class="board-row').slice(1).find((row) => row.includes(reference))?.split("</tr>")[0] ?? "";
+  const onBoard = (overrides) => ({
+    stage: "preparing",
+    revision: 3,
+    preparationVersion: 0,
+    answers: { service: "Drop-off", language: "English" },
+    intakeVerified: true,
+    reviewerId: null,
+    lastRemindedAt: null,
+    updatedAt: "2026-09-12T16:30:00.000Z",
+    phone: "2155550123",
+    ...overrides,
+  });
+  const store = staffStore({
+    // Riley is a volunteer here: office staff see every phone, which would
+    // hide the rule.
+    people: [
+      { id: "person-riley", name: "Riley Park", capabilities: ["prepare"] },
+      { id: "person-sam", name: "Sam", capabilities: ["prepare"] },
+    ],
+    cases: [
+      onBoard({ id: "riley-1", reference: "VT-PHON-0001", preparerId: "person-riley" }),
+      onBoard({ id: "sam-1", reference: "VT-PHON-0002", preparerId: "person-sam" }),
+    ],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.setBoardFilter("search", "VT-PHON");
+  const html = staffScreen(controller.getState());
+  const mine = boardRow(html, "VT-PHON-0001");
+  assert.match(mine, /<span class="phone-mask" id="board-phone-riley-1" tabindex="0">/);
+  assert.ok(mine.includes('<span class="phone-full">(215) 555-0123</span>'));
+  const theirs = boardRow(html, "VT-PHON-0002");
+  assert.match(theirs, /<span class="phone-mask is-locked" title="Claim this case to see the full number">/);
+  assert.doesNotMatch(theirs, /555/, "the number reached Riley's locked row");
+  controller.stop();
+});
+
+test("a staff controller's actions carry the staff person", async () => {
+  const store = staffStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparation_ready", revision: 2, answers: {} }],
+    assistance: [{ id: "item-1", caseId: null, kind: "intake_help", status: "open", revision: 4, assigneeId: null }],
+  });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  // Even a persona passed in is not the staff member's to choose.
+  await controller.runAction("CLAIM_PREPARATION", {}, { personId: "person-sam" });
+  assert.equal(store.writes.at(-1).personId, "person-riley");
+  await controller.logContact("case-a", CONTACT_ENTRY);
+  assert.equal(store.writes.at(-1).personId, "person-riley");
+  await controller.runAssistanceAction("CLAIM", "item-1");
+  assert.equal(store.writes.at(-1).personId, "person-riley");
+  controller.stop();
+});
+
+test("selectPerson as staff is refused and changes nothing", async () => {
+  const store = staffStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparing", revision: 2, answers: {} }],
+  });
+  const { controller, sessionStorage } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-a");
+  controller.setCaseTab("documents");
+  const stored = sessionStorage.raw("vitally:client:v1:user-riley");
+  const calls = store.calls.length;
+  assert.throws(() => controller.selectPerson("person-sam"), (error) => error.code === "FORBIDDEN");
+  const state = controller.getState();
+  assert.equal(state.selectedPersonId, "person-riley");
+  assert.equal(state.caseTab, "documents");
+  assert.equal(sessionStorage.raw("vitally:client:v1:user-riley"), stored);
+  assert.equal(store.calls.length, calls, "nothing is read or sent");
+  controller.stop();
+});
+
+test("a staff window ignores a persona left in its storage and never stores one", async () => {
+  const sessionStorage = fakeSession({
+    "vitally:client:v1:user-riley": JSON.stringify({
+      screen: "staff-case",
+      selectedCaseId: "case-a",
+      selectedPersonId: "person-sam",
+    }),
+  });
+  const store = staffStore({
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparation_ready", revision: 2, answers: {} }],
+  });
+  const { controller } = build({ store, sessionStorage });
+  await controller.start();
+  // The rest of the record is still this window's.
+  assert.equal(controller.getState().selectedCaseId, "case-a");
+  assert.equal(controller.getState().selectedPersonId, "person-riley");
+  await controller.runAction("CLAIM_PREPARATION", {});
+  assert.equal(store.writes.at(-1).personId, "person-riley", "Riley acts as Riley, never as Sam");
+  const record = JSON.parse(sessionStorage.raw("vitally:client:v1:user-riley"));
+  assert.equal(record.selectedCaseId, "case-a");
+  assert.ok(!("selectedPersonId" in record), "no persona is written for staff");
+  controller.stop();
+});
+
+test("the demonstration controls refuse staff without a call", async () => {
+  const store = staffStore({ cases: [sampleCase()] });
+  const { controller } = build({ store });
+  await controller.start();
+  await assert.rejects(controller.resetFixtures(), { code: "FORBIDDEN" });
+  await assert.rejects(
+    controller.loadCheckpoint({ caseId: "fixture-a", checkpoint: "intake_ready" }),
+    { code: "FORBIDDEN" },
+  );
+  assert.deepEqual(store.writes, []);
+  assert.ok(!store.calls.includes("resetFixtures"));
+  assert.ok(!store.calls.includes("loadCheckpoint"));
+  controller.stop();
+});
+
+// The staff twin of "an admin persona opening a Request sent case starts
+// screening, once": whether this window acts as an admin is decided by the
+// account's own person.
+test("a staff admin opening a Request sent case starts screening as the staff person", async () => {
+  const store = staffStore({ cases: [RECEIVED] });
+  const { controller } = build({ store });
+  await controller.start();
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 1);
+  assert.equal(startWrites(store)[0].personId, "person-riley");
+  controller.stop();
+});
+
+test("a staff member without admin starts no screening, whatever persona the window once held", async () => {
+  const sessionStorage = fakeSession({
+    "vitally:client:v1:user-riley": JSON.stringify({ selectedPersonId: "person-sam" }),
+  });
+  const store = staffStore({
+    cases: [RECEIVED],
+    people: [{ id: "person-riley", name: "Riley Park", capabilities: ["prepare"] }, ...adminPeople],
+  });
+  const { controller } = build({ store, sessionStorage });
+  await controller.start();
+  await controller.selectCase("case-r");
+  await tick();
+  assert.equal(startWrites(store).length, 0);
   controller.stop();
 });
