@@ -1,7 +1,7 @@
 import { createAuth } from "./auth.mjs";
 import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
-import { CASE_ACTIONS, ASSISTANCE_ACTIONS, isStaffWindow } from "./contracts.mjs";
+import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaffWindow } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
@@ -30,7 +30,18 @@ import {
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
-import { buildDraftPdf, createDraftOffer, draftFontFiles, draftFontsFor, draftLink, fieldsNeedFont } from "./draft-pdf.mjs";
+import {
+  buildDraftPdf,
+  buildEditingCopy,
+  createDraftOffer,
+  draftFontFiles,
+  draftFontsFor,
+  draftLink,
+  fieldsNeedFont,
+  readFilledCopy,
+} from "./draft-pdf.mjs";
+import { readShaded, uploadRefusal } from "./shaded-fields.mjs";
+import { OPEN_FAILED, createShadedSave, editorGone, openShadedEditor } from "./shaded-editor.mjs";
 import {
   describeFocus,
   focusSelectors,
@@ -50,7 +61,7 @@ import { createHantLoader, hantReady } from "./hant.mjs";
 import { t, SENTENCES } from "./client-text.mjs";
 import { createToastTimer } from "./toast.mjs";
 import { contactEntryFromForm, contactSummary, contactSummaries } from "./contact-log.mjs";
-import { decorateStaffCase, outcomeGroup } from "./staff-views.mjs";
+import { decorateStaffCase, outcomeGroup, staffEligibility } from "./staff-views.mjs";
 
 // Bootstrap and DOM wiring, and nothing else. No state lives here (the
 // controller owns it), no HTML is written here (the view modules own it), and
@@ -145,6 +156,10 @@ if (!config) {
   // re-read after an action, another window's change) leaves the caret where
   // the person is typing.
   let shownDialog = null;
+  // The held upload read (state.shadedReview) the last render drew. Only one
+  // that has just appeared takes the keyboard, to its heading; a redraw of
+  // the same one leaves the keyboard where it is.
+  let shownShadedReview = null;
   // A control inside the open dialog that its own action disabled while it was
   // in flight: the keyboard goes back to it once the action lands, rather than
   // being left on the dialog container.
@@ -235,7 +250,14 @@ if (!config) {
     if (hadFocus) toggle?.focus();
   }
 
+  // The open shaded-section editor (design D7) and the case it was opened on.
+  let shadedEditor = null;
+  let shadedEditorCase = null;
+
   function render(focus = false) {
+    // Signed out in another tab, or the case left: the editor's session is
+    // gone, so it closes without asking, and #app is usable again.
+    if (shadedEditor && editorGone(controller.getState(), shadedEditorCase)) shadedEditor.close();
     if (quiet) return;
     // On the version-2 form a render waits for the press (or the composition)
     // to end; `flushHeld` draws it then, unless another render drew first.
@@ -323,6 +345,12 @@ if (!config) {
       root.querySelector("#main")?.focus();
       window.scrollTo(0, 0);
     } else if (keyboard) restoreField(keyboard);
+    // A held upload read that has just appeared takes the keyboard, to its
+    // heading (Task 3 draws it); a redraw of the same read leaves it be.
+    const review = state.shadedReview ?? null;
+    if (review && review !== shownShadedReview && !state.dialog)
+      root.querySelector("#shaded-review-title")?.focus();
+    shownShadedReview = review;
     // A render that removed the focused sidebar control (and whose restore
     // missed) must not leave the peek held.
     peek.focus(peekZone(document.activeElement) === "sidebar" && keyboardFocus(document.activeElement));
@@ -1394,6 +1422,211 @@ if (!config) {
     ready.replaceChildren(link);
   }
 
+  const isoToday = () => {
+    const now = new Date();
+    return [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join("-");
+  };
+
+  // The case's saved shaded section: its one row, or null before the first save.
+  const savedShaded = (record) => (record?.preparerShadedFields ?? [])[0] ?? null;
+
+  // ---- the 13614-C shaded section: download / upload (design D8) --------
+  //
+  // Both stay in this browser: the copy is built here and saved as a file, and
+  // the filled copy is read here. Neither is uploaded or kept. Every failure
+  // is said beside the upload control (SHADED_UPLOAD), with Dismiss only.
+  const shadedFailure = (message, code = "VALIDATION") =>
+    controller.noteLocalFailure({ code, message, place: SHADED_UPLOAD });
+
+  // The English editing copy: the client's answers drawn as in the draft, and
+  // only the 106 shaded fields left fillable, holding the saved values. Its
+  // Keywords carry the case and the section version the upload checks. The
+  // download and the editor (design D7) open the same copy.
+  async function editingCopy(state) {
+    const record = state.savedCase;
+    const reference = record.reference ?? "";
+    const row = savedShaded(record);
+    const version = Number(row?.version ?? 0);
+    const fields = draftFields(state.draftAnswers ?? {}, { form: "en", reference, today: isoToday() });
+    const PDFLib = await import("./vendor/pdf-lib.mjs");
+    const [formBytes, fontFiles] = await Promise.all([
+      fetchBytes(FORM_FILES.en),
+      fieldsNeedFont(fields) ? draftFontFiles(draftFontsFor("en"), fields, { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit }) : [],
+    ]);
+    const bytes = await buildEditingCopy({
+      PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, fields,
+      shaded: row?.fields ?? {}, reference, version,
+    });
+    return { bytes, reference, version };
+  }
+
+  // What readShaded needs from the case: its household size (rows past it
+  // take no cell) and its season (the year rule), else the workspace's.
+  const shadedRules = (record, workspace) => {
+    const members = Array.isArray(record?.answers?.hh) ? record.answers.hh.length : 0;
+    const season = Number.isInteger(record?.season)
+      ? record.season
+      : Number.isInteger(workspace?.currentSeason)
+        ? workspace.currentSeason
+        : undefined;
+    return { form: "en", householdSize: Math.min(members, 4), season };
+  };
+
+  async function downloadShadedCopy(by) {
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    try {
+      const { bytes, reference } = await editingCopy(state);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `13614-C-shaded-${reference || "case"}.pdf`;
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      if (by !== signedInUserId()) return;
+      shadedFailure(
+        error?.draftFont ? "The draft font could not be checked. Try again later." : "The copy could not be made. Press Download to fill elsewhere again.",
+        "DRAFT",
+      );
+    }
+  }
+
+  // A filled copy is read, then held for the preparer to check (change
+  // guard-shaded-upload-against-preview, design D1): the case's reference,
+  // then the shaded fields by name into readShaded (with the case's household
+  // size and season), then uploadRefusal (no values). Nothing is sent until
+  // Save these values (`confirm-shaded-review`), which sends
+  // SAVE_PREPARER_FIELDS on the copy's own version.
+  let shadedUploadToken = 0;
+  async function uploadShadedCopy(input, by) {
+    const file = input.files?.[0] ?? null;
+    if (!file) return;
+    // Only the latest upload may be reviewed or refused: a slow earlier read must not replace it.
+    const token = ++shadedUploadToken;
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    const record = state.savedCase;
+    // A new upload replaces any read still held, even one this file's read refuses.
+    if (state.shadedReview) controller.cancelShadedReview();
+    let read;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const PDFLib = await import("./vendor/pdf-lib.mjs");
+      read = await readFilledCopy({ PDFLib, bytes, reference: record.reference ?? "" });
+    } catch (error) {
+      if (by !== signedInUserId() || token !== shadedUploadToken) return;
+      return shadedFailure(
+        ["NOT_A_PDF", "OTHER_CASE", "NO_FIELDS"].includes(error?.code)
+          ? error.message
+          : "This file isn't a PDF the editor can read.",
+      );
+    } finally {
+      // The same file can be chosen again after a fix elsewhere.
+      input.value = "";
+    }
+    if (by !== signedInUserId() || token !== shadedUploadToken) return;
+    // Another case was opened while the file was read: this copy was for the old one.
+    const now = controller.getState();
+    if (now.savedCase?.id !== record.id) return;
+    const { values, errors } = readShaded(read.raw, shadedRules(now.savedCase, now.workspace));
+    if (errors.length) return shadedFailure(errors.map((entry) => entry.message).join(" "));
+    const refusal = uploadRefusal({ values, preview: read.preview });
+    if (refusal) return shadedFailure(refusal);
+    controller.reviewShadedCopy({ values, version: read.version, preview: read.preview });
+  }
+
+  // Save these values: the held read goes through the upload's own save.
+  async function confirmShadedReview() {
+    const shown = controller.getState().errorCount;
+    try {
+      await controller.confirmShadedReview();
+    } catch (error) {
+      // The controller said it beside the control; anything it did not is said there too.
+      if (controller.getState().errorCount === shown) shadedFailure("Something went wrong.", error?.code ?? "SERVER_ERROR");
+    } finally {
+      // Save removed the focused button; the upload control was disabled while busy, so focus it now.
+      const active = document.activeElement;
+      if (!active || active === document.body || !root.contains(active)) root.querySelector("#shaded-upload")?.focus();
+    }
+  }
+
+  // ---- the 13614-C shaded section: the editor (design D7) ---------------
+  //
+  // A full-screen layer beside `#app` (shaded-editor.mjs), which `render()`
+  // never touches, so the preparer's edits survive every redraw. `#app` is
+  // inert while it is open. pdf.js is loaded only now. (`shadedEditor` and
+  // `shadedEditorCase` are declared before render(), which closes the editor
+  // when its sign-in or case has gone.)
+
+  async function loadPdfjs() {
+    const pdfjs = await import("./vendor/pdfjs.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdfjs-worker.mjs", import.meta.url).href;
+    return pdfjs;
+  }
+
+  // Why this window may no longer save the open case's shaded section, or
+  // null: the same rule that offers the tools (staffEligibility).
+  function shadedRefusal(caseId) {
+    const state = controller.getState();
+    if (state.savedCase?.id !== caseId) return "This case is no longer open here. Close the editor.";
+    const people = state.people ?? [];
+    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const decision = staffEligibility(decorateStaffCase(state.savedCase, people), person).shadedSection;
+    return decision.allowed ? null : decision.reason;
+  }
+
+  function openEditor(by) {
+    if (shadedEditor) return;
+    const state = controller.getState();
+    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    const caseId = state.savedCase.id;
+    if (shadedRefusal(caseId)) return;
+    // Saves based on the stored version this copy shows, then + 1 per
+    // accepted save (createShadedSave).
+    const onSave = createShadedSave({
+      version: Number(savedShaded(state.savedCase)?.version ?? 0),
+      check: (raw) => {
+        const now = controller.getState();
+        return readShaded(raw, shadedRules(now.savedCase, now.workspace));
+      },
+      save: (values, basedOnVersion) => controller.saveShadedSection(values, basedOnVersion, { from: "editor" }),
+      storedVersion: () => Number(savedShaded(controller.getState().savedCase)?.version ?? 0),
+    });
+    const bytes = editingCopy(state).then((made) => made.bytes);
+    // A copy that couldn't be made fails the opening, through `ready`.
+    bytes.catch(() => {});
+    root.inert = true;
+    const editor = openShadedEditor({
+      document,
+      window,
+      loadPdfjs,
+      bytes,
+      explainRefusal: () => shadedRefusal(caseId),
+      onSave,
+      onClose() {
+        shadedEditor = null;
+        root.inert = false;
+        // Back to "Fill the shaded section", or the page when it has gone.
+        const opener = root.querySelector('[data-action="open-shaded-editor"]:not([disabled])');
+        (opener ?? root.querySelector("#main"))?.focus();
+      },
+    });
+    shadedEditor = editor;
+    shadedEditorCase = caseId;
+    editor.ready.catch(() => {
+      if (by !== signedInUserId()) return;
+      controller.noteLocalFailure({ code: "EDITOR", message: OPEN_FAILED, place: SHADED_EDITOR }, () =>
+        openEditor(signedInUserId()),
+      );
+    });
+  }
+
   async function viewDraft(form, by, kind = "13614c") {
     // A client's 13614-C is half finished (hide-draft-13614c-from-clients): only staff make one.
     if (kind !== "14446" && !isStaffWindow(controller.getState().principal)) return;
@@ -1418,7 +1651,11 @@ if (!config) {
       // hanging after HANT_START_TIMEOUT_MS, is draft.failed.
       // The 14446 has no generated lines of its own, so it never needs the map.
       if (kind !== "14446" && form === "zh-t") await loadHantWithin({ hantReady, loadHant }, HANT_START_TIMEOUT_MS);
-      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, { form, reference, today });
+      const fields = (kind === "14446" ? draft14446Fields : draftFields)(state.draftAnswers ?? {}, {
+        // The 13614-C prints the saved shaded section in every form (design
+        // D9); the 14446 has no shaded section and ignores it.
+        form, reference, today, shaded: savedShaded(state.savedCase)?.fields ?? null,
+      });
       const PDFLib = await import("./vendor/pdf-lib.mjs");
       const [formBytes, fontFiles] = await Promise.all([
         fetchBytes(files[form]),
@@ -1806,6 +2043,22 @@ if (!config) {
       case "view-draft":
         await viewDraft(target.dataset.form ?? "en", by, target.dataset.draft ?? "13614c");
         break;
+      case "download-shaded-copy":
+        await downloadShadedCopy(by);
+        break;
+      case "confirm-shaded-review":
+        await confirmShadedReview();
+        break;
+      case "cancel-shaded-review":
+        controller.cancelShadedReview();
+        // Back to the upload control, to choose another file.
+        root.querySelector("#shaded-upload")?.focus();
+        break;
+      case "open-shaded-editor":
+        // A failure to open said earlier goes with the new try.
+        if (controller.getState().error?.place === SHADED_EDITOR) controller.clearError("EDITOR");
+        openEditor(by);
+        break;
       case "toggle-senior":
         controller.editAnswers({
           form_version: state.draftAnswers?.form_version === "senior" ? "general" : "senior",
@@ -2015,6 +2268,10 @@ if (!config) {
 
   root.addEventListener("change", (event) => {
     const field = event.target;
+    if (field.matches?.('input[type="file"][data-action="upload-shaded-copy"]')) {
+      void uploadShadedCopy(field, signedInUserId());
+      return;
+    }
     if (field.matches?.("select[data-board-filter]")) {
       controller.setBoardFilter(field.dataset.boardFilter, field.value);
       root.querySelector(`#${field.id}`)?.focus();
@@ -2133,6 +2390,8 @@ if (!config) {
 
   // Dialogs keep the keyboard inside them, and Escape always closes.
   document.addEventListener("keydown", (event) => {
+    // The shaded-section editor keeps its own keyboard (shaded-editor.mjs).
+    if (shadedEditor) return;
     if (event.key === "Escape" && !controller.getState().dialog) {
       if (event.isComposing) return; // never block an IME's own cancel
       // applyPeek moves the keyboard to the toggle if it was in the sidebar.

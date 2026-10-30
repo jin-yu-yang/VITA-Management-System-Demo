@@ -12,6 +12,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 - [The action API](#the-action-api)
 - [The case state machine](#the-case-state-machine)
 - [Action catalogue](#action-catalogue)
+- [The shaded section of the 13614-C](#the-shaded-section-of-the-13614-c)
 - [Season-end close](#season-end-close)
 - [The contact log](#the-contact-log)
 - [Check order and error codes](#check-order-and-error-codes)
@@ -24,7 +25,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is thirty-eight plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is thirty-nine plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -67,7 +68,7 @@ in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 | `036_hold_and_closing.sql` | Hand-written: the `awaiting_documents` and `on_hold` stages; `cases.documents_origin`, `hold_origin` and `closing_reason`; `REQUEST_DOCUMENTS_AT_INTAKE`, `PUT_ON_HOLD`, `RESUME_FROM_HOLD` and the client's `WITHDRAW`; `CLOSE_CASE` takes one of six reasons and an optional note, and is also allowed from the two new stages; an admin may record and verify documents there; the `withdrawal_notice` follow-up purpose; the `on_hold` and `withdrawn` sample cases |
 | `037_adjust_filing_to_pcdc.sql` | Hand-written: a paper return is "given to the client" at `MARK_EFILED` (stored result `given_to_client`, no date; the old `mailed` is renamed and its date dropped); all four federal/state method pairs are allowed; `RECORD_FILING_RESULT` takes e-filed returns only and `MARK_EFILED` moves the case straight to `accepted` when no e-filed return waits; the client line of `MARK_READY_TO_EFILE` no longer names Form 8879; the new RPC `vitally_close_unsigned`; the `rejected` sample's fix note is the site coordinator's |
 | `038_staff_identity.sql` | Hand-written: the `staff` membership access and `people.user_id`, with a commit-time check that links them; `vitally_private.acting_person`, which the six entry points that take a person now call first; `staff` accepted wherever staff behaviour is decided (21 policies, `lock_case`, `lock_assistance_item`, `contact_person`, `check_operation_authority`'s guard, assisted mode and the two contact-log checks); the private `add_staff_member` and `set_default_followup`; `initialize_workspace` re-runs once staff exist. The header holds the inventory of every `'presenter'` check and what was decided for each |
-
+| `039_preparer_shaded_fields.sql` | Hand-written: the shaded section of Form 13614-C, filled by the case's preparer: the staff-only `preparer_shaded_fields` table (one row per case, in the Realtime publication), `vitally_private.check_preparer_fields`, and the `SAVE_PREPARER_FIELDS` action with its version guard; the sample cases that have a preparer questionnaire get a fictional shaded row |
 **Catalogue changes ship as a new `NNN_intake_catalogue_*.sql` written by `npm run build:intake`;
 never edit an applied one.** The build writes a file only when the hash differs from the newest
 catalogue migration's. The hash covers the catalogue and `LOADER_VERSION` in
@@ -108,7 +109,7 @@ version of a function, use the **last** file that defines it:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action`, `vitally_private.check_operation_authority` | `038_staff_identity.sql` |
+| `public.vitally_apply_action`, `vitally_private.check_operation_authority`, `check_payload`, `apply_fixture_scenario`, `check_preparer_fields`, `act_save_preparer_fields` | `039_preparer_shaded_fields.sql` |
 | `vitally_private.acting_person`, `check_staff_links`, `add_staff_member`, `set_default_followup` | `038_staff_identity.sql` |
 | `vitally_private.lock_case`, `lock_assistance_item`, `contact_person`, `initialize_workspace` | `038_staff_identity.sql` |
 | `public.vitally_log_contact`, `vitally_edit_contact` | `038_staff_identity.sql` |
@@ -124,7 +125,7 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
 | `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
-| `vitally_private.check_payload`, `act_mark_ready_to_efile`, `apply_fixture_scenario`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
+| `vitally_private.act_mark_ready_to_efile`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.act_return_to_signing` | `035_post_efiling_stages.sql` |
 | `public.vitally_close_unsigned` | `038_staff_identity.sql` |
 | `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
@@ -200,6 +201,7 @@ erDiagram
 | `client_events` | Plain-language progress a client may read | `action`, `message`. Written only when an action has something to tell the client |
 | `case_contacts` | Contact details of a version-2 case | One row per case: client phone and second phone, `best_contact_time`, `best_contact_note`. Client-visible on own cases; written by SAVE_ANSWERS and UPDATE_CONTACT; published to Realtime |
 | `case_materials` | Materials the site has received | Primary key `(case_id, item)`; `item` from the eleven-item checklist; `recorded_by_person_id`. Staff-only; written only by RECORD_MATERIALS; published to Realtime |
+| `preparer_shaded_fields` | The shaded section of Form 13614-C (039) | One row per case (`case_id` unique): `fields` (a flat, sparse JSON object keyed by the 106 field keys of `src/shaded-fields.mjs`; blank means absent), `version` (counts saves, from 1), `updated_by_person_id`. A check constraint runs `check_preparer_fields`. Staff-only (033's select, widened to `staff` as 038 widened the others, and never a client's unsent draft); written only by SAVE_PREPARER_FIELDS; published to Realtime |
 | `filing_attempts` | One row per filing of a case (035) | Unique `(case_id, attempt)`; `filed_at`, `filed_by`. Staff-only (013's presenter-only select); written only by MARK_EFILED; not in the Realtime publication, so a `cases` update triggers the staff reload |
 | `filing_returns` | The federal and the state return of one attempt (035) | Unique `(case_id, attempt, return_kind)`; `method`, `result`, `answered_on` (the acknowledgment date; null for a return given to the client), `reject_code` (1–40 characters), `recorded_by`. Staff-only; written by MARK_EFILED and RECORD_FILING_RESULT; not in the publication. A reject code never reaches a client |
 | `filing_notes` | What the office fixed after a rejection (035) | `case_id`, `attempt`, `note` (1–1000), `recorded_by`, `recorded_at`. Staff-only, **append-only**: a `before update or delete` trigger refuses any change, the service role included. Two exceptions: a note goes with its whole case (a sample reset, or a case or workspace delete), and a sample's checkpoint reload clears the notes of that one sample case. Written by RECORD_FILING_RESULT's `fixNote`; not in the publication |
@@ -510,6 +512,7 @@ shorthands in the table:
 | `RECORD_MATERIALS` | Presenter + person (same authority as above); no applicant | Any | | Replaces the set of materials received | No |
 | `SET_DOCUMENT_CARD` | Applicant owner, or presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | | Upserts the card's `status` in `case_document_cards` (`not_done` stores null) | No |
 | `SET_DOCUMENT_GROUP` | Presenter + a person who works on the case (`works_on_case`, 018; never on a client's unsent draft) | Any but `closed` | `maybe` only undoes a staff `needed` | Sets or clears the card's `group_override` | No |
+| `SAVE_PREPARER_FIELDS` | Presenter + person (the person must have `prepare`, `INELIGIBLE` otherwise) | `preparing`, `corrections_required` | Current preparer; `basedOnVersion` equals the stored version (0 when there is no row), else `CONFLICT`; the year is before the season and a household row has a member | Replaces the whole set in `preparer_shaded_fields` and adds 1 to its version; the history lists the changed keys | No |
 
 Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an extra key is a
 `VALIDATION` error, not ignored. The browser builds them in
@@ -535,6 +538,7 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 | `RECORD_MATERIALS` | `{received: string[]}` |
 | `SET_DOCUMENT_CARD` | `{slotId, status: "later" \| "none" \| "not_done"}` |
 | `SET_DOCUMENT_GROUP` | `{slotId, group: "needed" \| "maybe"}` |
+| `SAVE_PREPARER_FIELDS` | `{basedOnVersion (whole number), fields: {<shaded key>: value}}`; `fields` passes `check_preparer_fields` |
 | `REQUEST_CORRECTIONS` | `{findings (≤2000)}` |
 | `RESUBMIT_REVIEW` | `{questionnaire, resolution (≤2000)}` |
 | `RECORD_REVIEW_CONTACT` | `{outcome, note (≤1000)}` |
@@ -546,6 +550,40 @@ Payload shapes are whitelisted exactly in `vitally_private.check_payload`; an ex
 Assistance items have their own two actions through `vitally_assistance_action`: `CLAIM` (item
 `open` → `assigned`, needs `assist`, no note) and `RESOLVE` (`assigned` → `resolved`, only the
 assignee, note required). They write no case history.
+
+## The shaded section of the 13614-C
+
+The shaded part of Form 13614-C ("To be completed by certified volunteer") belongs to the case's
+preparer (OpenSpec change `add-preparer-13614c-fields`; migration `039_preparer_shaded_fields.sql`).
+The browser side is in [Front end](frontend.md#the-shaded-section-of-the-13614-c).
+
+- **The table.** `preparer_shaded_fields` holds one row per case: `fields` is a flat, sparse JSON
+  object (a blank is absent, never an empty string), `version` counts saves (the first save is 1),
+  and `updated_by_person_id` says who saved last. Staff may read it (a presenter, never a client's
+  unsent draft); nothing but the action writes it. It is in the Realtime publication for staff only.
+- **The check.** `vitally_private.check_preparer_fields(jsonb)` is the shape check, used by the
+  table's check constraint and by `check_payload`. It repeats the key table of
+  `src/shaded-fields.mjs`: a known key, and for it the right type (a box is `true`, a count is a
+  whole number 0–99, an amount matches `^(0|[1-9][0-9]{0,5})(\.[0-9]{1,2})?$`, a household cell is
+  `yes`, `no` or `na`, a VIN is 1–17 letters and digits, a reason is at most 120 characters and a
+  note at most 500, counted in characters). A text that is only whitespace is blank and is refused.
+  A year must be four digits and at least 2000 here; the season bound and the household rows need the case, so the action checks those.
+- **The action.** `SAVE_PREPARER_FIELDS` (`act_save_preparer_fields`) takes `{basedOnVersion,
+  fields}` and replaces the whole set. The stage must be `preparing` or `corrections_required`
+  (`INVALID_TRANSITION` otherwise), then `require_case_preparer` (the current preparer, as for any
+  preparer action), then the version guard, then the two case rules: the disallowed year must be
+  before the case's season, and a `household<n>…` key needs a household member in the answers (at
+  most four rows). Any of those, like a bad shape, is `VALIDATION`.
+- **The version guard.** The row is locked, and the stored version (0 when there is no row) must
+  equal `basedOnVersion`, else `CONFLICT`. The case revision in the envelope is checked earlier by
+  `vitally_apply_action`, so other actions moving the revision (the office recording materials, say)
+  produce a `CONFLICT` that the browser can tell apart by re-reading: when only the revision moved,
+  it sends the same values again (see the front end's `createShadedSave`). A save writes
+  `version + 1`.
+- **History.** `case_events` records `SAVE_PREPARER_FIELDS` with `detail.changed`, the sorted keys
+  whose value differs from before (never the values) and `detail.version`. The staff history shows
+  the field labels. No `client_events` row is written, so a client sees nothing.
+- **Fixtures.** See [Sample cases](#sample-cases-reset-and-checkpoints-demo-only).
 
 ## Season-end close
 
@@ -659,13 +697,13 @@ exceptions from an application path; the browser would show them as `SERVER_ERRO
 
 ## Realtime
 
-Sixteen tables are published to `supabase_realtime`, INSERT and UPDATE only. `007_realtime_publication.sql`
+Nineteen tables are published to `supabase_realtime`, INSERT and UPDATE only. `007_realtime_publication.sql`
 adds twelve: `cases`, `document_requests`, `documents`, `client_events`, `workspaces`, `people`,
 `preparation_participants`, `admin_followups`, `contact_attempts`, `case_events`,
 `assistance_items`, `reviews`. `011` adds `case_contacts`, `013` adds `case_materials` and `017` adds `case_document_cards`.
-`031` adds `contact_log` and `contact_log_versions` and removes `contact_attempts`.
+`031` adds `contact_log` and `contact_log_versions` and removes `contact_attempts`; `033` adds the two questionnaire tables and `039` adds `preparer_shaded_fields`.
 `action_receipts` is not published. An applicant's window watches seven of them (`CLIENT_TABLES`),
-a presenter's all sixteen (`STAFF_TABLES`).
+a presenter's all nineteen (`STAFF_TABLES`).
 
 Realtime applies each subscriber's RLS, so the same visibility rules hold for events. Deletes are
 not published because a deleted row cannot be authorized. The browser treats events as "something
@@ -696,6 +734,7 @@ filing attempt and return rows. Migration 036 adds `on_hold` (a documents hold w
   `fixture_contact_v2` (phones `2155550101`–`06`, best time weekday evenings) before its scenario
   is applied. Their household member carries a fixed `member_id`. 023 deleted every version-1
   sample and seeds nothing itself: a workspace has no samples again until the next reset.
+- **The shaded section on the samples (039).** Each sample that has a preparer questionnaire also gets a `preparer_shaded_fields` row (version 1, saved by Alex) with fictional values: a W-2 and a 1099-INT with counts, the standard deduction, an income note, and the first household row's five cells when the sample has a household member. A reset or a checkpoint deletes the case's shaded row with its other workflow records, then seeds it again where the scenario has one.
 - **A checkpoint clears office work on the sample:** its `case_materials` and
   `case_document_cards` rows go with the rest of its workflow records; its `case_contacts` row stays.
 - **A reset or checkpoint clears the sample's contact log** with the rest of its work (031 redefines
@@ -743,14 +782,14 @@ Example: a reviewer can "release" a review they claimed by mistake.
 
 1. **Vocabulary.** Add `RELEASE_REVIEW` to `CASE_ACTIONS` in [`src/contracts.mjs`](../../src/contracts.mjs).
 2. **Migration `NNN_release_review.sql`:**
-   - `create or replace vitally_private.check_operation_authority` (current definition: 038) with
+   - `create or replace vitally_private.check_operation_authority` (current definition: 039) with
      the new type in the right authority group.
-   - `create or replace vitally_private.check_payload` (current definition: 034) with the payload
+   - `create or replace vitally_private.check_payload` (current definition: 039) with the payload
      shape.
    - A new `vitally_private.act_release_review(p_member, p_case, p_person, p_payload)`: stage check
      first (`VT004`), then `require_case_reviewer`, then the change. Return
      `{detail: {...}}` and, if the client should be told, `message`.
-   - `create or replace public.vitally_apply_action` (current definition: 038) with one new `when`
+   - `create or replace public.vitally_apply_action` (current definition: 039) with one new `when`
      branch.
    - Re-apply grants (see above).
 3. **Browser.** A payload builder in [`src/case-actions.mjs`](../../src/case-actions.mjs), an
@@ -808,7 +847,7 @@ and a case is created with no answers (`vitally_create_case` refuses any other `
 
 ## Testing
 
-The database suite (`tests/database*.mjs`, 421 tests) runs against the local stack only. Each test
+The database suite (`tests/database*.mjs`, 434 tests) runs against the local stack only. Each test
 file builds a throwaway workspace with fresh synthetic accounts through
 [`tests/support/database-fixture.mjs`](../../tests/support/database-fixture.mjs) and deletes it
 afterwards, so tests are independent and leave your rehearsal workspace alone.
@@ -831,6 +870,7 @@ What the suite covers, by file:
 | `database-season-close.mjs` | `vitally_close_unsigned`: closing signing cases as Dismissed, all or nothing, refusals, replay, the receipt, and that unlisted cases are left alone |
 | `database-realtime.mjs` | Realtime privacy between clients and for staff tables |
 | `database-store.mjs` | The browser's data adapter against the real database |
+| `database-shaded.mjs` | The shaded section (039): the table and its RLS, `check_preparer_fields`, SAVE_PREPARER_FIELDS (authority, stages, the version guard, season and household rules, history without a client event), Realtime, and the samples |
 
 Every privileged connection passes the target guard in
 [`tools/admin/test-target.mjs`](../../tools/admin/test-target.mjs): loopback addresses only, the

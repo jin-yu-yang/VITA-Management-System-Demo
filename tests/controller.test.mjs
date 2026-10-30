@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createController } from "../src/controller.mjs";
+import { SHADED_EDITOR, SHADED_UPLOAD } from "../src/contracts.mjs";
 import { POOL_FILTER_KEYS } from "../src/pool-views.mjs";
 import { saveStatus } from "../src/client-views.mjs";
 import { closeUnsignedDialogBody, closeUnsignedListKey } from "../src/office-views.mjs";
@@ -6049,6 +6050,379 @@ test("closeUnsigned conflict re-reads", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// The shaded section (change add-preparer-13614c-fields, design D5)
+// ---------------------------------------------------------------------------
+
+const shadedStore = () =>
+  fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "alex", name: "Alex", capabilities: ["prepare"] }],
+    cases: [
+      {
+        id: "case-s",
+        reference: "VT-SHAD-ED22",
+        stage: "preparing",
+        revision: 7,
+        answers: {},
+        preparerId: "alex",
+        participants: ["alex"],
+        preparerShadedFields: [],
+      },
+    ],
+  });
+
+test("saveShadedSection sends the latest revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The office logs a contact meanwhile: realtime brings the newer revision.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 9 });
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-s", caseId: "case-s" });
+  const fields = { incomeW2s: true, incomeW2sCount: 2 };
+  await controller.saveShadedSection(fields, 0);
+  const sent = store.writes.at(-1);
+  assert.equal(sent.type, "SAVE_PREPARER_FIELDS");
+  assert.equal(sent.caseId, "case-s");
+  assert.equal(sent.expectedRevision, 9);
+  assert.equal(sent.personId, "alex");
+  assert.deepEqual(sent.payload, { fields, basedOnVersion: 0 });
+  // Saved, in place beside the upload control.
+  assert.deepEqual(controller.getState().shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+// The read of an uploaded copy is held until the preparer confirms
+// (change guard-shaded-upload-against-preview, design D1).
+
+const shadedSends = (store) => store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+
+async function openShadedCase({ withSecondCase = false } = {}) {
+  const store = shadedStore();
+  if (withSecondCase)
+    store.records.set("case-t", { ...store.records.get("case-s"), id: "case-t", reference: "VT-SHAD-ED33", revision: 3 });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  return { store, controller };
+}
+
+test("a reviewed upload is sent only on confirm", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  assert.equal(shadedSends(store).length, 0);
+  assert.deepEqual(controller.getState().shadedReview, {
+    caseId: "case-s",
+    values: { incomeW2s: true },
+    version: 0,
+    preview: false,
+  });
+  assert.ok(await controller.confirmShadedReview());
+  const sends = shadedSends(store);
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].caseId, "case-s");
+  assert.deepEqual(sends[0].payload, { fields: { incomeW2s: true }, basedOnVersion: 0 });
+  const state = controller.getState();
+  assert.equal(state.shadedReview, null);
+  assert.deepEqual(state.shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("a new upload under review clears this case's upload error and Saved", async () => {
+  const { controller } = await openShadedCase();
+  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: SHADED_UPLOAD });
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: true });
+  const state = controller.getState();
+  assert.equal(state.error, null);
+  assert.equal(state.shadedStatus, null);
+  assert.equal(state.shadedReview.preview, true);
+  controller.stop();
+});
+
+test("cancel sends nothing", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  controller.cancelShadedReview();
+  assert.equal(shadedSends(store).length, 0);
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("a case switch drops the review", async () => {
+  const { store, controller } = await openShadedCase({ withSecondCase: true });
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  await controller.selectCase("case-t");
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("sign-out drops the review", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  await controller.signOut();
+  assert.equal(controller.getState().shadedReview, null);
+  assert.equal(await controller.confirmShadedReview(), null);
+  assert.equal(shadedSends(store).length, 0);
+  controller.stop();
+});
+
+test("the review survives a state change", async () => {
+  const { store, controller } = await openShadedCase();
+  const values = { incomeW2s: true, incomeW2sCount: 2 };
+  controller.reviewShadedCopy({ values, version: 0, preview: false });
+  // The office logs a contact meanwhile: realtime brings the newer revision.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 9 });
+  await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-s", caseId: "case-s" });
+  const state = controller.getState();
+  assert.equal(state.savedCase.revision, 9);
+  assert.equal(state.shadedReview.caseId, "case-s");
+  assert.deepEqual(state.shadedReview.values, values);
+  // Confirming then sends it on the newer revision.
+  await controller.confirmShadedReview();
+  assert.equal(shadedSends(store).at(-1).expectedRevision, 9);
+  controller.stop();
+});
+
+test("confirm is single-flight", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  const first = controller.confirmShadedReview();
+  assert.equal(await controller.confirmShadedReview(), null);
+  await first;
+  assert.equal(shadedSends(store).length, 1);
+  controller.stop();
+});
+
+test("a CONFLICT after confirm keeps the stale-copy sentence", async () => {
+  const { store, controller } = await openShadedCase();
+  controller.reviewShadedCopy({ values: { incomeW2s: true }, version: 0, preview: false });
+  // The section itself was saved since the copy was downloaded (version 0).
+  store.records.set("case-s", {
+    ...store.records.get("case-s"),
+    revision: 8,
+    preparerShadedFields: [{ version: 1, fields: {} }],
+  });
+  store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
+  await assert.rejects(controller.confirmShadedReview(), (error) => error.code === "CONFLICT");
+  assert.equal(shadedSends(store).length, 1);
+  const state = controller.getState();
+  assert.equal(state.error.place, SHADED_UPLOAD);
+  assert.equal(
+    state.error.message,
+    "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.",
+  );
+  assert.equal(state.shadedReview, null);
+  assert.equal(state.retryable, false);
+  controller.stop();
+});
+
+test("an upload refused only because the case moved is sent once more on the new revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The office records materials in another window; this window hasn't heard yet.
+  store.records.set("case-s", { ...store.records.get("case-s"), revision: 8 });
+  store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+  const fields = { incomeW2s: true, incomeW2sCount: 2 };
+  assert.ok(await controller.saveShadedSection(fields, 0));
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 2);
+  assert.equal(sends[0].expectedRevision, 7);
+  assert.equal(sends[1].expectedRevision, 8);
+  assert.notEqual(sends[0].actionId, sends[1].actionId);
+  assert.deepEqual(sends[1].payload, { fields, basedOnVersion: 0 });
+  const state = controller.getState();
+  assert.equal(state.error, null);
+  assert.deepEqual(state.shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("an upload is never sent again to a case opened while it was out", async () => {
+  const store = shadedStore();
+  store.records.set("case-t", { ...store.records.get("case-s"), id: "case-t", reference: "VT-SHAD-ED33", revision: 3 });
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The first send meets a CONFLICT, and the preparer opens another case meanwhile;
+  // that case's section is also at version 0, as the copy's was.
+  const act = store.act;
+  let first = true;
+  store.act = async (action) => {
+    if (first) {
+      first = false;
+      await controller.selectCase("case-t");
+      store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+    }
+    return act(action);
+  };
+  assert.equal(await controller.saveShadedSection({ incomeW2s: true }, 0), null);
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].caseId, "case-s");
+  const state = controller.getState();
+  assert.equal(state.savedCase.id, "case-t");
+  // Nothing about case-s is said on case-t.
+  assert.equal(state.shadedStatus, null);
+  assert.equal(state.error, null);
+  controller.stop();
+});
+
+test("an upload whose resend meets the case moving again asks for the same file again", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // Every send meets a newer case revision; the section stays at version 0.
+  const act = store.act;
+  store.act = async (action) => {
+    const record = store.records.get(action.caseId);
+    store.records.set(action.caseId, { ...record, revision: record.revision + 1 });
+    store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+    return act(action);
+  };
+  await assert.rejects(controller.saveShadedSection({ incomeW2s: true }, 0));
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 2);
+  const state = controller.getState();
+  assert.equal(state.error.place, SHADED_UPLOAD);
+  assert.equal(state.error.message, "The case changed while this copy was being saved. Upload the same file again.");
+  assert.equal(state.retryable, false);
+  assert.equal(state.shadedStatus, null);
+  controller.stop();
+});
+
+test("a refused shaded save is said beside the upload control, with Dismiss only", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // The section itself was saved since the copy was downloaded (version 0).
+  store.records.set("case-s", {
+    ...store.records.get("case-s"),
+    revision: 8,
+    preparerShadedFields: [{ version: 1, fields: {} }],
+  });
+  store.failNext = Object.assign(new Error("stale"), { code: "CONFLICT" });
+  await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "CONFLICT");
+  // A stale copy is not sent again.
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 1);
+  const state = controller.getState();
+  // One name for the place, from contracts.mjs, shared by the controller and the page.
+  assert.equal(SHADED_UPLOAD, "shaded-upload");
+  assert.equal(state.error.place, SHADED_UPLOAD);
+  assert.equal(
+    state.error.message,
+    "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.",
+  );
+  assert.equal(state.retryable, false);
+  assert.equal(state.shadedStatus, null);
+  // An unknown outcome is not offered again either: the upload is pressed again instead.
+  store.failNext = Object.assign(new Error("offline"), { code: "OFFLINE" });
+  await assert.rejects(controller.saveShadedSection({}, 0), (error) => error.code === "OFFLINE");
+  assert.equal(controller.getState().retryable, false);
+  assert.equal(controller.getState().error.place, SHADED_UPLOAD);
+  assert.equal(await controller.retryLast(), null);
+  // A failure the page records itself (a file it couldn't read) goes to the same place.
+  controller.noteLocalFailure({ code: "VALIDATION", message: "This file isn't a PDF the editor can read.", place: SHADED_UPLOAD });
+  assert.equal(controller.getState().error.place, SHADED_UPLOAD);
+  controller.stop();
+});
+
+test("a second shaded save while one is out does nothing", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  const first = controller.saveShadedSection({ incomeW2s: true }, 0);
+  assert.equal(await controller.saveShadedSection({ incomeW2s: true }, 0), null);
+  await first;
+  assert.equal(store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS").length, 1);
+  controller.stop();
+});
+
+test("an editor's shaded save leaves its refusals to the editor", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  for (const code of ["CONFLICT", "INVALID_TRANSITION", "OFFLINE"]) {
+    store.failNext = Object.assign(new Error(code), { code });
+    await assert.rejects(
+      controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }),
+      (error) => error.code === code,
+    );
+    const state = controller.getState();
+    // The editor says it in its own status; nothing is said behind it.
+    assert.equal(state.error, null, code);
+    assert.equal(state.retryable, false, code);
+    assert.equal(state.shadedStatus, null, code);
+    assert.equal(await controller.retryLast(), null, code);
+  }
+  // An accepted save says Saved beside the tools, as an upload does.
+  await controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" });
+  assert.deepEqual(controller.getState().shadedStatus, { caseId: "case-s", text: "Saved" });
+  controller.stop();
+});
+
+test("an editor's save sent again after a CONFLICT goes out on the re-read revision", async () => {
+  const store = shadedStore();
+  let next = 0;
+  const { controller } = build({ store, newActionId: () => `action-${(next += 1)}` });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  // Another window moved the case (materials, say).
+  (await store.getCase("case-s")).revision = 8;
+  store.failNext = Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+  await assert.rejects(controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }));
+  // The CONFLICT re-read the case; the section is still at the editor's version.
+  assert.equal((controller.getState().savedCase.preparerShadedFields ?? [])[0]?.version ?? 0, 0);
+  // The second send is not blocked by the first, and is not a retry envelope.
+  assert.ok(await controller.saveShadedSection({ incomeW2s: true }, 0, { from: "editor" }));
+  const sends = store.writes.filter((write) => write.type === "SAVE_PREPARER_FIELDS");
+  assert.equal(sends.length, 2);
+  assert.notEqual(sends[0].actionId, sends[1].actionId);
+  // Pinned to the revision the window holds after the re-read, never older.
+  assert.equal(sends[1].expectedRevision, 8);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+test("an editor that couldn't be opened is recorded in the shaded panel, with Try again", async () => {
+  const store = shadedStore();
+  const { controller } = build({ store });
+  await controller.start();
+  controller.selectPerson("alex");
+  await controller.selectCase("case-s");
+  let opened = 0;
+  controller.noteLocalFailure(
+    { code: "EDITOR", message: "The editor could not be opened. Try again, or use Download to fill elsewhere.", place: SHADED_EDITOR },
+    () => void (opened += 1),
+  );
+  assert.equal(SHADED_EDITOR, "shaded-editor");
+  assert.equal(controller.getState().error.place, SHADED_EDITOR);
+  assert.equal(controller.getState().retryable, true);
+  assert.deepEqual(await controller.retryLast(), { local: true });
+  assert.equal(opened, 1);
+  assert.equal(controller.getState().error, null);
+  controller.stop();
+});
+
+// ---------------------------------------------------------------------------
 // A staff account acts as its own person (add-staff-identity, design D9)
 // ---------------------------------------------------------------------------
 
@@ -6232,6 +6606,5 @@ test("a staff member without admin starts no screening, whatever persona the win
   await controller.start();
   await controller.selectCase("case-r");
   await tick();
-  assert.equal(startWrites(store).length, 0);
-  controller.stop();
+  assert.equal(startWrites(store).length, 0);  controller.stop();
 });

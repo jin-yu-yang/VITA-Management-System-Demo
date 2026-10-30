@@ -158,7 +158,7 @@ Two scripts generate committed files. Neither needs a key or touches a database.
 
 | Command | Writes | When |
 | --- | --- | --- |
-| `npm run build:vendor` (`tools/build.mjs`) | `src/vendor/supabase.mjs`, the pinned SDK bundle | After upgrading `@supabase/supabase-js` |
+| `npm run build:vendor` (`tools/build.mjs`) | `src/vendor/supabase.mjs` (the SDK), `src/vendor/pdf-lib.mjs` (pdf-lib and fontkit) and `src/vendor/pdfjs.mjs` with `src/vendor/pdfjs-worker.mjs` (pdf.js, copied), each pinned | After upgrading `@supabase/supabase-js`, `pdf-lib`, `@pdf-lib/fontkit` or `pdfjs-dist` |
 | `npm run build:intake` (`tools/build-intake-catalogue.mjs`) | `src/intake-catalogue-data.mjs`, and a new `supabase/migrations/NNN_intake_catalogue_<hash8>.sql` when the catalogue's hash changed | After editing `docs/intake-questions/` ([database recipe](database.md#change-the-intake-questions)) |
 
 The catalogue data is a JavaScript module rather than JSON because the local server (and the

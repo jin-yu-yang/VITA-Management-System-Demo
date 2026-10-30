@@ -51,6 +51,8 @@ import {
   CLOSING_REASON_NAMES,
 } from "./domain.mjs";
 import { CONTACT_OUTCOMES } from "./case-actions.mjs";
+import { shadedLabel, reviewRows, PREVIEW_WARNING } from "./shaded-fields.mjs";
+import { SHADED_EDITOR, SHADED_UPLOAD } from "./contracts.mjs";
 import {
   CONFIRMED_BY,
   CONFIRMED_METHODS,
@@ -428,6 +430,10 @@ export function staffEligibility(caseRecord, person) {
     claimPreparation: claimPreparation(),
     claimReview: claimReview(),
     preparationWork: preparationWork(),
+    // The 13614-C shaded section (change add-preparer-13614c-fields, D4): the
+    // same rule as the preparer's other work, as the database's
+    // require_case_preparer and its two stages.
+    shadedSection: preparationWork(),
     verifyIntakeDocument: verifyIntakeDocument(),
     reviewDecision: reviewDecision(),
     reviewContact: reviewContact(),
@@ -736,7 +742,9 @@ export function listPhone(record, person, prefix) {
 // than only in the page-wide banner — with the same two controls, so nothing is
 // lost by announcing it here instead.
 export function problemNotice(ui) {
-  if (!ui?.error) return "";
+  // The shaded section states its own failures in its panel: an upload's
+  // beside the control, an editor that couldn't be opened above its tools.
+  if (!ui?.error || ui.error.place === SHADED_UPLOAD || ui.error.place === SHADED_EDITOR) return "";
   return `<div class="notice error" role="alert">${icon("help")}<div><h3>${esc(
     ui.error.code === "CONFLICT"
       ? "This case changed while you were working"
@@ -1139,10 +1147,93 @@ const draftTools = () =>
     'data-draft="14446" data-form="en"',
   )}${button("繁體中文版", "view-draft", "secondary", 'data-draft="14446" data-form="zh-t" lang="zh-Hant"')}<p id="draft-ready" class="draft-ready" aria-live="polite"></p></div>`;
 
+// The 13614-C shaded section (change add-preparer-13614c-fields, D7, D8):
+// "Fill the shaded section" (the editor) with the download / upload tools
+// always beside it, for the case's preparer while the case is being prepared,
+// and why not otherwise. An upload's error and its "Saved" are said here,
+// beside the control, and an editor that couldn't be opened is said here with
+// Try again. The error is shown whoever's page this is, so it is never lost
+// behind a refusal.
+const EDITOR_BROWSERS =
+  "The editor works in Chrome and Edge 125 or later, Firefox ESR or later, and Safari 18 or later. In any other browser, download the copy and upload it.";
+
+const DOWNLOAD_NOTE = "Open it in Chrome or the free Adobe Acrobat Reader, not macOS Preview.";
+
+export function shadedPanel(record, rights, ui = {}) {
+  const decision = rights?.shadedSection ?? refused(CHOOSE_PERSONA);
+  const error = ui?.error?.place === SHADED_UPLOAD ? ui.error : null;
+  const editorError = ui?.error?.place === SHADED_EDITOR ? ui.error : null;
+  const editorNotice = editorError
+    ? `<div class="notice error" role="alert" id="shaded-editor-error">${icon("help")}<div><h3>The editor did not open</h3><p>${esc(
+        editorError.message,
+      )}</p><div class="conflict-choices">${when(ui.retryable, button("Try again", "retry-action", "inline"))}${button(
+        "Dismiss",
+        "dismiss-error",
+        "inline",
+      )}</div></div></div>`
+    : "";
+  const row = (record?.preparerShadedFields ?? [])[0] ?? null;
+  const filled = Object.keys(row?.fields ?? {}).length;
+  const summary = row ? `${filled} ${filled === 1 ? "field" : "fields"} filled` : "Nothing saved yet";
+  const notice = error
+    ? `<div class="notice error" role="alert" id="shaded-upload-error">${icon("help")}<div><h3>${
+        // A download that failed (DRAFT) is not a save that failed.
+        error.code === "DRAFT" ? "The copy was not downloaded" : "The filled copy was not saved"
+      }</h3><p>${esc(
+        error.message,
+      )}</p><div class="conflict-choices">${button("Dismiss", "dismiss-error", "inline")}</div></div></div>`
+    : "";
+  const saved =
+    !error && !editorError && ui?.shadedStatus?.caseId != null && ui.shadedStatus.caseId === record?.id
+      ? esc(ui.shadedStatus.text)
+      : "";
+  const busy = ui?.busy ? "disabled" : "";
+  const held = ui?.shadedReview;
+  const reviewing = decision.allowed && held != null && held.caseId === record?.id;
+  const rows = reviewing ? reviewRows(held.values) : [];
+  const reviewBox = reviewing
+    ? `<div class="shaded-review" role="region" aria-labelledby="shaded-review-title"><h3 id="shaded-review-title" tabindex="-1">Check what was read from this copy</h3><p>${rows.length} filled ${
+        rows.length === 1 ? "field" : "fields"
+      }:</p><ul>${rows
+        .map(
+          (r) =>
+            `<li><span class="shaded-review-label">${esc(r.label)}:</span> <span class="shaded-review-value">${esc(r.value)}</span></li>`,
+        )
+        .join("")}</ul>${when(held.preview, `<p class="shaded-review-warning">${esc(PREVIEW_WARNING)}</p>`)}<div class="conflict-choices">${button(
+        "Save these values",
+        "confirm-shaded-review",
+        "primary",
+        busy,
+      )}${button("Cancel", "cancel-shaded-review", "secondary", busy)}</div></div>`
+    : "";
+  const tools = decision.allowed
+    ? `<div class="summary-tools shaded-tools">${button(
+        `${icon("file")} Fill the shaded section`,
+        "open-shaded-editor",
+        "primary",
+        busy,
+      )}${button(
+        `${icon("file")} Download to fill elsewhere`,
+        "download-shaded-copy",
+        "secondary",
+        busy,
+      )}<p class="field-note shaded-download-note">${esc(DOWNLOAD_NOTE)}</p>${
+        reviewing
+          ? reviewBox
+          : `<label class="shaded-upload" for="shaded-upload">${icon("upload")} Upload the filled copy</label><input type="file" id="shaded-upload" accept="application/pdf" data-action="upload-shaded-copy"${
+              error ? ' aria-describedby="shaded-upload-error"' : ""
+            }${busy ? " disabled" : ""}><p id="shaded-status" class="draft-ready" role="status">${saved}</p>`
+      }</div><p class="field-note shaded-browsers">${esc(EDITOR_BROWSERS)}</p>`
+    : explain(decision);
+  return `<section class="panel shaded-panel" aria-labelledby="shaded-title"><div class="section-head"><h2 id="shaded-title">Shaded section of the 13614-C</h2><span class="muted small">${esc(
+    summary,
+  )}</span></div><p class="field-note">The parts marked "To be completed by certified volunteer". Fill them here on the form, or download the copy, fill only the shaded fields in a PDF program, and upload it here. The file stays in this browser.</p>${editorNotice}${notice}${tools}</section>`;
+}
+
 // What the Intake answers tab holds, shared with the office page. The draft
 // prints the client's phones, so its buttons follow the contact rule.
 export function intakeAnswersTab(record, rights, ui = {}, person = null) {
-  return `${answersPanel(record, { person })}${when(canSeeContact(record, person), draftTools())}${contactCard(record, rights, ui)}${materialsCard(record, rights, ui)}`;
+  return `${answersPanel(record, { person })}${when(canSeeContact(record, person), draftTools())}${shadedPanel(record, rights, ui)}${contactCard(record, rights, ui)}${materialsCard(record, rights, ui)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -2032,6 +2123,7 @@ export const EVENT_SENTENCES = Object.freeze({
   RECORD_MATERIALS: "recorded the materials received",
   SET_DOCUMENT_CARD: "updated a document's status",
   SET_DOCUMENT_GROUP: "changed whether a document is needed",
+  SAVE_PREPARER_FIELDS: "saved the shaded section",
 });
 
 export function historySentence(entry) {
@@ -2046,7 +2138,12 @@ export function historySentence(entry) {
       }`
     : (EVENT_SENTENCES[code] ?? code.toLowerCase().replaceAll("_", " ").trim()) ||
       "recorded a change";
-  const sentence = entry?.actorName ? `${entry.actorName} ${words}` : words;
+  // A shaded save names the fields it changed, by label, never their values.
+  const changed =
+    code === "SAVE_PREPARER_FIELDS" && Array.isArray(entry?.detail?.changed)
+      ? ` · ${entry.detail.changed.length ? entry.detail.changed.map(shadedLabel).join(", ") : "no fields changed"}`
+      : "";
+  const sentence = `${entry?.actorName ? `${entry.actorName} ${words}` : words}${changed}`;
   // A close or a hold carries staff context: the reason's name and the note, as typed.
   const reason =
     code === "CLOSE_CASE" && !seasonEnd && Object.hasOwn(CLOSING_REASON_NAMES, entry?.detail?.reason ?? "")

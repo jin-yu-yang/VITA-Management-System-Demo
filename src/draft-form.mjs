@@ -12,6 +12,7 @@ import { CATALOGUE, findQuestion, isAnswered, memberNameParts, spouseShown, visi
 import { formatAnswer, formatDate } from "./intake-form.mjs";
 import { sourceText } from "./language.mjs";
 import { t } from "./client-text.mjs";
+import { SHADED_FIELDS, shadedName, shadedPrint } from "./shaded-fields.mjs";
 
 export const FORM_FILES = Object.freeze({
   en: "src/forms/f13614c-2025.pdf",
@@ -288,8 +289,9 @@ export function isoDay(today) {
 }
 
 /** The DRAFT line the builder stamps on each page: shared with the draft Form 14446. */
-export function draftStamp(reference, today) {
-  return ["DRAFT – prepared from online answers", usDate(isoDay(today)), oneLine(reference)].filter(Boolean).join(", ");
+export function draftStamp(reference, today, { preparerEntries = false } = {}) {
+  const lead = preparerEntries ? "DRAFT – online answers and preparer entries" : "DRAFT – prepared from online answers";
+  return [lead, usDate(isoDay(today)), oneLine(reference)].filter(Boolean).join(", ");
 }
 
 // ---------------------------------------------------------------------------
@@ -375,11 +377,16 @@ function commentsFor(answers, members, lang) {
  * Additional Comments, the table's relationship box and the PDF's own lines
  * (`words`) are in the form's language (English, Simplified, or Traditional
  * through the map); the stamp and the file name stay English.
- * Returns `{ text, checks, comments, consentPage, words }`, plus the `stamp`
+ * `shaded` is the case's saved shaded section (stored values, see
+ * shaded-fields.mjs) or null. Its notes are not in `text`: they come back as
+ * `notes: [{ name, text, block, page }]` (`block` is the note's heading without
+ * "notes", e.g. "Income") for the builder to wrap and continue; `preparerEntries`
+ * is true when any shaded value is set, and words the stamp.
+ * Returns `{ text, checks, comments, consentPage, words, notes, preparerEntries }`, plus the `stamp`
  * and the `fileName` the builder and the page use. `words.continuedOn` keeps
  * its `{page}` for the builder, which knows the page.
  */
-export function draftFields(answers, { form = "en", reference = "", today } = {}) {
+export function draftFields(answers, { form = "en", reference = "", today, shaded = null } = {}) {
   const names = familyOf(form);
   const visible = visibleAnswers(2, answers ?? {});
   const text = {};
@@ -450,8 +457,24 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
     }
   });
 
+  const notes = [];
+  const values = shaded && typeof shaded === "object" ? shaded : {};
+  let preparerEntries = false;
+  for (const field of SHADED_FIELDS) {
+    if (!Object.hasOwn(values, field.key)) continue;
+    const value = values[field.key];
+    if (value === undefined || value === null || value === false || value === "") continue;
+    preparerEntries = true;
+    const name = shadedName(field.key, form);
+    if (field.kind === "note") {
+      const page = Number(/\.page(\d+)\[0\]\./.exec(name)?.[1] ?? 1);
+      notes.push({ name, text: String(value), block: field.label.replace(/ notes$/, ""), page });
+    } else if (field.kind === "box") tick(name.slice(PREFIX.length));
+    else put(name.slice(PREFIX.length), shadedPrint(field.key, value));
+  }
+
   const comments = commentsFor(visible, members, FORM_LANG[form]);
-  const stamp = draftStamp(reference, today);
+  const stamp = draftStamp(reference, today, { preparerEntries });
   const suffix = form === "en" ? "" : `-${form}`;
   const fileName = `13614-C-draft${reference ? `-${oneLine(reference)}` : ""}${suffix}.pdf`;
   const lang = FORM_LANG[form];
@@ -460,5 +483,5 @@ export function draftFields(answers, { form = "en", reference = "", today } = {}
     continuedOn: t("draft.continued_on", { page: "{page}" }, lang),
     notice: t("draft.notice", {}, lang),
   };
-  return { text, checks, comments, consentPage, words, stamp, fileName };
+  return { text, checks, comments, consentPage, words, notes, preparerEntries, stamp, fileName };
 }

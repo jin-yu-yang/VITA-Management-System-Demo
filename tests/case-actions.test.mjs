@@ -234,6 +234,11 @@ test("an unknown type is a local validation failure, never a request", () => {
   assert.ok(CASE_ACTIONS.includes("SAVE_ANSWERS"));
   assert.ok(!PAYLOAD_ACTIONS.includes("SAVE_ANSWERS"));
   assert.throws(() => payloadFor("SAVE_ANSWERS", {}, {}), invalid);
+  // SAVE_PREPARER_FIELDS neither: the page reads the uploaded copy, and the
+  // controller sends it with the latest revision (change add-preparer-13614c-fields).
+  assert.ok(CASE_ACTIONS.includes("SAVE_PREPARER_FIELDS"));
+  assert.ok(!PAYLOAD_ACTIONS.includes("SAVE_PREPARER_FIELDS"));
+  assert.throws(() => payloadFor("SAVE_PREPARER_FIELDS", {}, {}), invalid);
 });
 
 test("a missing required field refuses before anything is sent", () => {

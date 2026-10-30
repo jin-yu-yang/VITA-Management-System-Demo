@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  FORM_FILES, FORM_SHA256, draftFields, draftFieldNames,
+  FORM_FILES, FORM_SHA256, draftFields, draftFieldNames, draftStamp,
 } from "../src/draft-form.mjs";
+import { shadedName } from "../src/shaded-fields.mjs";
 import { findQuestion, wording } from "../src/intake-catalogue.mjs";
 import { setHantMap } from "../src/hant.mjs";
 import * as OpenCC from "opencc-js";
@@ -564,4 +565,36 @@ test("the spouse lines print only when a joint return is possible (add-widowed-s
   assert.equal(died2024.text[F("page1[0].maritalStatus[0].statusWidowed[0].yearSpousesDeath[0]")], "2024");
   for (const box of ["spousesFirstName", "spousesMiddleInitial", "spousesLastName", "spousesDateOfBirth", "spousesJobTitle", "spousesTelephoneNumber"])
     assert.equal(died2024.text[F(`page1[0].${box}[0]`)], undefined, box);
+});
+
+const SHADED = { household1QualifyingChild: "yes", incomeW2s: true, incomeW2sCount: 2, incomeRefundAmount: "412.00" };
+
+test("shaded values fill every form", () => {
+  for (const form of ["en", "zh-s", "zh-t"]) {
+    const { text, checks, notes, preparerEntries } = draft(MARRIED, { ...OPTIONS, form, shaded: SHADED });
+    assert.equal(text[shadedName("household1QualifyingChild", form)], "Yes", form);
+    assert.ok(checks.includes(shadedName("incomeW2s", form)), form);
+    assert.equal(text[shadedName("incomeW2sCount", form)], "2", form);
+    assert.equal(text[shadedName("incomeRefundAmount", form)], "412.00", form);
+    assert.deepEqual(notes, [], form);
+    assert.equal(preparerEntries, true, form);
+  }
+});
+
+test("shaded notes are kept out of text and listed with their block and page", () => {
+  const shaded = { deductionNotes: "Bring the 1098.", incomeNotes: "Two jobs.", infoVin: "1HGCM82633A004352" };
+  const { text, notes } = draft(MARRIED, { ...OPTIONS, shaded });
+  assert.equal(text[shadedName("deductionNotes", "en")], undefined);
+  assert.equal(text[shadedName("infoVin", "en")], "1HGCM82633A004352");
+  assert.deepEqual(notes.map((n) => [n.name, n.text, n.block, n.page]), [
+    [shadedName("incomeNotes", "en"), "Two jobs.", "Income", 2],
+    [shadedName("deductionNotes", "en"), "Bring the 1098.", "Standard or itemized deductions", 3],
+  ]);
+});
+
+test("stamp wording follows the preparer entries", () => {
+  assert.equal(draft(MARRIED, { ...OPTIONS, shaded: SHADED }).stamp, "DRAFT – online answers and preparer entries, 10/04/2026, VT-ABCD-EFGH");
+  assert.equal(draft(MARRIED, { ...OPTIONS, shaded: {} }).stamp, "DRAFT – prepared from online answers, 10/04/2026, VT-ABCD-EFGH");
+  assert.equal(draft(MARRIED, { ...OPTIONS, shaded: null }).preparerEntries, false);
+  assert.equal(draftStamp("VT-ABCD-EFGH", "2026-10-04", { preparerEntries: true }), "DRAFT – online answers and preparer entries, 10/04/2026, VT-ABCD-EFGH");
 });

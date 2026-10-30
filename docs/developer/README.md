@@ -95,18 +95,21 @@ src/
   styles.css               All styles.
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
+  vendor/pdf-lib.mjs       Committed, pinned bundle of pdf-lib and @pdf-lib/fontkit (the draft forms).
+  vendor/pdfjs.mjs, vendor/pdfjs-worker.mjs
+                           Committed copy of pdfjs-dist's legacy build (the shaded-section editor).
 supabase/
-  migrations/001-038       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-039       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
-  build.mjs                Rebuilds src/vendor/supabase.mjs.
+  build.mjs                Rebuilds the four files in src/vendor/.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1235.
-  database*.mjs            Database tests against the local stack: 326.
+  *.test.mjs               Unit tests (no network): 1418.
+  database*.mjs            Database tests against the local stack: 434.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
-  browser.mjs              The full demonstration story, two browsers, both directions: 63.
+  browser.mjs              The full demonstration story, two browsers, both directions: 77.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
 docs/
   setup.md                 How to run and test everything.

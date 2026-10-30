@@ -76,7 +76,19 @@ export const CASE_ACTIONS = Object.freeze([
   // Part 4b2 (migration 017): the document cards. The controller builds them.
   "SET_DOCUMENT_CARD",
   "SET_DOCUMENT_GROUP",
+  // Change add-preparer-13614c-fields (migration 039): the 13614-C shaded
+  // section. It carries exactly { fields, basedOnVersion }; the controller
+  // builds it from an uploaded copy, not a form.
+  "SAVE_PREPARER_FIELDS",
 ]);
+
+// Where a shaded-section download or upload failure is said: beside the
+// upload control on the case page (`error.place`). One name, shared by the
+// controller that records it and the page that draws it.
+export const SHADED_UPLOAD = "shaded-upload";
+// Where an editor that couldn't be opened is said: in the shaded panel, with
+// Try again (which opens it again) and Dismiss (design D7, screen-states).
+export const SHADED_EDITOR = "shaded-editor";
 
 // Assistance is its own workflow with its own RPC, so its controls carry their
 // own attribute and are validated against this vocabulary — never translated

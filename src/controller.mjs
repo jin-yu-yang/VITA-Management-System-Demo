@@ -2,6 +2,8 @@ import {
   CASE_ACTIONS,
   CHECKPOINTS,
   ASSISTANCE_ACTIONS,
+  SHADED_EDITOR,
+  SHADED_UPLOAD,
 } from "./contracts.mjs";
 import {
   CONTACT_FIELDS,
@@ -30,6 +32,7 @@ import {
   withholdInvalid,
 } from "./intake-form.mjs";
 import { cardsFor } from "./document-cards.mjs";
+import { createShadedSave } from "./shaded-editor.mjs";
 import { createWindowState } from "./window-state.mjs";
 import { isLang, readLanguage, writeLanguage } from "./language.mjs";
 
@@ -80,6 +83,15 @@ const CONFLICT_MESSAGE =
 // clients read "application", and neither ever sees a revision number.
 const STAFF_CONFLICT_MESSAGE =
   "Someone else changed this case. The newest version is shown — check it and try again.";
+// The shaded section's upload (change add-preparer-13614c-fields, design D8):
+// its errors are said beside the upload control, and a stale copy is named as
+// one, since nothing was "opened" there.
+const STAFF_UPLOAD_CONFLICT_MESSAGE =
+  "The shaded section was saved since this copy was downloaded. Download a fresh copy and fill that one.";
+// The case moved again while an upload was being sent once more: the copy is
+// still good, so the same file is uploaded again.
+const STAFF_UPLOAD_CASE_MOVED_MESSAGE =
+  "The case changed while this copy was being saved. Upload the same file again.";
 const ASSISTANCE_CONFLICT_MESSAGE =
   "Someone else changed this item. The newest version is shown — check it and try again.";
 const STAFF_CONTACT_GONE_MESSAGE = "This contact is no longer on screen.";
@@ -348,6 +360,16 @@ export function createController({
     sidebarOpen: true,
     // Which tab of the case page this window shows. Overview unless chosen.
     caseTab: "overview",
+    // `{caseId, text: "Saved"}` once an uploaded shaded section was saved,
+    // said beside the upload control on that case's page until the next
+    // upload or error.
+    shadedStatus: null,
+    // `{caseId, values, version, preview}` while what was read from an
+    // uploaded copy waits for the preparer to confirm it (change
+    // guard-shaded-upload-against-preview, design D1). Kept across redraws;
+    // dropped on a case switch, sign-out, Cancel, Save and the next upload.
+    // Window-local only, never persisted.
+    shadedReview: null,
   };
 
   // Everything this window remembers by itself, under one key per user.
@@ -537,7 +559,13 @@ export function createController({
     state.error = {
       code: error?.code ?? "SERVER_ERROR",
       message: message ?? error?.message ?? "Something went wrong.",
+      // Where the page says it, when that is not the usual place: the
+      // shaded section's upload control (SHADED_UPLOAD), or its panel when
+      // the editor couldn't be opened (SHADED_EDITOR).
+      ...(error?.place === SHADED_UPLOAD || error?.place === SHADED_EDITOR ? { place: error.place } : {}),
     };
+    // A newer error replaces a shaded save's "Saved".
+    state.shadedStatus = null;
     if (error?.code === "OFFLINE") state.connection = "offline";
   }
 
@@ -836,6 +864,8 @@ export function createController({
     pendingAction = null;
     screeningStart = null;
     state.retryable = false;
+    // A held upload read is the old case's: never saved to another.
+    state.shadedReview = null;
   }
 
   // ---- start / stop ------------------------------------------------------
@@ -1197,6 +1227,8 @@ export function createController({
     state.caseTab = "overview";
     state.boardSearchDraft = undefined;
     state.sidebarOpen = true;
+    state.shadedStatus = null;
+    state.shadedReview = null;
     state.error = null;
     state.authStep = "email";
     state.authEmail = "";
@@ -2342,11 +2374,14 @@ export function createController({
     show();
   }
 
-  async function runAction(type, payload, { personId } = {}) {
+  // `caseId`, when given, is the case the action is for: nothing is sent once
+  // another case is open (the envelope is never built for a different case).
+  async function runAction(type, payload, { personId, caseId: forCase = null } = {}) {
     if (!CASE_ACTIONS.includes(type))
       throw refuse("VALIDATION", "This step is not available.");
     if (!state.savedCase)
       throw refuse("NOT_FOUND", "Open an application first.");
+    if (forCase !== null && state.savedCase.id !== forCase) return null;
     // A start sent by this window's open is still out: the press waits for it
     // (it re-reads the case), so it pins the new revision and meets no conflict.
     // A second press meanwhile does nothing, as a second click while a
@@ -2366,7 +2401,8 @@ export function createController({
     }
     const action = {
       actionId: newActionId(),
-      caseId: state.savedCase.id,
+      // The open case, which is `forCase` when one was named (checked above).
+      caseId: forCase ?? state.savedCase.id,
       // As a save's pin: the revision this window last knew, the receipt's
       // when the re-read after a save failed.
       expectedRevision: pinRevision(),
@@ -2417,6 +2453,130 @@ export function createController({
     cardAction("SET_DOCUMENT_CARD", { slotId, status });
   const setDocumentGroup = (slotId, group) =>
     cardAction("SET_DOCUMENT_GROUP", { slotId, group });
+
+  // The shaded section, read from an uploaded copy (design D5, D8). The case
+  // revision is the latest this window knows (`runAction`, kept current by
+  // realtime), so unrelated work on the case never blocks it; the copy's own
+  // section version is what catches a stale copy (`basedOnVersion`). One at a
+  // time: a second press while one is out does nothing. A refusal is said
+  // beside the upload control with Dismiss only: the way to try again is to
+  // upload again.
+  // From the editor (`from: "editor"`, design D7) a refusal is the editor's
+  // to say, in its own status with the edits kept: nothing is recorded on the
+  // page behind it, and nothing is kept to send again.
+  // The server says CONFLICT for a stale case revision as well as a stale
+  // section. An upload treats them as the editor does (createShadedSave): when
+  // the re-read case still holds the copy's section version, only the case
+  // moved and the same values go once more on the fresh revision; only a
+  // section that moved is a stale copy. The editor makes that call itself,
+  // around each of its own sends.
+  let shadedSaveInFlight = false;
+  async function saveShadedSection(fields, basedOnVersion, { from = "upload" } = {}) {
+    if (shadedSaveInFlight) return null;
+    shadedSaveInFlight = true;
+    const caseId = state.savedCase?.id ?? null;
+    state.shadedStatus = null;
+    // Every send is for the case open when this save began (`caseId`), never
+    // whatever is open by the time it goes: runAction sends nothing once that
+    // case is no longer open, and the section version is read from it only
+    // while it is.
+    const stillOpen = () => caseId !== null && state.savedCase?.id === caseId;
+    try {
+      let receipt = null;
+      const send = async (values, based) =>
+        (receipt = await runAction("SAVE_PREPARER_FIELDS", { fields: values, basedOnVersion: based }, { caseId }));
+      if (from === "editor") await send(fields, basedOnVersion);
+      else {
+        const upload = createShadedSave({
+          version: basedOnVersion,
+          check: () => ({ values: fields, errors: [] }),
+          save: send,
+          storedVersion: () => (stillOpen() ? Number((state.savedCase.preparerShadedFields ?? [])[0]?.version ?? 0) : NaN),
+        });
+        try {
+          await upload(fields);
+        } catch (error) {
+          // Nothing was sent (the case was left meanwhile): nothing to say.
+          if (error?.code === "NOT_SENT") return null;
+          // Another case was opened while it was out: what this upload met is
+          // the old case's, and nothing of it is said on the new one.
+          if (!stillOpen()) {
+            state.error = null;
+            state.retryable = false;
+            pendingAction = null;
+            show();
+            return null;
+          }
+          throw error;
+        }
+      }
+      if (receipt && state.savedCase?.id === caseId) {
+        state.shadedStatus = { caseId, text: "Saved" };
+        show();
+      }
+      return receipt;
+    } catch (error) {
+      if (from === "editor") {
+        state.error = null;
+        state.retryable = false;
+        state.shadedStatus = null;
+        pendingAction = null;
+        show();
+      } else if (state.error) {
+        state.error = {
+          ...state.error,
+          place: SHADED_UPLOAD,
+          ...(error?.code === "CONFLICT" ? { message: STAFF_UPLOAD_CONFLICT_MESSAGE } : {}),
+          ...(error?.code === "CASE_MOVED" ? { message: STAFF_UPLOAD_CASE_MOVED_MESSAGE } : {}),
+        };
+        // Dismiss only (screen-states): no envelope is kept to send again.
+        state.retryable = false;
+        pendingAction = null;
+        show();
+      }
+      throw error;
+    } finally {
+      shadedSaveInFlight = false;
+    }
+  }
+
+  // What was read from an uploaded copy is held for the open case until the
+  // preparer confirms it (design D1): nothing is sent yet. A new upload
+  // replaces the one held, and starts this case's upload control afresh: its
+  // earlier error and "Saved" go.
+  function reviewShadedCopy({ values, version, preview }) {
+    const caseId = state.savedCase?.id ?? null;
+    if (caseId === null) return;
+    state.shadedReview = { caseId, values, version, preview: Boolean(preview) };
+    if (state.error?.place === SHADED_UPLOAD) {
+      state.error = null;
+      state.retryable = false;
+    }
+    state.shadedStatus = null;
+    show();
+  }
+
+  // Save these values: the held read goes through the upload's own save, with
+  // its single flight, stale-copy sentence and case-moved resend. A read held
+  // for a case no longer open is dropped unsent.
+  async function confirmShadedReview() {
+    const review = state.shadedReview;
+    if (!review) return null;
+    if (review.caseId !== state.savedCase?.id) {
+      state.shadedReview = null;
+      show();
+      return null;
+    }
+    if (shadedSaveInFlight) return null;
+    state.shadedReview = null;
+    return saveShadedSection(review.values, review.version);
+  }
+
+  // Cancel: the held read is dropped and nothing is sent.
+  function cancelShadedReview() {
+    state.shadedReview = null;
+    show();
+  }
 
   // Assistance items are not cases: they have their own RPC, their own revision
   // and their own list, so they get their own dispatch rather than a branch
@@ -2800,6 +2960,10 @@ export function createController({
     runAction,
     setDocumentCard,
     setDocumentGroup,
+    saveShadedSection,
+    reviewShadedCopy,
+    confirmShadedReview,
+    cancelShadedReview,
     retryLast,
     navigate,
     togglePanel,
