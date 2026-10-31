@@ -46,6 +46,15 @@ get the staff screens without the persona picker or demo tools, and staff-only w
   `receive_documents`, `assist`), and decide who may grant them. Today a roster entry sets a staff
   member's capabilities once; changing them, or deactivating a staff member, is not built, and
   there is no admin screen.
+- **One person, two workspaces** ([#104](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/104)).
+  The screens are chosen by the acting person's capabilities (ruling R55): `admin` gets the office
+  workspace, everyone else the preparation/review one. A presenter switches persona to move between
+  them; a staff account is one person and cannot. So a staff member with `admin` and `prepare` or
+  `review` — PCDC's site coordinator, who runs the office and also reviews — reaches only the office
+  workspace and never sees *Claim review*. Found on 2026-10-30 rehearsing with real accounts; the
+  rehearsal gives the reviewer `review` alone. Needed on day 1 of the pilot: a switch between the two
+  workspaces for such a person (a view change; the database already checks every action), decided
+  together with the role mapping above.
 - **Presenter removal.** Presenter access, the persona picker and `p_person_id` stay for the
   classroom demonstration. Once the demo no longer needs them (§5), remove them and rename or split
   the remaining access into real roles.
@@ -126,6 +135,13 @@ To build next:
   ([database recipe](database.md#add-a-workflow-action)). Waiting for documents, Hold, the
   unreachable client and client withdrawal are built (036). The IRS's answer after e-filing
   (accepted, rejected, paper) is built, recorded by hand; importing the real answers is not.
+- **The signing method, asked at the right moment**
+  ([#106](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/106)). The reviewer
+  questionnaire requires how the client will sign Form 8879 even when the reviewer answered No to
+  going over the return with them; nobody can know it before that conversation. The go-over
+  follow-up's resolution is where the office learns it, so ask it there and choose the signing-plan
+  client text then. Changes `APPROVE_REVIEW`'s validation, `RESOLVE_FOLLOWUP`'s payload and the
+  client text. Found on 2026-10-30 rehearsing the demo; PCDC's own practice.
 - **Release and reassignment** (spec §8.5, §13), not built: an admin action to change a case's preparer or
   reviewer. The participation record must still block self-review after reassignment; the database
   already enforces that.
