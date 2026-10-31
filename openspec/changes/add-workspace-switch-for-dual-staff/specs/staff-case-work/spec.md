@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: A staff account with admin and volunteer work can switch workspaces
-A `staff` account whose person has `admin` and at least one of `prepare` or `review` SHALL have an **Office / Cases** switch in the staff sidebar, above "Signed in as". In **Office** the account SHALL get the office workspace: Follow-ups, All cases, Add a case and the office case page. In **Cases** it SHALL get the volunteer workspace: the Work board and the volunteer case page, where what it may claim or do is decided by its capabilities, as for any volunteer. The current mode SHALL be shown as pressed. The switch SHALL be a view choice: it SHALL NOT grant anything, and the database SHALL keep checking every action against the person's capabilities.
+A `staff` account whose person has `admin` and at least one of `prepare` or `review` SHALL have an **Office / Cases** switch in the staff sidebar, above "Signed in as". In **Office** the account SHALL get the office workspace: Follow-ups, All cases, Add a case and the office case page. In **Cases** it SHALL get the volunteer workspace: the Work board and the volunteer case page, where what it may claim or do is decided by its capabilities, as for any volunteer. The switch SHALL be two buttons, Office and Cases, inside one group labelled "Workspace" (`role="group"`, `aria-label="Workspace"`); the current mode's button SHALL be `aria-pressed="true"` and the other `aria-pressed="false"`. The switch SHALL be a view choice: it SHALL NOT grant anything, and the database SHALL keep checking every action against the person's capabilities.
 
 A window SHALL open in Office unless this window saved Cases for this user. Switching SHALL keep the window where it is when that place exists in the other workspace:
 - On the home screen, switching SHALL show Follow-ups in Office and the Work board in Cases.
@@ -11,7 +11,7 @@ A window SHALL open in Office unless this window saved Cases for this user. Swit
 
 #### Scenario: A dual account signs in
 - **WHEN** a staff member with `admin` and `review` signs in
-- **THEN** Follow-ups opens, the sidebar shows Follow-ups and All cases, and the switch shows Office pressed
+- **THEN** Follow-ups opens, the sidebar shows Follow-ups and All cases, and the "Workspace" group shows Office pressed and Cases not pressed
 
 #### Scenario: Switching to Cases and claiming
 - **WHEN** that staff member presses Cases, and a case is waiting for an independent reviewer that they did not prepare
@@ -23,7 +23,7 @@ A window SHALL open in Office unless this window saved Cases for this user. Swit
 
 #### Scenario: Switching on a case page
 - **WHEN** the staff member has a case page open in Office and presses Cases
-- **THEN** the same case's volunteer page opens, on its Overview tab
+- **THEN** the same case's volunteer page opens, on its Overview tab, with its staff sections and case actions, never "Staff sections are not loaded"
 
 #### Scenario: Switching from Add a case with typed answers
 - **WHEN** the staff member has typed answers in Add a case and presses Cases

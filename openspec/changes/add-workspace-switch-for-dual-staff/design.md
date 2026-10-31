@@ -47,14 +47,14 @@ The historical design `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-re
 - **Alternative considered:** storing the mode on the server, per person. Rejected: it needs a database change, and the decision is a view choice.
 
 ### D4: The switch's place and shape
-- **Choice:** in `staffSidebar`, inside the account area, above the "Signed in as" row: a labelled group, "Workspace", with two buttons, **Office** and **Cases**, on the action `set-workspace-mode` and a value. The current one is `aria-pressed="true"`. It is rendered only when `hasWorkspaceSwitch` is true. The navigation above follows the mode (Follow-ups and All cases, or Work board).
+- **Choice:** in `staffSidebar`, inside the account area, above the "Signed in as" row: a container with `role="group"` and `aria-label="Workspace"`, holding two buttons, **Office** and **Cases**, on the action `set-workspace-mode` with `data-mode`. Each button carries `aria-pressed`: `"true"` on the current mode, `"false"` on the other. It is rendered only when `hasWorkspaceSwitch` is true. The navigation above follows the mode (Follow-ups and All cases, or Work board).
 - **Reason:** the brainstorm placed it there. Two pressed-state buttons are a familiar, keyboard-reachable control and match the sidebar's other buttons.
 - **Alternative considered:** a select or a single toggle. Rejected: two named options read more clearly than one control that hides the other state.
 
 ### D5: Where a switch lands
 - **Choice:**
   - On the home screen (`staff`): it stays on `staff`, which is Follow-ups in Office and the Work board in Cases.
-  - On a case page: it stays on the same case and shows the other workspace's case page.
+  - On a case page: it stays on the same case and shows the other workspace's case page. **Precondition:** the volunteer case page (`renderStaffCase` in `src/staff-views.mjs`) needs a staff-shaped record, one whose `participants` and `reviews` are arrays (`staffShaped`). Without them it shows "Staff sections are not loaded" and offers no case action. Both workspaces appear to open a case through the same path (`selectCase` → `store.getCase` in `src/controller.mjs`), so the `savedCase` the office page holds should already carry both fields. Apply confirms this first (tasks 2.4). If the office path turns out to load a record without them, `setWorkspaceMode("cases")` re-reads the open case (`selectCase(id, { navigate: false })`) before the volunteer page is drawn.
   - On All cases, switching to Cases: the existing redirect sends a non-office window on an office screen to the Work board.
   - On Add a case: the switch goes through `leaveAddCaseFirst` in `src/app.mjs`, as the sidebar's other exits do, so typed answers are not lost without asking. It then lands on the Work board.
 - **Reason:** each case reuses a path the code already has.
@@ -67,11 +67,12 @@ The historical design `docs/superpowers/specs/2026-09-28-redesign-roadmap-and-re
 ### D7: Screening on open follows the workspace
 - **Choice:** `actingAdmin()` becomes "the window is in the office workspace" (`inOfficeWorkspace`). A dual account in Cases mode opening a Request sent case starts nothing. Switching from Cases to Office while that case is open starts it, as switching a presenter's persona to an admin already does.
 - **Reason:** in Cases mode the page is the volunteer page, which shows no office work. Moving the case from it would be a hidden effect. For presenters and admin-only accounts the result is the same as today.
-- **Alternative considered:** keep starting screening on any open by an admin. Rejected for the reason above. Recorded in the brainstorm as a detail settled while writing, for the reviewer to confirm.
+- **Alternative considered:** keep starting screening on any open by an admin. Rejected for the reason above. Confirmed in the review of these planning artifacts.
 
 ## Risks / Trade-offs
 
 - [Risk] A dual person forgets which mode they are in and looks for a control in the wrong workspace. → Mitigation: the sidebar navigation and the page's overline ("OFFICE WORKSPACE" or "VOLUNTEER WORKSPACE") already name the workspace, and the switch shows the pressed mode. The hint points to claimable work from the office page.
+- [Risk] Switching to Cases on a case page draws the volunteer page from a record the office loaded. If that record lacks `participants` or `reviews`, the page says "Staff sections are not loaded" and the person cannot claim. → Mitigation: tasks 2.4 confirms that both workspaces load the case the same way, with both fields; if they do not, the switch re-reads the case (D5). The browser story asserts that the volunteer page after the hint never shows "Staff sections are not loaded".
 - [Risk] A stored mode survives a change of capabilities, for example when `review` is taken away. → Mitigation: the mode is honoured only while `hasWorkspaceSwitch` is true. Otherwise R55 decides, whatever is stored.
 - [Trade-off] The mode is per window (session storage), not per person on the server, so a second window or browser opens in Office. → Accepted: this matches every other window choice (R44) and needs no database change. Office is the main job, so it is the right default.
 - [Trade-off] The hint covers claiming only, not work the person already holds as preparer or reviewer. → Accepted: in the agreed scope. Their own cases are on the Work board in Cases mode.
@@ -82,4 +83,4 @@ N/A: no deployment, database or data change. The new window-state field is optio
 
 ## Open Questions
 
-None blocking. D7 (screening only from the office workspace) and the exact hint wording (D6) are details settled while writing the artifacts. The reviewer of these planning artifacts owns them. They affect only what a dual account sees and when a Request sent case moves.
+None. D7 (screening only from the office workspace) and D3 (the mode stored per window) were confirmed in review.
