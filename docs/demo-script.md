@@ -35,6 +35,8 @@ what that suite already verified, not a hoped-for behavior.
 | Filing results | The IRS's and Pennsylvania's answers (accepted or rejected for an e-filed return; a paper return is given to the client at Mark e-filed) are recorded by hand by an admin; nothing is sent to the IRS or Pennsylvania, and the refund sites are plain text | — |
 | Holds, withdrawal and closing | A hold's "Got in touch" is recorded by hand; nothing calls or messages the client, and a withdrawal notice is only a follow-up for the office to act on | A client's Withdraw button and an admin's close, hold and document requests are real database writes, shared with the other window |
 | Screening checks | — | A volunteer ticks what they confirmed (phone, documents, scope, and identity for an online client); the office records it |
+| Staff accounts | The presenter's persona picker (Alex, Morgan, Sam) is a demo tool | A roster staff account signs in as one real person; the database decides who is acting on every action, so receipts, history and the reviewer-is-not-the-preparer rule name that person (#90) |
+| The 13614-C shaded section | — | The preparer's answers are saved as data and filled into the IRS form by the same generator that makes the draft; the in-browser editor edits only the shaded fields (#98) |
 | Rehearsal/automation codes | In automated tests only, the outbound OTP **send** request is intercepted so no mail server is contacted; **verification is never intercepted** | In a rehearsal nothing is intercepted: a real code is really sent and really verified. On the isolated local stack it is caught by the stack's mail catcher; delivery to an approved real inbox waits on Task 10B (pending) |
 
 Say this plainly during a presentation: **"The documents, reminders, and tax-preparation steps you
@@ -65,6 +67,54 @@ actions from anyone else regardless of what the screen shows). It has:
 - **"Fill fictional details"**: fills a form with generated fictional answers (used both by an
   applicant filling their own intake and by staff filling an assisted walk-in intake). It never
   submits anything by itself.
+
+## The M4 story: two real staff accounts and the 13614-C
+
+Rehearsed on 2026-10-30 on `main` with the example roster plus one reviewer. Three windows: the
+**presenter** (only to reset the samples and to act as Sam for the office steps), **Riley Park**
+(`staff-a@example.org`, `prepare`) and **Jordan Lee** (`staff-b@example.org`, `review` only — a
+staff account that also holds `admin` gets the office workspace and never sees *Claim review*,
+[#104](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/104)). Codes arrive in
+Mailpit; the local stack needs the Magic Link template from [`docs/setup.md`](setup.md#create-the-stack)
+or the email carries no code. About 12 minutes end to end; the talk shows the middle 3½.
+
+1. **Presenter resets the sample cases.** Ten cases, among them Mei Chen at *Waiting for
+   preparation* (drop-off, Mandarin).
+2. **Riley signs in.** Point at the sidebar: "Signed in as Riley Park", no persona picker, no reset,
+   no checkpoints. Everything this window does is recorded against Riley.
+3. **Riley claims Mei Chen's case** from the work board and opens it.
+4. **Riley fills the shaded section.** *Fill the shaded section* opens the 13614-C in a full-screen
+   editor with only the grey "certified volunteer" fields editable. Fill the household row (all
+   five cells), tick a W-2 and give its count, add a note. **Save these values** says "Saved" and
+   keeps the editor open; Close. (A partial save is accepted on purpose: the preparer attests
+   completeness in the questionnaire, not the editor.)
+5. **View Draft 13614-C.** The generated form carries Riley's values in the shaded cells. This is
+   the M4 goal: the volunteer's half of the form is data, filled into the real PDF.
+6. **Riley sends the return to review** with the preparer questionnaire, ticking "I have completed
+   the shaded parts". Try *Claim review* as Riley: refused, "You prepared this case, so you cannot
+   review it." Say that the database refuses it too, whatever the screen shows.
+7. **Jordan signs in** (a second window). The board shows the case under *Waiting for review*,
+   preparer Riley Park, reviewer Unassigned. **Claim review.**
+8. **Jordan approves.** In the reviewer questionnaire answer *yes* to going over the return (date
+   today, phone) and pick a signing method; with *no*, the office gets a go-over task first and
+   the signing question is one the reviewer cannot really answer
+   ([#106](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/106)). Fill one Exit
+   Form group or none. **Approve this review** → *Ready to exit*.
+9. **Presenter, acting as Sam, files.** *Mark ready to e-file* (narrate the client's signature),
+   *Mark e-filed* → "Both returns e-filed", *Record filing result* → IRS accepted, Pennsylvania
+   accepted. The case reaches **Accepted**, the end of the chain: it appears under *Done*, and
+   *Close this case* is refused at this stage by design. Closing with a reason is for a case that
+   stops early (client unreachable, withdrawn, out of scope, unsigned at season end).
+10. **Open History.** Every line names the real account that did it — Riley Park, Jordan Lee, Sam —
+    not a persona. This is #90 in one screen.
+11. **Back in Riley's window**, the board no longer lists the case (finished work leaves the work
+    board; the search box finds it by Application ID). Refresh to show the live state is shared.
+
+Known in this story, not defects: the case page's lifecycle bar shows a hollow *Closed* after
+*Accepted* ([#109](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/109)); the
+Exit Form group shows both payment-method groups whatever the result
+([#108](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/108)); Chrome's date
+fields follow the browser's own language.
 
 ## The two-minute story
 
