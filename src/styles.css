@@ -2999,6 +2999,18 @@ textarea::placeholder {
   background: var(--vt-stage-amend);
   box-shadow: 0 0 0 4px var(--vt-stage-amend-bg);
 }
+/* A closed case: the steps before Closed are neither done nor still to come. */
+.lifecycle-step.neutral {
+  color: var(--vt-muted);
+}
+.lifecycle-step.neutral .lifecycle-dot {
+  border-color: var(--vt-line);
+  background: var(--vt-surface);
+}
+.lifecycle-step.neutral::before,
+.lifecycle-step.neutral + .lifecycle-step.current::before {
+  background: var(--vt-line);
+}
 .case-tabs {
   display: flex;
   gap: 22px;

@@ -271,7 +271,7 @@ alongside today's rows. A case at Accepted SHALL have no row. Follow-ups' filter
 The amber (3 days) and red (5 days) colouring SHALL apply to a Waiting for documents row and to a Filing result row. A Hold row, a Withdrawn row and a Rejected row SHALL never be coloured.
 
 **The case page:**
-- Its lifecycle bar SHALL show Request sent, Screening in progress, Pending intake / filing, Filing in progress, Pending review, Review in progress, Ready to exit, Ready to e-file, E-filed, Accepted and Closed. Corrections in progress SHALL show on Filing in progress, and Rejected on E-filed. Waiting for documents SHALL show on the stage it was asked from. Hold SHALL show on the stage it came from: Ready to exit, or the stage the documents were asked from.
+- Its lifecycle bar SHALL show Request sent, Screening in progress, Pending intake / filing, Filing in progress, Pending review, Review in progress, Ready to exit, Ready to e-file, E-filed and Accepted. Accepted SHALL be the bar's last step: the bar SHALL NOT show Closed after Accepted for any case that is not closed. At Accepted every step SHALL be shown done, and no step SHALL be shown as the current one. A closed case's bar SHALL show Closed after Accepted as its only current step, and every step before it SHALL be shown neutral: neither done nor still to come. Where a closed case stopped SHALL be read in its History tab. Corrections in progress SHALL show on Filing in progress, and Rejected on E-filed. Waiting for documents SHALL show on the stage it was asked from. Hold SHALL show on the stage it came from: Ready to exit, or the stage the documents were asked from.
 - For an admin, the intake-check form SHALL show at Screening in progress only.
 - For an admin, the office actions panel SHALL offer Ask for documents…, Put on hold…, Got in touch… and Close… at the stages their moves allow. Close… SHALL offer the six reasons and the note.
 - For an admin, the signing panel SHALL be headed "Signing". At a Hold that came from Ready to exit it SHALL say "The office could not reach the client to sign.", and before Ready to e-file it SHALL say "This is recorded once the client has signed.".
@@ -327,6 +327,22 @@ The amber (3 days) and red (5 days) colouring SHALL apply to a Waiting for docum
 #### Scenario: Accepted leaves the queue
 - **WHEN** the last waiting return of a case is recorded as accepted
 - **THEN** the case has no Follow-ups row
+
+#### Scenario: The bar of an Accepted case
+- **WHEN** a staff member opens a case at Accepted
+- **THEN** its lifecycle bar shows every step from Request sent to Accepted as done, no step as current, and no Closed
+
+#### Scenario: The bar of a closed case
+- **WHEN** a staff member opens a case that was closed from Pending review
+- **THEN** its lifecycle bar shows Closed after Accepted as the current step, and every step from Request sent to Accepted as neutral, neither done nor still to come
+
+#### Scenario: The bar of an open case ends at Accepted
+- **WHEN** a staff member opens a case at Pending review
+- **THEN** its lifecycle bar shows the steps before Pending review as done, Pending review as current, the steps from Review in progress to Accepted as still to come, and no Closed
+
+#### Scenario: Rejected and Corrections in progress are unchanged
+- **WHEN** a staff member opens a case at Rejected, and another at Corrections in progress
+- **THEN** the first bar shows Rejected on the E-filed step and the second shows Corrections in progress on the Filing in progress step, each as the current step with the steps before it done
 
 ### Requirement: Clients are told at each new step
 The client's status panel SHALL show the message for their case's stage, in their language:
