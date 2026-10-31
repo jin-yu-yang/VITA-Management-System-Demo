@@ -9,6 +9,8 @@
 // no DOM. `openShadedEditor` draws the layer and wires it to a session. pdf.js
 // is passed in (`loadPdfjs`), so it is loaded only when the editor opens.
 
+import { isStaffWindow } from "./contracts.mjs";
+
 export const DISCARD_QUESTION = "Discard your changes?";
 export const CONFLICT_SENTENCE = "Saved elsewhere since you opened this. Close and reopen to see the latest.";
 export const OPEN_FAILED = "The editor could not be opened. Try again, or use Download to fill elsewhere.";
@@ -234,13 +236,14 @@ export function createShadedSave({ version: opened, check, save, storedVersion }
 }
 
 /**
- * Whether the open editor has lost its place: nobody presenter is signed in
- * any more (a sign-out in another tab), or the case it was opened on is no
- * longer the selected one. A re-read that drops the record for a moment
+ * Whether the open editor has lost its place: no staff window is signed in
+ * any more (a sign-out in another tab; a presenter or a staff account, as
+ * isStaffWindow says), or the case it was opened on is no longer the selected
+ * one. A re-read that drops the record for a moment
  * keeps the selection, so it is not leaving.
  */
 export function editorGone(state, caseId) {
-  return state?.principal?.access !== "presenter" || state?.selectedCaseId !== caseId;
+  return !isStaffWindow(state?.principal) || state?.selectedCaseId !== caseId;
 }
 
 // pdf.js's annotation layer wants a link service; the editing copy has no
