@@ -1476,7 +1476,7 @@ if (!config) {
 
   async function downloadShadedCopy(by) {
     const state = controller.getState();
-    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    if (!isStaffWindow(state.principal) || !state.savedCase) return;
     try {
       const { bytes, reference } = await editingCopy(state);
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
@@ -1510,7 +1510,7 @@ if (!config) {
     // Only the latest upload may be reviewed or refused: a slow earlier read must not replace it.
     const token = ++shadedUploadToken;
     const state = controller.getState();
-    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    if (!isStaffWindow(state.principal) || !state.savedCase) return;
     const record = state.savedCase;
     // A new upload replaces any read still held, even one this file's read refuses.
     if (state.shadedReview) controller.cancelShadedReview();
@@ -1584,7 +1584,7 @@ if (!config) {
   function openEditor(by) {
     if (shadedEditor) return;
     const state = controller.getState();
-    if (state.principal?.access !== "presenter" || !state.savedCase) return;
+    if (!isStaffWindow(state.principal) || !state.savedCase) return;
     const caseId = state.savedCase.id;
     if (shadedRefusal(caseId)) return;
     // Saves based on the stored version this copy shows, then + 1 per
