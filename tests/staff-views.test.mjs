@@ -1193,6 +1193,7 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   assert.deepEqual(steps("received")[0], "current");
   assert.deepEqual(steps("screening").slice(0, 3), ["done", "current", "todo"]);
   assert.deepEqual(steps("corrections_required")[3], "current amend");
+  assert.deepEqual(steps("corrections_required").slice(0, 3), ["done", "done", "done"]);
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
   assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?Review in progress/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
