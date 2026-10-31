@@ -157,6 +157,14 @@ max_frequency = "60s"
 otp_length = 6
 otp_expiry = 3600
 
+# The sign-in email must carry the code itself. The CLI's default Magic Link template
+# sends a link and no code, so the app's form (which asks for a code) cannot be used
+# and only the automated suites, which read the code through the admin API, work.
+# The file is one line: <p>Your ViTally code is {{ .Token }}</p>
+[auth.email.template.magic_link]
+subject = "Your ViTally code"
+content_path = "./supabase/templates/magic_link.html"
+
 [auth.sms]
 enable_signup = false
 
