@@ -1550,3 +1550,20 @@ test("Return to signing is never held back by a paper return, and stays refused 
   const waiting = { stage: "rejected", federalMethod: "efile", stateMethod: "efile", federalResult: "rejected" };
   assert.match(sam(waiting).returnToSigning.reason, /^Waiting for Pennsylvania's answer/);
 });
+
+test("the office's Ready to exit case offers the Exit Form from the reviewer's questionnaire", () => {
+  const approved = officeCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [{ id: "review-1", preparationVersion: 1, status: "approved", reviewerId: "morgan" }],
+    reviewerQuestionnaires: [{ id: "rq-1", reviewId: "review-1", exitForm: { federal: null, state: null, local: [] } }],
+  });
+  const html = renderAdminCase(approved, { person: SAM });
+  assert.match(html, /<h2 id="exit-form-title">Exit Form<\/h2>/);
+  assert.match(html, /data-action="view-exit-form" data-review="review-1">Download Exit Form</);
+
+  const before = renderAdminCase(officeCase(), { person: SAM });
+  assert.match(before, /The Exit Form is ready once a reviewer approves the return with their questionnaire\./);
+  assert.doesNotMatch(before, /view-exit-form/);
+});
