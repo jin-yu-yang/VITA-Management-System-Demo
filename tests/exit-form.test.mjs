@@ -59,15 +59,36 @@ test("no refund or tax owed ticks only the filing method", () => {
   assert.equal(valueAt(marks, L.groups.federal.amount), undefined);
 });
 
-// The cells of one "Other Tax" line, by column.
-const localRow = (marks, i) => {
-  const y = L.local.firstBaseline + i * L.local.pitch;
-  return Object.fromEntries(
-    Object.entries(L.local.columns).map(([key, col]) => [key, marks.text.find((m) => m.x === col.x && m.y === y)?.value ?? ""]),
-  );
+// One "Other Tax" row: which of its three boxes are ticked, and the amount.
+const T = L.local;
+const ROWS = ["NPT", "BIRT", "EET", "SIT", "PAIBWTR"];
+const localRow = (marks, type) => {
+  const y = T.firstBaseline + ROWS.indexOf(type) * T.pitch;
+  const tick = (x) => marks.checks.some((c) => c.x === x + T.box / 2 && c.y === y - T.box / 2 + 0.5);
+  return {
+    ticked: tick(T.typeBox),
+    owe: tick(T.oweBox),
+    refund: tick(T.refundBox),
+    amount: marks.text.find((m) => m.x === T.amount.x && m.y === y)?.value ?? "",
+  };
 };
 
-test("Other Tax lists each Local entry in both languages: tax, refund or owed and how, amount", () => {
+test("Other Tax prints a row for every Local tax, so it can be ticked by hand", () => {
+  const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
+  for (const type of ROWS) {
+    const y = T.firstBaseline + ROWS.indexOf(type) * T.pitch;
+    assert.ok(marks.text.some((m) => m.x === T.typeLabel.x && m.y === y && m.value === type), type);
+    assert.ok(marks.text.some((m) => m.x === T.oweLabel.x && m.y === y && m.value === "補繳 Owe"), type);
+    assert.ok(marks.text.some((m) => m.x === T.refundLabel.x && m.y === y && m.value === "退稅 Refund"), type);
+    assert.deepEqual(localRow(marks, type), { ticked: false, owe: false, refund: false, amount: "" });
+  }
+  assert.equal(marks.squares.length, 15);
+  assert.equal(marks.rules.length, 5);
+  assert.equal(marks.checks.length, 0);
+  assert.deepEqual(marks.covers, T.covers);
+});
+
+test("a Local tax that applies is ticked with its amount and Owe or Refund", () => {
   const q = {
     remarks: "Bring photo ID.",
     exitForm: {
@@ -76,26 +97,30 @@ test("Other Tax lists each Local entry in both languages: tax, refund or owed an
       local: [
         { type: "NPT", method: "paper", result: "refund", amount: "40", refundBy: "check" },
         { type: "BIRT", method: "paper", result: "owe", amount: "1250", oweBy: "mail_check" },
-        { type: "SIT", method: "efile", result: "owe", amount: "12.3", oweBy: "direct_debit", debitOn: "2026-04-15" },
         { type: "EET", method: "paper", result: "none" },
       ],
     },
   };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
-  assert.deepEqual(localRow(marks, 0), { type: "NPT", how: "退稅 Refund · 支票 Check", amount: "$40.00" });
-  assert.deepEqual(localRow(marks, 1), { type: "BIRT", how: "補繳 Owe · 郵寄支票 Mail check", amount: "$1,250.00" });
-  assert.deepEqual(localRow(marks, 2), { type: "SIT (E-file)", how: "補繳 Owe · 銀行扣款 Direct debit 04/15/2026", amount: "$12.30" });
-  assert.deepEqual(localRow(marks, 3), { type: "EET", how: "無退稅或補繳 No refund or tax owed", amount: "" });
-  assert.equal(marks.checks.length, 0);
-  assert.equal(exitFormNeedsFont(marks), true);
+  assert.deepEqual(localRow(marks, "NPT"), { ticked: true, owe: false, refund: true, amount: "40.00" });
+  assert.deepEqual(localRow(marks, "BIRT"), { ticked: true, owe: true, refund: false, amount: "1,250.00" });
+  assert.deepEqual(localRow(marks, "EET"), { ticked: true, owe: false, refund: false, amount: "" });
+  assert.deepEqual(localRow(marks, "SIT"), { ticked: false, owe: false, refund: false, amount: "" });
   assert.equal(valueAt(marks, L.remarks), "Bring photo ID.");
-  // The template's own Other Tax boxes are covered.
-  assert.deepEqual(marks.covers, L.local.covers);
 });
 
-test("no Local entry says None under Other Tax", () => {
-  const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
-  assert.equal(localRow(marks, 0).type, "無 None");
+test("e-file, direct deposit and direct debit on a Local tax go to the remarks", () => {
+  const q = {
+    remarks: "Signed in person.",
+    exitForm: {
+      federal: null,
+      state: null,
+      local: [{ type: "SIT", method: "efile", result: "owe", amount: "12.3", oweBy: "direct_debit", debitOn: "2026-04-15" }],
+    },
+  };
+  const marks = exitFormMarks(q, CASE, "2026-11-01");
+  assert.deepEqual(localRow(marks, "SIT"), { ticked: true, owe: true, refund: false, amount: "12.30" });
+  assert.equal(valueAt(marks, L.remarks), "SIT: e-filed, direct debit on 04/15/2026; Signed in person.");
 });
 
 test("the filled PDF is one page with a blank author", async () => {

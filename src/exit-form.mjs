@@ -5,6 +5,10 @@
 // exitFormMarks says what goes where; buildExitFormPdf draws it.
 import { oneLine, usDate } from "./draft-form.mjs";
 import { needsEmbeddedFont, patchSubsetPadding, printable } from "./draft-pdf.mjs";
+import { LOCAL_TYPES } from "./questionnaires.mjs";
+
+// The Local taxes, in the questionnaire's order: a row each under Other Tax.
+const LOCAL_TAXES = Object.freeze(LOCAL_TYPES.map(([type]) => type));
 
 export const EXIT_FORM_FILE = "src/forms/exit-form-pcdc.pdf";
 
@@ -22,9 +26,9 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
   clientNumber: { x: 500, y: 174, width: 100 },
   taxpayer: { x: 252, y: 204, width: 310 },
   remarks: { x: 130, y: 557, width: 430 },
-  // "Other Tax": the template's boxes are covered and each Local entry gets
-  // its own bilingual line: the tax, refund or owed and how, the amount.
-  // Local taxes are almost always paper-filed, so only e-file is said.
+  // "Other Tax": the template's own boxes are covered and replaced by one
+  // row per Local tax, printed whether or not it applies, so the form can
+  // still be ticked by hand: ☐ NPT $____  ☐ 補繳 Owe  ☐ 退稅 Refund.
   local: {
     covers: [
       { x: 47, y: 444, width: 39, height: 20 }, // the blank before 其他稅
@@ -33,12 +37,14 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
     ],
     firstBaseline: 456,
     pitch: 15,
-    rows: 5,
-    columns: {
-      type: { x: 196, width: 70 },
-      how: { x: 270, width: 222 },
-      amount: { x: 495, width: 70, align: "right" },
-    },
+    box: 8.5,
+    typeBox: 196,
+    typeLabel: { x: 209, width: 56 },
+    amount: { x: 280, width: 66, ruleFrom: 278, ruleTo: 348 },
+    oweBox: 368,
+    oweLabel: { x: 381, width: 60 },
+    refundBox: 448,
+    refundLabel: { x: 461, width: 70 },
   },
   groups: {
     federal: {
@@ -67,29 +73,18 @@ const money = (amount) => {
   return `$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${cents.padEnd(2, "0")}`;
 };
 
-// The template's own words, Chinese then English.
-const HOW_LABEL = Object.freeze({
-  direct_deposit: "退稅 Refund · 存入銀行 Direct deposit",
-  check: "退稅 Refund · 支票 Check",
-  direct_debit: "補繳 Owe · 銀行扣款 Direct debit",
-  mail_check: "補繳 Owe · 郵寄支票 Mail check",
-});
-const NONE_LABEL = "無退稅或補繳 No refund or tax owed";
-export const NO_LOCAL_LABEL = "無 None";
+const OWE_LABEL = "補繳 Owe";
+const REFUND_LABEL = "退稅 Refund";
+const HOW_NOTE = Object.freeze({ direct_deposit: "direct deposit", direct_debit: "direct debit" });
 
-// One Local entry's line in "Other Tax".
-function localColumns(entry) {
-  const how =
-    entry.result === "none"
-      ? NONE_LABEL
-      : entry.result === "refund"
-        ? HOW_LABEL[entry.refundBy]
-        : `${HOW_LABEL[entry.oweBy]}${entry.debitOn ? ` ${usDate(entry.debitOn)}` : ""}`;
-  return {
-    type: entry.method === "efile" ? `${entry.type} (E-file)` : entry.type,
-    how,
-    amount: entry.result === "none" || entry.amount == null ? "" : money(entry.amount),
-  };
+// What a Local entry needs said beyond its row (rare: e-file, direct
+// deposit, direct debit), for the front of the remarks.
+function localNote(entry) {
+  const parts = [];
+  if (entry.method === "efile") parts.push("e-filed");
+  const how = entry.result === "refund" ? entry.refundBy : entry.result === "owe" ? entry.oweBy : null;
+  if (HOW_NOTE[how]) parts.push(`${HOW_NOTE[how]}${entry.debitOn ? ` on ${usDate(entry.debitOn)}` : ""}`);
+  return parts.length ? `${entry.type}: ${parts.join(", ")}` : "";
 }
 
 function groupMarks(layout, entry, out) {
@@ -113,13 +108,14 @@ function groupMarks(layout, entry, out) {
  * What the Exit Form shows, from the reviewer's questionnaire and the case.
  * `case` is { taxYear, clientNumber, firstName, lastName }; `today` is
  * 'YYYY-MM-DD'. Returns { text: [{x, y, width, value, size}], checks:
- * [{x, y}], covers: [{x, y, width, height}], fileName }. "Other Tax" lists
- * up to five Local entries, one per line. Nothing about a bank account is
- * ever drawn.
+ * [{x, y}], covers and squares: [{x, y, width, height}], rules: [{from, to,
+ * y}], fileName }. "Other Tax" has a row for each Local tax; the ones that
+ * apply are ticked with their amount and Owe or Refund. Nothing about a bank
+ * account is ever drawn.
  */
 export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName, lastName } = {}, today) {
   const L = EXIT_FORM_LAYOUT;
-  const out = { text: [], checks: [], covers: [...L.local.covers] };
+  const out = { text: [], checks: [], covers: [...L.local.covers], squares: [], rules: [] };
   const put = (place, value, size = TEXT_SIZE) => {
     const text = oneLine(value);
     if (text) out.text.push({ ...place, value: text, size });
@@ -132,14 +128,34 @@ export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName,
   const exit = questionnaire?.exitForm ?? {};
   groupMarks(L.groups.federal, exit.federal, out);
   groupMarks(L.groups.state, exit.state, out);
-  const local = (exit.local ?? []).slice(0, L.local.rows);
-  if (!local.length) put({ ...L.local.columns.type, y: L.local.firstBaseline }, NO_LOCAL_LABEL, 10);
-  local.forEach((entry, i) => {
-    const y = L.local.firstBaseline + i * L.local.pitch;
-    const cols = localColumns(entry);
-    for (const [key, place] of Object.entries(L.local.columns)) put({ ...place, y }, cols[key], 10);
+  const T = L.local;
+  const entries = new Map((exit.local ?? []).map((entry) => [entry.type, entry]));
+  const notes = [];
+  LOCAL_TAXES.forEach((type, i) => {
+    const y = T.firstBaseline + i * T.pitch;
+    const square = (x) => {
+      out.squares.push({ x, y: y - T.box + 0.5, width: T.box, height: T.box });
+      return { x: x + T.box / 2, y: y - T.box / 2 + 0.5 };
+    };
+    const typeBox = square(T.typeBox);
+    put({ ...T.typeLabel, y }, type, 10);
+    out.rules.push({ from: T.amount.ruleFrom, to: T.amount.ruleTo, y: y + 2 });
+    put({ x: T.amount.ruleFrom - 8, y, width: 8 }, "$", 10);
+    const oweBox = square(T.oweBox);
+    put({ ...T.oweLabel, y }, OWE_LABEL, 10);
+    const refundBox = square(T.refundBox);
+    put({ ...T.refundLabel, y }, REFUND_LABEL, 10);
+
+    const entry = entries.get(type);
+    if (!entry) return;
+    out.checks.push(typeBox);
+    if (entry.result === "owe") out.checks.push(oweBox);
+    if (entry.result === "refund") out.checks.push(refundBox);
+    if (entry.result !== "none" && entry.amount != null) put({ ...T.amount, y }, money(entry.amount).slice(1), 10);
+    const note = localNote(entry);
+    if (note) notes.push(note);
   });
-  put(L.remarks, questionnaire?.remarks ?? "", 9);
+  put(L.remarks, [...notes, oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; "), 9);
 
   const ref = String(clientNumber ?? "").replace(/[^A-Za-z0-9-]/g, "");
   out.fileName = `exit-form${ref ? `-${ref}` : ""}.pdf`;
@@ -191,6 +207,10 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   // White boxes over the parts of the template this fill replaces.
   for (const c of marks.covers ?? [])
     page.drawRectangle({ x: c.x, y: PAGE_HEIGHT - c.y - c.height, width: c.width, height: c.height, color: rgb(1, 1, 1) });
+  for (const q of marks.squares ?? [])
+    page.drawRectangle({ x: q.x, y: PAGE_HEIGHT - q.y - q.height, width: q.width, height: q.height, borderColor: color, borderWidth: 0.7 });
+  for (const r of marks.rules ?? [])
+    page.drawLine({ start: { x: r.from, y: PAGE_HEIGHT - r.y }, end: { x: r.to, y: PAGE_HEIGHT - r.y }, thickness: 0.6, color });
   for (const mark of marks.text) {
     let text = mark.value;
     let size = mark.size;
@@ -207,7 +227,7 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   // A tick as an X inside the box.
   for (const { x, y } of marks.checks) {
     const cy = PAGE_HEIGHT - y;
-    const r = 3.6;
+    const r = 3;
     page.drawLine({ start: { x: x - r, y: cy - r }, end: { x: x + r, y: cy + r }, thickness: 1.3, color });
     page.drawLine({ start: { x: x - r, y: cy + r }, end: { x: x + r, y: cy - r }, thickness: 1.3, color });
   }
