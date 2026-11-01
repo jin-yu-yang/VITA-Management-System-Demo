@@ -797,7 +797,8 @@ export function caseTabs(panels, active = "overview", counts = {}) {
 
 // The main path through the stages after the client sends the application
 // (a draft is not on it). Corrections are a loop back into preparation, so
-// they show on the preparation step, marked as amendment.
+// they show on the preparation step, marked as amendment. Accepted is the end
+// of the path; Closed is drawn after it only for a closed case.
 const LIFECYCLE = Object.freeze([
   "received",
   "screening",
@@ -809,7 +810,6 @@ const LIFECYCLE = Object.freeze([
   "ready_to_efile",
   "efiled",
   "accepted",
-  "closed",
 ]);
 
 // The record, so that E-filed and Accepted carry the filing method's staff
@@ -831,15 +831,23 @@ export function lifecycleBar(subject) {
       : (record.holdOrigin ?? null);
   const amendStep = correcting ? "preparing" : rejected ? "efiled" : heldOn;
   const amendStage = correcting ? "corrections_required" : rejected ? "rejected" : stage;
-  const at = LIFECYCLE.indexOf(amendStep ?? stage);
-  return `<ol class="lifecycle" aria-label="Where this case is">${LIFECYCLE.map((step, index) => {
-    // A case can be closed from any stage, so a closed case marks no step as
-    // done; the History tab shows the path it took.
-    const state =
-      at < 0 ? "todo" : index === at ? "current" : index < at && stage !== "closed" ? "done" : "todo";
-    const amend = amendStep !== null && step === amendStep;
+  const closed = stage === "closed";
+  const accepted = stage === "accepted";
+  const steps = closed ? [...LIFECYCLE, "closed"] : LIFECYCLE;
+  const at = steps.indexOf(amendStep ?? stage);
+  return `<ol class="lifecycle" aria-label="Where this case is">${steps.map((step, index) => {
+    // A case can be closed from any stage and nothing records which, so the
+    // steps before Closed are neutral (neither done nor still to come); the
+    // History tab shows the path it took. An accepted case has finished every
+    // step, so none is current.
+    const state = closed
+      ? step === "closed" ? "current" : "neutral"
+      : accepted
+        ? "done"
+        : at < 0 ? "todo" : index === at ? "current" : index < at ? "done" : "todo";
+    const amend = !closed && amendStep !== null && step === amendStep;
     const label = describeStage(amend ? amendStage : step, "en", record).label;
-    return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${index === at ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
+    return `<li class="lifecycle-step ${state}${amend ? " amend" : ""}"${state === "current" ? ' aria-current="step"' : ""}><span class="lifecycle-dot"></span><span class="lifecycle-label">${esc(label)}</span></li>`;
   }).join("")}</ol>`;
 }
 

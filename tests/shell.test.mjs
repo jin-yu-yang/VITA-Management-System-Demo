@@ -79,6 +79,15 @@ test("the stylesheet hides a closed sidebar rather than leaving it to the UA def
   assert.match(css, /\.app-sidebar\[hidden\]\s*\{[^}]*display:\s*none/);
 });
 
+test("the stylesheet draws a closed case's earlier lifecycle steps as neutral", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.lifecycle-step\.neutral/);
+  assert.match(
+    css,
+    /\.lifecycle-step\.neutral \+ \.lifecycle-step\.current::before\s*\{[^}]*var\(--vt-line\)/,
+  );
+});
+
 test("an inactive case tab is not displayed", () => {
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   // Any author `display` on .case-panel overrides [hidden] unless this exists.

@@ -1188,21 +1188,58 @@ test("the lifecycle bar marks done, current and still-to-come steps", () => {
   const steps = (stage) =>
     [...lifecycleBar(stage).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
   assert.deepEqual(steps("preparing"), [
-    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo", "todo",
+    "done", "done", "done", "current", "todo", "todo", "todo", "todo", "todo", "todo",
   ]);
   assert.deepEqual(steps("received")[0], "current");
   assert.deepEqual(steps("screening").slice(0, 3), ["done", "current", "todo"]);
   assert.deepEqual(steps("corrections_required")[3], "current amend");
+  assert.deepEqual(steps("corrections_required").slice(0, 3), ["done", "done", "done"]);
   assert.match(lifecycleBar("corrections_required"), /Corrections in progress/);
   assert.match(lifecycleBar("reviewing"), /aria-current="step"[^>]*>[\s\S]*?Review in progress/);
   assert.ok(steps("nonsense").every((s) => s === "todo"));
   // A draft is not on the path: it marks nothing, and does not claim a step.
   assert.ok(steps("draft").every((s) => s === "todo"));
   assert.doesNotMatch(lifecycleBar("draft"), /aria-current/);
-  // Closed can happen at any stage, so nothing before it is claimed as done.
-  assert.deepEqual(steps("closed"), [
-    "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "todo", "current",
+  assert.doesNotMatch(lifecycleBar("draft"), /Closed/);
+  assert.doesNotMatch(lifecycleBar("nonsense"), /Closed/);
+  // Closed can happen at any stage, so nothing before it is claimed as done
+  // or still to come: those steps are neutral, and Closed is the only current one.
+  assert.deepEqual(steps("closed"), [...Array(10).fill("neutral"), "current"]);
+  const labelsOf = (stage) =>
+    [...lifecycleBar(stage).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  assert.equal(labelsOf("closed").at(-1), "Closed");
+  assert.equal([...lifecycleBar("closed").matchAll(/aria-current="step"/g)].length, 1);
+  assert.match(lifecycleBar("closed"), /aria-current="step"[^>]*>[\s\S]*?Closed/);
+});
+
+test("the lifecycle bar ends at Accepted and never draws Closed after it", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  const labels = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
+  const accepted = { stage: "accepted", federalMethod: "efile", stateMethod: "efile" };
+  assert.deepEqual(steps(accepted), Array(10).fill("done"));
+  assert.doesNotMatch(lifecycleBar(accepted), /aria-current/);
+  assert.doesNotMatch(lifecycleBar(accepted), /Closed/);
+  assert.deepEqual(steps("review_ready"), [
+    ...Array(4).fill("done"), "current", ...Array(5).fill("todo"),
   ]);
+  assert.ok(!labels("review_ready").includes("Closed"));
+  const mixed = { stage: "accepted", federalMethod: "efile", stateMethod: "paper" };
+  assert.deepEqual(labels(mixed).slice(8), [
+    describeStage("efiled", "en", mixed).label,
+    describeStage("accepted", "en", mixed).label,
+  ]);
+  assert.deepEqual(steps(mixed).slice(8), ["done", "done"]);
+});
+
+test("a closed case claims nothing, even when it came from a Hold", () => {
+  const steps = (record) =>
+    [...lifecycleBar(record).matchAll(/class="lifecycle-step ([a-z ]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(
+    steps({ stage: "closed", holdOrigin: "awaiting_documents", documentsOrigin: "screening" }),
+    [...Array(10).fill("neutral"), "current"],
+  );
 });
 
 test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
@@ -1211,7 +1248,7 @@ test("the lifecycle bar runs on to Ready to e-file and E-filed", () => {
   const ready = steps("ready_to_efile");
   assert.deepEqual(ready.slice(0, 7), Array(7).fill("done"));
   assert.equal(ready[7], "current");
-  assert.deepEqual(ready.slice(8), ["todo", "todo", "todo"]);
+  assert.deepEqual(ready.slice(8), ["todo", "todo"]);
   const bar = lifecycleBar("ready_to_efile");
   assert.match(bar, /Ready to e-file/);
   assert.match(bar, /E-filed/);
@@ -1226,7 +1263,7 @@ test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the met
   const labels = (record) =>
     [...lifecycleBar(record).matchAll(/class="lifecycle-label">([^<]*)</g)].map((m) => m[1]);
   assert.deepEqual(labels({ stage: "efiled" }).slice(7), [
-    "Ready to e-file", "E-filed", "Accepted", "Closed",
+    "Ready to e-file", "E-filed", "Accepted",
   ]);
   // Rejected shows on the E-filed step, marked like Corrections on Filing in progress.
   const rejected = steps({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" });
@@ -1241,10 +1278,9 @@ test("the lifecycle bar takes the record: Accepted, Rejected on E-filed, the met
     lifecycleBar({ stage: "rejected", federalMethod: "efile", stateMethod: "efile" }),
     /aria-current="step"/,
   );
-  // Accepted is the current step; the rest before it are done.
+  // Accepted ends the path: every step is done and none is current.
   const accepted = steps({ stage: "accepted", federalMethod: "efile", stateMethod: "efile" });
-  assert.equal(accepted[9], "current");
-  assert.deepEqual(accepted.slice(0, 9), Array(9).fill("done"));
+  assert.deepEqual(accepted, Array(10).fill("done"));
   // The method's staff name; a case e-filed before methods keeps "E-filed".
   assert.equal(
     labels({ stage: "efiled", federalMethod: "efile", stateMethod: "paper" })[8],
