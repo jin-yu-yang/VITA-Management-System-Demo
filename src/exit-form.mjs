@@ -13,9 +13,10 @@ const LOCAL_TAXES = Object.freeze(LOCAL_TYPES.map(([type]) => type));
 export const EXIT_FORM_FILE = "src/forms/exit-form-pcdc.pdf";
 
 const PAGE_HEIGHT = 792;
-// What the system fills in is drawn a little larger than the form's own
-// small print, so it reads at a glance.
-const TEXT_SIZE = 12.5;
+// What the system fills in is drawn in bold and larger than the form's own
+// labels, so it reads at a glance.
+const TEXT_SIZE = 15;
+const AMOUNT_SIZE = 14;
 const SMALL_SIZE = 9;
 const ROW_SIZE = 11;
 const MIN_SIZE = 6;
@@ -51,7 +52,7 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
   },
   groups: {
     federal: {
-      amount: { x: 503, y: 246, width: 60 },
+      amount: { x: 503, y: 246, width: 76 },
       debitOn: { x: 390, y: 299, width: 33 },
       boxes: {
         efile: [174, 241], paper: [281, 241],
@@ -98,12 +99,12 @@ function groupMarks(layout, entry, out) {
   };
   box(entry.method);
   if (entry.result === "none") return;
-  if (entry.amount != null) out.text.push({ ...layout.amount, value: money(entry.amount), size: TEXT_SIZE });
+  if (entry.amount != null) out.text.push({ ...layout.amount, value: money(entry.amount), size: AMOUNT_SIZE, bold: true });
   if (entry.result === "refund") box(entry.refundBy);
   if (entry.result === "owe") {
     box(entry.oweBy);
     if (entry.oweBy === "direct_debit" && entry.debitOn)
-      out.text.push({ ...layout.debitOn, value: usDate(entry.debitOn), size: SMALL_SIZE });
+      out.text.push({ ...layout.debitOn, value: usDate(entry.debitOn), size: SMALL_SIZE, bold: true });
   }
 }
 
@@ -126,11 +127,11 @@ export function exitFormMarks(
   const out = { text: [], checks: [], covers: [...L.local.covers], squares: [], rules: [] };
   const put = (place, value, size = TEXT_SIZE) => {
     const text = oneLine(value);
-    if (text) out.text.push({ ...place, value: text, size });
+    if (text) out.text.push({ ...place, value: text, size, bold: true });
   };
-  put(L.taxYear, taxYear ?? "", 15);
+  put(L.taxYear, taxYear ?? "", 16);
   put(L.date, usDate(today));
-  put(L.clientNumber, clientNumber ?? "");
+  put(L.clientNumber, clientNumber ?? "", 16);
   const name = (first, last) => [first, last].map(oneLine).filter(Boolean).join(" ");
   put(L.taxpayer, [name(firstName, lastName), name(spouseFirstName, spouseLastName)].filter(Boolean).join(" & "));
 
@@ -164,11 +165,11 @@ export function exitFormMarks(
     out.checks.push(typeBox);
     if (entry.result === "owe") out.checks.push(oweBox);
     if (entry.result === "refund") out.checks.push(refundBox);
-    if (entry.result !== "none" && entry.amount != null) put({ ...T.amount, y }, money(entry.amount).slice(1), 12);
+    if (entry.result !== "none" && entry.amount != null) put({ ...T.amount, y }, money(entry.amount).slice(1), 13);
     const note = localNote(entry);
     if (note) notes.push(note);
   });
-  put(L.remarks, [...notes, oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; "), 10.5);
+  put(L.remarks, [...notes, oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; "), 12);
 
   const ref = String(clientNumber ?? "").replace(/[^A-Za-z0-9-]/g, "");
   out.fileName = `exit-form${ref ? `-${ref}` : ""}.pdf`;
@@ -194,6 +195,7 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   const page = doc.getPage(0);
   const color = rgb(0, 0, 0);
   const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await doc.embedFont(StandardFonts.HelveticaBold);
   const fonts = [];
   if (exitFormNeedsFont(marks)) {
     if (!fontFiles.length) throw new Error("The Exit Form needs its font files.");
@@ -205,8 +207,9 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
     fonts.find((font) => font.getCharacterSet().includes(ch.codePointAt(0))) ?? fonts[0];
 
   // [text, font] runs: Helvetica for a value it can draw, else per character.
-  const runsOf = (text, embedded = false) => {
-    if (!embedded && !needsEmbeddedFont(text)) return [[text, helvetica]];
+  // Noto has no bold here, so Chinese in a filled value is drawn regular.
+  const runsOf = (text, embedded = false, bold = false) => {
+    if (!embedded && !needsEmbeddedFont(text)) return [[text, bold ? helveticaBold : helvetica]];
     const runs = [];
     for (const ch of printable(text, fonts)) {
       const font = fontFor(ch);
@@ -227,7 +230,7 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   for (const mark of marks.text) {
     let text = mark.value;
     let size = mark.size;
-    const fit = (t) => runsOf(t, mark.embedded);
+    const fit = (t) => runsOf(t, mark.embedded, mark.bold);
     while (size > MIN_SIZE && widthOf(fit(text), size) > mark.width) size -= 0.5;
     while (text.length > 1 && widthOf(fit(text), size) > mark.width) text = `${[...text].slice(0, -2).join("")}…`;
     const runs = fit(text);
