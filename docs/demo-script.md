@@ -70,13 +70,13 @@ actions from anyone else regardless of what the screen shows). It has:
 
 ## The M4 story: two real staff accounts and the 13614-C
 
-Rehearsed on 2026-10-30 on `main` with the example roster plus one reviewer. Three windows: the
+Rehearsed on 2026-10-30 on `main` with the example roster plus one reviewer; button names checked against `main` on 2026-10-31. Three windows: the
 **presenter** (only to reset the samples and to act as Sam for the office steps), **Riley Park**
 (`staff-a@example.org`, `prepare`) and **Jordan Lee** (`staff-b@example.org`, `review` only — a
 staff account that also holds `admin` gets the office workspace and never sees *Claim review*,
 [#104](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/104)). Codes arrive in
 Mailpit; the local stack needs the Magic Link template from [`docs/setup.md`](setup.md#create-the-stack)
-or the email carries no code. About 12 minutes end to end; the talk shows the middle 3½.
+or the email carries no code. About 12 minutes end to end; the talk (11/2) shows the middle 3½.
 
 1. **Presenter resets the sample cases.** Ten cases, among them Mei Chen at *Waiting for
    preparation* (drop-off, Mandarin).
@@ -85,14 +85,18 @@ or the email carries no code. About 12 minutes end to end; the talk shows the mi
 3. **Riley claims Mei Chen's case** from the work board and opens it.
 4. **Riley fills the shaded section.** *Fill the shaded section* opens the 13614-C in a full-screen
    editor with only the grey "certified volunteer" fields editable. Fill the household row (all
-   five cells), tick a W-2 and give its count, add a note. **Save these values** says "Saved" and
-   keeps the editor open; Close. (A partial save is accepted on purpose: the preparer attests
+   five cells), tick a W-2 and give its count, add a note. **Save** says "Saved" and keeps the
+   editor open (**Save these values** is the other flow's button, after uploading a filled copy);
+   Close. (A partial save is accepted on purpose: the preparer attests
    completeness in the questionnaire, not the editor.)
 5. **View Draft 13614-C.** The generated form carries Riley's values in the shaded cells. This is
    the M4 goal: the volunteer's half of the form is data, filled into the real PDF.
-6. **Riley sends the return to review** with the preparer questionnaire, ticking "I have completed
-   the shaded parts". Try *Claim review* as Riley: refused, "You prepared this case, so you cannot
-   review it." Say that the database refuses it too, whatever the screen shows.
+6. **Riley sends the return to review**: fill the preparer questionnaire, tick "I have completed the
+   shaded parts of the 13614-C.", and press **Record that preparation is complete in TaxSlayer**.
+   The case moves to *Pending review*. In Riley's window there is no *Claim review* button at all:
+   where it would be, the board row and the case page say "You prepared this case, so you cannot
+   review it." Point at that sentence, and say that the database refuses it too, whatever the
+   screen shows.
 7. **Jordan signs in** (a second window). The board shows the case under *Waiting for review*,
    preparer Riley Park, reviewer Unassigned. **Claim review.**
 8. **Jordan approves.** In the reviewer questionnaire answer *yes* to going over the return (date
@@ -100,9 +104,12 @@ or the email carries no code. About 12 minutes end to end; the talk shows the mi
    the signing question is one the reviewer cannot really answer
    ([#106](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/106)). Fill one Exit
    Form group or none. **Approve this review** → *Ready to exit*.
-9. **Presenter, acting as Sam, files.** *Mark ready to e-file* (narrate the client's signature),
-   *Mark e-filed* → "Both returns e-filed", *Record filing result* → IRS accepted, Pennsylvania
-   accepted. The case reaches **Accepted**, the end of the chain: it appears under *Done*, and
+9. **Presenter, acting as Sam, files.** *Mark ready to e-file* (narrate the client's signature).
+   *Mark e-filed…*: choose "Both returns e-filed", tick "Each return was e-filed, or given to the
+   client on paper, as chosen above.", press **Mark e-filed**. *Record filing result…*: for
+   **Federal return (e-filed)** and **Pennsylvania return (e-filed)** set **Answer** to Accepted and
+   fill **Date of the answer** (today), leave the reject code and fix note empty, tick "These results
+   are correct.", press **Record the result**. The case reaches **Accepted**, the end of the chain: it appears under *Done*, and
    *Close this case* is refused at this stage by design. Closing with a reason is for a case that
    stops early (client unreachable, withdrawn, out of scope, unsigned at season end).
 10. **Open History.** Every line names the real account that did it — Riley Park, Jordan Lee, Sam —
