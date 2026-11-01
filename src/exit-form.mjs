@@ -13,8 +13,11 @@ const LOCAL_TAXES = Object.freeze(LOCAL_TYPES.map(([type]) => type));
 export const EXIT_FORM_FILE = "src/forms/exit-form-pcdc.pdf";
 
 const PAGE_HEIGHT = 792;
-const TEXT_SIZE = 11;
-const SMALL_SIZE = 8;
+// What the system fills in is drawn a little larger than the form's own
+// small print, so it reads at a glance.
+const TEXT_SIZE = 12.5;
+const SMALL_SIZE = 9;
+const ROW_SIZE = 11;
 const MIN_SIZE = 6;
 
 // Places on the template, in points from the page's top-left corner (as a
@@ -25,26 +28,26 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
   date: { x: 134, y: 174, width: 190 },
   clientNumber: { x: 500, y: 174, width: 100 },
   taxpayer: { x: 252, y: 204, width: 310 },
-  remarks: { x: 130, y: 557, width: 430 },
+  remarks: { x: 130, y: 557, width: 432 },
   // "Other Tax": the template's own boxes are covered and replaced by one
   // row per Local tax, printed whether or not it applies, so the form can
   // still be ticked by hand: ☐ NPT $____  ☐ 補繳 Owe  ☐ 退稅 Refund.
   local: {
-    covers: [
-      { x: 47, y: 444, width: 39, height: 20 }, // the blank before 其他稅
-      { x: 190, y: 422.5, width: 395, height: 97.5 }, // boxes and Amount, all three rows
-      { x: 47, y: 466, width: 145, height: 54 }, // the Refund and Owe labels
-    ],
-    firstBaseline: 456,
-    pitch: 15,
-    box: 8.5,
-    typeBox: 196,
-    typeLabel: { x: 209, width: 56 },
-    amount: { x: 280, width: 66, ruleFrom: 278, ruleTo: 348 },
-    oweBox: 368,
-    oweLabel: { x: 381, width: 60 },
-    refundBox: 448,
-    refundLabel: { x: 461, width: 70 },
+    // The whole Other Tax section of the template, its own label included:
+    // the label is drawn again at the left edge 聯邦稅 and 州稅 use.
+    covers: [{ x: 47, y: 422.5, width: 538, height: 97.5 }],
+    label: { zh: { x: 50, y: 447, size: 14 }, en: { x: 95, y: 447, size: 12 } },
+    firstBaseline: 447,
+    pitch: 17,
+    box: 9,
+    typeBox: 163,
+    typeLabel: { x: 177, width: 56 },
+    dollar: { x: 246, width: 10 },
+    amount: { x: 258, width: 74, ruleFrom: 256, ruleTo: 334 },
+    oweBox: 352,
+    oweLabel: { x: 366, width: 64 },
+    refundBox: 440,
+    refundLabel: { x: 454, width: 100 },
   },
   groups: {
     federal: {
@@ -106,29 +109,39 @@ function groupMarks(layout, entry, out) {
 
 /**
  * What the Exit Form shows, from the reviewer's questionnaire and the case.
- * `case` is { taxYear, clientNumber, firstName, lastName }; `today` is
+ * `case` is { taxYear, clientNumber, firstName, lastName, spouseFirstName,
+ * spouseLastName } (the spouse's only for a couple); `today` is
  * 'YYYY-MM-DD'. Returns { text: [{x, y, width, value, size}], checks:
  * [{x, y}], covers and squares: [{x, y, width, height}], rules: [{from, to,
  * y}], fileName }. "Other Tax" has a row for each Local tax; the ones that
  * apply are ticked with their amount and Owe or Refund. Nothing about a bank
  * account is ever drawn.
  */
-export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName, lastName } = {}, today) {
+export function exitFormMarks(
+  questionnaire,
+  { taxYear, clientNumber, firstName, lastName, spouseFirstName, spouseLastName } = {},
+  today,
+) {
   const L = EXIT_FORM_LAYOUT;
   const out = { text: [], checks: [], covers: [...L.local.covers], squares: [], rules: [] };
   const put = (place, value, size = TEXT_SIZE) => {
     const text = oneLine(value);
     if (text) out.text.push({ ...place, value: text, size });
   };
-  put(L.taxYear, taxYear ?? "", 14);
+  put(L.taxYear, taxYear ?? "", 15);
   put(L.date, usDate(today));
   put(L.clientNumber, clientNumber ?? "");
-  put(L.taxpayer, [firstName, lastName].map(oneLine).filter(Boolean).join(" "));
+  const name = (first, last) => [first, last].map(oneLine).filter(Boolean).join(" ");
+  put(L.taxpayer, [name(firstName, lastName), name(spouseFirstName, spouseLastName)].filter(Boolean).join(" & "));
 
   const exit = questionnaire?.exitForm ?? {};
   groupMarks(L.groups.federal, exit.federal, out);
   groupMarks(L.groups.state, exit.state, out);
   const T = L.local;
+  // Drawn in the downloaded Noto Sans, the nearest match to the form's own type.
+  const row = (place, value, size = ROW_SIZE) => out.text.push({ ...place, value, size, embedded: true });
+  row({ ...T.label.zh, width: 44 }, "其他稅", T.label.zh.size);
+  row({ ...T.label.en, width: 60 }, "Other Tax:", T.label.en.size);
   const entries = new Map((exit.local ?? []).map((entry) => [entry.type, entry]));
   const notes = [];
   LOCAL_TAXES.forEach((type, i) => {
@@ -138,24 +151,24 @@ export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName,
       return { x: x + T.box / 2, y: y - T.box / 2 + 0.5 };
     };
     const typeBox = square(T.typeBox);
-    put({ ...T.typeLabel, y }, type, 10);
+    row({ ...T.typeLabel, y }, type);
+    row({ ...T.dollar, y }, "$");
     out.rules.push({ from: T.amount.ruleFrom, to: T.amount.ruleTo, y: y + 2 });
-    put({ x: T.amount.ruleFrom - 8, y, width: 8 }, "$", 10);
     const oweBox = square(T.oweBox);
-    put({ ...T.oweLabel, y }, OWE_LABEL, 10);
+    row({ ...T.oweLabel, y }, OWE_LABEL);
     const refundBox = square(T.refundBox);
-    put({ ...T.refundLabel, y }, REFUND_LABEL, 10);
+    row({ ...T.refundLabel, y }, REFUND_LABEL);
 
     const entry = entries.get(type);
     if (!entry) return;
     out.checks.push(typeBox);
     if (entry.result === "owe") out.checks.push(oweBox);
     if (entry.result === "refund") out.checks.push(refundBox);
-    if (entry.result !== "none" && entry.amount != null) put({ ...T.amount, y }, money(entry.amount).slice(1), 10);
+    if (entry.result !== "none" && entry.amount != null) put({ ...T.amount, y }, money(entry.amount).slice(1), 12);
     const note = localNote(entry);
     if (note) notes.push(note);
   });
-  put(L.remarks, [...notes, oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; "), 9);
+  put(L.remarks, [...notes, oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; "), 10.5);
 
   const ref = String(clientNumber ?? "").replace(/[^A-Za-z0-9-]/g, "");
   out.fileName = `exit-form${ref ? `-${ref}` : ""}.pdf`;
@@ -168,7 +181,7 @@ export const exitFormFontFields = (marks) => ({
 });
 
 /** Whether any drawn value needs the downloaded CJK fonts. */
-export const exitFormNeedsFont = (marks) => marks.text.some((mark) => needsEmbeddedFont(mark.value));
+export const exitFormNeedsFont = (marks) => marks.text.some((mark) => mark.embedded || needsEmbeddedFont(mark.value));
 
 /**
  * The filled Exit Form's bytes. `fontFiles` (draftFontFiles' result) is
@@ -192,8 +205,8 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
     fonts.find((font) => font.getCharacterSet().includes(ch.codePointAt(0))) ?? fonts[0];
 
   // [text, font] runs: Helvetica for a value it can draw, else per character.
-  const runsOf = (text) => {
-    if (!needsEmbeddedFont(text)) return [[text, helvetica]];
+  const runsOf = (text, embedded = false) => {
+    if (!embedded && !needsEmbeddedFont(text)) return [[text, helvetica]];
     const runs = [];
     for (const ch of printable(text, fonts)) {
       const font = fontFor(ch);
@@ -208,15 +221,16 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   for (const c of marks.covers ?? [])
     page.drawRectangle({ x: c.x, y: PAGE_HEIGHT - c.y - c.height, width: c.width, height: c.height, color: rgb(1, 1, 1) });
   for (const q of marks.squares ?? [])
-    page.drawRectangle({ x: q.x, y: PAGE_HEIGHT - q.y - q.height, width: q.width, height: q.height, borderColor: color, borderWidth: 0.7 });
+    page.drawRectangle({ x: q.x, y: PAGE_HEIGHT - q.y - q.height, width: q.width, height: q.height, borderColor: color, borderWidth: 0.75 });
   for (const r of marks.rules ?? [])
     page.drawLine({ start: { x: r.from, y: PAGE_HEIGHT - r.y }, end: { x: r.to, y: PAGE_HEIGHT - r.y }, thickness: 0.6, color });
   for (const mark of marks.text) {
     let text = mark.value;
     let size = mark.size;
-    while (size > MIN_SIZE && widthOf(runsOf(text), size) > mark.width) size -= 0.5;
-    while (text.length > 1 && widthOf(runsOf(text), size) > mark.width) text = `${[...text].slice(0, -2).join("")}…`;
-    const runs = runsOf(text);
+    const fit = (t) => runsOf(t, mark.embedded);
+    while (size > MIN_SIZE && widthOf(fit(text), size) > mark.width) size -= 0.5;
+    while (text.length > 1 && widthOf(fit(text), size) > mark.width) text = `${[...text].slice(0, -2).join("")}…`;
+    const runs = fit(text);
     let x = mark.align === "right" ? mark.x + mark.width - widthOf(runs, size) : mark.x;
     const y = PAGE_HEIGHT - mark.y;
     for (const [run, font] of runs) {

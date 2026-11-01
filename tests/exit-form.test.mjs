@@ -28,6 +28,15 @@ test("the header comes from the case and today", () => {
   assert.equal(marks.fileName, "exit-form-31.pdf");
 });
 
+test("a couple is written as taxpayer & spouse", () => {
+  const marks = exitFormMarks(
+    { exitForm: { federal: null, state: null, local: [] } },
+    { ...CASE, spouseFirstName: "Wei", spouseLastName: "Chen" },
+    "2026-11-01",
+  );
+  assert.equal(valueAt(marks, L.taxpayer), "Mei Chen & Wei Chen");
+});
+
 test("a refund ticks the method and how it is paid, with the amount as money", () => {
   const q = { exitForm: { federal: { method: "efile", result: "refund", amount: "1234.5", refundBy: "direct_deposit" }, state: null, local: [] } };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
@@ -77,7 +86,7 @@ test("Other Tax prints a row for every Local tax, so it can be ticked by hand", 
   const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
   for (const type of ROWS) {
     const y = T.firstBaseline + ROWS.indexOf(type) * T.pitch;
-    assert.ok(marks.text.some((m) => m.x === T.typeLabel.x && m.y === y && m.value === type), type);
+    assert.ok(marks.text.some((m) => m.x === T.typeLabel.x && m.y === y && m.value === type && m.embedded), type);
     assert.ok(marks.text.some((m) => m.x === T.oweLabel.x && m.y === y && m.value === "補繳 Owe"), type);
     assert.ok(marks.text.some((m) => m.x === T.refundLabel.x && m.y === y && m.value === "退稅 Refund"), type);
     assert.deepEqual(localRow(marks, type), { ticked: false, owe: false, refund: false, amount: "" });
@@ -86,6 +95,9 @@ test("Other Tax prints a row for every Local tax, so it can be ticked by hand", 
   assert.equal(marks.rules.length, 5);
   assert.equal(marks.checks.length, 0);
   assert.deepEqual(marks.covers, T.covers);
+  // The section's label is drawn again at the left edge 聯邦稅 and 州稅 use.
+  assert.ok(marks.text.some((m) => m.value === "其他稅" && m.x === 50));
+  assert.ok(marks.text.some((m) => m.value === "Other Tax:"));
 });
 
 test("a Local tax that applies is ticked with its amount and Owe or Refund", () => {

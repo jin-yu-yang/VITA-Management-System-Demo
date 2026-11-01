@@ -5,7 +5,7 @@ import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaff
 import { payloadFor } from "./case-actions.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered, spouseShown, visibleAnswers } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
@@ -1717,6 +1717,7 @@ if (!config) {
     showDraftLink();
     try {
       const answers = state.draftAnswers ?? record.answers ?? {};
+      const visible = visibleAnswers(2, answers);
       const season = Number.isInteger(record.season)
         ? record.season
         : Number.isInteger(state.workspace?.currentSeason)
@@ -1724,7 +1725,14 @@ if (!config) {
           : 2025;
       const marks = exitFormMarks(
         questionnaire,
-        { taxYear: season, clientNumber: record.clientNumber ?? "", firstName: answers.tp_first_name, lastName: answers.tp_last_name },
+        {
+          taxYear: season,
+          clientNumber: record.clientNumber ?? "",
+          firstName: answers.tp_first_name,
+          lastName: answers.tp_last_name,
+          // A couple (married, or widowed in the tax year): "Taxpayer & Spouse".
+          ...(spouseShown(visible) ? { spouseFirstName: visible.sp_first_name, spouseLastName: visible.sp_last_name } : {}),
+        },
         isoToday(),
       );
       const PDFLib = await import("./vendor/pdf-lib.mjs");
