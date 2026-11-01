@@ -23,7 +23,8 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
   taxpayer: { x: 252, y: 204, width: 310 },
   remarks: { x: 130, y: 557, width: 430 },
   // "Other Tax": the template's boxes are covered and each Local entry gets
-  // its own line (tax, how it was filed, refund or owed and how, amount).
+  // its own bilingual line: the tax, refund or owed and how, the amount.
+  // Local taxes are almost always paper-filed, so only e-file is said.
   local: {
     covers: [
       { x: 47, y: 444, width: 39, height: 20 }, // the blank before 其他稅
@@ -34,9 +35,8 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
     pitch: 15,
     rows: 5,
     columns: {
-      type: { x: 196, width: 52 },
-      method: { x: 252, width: 62 },
-      how: { x: 318, width: 172 },
+      type: { x: 196, width: 70 },
+      how: { x: 270, width: 222 },
       amount: { x: 495, width: 70, align: "right" },
     },
   },
@@ -67,25 +67,26 @@ const money = (amount) => {
   return `$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${cents.padEnd(2, "0")}`;
 };
 
-const METHOD_LABEL = Object.freeze({ efile: "E-file", paper: "Paper file" });
+// The template's own words, Chinese then English.
 const HOW_LABEL = Object.freeze({
-  direct_deposit: "Refund by direct deposit",
-  check: "Refund by check",
-  direct_debit: "Owe, direct debit",
-  mail_check: "Owe, mail check",
+  direct_deposit: "退稅 Refund · 存入銀行 Direct deposit",
+  check: "退稅 Refund · 支票 Check",
+  direct_debit: "補繳 Owe · 銀行扣款 Direct debit",
+  mail_check: "補繳 Owe · 郵寄支票 Mail check",
 });
+const NONE_LABEL = "無退稅或補繳 No refund or tax owed";
+export const NO_LOCAL_LABEL = "無 None";
 
 // One Local entry's line in "Other Tax".
 function localColumns(entry) {
   const how =
     entry.result === "none"
-      ? "No refund or tax owed"
+      ? NONE_LABEL
       : entry.result === "refund"
         ? HOW_LABEL[entry.refundBy]
-        : `${HOW_LABEL[entry.oweBy]}${entry.debitOn ? ` on ${usDate(entry.debitOn)}` : ""}`;
+        : `${HOW_LABEL[entry.oweBy]}${entry.debitOn ? ` ${usDate(entry.debitOn)}` : ""}`;
   return {
-    type: entry.type,
-    method: METHOD_LABEL[entry.method] ?? entry.method,
+    type: entry.method === "efile" ? `${entry.type} (E-file)` : entry.type,
     how,
     amount: entry.result === "none" || entry.amount == null ? "" : money(entry.amount),
   };
@@ -132,7 +133,7 @@ export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName,
   groupMarks(L.groups.federal, exit.federal, out);
   groupMarks(L.groups.state, exit.state, out);
   const local = (exit.local ?? []).slice(0, L.local.rows);
-  if (!local.length) put({ ...L.local.columns.type, y: L.local.firstBaseline, width: 100 }, "None", 10);
+  if (!local.length) put({ ...L.local.columns.type, y: L.local.firstBaseline }, NO_LOCAL_LABEL, 10);
   local.forEach((entry, i) => {
     const y = L.local.firstBaseline + i * L.local.pitch;
     const cols = localColumns(entry);

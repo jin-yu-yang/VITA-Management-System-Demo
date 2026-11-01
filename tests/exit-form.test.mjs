@@ -67,7 +67,7 @@ const localRow = (marks, i) => {
   );
 };
 
-test("Other Tax lists each Local entry: tax, filing, refund or owed and how, amount", () => {
+test("Other Tax lists each Local entry in both languages: tax, refund or owed and how, amount", () => {
   const q = {
     remarks: "Bring photo ID.",
     exitForm: {
@@ -82,11 +82,12 @@ test("Other Tax lists each Local entry: tax, filing, refund or owed and how, amo
     },
   };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
-  assert.deepEqual(localRow(marks, 0), { type: "NPT", method: "Paper file", how: "Refund by check", amount: "$40.00" });
-  assert.deepEqual(localRow(marks, 1), { type: "BIRT", method: "Paper file", how: "Owe, mail check", amount: "$1,250.00" });
-  assert.deepEqual(localRow(marks, 2), { type: "SIT", method: "E-file", how: "Owe, direct debit on 04/15/2026", amount: "$12.30" });
-  assert.deepEqual(localRow(marks, 3), { type: "EET", method: "Paper file", how: "No refund or tax owed", amount: "" });
+  assert.deepEqual(localRow(marks, 0), { type: "NPT", how: "退稅 Refund · 支票 Check", amount: "$40.00" });
+  assert.deepEqual(localRow(marks, 1), { type: "BIRT", how: "補繳 Owe · 郵寄支票 Mail check", amount: "$1,250.00" });
+  assert.deepEqual(localRow(marks, 2), { type: "SIT (E-file)", how: "補繳 Owe · 銀行扣款 Direct debit 04/15/2026", amount: "$12.30" });
+  assert.deepEqual(localRow(marks, 3), { type: "EET", how: "無退稅或補繳 No refund or tax owed", amount: "" });
   assert.equal(marks.checks.length, 0);
+  assert.equal(exitFormNeedsFont(marks), true);
   assert.equal(valueAt(marks, L.remarks), "Bring photo ID.");
   // The template's own Other Tax boxes are covered.
   assert.deepEqual(marks.covers, L.local.covers);
@@ -94,14 +95,17 @@ test("Other Tax lists each Local entry: tax, filing, refund or owed and how, amo
 
 test("no Local entry says None under Other Tax", () => {
   const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
-  assert.equal(localRow(marks, 0).type, "None");
+  assert.equal(localRow(marks, 0).type, "無 None");
 });
 
-test("the filled PDF is one page and needs no font for Latin text", async () => {
+test("the filled PDF is one page with a blank author", async () => {
   const q = { remarks: "Signed in person.", exitForm: { federal: { method: "efile", result: "refund", amount: "10", refundBy: "check" }, state: null, local: [] } };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
-  assert.equal(exitFormNeedsFont(marks), false);
-  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), marks });
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), {
+    fontkit: PDFLib.fontkit,
+    fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path),
+  });
+  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
   const doc = await PDFLib.PDFDocument.load(bytes);
   assert.equal(doc.getPageCount(), 1);
   assert.equal(doc.getAuthor() ?? "", "");
