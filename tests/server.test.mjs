@@ -244,6 +244,7 @@ test("the five form PDFs are served and nothing else under forms", async () => {
       "/src/forms/f13614ct-2025.pdf",
       "/src/forms/f14446-pcdc-en.pdf",
       "/src/forms/f14446-pcdc-zh-t.pdf",
+      "/src/forms/exit-form-pcdc.pdf",
     ]) {
       const response = await request(port, path);
       assert.equal(response.status, 200, path);
@@ -262,6 +263,7 @@ test("the five form PDFs are served and nothing else under forms", async () => {
       "/src/forms/f14446-pcdc-zh-s.pdf",
       "/src/forms/f14446-pcdc-en.PDF",
       "/src/forms/f14446.pdf",
+      "/src/forms/exit-form.pdf",
       "/src/f14446-pcdc-en.pdf",
     ])
       assert.equal((await request(port, path)).status, 404, path);

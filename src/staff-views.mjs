@@ -1793,6 +1793,13 @@ function contactStepLine(attempt, questionnaire) {
     : "The office will go over the return with the client.";
 }
 
+// Download Exit Form: the client's hand-out, filled from this approval's
+// questionnaire (src/exit-form.mjs). Only an approval that has one offers it.
+const exitFormTool = (record, attempt) =>
+  reviewerQuestionnaireOf(record, attempt)
+    ? `<div class="summary-tools">${button("Download Exit Form", "view-exit-form", "secondary", `data-review="${esc(attempt.id)}"`)}</div>`
+    : "";
+
 function reviewAttempts(record) {
   const attempts = record.reviews ?? [];
   const preparerFor = (attempt) =>
@@ -1824,7 +1831,7 @@ function reviewAttempts(record) {
           detailRow("Conversation note", attempt?.clientContactNote),
         )}<h4>Preparer's answers</h4>${preparerAnswers(preparerFor(attempt))}${when(
           attempt?.status === "approved",
-          `<h4>Reviewer's answers</h4>${reviewerAnswers(reviewerQuestionnaireOf(record, attempt))}`,
+          `<h4>Reviewer's answers</h4>${reviewerAnswers(reviewerQuestionnaireOf(record, attempt))}${exitFormTool(record, attempt)}`,
         )}<small>Opened ${esc(formatTime(attempt?.createdAt))}${when(attempt?.decidedAt, ` · decided ${esc(formatTime(attempt?.decidedAt))}`)}</small></li>`,
     )
     .join("")}</ol>`;
