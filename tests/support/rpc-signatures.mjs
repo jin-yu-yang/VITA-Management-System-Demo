@@ -116,3 +116,34 @@ export const RPC_SIGNATURES = Object.freeze([
     }),
   }),
 ]);
+
+// The private roster functions (OpenSpec change add-staff-identity, design D6).
+// They are not entry points: only the roster command calls them, over the
+// database connection, so no public signature changes. The database suite calls
+// each one through PostgREST, under its name in the public schema and in the
+// private schema, as the anonymous client and as the presenter, and expects a
+// refusal that leaves nothing behind: no permission (42501), or no such
+// function or exposed schema (PGRST202, PGRST106).
+export const PRIVATE_SETUP_DENIALS = Object.freeze(["42501", "PGRST202", "PGRST106"]);
+export const PRIVATE_SETUP_FUNCTIONS = Object.freeze([
+  Object.freeze({
+    name: "add_staff_member",
+    signature: "add_staff_member(uuid,uuid,text,text,text[])",
+    // A legitimate request for an account with no membership yet.
+    args: (context) => ({
+      p_workspace_id: context.workspaceId,
+      p_user_id: context.userId,
+      p_person_key: "mallory",
+      p_name: "Mallory Stone",
+      p_capabilities: ["admin", "followup"],
+    }),
+  }),
+  Object.freeze({
+    name: "set_default_followup",
+    signature: "set_default_followup(uuid,text)",
+    args: (context) => ({
+      p_workspace_id: context.workspaceId,
+      p_person_key: context.personKey,
+    }),
+  }),
+]);

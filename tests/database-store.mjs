@@ -90,6 +90,8 @@ test("the browser adapter reads, acts and subscribes against real Supabase", asy
         workspaceId: f.workspaceId,
         access: "applicant",
         email: (await f.applicantA.auth.getUser()).data.user.email,
+        personId: null,
+        personName: null,
       });
       const staff = await presenter.getPrincipal();
       assert.equal(staff.access, "presenter");

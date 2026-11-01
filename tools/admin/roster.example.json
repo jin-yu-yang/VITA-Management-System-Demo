@@ -1,6 +1,14 @@
 {
   "workspaceId": "replace-with-a-uuid",
   "presenters": ["presenter@example.org"],
+  "staff": [
+    {
+      "email": "staff-a@example.org",
+      "name": "Riley Park",
+      "personKey": "riley",
+      "capabilities": ["prepare"]
+    }
+  ],
   "applicants": ["client-a@example.org", "client-b@example.org"],
   "sampleCaseOwners": { "preparation_ready": "client-a@example.org" }
 }

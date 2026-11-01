@@ -79,8 +79,8 @@ const FIELDS = Object.freeze({
  * @param {Storage} [options.sessionStorage] the window's session storage
  * @param {() => number} [options.clock]     current time in milliseconds
  * @returns {{
- *   read(userId: string): object|null,
- *   write(userId: string, value: object): void,
+ *   read(userId: string, options?: {access?: string}): object|null,
+ *   write(userId: string, value: object, options?: {access?: string}): void,
  *   clear(userId: string): void,
  *   readAccess(): object,
  *   writeAccess(record: object): void,
@@ -127,18 +127,26 @@ export function createWindowState({ sessionStorage, clock = () => Date.now() } =
     return result;
   };
 
+  // A staff account is its own person (add-staff-identity, D9): its window
+  // has no persona to remember, and one found in storage — left by a
+  // presenter window or written by hand — is never its to restore.
+  const forAccess = (saved, access) => {
+    if (saved && access === "staff") delete saved.selectedPersonId;
+    return saved;
+  };
+
   return {
     // What this user chose in this window, or null when nothing usable is
     // stored. Only the fields that were actually stored come back.
-    read(userId) {
+    read(userId, { access } = {}) {
       if (!userId) return null;
-      const saved = pick(readJson(windowStateKey(userId)));
+      const saved = forAccess(pick(readJson(windowStateKey(userId))), access);
       return saved && Object.keys(saved).length ? saved : null;
     },
 
-    write(userId, value) {
+    write(userId, value, { access } = {}) {
       if (!userId) return;
-      writeJson(windowStateKey(userId), pick(value) ?? {});
+      writeJson(windowStateKey(userId), forAccess(pick(value), access) ?? {});
     },
 
     clear(userId) {

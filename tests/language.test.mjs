@@ -288,3 +288,8 @@ test("the map's loader asks for a fresh URL after a failure, and keeps the path 
   assert.equal(toHant("身份证件"), "身份證件");
   setHantMap(null);
 });
+
+test("a staff account's screens are English whatever the browser chose", () => {
+  assert.equal(viewLang({ principal: { access: "staff" }, lang: "zh-Hans" }), "en");
+  assert.equal(viewLang({ principal: { access: "applicant" }, lang: "zh-Hans" }), "zh-Hans");
+});

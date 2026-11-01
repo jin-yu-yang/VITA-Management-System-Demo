@@ -890,11 +890,12 @@ test("the bottom bar: Cancel, Save draft, the confirmation and Send", () => {
   }
   // Typing during a save is kept, so the fields stay on.
   assert.doesNotMatch(formOf(addV2({ draftAnswers: answers, officeSaving: true, openAddSubsteps: ["about.address"] })), /<input[^>]*data-control[^>]* disabled/);
-  assert.match(html, /data-action="fill-assisted-intake"/);
+  assert.doesNotMatch(html, /fill-assisted-intake/, "no demo pill without demoTools (staff account)");
+  assert.match(addV2({ demoTools: true }), /data-action="fill-assisted-intake"/);
 });
 
 test("the version-2 Add a case refuses a persona without the right", () => {
-  const refused = addV2({ person: { id: "p-al", name: "Alex", capabilities: ["prepare"] } });
+  const refused = addV2({ demoTools: true, person: { id: "p-al", name: "Alex", capabilities: ["prepare"] } });
   assert.match(refused, /staff-reason/);
   assert.doesNotMatch(refused, /<form/);
   assert.match(refused, /fill-assisted-intake/);

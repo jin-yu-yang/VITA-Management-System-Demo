@@ -1,7 +1,9 @@
 // Builds the two committed browser vendor files:
 //   `src/vendor/supabase.mjs` from `tools/vendor-entry.mjs` (the Supabase SDK),
 //   `src/vendor/pdf-lib.mjs` from `tools/vendor-pdf-entry.mjs` (pdf-lib and
-//   @pdf-lib/fontkit, for the draft Form 13614-C; spec 2026-10-04 §7.3).
+//   @pdf-lib/fontkit, for the draft Form 13614-C; spec 2026-10-04 §7.3),
+//   `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs`, copied (not
+//   bundled) from pdfjs-dist's legacy build, for the shaded-section editor.
 //
 // The public demo is served from the repository root as plain static files,
 // with no build step at request time (Ruling R33). So each library is bundled
@@ -13,7 +15,7 @@
 // Run with:
 //   node tools/build.mjs        (npm run build:vendor)
 import { build } from "esbuild";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -66,10 +68,48 @@ export const buildPdfBundle = () =>
     libraries: ["pdf-lib", "@pdf-lib/fontkit"],
   });
 
+// pdf.js is already a minified ES module and its worker must stay a separate
+// file, so both are copied under the names the server allowlist accepts, each
+// with a banner. A trailing sourceMappingURL comment would point at a .map file
+// that is not served, so it is dropped if present.
+const PDFJS_FILES = [
+  ["pdf.min.mjs", "pdfjs.mjs"],
+  ["pdf.worker.min.mjs", "pdfjs-worker.mjs"],
+];
+
+export async function buildPdfjsFiles() {
+  const version = await installedVersion("pdfjs-dist");
+  const banner = [
+    `// Copied by tools/build.mjs from pdfjs-dist ${version} (legacy build).`,
+    "// Do not edit by hand. Rebuild with: npm run build:vendor",
+    "",
+  ].join("\n");
+  const files = [];
+  for (const [from, to] of PDFJS_FILES) {
+    const source = await readFile(
+      path.join(root, "node_modules", "pdfjs-dist", "legacy", "build", from),
+      "utf8",
+    );
+    const outfile = path.join(root, "src", "vendor", to);
+    await writeFile(
+      outfile,
+      banner + source.replace(/\n?\/\/# sourceMappingURL=.*\s*$/, "\n"),
+    );
+    files.push({ outfile, bytes: (await stat(outfile)).size });
+  }
+  return { version, files };
+}
+
 if (import.meta.filename === process.argv[1]) {
   for (const result of [await buildVendorBundle(), await buildPdfBundle()])
     console.log(
       `Bundled ${result.versions.join(", ")} with esbuild ${result.bundler}: ` +
         `${path.relative(root, result.outfile)} (${result.bytes} bytes)`,
+    );
+  const pdfjs = await buildPdfjsFiles();
+  for (const file of pdfjs.files)
+    console.log(
+      `Copied pdfjs-dist ${pdfjs.version} (legacy build): ` +
+        `${path.relative(root, file.outfile)} (${file.bytes} bytes)`,
     );
 }

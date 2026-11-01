@@ -159,6 +159,7 @@ test("shared case contracts expose readable references and frozen vocabularies",
     "RECORD_MATERIALS",
     "SET_DOCUMENT_CARD",
     "SET_DOCUMENT_GROUP",
+    "SAVE_PREPARER_FIELDS",
   ]);
   assert.deepEqual(ERROR_CODES, [
     "FORBIDDEN",

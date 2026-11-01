@@ -7,7 +7,11 @@ import {
   SAMPLE_CONTACT,
   screeningChecks,
 } from "./support/database-fixture.mjs";
-import { RPC_SIGNATURES } from "./support/rpc-signatures.mjs";
+import {
+  PRIVATE_SETUP_DENIALS,
+  PRIVATE_SETUP_FUNCTIONS,
+  RPC_SIGNATURES,
+} from "./support/rpc-signatures.mjs";
 import { REFERENCE_PATTERN } from "../src/contracts.mjs";
 import { makeSampleAnswers } from "../src/sample-data.mjs";
 // The denial Task 2 already asserts for anonymous table and function access.
@@ -941,6 +945,54 @@ test("installed entry points deny anonymous callers and serve members", async (t
           if (entry.receiptKeys.includes("reference"))
             assert.match(allowed.data.reference, REFERENCE_PATTERN);
         }
+      },
+    );
+    await t.test(
+      "the private roster functions cannot be called by the anonymous client or a presenter",
+      async () => {
+        // A staff member with `followup`, so moving the default to them is a
+        // request the function itself would accept from the roster command.
+        const dana = await f.staff({ key: "dana", name: "Dana Fox", capabilities: ["followup"] });
+        const context = {
+          workspaceId: f.workspaceId,
+          userId: f.unapprovedUserId,
+          personKey: "dana",
+        };
+        const installed = (
+          await f.sql(
+            "select p.proname||'('||array_to_string(array(select format_type(t,null) from unnest(p.proargtypes) t),',')||')' as signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='vitally_private' and p.proname = any($1)",
+            [PRIVATE_SETUP_FUNCTIONS.map((entry) => entry.name)],
+          )
+        ).rows.map((row) => row.signature);
+        assert.deepEqual(
+          installed.sort(),
+          PRIVATE_SETUP_FUNCTIONS.map((entry) => entry.signature).sort(),
+        );
+        const state = async () =>
+          (
+            await f.sql(
+              `select (select default_followup_person_id from public.workspaces where id=$1) as default_id,
+                (select count(*) from public.people where workspace_id=$1) as people,
+                (select count(*) from public.memberships where user_id=$2) as memberships`,
+              [f.workspaceId, f.unapprovedUserId],
+            )
+          ).rows[0];
+        const before = await state();
+        assert.equal(before.default_id, f.sam);
+        for (const entry of PRIVATE_SETUP_FUNCTIONS)
+          for (const [who, client] of [
+            ["anonymous", f.anonymous],
+            ["presenter", f.presenter],
+          ])
+            for (const target of [client, client.schema("vitally_private")]) {
+              const { error } = await target.rpc(entry.name, entry.args(context));
+              assert.ok(
+                PRIVATE_SETUP_DENIALS.includes(error?.code),
+                `${entry.name} as ${who}: ${error?.code}`,
+              );
+            }
+        assert.deepEqual(await state(), before);
+        assert.notEqual(before.default_id, dana.personId);
       },
     );
   } finally {

@@ -87,6 +87,24 @@ test("the allowlisted browser files are served with their type", async () => {
   });
 });
 
+test("serves the pdf.js vendor files", async () => {
+  await withServer(CONFIGURED, async (port) => {
+    for (const path of ["/src/vendor/pdfjs.mjs", "/src/vendor/pdfjs-worker.mjs"]) {
+      const response = await request(port, path);
+      assert.equal(response.status, 200, path);
+      assert.equal(
+        response.headers["content-type"],
+        "text/javascript; charset=utf-8",
+        path,
+      );
+      assert.match(response.body, /^\/\/ Copied by tools\/build\.mjs/, path);
+      assert.match(response.body, /pdfjs-dist 6\.4\.299 \(legacy build\)/, path);
+    }
+    const unrenamed = await request(port, "/src/vendor/pdf.min.mjs");
+    assert.equal(unrenamed.status, 404);
+  });
+});
+
 test("the public config carries the four documented keys and nothing else", async () => {
   await withServer(CONFIGURED, async (port) => {
     const response = await request(port, "/public-config.json");

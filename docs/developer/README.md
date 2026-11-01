@@ -95,18 +95,21 @@ src/
   styles.css               All styles.
   pcdc-logo.png            PCDC's own logo file, unchanged.
   vendor/supabase.mjs      Committed, pinned bundle of @supabase/supabase-js.
+  vendor/pdf-lib.mjs       Committed, pinned bundle of pdf-lib and @pdf-lib/fontkit (the draft forms).
+  vendor/pdfjs.mjs, vendor/pdfjs-worker.mjs
+                           Committed copy of pdfjs-dist's legacy build (the shaded-section editor).
 supabase/
-  migrations/001-034       The whole schema, RLS, business logic and intake catalogue, in order.
+  migrations/001-039       The whole schema, RLS, business logic and intake catalogue, in order.
   test-stack.config.example.toml   Reference config for the local test stack.
 tools/
   admin/                   Privileged tooling: target guards, migrate, roster, workspace setup.
-  build.mjs                Rebuilds src/vendor/supabase.mjs.
+  build.mjs                Rebuilds the four files in src/vendor/.
   build-intake-catalogue.mjs  Builds the catalogue data module and its migration from docs/intake-questions.
 tests/
-  *.test.mjs               Unit tests (no network): 1235.
-  database*.mjs            Database tests against the local stack: 326.
+  *.test.mjs               Unit tests (no network): 1418.
+  database*.mjs            Database tests against the local stack: 434.
   auth-browser.mjs         Real sign-in in Chrome and Firefox: 20.
-  browser.mjs              The full demonstration story, two browsers, both directions: 63.
+  browser.mjs              The full demonstration story, two browsers, both directions: 77.
   support/                 Test fixtures: throwaway workspaces, browser helpers, cleanup.
 docs/
   setup.md                 How to run and test everything.
@@ -146,9 +149,9 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Term | Meaning |
 | --- | --- |
 | Workspace | One site's shared data set. Every row belongs to exactly one workspace. The demo has one per class. |
-| Membership | An Auth account's access to a workspace: `applicant` (a client) or `presenter` (staff, in the demo). One active membership per account. |
-| Person / persona | A staff member record in `people` (Alex, Morgan, Sam) with capabilities. In the demo, a presenter account can act as any of them. |
-| Capability | What a person may do: `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. |
+| Membership | An Auth account's access to a workspace: `applicant` (a client), `presenter` (the demonstration's staff account, which can act as any demo persona) or `staff` (a real staff member, linked to exactly one person). One active membership per account. |
+| Person / persona | A staff member record in `people` with capabilities. Alex, Morgan and Sam are the demo personas, which a presenter account can act as; a staff member's own person is linked to their account (`people.user_id`), and the database makes that account act as it. |
+| Capability | What a person may do: `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. Set on the person (by the workspace initializer for the demo personas, by the roster for staff), and checked on every action. |
 | Case | One client's tax-return application, with a readable reference such as `VT-ABCD-2345`. |
 | Stage | Where a case is in the workflow: `draft` through `efiled` (with `screening` after `received` and `ready_to_efile` before `efiled`), or `closed`. |
 | Revision | A counter on each case (and assistance item) that moves on every accepted action. |

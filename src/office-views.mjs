@@ -785,14 +785,18 @@ function createdBy(record, people) {
  *
  * @param {object} ui `{ person, busy, officeSaving, draftAnswers, savedCase,
  *   openAddSubsteps, openPanels, addCaseShowMissing, revealed, dirty,
- *   saveState, conflict, error, retryable, people }`, `savedCase` decorated
+ *   saveState, conflict, error, retryable, people, demoTools }`, `demoTools`
+ *   (a presenter's window) adds the Fill fictional details pill, `savedCase` decorated
  *   (`decorateStaffCase`)
  */
 export function renderAddCaseV2(ui = {}) {
   const view = ui ?? {};
   const person = view.person ?? null;
   const off = view.busy ? "disabled" : "";
-  const pill = `<p class="fiction-pill">${icon("spark")} Fictional data only · ${button("Fill fictional details", "fill-assisted-intake", "text", off)}</p>`;
+  // The fill button is a demo tool: only a presenter's window carries it.
+  const pill = !view.demoTools
+    ? ""
+    : `<p class="fiction-pill">${icon("spark")} Fictional data only · ${button("Fill fictional details", "fill-assisted-intake", "text", off)}</p>`;
   const rights = adminEligibility({}, person);
   if (!rights.assistedIntake.allowed) return `${pill}${explain(rights.assistedIntake)}`;
   const record = view.savedCase ?? null;

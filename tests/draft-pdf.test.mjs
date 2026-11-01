@@ -5,22 +5,23 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { inflateSync } from "node:zlib";
 import {
-  PDFDocument, PDFDict, PDFName, PDFArray, PDFCheckBox, PDFTextField, StandardFonts, rgb,
+  PDFDocument, PDFDict, PDFName, PDFBool, PDFHexString, pushGraphicsState, popGraphicsState, translate, drawObject, rotateInPlace, PDFArray, PDFCheckBox, PDFTextField, StandardFonts, rgb,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import * as bundled from "../src/vendor/pdf-lib.mjs";
 import { FORM_FILES, FORM_SHA256, draftFields, draftFieldNames } from "../src/draft-form.mjs";
+import { shadedName, shadedNames, readShaded } from "../src/shaded-fields.mjs";
 import HANT_MAP from "../src/zh-hant.mjs";
 import { describeFocus, focusSelectors } from "../src/ui.mjs";
 import {
-  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, createDraftOffer, draftFontFiles,
+  CJK_DRAW, DRAFT_FONTS, DRAFT_FONT_FIXTURES, WIN_ANSI_CODE_POINTS, buildDraftPdf, buildEditingCopy, readFilledCopy, createDraftOffer, draftFontFiles,
   draftFontsFor, draftLink, fieldsNeedFont, needsEmbeddedFont, patchSubsetPadding, printable,
 } from "../src/draft-pdf.mjs";
 
 // Node, with pdf-lib and fontkit from node_modules. The fonts are the
 // byte-identical copies installed from npm (DRAFT_FONT_FIXTURES); no test here
 // reaches the network. All names and data are fictional.
-const PDFLib = { PDFDocument, StandardFonts, rgb };
+const PDFLib = { PDFDocument, StandardFonts, rgb, PDFName, PDFBool, PDFHexString, pushGraphicsState, popGraphicsState, translate, drawObject, rotateInPlace };
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const formBytes = (form) => readFile(new URL(`../${FORM_FILES[form]}`, import.meta.url));
 const fixtureBytes = (url) => readFile(new URL(`../${DRAFT_FONT_FIXTURES[url].path}`, import.meta.url));
@@ -63,8 +64,8 @@ function watchedFiles(files = []) {
   return { proxy, seen };
 }
 
-async function build(answers, { form = "en", fontFiles = [], flatten = true } = {}) {
-  const fields = draftFields(answers, { ...OPTIONS, form });
+async function build(answers, { form = "en", fontFiles = [], flatten = true, shaded } = {}) {
+  const fields = draftFields(answers, { ...OPTIONS, form, shaded });
   const bytes = await buildDraftPdf({
     PDFLib, fontkit, formBytes: await formBytes(form), fontFiles, fields,
     stamp: fields.stamp, fileName: fields.fileName, flatten,
@@ -688,4 +689,200 @@ test("the blocked-tab draft link can be found again by the focus restore", () =>
   const focus = describeFocus(link);
   assert.ok(focus, "the focus restore has something to look for");
   assert.deepEqual(focusSelectors(focus), ['[id="draft-ready-link"]']);
+});
+
+test("shaded values round-trip in all three forms, a Chinese reason through runs", async () => {
+  const shaded = { household1QualifyingChild: "yes", incomeW2s: true, incomeW2sCount: 2, incomeRefundAmount: "412.00", infoDisallowedReason: "子女资格不符" };
+  for (const form of ["en", "zh-s", "zh-t"]) {
+    const { doc } = await build(BASE, { form, shaded, flatten: false, fontFiles: await fontFilesFor(form) });
+    const f = doc.getForm();
+    assert.equal(f.getTextField(shadedName("household1QualifyingChild", form)).getText(), "Yes", form);
+    assert.ok(f.getCheckBox(shadedName("incomeW2s", form)).isChecked(), form);
+    assert.equal(f.getTextField(shadedName("incomeW2sCount", form)).getText(), "2", form);
+    assert.equal(f.getTextField(shadedName("incomeRefundAmount", form)).getText(), "412.00", form);
+    assert.ok(drawnText(doc.getPage(2)).some((l) => l.text.includes("子女资格不符")), `reason drawn: ${form}`);
+  }
+});
+
+test("a long note continues in Additional Comments, every character printed", async () => {
+  const note = Array.from({ length: 80 }, (_, i) => `w${String(i).padStart(3, "0")}`).join(" "); // 400 characters
+  assert.equal(note.length, 399);
+  const { doc, fields } = await build(BASE, { shaded: { deductionNotes: note } });
+  assert.equal(doc.getPageCount(), 6);
+  const lines = (page) => drawnText(page).map((l) => l.text);
+  const inBox = lines(doc.getPage(2));
+  const rest = lines(doc.getPage(4));
+  assert.ok(inBox.length > 0 && inBox[0].startsWith("w000"), JSON.stringify(inBox));
+  const at = rest.indexOf("Continued from page 3, Standard or itemized deductions notes:");
+  assert.ok(at >= 0, JSON.stringify(rest));
+  const printed = [...inBox, ...rest.slice(at + 1)].join(" ").split(/\s+/).filter((w) => /^w\d{3}$/.test(w));
+  assert.deepEqual(printed, note.split(" "));
+  assert.ok(rest.includes("My 1099-INT has not arrived yet."));
+  assert.equal(fields.notes.length, 1);
+});
+
+/** Every drawn line from `from` (0-based page) on, without the PDF's own continuation lines. */
+const drawnFrom = (doc, from) =>
+  doc.getPages().slice(from).flatMap((page) => drawnText(page).map((l) => l.text))
+    .filter((t) => t !== "Additional comments (continued)" && t !== "补充说明（续）" && !/^(\(continued on page \d+\)|（续见第 \d+ 页）)$/.test(t));
+const squash = (text) => text.replace(/\s+/gu, "");
+
+test("a multi-paragraph note with a blank line prints every character", async () => {
+  const para = (tag, n) => Array.from({ length: n }, (_, i) => `${tag}${String(i).padStart(2, "0")}`).join(" ");
+  const note = `${para("a", 20)}\n\n${para("b", 25)}\n${para("c", 12)}`;
+  const { doc } = await build({ tp_first_name: "Mei" }, { shaded: { deductionNotes: note } });
+  const inBox = drawnText(doc.getPage(2)).map((l) => l.text);
+  const rest = drawnFrom(doc, 4);
+  assert.equal(rest[0], "Continued from page 3, Standard or itemized deductions notes:");
+  assert.equal(squash([...inBox, ...rest.slice(1)].join("")), squash(note));
+});
+
+test("a Chinese note under zh-s prints every character", async () => {
+  const note = "我的表还没收到，请在三月前补交。\n\n" + "子女资格需要再确认".repeat(25);
+  const { doc } = await build({ tp_first_name: "Mei" }, { form: "zh-s", fontFiles: await fontFilesFor("zh-s"), shaded: { deductionNotes: note } });
+  const inBox = drawnText(doc.getPage(2)).map((l) => l.text);
+  const rest = drawnFrom(doc, 4);
+  assert.equal(rest[0], "Continued from page 3, Standard or itemized deductions notes:");
+  assert.equal(squash([...inBox, ...rest.slice(1)].join("")), squash(note));
+});
+
+test("the preparer-entries stamp is on every page, continued pages included", async () => {
+  const { doc } = await build(BASE, { shaded: { deductionNotes: "word ".repeat(3000) } });
+  assert.ok(doc.getPageCount() > 6);
+  for (const page of doc.getPages())
+    assert.ok(hasHexText(pageContent(page), "DRAFT \x96 online answers and preparer entries, 10/04/2026, VT-ABCD-EFGH"));
+});
+
+test("a case with no saved section draws the same as one built without the option", async () => {
+  const [plain, nulled] = await Promise.all([build(BASE), build(BASE, { shaded: null })]);
+  assert.deepEqual(plain.doc.getPages().map((p) => drawnText(p)), nulled.doc.getPages().map((p) => drawnText(p)));
+  assert.equal(plain.fields.stamp, nulled.fields.stamp);
+  assert.equal(plain.doc.getPageCount(), nulled.doc.getPageCount());
+});
+
+test("a short note stays in its box and a case with no section is unchanged", async () => {
+  const { doc } = await build(BASE, { shaded: { incomeNotes: "Two jobs." } });
+  assert.ok(drawnText(doc.getPage(1)).some((l) => l.text === "Two jobs."));
+  assert.ok(!drawnText(doc.getPage(4)).some((l) => l.text.startsWith("Continued from")));
+});
+
+// ---------------------------------------------------------------------------
+// The editing copy and the reader for a filled copy
+// ---------------------------------------------------------------------------
+
+const EDIT_OPTIONS = { reference: "VT-ABCD-EFGH", today: "2026-10-24" };
+async function editingCopy(answers, { shaded = {}, version = 3, reference = EDIT_OPTIONS.reference, lib = PDFLib } = {}) {
+  const fields = draftFields(answers, { ...EDIT_OPTIONS, form: "en" });
+  return buildEditingCopy({
+    PDFLib: lib, fontkit, formBytes: await formBytes("en"), fontFiles: await fontFilesFor("en"),
+    fields, shaded, reference, version,
+  });
+}
+
+test("the editing copy keeps exactly the shaded fields", async () => {
+  const bytes = await editingCopy(BASE);
+  const doc = await PDFDocument.load(bytes);
+  const names = doc.getForm().getFields().map((f) => f.getName());
+  assert.equal(names.length, 106);
+  assert.deepEqual([...names].sort(), [...shadedNames("en")].sort());
+  assert.equal(doc.getKeywords(), "vitally-shaded case:VT-ABCD-EFGH version:3");
+  assert.match(pageContent(doc.getPage(0)), /FlatWidget/, "the client answers are drawn on the page");
+});
+
+test("an editing copy for a Chinese name builds, with the note's /V decoding back", async () => {
+  const note = "收入说明：一份 W-2";
+  const bytes = await editingCopy({ ...BASE, tp_first_name: "美玲" }, { shaded: { incomeNotes: note, incomeW2s: true, incomeW2sCount: 2, household1QualifyingChild: "yes" } });
+  const doc = await PDFDocument.load(bytes);
+  const form = doc.getForm();
+  assert.equal(form.getFields().length, 106);
+  const field = form.getTextField(shadedName("incomeNotes"));
+  assert.equal(field.acroField.dict.lookup(PDFName.of("V")).decodeText(), note);
+  assert.equal(doc.catalog.lookup(PDFName.of("AcroForm")).get(PDFName.of("NeedAppearances")), PDFBool.True);
+  assert.ok(form.getCheckBox(shadedName("incomeW2s")).isChecked());
+  assert.equal(form.getTextField(shadedName("incomeW2sCount")).getText(), "2");
+  assert.equal(form.getTextField(shadedName("household1QualifyingChild")).getText(), "Yes");
+});
+
+test("the editing copy built with the bundled pdf-lib matches", async () => {
+  const bytes = await editingCopy(BASE, { lib: bundled });
+  assert.equal((await PDFDocument.load(bytes)).getForm().getFields().length, 106);
+});
+
+test("the copy round-trips through the reader", async () => {
+  const doc = await PDFDocument.load(await editingCopy(BASE, { version: 4 }));
+  const form = doc.getForm();
+  form.getCheckBox(shadedName("incomeW2s")).check();
+  form.getTextField(shadedName("incomeW2sCount")).setText("2");
+  const filled = await doc.save();
+  const { raw, version } = await readFilledCopy({ PDFLib, bytes: filled, reference: "VT-ABCD-EFGH" });
+  assert.equal(version, 4);
+  assert.deepEqual(readShaded(raw, { form: "en" }), { values: { incomeW2s: true, incomeW2sCount: 2 }, errors: [] });
+});
+
+test("the reader reports a Preview Producer", async () => {
+  const plain = await readFilledCopy({ PDFLib, bytes: await editingCopy(BASE), reference: "VT-ABCD-EFGH" });
+  assert.equal(plain.preview, false);
+  const doc = await PDFDocument.load(await editingCopy(BASE), { updateMetadata: false });
+  doc.setProducer("macOS Version 14.5 (Build 23F79) Quartz PDFContext");
+  const saved = await readFilledCopy({ PDFLib, bytes: await doc.save(), reference: "VT-ABCD-EFGH" });
+  assert.equal(saved.preview, true);
+});
+
+test("the reader takes any box export value but Off as ticked", async () => {
+  // Another PDF tool may tick with its own on-state name (/1, /On) or a string,
+  // or leave /V unset and say it only in the widget's /AS.
+  const doc = await PDFDocument.load(await editingCopy(BASE));
+  const form = doc.getForm();
+  const field = (key) => form.getCheckBox(shadedName(key)).acroField;
+  field("incomeW2s").dict.set(PDFName.of("V"), PDFName.of("1"));
+  field("incomeTips").dict.set(PDFName.of("V"), PDFName.of("Off"));
+  field("income1099R").dict.set(PDFName.of("V"), PDFHexString.fromText("On"));
+  const widgetOnly = field("incomeQcd");
+  widgetOnly.dict.delete(PDFName.of("V"));
+  for (const widget of widgetOnly.getWidgets()) widget.dict.set(PDFName.of("AS"), PDFName.of("On"));
+  const { raw } = await readFilledCopy({ PDFLib, bytes: await doc.save(), reference: "VT-ABCD-EFGH" });
+  const { values, errors } = readShaded(raw, { form: "en" });
+  assert.deepEqual(errors, []);
+  assert.equal(values.incomeW2s, true);
+  assert.equal(values.incomeTips, undefined);
+  assert.equal(values.income1099R, true);
+  assert.equal(values.incomeQcd, true);
+  // An untouched box is still absent.
+  assert.equal(values.incomeDisability, undefined);
+});
+
+test("the reader refuses another case's copy, a flattened copy and a broken file", async () => {
+  const copy = await editingCopy(BASE);
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: copy, reference: "VT-ZZZZ-YYYY" }), (e) => e.code === "OTHER_CASE" && /different case/.test(e.message));
+  const flat = await PDFDocument.load(copy);
+  flat.getForm().flatten();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await flat.save(), reference: "VT-ABCD-EFGH" }),
+    (e) => e.code === "NO_FIELDS" && e.message === "This copy has no form fields. In Chrome, use the download button, not Print.");
+  for (const bytes of [new TextEncoder().encode("hello"), new Uint8Array(0)])
+    await assert.rejects(readFilledCopy({ PDFLib, bytes, reference: "VT-ABCD-EFGH" }),
+      (e) => e.code === "NOT_A_PDF" && e.message === "This file isn't a PDF the editor can read.");
+});
+
+test("a printed copy, with no fields and no Keywords, gets the Print sentence", async () => {
+  // Print to PDF makes a new file: the form is drawn, and neither the fields
+  // nor the document's Keywords survive.
+  const printed = await PDFDocument.create();
+  printed.addPage().drawText("13614-C", { x: 50, y: 700 });
+  const bytes = await printed.save();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes, reference: "VT-ABCD-EFGH" }),
+    (e) => e.code === "NO_FIELDS" && e.message === "This copy has no form fields. In Chrome, use the download button, not Print.");
+  // A flattened copy whose Keywords name another case is still a copy with no fields.
+  const flat = await PDFDocument.load(await editingCopy(BASE));
+  flat.getForm().flatten();
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await flat.save(), reference: "VT-ZZZZ-YYYY" }), (e) => e.code === "NO_FIELDS");
+  // A copy with the shaded fields but no case keyword is another case's.
+  const unmarked = await PDFDocument.load(await editingCopy(BASE));
+  unmarked.setKeywords([]);
+  await assert.rejects(readFilledCopy({ PDFLib, bytes: await unmarked.save(), reference: "VT-ABCD-EFGH" }), (e) => e.code === "OTHER_CASE");
+});
+
+test("stored values come back through the reader, a two-line note included", async () => {
+  const shaded = { household1QualifyingChild: "na", incomeNotes: "line one\nline two", incomeRefundAmount: "412.00", itemizedLastYearYes: true };
+  const { raw } = await readFilledCopy({ PDFLib, bytes: await editingCopy(BASE, { shaded }), reference: "VT-ABCD-EFGH" });
+  assert.deepEqual(readShaded(raw, { form: "en" }).values, shaded);
 });

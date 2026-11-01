@@ -1177,7 +1177,7 @@ export function renderAdminCase(caseRecord, ui = {}) {
   ];
   return [
     problemNotice(view),
-    caseHeader(record, person),
+    caseHeader(record, person, view.principal),
     caseTabs(panels, view.caseTab, {
       documents: (record.requests ?? []).length,
       followup: openFollowups,

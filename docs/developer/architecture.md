@@ -27,7 +27,7 @@ foundation for production too; see [key decisions](#key-decisions-and-trade-offs
 | Supabase Auth (GoTrue) | Supabase | Email one-time-code sign-in. Accounts exist only for approved addresses. |
 | PostgREST | Supabase | Exposes tables (read-only for browsers) and the eight RPC functions over HTTP. |
 | PostgreSQL | Supabase | Schema, row-level security, and all workflow logic in `SECURITY DEFINER` functions. |
-| Realtime | Supabase | Pushes INSERT/UPDATE events on sixteen tables, filtered by the same row-level security. |
+| Realtime | Supabase | Pushes INSERT/UPDATE events on nineteen tables, filtered by the same row-level security. |
 | `server.mjs` | Local machine | Serves the static files and `/public-config.json` locally. Any static host can replace it. |
 | `tools/admin/` | Operator's machine | Privileged tasks (migrations, roster) behind fail-closed target guards. Never in the browser. |
 
@@ -42,10 +42,11 @@ erDiagram
   WORKSPACE ||--o{ PERSON : "has staff"
   MEMBERSHIP {
     uuid user_id
-    text access "applicant | presenter"
+    text access "applicant | presenter | staff"
   }
   PERSON {
     uuid id
+    uuid user_id "the staff account that is this person; null for the demo personas"
     text name "Alex, Morgan, Sam"
     text_array capabilities "prepare, review, admin, followup, receive_documents, assist"
   }
@@ -54,18 +55,29 @@ erDiagram
 - **Auth user** (`auth.users`): who signed in. Created only by the roster command, so only
   approved addresses can sign in.
 - **Membership** (`public.memberships`): which workspace the account belongs to, and whether it
-  is an `applicant` (a client) or a `presenter` (staff).
+  is an `applicant` (a client), a `presenter` (the demonstration's staff account) or `staff` (a real
+  staff member's own account).
 - **Person** (`public.people`): a staff member with capabilities. Every staff action names the
   person it is done as, and the database checks that person's capabilities.
 
-**In the demo, people are not linked to accounts.** A presenter account chooses a persona in the
+**Presenter accounts are not linked to people.** A presenter account chooses a persona in the
 presenter panel and acts as Alex, Morgan or Sam, so one group member can demonstrate every role.
 The database still enforces each persona's capabilities and independence rules, so the workflow
 rules are real, but the question "is this account allowed to act as Alex?" is answered only by
-"it is a presenter". This is the most important demo-only shortcut. Production needs each staff
-member to have their own account linked to their own person record, with the acting person
-derived from the signed-in account instead of chosen in the browser. The
-[roadmap](production-roadmap.md#1-staff-identity) describes the change.
+"it is a presenter". This is the most important demo-only shortcut, and it stays for the classroom
+demonstration.
+
+**Staff accounts are linked.** A `staff` membership has exactly one `people` row with a matching
+`user_id`, created from the roster. The database, not the browser, decides who is acting: every
+entry point that takes a person calls `vitally_private.acting_person` first, which gives a staff
+account its own person whatever the browser sent, and refuses it anyone else
+([Database: who is acting](database.md#who-is-acting)). A presenter may not act as a staff member's
+person. So receipts, case history, participation, reviews and the contact log name the real staff
+member, and the independence rule (a preparer never reviews their own case) holds across real
+accounts. The browser's principal carries `personId` and `personName` for a staff account, and
+`staffWindow()` and `actingPersonId()` in the controller route it to the staff screens as its own
+person ([Front end: the controller](frontend.md#the-controller)). What remains is visibility and
+roles; see the [roadmap](production-roadmap.md#1-staff-identity).
 
 ## Who can see what
 
@@ -75,14 +87,14 @@ Visibility is enforced by row-level security on every table (full policies in
 | Principal | Sees |
 | --- | --- |
 | Applicant | Their own cases, and on those only: document requests, their documents, their contact details (`case_contacts`), and plain-language progress messages (`client_events`). |
-| Presenter | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, the contact log (`contact_log`, `contact_log_versions`), reviews, assistance items, materials received. |
+| Presenter or staff | Every case in the workspace **except other people's unsubmitted client drafts**, plus all staff records: people, internal history, participation, follow-ups, the contact log (`contact_log`, `contact_log_versions`), reviews, assistance items, materials received. A staff account sees exactly what a presenter sees, including through Realtime; narrowing it is the roadmap's visibility work. |
 | Anonymous | Nothing. |
 
 The browser mirrors this: the applicant adapter never requests a staff table
 (`CLIENT_TABLES` in [`src/supabase-store.mjs`](../../src/supabase-store.mjs)).
 
 **Contact details are narrower on screen than in the database.** Row-level security lets every
-presenter read `case_contacts`, because it cannot tell personas apart. The screens apply decision
+presenter or staff account read `case_contacts`, because it cannot tell personas apart. The screens apply decision
 D5 themselves through `canSeeContact` in
 [`src/intake-catalogue.mjs`](../../src/intake-catalogue.mjs): office staff (`followup` or `admin`)
 on any case, a volunteer only on a case they prepare or review. The actions that change contact
@@ -137,10 +149,10 @@ sequenceDiagram
   U->>A: clicks a button (data-case-action="CLAIM_PREPARATION")
   A->>A: payloadFor(type, button data, form values)
   A->>C: runAction(type, payload)
-  C->>C: new actionId, expectedRevision = case.revision, personId = chosen persona
+  C->>C: new actionId, expectedRevision = case.revision, personId = actingPersonId()
   C->>S: act(envelope)
   S->>DB: rpc("vitally_apply_action", ...)
-  Note over DB: one transaction: membership, receipt, lock case,<br/>authority, revision, payload, stage, eligibility,<br/>then mutate + history + revision + receipt
+  Note over DB: one transaction: membership, acting person, receipt, lock case,<br/>authority, revision, payload, stage, eligibility,<br/>then mutate + history + revision + receipt
   DB-->>S: receipt {actionId, caseId, reference, revision}
   S-->>C: receipt
   C->>C: refresh() and re-render
@@ -166,7 +178,7 @@ The fixed order of checks, and which error each step produces, is in
 
 ## How live updates work
 
-Realtime sends INSERT and UPDATE events for sixteen tables. The browser uses an event only as a
+Realtime sends INSERT and UPDATE events for nineteen tables. The browser uses an event only as a
 hint: it takes the table and row id, decides what might be stale (the list, the open case, the
 assistance list), and **re-reads through the normal RLS-scoped queries**. It never trusts event
 payloads as data. Realtime applies RLS too, so a client never receives another client's event.
@@ -200,7 +212,8 @@ reload. Details in [Front end: sign-in](frontend.md#sign-in) and
 | Inline RLS predicates, repeated per table | Avoids granting browsers EXECUTE on helper functions | Seven copies of the case-visibility rule must stay in agreement (a test checks this) | Revisit; a view or helper with care |
 | Vanilla ES modules, no framework, no build | Static hosting, nothing to install to view | Full-page re-render needs hand-written focus and draft preservation | Probably not; see [front end](frontend.md#moving-to-a-framework) |
 | Committed, pinned Supabase SDK bundle | Works from any static host, reproducible | Must be rebuilt by hand on upgrade | Replaced by a normal build if a framework is adopted |
-| Presenter personas | One person can demonstrate every role | Not a real staff identity model | **No.** Must be replaced |
+| Presenter personas | One person can demonstrate every role | Not a real staff identity model | **No.** Replaced by `staff` accounts once presenter mode is removed |
+| `staff` accounts linked to a person, acting person decided by the database | The browser never claims an identity; receipts and history name the real person | Two staff paths (presenter and staff) until presenter mode goes | Yes |
 | Sample cases, reset and checkpoints in the database | Repeatable demonstrations | Demo-only functions and columns in the schema | **No.** Remove or restrict to non-production environments |
 
 ## Real versus simulated

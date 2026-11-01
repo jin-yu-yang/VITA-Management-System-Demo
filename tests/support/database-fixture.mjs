@@ -730,6 +730,54 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
     await sqlClient.end();
     await endRun(runManifest);
   };
+  // One confirmed synthetic account, tracked for cleanup and signed in.
+  const provision = async () => {
+    await assertTestTarget();
+    const password = randomBytes(32).toString("base64url");
+    const email = `${randomUUID()}@vitally.invalid`;
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (error || !data.user)
+      throw new Error("Synthetic Auth provisioning failed.");
+    run.users.add(data.user.id);
+    await saveRun(runManifest);
+    const client = createClient(
+      target.apiUrl,
+      target.publishableKey,
+      options,
+    );
+    clients.push(client);
+    const auth = await client.auth.signInWithPassword({ email, password });
+    if (auth.error) throw new Error("Synthetic Auth sign-in failed.");
+    return { client, userId: data.user.id, email };
+  };
+  // A staff member of this run's workspace (OpenSpec change add-staff-identity):
+  // a new account, a `staff` membership and a new linked person, made through
+  // the one private function the roster command uses. `personKey` is `key`; a
+  // repeat with changed values for the same key is refused, so each member a
+  // file needs has a key of its own.
+  // `workspaceId` names another workspace of this run (see f.initializeOwned).
+  f.provision = provision;
+  f.staff = async ({ key, name, capabilities, workspaceId = f.workspaceId }) => {
+    const { client, userId, email } = await provision();
+    await f.withSetupLock(() =>
+      f.sql("select vitally_private.add_staff_member($1,$2,$3,$4,$5::text[])", [
+        workspaceId,
+        userId,
+        key,
+        name,
+        capabilities,
+      ]),
+    );
+    const { rows } = await f.sql(
+      "select id from public.people where workspace_id=$1 and person_key=$2",
+      [workspaceId, key],
+    );
+    return { client, userId, personId: rows[0].id, email };
+  };
   try {
     // Schema preflight provides the intended RED before any Auth provisioning.
     await f.sql("select id from public.workspaces limit 0");
@@ -740,32 +788,13 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
       "outsider",
       "unapproved",
     ]) {
-      await assertTestTarget();
-      const password = randomBytes(32).toString("base64url");
-      const email = `${randomUUID()}@vitally.invalid`;
-      const { data, error } = await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
-      if (error || !data.user)
-        throw new Error("Synthetic Auth provisioning failed.");
-      run.users.add(data.user.id);
-      await saveRun(runManifest);
-      f[`${actor}UserId`] = data.user.id;
+      const { client, userId, email } = await provision();
+      f[`${actor}UserId`] = userId;
       // The synthetic address beside the id (Ruling R46). The browser gate
       // types it into the real sign-in form and generates that user's one-time
       // code from it, so the actor a test signs in as is the actor the fixture
       // provisioned. It is never logged, and cleanup still works by id alone.
       f[`${actor}Email`] = email;
-      const client = createClient(
-        target.apiUrl,
-        target.publishableKey,
-        options,
-      );
-      clients.push(client);
-      const auth = await client.auth.signInWithPassword({ email, password });
-      if (auth.error) throw new Error("Synthetic Auth sign-in failed.");
       f[actor] = client;
     }
     f.setup = {
@@ -820,6 +849,8 @@ export async function createDatabaseFixture({ afterInitialize } = {}) {
         });
       return people;
     };
+    // Another workspace of this run, owned and cleaned up like the foreign one.
+    f.initializeOwned = initializeOwned;
     f.people = await initializeVerified(f.setup);
     ({ alex: f.alex, morgan: f.morgan, sam: f.sam } = f.people);
     f.foreignPeople = await initializeVerified({

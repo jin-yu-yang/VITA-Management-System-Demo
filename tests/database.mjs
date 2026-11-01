@@ -1219,8 +1219,10 @@ test("workflow records stay owner-visible, presenter-only, and write-protected",
             `${policy.name} must reuse the visible_cases draft rule`,
           );
           assert.ok(
-            expression.includes("(m.access = 'presenter'::text)"),
-            `${policy.name} must check presenter access`,
+            expression.includes(
+              "(m.access = ANY (ARRAY['presenter'::text, 'staff'::text]))",
+            ),
+            `${policy.name} must check presenter and staff access`,
           );
           const ownerReadable = CLIENT_VISIBLE_TABLES.includes(policy.name);
           assert.equal(

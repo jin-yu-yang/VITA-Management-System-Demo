@@ -17,6 +17,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [Rendering](#rendering)
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
+- [The shaded section of the 13614-C](#the-shaded-section-of-the-13614-c)
 - [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
@@ -88,9 +89,9 @@ fields:
 
 | Field | Meaning |
 | --- | --- |
-| `session`, `principal` | Sign-in status (`unknown`, `none`, `present`) and `{userId, workspaceId, access, email}` |
+| `session`, `principal` | Sign-in status (`unknown`, `none`, `present`) and `{userId, workspaceId, access, email, personId, personName}`. `access` is `applicant`, `presenter` or `staff`; `personId` and `personName` are a staff account's own roster person, null for the other two |
 | `connection` | `online`, `reconnecting`, `offline` |
-| `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for presenters only) |
+| `cases`, `people`, `assistance`, `workspace` | Lists for the current screen (people, assistance and workspace for staff windows only) |
 | `savedCase` | The open case exactly as the server last returned it |
 | `draftAnswers`, `dirty`, `editBaseRevision`, `conflict`, `saveState` | The intake form's unsaved edits, kept apart from `savedCase` |
 | `formSubstep`, `visitedSubsteps`, `returnToSummary`, `revealed` | The sub-step on screen; the sub-steps left at least once, plus `review.submit` once Continue on 9.2 has earned it (stored on the server as `cases.intake_visited`, so their marks follow the client); whether a summary Change is open; and the ids whose invalid value is shown ([below](#the-version-2-intake-form)) |
@@ -111,6 +112,16 @@ sign-in (`sendCode`, `verifyCode`, `editAuthEmail`, `editAuthCode`, `restartSign
 `setBoardSearchDraft`, `toggleSidebar`, `setCaseTab`, `setLookup`, `openDialog`, `closeDialog`,
 `dismissError`, `clearError`).
 
+Two questions are kept apart (add-staff-identity D9). `presenter()` is the demonstration's own:
+the persona picker, sample reset and checkpoints. **`staffWindow()`** is everything a staff screen
+does (its reads, its eligibility rules and its actions), true for a `presenter` or a `staff`
+account (`isStaffWindow` in [`src/contracts.mjs`](../../src/contracts.mjs) says the same for the
+views). Only who is acting differs, and **`actingPersonId(personId)`** decides it: a staff account
+is always `principal.personId`, whatever is passed in; a presenter sends the persona it chose (or
+the one an action names); a client sends none. The persona actions (`selectPerson`) are refused for
+a staff account, and the store sends `p_person_id: null` for staff, so the browser never claims an
+identity; the database resolves it ([Database: who is acting](database.md#who-is-acting)).
+
 Three rules the controller keeps:
 
 1. **Saved and draft are different.** A live update replaces `savedCase` but never rewrites what
@@ -130,9 +141,10 @@ Three rules the controller keeps:
 | --- | --- |
 | Signed out | Email and code form ([`client-views.mjs`](../../src/client-views.mjs) `accessScreen`); "cannot reach the server" and "no access" screens ([`views.mjs`](../../src/views.mjs)) |
 | Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the sub-step form, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
-| Presenter, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
-| Presenter, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
+| Staff window, volunteer persona | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
+| Staff window, `admin` persona | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
 | Every presenter | The presenter panel on top ([`presenter-views.mjs`](../../src/presenter-views.mjs), demo only) |
+| Staff account | The same staff screens, with no persona picker: the sidebar and the case page header say "Signed in as <name>", and the person is the account's own (`staffScreen` in `views.mjs` picks the office screens when that person has `admin`, and the volunteer work board otherwise, exactly as for a persona). No sample reset, no checkpoints, and no "Fill fictional details" pill (a presenter-only tool, including the office's Add a case pill). Always English |
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
@@ -286,7 +298,7 @@ volunteer and office pages):
 - **Materials received** (D9): the eleven `MATERIALS_ITEMS`, saved with RECORD_MATERIALS by
   anyone who passes `canSeeContact`, read-only for everyone else.
 - **The draft** buttons (`draftTools` in `src/staff-views.mjs`: the 13614-C in three languages and the Form 14446 in two, after the claim), only for people who pass
-  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a presenter (`principal.access === "presenter"`); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
+  `canSeeContact`, because the draft prints the phones. `viewDraft` (`app.mjs`) makes a 13614-C only for a staff window (`isStaffWindow`: a presenter or a staff account); for anyone else it returns before any tab opens, with no tab, link or error. `writeTab(tab, text, kind)` titles the tab by form: `draft.tab_title` ("Draft 13614-C") or `draft14446.tab_title` ("Draft Form 14446").
 
 The contact and materials forms read multi-value checkboxes with `formValuesWithLists`
 (`src/form-values.mjs`); `Object.fromEntries(new FormData(form))` would keep only the last box.
@@ -315,6 +327,120 @@ cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_
   persona switch leave without asking. The guard also covers `open-add-case`, though that button
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
+
+## The shaded section of the 13614-C
+
+The shaded part of Form 13614-C ("To be completed by certified volunteer") is filled by the case's
+preparer, either on the form in the browser or in a PDF program. Four modules carry it; the
+database side is in [Database](database.md#the-shaded-section-of-the-13614-c).
+
+**[`src/shaded-fields.mjs`](../../src/shaded-fields.mjs)** is the explicit table of the 106 fields
+(`SHADED_FIELDS`): each has a stable `key`, its PDF field name in the English form (`en`) and in
+the two Chinese forms (`zh`, shared by 简体 and 繁體; the energy-improvement field is the one name
+that differs), a `kind` (`box`, `count`, `amount`, `cell`, `vin`, `year`, `reason`, `note`), a
+`label` and a `block`. It is pure (no DOM, no PDF library) and has no wording in it.
+
+- `checkShaded(values, { householdSize, season })` applies the rules and returns
+  `[{ key, label, message }]`: a count is 0–99, an amount has at most six digits and two decimals,
+  a year is four digits from 2000 to before the season, a reason is at most 120 characters and a
+  note at most 500, the Yes/No box pairs (`SHADED_PAIRS`) cannot both be ticked, and a household
+  row past the household's size must be blank.
+- `readShaded(raw, { form, householdSize, season })` maps `{ pdfFieldName: value }` to
+  `{ values, errors }`: a blank is absent, a checkbox is `true`, a household cell is
+  `yes`, `no` or `na`. The same table serves the draft fill, the editing copy, the upload and the
+  editor. The database repeats the keys and the shape rules; the browser checks first and names
+  the field it refuses, and the database stays the authority.
+
+**The draft fill.** `draftFields(answers, { …, shaded })` in
+[`src/draft-form.mjs`](../../src/draft-form.mjs) puts the saved values on the form: boxes are
+ticked, other values are printed (`shadedPrint`), and the notes come back as
+`notes: [{ name, text, block, page }]` for the builder instead of going into `text`. When any
+value is set, `preparerEntries` is true and the stamp reads "DRAFT – online answers and preparer
+entries" instead of "DRAFT – prepared from online answers". All three languages of the 13614-C
+print the saved section (the 14446 has none and ignores it). `buildDraftPdf` in
+[`src/draft-pdf.mjs`](../../src/draft-pdf.mjs) wraps each note in its own box with the wrapping of
+Additional Comments; what does not fit goes ahead of the comments under "Continued from page
+<n>, <block> notes:" and then onto continued pages like any comment.
+
+**The editing copy.** `buildEditingCopy({ PDFLib, fontkit, formBytes, fontFiles, fields, shaded,
+reference, version })` is the same build with `editing` set:
+
+- A partial flatten (`partialFlatten`, a copy of pdf-lib 1.17.1's `flatten` that skips named
+  fields) draws every field's appearance on its page and removes it, except the 106 shaded fields,
+  which stay live and hold the stored values. The client's answers are therefore fixed text and
+  only the shaded section can be typed in.
+- Text that WinAnsi cannot draw (Chinese, for example) is set as the field's `/V` with no
+  appearance, and `NeedAppearances` is set so the viewer makes it.
+- The PDF's Keywords carry `vitally-shaded case:<reference> version:<n>`, which is how an upload
+  is matched to its case and to the version it was made from. The copy is English only and is
+  never uploaded to a server or stored.
+
+**Download and upload** (`shadedPanel` in `src/staff-views.mjs`, on the Intake answers tab for
+both the volunteer and office pages; handlers in `src/app.mjs`):
+
+- The panel shows "Fill the shaded section" (the editor), "Download to fill elsewhere" and "Upload
+  the filled copy", only when `staffEligibility(...).shadedSection` allows it (the case's
+  preparer, while the case is being prepared or corrections are requested); otherwise it says why
+  not. It also lists the browsers the editor works in: Chrome and Edge 125 or later, Firefox ESR
+  or later, Safari 18 or later. In any other browser, download and upload still work.
+- `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
+- Beside the Download button the panel says to open the copy in Chrome or the free Adobe Acrobat
+  Reader, not macOS Preview (`.shaded-download-note`).
+- `uploadShadedCopy` reads the file with `readFilledCopy({ PDFLib, bytes, reference })`, which
+  returns `{ raw, version, preview }` or throws an error with a `code` and a sentence for the
+  preparer: `NOT_A_PDF` (not a readable PDF), `NO_FIELDS` (none of the shaded fields: a printed
+  copy, so it says to use the download button, not Print) or `OTHER_CASE` (the Keywords name
+  another case). The file is loaded with `updateMetadata: false`, so the Producer is the one the
+  copy was saved with, and `preview` is true when it names macOS Preview (which can drop filled
+  values). The values then go through `readShaded` with the case's household size and season. If
+  none are filled, the upload is refused after the other refusals, with the no-values message
+  (which adds a Preview note when `preview` is set).
+- Otherwise nothing is saved yet. The values are held in `state.shadedReview` (per case) and the
+  panel replaces the upload control with "Check what was read from this copy": a count, one row
+  per filled field, a Preview warning when `preview` is set, and "Save these values"
+  (`confirm-shaded-review`, which calls `controller.confirmShadedReview()`; that re-checks the case, then calls
+  `saveShadedSection(values, version)`, and focus returns to the upload control) or
+  "Cancel" (`cancel-shaded-review`). The held review is dropped on a case switch, on sign-out and
+  when a new file is uploaded. A refusal or a failed save is shown in the panel, beside the control
+  (`SHADED_UPLOAD`), and "Saved" is shown there on success, so nothing is lost behind a refusal. A
+  `CONFLICT` there means the section was saved since the copy was downloaded, and the sentence says
+  to download a fresh copy.
+- The case's History tab lists a save as "saved the shaded section", followed by the labels of the
+  fields that changed (never their values). A client sees nothing: no client event is written.
+
+**The editor** ([`src/shaded-editor.mjs`](../../src/shaded-editor.mjs)) draws the editing copy
+with pdf.js in a full-screen layer, so the preparer types straight onto the form.
+
+- **Why the layer lives beside `#app`, not in it.** `render()` replaces the whole of `#app` on
+  every state change, realtime events included, and would wipe what the preparer had typed and
+  the pdf.js canvases. The layer is a sibling that `render()` never touches. While it is open,
+  `#app` is `inert` (the layer is a modal dialog with its own focus trap and Escape/Close
+  handling), and the page's own key handler in `app.mjs` returns early.
+- **Two parts.** `createEditorSession` decides, with no DOM: what changed, when Save is
+  available, what a refusal says, and when Close and Escape ask "Discard your changes?" first.
+  `openShadedEditor` draws the layer and wires it to a session. pdf.js is passed in (`loadPdfjs`
+  in `app.mjs`, a dynamic `import("./vendor/pdfjs.mjs")` with the worker set to
+  `./vendor/pdfjs-worker.mjs`), so it loads only when the editor opens. The editor's `ready`
+  promise settles once every page is drawn (the story waits for it) and rejects, after the layer
+  has gone, when it cannot open; the panel then shows "The editor did not open" with Try again.
+- **Saving.** `createShadedSave` is the `onSave` the editor calls. It checks the values with
+  `readShaded`, then sends them with `basedOnVersion`; an accepted save made exactly `version + 1`
+  (the server writes based + 1), so that is the next base. It is never read back from the case,
+  because another window's newer save landing first would be adopted and silently overwritten.
+  The server says `CONFLICT` for a stale case revision as well as a stale section. After one, the
+  window has re-read the case: if the section is still at this editor's version, only the case
+  moved (the office recorded materials, say), and the same values are sent once more, once. If
+  the case moved again, Save stays offered without the conflict sentence; if the section itself
+  moved, the editor says "Saved elsewhere since you opened this. Close and reopen to see the
+  latest." Save keeps the editor open.
+- **Leaving.** While there are unsaved changes, `beforeunload` guards the tab. The editor closes
+  by itself (`editorGone`, checked in `render()`) when the case is no longer the selected one or
+  no presenter is signed in, for example after a sign-out in another tab, without a prompt.
+- **Vendor files.** `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs` are copied from
+  `pdfjs-dist`'s legacy build by `buildPdfjsFiles()` in `tools/build.mjs`
+  (`npm run build:vendor`), with the library version in a banner. The server's allowlist already
+  serves `/src/vendor/<name>.mjs`. The other two vendor files are `supabase.mjs` and `pdf-lib.mjs`
+  ([setup](../setup.md#the-vendor-bundle)).
 
 ## Stages and their words
 
@@ -631,13 +757,13 @@ case, form step, persona, board filters, case tab, whether the sidebar is open, 
 case's visited steps and revealed errors) in `sessionStorage` under a key that includes the user
 id. Each field has its own shape check (`FIELDS`); a malformed one is dropped, and the visited
 steps are ignored unless they belong to the open case. Two windows can show different things; two accounts in one browser never share a view; signing
-out clears it. It never stores codes, tokens or answers.
+out clears it. It never stores codes, tokens or answers. It never keeps a persona for a staff account, which has no choice to remember.
 
 ## Client languages
 
 Every client screen is in English, Simplified Chinese (简体) or Traditional Chinese (繁體), chosen
 with the switch in the client bar and saved per browser in `localStorage["vitally.lang"]`. A first
-visit takes its language from `navigator.languages`. Staff and presenter screens are always
+visit takes its language from `navigator.languages`. Staff screens (a presenter's or a staff account's) are always
 English. Traditional is derived at build time with OpenCC `tw`, characters only (common Taiwan
 character forms, no phrase or vocabulary conversion), and is fetched only when 繁體 is chosen or
 a staff member makes the 繁體 draft 13614-C, which leaves the screen's language as it is (the Form 14446 never loads it). A saved 繁體 waits at
@@ -653,7 +779,7 @@ The design is [spec 2026-10-05](../superpowers/specs/2026-10-05-chinese-on-scree
 | [`zh-hant.mjs`](../../src/zh-hant.mjs) | the generated map, Simplified source string → Traditional; never edit it by hand |
 
 - **The screen's language** is `viewLang(state)`: `state.lang` for a client and for every screen
-  before sign-in, and `"en"` for a presenter. A renderer reads it once and passes `lang` down.
+  before sign-in, and `"en"` for a staff window. A renderer reads it once and passes `lang` down.
   `app.mjs` sets `<html lang>` and `document.title` after each render.
 - **Screen text** is a `TEXT` key, `t(key, params, lang)`. An entry is `{ en, zh }`; `{name}`
   placeholders are filled from `params`, and `en` may be `{ one, other }`, chosen by `params.n`.
@@ -708,9 +834,9 @@ the keyboard stays on the pressed one.
 
 | Suite | Command | What it tests |
 | --- | --- | --- |
-| Unit (1160) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
+| Unit (1418) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (63) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (77) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in
