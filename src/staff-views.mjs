@@ -1802,16 +1802,14 @@ const exitFormTool = (record, attempt) =>
 
 /**
  * The office's Exit Form panel: the button for the latest approval that has
- * a reviewer questionnaire, or a line saying there is none yet.
+ * a reviewer questionnaire. Nothing before there is one.
  */
 export function exitFormPanel(record) {
   const approved = [...(record?.reviews ?? [])]
     .reverse()
     .find((attempt) => attempt?.status === "approved" && reviewerQuestionnaireOf(record, attempt));
-  const body = approved
-    ? `<p class="field-note">PCDC's hand-out for the client, filled from the reviewer's answers for version ${esc(approved.preparationVersion)}. Print it for the client when they sign.</p>${exitFormTool(record, approved)}`
-    : emptyLine("The Exit Form is ready once a reviewer approves the return with their questionnaire.");
-  return `<section class="panel" aria-labelledby="exit-form-title"><div class="section-head"><h2 id="exit-form-title">Exit Form</h2></div>${body}</section>`;
+  if (!approved) return "";
+  return `<section class="panel" aria-labelledby="exit-form-title"><div class="section-head"><h2 id="exit-form-title">Exit Form</h2></div><p class="field-note">PCDC's hand-out for the client, filled from the reviewer's answers for version ${esc(approved.preparationVersion)}. Print it for the client when they sign.</p>${exitFormTool(record, approved)}</section>`;
 }
 
 function reviewAttempts(record) {

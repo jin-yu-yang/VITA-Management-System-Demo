@@ -1564,6 +1564,5 @@ test("the office's Ready to exit case offers the Exit Form from the reviewer's q
   assert.match(html, /data-action="view-exit-form" data-review="review-1">Download Exit Form</);
 
   const before = renderAdminCase(officeCase(), { person: SAM });
-  assert.match(before, /The Exit Form is ready once a reviewer approves the return with their questionnaire\./);
-  assert.doesNotMatch(before, /view-exit-form/);
+  assert.doesNotMatch(before, /exit-form-title|view-exit-form/);
 });
