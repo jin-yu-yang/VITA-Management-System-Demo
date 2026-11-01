@@ -13,7 +13,7 @@ import {
 import { DRAFT_FONT_FIXTURES, draftFontFiles, draftFontsFor } from "../src/draft-pdf.mjs";
 
 // Fictional case and answers only.
-const CASE = { taxYear: 2025, clientNumber: "PCDC-0031", firstName: "Mei", lastName: "Chen" };
+const CASE = { taxYear: 2025, clientNumber: 31, firstName: "Mei", lastName: "Chen" };
 const L = EXIT_FORM_LAYOUT;
 const valueAt = (marks, place) => marks.text.find((m) => m.x === place.x && m.y === place.y)?.value;
 const ticked = (marks, at) => marks.checks.some((c) => c.x === at[0] && c.y === at[1]);
@@ -22,10 +22,10 @@ test("the header comes from the case and today", () => {
   const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
   assert.equal(valueAt(marks, L.taxYear), "2025");
   assert.equal(valueAt(marks, L.date), "11/01/2026");
-  assert.equal(valueAt(marks, L.clientNumber), "PCDC-0031");
+  assert.equal(valueAt(marks, L.clientNumber), "31");
   assert.equal(valueAt(marks, L.taxpayer), "Mei Chen");
   assert.equal(marks.checks.length, 0);
-  assert.equal(marks.fileName, "exit-form-PCDC-0031.pdf");
+  assert.equal(marks.fileName, "exit-form-31.pdf");
 });
 
 test("a refund ticks the method and how it is paid, with the amount as money", () => {
@@ -38,21 +38,18 @@ test("a refund ticks the method and how it is paid, with the amount as money", (
   assert.equal(marks.checks.length, 2);
 });
 
-test("an owed direct debit prints its date; a mail check none", () => {
+test("an owed direct debit prints its date", () => {
   const q = {
     exitForm: {
       federal: null,
       state: { method: "paper", result: "owe", amount: "86", oweBy: "direct_debit", debitOn: "2026-04-15" },
-      local: [{ type: "NPT", method: "efile", result: "owe", amount: "40", oweBy: "mail_check" }],
+      local: [],
     },
   };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
   assert.equal(valueAt(marks, L.groups.state.debitOn), "04/15/2026");
   assert.ok(ticked(marks, L.groups.state.boxes.paper));
   assert.ok(ticked(marks, L.groups.state.boxes.direct_debit));
-  assert.equal(valueAt(marks, L.groups.local.type), "NPT");
-  assert.ok(ticked(marks, L.groups.local.boxes.mail_check));
-  assert.equal(valueAt(marks, L.groups.local.debitOn), undefined);
 });
 
 test("no refund or tax owed ticks only the filing method", () => {
@@ -62,20 +59,42 @@ test("no refund or tax owed ticks only the filing method", () => {
   assert.equal(valueAt(marks, L.groups.federal.amount), undefined);
 });
 
-test("Local entries past the first go to the remarks, ahead of the reviewer's", () => {
+// The cells of one "Other Tax" line, by column.
+const localRow = (marks, i) => {
+  const y = L.local.firstBaseline + i * L.local.pitch;
+  return Object.fromEntries(
+    Object.entries(L.local.columns).map(([key, col]) => [key, marks.text.find((m) => m.x === col.x && m.y === y)?.value ?? ""]),
+  );
+};
+
+test("Other Tax lists each Local entry: tax, filing, refund or owed and how, amount", () => {
   const q = {
     remarks: "Bring photo ID.",
     exitForm: {
       federal: null,
       state: null,
       local: [
-        { type: "NPT", method: "paper", result: "none" },
-        { type: "BIRT", method: "efile", result: "refund", amount: "12", refundBy: "check" },
+        { type: "NPT", method: "paper", result: "refund", amount: "40", refundBy: "check" },
+        { type: "BIRT", method: "paper", result: "owe", amount: "1250", oweBy: "mail_check" },
+        { type: "SIT", method: "efile", result: "owe", amount: "12.3", oweBy: "direct_debit", debitOn: "2026-04-15" },
+        { type: "EET", method: "paper", result: "none" },
       ],
     },
   };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
-  assert.equal(valueAt(marks, L.remarks), "BIRT: e-file, refund $12.00 by check; Bring photo ID.");
+  assert.deepEqual(localRow(marks, 0), { type: "NPT", method: "Paper file", how: "Refund by check", amount: "$40.00" });
+  assert.deepEqual(localRow(marks, 1), { type: "BIRT", method: "Paper file", how: "Owe, mail check", amount: "$1,250.00" });
+  assert.deepEqual(localRow(marks, 2), { type: "SIT", method: "E-file", how: "Owe, direct debit on 04/15/2026", amount: "$12.30" });
+  assert.deepEqual(localRow(marks, 3), { type: "EET", method: "Paper file", how: "No refund or tax owed", amount: "" });
+  assert.equal(marks.checks.length, 0);
+  assert.equal(valueAt(marks, L.remarks), "Bring photo ID.");
+  // The template's own Other Tax boxes are covered.
+  assert.deepEqual(marks.covers, L.local.covers);
+});
+
+test("no Local entry says None under Other Tax", () => {
+  const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
+  assert.equal(localRow(marks, 0).type, "None");
 });
 
 test("the filled PDF is one page and needs no font for Latin text", async () => {

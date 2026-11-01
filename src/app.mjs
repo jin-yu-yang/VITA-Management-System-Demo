@@ -1724,7 +1724,7 @@ if (!config) {
           : 2025;
       const marks = exitFormMarks(
         questionnaire,
-        { taxYear: season, clientNumber: record.reference ?? "", firstName: answers.tp_first_name, lastName: answers.tp_last_name },
+        { taxYear: season, clientNumber: record.clientNumber ?? "", firstName: answers.tp_first_name, lastName: answers.tp_last_name },
         isoToday(),
       );
       const PDFLib = await import("./vendor/pdf-lib.mjs");

@@ -22,6 +22,24 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
   clientNumber: { x: 500, y: 174, width: 100 },
   taxpayer: { x: 252, y: 204, width: 310 },
   remarks: { x: 130, y: 557, width: 430 },
+  // "Other Tax": the template's boxes are covered and each Local entry gets
+  // its own line (tax, how it was filed, refund or owed and how, amount).
+  local: {
+    covers: [
+      { x: 47, y: 444, width: 39, height: 20 }, // the blank before 其他稅
+      { x: 190, y: 422.5, width: 395, height: 97.5 }, // boxes and Amount, all three rows
+      { x: 47, y: 466, width: 145, height: 54 }, // the Refund and Owe labels
+    ],
+    firstBaseline: 456,
+    pitch: 15,
+    rows: 5,
+    columns: {
+      type: { x: 196, width: 52 },
+      method: { x: 252, width: 62 },
+      how: { x: 318, width: 172 },
+      amount: { x: 495, width: 70, align: "right" },
+    },
+  },
   groups: {
     federal: {
       amount: { x: 503, y: 246, width: 60 },
@@ -41,16 +59,6 @@ export const EXIT_FORM_LAYOUT = Object.freeze({
         direct_debit: [132.5, 397], mail_check: [445, 397],
       },
     },
-    local: {
-      type: { x: 51, y: 456, width: 34 },
-      amount: { x: 514, y: 456, width: 50 },
-      debitOn: { x: 390, y: 509, width: 33 },
-      boxes: {
-        efile: [202, 451], paper: [308.5, 451],
-        direct_deposit: [134, 477], check: [444, 477],
-        direct_debit: [132.5, 504], mail_check: [445, 504],
-      },
-    },
   },
 });
 
@@ -59,24 +67,28 @@ const money = (amount) => {
   return `$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${cents.padEnd(2, "0")}`;
 };
 
-const METHOD_LABEL = Object.freeze({ efile: "e-file", paper: "paper" });
+const METHOD_LABEL = Object.freeze({ efile: "E-file", paper: "Paper file" });
 const HOW_LABEL = Object.freeze({
-  direct_deposit: "direct deposit",
-  check: "check",
-  direct_debit: "direct debit",
-  mail_check: "mail check",
+  direct_deposit: "Refund by direct deposit",
+  check: "Refund by check",
+  direct_debit: "Owe, direct debit",
+  mail_check: "Owe, mail check",
 });
 
-// One extra Local entry as a remarks line: the template has room for one.
-function localLine(entry) {
-  const parts = [`${entry.type}: ${METHOD_LABEL[entry.method] ?? entry.method}`];
-  if (entry.result === "refund") parts.push(`refund ${money(entry.amount)} by ${HOW_LABEL[entry.refundBy]}`);
-  if (entry.result === "owe")
-    parts.push(
-      `owe ${money(entry.amount)} by ${HOW_LABEL[entry.oweBy]}${entry.debitOn ? ` on ${usDate(entry.debitOn)}` : ""}`,
-    );
-  if (entry.result === "none") parts.push("no refund or tax owed");
-  return parts.join(", ");
+// One Local entry's line in "Other Tax".
+function localColumns(entry) {
+  const how =
+    entry.result === "none"
+      ? "No refund or tax owed"
+      : entry.result === "refund"
+        ? HOW_LABEL[entry.refundBy]
+        : `${HOW_LABEL[entry.oweBy]}${entry.debitOn ? ` on ${usDate(entry.debitOn)}` : ""}`;
+  return {
+    type: entry.type,
+    method: METHOD_LABEL[entry.method] ?? entry.method,
+    how,
+    amount: entry.result === "none" || entry.amount == null ? "" : money(entry.amount),
+  };
 }
 
 function groupMarks(layout, entry, out) {
@@ -100,12 +112,13 @@ function groupMarks(layout, entry, out) {
  * What the Exit Form shows, from the reviewer's questionnaire and the case.
  * `case` is { taxYear, clientNumber, firstName, lastName }; `today` is
  * 'YYYY-MM-DD'. Returns { text: [{x, y, width, value, size}], checks:
- * [{x, y}], fileName }. Local's first entry fills "Other Tax"; any more go
- * to the front of the remarks. Nothing about a bank account is ever drawn.
+ * [{x, y}], covers: [{x, y, width, height}], fileName }. "Other Tax" lists
+ * up to five Local entries, one per line. Nothing about a bank account is
+ * ever drawn.
  */
 export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName, lastName } = {}, today) {
   const L = EXIT_FORM_LAYOUT;
-  const out = { text: [], checks: [] };
+  const out = { text: [], checks: [], covers: [...L.local.covers] };
   const put = (place, value, size = TEXT_SIZE) => {
     const text = oneLine(value);
     if (text) out.text.push({ ...place, value: text, size });
@@ -118,15 +131,16 @@ export function exitFormMarks(questionnaire, { taxYear, clientNumber, firstName,
   const exit = questionnaire?.exitForm ?? {};
   groupMarks(L.groups.federal, exit.federal, out);
   groupMarks(L.groups.state, exit.state, out);
-  const [firstLocal, ...moreLocal] = exit.local ?? [];
-  if (firstLocal) {
-    put(L.groups.local.type, firstLocal.type, SMALL_SIZE);
-    groupMarks(L.groups.local, firstLocal, out);
-  }
-  const remarks = [...moreLocal.map(localLine), oneLine(questionnaire?.remarks ?? "")].filter(Boolean).join("; ");
-  put(L.remarks, remarks, 9);
+  const local = (exit.local ?? []).slice(0, L.local.rows);
+  if (!local.length) put({ ...L.local.columns.type, y: L.local.firstBaseline, width: 100 }, "None", 10);
+  local.forEach((entry, i) => {
+    const y = L.local.firstBaseline + i * L.local.pitch;
+    const cols = localColumns(entry);
+    for (const [key, place] of Object.entries(L.local.columns)) put({ ...place, y }, cols[key], 10);
+  });
+  put(L.remarks, questionnaire?.remarks ?? "", 9);
 
-  const ref = oneLine(clientNumber ?? "");
+  const ref = String(clientNumber ?? "").replace(/[^A-Za-z0-9-]/g, "");
   out.fileName = `exit-form${ref ? `-${ref}` : ""}.pdf`;
   return out;
 }
@@ -173,14 +187,18 @@ export async function buildExitFormPdf({ PDFLib, fontkit, formBytes, fontFiles =
   };
   const widthOf = (runs, size) => runs.reduce((sum, [text, font]) => sum + font.widthOfTextAtSize(text, size), 0);
 
+  // White boxes over the parts of the template this fill replaces.
+  for (const c of marks.covers ?? [])
+    page.drawRectangle({ x: c.x, y: PAGE_HEIGHT - c.y - c.height, width: c.width, height: c.height, color: rgb(1, 1, 1) });
   for (const mark of marks.text) {
     let text = mark.value;
     let size = mark.size;
     while (size > MIN_SIZE && widthOf(runsOf(text), size) > mark.width) size -= 0.5;
     while (text.length > 1 && widthOf(runsOf(text), size) > mark.width) text = `${[...text].slice(0, -2).join("")}…`;
-    let x = mark.x;
+    const runs = runsOf(text);
+    let x = mark.align === "right" ? mark.x + mark.width - widthOf(runs, size) : mark.x;
     const y = PAGE_HEIGHT - mark.y;
-    for (const [run, font] of runsOf(text)) {
+    for (const [run, font] of runs) {
       page.drawText(run, { x, y, size, font, color });
       x += font.widthOfTextAtSize(run, size);
     }
