@@ -5773,3 +5773,12 @@ html:lang(zh-Hant) {
   text-transform: uppercase;
   color: var(--vt-muted);
 }
+
+/* Auto-fill fictional data (demo-fill.mjs): small, out of the way, dashed so
+   it reads as a demo helper rather than a step of the work. */
+.btn.demo-fill {
+  display: inline-flex;
+  margin: 0 0 12px;
+  border-style: dashed;
+  font-size: 0.85em;
+}

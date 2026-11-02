@@ -360,10 +360,17 @@ const isCloseButton = (element) =>
   String(element?.className ?? "")
     .split(/\s+/)
     .includes("close-btn");
+// The demo's "Auto-fill fictional data" button (demo-fill.mjs) is a helper, not
+// the dialog's work: the keyboard still lands on the first real control.
+const isDemoFill = (element) =>
+  String(element?.className ?? "")
+    .split(/\s+/)
+    .includes("demo-fill");
 
 export function dialogFocusTarget(controls = [], container = null) {
   const usable = controls.filter((control) => control && !control.disabled);
   return (
+    usable.find((control) => !isCloseButton(control) && !isDemoFill(control)) ??
     usable.find((control) => !isCloseButton(control)) ??
     usable.find(isCloseButton) ??
     container ??

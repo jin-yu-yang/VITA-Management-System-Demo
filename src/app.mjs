@@ -3,6 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaffWindow } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
+import { fillForm } from "./demo-fill.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
@@ -1754,6 +1755,11 @@ if (!config) {
       case "open-cases":
         if (leaveAddCaseFirst("open-cases", target)) break;
         EXITS["open-cases"]();
+        break;
+      case "demo-fill":
+        // Fills the form with fictional answers; nothing is sent until the
+        // form's own submit button is pressed (demo-fill.mjs).
+        fillForm(target);
         break;
       case "clear-exit-group": {
         // An Exit Form group is emptied in place: every field unticked or

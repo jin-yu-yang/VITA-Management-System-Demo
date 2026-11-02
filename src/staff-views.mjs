@@ -69,6 +69,7 @@ import {
   goOverPrefill,
   changedAnswers,
 } from "./questionnaires.mjs";
+import { demoFillButton } from "./demo-fill.mjs";
 import {
   CONTACT_DIRECTIONS,
   CONTACT_WITH,
@@ -1442,7 +1443,7 @@ export function nextStep(record, rights, ui = {}) {
       break;
     case "preparing":
       body = rights.preparationWork.allowed
-        ? `${blocked}<form class="staff-form q-form">${preparerForm(record, null, ui)}${caseSubmit(
+        ? `${blocked}<form class="staff-form q-form">${demoFillButton()}${preparerForm(record, null, ui)}${caseSubmit(
             `${icon("check")} Record that preparation is complete in TaxSlayer`,
             "SUBMIT_REVIEW",
             "primary",
@@ -1456,7 +1457,7 @@ export function nextStep(record, rights, ui = {}) {
         `<div class="notice amber" role="note">${icon("help")}<div><h3>Corrections the reviewer asked for</h3><p>${esc(corrections?.findings)}</p><small>${esc(corrections?.reviewerName ?? "")} · version ${esc(corrections?.preparationVersion)} · ${esc(formatTime(corrections?.decidedAt))}</small></div></div>`,
       )}${
         rights.preparationWork.allowed
-          ? `${blocked}<form class="staff-form q-form">${textarea(
+          ? `${blocked}<form class="staff-form q-form">${demoFillButton()}${textarea(
               "What you corrected in TaxSlayer",
               "resolution",
               "",
@@ -1485,7 +1486,7 @@ export function nextStep(record, rights, ui = {}) {
         "preparationVersion",
       );
       body = rights.reviewDecision.allowed
-        ? `${when(version > 1, submissionComparison(previous, current, version))}<form class="staff-form q-form">${reviewerForm(
+        ? `${when(version > 1, submissionComparison(previous, current, version))}<form class="staff-form q-form">${demoFillButton()}${reviewerForm(
             record,
             ui,
           )}<div class="next-step-actions">${caseSubmit(
@@ -1508,7 +1509,7 @@ export function nextStep(record, rights, ui = {}) {
         ? `<p class="muted">${esc(line)}</p>`
         : approved?.clientContactStatus === "pending"
           ? rights.reviewContact.allowed
-            ? `<form class="staff-form">${select(
+            ? `<form class="staff-form">${demoFillButton()}${select(
                 "What happened",
                 "outcome",
                 "",
