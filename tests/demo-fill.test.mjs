@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { demoValues, demoFillButton } from "../src/demo-fill.mjs";
+import {
+  markEfiledDialogBody,
+  markReadyToEfileDialogBody,
+  recordFilingResultDialogBody,
+  returnToSigningDialogBody,
+} from "../src/admin-views.mjs";
 import { preparerQuestionnaire, reviewerQuestionnaire } from "../src/questionnaires.mjs";
 import { payloadFor } from "../src/case-actions.mjs";
 
@@ -11,9 +17,18 @@ const asForm = (values, ticked = "yes") =>
 
 const NOW = Date.parse("2026-02-10T15:00:00Z");
 
+const PRESENTER = { access: "presenter" };
+
 test("the auto-fill button names its action", () => {
-  assert.match(demoFillButton(), /data-action="demo-fill"/);
-  assert.match(demoFillButton(), /type="button"/); // never submits the form
+  assert.match(demoFillButton(PRESENTER), /data-action="demo-fill"/);
+  assert.match(demoFillButton(PRESENTER), /type="button"/); // never submits the form
+});
+
+test("only a presenter gets the auto-fill button: a staff account never fills a real case", () => {
+  assert.equal(demoFillButton({ access: "staff" }), "", "a staff account");
+  assert.equal(demoFillButton({ access: "applicant" }), "", "a client");
+  assert.equal(demoFillButton(null), "", "signed out");
+  assert.equal(demoFillButton(), "", "no principal given");
 });
 
 test("the fictional data passes the preparer questionnaire", () => {
@@ -48,4 +63,12 @@ test("the fictional data passes the filing dialogs", () => {
   const { payload: result } = payloadFor("RECORD_FILING_RESULT", { stage: "efiled" }, values);
   assert.equal(result.results.federal.result, "accepted");
   assert.equal(result.fixNote, undefined);
+});
+
+test("a filing dialog shows the auto-fill button to a presenter and never to a staff account", () => {
+  const savedCase = { reference: "VT-TEST-0002", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } };
+  for (const body of [markReadyToEfileDialogBody, markEfiledDialogBody, recordFilingResultDialogBody, returnToSigningDialogBody]) {
+    assert.match(body({ savedCase, principal: PRESENTER }), /data-action="demo-fill"/, `${body.name}, presenter`);
+    assert.doesNotMatch(body({ savedCase, principal: { access: "staff" } }), /demo-fill/, `${body.name}, staff account`);
+  }
 });

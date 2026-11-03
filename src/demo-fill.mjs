@@ -10,9 +10,16 @@ import { todayIso } from "./questionnaires.mjs";
 
 export const DEMO_FILL_ACTION = "demo-fill";
 
-/** The button, placed at the top of a form or dialog. */
-export const demoFillButton = () =>
-  `<button type="button" class="btn secondary demo-fill" data-action="${DEMO_FILL_ACTION}">Auto-fill fictional data</button>`;
+/**
+ * The button, placed at the top of a form or dialog, for a presenter only.
+ * Like the other demo tools ("Fill fictional details", the sample reset and
+ * the checkpoints), a staff account never gets it: a real preparer, reviewer
+ * or office worker must never fill a real case with made-up answers.
+ */
+export const demoFillButton = (principal) =>
+  principal?.access === "presenter"
+    ? `<button type="button" class="btn secondary demo-fill" data-action="${DEMO_FILL_ACTION}">Auto-fill fictional data</button>`
+    : "";
 
 const DAY = 24 * 60 * 60 * 1000;
 const pad = (n) => String(n).padStart(2, "0");

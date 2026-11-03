@@ -1758,7 +1758,9 @@ if (!config) {
         break;
       case "demo-fill":
         // Fills the form with fictional answers; nothing is sent until the
-        // form's own submit button is pressed (demo-fill.mjs).
+        // form's own submit button is pressed (demo-fill.mjs). A demo tool:
+        // a staff account never fills, even if the button appeared.
+        if (controller.getState().principal?.access !== "presenter") break;
         fillForm(target);
         break;
       case "clear-exit-group": {
