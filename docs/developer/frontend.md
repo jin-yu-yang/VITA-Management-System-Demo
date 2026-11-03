@@ -383,6 +383,12 @@ both the volunteer and office pages; handlers in `src/app.mjs`):
   preparer, while the case is being prepared or corrections are requested); otherwise it says why
   not. It also lists the browsers the editor works in: Chrome and Edge 125 or later, Firefox ESR
   or later, Safari 18 or later. In any other browser, download and upload still work.
+- The three handlers in `app.mjs` (`openEditor`, `downloadShadedCopy`, `uploadShadedCopy`) and
+  `editorGone` run for any staff window (`isStaffWindow`: a presenter or a staff account), the
+  rule every other staff screen uses (#103). Who may fill is still `staffEligibility` alone,
+  which for a staff account reads the account's own person. The browser story runs these tools
+  as a presenter only, so a check that tests `access === "presenter"` here would pass every suite
+  and still lock out a real preparer.
 - `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
 - Beside the Download button the panel says to open the copy in Chrome or the free Adobe Acrobat
   Reader, not macOS Preview (`.shaded-download-note`).
@@ -435,7 +441,13 @@ with pdf.js in a full-screen layer, so the preparer types straight onto the form
   latest." Save keeps the editor open.
 - **Leaving.** While there are unsaved changes, `beforeunload` guards the tab. The editor closes
   by itself (`editorGone`, checked in `render()`) when the case is no longer the selected one or
-  no presenter is signed in, for example after a sign-out in another tab, without a prompt.
+  no staff window is signed in (a presenter or a staff account), for example after a sign-out in
+  another tab, without a prompt.
+- **Field size.** pdf.js sizes each annotation input at `height: 100%` of its section, so the
+  page's global field rule (padding, `min-height: var(--vt-tap)`, radius) must not reach it: it
+  made every input 44px tall and pushed typed values a row down. The editor's own input rule in
+  `styles.css` resets padding, min-height, radius and line-height (#103). Keep that reset when
+  changing the global field style.
 - **Vendor files.** `src/vendor/pdfjs.mjs` and `src/vendor/pdfjs-worker.mjs` are copied from
   `pdfjs-dist`'s legacy build by `buildPdfjsFiles()` in `tools/build.mjs`
   (`npm run build:vendor`), with the library version in a banner. The server's allowlist already
@@ -492,9 +504,13 @@ that has methods was returned to signing, and its message asks the client to sig
   `label` for `audience: "staff"` (the default) and `clientLabel` for `audience: "client"`. The
   client's screens (the applications list, the progress page and its review panel) pass
   `"client"`; every staff, office and presenter screen leaves the default.
-- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists eleven steps with staff
+- **The staff lifecycle bar** (`lifecycleBar` in `staff-views.mjs`) lists ten steps with staff
   labels: `received`, `screening`, `preparation_ready`, `preparing`, `review_ready`, `reviewing`,
-  `review_approved`, `ready_to_efile`, `efiled`, `accepted`, `closed`. A case in
+  `review_approved`, `ready_to_efile`, `efiled`, `accepted`. Accepted is the end: an accepted case
+  shows every step done and none current. A `closed` case gets an eleventh step, Closed, as the
+  only current one; the steps before it are `neutral` (neither done nor to come), because nothing
+  records the stage a case was closed from, and the History tab shows its path (#109, change
+  `fix-lifecycle-bar-closed-after-accepted`). A case in
   `corrections_required` shows on the `preparing` step, marked as an amendment; a `rejected` case
   shows on the `efiled` step the same way. A case at Waiting for documents shows on the step it
   was asked from (`documentsOrigin`), and a Hold on the step it came from (`holdOrigin`), both
