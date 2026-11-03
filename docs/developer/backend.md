@@ -25,8 +25,8 @@ needed in production: any static host that serves the files plus a `public-confi
 same job.
 
 - **Allowlist, not a file server.** It serves exactly `/`, `/index.html`, `/src/<name>.mjs|css|svg|png`,
-  `/src/vendor/<name>.mjs`, the five forms under `/src/forms/` by their exact names (the 13614-C
-  in English, 简体 and 繁體, and PCDC's two Form 14446 files: `FORMS` in `server.mjs`), and
+  `/src/vendor/<name>.mjs`, the PDF forms under `/src/forms/` by their exact names (`FORMS` in
+  `server.mjs`; the list is in [HTTP headers on the static host](#operations-checklist-for-a-real-deployment)), and
   `/public-config.json`. A new form file is served only once it is added to that pattern. The check runs on the raw request path
   before any `..` or percent-escape is resolved, so path tricks cannot reach migrations, tools or
   `.env` files. Everything else is 404.
