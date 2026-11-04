@@ -2921,11 +2921,15 @@ test("review panel shows answers per version", () => {
   assert.match(html, /<span>Remarks<\/span><strong>Looks right\.<\/strong>/);
   assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 10\/16\/2026\.<\/strong>/);
   assert.match(html, /<span>Went over the return with the client<\/span><strong>Yes, on 10\/16\/2026/);
+  // Only the approval with a questionnaire offers the Exit Form.
+  assert.equal((html.match(/data-action="view-exit-form"/g) ?? []).length, 1);
+  assert.match(html, /data-action="view-exit-form" data-review="review-1">Download Exit Form</);
 });
 
 test("no questionnaire recorded line", () => {
   const html = renderStaffCase(staffCase({ stage: "review_ready", preparationVersion: 1, reviews: [reviewRow({ status: "approved" })] }), MORGAN);
   assert.match(html, /<p class="muted">No questionnaire was recorded for this version\.<\/p>/);
+  assert.doesNotMatch(html, /view-exit-form/);
 });
 
 const approvedWith = (q) =>
