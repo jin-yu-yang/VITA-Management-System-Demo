@@ -9,7 +9,7 @@
 
 - [x] 2.1 Add the story phase: Morgan presses Download Exit Form on the `review_approved` sample, and the PDF has the year, the date, the client number, the name, the amount, an empty Author and the Title "Exit Form"; the case's stage and revision don't change
 - [x] 2.2 Extend the phase: Sam's button with wrong font bytes shows the tab's and the error notice's failure sentences, and Try again makes the form once the fonts are back
-- [x] 2.3 Extend the phase: with `window.open` blocked, Sam's button offers the PDF as a link named `exit-form-<client number>.pdf`
+- [x] 2.3 Extend the phase: with `window.open` blocked, Sam's button shows no error and no link on Overview, and the Intake answers tab shows a link named `exit-form-<client number>.pdf` (known problem, #122)
 - [x] 2.4 Make the phase work only when the staff window is Chrome, record "not run" otherwise, and remove its routes and overrides even when it fails
 
 ## 3. Documentation

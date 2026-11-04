@@ -22,11 +22,11 @@ The Exit Form is PCDC's one-page bilingual hand-out for the client at signing. P
 
 ### D1: Characterisation tests, with no change to `src/`
 - **Choice:** Add tests that pass against the code as it is. A task's "red" step is therefore a check that the test can fail (temporarily break the expectation), not a missing feature.
-- **Why:** The user asked to record behaviour, and to protect it with tests, without changing it.
+- **Why:** The user asked to record behaviour, and to protect it with tests, without changing it. The final review found the blocked tab's link isn't visible where the button is, confirmed in Chrome. The user chose to record that as a known problem in #122 and test what really happens, rather than fix `src/` first.
 - **Alternatives:** Spec only, leaving the riskiest parts unprotected. Spec only what is already tested, leaving those parts unrecorded.
 
 ### D2: Known problems are recorded neutrally, with their issue
-- **Choice:** The requirements say what happens, and add "Known problem, see #122; this records current behaviour, not the intended one." The Remarks cut and the font failure both get this.
+- **Choice:** The requirements say what happens, and add "Known problem, see #122; this records current behaviour, not the intended one." The Remarks cut, the small debit date, the font failure and the blocked tab's link all get this.
 - **Why:** A spec is read as what we want. Clients get this form, and #122 is to be fixed before the February pilot.
 - **Alternatives:** Leave them out, which hides them. Fix them here, which is a behaviour change outside this change's scope.
 
