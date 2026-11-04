@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import * as PDFLib from "../src/vendor/pdf-lib.mjs";
 import {
   EXIT_FORM_FILE,
@@ -161,4 +162,66 @@ test("Chinese in a name or the remarks is drawn with the downloaded fonts", asyn
   });
   const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
   assert.equal((await PDFLib.PDFDocument.load(bytes)).getPageCount(), 1);
+});
+
+// The Remarks line as the page draws it: its text and font sizes.
+async function remarksLine(remarks, local = []) {
+  const marks = exitFormMarks({ remarks, exitForm: { federal: null, state: null, local } }, CASE, "2026-11-01");
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), {
+    fontkit: PDFLib.fontkit,
+    fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path),
+  });
+  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
+  const task = getDocument({ data: new Uint8Array(bytes), verbosity: 0 });
+  const { items } = await (await (await task.promise).getPage(1)).getTextContent();
+  await task.destroy();
+  const line = items.filter(
+    (item) => item.str.trim() && Math.abs(item.transform[5] - (792 - L.remarks.y)) < 1 && item.transform[4] >= L.remarks.x - 1,
+  );
+  return { text: line.map((item) => item.str).join(""), sizes: line.map((item) => item.transform[0]) };
+}
+
+test("a short remark is drawn whole at 12 pt", async () => {
+  const { text, sizes } = await remarksLine("Bring the corrected W-2.");
+  assert.equal(text, "Bring the corrected W-2.");
+  assert.ok(sizes.every((size) => Math.abs(size - 12) < 0.01));
+});
+
+test("a wider remark is drawn whole and smaller", async () => {
+  const remark = "Fictional remark ".repeat(8).trim();
+  const { text, sizes } = await remarksLine(remark);
+  assert.equal(text, remark);
+  assert.ok(sizes.every((size) => size < 12 && size >= 5.99));
+});
+
+// Known problem, #122: this records what happens, not what we want.
+test("a remark too long for the line is cut at 6 pt, in English and Chinese (#122)", async () => {
+  for (const remark of ["Fictional remark ".repeat(120).slice(0, 2000), "虛構備註".repeat(500)]) {
+    const { text, sizes } = await remarksLine(remark);
+    assert.ok(text.endsWith("…"));
+    assert.ok(remark.startsWith(text.slice(0, -1)));
+    assert.ok(sizes.every((size) => Math.abs(size - 6) < 0.01));
+  }
+});
+
+test("a Local note at the front of the Remarks leaves less room for them (#122)", async () => {
+  const remark = "Fictional remark ".repeat(9).trim(); // fits with no note
+  assert.equal((await remarksLine(remark)).text, remark);
+  const local = [{ type: "SIT", method: "efile", result: "owe", amount: "10", oweBy: "direct_debit", debitOn: "2027-04-15" }];
+  const { text } = await remarksLine(remark, local);
+  assert.ok(text.startsWith("SIT: e-filed, direct debit on 04/15/2027; Fictional"));
+  assert.ok(text.endsWith("…"));
+});
+
+test("the template has no document info, and a filled form is titled Exit Form", async () => {
+  const template = await PDFLib.PDFDocument.load(await readFile(EXIT_FORM_FILE), { updateMetadata: false });
+  assert.equal(template.getAuthor(), undefined);
+  assert.equal(template.getTitle(), undefined);
+  const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), {
+    fontkit: PDFLib.fontkit,
+    fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path),
+  });
+  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
+  assert.equal((await PDFLib.PDFDocument.load(bytes, { updateMetadata: false })).getTitle(), "Exit Form");
 });
