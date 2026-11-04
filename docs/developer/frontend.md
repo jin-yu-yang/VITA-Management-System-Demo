@@ -481,7 +481,10 @@ in the browser from an approval's reviewer questionnaire, and nothing is uploade
   shown.
 - **Who may make it.** `viewExitForm` in `app.mjs` returns at once for anything but a staff window
   (`isStaffWindow`). Like the drafts, it opens a new tab and, if the browser blocks the tab,
-  offers a link instead (`draftOffers`).
+  offers a link instead (`draftOffers`). A blocked tab's link is drawn on the Intake answers tab, so
+  it can't be seen from Overview, it ends after about 60 seconds, and it doesn't exist for a
+  volunteer who can't see the contact details
+  ([#122](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/122)).
 - **What goes on it.** `exitFormMarks(questionnaire, header, today)` in
   [`src/exit-form.mjs`](../../src/exit-form.mjs) decides everything, with no DOM. `buildExitFormPdf`
   then draws it on the blank template.
@@ -493,7 +496,10 @@ in the browser from an approval's reviewer questionnaire, and nothing is uploade
   - Under Other Tax, the template's boxes are covered by one printed row per Local type, so a blank
     copy can still be filled by hand. The details a row has no room for go to the front of the
     remarks.
-  - Filled values are drawn in Helvetica Bold, larger than the form's labels.
+  - Filled values are drawn in Helvetica Bold, unless they contain Chinese. The header and the
+    amounts are larger than the form's 12 pt labels, the Remarks start at 12 pt, and a debit date
+    is drawn at 6.5 pt because its place is small
+    ([#122](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/122)).
 - **The template.** `src/forms/exit-form-pcdc.pdf` (`EXIT_FORM_FILE`) has no form fields, so every
   value goes at a fixed place in `EXIT_FORM_LAYOUT`, measured in points from the page's top-left
   corner. A new version of PCDC's form means measuring those places again. The local server

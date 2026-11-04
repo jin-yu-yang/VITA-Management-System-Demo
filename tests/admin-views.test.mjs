@@ -1586,3 +1586,29 @@ test("the office's Exit Form panel uses the latest approval and stays after fili
   assert.equal((html.match(/data-action="view-exit-form"/g) ?? []).length, 1);
   assert.match(html, /data-action="view-exit-form" data-review="review-2">/);
 });
+
+test("the office's Exit Form panel needs a reviewer questionnaire, and uses the latest approval that has one", () => {
+  const exitForm = { federal: null, state: null, local: [] };
+  const none = officeCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    reviewerId: "morgan",
+    reviews: [{ id: "review-1", preparationVersion: 1, status: "approved", reviewerId: "morgan" }],
+    reviewerQuestionnaires: [],
+  });
+  assert.doesNotMatch(renderAdminCase(none, { person: SAM }), /exit-form-title|view-exit-form/);
+
+  const later = officeCase({
+    stage: "review_approved",
+    preparationVersion: 2,
+    reviewerId: "morgan",
+    reviews: [
+      { id: "review-1", preparationVersion: 1, status: "approved", reviewerId: "morgan" },
+      { id: "review-2", preparationVersion: 2, status: "approved", reviewerId: "morgan" },
+    ],
+    reviewerQuestionnaires: [{ id: "rq-1", reviewId: "review-1", exitForm }],
+  });
+  const html = renderAdminCase(later, { person: SAM });
+  assert.equal((html.match(/data-action="view-exit-form"/g) ?? []).length, 1);
+  assert.match(html, /data-action="view-exit-form" data-review="review-1">/);
+});

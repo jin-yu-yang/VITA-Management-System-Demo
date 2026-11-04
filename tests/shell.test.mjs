@@ -114,6 +114,8 @@ test("app.mjs makes the Exit Form for a staff window only, and records nothing",
   const body = app.slice(app.indexOf("async function viewExitForm"), app.indexOf("// ---- leaving Add a case"));
   assert.match(body, /if \(!isStaffWindow\(state\.principal\)\) return;/);
   assert.match(body, /spouseShown\(visible\)/);
+  // The date on the form is today's, never the approval's.
+  assert.match(body, /isoToday\(\)/);
   assert.match(body, /"The Exit Form could not be made\. Close this tab and try again\."/);
   assert.match(body, /message: "The Exit Form could not be made\. Try again\."/);
   // Only reads and reports: no controller call that saves anything.
@@ -122,6 +124,7 @@ test("app.mjs makes the Exit Form for a staff window only, and records nothing",
     ["clearError", "getState", "noteLocalFailure"],
   );
   assert.doesNotMatch(read("../src/client-views.mjs"), /view-exit-form/);
+  assert.doesNotMatch(read("../src/intake-views.mjs"), /view-exit-form/);
 });
 
 test("an inactive case tab is not displayed", () => {
