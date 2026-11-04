@@ -53,6 +53,7 @@ import {
 } from "./domain.mjs";
 import { CLOSING_REASONS } from "./contracts.mjs";
 import { nowInput } from "./contact-log.mjs";
+import { demoFillButton } from "./demo-fill.mjs";
 
 // The task's own list lives beside the Contacts tab, in staff-views.mjs, and
 // the office drawer takes it from here as it always took the attempt list.
@@ -776,6 +777,7 @@ const clientName = (record) =>
 export function markReadyToEfileDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
+    before: demoFillButton(state.principal),
     lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> as ready to e-file?`,
@@ -908,6 +910,7 @@ function efiledChoices(record) {
 export function markEfiledDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
+    before: demoFillButton(state.principal),
     lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> as e-filed?`,
@@ -959,6 +962,7 @@ function resultFields(kind) {
 export function recordFilingResultDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
+    before: demoFillButton(state.principal),
     lead: `Record the filing result for <strong>${esc(
       record.reference ?? "this case",
     )}</strong> for <strong>${esc(clientName(record))}</strong>?`,
@@ -997,6 +1001,7 @@ export function recordFilingResultDialogBody(state = {}) {
 export function returnToSigningDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
+    before: demoFillButton(state.principal),
     lead: `Return <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> to signing?`,
