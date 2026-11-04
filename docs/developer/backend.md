@@ -25,7 +25,9 @@ needed in production: any static host that serves the files plus a `public-confi
 same job.
 
 - **Allowlist, not a file server.** It serves exactly `/`, `/index.html`, `/src/<name>.mjs|css|svg|png`,
-  `/src/vendor/<name>.mjs` and `/public-config.json`. The check runs on the raw request path
+  `/src/vendor/<name>.mjs`, the PDF forms under `/src/forms/` by their exact names (`FORMS` in
+  `server.mjs`; the list is in [HTTP headers on the static host](#operations-checklist-for-a-real-deployment)), and
+  `/public-config.json`. A new form file is served only once it is added to that pattern. The check runs on the raw request path
   before any `..` or percent-escape is resolved, so path tricks cannot reach migrations, tools or
   `.env` files. Everything else is 404.
 - **`GET` and `HEAD` only**, with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
