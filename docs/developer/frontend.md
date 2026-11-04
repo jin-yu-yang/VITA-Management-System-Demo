@@ -500,14 +500,16 @@ in the browser from an approval's reviewer questionnaire, and nothing is uploade
   serves the file by its exact name (`FORMS` in `server.mjs`), and a static host must publish it
   with the other forms. Strip a new template's document info (author, title) before committing
   it, because a Word export carries the author's name. The generated PDF's author is blank too.
-- **Fonts.** The Other Tax rows are bilingual, so when a mark needs it (`exitFormNeedsFont`) the
-  Traditional Chinese Noto font is fetched with the drafts' pinned, checked files
-  (`draftFontFiles`).
+- **Fonts.** The Other Tax rows are bilingual, so every Exit Form fetches the Traditional Chinese
+  Noto font, with the drafts' pinned, checked files (`draftFontFiles`). If that fails, no form is
+  made ([#122](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/122)).
 - **Privacy.** Nothing about a bank account is drawn, because none is stored
   (`review-and-corrections`).
-- **Tests.** `tests/exit-form.test.mjs` covers the marks and builds real PDFs. The button
-  assertions are in `tests/staff-views.test.mjs` and `tests/admin-views.test.mjs`, and the
-  allowlist entry is in `tests/server.test.mjs`.
+- **Tests.** `tests/exit-form.test.mjs` covers the marks, builds real PDFs, and pins long Remarks
+  and the template's document info. `tests/shell.test.mjs` pins `viewExitForm`'s wiring. The button
+  assertions are in `tests/staff-views.test.mjs` and `tests/admin-views.test.mjs`, and the allowlist
+  entry is in `tests/server.test.mjs`. The browser story presses the button, a failure with its
+  retry, and a blocked tab, with a Chrome staff window only.
 
 ## Stages and their words
 
