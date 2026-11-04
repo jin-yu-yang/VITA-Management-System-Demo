@@ -401,9 +401,10 @@ both the volunteer and office pages; handlers in `src/app.mjs`):
 - The three handlers in `app.mjs` (`openEditor`, `downloadShadedCopy`, `uploadShadedCopy`) and
   `editorGone` run for any staff window (`isStaffWindow`: a presenter or a staff account), the
   rule every other staff screen uses (#103). Who may fill is still `staffEligibility` alone,
-  which for a staff account reads the account's own person. The browser story runs these tools
-  as a presenter only, so a check that tests `access === "presenter"` here would pass every suite
-  and still lock out a real preparer.
+  which for a staff account reads the account's own person. The browser story fills the section
+  in the editor as a staff account too (Riley Park), and checks that a field is as tall as its
+  cell. Download and upload still run as a presenter only, so a check that tests
+  `access === "presenter"` in those two would pass every suite and still lock out a real preparer.
 - `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
 - Beside the Download button the panel says to open the copy in Chrome or the free Adobe Acrobat
   Reader, not macOS Preview (`.shaded-download-note`).
