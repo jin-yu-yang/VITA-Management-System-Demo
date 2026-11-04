@@ -7552,6 +7552,51 @@ async function runPermutation(t, roles) {
         assert.equal((await caseById(fixture, caseId)).preparer_id, rileyAccount.personId);
         // Live updates: the claim reaches Jordan's board without a reload.
         await jordanRow("Riley Park");
+
+        // The shaded section, as a staff account (#103): its tools once did
+        // nothing for one while every presenter run passed. A field is as tall
+        // as its cell: the page's field rule once made one 44px, and the text
+        // typed in it landed on the row below.
+        const rowOneChild = riley.locator(
+          '.shaded-editor [name="form1[0].page1[0].namesOf[0].Row1[0].qualifyingChildDependent[0]"]',
+        );
+        const rileyEditorButton = (which) => riley.locator(`.shaded-editor [data-editor="${which}"]`);
+        await openCaseTab(riley, "intake");
+        await waitForQuiet(riley);
+        await riley.locator('#case-panel-intake [data-action="open-shaded-editor"]').click({ timeout: CLICK_MS });
+        await riley.locator('.shaded-editor[data-ready="true"]').waitFor({ timeout: ARRIVAL_MS });
+        await rowOneChild.fill("Yes");
+        const rowOneHeights = await rowOneChild.evaluate((input) => ({
+          input: input.getBoundingClientRect().height,
+          cell: input.closest("section").getBoundingClientRect().height,
+        }));
+        assert.ok(
+          Math.abs(rowOneHeights.input - rowOneHeights.cell) <= 1,
+          `a shaded field is not as tall as its cell: ${JSON.stringify(rowOneHeights)}`,
+        );
+        await rileyEditorButton("save").click({ timeout: CLICK_MS });
+        await waitFor(
+          riley,
+          "Saved in Riley's editor",
+          () => document.querySelector(".shaded-editor #shaded-editor-status")?.textContent.trim() === "Saved",
+          undefined,
+          ARRIVAL_MS,
+        );
+        assert.deepEqual(
+          (
+            await fixture.database.sql("select fields,version from public.preparer_shaded_fields where case_id=$1", [caseId])
+          ).rows.map((row) => ({ fields: row.fields, version: Number(row.version) })),
+          [{ fields: { household1QualifyingChild: "yes" }, version: 1 }],
+        );
+        await rileyEditorButton("close").click({ timeout: CLICK_MS });
+        await waitFor(
+          riley,
+          "Riley's editor to close",
+          () => !document.querySelector(".shaded-editor") && !document.querySelector("#app").inert,
+          undefined,
+          ARRIVAL_MS,
+        );
+
         await actQuestionnaire(
           riley,
           "SUBMIT_REVIEW",
@@ -7704,7 +7749,7 @@ async function runPermutation(t, roles) {
         assertConsoleQuiet(rileyWin, { name: "Riley's staff window", allow: REFUSAL_LINES });
         assertConsoleQuiet(jordanWin, { name: "Jordan's staff window", allow: REFUSAL_LINES });
         evidence.story.staffAccounts =
-          "Riley Park (prepare, review) and Jordan Lee (review) signed in through the real form in two engines; Signed in as, no presenter controls; a leftover Sam persona ignored; Riley prepared, Jordan's board followed live, Riley's own review refused (SELF_REVIEW), Jordan claimed and approved; history, receipts and events name each";
+          "Riley Park (prepare, review) and Jordan Lee (review) signed in through the real form in two engines; Signed in as, no presenter controls; a leftover Sam persona ignored; Riley prepared and filled the shaded section in the editor, a field as tall as its cell; Jordan's board followed live, Riley's own review refused (SELF_REVIEW), Jordan claimed and approved; history, receipts and events name each";
       } finally {
         await rileyWin.context.close();
         await jordanWin.context.close();
