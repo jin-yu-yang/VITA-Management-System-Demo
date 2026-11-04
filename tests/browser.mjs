@@ -2876,6 +2876,134 @@ async function runPermutation(t, roles) {
       evidence.story.shortPath = "claimed and approved with no correction round";
     });
 
+    await phase("the Exit Form opens from an approved review, and says so when it can't be made", async () => {
+      // Chrome only: Firefox may download a blob PDF instead of opening it.
+      let exitForm = `not run: the staff engine is ${roles.staff}, which may download the PDF instead of opening it`;
+      if (roles.staff === "chrome") {
+        const sample = samples.find((row) => row.fixture_key === "review_approved");
+        const before = await caseById(fixture, sample.id);
+        const expected = await one(
+          fixture,
+          "select c.season,c.client_number,c.answers->>'tp_first_name' first_name,c.answers->>'tp_last_name' last_name,q.exit_form from public.cases c join public.reviewer_questionnaires q on q.case_id=c.id where c.id=$1",
+          [sample.id],
+        );
+        const wrongFont = { on: false };
+        const fontRoutes = [];
+        try {
+          // The fonts come from the packages npm installed, never the internet.
+          for (const [url, file] of Object.entries(DRAFT_FONT_FIXTURES)) {
+            const bytes = await readFile(path.join(ROOT, file.path));
+            const handler = (route) =>
+              route.fulfill({
+                status: 200,
+                headers: { "content-type": "font/ttf", "access-control-allow-origin": "*" },
+                body: wrongFont.on ? Buffer.from("not the pinned font") : bytes,
+              });
+            await staff.route(url, handler);
+            fontRoutes.push([url, handler]);
+          }
+          const press = async () => {
+            await revealCaseControl(staff, '[data-action="view-exit-form"]');
+            await waitForQuiet(staff);
+            const opened = staff.waitForEvent("popup", { timeout: CLICK_MS });
+            await staff.locator('[data-action="view-exit-form"]').first().click({ timeout: CLICK_MS });
+            return await opened;
+          };
+
+          // The reviewer opens it: one page, the case's own header and amount.
+          await choosePersona(staff, morgan);
+          await openBoard(staff, WORK_BOARD_HEADING);
+          await openCaseByReference(staff, sample.reference);
+          const popup = await press();
+          const bytes = await draftBytes(popup);
+          const { pages, strings } = await draftPageText(bytes, 0);
+          assert.equal(pages, 1, "the Exit Form is not one page");
+          for (const wanted of [
+            String(expected.season),
+            String(expected.client_number),
+            `${expected.first_name} ${expected.last_name}`,
+            `$${expected.exit_form.federal.amount}`,
+          ])
+            assert.ok(strings.includes(wanted), `the Exit Form does not print ${JSON.stringify(wanted)}: ${JSON.stringify(strings)}`);
+          assert.ok(
+            strings.some((text) => /^\d{2}\/\d{2}\/\d{4}$/.test(text)),
+            `the Exit Form prints no date: ${JSON.stringify(strings)}`,
+          );
+          const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+          assert.equal(doc.getAuthor() ?? "", "", "the Exit Form names an author");
+          assert.equal(doc.getTitle(), "Exit Form");
+          await popup.close();
+
+          // The office's form can't be made: the tab and the banner say so,
+          // and Try again makes it once the cause is gone.
+          await choosePersona(staff, sam);
+          await openBoard(staff, OFFICE_BOARD_HEADING);
+          await openCaseByReference(staff, sample.reference);
+          wrongFont.on = true;
+          const failed = await press();
+          await waitFor(
+            failed,
+            "the Exit Form tab to say it could not be made",
+            (wanted) => document.body?.textContent.trim() === wanted,
+            "The Exit Form could not be made. Close this tab and try again.",
+            ARRIVAL_MS,
+          );
+          await waitFor(
+            staff,
+            "the problem banner to say the Exit Form could not be made",
+            (wanted) => document.querySelector(".problem-banner")?.textContent.includes(wanted),
+            "The Exit Form could not be made. Try again.",
+            ARRIVAL_MS,
+          );
+          await failed.close();
+          wrongFont.on = false;
+          const retried = staff.waitForEvent("popup", { timeout: ARRIVAL_MS }).catch(() => null);
+          await waitForQuiet(staff);
+          await staff.locator('.problem-banner [data-action="retry-action"]').click({ timeout: CLICK_MS });
+          const again = await retried;
+          if (again) {
+            assert.equal((await draftBytes(again)).subarray(0, 5).toString("latin1"), "%PDF-", "Try again did not make the Exit Form");
+            await again.close();
+          } else {
+            await staff.locator("#draft-ready-link").waitFor({ state: "visible", timeout: ARRIVAL_MS });
+          }
+          await waitFor(staff, "the Exit Form error to clear", () => !document.querySelector(".problem-banner"), undefined, ARRIVAL_MS);
+
+          // A blocked tab: the page offers the finished PDF as a link.
+          await staff.evaluate(() => {
+            window.__vitallyOpen = window.open;
+            window.open = () => null;
+          });
+          await waitForQuiet(staff);
+          await staff.locator('[data-action="view-exit-form"]').first().click({ timeout: CLICK_MS });
+          await waitFor(staff, "the Exit Form link", () => Boolean(document.querySelector("#draft-ready a")), undefined, ARRIVAL_MS);
+          const blocked = await staff.evaluate(() => {
+            const link = document.querySelector("#draft-ready a");
+            return { download: link.download, blob: link.href.startsWith("blob:") };
+          });
+          await staff.evaluate(() => {
+            window.open = window.__vitallyOpen;
+          });
+          assert.deepEqual(blocked, { download: `exit-form-${expected.client_number}.pdf`, blob: true });
+
+          // Nothing is kept: the case did not move.
+          const after = await caseById(fixture, sample.id);
+          assert.equal(after.stage, before.stage, "making the Exit Form moved the case");
+          assert.equal(after.revision, before.revision, "making the Exit Form changed the case");
+          await openBoard(staff, OFFICE_BOARD_HEADING);
+          exitForm = {
+            opened: "one page with the season, client number, name, amount and a date",
+            failure: "tab and banner said so; Try again " + (again ? "opened a new tab" : "offered the link"),
+            blocked: blocked.download,
+          };
+        } finally {
+          await staff.evaluate(() => { if (window.__vitallyOpen) window.open = window.__vitallyOpen; }).catch(() => {});
+          for (const [url, handler] of fontRoutes) await staff.unroute(url, handler).catch(() => {});
+        }
+      }
+      evidence.story.exitForm = exitForm;
+    });
+
     let loopKit = null;
     await phase("the office records signing and e-filing, and the client sees each step", async () => {
       // The class case's approval settled the reviewer's call itself, so the
