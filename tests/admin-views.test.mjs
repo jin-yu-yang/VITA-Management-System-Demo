@@ -1566,3 +1566,23 @@ test("the office's Ready to exit case offers the Exit Form from the reviewer's q
   const before = renderAdminCase(officeCase(), { person: SAM });
   assert.doesNotMatch(before, /exit-form-title|view-exit-form/);
 });
+
+test("the office's Exit Form panel uses the latest approval and stays after filing", () => {
+  const approved = officeCase({
+    stage: "efiled",
+    preparationVersion: 2,
+    reviewerId: "morgan",
+    reviews: [
+      { id: "review-1", preparationVersion: 1, status: "approved", reviewerId: "morgan" },
+      { id: "review-2", preparationVersion: 2, status: "approved", reviewerId: "morgan" },
+    ],
+    reviewerQuestionnaires: [
+      { id: "rq-1", reviewId: "review-1", exitForm: { federal: null, state: null, local: [] } },
+      { id: "rq-2", reviewId: "review-2", exitForm: { federal: null, state: null, local: [] } },
+    ],
+  });
+  const html = renderAdminCase(approved, { person: SAM });
+  assert.match(html, /<h2 id="exit-form-title">Exit Form<\/h2>/);
+  assert.equal((html.match(/data-action="view-exit-form"/g) ?? []).length, 1);
+  assert.match(html, /data-action="view-exit-form" data-review="review-2">/);
+});
