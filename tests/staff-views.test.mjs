@@ -2926,6 +2926,28 @@ test("review panel shows answers per version", () => {
   assert.match(html, /data-action="view-exit-form" data-review="review-1">Download Exit Form</);
 });
 
+test("the Exit Form's blocked-tab link has a place only on the Intake answers tab, and only for who sees the contact details (#122)", () => {
+  const record = staffCase({
+    stage: "review_approved",
+    preparationVersion: 1,
+    preparerId: "alex",
+    reviewerId: "morgan",
+    reviews: [reviewRow({ id: "review-1", status: "approved", clientContactStatus: "completed", clientContactOutcome: "reached" })],
+    preparerQuestionnaires: [prepQ()],
+    reviewerQuestionnaires: [revQ()],
+  });
+  // Known problem, #122: another volunteer gets the button but no place to show
+  // the blocked-tab link. This records what happens, not what we want.
+  const other = renderStaffCase(record, { id: "jo", name: "Jo", capabilities: ["review"] });
+  assert.match(other, /data-action="view-exit-form"/);
+  assert.doesNotMatch(other, /id="draft-ready"/);
+
+  const reviewer = renderStaffCase(record, MORGAN);
+  assert.match(reviewer, /data-action="view-exit-form"/);
+  assert.match(reviewer, /id="draft-ready"/);
+  assert.ok(reviewer.indexOf('id="draft-ready"') > reviewer.indexOf('id="case-panel-intake"'), "the link is not in the Overview");
+});
+
 test("no questionnaire recorded line", () => {
   const html = renderStaffCase(staffCase({ stage: "review_ready", preparationVersion: 1, reviews: [reviewRow({ status: "approved" })] }), MORGAN);
   assert.match(html, /<p class="muted">No questionnaire was recorded for this version\.<\/p>/);

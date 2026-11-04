@@ -106,6 +106,27 @@ test("an Exit Form group hides the fields its Result does not use (#108)", () =>
   assert.doesNotMatch(css, shown("none", "amount"));
 });
 
+// app.mjs has no DOM harness; the browser story proves what these lines do.
+test("app.mjs makes the Exit Form for a staff window only, and records nothing", () => {
+  const read = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+  const app = read("../src/app.mjs");
+  assert.match(app, /case "view-exit-form":/);
+  const body = app.slice(app.indexOf("async function viewExitForm"), app.indexOf("// ---- leaving Add a case"));
+  assert.match(body, /if \(!isStaffWindow\(state\.principal\)\) return;/);
+  assert.match(body, /spouseShown\(visible\)/);
+  // The date on the form is today's, never the approval's.
+  assert.match(body, /isoToday\(\)/);
+  assert.match(body, /"The Exit Form could not be made\. Close this tab and try again\."/);
+  assert.match(body, /message: "The Exit Form could not be made\. Try again\."/);
+  // Only reads and reports: no controller call that saves anything.
+  assert.deepEqual(
+    [...new Set([...body.matchAll(/controller\.(\w+)/g)].map((match) => match[1]))].sort(),
+    ["clearError", "getState", "noteLocalFailure"],
+  );
+  assert.doesNotMatch(read("../src/client-views.mjs"), /view-exit-form/);
+  assert.doesNotMatch(read("../src/intake-views.mjs"), /view-exit-form/);
+});
+
 test("an inactive case tab is not displayed", () => {
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   // Any author `display` on .case-panel overrides [hidden] unless this exists.

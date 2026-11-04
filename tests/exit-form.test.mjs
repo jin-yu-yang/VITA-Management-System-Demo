@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import * as PDFLib from "../src/vendor/pdf-lib.mjs";
 import {
   EXIT_FORM_FILE,
@@ -57,8 +58,43 @@ test("an owed direct debit prints its date", () => {
   };
   const marks = exitFormMarks(q, CASE, "2026-11-01");
   assert.equal(valueAt(marks, L.groups.state.debitOn), "04/15/2026");
+  assert.equal(valueAt(marks, L.groups.state.amount), "$86.00");
   assert.ok(ticked(marks, L.groups.state.boxes.paper));
   assert.ok(ticked(marks, L.groups.state.boxes.direct_debit));
+});
+
+test("the header and amounts are bold and larger than the form's 12 pt labels; remarks start at 12 pt", () => {
+  const q = { remarks: "Fictional note.", exitForm: { federal: { method: "efile", result: "refund", amount: "10", refundBy: "check" }, state: null, local: [] } };
+  const marks = exitFormMarks(q, CASE, "2026-11-01");
+  for (const [name, place] of Object.entries({ taxYear: L.taxYear, date: L.date, clientNumber: L.clientNumber, taxpayer: L.taxpayer, amount: L.groups.federal.amount })) {
+    const mark = marks.text.find((m) => m.x === place.x && m.y === place.y);
+    assert.equal(mark?.bold, true, `${name} is bold`);
+    assert.ok(mark.size > 12, `${name} is larger than 12 pt`);
+  }
+  assert.equal(marks.text.find((m) => m.x === L.remarks.x && m.y === L.remarks.y).size, 12);
+});
+
+test("a debit date starts at 9 pt, and Federal, State and Local amounts at 14, 14 and 13 pt, all bold", () => {
+  const q = {
+    exitForm: {
+      federal: { method: "efile", result: "refund", amount: "10", refundBy: "check" },
+      state: { method: "paper", result: "owe", amount: "86", oweBy: "direct_debit", debitOn: "2026-04-15" },
+      local: [{ type: "NPT", method: "paper", result: "refund", amount: "40", refundBy: "check" }],
+    },
+  };
+  const marks = exitFormMarks(q, CASE, "2026-11-01");
+  const at = (x, y) => marks.text.find((m) => m.x === x && m.y === y);
+  const T = L.local;
+  const localY = T.firstBaseline;
+  for (const [name, mark, size] of [
+    ["debit date", at(L.groups.state.debitOn.x, L.groups.state.debitOn.y), 9],
+    ["Federal amount", at(L.groups.federal.amount.x, L.groups.federal.amount.y), 14],
+    ["State amount", at(L.groups.state.amount.x, L.groups.state.amount.y), 14],
+    ["Local amount", at(T.amount.x, localY), 13],
+  ]) {
+    assert.equal(mark?.size, size, `${name} size`);
+    assert.equal(mark.bold, true, `${name} is bold`);
+  }
 });
 
 test("no refund or tax owed ticks only the filing method", () => {
@@ -161,4 +197,91 @@ test("Chinese in a name or the remarks is drawn with the downloaded fonts", asyn
   });
   const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
   assert.equal((await PDFLib.PDFDocument.load(bytes)).getPageCount(), 1);
+});
+
+// What a built page draws on the line at a place: its text and font sizes.
+async function lineAt(marks, place, keep = () => true) {
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), {
+    fontkit: PDFLib.fontkit,
+    fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path),
+  });
+  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
+  const task = getDocument({ data: new Uint8Array(bytes), verbosity: 0 });
+  const { items } = await (await (await task.promise).getPage(1)).getTextContent();
+  await task.destroy();
+  const line = items.filter(
+    (item) => item.str.trim() && keep(item.str) && Math.abs(item.transform[5] - (792 - place.y)) < 1 && item.transform[4] >= place.x - 1,
+  );
+  return { text: line.map((item) => item.str).join(""), sizes: line.map((item) => item.transform[0]), fonts: [...new Set(line.map((item) => item.fontName))] };
+}
+
+// The Remarks line as the page draws it.
+const remarksLine = (remarks, local = []) =>
+  lineAt(exitFormMarks({ remarks, exitForm: { federal: null, state: null, local } }, CASE, "2026-11-01"), L.remarks);
+
+test("a short remark is drawn whole at 12 pt", async () => {
+  const { text, sizes } = await remarksLine("Bring the corrected W-2.");
+  assert.equal(text, "Bring the corrected W-2.");
+  assert.ok(sizes.every((size) => Math.abs(size - 12) < 0.01));
+});
+
+test("a wider remark is drawn whole and smaller", async () => {
+  const remark = "Fictional remark ".repeat(8).trim();
+  const { text, sizes } = await remarksLine(remark);
+  assert.equal(text, remark);
+  assert.ok(sizes.every((size) => size < 12 && size >= 5.99));
+});
+
+// Known problem, #122: this records what happens, not what we want.
+test("a remark too long for the line is cut at 6 pt, in English and Chinese (#122)", async () => {
+  for (const remark of ["Fictional remark ".repeat(120).slice(0, 2000), "虛構備註".repeat(500)]) {
+    const { text, sizes } = await remarksLine(remark);
+    assert.ok(text.endsWith("…"));
+    assert.ok(remark.startsWith(text.slice(0, -1)));
+    assert.ok(sizes.every((size) => Math.abs(size - 6) < 0.01));
+  }
+});
+
+test("a name Helvetica can't draw is not bold, and is drawn whole in the downloaded font", async () => {
+  const line = async (firstName) => {
+    const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, { ...CASE, firstName }, "2026-11-01");
+    return lineAt(marks, L.taxpayer);
+  };
+  const plain = await line("Mei");
+  const accented = await line("Nguyễn");
+  assert.equal(plain.text, "Mei Chen");
+  assert.equal(accented.text, "Nguyễn Chen");
+  assert.ok(plain.fonts.length > 0 && accented.fonts.length > 0);
+  assert.ok(accented.fonts.every((font) => !plain.fonts.includes(font)), JSON.stringify([plain.fonts, accented.fonts]));
+});
+
+// Known problem, #122: this records what happens, not what we want.
+test("a State direct debit date is drawn at 6.5 pt, because its place is small (#122)", async () => {
+  const q = { exitForm: { federal: null, state: { method: "efile", result: "owe", amount: "86", oweBy: "direct_debit", debitOn: "2027-04-15" }, local: [] } };
+  // The template's own words share this baseline, so keep only the date.
+  const { text, sizes } = await lineAt(exitFormMarks(q, CASE, "2026-11-01"), L.groups.state.debitOn, (str) => /\d\d\/\d\d\/\d{4}/.test(str));
+  assert.match(text, /^\s*04\/15\/2027$/);
+  assert.ok(sizes.every((size) => Math.abs(size - 6.5) < 0.01), JSON.stringify(sizes));
+});
+
+test("a Local note at the front of the Remarks leaves less room for them (#122)", async () => {
+  const remark = "Fictional remark ".repeat(9).trim(); // fits with no note
+  assert.equal((await remarksLine(remark)).text, remark);
+  const local = [{ type: "SIT", method: "efile", result: "owe", amount: "10", oweBy: "direct_debit", debitOn: "2027-04-15" }];
+  const { text } = await remarksLine(remark, local);
+  assert.ok(text.startsWith("SIT: e-filed, direct debit on 04/15/2027; Fictional"));
+  assert.ok(text.endsWith("…"));
+});
+
+test("the template has no document info, and a filled form is titled Exit Form", async () => {
+  const template = await PDFLib.PDFDocument.load(await readFile(EXIT_FORM_FILE), { updateMetadata: false });
+  assert.equal(template.getAuthor(), undefined);
+  assert.equal(template.getTitle(), undefined);
+  const marks = exitFormMarks({ exitForm: { federal: null, state: null, local: [] } }, CASE, "2026-11-01");
+  const fontFiles = await draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), {
+    fontkit: PDFLib.fontkit,
+    fetchFont: (file) => readFile(DRAFT_FONT_FIXTURES[file.url].path),
+  });
+  const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes: await readFile(EXIT_FORM_FILE), fontFiles, marks });
+  assert.equal((await PDFLib.PDFDocument.load(bytes, { updateMetadata: false })).getTitle(), "Exit Form");
 });

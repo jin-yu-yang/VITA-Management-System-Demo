@@ -633,6 +633,14 @@ test("the blocked-tab draft link outlives redraws until it is opened or its URL 
   assert.equal(offers.current("case-1", "user-1").url, "blob:three");
 });
 
+test("a draft offer with no lifetime revokes its URL after 60 seconds", () => {
+  const delays = [];
+  const offers = createDraftOffer({ revoke: () => {}, setTimer: (fn, ms) => delays.push(ms) });
+  offers.keep("blob:one");
+  offers.offer({ url: "blob:one", fileName: "a.pdf", caseId: "case-1", userId: "user-1" });
+  assert.deepEqual(delays, [60_000]);
+});
+
 // The draft holds the answers of whoever made it (unsaved edits included):
 // another person signing in to the same tab within its minute, even on the
 // same case, never sees it, and signing out ends it at once.
