@@ -110,13 +110,17 @@ Known problem, see #122: if the font can't be fetched or fails its check, no Exi
 - **THEN** no form is made, and the tab and the error notice say so
 
 ### Requirement: The Exit Form's values fit their places
-Filled values SHALL be drawn in bold, except a value containing Chinese, which SHALL be drawn entirely in the downloaded font. The tax year, the date, the client number, the name and the amounts SHALL start larger than the form's 12 pt English labels. The Remarks SHALL start at 12 pt, and a debit date at 9 pt. A value wider than its place SHALL be drawn smaller, down to 6 pt, and if it still doesn't fit, SHALL be cut and end in "…". This applies to the Remarks, which are drawn on one line, and to the debit date, whose place holds a full date only at 6.5 pt.
+Filled values SHALL be drawn in bold, except a value with a character Helvetica can't draw (Chinese, or a letter like "ễ" or "Ł"), which SHALL be drawn entirely in the downloaded font. The tax year, the date, the client number, the name and the amounts SHALL start larger than the form's 12 pt English labels. The Remarks SHALL start at 12 pt, and a debit date at 9 pt. A value wider than its place SHALL be drawn smaller, down to 6 pt, and if it still doesn't fit, SHALL be cut and end in "…". This applies to every value, and most affects the Remarks, which are drawn on one line, and the debit date, whose place holds a full date only at 6.5 pt.
 
 Known problem, see #122: the reviewer may enter up to 2000 characters of Remarks, which can be more than the line holds, and the reviewer is not told when the rest is cut. A debit date at 6.5 pt is hard to read on a form for clients. This records current behaviour, not the intended one.
 
 #### Scenario: Header values and amounts are bold and larger than the labels
-- **WHEN** the form shows a tax year, a date, a client number, a name and an amount
+- **WHEN** the form shows a tax year, a date, a client number, the name Mei Chen and a Federal amount
 - **THEN** each is drawn in bold, larger than 12 pt
+
+#### Scenario: A name Helvetica can't draw is not bold
+- **WHEN** the taxpayer's first name has a character Helvetica can't draw
+- **THEN** the whole name is drawn in the downloaded font, not in bold
 
 #### Scenario: A debit date is drawn small (known problem, #122)
 - **WHEN** the form shows the debit date 04/15/2027
