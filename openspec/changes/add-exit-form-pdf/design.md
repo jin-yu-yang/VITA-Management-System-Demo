@@ -41,7 +41,7 @@ The Exit Form is PCDC's one-page bilingual hand-out for the client at signing. P
 - **Alternatives:** Hooking `URL.createObjectURL` to read the bytes in Firefox too. It wouldn't prove a tab shows the PDF, and it differs from every other draft check.
 
 ### D5: The failure is triggered with wrong font bytes
-- **Choice:** The phase serves the font URLs with wrong bytes, checks the tab's message and the banner, restores the fonts, and presses Try again.
+- **Choice:** The phase serves the font URLs with wrong bytes, checks the tab's message and the case page's error notice, restores the fonts, and presses Try again.
 - **Why:** An HTTP 500 on the form makes Chrome log a console error, which the staff window's console check doesn't allow (`REFUSAL_LINES` has no 500). Wrong bytes log nothing, and this is the failure #122 describes.
 - **Alternatives:** A 500 with a new exception to the console check, which widens that check for every other phase. The Form 14446 check excuses its 500 by position, but only in its own separate window.
 

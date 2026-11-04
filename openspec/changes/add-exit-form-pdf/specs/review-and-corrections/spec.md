@@ -24,7 +24,7 @@ ViTally SHALL offer "Download Exit Form" for an approved review that has a revie
 - **THEN** the Overview has no Exit Form panel
 
 ### Requirement: Staff make the Exit Form in the browser and nothing is kept
-Only a staff window SHALL be able to make the Exit Form. The form SHALL be built in the browser from the approved review's questionnaire and the case, and SHALL NOT be uploaded or stored. Pressing "Download Exit Form" SHALL open the PDF in a new tab. If the browser blocks the tab, the page SHALL offer the finished PDF as a link instead. If the form can't be made, the tab SHALL say "The Exit Form could not be made. Close this tab and try again.", the problem banner SHALL say "The Exit Form could not be made. Try again.", and the banner's Try again SHALL build it again. Making the form SHALL NOT change the case.
+Only a staff window SHALL be able to make the Exit Form. The form SHALL be built in the browser from the approved review's questionnaire and the case, and SHALL NOT be uploaded or stored. Pressing "Download Exit Form" SHALL open the PDF in a new tab. If the browser blocks the tab, the page SHALL offer the finished PDF as a link instead. If the form can't be made, the tab SHALL say "The Exit Form could not be made. Close this tab and try again.", the case page's error notice SHALL say "The Exit Form could not be made. Try again.", and the notice's Try again SHALL build it again. Making the form SHALL NOT change the case.
 
 #### Scenario: The form opens in a new tab
 - **WHEN** a reviewer presses "Download Exit Form" on an approved review
@@ -36,7 +36,7 @@ Only a staff window SHALL be able to make the Exit Form. The form SHALL be built
 
 #### Scenario: A failure says so and can be tried again
 - **WHEN** the form can't be made
-- **THEN** the tab and the problem banner say so, and pressing the banner's Try again once the cause is gone makes the form
+- **THEN** the tab and the error notice say so, and pressing the notice's Try again once the cause is gone makes the form
 
 #### Scenario: A client window makes nothing
 - **WHEN** a client session reaches the Exit Form's action
@@ -87,7 +87,7 @@ Known problem, see #122: if the font can't be fetched or fails its check, no Exi
 
 #### Scenario: A failed font check stops the form
 - **WHEN** the font's bytes are not the pinned ones
-- **THEN** no form is made, and the tab and the problem banner say so
+- **THEN** no form is made, and the tab and the error notice say so
 
 ### Requirement: The Exit Form's values fit their places
 Filled values SHALL be drawn in bold and larger than the form's labels, except Chinese, which SHALL be drawn in the downloaded font. A value wider than its place SHALL be drawn smaller, down to 6 pt, and if it still doesn't fit, SHALL be cut and end in "…". This applies to the Remarks, which are drawn on one line.
