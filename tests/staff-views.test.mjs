@@ -2796,6 +2796,18 @@ test("Exit Form groups are collapsed details", () => {
   assert.match(html, /name="state\.result"/);
 });
 
+test("an Exit Form group wraps each Result-dependent field for CSS to show or hide (#108)", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const federal = html.match(/<details class="q-exit-group" data-exit-group="federal">[\s\S]*?<\/details>/)[0];
+  assert.match(federal, /<div class="q-exit-when-amount">[^]*?name="federal\.amount"[^]*?<\/div>/);
+  assert.match(federal, /<div class="q-exit-when-refund"><fieldset class="check-group"><legend>How the refund is paid<\/legend>[^]*?name="federal\.refundBy"/);
+  assert.match(federal, /<div class="q-exit-when-owe"><fieldset class="check-group"><legend>How the amount owed is paid<\/legend>[^]*?name="federal\.oweBy"/);
+  assert.match(federal, /<div class="q-exit-when-debit">[^]*?name="federal\.debitOn"/);
+  // Method and Result stay outside every wrapper: they are always shown.
+  assert.doesNotMatch(federal, /q-exit-when-[a-z]+">(?:(?!<\/div>)[^])*name="federal\.(?:method|result)"/);
+  assert.equal((html.match(/class="q-exit-when-amount"/g) ?? []).length, 7);
+});
+
 test("every Exit Form group has a Clear control", () => {
   const html = stepFor(REVIEWING, MORGAN);
   const keys = ["federal", "state", "local.NPT", "local.BIRT", "local.EET", "local.SIT", "local.PAIBWTR"];
@@ -2909,11 +2921,15 @@ test("review panel shows answers per version", () => {
   assert.match(html, /<span>Remarks<\/span><strong>Looks right\.<\/strong>/);
   assert.match(html, /<span>Client conversation<\/span><strong>The reviewer went over the return with the client on 10\/16\/2026\.<\/strong>/);
   assert.match(html, /<span>Went over the return with the client<\/span><strong>Yes, on 10\/16\/2026/);
+  // Only the approval with a questionnaire offers the Exit Form.
+  assert.equal((html.match(/data-action="view-exit-form"/g) ?? []).length, 1);
+  assert.match(html, /data-action="view-exit-form" data-review="review-1">Download Exit Form</);
 });
 
 test("no questionnaire recorded line", () => {
   const html = renderStaffCase(staffCase({ stage: "review_ready", preparationVersion: 1, reviews: [reviewRow({ status: "approved" })] }), MORGAN);
   assert.match(html, /<p class="muted">No questionnaire was recorded for this version\.<\/p>/);
+  assert.doesNotMatch(html, /view-exit-form/);
 });
 
 const approvedWith = (q) =>

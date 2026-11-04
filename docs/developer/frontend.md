@@ -18,6 +18,7 @@ The front end **predicts** what a person may do so it can show the right buttons
 - [The version-2 intake form](#the-version-2-intake-form)
 - [Staff views and Add a case (version 2)](#staff-views-and-add-a-case-version-2)
 - [The shaded section of the 13614-C](#the-shaded-section-of-the-13614-c)
+- [The Exit Form](#the-exit-form)
 - [Stages and their words](#stages-and-their-words)
 - [Events and actions](#events-and-actions)
 - [Errors, conflicts and retries](#errors-conflicts-and-retries)
@@ -309,6 +310,20 @@ card `cardsFor` gives, grouped like the client's Documents step, in the office's
 cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_GROUP, shown as
 "Needed (moved up by the office)"). The optional "other" card has no marks.
 
+**The questionnaires** (`preparerForm` and `reviewerForm` in `staff-views.mjs`; the payload
+builders `preparerQuestionnaire`, `reviewerQuestionnaire` and `exitFormFrom` in
+[`src/questionnaires.mjs`](../../src/questionnaires.mjs); what they ask is in the
+`review-and-corrections` spec). Parts that depend on an earlier answer are shown and hidden by
+CSS alone, with `:has()` on the checked radio, so a redraw never loses them: `q-when-yes` (after
+going over the return) and `q-when-in-person` (the signing appointment). The reviewer's Exit Form
+has one collapsible group each for Federal, State and every Local type (`exitGroup`), reopened
+after a redraw when the volunteer typed in it (`groupsToOpen`), and emptied in place by "Clear
+this section". Inside a group, Method and Result come first, and only what that Result needs
+follows (#108): `q-exit-when-amount` and `q-exit-when-refund` for Refund, `q-exit-when-amount` and
+`q-exit-when-owe` for Owe, `q-exit-when-debit` only for Owe paid by Direct debit, nothing for
+None. Hiding never clears a field: `group()` in `questionnaires.mjs` reads only the fields the
+Result uses, so a value left in a hidden field is never sent.
+
 **Add a case** is `renderAddCaseV2` in `office-views.mjs`:
 
 - One accordion per visible question sub-step under its step's heading, plus one Documents
@@ -453,6 +468,46 @@ with pdf.js in a full-screen layer, so the preparer types straight onto the form
   (`npm run build:vendor`), with the library version in a banner. The server's allowlist already
   serves `/src/vendor/<name>.mjs`. The other two vendor files are `supabase.mjs` and `pdf-lib.mjs`
   ([setup](../setup.md#the-vendor-bundle)).
+
+## The Exit Form
+
+The Exit Form is PCDC's one-page bilingual hand-out that the client gets at signing. Staff make it
+in the browser from an approval's reviewer questionnaire, and nothing is uploaded or kept.
+
+- **Where it is offered.** "Download Exit Form" appears under each approved review that has a
+  reviewer questionnaire, on the volunteer's Independent review panel (`exitFormTool` in
+  `staff-views.mjs`). The office's case page has no review panel, so its Overview gets an Exit Form
+  panel (`exitFormPanel`) for the latest such approval; before there is one, the panel is not
+  shown.
+- **Who may make it.** `viewExitForm` in `app.mjs` returns at once for anything but a staff window
+  (`isStaffWindow`). Like the drafts, it opens a new tab and, if the browser blocks the tab,
+  offers a link instead (`draftOffers`).
+- **What goes on it.** `exitFormMarks(questionnaire, header, today)` in
+  [`src/exit-form.mjs`](../../src/exit-form.mjs) decides everything, with no DOM. `buildExitFormPdf`
+  then draws it on the blank template.
+  - The header has the tax year (the case's season), today's date, the client number, and the
+    taxpayer's name. A couple (married, or widowed in the tax year, by the intake's own spouse
+    rule) gets "Taxpayer & Spouse".
+  - Federal and State tick e-file or paper and the refund or payment method, then write the
+    amount and the direct-debit date.
+  - Under Other Tax, the template's boxes are covered by one printed row per Local type, so a blank
+    copy can still be filled by hand. The details a row has no room for go to the front of the
+    remarks.
+  - Filled values are drawn in Helvetica Bold, larger than the form's labels.
+- **The template.** `src/forms/exit-form-pcdc.pdf` (`EXIT_FORM_FILE`) has no form fields, so every
+  value goes at a fixed place in `EXIT_FORM_LAYOUT`, measured in points from the page's top-left
+  corner. A new version of PCDC's form means measuring those places again. The local server
+  serves the file by its exact name (`FORMS` in `server.mjs`), and a static host must publish it
+  with the other forms. Strip a new template's document info (author, title) before committing
+  it, because a Word export carries the author's name. The generated PDF's author is blank too.
+- **Fonts.** The Other Tax rows are bilingual, so when a mark needs it (`exitFormNeedsFont`) the
+  Traditional Chinese Noto font is fetched with the drafts' pinned, checked files
+  (`draftFontFiles`).
+- **Privacy.** Nothing about a bank account is drawn, because none is stored
+  (`review-and-corrections`).
+- **Tests.** `tests/exit-form.test.mjs` covers the marks and builds real PDFs. The button
+  assertions are in `tests/staff-views.test.mjs` and `tests/admin-views.test.mjs`, and the
+  allowlist entry is in `tests/server.test.mjs`.
 
 ## Stages and their words
 

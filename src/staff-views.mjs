@@ -1621,6 +1621,11 @@ function preparerForm(record, previous, ui = {}) {
 
 // One Exit Form entry as a collapsible group, closed until opened. A group the
 // volunteer typed in is reopened after a redraw by app.mjs (groupsToOpen).
+// Only the fields the chosen Result needs are shown (#108): the amount for a
+// refund or an amount owed, the refund's or the payment's method to match, and
+// the debit date only for a direct debit. Showing and hiding is CSS alone
+// (q-exit-when-*); the payload builder (questionnaires.mjs, group) drops whatever
+// the Result does not use.
 function exitGroup(title, prefix) {
   const scope = "rev";
   return `<details class="q-exit-group" data-exit-group="${esc(prefix)}"><summary>${esc(title)}</summary><div class="q-exit-group-body">${radios(
@@ -1629,20 +1634,33 @@ function exitGroup(title, prefix) {
     `${prefix}.method`,
     FILING_METHODS,
     "",
-  )}${radios("Result", scope, `${prefix}.result`, RESULTS, "")}${input(
-    "Amount (refund or owe)",
+  )}${radios("Result", scope, `${prefix}.result`, RESULTS, "")}<div class="q-exit-when-amount">${input(
+    "Amount",
     `${prefix}.amount`,
     "",
     "text",
     'inputmode="decimal" maxlength="9" placeholder="0.00"',
     scope,
-  )}${radios("If a refund, paid by", scope, `${prefix}.refundBy`, REFUND_BY, "")}${radios(
-    "If owed, paid by",
+  )}</div><div class="q-exit-when-refund">${radios(
+    "How the refund is paid",
+    scope,
+    `${prefix}.refundBy`,
+    REFUND_BY,
+    "",
+  )}</div><div class="q-exit-when-owe">${radios(
+    "How the amount owed is paid",
     scope,
     `${prefix}.oweBy`,
     OWE_BY,
     "",
-  )}${input("Debit date (direct debit only)", `${prefix}.debitOn`, "", "date", "", scope)}<button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${esc(prefix)}">Clear this section</button></div></details>`;
+  )}</div><div class="q-exit-when-debit">${input(
+    "Debit date",
+    `${prefix}.debitOn`,
+    "",
+    "date",
+    "",
+    scope,
+  )}</div><button type="button" class="btn secondary" data-action="clear-exit-group" data-group="${esc(prefix)}">Clear this section</button></div></details>`;
 }
 
 /**
@@ -1793,6 +1811,25 @@ function contactStepLine(attempt, questionnaire) {
     : "The office will go over the return with the client.";
 }
 
+// Download Exit Form: the client's hand-out, filled from this approval's
+// questionnaire (src/exit-form.mjs). Only an approval that has one offers it.
+const exitFormTool = (record, attempt) =>
+  reviewerQuestionnaireOf(record, attempt)
+    ? `<div class="summary-tools">${button("Download Exit Form", "view-exit-form", "secondary", `data-review="${esc(attempt.id)}"`)}</div>`
+    : "";
+
+/**
+ * The office's Exit Form panel: the button for the latest approval that has
+ * a reviewer questionnaire. Nothing before there is one.
+ */
+export function exitFormPanel(record) {
+  const approved = [...(record?.reviews ?? [])]
+    .reverse()
+    .find((attempt) => attempt?.status === "approved" && reviewerQuestionnaireOf(record, attempt));
+  if (!approved) return "";
+  return `<section class="panel" aria-labelledby="exit-form-title"><div class="section-head"><h2 id="exit-form-title">Exit Form</h2></div><p class="field-note">PCDC's hand-out for the client, filled from the reviewer's answers for version ${esc(approved.preparationVersion)}. Print it for the client when they sign.</p>${exitFormTool(record, approved)}</section>`;
+}
+
 function reviewAttempts(record) {
   const attempts = record.reviews ?? [];
   const preparerFor = (attempt) =>
@@ -1824,7 +1861,7 @@ function reviewAttempts(record) {
           detailRow("Conversation note", attempt?.clientContactNote),
         )}<h4>Preparer's answers</h4>${preparerAnswers(preparerFor(attempt))}${when(
           attempt?.status === "approved",
-          `<h4>Reviewer's answers</h4>${reviewerAnswers(reviewerQuestionnaireOf(record, attempt))}`,
+          `<h4>Reviewer's answers</h4>${reviewerAnswers(reviewerQuestionnaireOf(record, attempt))}${exitFormTool(record, attempt)}`,
         )}<small>Opened ${esc(formatTime(attempt?.createdAt))}${when(attempt?.decidedAt, ` · decided ${esc(formatTime(attempt?.decidedAt))}`)}</small></li>`,
     )
     .join("")}</ol>`;

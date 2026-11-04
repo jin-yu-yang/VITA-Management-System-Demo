@@ -117,11 +117,9 @@ or the email carries no code. About 12 minutes end to end; the talk (11/2) shows
 11. **Back in Riley's window**, the board no longer lists the case (finished work leaves the work
     board; the search box finds it by Application ID). Refresh to show the live state is shared.
 
-Known in this story, not defects: the case page's lifecycle bar shows a hollow *Closed* after
-*Accepted* ([#109](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/109)); the
-Exit Form group shows both payment-method groups whatever the result
-([#108](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/108)); Chrome's date
-fields follow the browser's own language.
+Known in this story, not defects: Chrome's date fields follow the browser's own language. (An Exit
+Form group now shows only the fields its Result needs: pick the Result first, then the amount and
+how it is paid, [#108](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/108).)
 
 ## The two-minute story
 
