@@ -396,6 +396,12 @@ test("app.mjs handles every version-2 action and no longer moves the form by ste
   assert.match(app, /kind === "14446" \? "draft14446\.tab_title" : "draft\.tab_title"/);
   assert.equal(TEXT["draft14446.tab_title"].en, "Draft Form 14446");
   assert.equal(TEXT["draft14446.tab_title"].zh, "14446 表草稿");
+  // The Exit Form's tabs, preparing and failed, are titled for it, never as
+  // the 13614-C draft (#122).
+  assert.match(app, /kind === "exit-form"\s*\? "Exit Form"/);
+  const exitTabs = app.match(/writeTab\(tab, "(?:Preparing the Exit Form|The Exit Form could not be made)[^"]*"[^)]*\)/g) ?? [];
+  assert.equal(exitTabs.length, 2, "both Exit Form tab texts");
+  for (const call of exitTabs) assert.match(call, /, "exit-form"\)$/, call);
   // The blocked-tab link goes with its URL (draft-pdf.mjs createDraftOffer),
   // and is offered after the build. It is kept outside the page and drawn
   // into #draft-ready after every render, so a redraw within its minute never

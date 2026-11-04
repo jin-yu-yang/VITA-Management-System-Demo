@@ -1373,10 +1373,15 @@ if (!config) {
   // blockers stop it; the PDF is loaded into it when ready. pdf-lib and the
   // form load only now, and the Chinese font only when some answer needs it
   // (the same files whatever the text says).
+  // `kind` names the tab: the two drafts in the screen language, or the Exit
+  // Form, a staff-only tab, in English (staff screens stay English).
   function writeTab(tab, text, kind = "13614c") {
     try {
       const page = tab.document;
-      page.title = t(kind === "14446" ? "draft14446.tab_title" : "draft.tab_title", {}, screenLang());
+      page.title =
+        kind === "exit-form"
+          ? "Exit Form"
+          : t(kind === "14446" ? "draft14446.tab_title" : "draft.tab_title", {}, screenLang());
       page.documentElement?.setAttribute("lang", screenLang());
       if (!page.body) page.documentElement?.append(page.createElement("body"));
       page.body.textContent = text;
@@ -1707,12 +1712,7 @@ if (!config) {
     if (!record || !questionnaire) return;
     const tab = window.open("", "_blank");
     if (tab) {
-      writeTab(tab, "Preparing the Exit Form…");
-      try {
-        tab.document.title = "Exit Form";
-      } catch {
-        // A tab we can no longer reach keeps its title.
-      }
+      writeTab(tab, "Preparing the Exit Form…", "exit-form");
     }
     draftOffers.drop();
     showDraftLink();
@@ -1754,7 +1754,7 @@ if (!config) {
       }
       controller.clearError("DRAFT");
     } catch {
-      if (tab && !tab.closed) writeTab(tab, "The Exit Form could not be made. Close this tab and try again.");
+      if (tab && !tab.closed) writeTab(tab, "The Exit Form could not be made. Close this tab and try again.", "exit-form");
       if (by !== signedInUserId()) return;
       controller.noteLocalFailure(
         { code: "DRAFT", message: "The Exit Form could not be made. Try again." },
