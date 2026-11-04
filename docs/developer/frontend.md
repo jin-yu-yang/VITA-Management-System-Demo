@@ -496,7 +496,8 @@ in the browser from an approval's reviewer questionnaire, and nothing is uploade
   - Under Other Tax, the template's boxes are covered by one printed row per Local type, so a blank
     copy can still be filled by hand. The details a row has no room for go to the front of the
     remarks.
-  - Filled values are drawn in Helvetica Bold, unless they contain Chinese. The header and the
+  - Filled values are drawn in Helvetica Bold, unless a value has a character Helvetica can't
+    draw (Chinese, or a letter like "ễ"), which is then drawn entirely in the downloaded font. The header and the
     amounts are larger than the form's 12 pt labels, the Remarks start at 12 pt, and a debit date
     is drawn at 6.5 pt because its place is small
     ([#122](https://github.com/jin-yu-yang/VITA-Management-System-Demo/issues/122)).
