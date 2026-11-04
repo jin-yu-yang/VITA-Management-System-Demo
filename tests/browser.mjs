@@ -2696,7 +2696,9 @@ async function runPermutation(t, roles) {
         paForgiveness: "eligible",
         wentOver: "no",
         signMethod: "portal",
-        exit: { "local.SIT": { amount: "45.00" } },
+        // The amount is shown only once a Result is chosen (#108), so the
+        // half-filled entry has a Result and an amount but no method.
+        exit: { "local.SIT": { result: "owe", amount: "45.00" } },
       });
       await waitForQuiet(staff);
       await approveButton.click({ timeout: CLICK_MS });

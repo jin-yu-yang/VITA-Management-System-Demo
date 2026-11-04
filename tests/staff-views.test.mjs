@@ -2796,6 +2796,18 @@ test("Exit Form groups are collapsed details", () => {
   assert.match(html, /name="state\.result"/);
 });
 
+test("an Exit Form group wraps each Result-dependent field for CSS to show or hide (#108)", () => {
+  const html = stepFor(REVIEWING, MORGAN);
+  const federal = html.match(/<details class="q-exit-group" data-exit-group="federal">[\s\S]*?<\/details>/)[0];
+  assert.match(federal, /<div class="q-exit-when-amount">[^]*?name="federal\.amount"[^]*?<\/div>/);
+  assert.match(federal, /<div class="q-exit-when-refund"><fieldset class="check-group"><legend>How the refund is paid<\/legend>[^]*?name="federal\.refundBy"/);
+  assert.match(federal, /<div class="q-exit-when-owe"><fieldset class="check-group"><legend>How the amount owed is paid<\/legend>[^]*?name="federal\.oweBy"/);
+  assert.match(federal, /<div class="q-exit-when-debit">[^]*?name="federal\.debitOn"/);
+  // Method and Result stay outside every wrapper: they are always shown.
+  assert.doesNotMatch(federal, /q-exit-when-[a-z]+">(?:(?!<\/div>)[^])*name="federal\.(?:method|result)"/);
+  assert.equal((html.match(/class="q-exit-when-amount"/g) ?? []).length, 7);
+});
+
 test("every Exit Form group has a Clear control", () => {
   const html = stepFor(REVIEWING, MORGAN);
   const keys = ["federal", "state", "local.NPT", "local.BIRT", "local.EET", "local.SIT", "local.PAIBWTR"];

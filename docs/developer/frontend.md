@@ -310,6 +310,20 @@ card `cardsFor` gives, grouped like the client's Documents step, in the office's
 cards (SET_DOCUMENT_CARD) and move a Maybe card to Needed or back (SET_DOCUMENT_GROUP, shown as
 "Needed (moved up by the office)"). The optional "other" card has no marks.
 
+**The questionnaires** (`preparerForm` and `reviewerForm` in `staff-views.mjs`; the payload
+builders `preparerQuestionnaire`, `reviewerQuestionnaire` and `exitFormFrom` in
+[`src/questionnaires.mjs`](../../src/questionnaires.mjs); what they ask is in the
+`review-and-corrections` spec). Parts that depend on an earlier answer are shown and hidden by
+CSS alone, with `:has()` on the checked radio, so a redraw never loses them: `q-when-yes` (after
+going over the return) and `q-when-in-person` (the signing appointment). The reviewer's Exit Form
+has one collapsible group each for Federal, State and every Local type (`exitGroup`), reopened
+after a redraw when the volunteer typed in it (`groupsToOpen`), and emptied in place by "Clear
+this section". Inside a group, Method and Result come first, and only what that Result needs
+follows (#108): `q-exit-when-amount` and `q-exit-when-refund` for Refund, `q-exit-when-amount` and
+`q-exit-when-owe` for Owe, `q-exit-when-debit` only for Owe paid by Direct debit, nothing for
+None. Hiding never clears a field: `group()` in `questionnaires.mjs` reads only the fields the
+Result uses, so a value left in a hidden field is never sent.
+
 **Add a case** is `renderAddCaseV2` in `office-views.mjs`:
 
 - One accordion per visible question sub-step under its step's heading, plus one Documents
