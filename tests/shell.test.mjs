@@ -88,6 +88,24 @@ test("the stylesheet draws a closed case's earlier lifecycle steps as neutral", 
   );
 });
 
+test("an Exit Form group hides the fields its Result does not use (#108)", () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  assert.match(css, /\.q-exit-when-amount,\s*\.q-exit-when-refund,\s*\.q-exit-when-owe,\s*\.q-exit-when-debit\s*\{\s*display:\s*none;/);
+  const shown = (result, part) =>
+    new RegExp(`\\.q-exit-group-body:has\\(input\\[name\\$="\\.result"\\]\\[value="${result}"\\]:checked\\)[^,{]*\\.q-exit-when-${part}\\s*[,{]`);
+  assert.match(css, shown("refund", "amount"));
+  assert.match(css, shown("owe", "amount"));
+  assert.match(css, shown("refund", "refund"));
+  assert.match(css, shown("owe", "owe"));
+  // The debit date needs both Owe and Direct debit, so switching an owed
+  // direct debit to Refund hides it again.
+  assert.match(
+    css,
+    /\.q-exit-group-body:has\(input\[name\$="\.result"\]\[value="owe"\]:checked\):has\(input\[name\$="\.oweBy"\]\[value="direct_debit"\]:checked\)\s*\.q-exit-when-debit\s*\{/,
+  );
+  assert.doesNotMatch(css, shown("none", "amount"));
+});
+
 test("an inactive case tab is not displayed", () => {
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   // Any author `display` on .case-panel overrides [hidden] unless this exists.

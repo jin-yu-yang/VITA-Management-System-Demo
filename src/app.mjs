@@ -6,7 +6,7 @@ import { payloadFor } from "./case-actions.mjs";
 import { fillForm } from "./demo-fill.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
-import { checkValue, findQuestion, findSubstep, isAnswered } from "./intake-catalogue.mjs";
+import { checkValue, findQuestion, findSubstep, isAnswered, spouseShown, visibleAnswers } from "./intake-catalogue.mjs";
 import {
   countText,
   drivesVisibility,
@@ -31,6 +31,7 @@ import {
 import { cardsFor } from "./document-cards.mjs";
 import { FORM_FILES, draftFields } from "./draft-form.mjs";
 import { FORM_14446_FILES, draft14446Fields } from "./draft-virtual-consent.mjs";
+import { EXIT_FORM_FILE, buildExitFormPdf, exitFormFontFields, exitFormMarks, exitFormNeedsFont } from "./exit-form.mjs";
 import {
   buildDraftPdf,
   buildEditingCopy,
@@ -1693,6 +1694,75 @@ if (!config) {
     }
   }
 
+  // ---- the Exit Form (src/exit-form.mjs) --------------------------------
+  //
+  // Staff only: built in this browser from the approval's questionnaire and
+  // the case, opened in a new tab like the drafts (or offered as a link when
+  // the browser blocks the tab). Nothing is uploaded or kept.
+  async function viewExitForm(reviewId, by) {
+    const state = controller.getState();
+    if (!isStaffWindow(state.principal)) return;
+    const record = state.savedCase;
+    const questionnaire = (record?.reviewerQuestionnaires ?? []).find((q) => q?.reviewId === reviewId);
+    if (!record || !questionnaire) return;
+    const tab = window.open("", "_blank");
+    if (tab) {
+      writeTab(tab, "Preparing the Exit Form…");
+      try {
+        tab.document.title = "Exit Form";
+      } catch {
+        // A tab we can no longer reach keeps its title.
+      }
+    }
+    draftOffers.drop();
+    showDraftLink();
+    try {
+      const answers = state.draftAnswers ?? record.answers ?? {};
+      const visible = visibleAnswers(2, answers);
+      const season = Number.isInteger(record.season)
+        ? record.season
+        : Number.isInteger(state.workspace?.currentSeason)
+          ? state.workspace.currentSeason
+          : 2025;
+      const marks = exitFormMarks(
+        questionnaire,
+        {
+          taxYear: season,
+          clientNumber: record.clientNumber ?? "",
+          firstName: answers.tp_first_name,
+          lastName: answers.tp_last_name,
+          // A couple (married, or widowed in the tax year): "Taxpayer & Spouse".
+          ...(spouseShown(visible) ? { spouseFirstName: visible.sp_first_name, spouseLastName: visible.sp_last_name } : {}),
+        },
+        isoToday(),
+      );
+      const PDFLib = await import("./vendor/pdf-lib.mjs");
+      const [formBytes, fontFiles] = await Promise.all([
+        fetchBytes(EXIT_FORM_FILE),
+        exitFormNeedsFont(marks)
+          ? draftFontFiles(draftFontsFor("zh-t"), exitFormFontFields(marks), { fetchFont: fetchCheckedFont, fontkit: PDFLib.fontkit })
+          : [],
+      ]);
+      const bytes = await buildExitFormPdf({ PDFLib, fontkit: PDFLib.fontkit, formBytes, fontFiles, marks });
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      draftOffers.keep(url);
+      if (tab && !tab.closed) {
+        tab.location.href = url;
+      } else {
+        draftOffers.offer({ url, fileName: marks.fileName, caseId: record.id, userId: signedInUserId() });
+        showDraftLink();
+      }
+      controller.clearError("DRAFT");
+    } catch {
+      if (tab && !tab.closed) writeTab(tab, "The Exit Form could not be made. Close this tab and try again.");
+      if (by !== signedInUserId()) return;
+      controller.noteLocalFailure(
+        { code: "DRAFT", message: "The Exit Form could not be made. Try again." },
+        () => viewExitForm(reviewId, by),
+      );
+    }
+  }
+
   // ---- leaving Add a case ----------------------------------------------
   //
   // What each exit from Add a case does once it may go. The confirm in the
@@ -2047,6 +2117,9 @@ if (!config) {
         // (styles.css, part 4b2); "afterprint" takes it off again.
         document.body.classList.add("print-summary");
         window.print();
+        break;
+      case "view-exit-form":
+        await viewExitForm(target.dataset.review ?? "", by);
         break;
       case "view-draft":
         await viewDraft(target.dataset.form ?? "en", by, target.dataset.draft ?? "13614c");

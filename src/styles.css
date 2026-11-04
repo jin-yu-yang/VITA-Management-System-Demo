@@ -5738,6 +5738,21 @@ html:lang(zh-Hant) {
 .q-exit-group-body {
   padding-bottom: 12px;
 }
+/* An Exit Form group shows only what its Result needs (#108). */
+.q-exit-when-amount,
+.q-exit-when-refund,
+.q-exit-when-owe,
+.q-exit-when-debit {
+  display: none;
+}
+.q-exit-group-body:has(input[name$=".result"][value="refund"]:checked) .q-exit-when-amount,
+.q-exit-group-body:has(input[name$=".result"][value="owe"]:checked) .q-exit-when-amount,
+.q-exit-group-body:has(input[name$=".result"][value="refund"]:checked) .q-exit-when-refund,
+.q-exit-group-body:has(input[name$=".result"][value="owe"]:checked) .q-exit-when-owe,
+.q-exit-group-body:has(input[name$=".result"][value="owe"]:checked):has(input[name$=".oweBy"][value="direct_debit"]:checked)
+  .q-exit-when-debit {
+  display: block;
+}
 .q-compare {
   margin-bottom: 8px;
   overflow-x: auto;
