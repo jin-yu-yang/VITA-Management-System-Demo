@@ -2934,7 +2934,7 @@ async function runPermutation(t, roles) {
           assert.equal(doc.getTitle(), "Exit Form");
           await popup.close();
 
-          // The office's form can't be made: the tab and the banner say so,
+          // The office's form can't be made: the tab and the error notice say so,
           // and Try again makes it once the cause is gone.
           await choosePersona(staff, sam);
           await openBoard(staff, OFFICE_BOARD_HEADING);
@@ -2950,8 +2950,8 @@ async function runPermutation(t, roles) {
           );
           await waitFor(
             staff,
-            "the problem banner to say the Exit Form could not be made",
-            (wanted) => document.querySelector(".problem-banner")?.textContent.includes(wanted),
+            "the error notice to say the Exit Form could not be made",
+            (wanted) => [...document.querySelectorAll(".notice.error")].some((notice) => notice.textContent.includes(wanted)),
             "The Exit Form could not be made. Try again.",
             ARRIVAL_MS,
           );
@@ -2959,7 +2959,9 @@ async function runPermutation(t, roles) {
           wrongFont.on = false;
           const retried = staff.waitForEvent("popup", { timeout: ARRIVAL_MS }).catch(() => null);
           await waitForQuiet(staff);
-          await staff.locator('.problem-banner [data-action="retry-action"]').click({ timeout: CLICK_MS });
+          await staff
+            .locator('.notice.error:has-text("The Exit Form could not be made") [data-action="retry-action"]')
+            .click({ timeout: CLICK_MS });
           const again = await retried;
           if (again) {
             assert.equal((await draftBytes(again)).subarray(0, 5).toString("latin1"), "%PDF-", "Try again did not make the Exit Form");
@@ -2967,7 +2969,13 @@ async function runPermutation(t, roles) {
           } else {
             await staff.locator("#draft-ready-link").waitFor({ state: "visible", timeout: ARRIVAL_MS });
           }
-          await waitFor(staff, "the Exit Form error to clear", () => !document.querySelector(".problem-banner"), undefined, ARRIVAL_MS);
+          await waitFor(
+            staff,
+            "the Exit Form error notice to clear",
+            () => ![...document.querySelectorAll(".notice.error")].some((notice) => notice.textContent.includes("The Exit Form could not be made")),
+            undefined,
+            ARRIVAL_MS,
+          );
 
           // A blocked tab: the page offers the finished PDF as a link.
           await staff.evaluate(() => {
@@ -2993,7 +3001,7 @@ async function runPermutation(t, roles) {
           await openBoard(staff, OFFICE_BOARD_HEADING);
           exitForm = {
             opened: "one page with the season, client number, name, amount and a date",
-            failure: "tab and banner said so; Try again " + (again ? "opened a new tab" : "offered the link"),
+            failure: "tab and error notice said so; Try again " + (again ? "opened a new tab" : "offered the link"),
             blocked: blocked.download,
           };
         } finally {
