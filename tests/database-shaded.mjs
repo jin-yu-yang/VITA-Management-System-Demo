@@ -55,7 +55,7 @@ test("shaded table is staff-only", async () => {
         (
           await client
             .from("preparer_shaded_fields")
-            .insert({ workspace_id: f.workspaceId, case_id: caseId, fields: {}, version: 1, updated_by_person_id: f.morgan })
+            .insert({ workspace_id: f.workspaceId, case_id: caseId, fields: {}, version: 1, updated_by_person_id: f.reviewerId })
         ).error,
         "insert refused",
       );
@@ -152,14 +152,14 @@ test("the SQL key lists match the JS table", async () => {
 
 const refused = (...codes) => (error) => codes.includes(error.code);
 
-// A case the claimed preparer (Alex) is working on: stage `preparing`.
+// A case the claimed preparer (the Preparer) is working on: stage `preparing`.
 const preparingCase = async (f) => {
   const caseId = await f.readyCase();
-  await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+  await f.act(f.preparer, caseId, "CLAIM_PREPARATION", {});
   return caseId;
 };
-const save = (f, caseId, fields, basedOnVersion, who = [f.presenter, f.alex]) =>
-  f.act(who[0], caseId, who[1], "SAVE_PREPARER_FIELDS", { basedOnVersion, fields });
+const save = (f, caseId, fields, basedOnVersion, client = f.preparer) =>
+  f.act(client, caseId, "SAVE_PREPARER_FIELDS", { basedOnVersion, fields });
 const stored = async (f, caseId) =>
   (await f.sql("select fields,version,updated_by_person_id from public.preparer_shaded_fields where case_id=$1", [caseId])).rows[0];
 const stageOf = async (f, caseId) =>
@@ -175,7 +175,7 @@ test("the case's preparer saves", async () => {
     const row = await stored(f, caseId);
     assert.deepEqual(row.fields, { incomeW2s: true, incomeW2sCount: 2 });
     assert.equal(Number(row.version), 1);
-    assert.equal(row.updated_by_person_id, f.alex);
+    assert.equal(row.updated_by_person_id, f.preparerId);
     await save(f, caseId, { incomeW2s: true }, 1);
     assert.equal(Number((await stored(f, caseId)).version), 2);
     assert.deepEqual((await stored(f, caseId)).fields, { incomeW2s: true });
@@ -187,16 +187,16 @@ test("the case's preparer saves", async () => {
 test("only the case's preparer may save", async () => {
   const f = await createDatabaseFixture();
   try {
-    const { casey } = await f.enrich({ addPeople: [{ key: "casey", name: "Casey", capabilities: ["prepare"] }] });
+    const casey = (await f.staff({ key: "casey", name: "Casey", capabilities: ["prepare"] })).client;
     const caseId = await preparingCase(f);
-    for (const [name, who] of [
-      ["the reviewer", [f.presenter, f.morgan]],
-      ["an admin who is not the preparer", [f.presenter, f.sam]],
-      ["another volunteer", [f.presenter, casey]],
-      ["no staff person", [f.presenter, null]],
+    for (const [name, client] of [
+      ["the reviewer", f.reviewer],
+      ["an admin who is not the preparer", f.siteCoordinator],
+      ["another volunteer", casey],
+      ["no staff person", f.presenter],
     ])
-      await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, who), refused("FORBIDDEN", "INELIGIBLE"), name);
-    await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, [f.applicantA, null]), refused("FORBIDDEN"), "the client");
+      await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, client), refused("FORBIDDEN", "INELIGIBLE"), name);
+    await assert.rejects(() => save(f, caseId, { incomeW2s: true }, 0, f.applicantA), refused("FORBIDDEN"), "the client");
     assert.equal(await stored(f, caseId), undefined);
   } finally {
     await f.close();
@@ -221,8 +221,8 @@ test("saving follows the stage", async () => {
     await assert.rejects(() => save(f, approved, { incomeW2s: true }, 0), rejected("INVALID_TRANSITION"));
 
     const corrections = await f.preparedCase();
-    await f.act(f.presenter, corrections, f.morgan, "CLAIM_REVIEW", {});
-    await f.act(f.presenter, corrections, f.morgan, "REQUEST_CORRECTIONS", { findings: "A fictional finding." });
+    await f.act(f.reviewer, corrections, "CLAIM_REVIEW", {});
+    await f.act(f.reviewer, corrections, "REQUEST_CORRECTIONS", { findings: "A fictional finding." });
     assert.equal(await stageOf(f, corrections), "corrections_required");
     await save(f, corrections, { incomeW2s: true }, 0);
     assert.equal(Number((await stored(f, corrections)).version), 1);
@@ -246,7 +246,7 @@ test("a stale version conflicts and other actions do not block a save", async ()
     const fresh = await preparingCase(f);
     await assert.rejects(() => save(f, fresh, { incomeTips: true }, 1), rejected("CONFLICT"));
     // Another action moves the case revision; the next save is still accepted.
-    await f.act(f.presenter, caseId, f.sam, "RECORD_MATERIALS", { received: ["w2"] });
+    await f.act(f.siteCoordinator, caseId, "RECORD_MATERIALS", { received: ["w2"] });
     await save(f, caseId, { incomeW2s: true, incomeTips: true }, 1);
     assert.equal(Number((await stored(f, caseId)).version), 2);
   } finally {
@@ -302,7 +302,7 @@ test("the payload has exactly basedOnVersion and fields", async () => {
     ];
     for (const [name, payload] of bad)
       await assert.rejects(
-        () => f.act(f.presenter, caseId, f.alex, "SAVE_PREPARER_FIELDS", payload),
+        () => f.act(f.preparer, caseId, "SAVE_PREPARER_FIELDS", payload),
         rejected("VALIDATION"),
         name,
       );
@@ -344,9 +344,9 @@ test("an identical replay returns the receipt and saves once", async () => {
   try {
     const caseId = await preparingCase(f);
     const revision = Number((await f.sql("select revision from public.cases where id=$1", [caseId])).rows[0].revision);
-    const args = applyArgs({ caseId, revision, personId: f.alex, type: "SAVE_PREPARER_FIELDS", payload: { basedOnVersion: 0, fields: { incomeW2s: true } } });
-    const first = await f.presenter.rpc("vitally_apply_action", args);
-    const second = await f.presenter.rpc("vitally_apply_action", args);
+    const args = applyArgs({ caseId, revision, type: "SAVE_PREPARER_FIELDS", payload: { basedOnVersion: 0, fields: { incomeW2s: true } } });
+    const first = await f.preparer.rpc("vitally_apply_action", args);
+    const second = await f.preparer.rpc("vitally_apply_action", args);
     assert.equal(first.error, null);
     assert.deepEqual(second.data, first.data);
     assert.equal(Number((await stored(f, caseId)).version), 1);
