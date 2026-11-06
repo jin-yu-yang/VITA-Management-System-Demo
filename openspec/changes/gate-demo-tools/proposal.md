@@ -49,3 +49,4 @@ _None._ `client-intake`'s "Fill fictional details" scenarios (the fill leaves co
   - `tests/support/browser-fixture.mjs`.
 - **Checks:** `npm test`, `npm run test:browser`, `npm run build:hant -- --check`.
 - **Systems:** none. Browser and local server only.
+- **Issue:** #133, part of tracking issue #128.
