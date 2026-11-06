@@ -88,3 +88,22 @@ test("demoToolsOn reads the controller's switch", () => {
   assert.equal(demoToolsOn({}), false);
   assert.equal(demoToolsOn(null), false);
 });
+
+test("every fill handler checks the switch", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/app.mjs", import.meta.url), "utf8");
+  for (const name of ["demo-fill", "fill-fictional", "regenerate-fictional", "confirm-regenerate"]) {
+    const start = source.indexOf(`case "${name}":`);
+    assert.ok(start >= 0, `case ${name} exists`);
+    const rest = source.slice(start + 1);
+    const next = rest.search(/case "|default:/);
+    const slice = source.slice(start, start + 1 + (next < 0 ? rest.length : next));
+    assert.ok(slice.includes("demoToolsOn("), `${name} checks demoToolsOn`);
+    assert.ok(!slice.includes('access !== "presenter"'), `${name} no longer checks presenter`);
+  }
+  const fnStart = source.indexOf("function fillAssistedIntake");
+  assert.ok(fnStart >= 0);
+  const body = source.slice(fnStart, fnStart + 400);
+  assert.ok(body.includes("demoToolsOn("), "fillAssistedIntake checks demoToolsOn");
+  assert.ok(!body.includes('access !== "presenter"'));
+});

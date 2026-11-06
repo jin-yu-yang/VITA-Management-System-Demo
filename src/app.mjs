@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaffWindow } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { demoToolsFromConfig, fillForm } from "./demo-fill.mjs";
+import { demoToolsFromConfig, demoToolsOn, fillForm } from "./demo-fill.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, spouseShown, visibleAnswers } from "./intake-catalogue.mjs";
@@ -1019,8 +1019,8 @@ if (!config) {
   // is in the boxes first, then its blank answers, through the draft like the
   // client's own.
   function fillAssistedIntake() {
-    // A demo tool: a staff account never fills, even if the button appeared.
-    if (controller.getState().principal?.access !== "presenter") return;
+    // A demo tool: it does nothing unless the demo-tools switch is on.
+    if (!demoToolsOn(controller.getState())) return;
     sampleSeed += 1;
     if (!root.querySelector("#add-case-v2-form")) {
       controller.noteLocalFailure({ code: "VALIDATION", message: "There is no assisted intake form on screen." });
@@ -1830,8 +1830,8 @@ if (!config) {
       case "demo-fill":
         // Fills the form with fictional answers; nothing is sent until the
         // form's own submit button is pressed (demo-fill.mjs). A demo tool:
-        // a staff account never fills, even if the button appeared.
-        if (controller.getState().principal?.access !== "presenter") break;
+        // it does nothing unless the demo-tools switch is on.
+        if (!demoToolsOn(controller.getState())) break;
         fillForm(target);
         break;
       case "clear-exit-group": {
@@ -2167,13 +2167,15 @@ if (!config) {
         break;
       }
       case "fill-fictional":
+        if (!demoToolsOn(controller.getState())) break;
         fictional(false);
         break;
       case "regenerate-fictional":
+        if (!demoToolsOn(controller.getState())) break;
         openDialog("regenerate");
         break;
       case "confirm-regenerate":
-        fictional(true);
+        if (demoToolsOn(controller.getState())) fictional(true);
         closeDialog();
         break;
       case "reconcile-mine":
