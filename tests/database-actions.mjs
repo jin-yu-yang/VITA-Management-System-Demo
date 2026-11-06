@@ -50,7 +50,6 @@ test("case actions apply the shared check order against real Supabase", async (t
         const saved = await f.act(
           f.applicantA,
           created.caseId,
-          null,
           "SAVE_ANSWERS",
           { answers: makeSampleAnswers() },
         );
@@ -63,7 +62,6 @@ test("case actions apply the shared check order against real Supabase", async (t
         const patched = await f.act(
           f.applicantA,
           created.caseId,
-          null,
           "SAVE_ANSWERS",
           { answers: { addr_city: "Pittsburgh" } },
         );
@@ -95,7 +93,6 @@ test("case actions apply the shared check order against real Supabase", async (t
         const submitted = await f.act(
           f.applicantA,
           created.caseId,
-          null,
           "SUBMIT",
           { confirmed: true },
         );
@@ -107,9 +104,8 @@ test("case actions apply the shared check order against real Supabase", async (t
           false,
         );
         const screening = await f.act(
-          f.presenter,
+          f.siteCoordinator,
           created.caseId,
-          f.sam,
           "START_SCREENING",
           {},
         );
@@ -119,9 +115,8 @@ test("case actions apply the shared check order against real Supabase", async (t
           "screening",
         );
         const verified = await f.act(
-          f.presenter,
+          f.siteCoordinator,
           created.caseId,
-          f.sam,
           "VERIFY_INTAKE",
           { checks: f.intakeChecks },
         );
@@ -131,9 +126,8 @@ test("case actions apply the shared check order against real Supabase", async (t
           "preparation_ready",
         );
         const claimed = await f.act(
-          f.presenter,
+          f.preparer,
           created.caseId,
-          f.alex,
           "CLAIM_PREPARATION",
           {},
         );
@@ -148,9 +142,9 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(staff.revision, 7);
         assert.equal(staff.preparationVersion, 0);
         assert.equal(staff.intakeVerified, true);
-        assert.equal(staff.preparerId, f.alex);
+        assert.equal(staff.preparerId, f.preparerId);
         assert.equal(staff.reviewerId, null);
-        assert.deepEqual(staff.participants, [f.alex]);
+        assert.deepEqual(staff.participants, [f.preparerId]);
         assert.deepEqual(staff.requests, []);
         assert.deepEqual(staff.documents, []);
         assert.deepEqual(staff.followups, []);
@@ -178,7 +172,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         const intake = staff.internalHistory.find(
           (entry) => entry.action === "VERIFY_INTAKE",
         );
-        assert.equal(intake.actorPersonId, f.sam);
+        assert.equal(intake.actorPersonId, f.siteCoordinatorId);
         assert.deepEqual(intake.detail, {
           checks: { ...f.intakeChecks },
         });
@@ -186,7 +180,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           staff.internalHistory.find(
             (entry) => entry.action === "CLAIM_PREPARATION",
           ).detail,
-          { preparerPersonId: f.alex },
+          { preparerPersonId: f.preparerId },
         );
         const { data: ownProgress } = await f.applicantA
           .from("client_events")
@@ -211,13 +205,12 @@ test("case actions apply the shared check order against real Supabase", async (t
         const attempts = [crypto.randomUUID(), crypto.randomUUID()];
         const results = await Promise.all(
           attempts.map((actionId) =>
-            f.presenter.rpc(
+            f.preparer.rpc(
               "vitally_apply_action",
               applyArgs({
                 actionId,
                 caseId,
                 revision,
-                personId: f.alex,
                 type: "CLAIM_PREPARATION",
               }),
             ),
@@ -236,7 +229,7 @@ test("case actions apply the shared check order against real Supabase", async (t
               [caseId],
             )
           ).rows,
-          [{ person_id: f.alex }],
+          [{ person_id: f.preparerId }],
         );
         assert.deepEqual(await actions(f, "case_events", caseId), [
           "SAVE_ANSWERS",
@@ -296,8 +289,8 @@ test("case actions apply the shared check order against real Supabase", async (t
       async () => {
         const submitted = await draftCase(f);
         const caseId = submitted.caseId;
-        await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
-        await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
+        await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
+        await f.act(f.siteCoordinator, caseId, "START_SCREENING", {});
         const verify = applyArgs({
           caseId,
           revision: 4,
@@ -466,14 +459,14 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(hidden.error.code, "VT002");
         await assert.rejects(
           () =>
-            f.act(f.applicantB, caseId, null, "SAVE_ANSWERS", {
+            f.act(f.applicantB, caseId, "SAVE_ANSWERS", {
               answers: { addr_city: "Pittsburgh" },
             }),
           rejected("NOT_FOUND"),
         );
         await assert.rejects(
           () =>
-            f.act(f.applicantA, crypto.randomUUID(), null, "SAVE_ANSWERS", {
+            f.act(f.applicantA, crypto.randomUUID(), "SAVE_ANSWERS", {
               answers: { addr_city: "Pittsburgh" },
             }),
           rejected("NOT_FOUND"),
@@ -509,39 +502,39 @@ test("case actions apply the shared check order against real Supabase", async (t
         for (const personId of [f.alex, f.morgan, null, f.foreignPeople.sam])
           await assert.rejects(
             () =>
-              f.act(f.presenter, received, personId, "VERIFY_INTAKE", {
+              f.actAsPersona(f.presenter, received, personId, "VERIFY_INTAKE", {
                 checks: f.intakeChecks,
               }),
             rejected("FORBIDDEN"),
           );
         await assert.rejects(
           () =>
-            f.act(f.applicantA, received, null, "VERIFY_INTAKE", {
+            f.act(f.applicantA, received, "VERIFY_INTAKE", {
               checks: f.intakeChecks,
             }),
           rejected("FORBIDDEN"),
         );
         // Positive control: the same action succeeds for an admin-capable person.
-        await f.act(f.presenter, received, f.sam, "START_SCREENING", {});
-        await f.act(f.presenter, received, f.sam, "VERIFY_INTAKE", {
+        await f.actAsPersona(f.presenter, received, f.sam, "START_SCREENING", {});
+        await f.actAsPersona(f.presenter, received, f.sam, "VERIFY_INTAKE", {
           checks: f.intakeChecks,
         });
         // Step 4 lets any same-workspace person attempt a claim; step 7 does not.
         for (const personId of [f.sam, f.morgan])
           await assert.rejects(
-            () => f.act(f.presenter, received, personId, "CLAIM_PREPARATION", {}),
+            () => f.actAsPersona(f.presenter, received, personId, "CLAIM_PREPARATION", {}),
             rejected("INELIGIBLE"),
           );
         assert.equal((await caseRow(f, received)).stage, "preparation_ready");
         assert.equal(await participantsOf(f, received), 0);
-        await f.act(f.presenter, received, f.alex, "CLAIM_PREPARATION", {});
+        await f.actAsPersona(f.presenter, received, f.alex, "CLAIM_PREPARATION", {});
         assert.equal((await caseRow(f, received)).preparer_id, f.alex);
       },
     );
     await t.test(
       "an admin presenter owns an assisted intake, never a client's own case",
       async () => {
-        const assisted = await f.createCase(f.presenter, crypto.randomUUID(), {
+        const assisted = await f.createCaseAsPersona(f.presenter, crypto.randomUUID(), {
           mode: "assisted",
           personId: f.sam,
           answers: {},
@@ -551,19 +544,19 @@ test("case actions apply the shared check order against real Supabase", async (t
         for (const personId of [f.alex, f.morgan, null])
           await assert.rejects(
             () =>
-              f.act(f.presenter, assisted.caseId, personId, "SAVE_ANSWERS", {
+              f.actAsPersona(f.presenter, assisted.caseId, personId, "SAVE_ANSWERS", {
                 answers: makeSampleAnswers(),
               }),
             rejected("FORBIDDEN"),
           );
         await assert.rejects(
           () =>
-            f.act(f.applicantA, assisted.caseId, null, "SAVE_ANSWERS", {
+            f.act(f.applicantA, assisted.caseId, "SAVE_ANSWERS", {
               answers: makeSampleAnswers(),
             }),
           rejected("NOT_FOUND"),
         );
-        const saved = await f.act(
+        const saved = await f.actAsPersona(
           f.presenter,
           assisted.caseId,
           f.sam,
@@ -571,7 +564,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           { answers: makeSampleAnswers() },
         );
         assert.equal(saved.revision, 2);
-        await f.act(f.presenter, assisted.caseId, f.sam, "SUBMIT", {
+        await f.actAsPersona(f.presenter, assisted.caseId, f.sam, "SUBMIT", {
           confirmed: true,
         });
         const staff = await f.readStaffCase(assisted.caseId);
@@ -592,7 +585,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         const owned = (await f.submittedClientCase()).caseId;
         await assert.rejects(
           () =>
-            f.act(f.presenter, owned, f.sam, "SAVE_ANSWERS", {
+            f.actAsPersona(f.presenter, owned, f.sam, "SAVE_ANSWERS", {
               answers: { addr_city: "Pittsburgh" },
             }),
           rejected("FORBIDDEN"),
@@ -628,7 +621,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           }),
         );
         assert.equal(stale.error.code, "VT003");
-        await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+        await f.actAsPersona(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
         // At the old revision the same attempt still conflicts first.
         const old = await f.presenter.rpc(
           "vitally_apply_action",
@@ -643,7 +636,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         // At a fresh revision the wrong stage answers before qualification.
         for (const personId of [f.alex, f.sam])
           await assert.rejects(
-            () => f.act(f.presenter, caseId, personId, "CLAIM_PREPARATION", {}),
+            () => f.actAsPersona(f.presenter, caseId, personId, "CLAIM_PREPARATION", {}),
             rejected("INVALID_TRANSITION"),
           );
         for (const [type, payload] of [
@@ -651,12 +644,12 @@ test("case actions apply the shared check order against real Supabase", async (t
           ["SUBMIT", { confirmed: true }],
         ])
           await assert.rejects(
-            () => f.act(f.applicantA, caseId, null, type, payload),
+            () => f.act(f.applicantA, caseId, type, payload),
             rejected("INVALID_TRANSITION"),
           );
         await assert.rejects(
           () =>
-            f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+            f.actAsPersona(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
               checks: f.intakeChecks,
             }),
           rejected("INVALID_TRANSITION"),
@@ -681,7 +674,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           { answers: "Pittsburgh" },
         ])
           await assert.rejects(
-            () => f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", payload),
+            () => f.act(f.applicantA, caseId, "SAVE_ANSWERS", payload),
             rejected("VALIDATION"),
           );
         // Unknown actions never reach a handler. Every action in CASE_ACTIONS
@@ -691,13 +684,13 @@ test("case actions apply the shared check order against real Supabase", async (t
         // FORBIDDEN rather than a validation error.
         for (const type of ["BOGUS", "claim_review", "CLAIM REVIEW"])
           await assert.rejects(
-            () => f.act(f.applicantA, caseId, null, type, {}),
+            () => f.act(f.applicantA, caseId, type, {}),
             rejected("VALIDATION"),
           );
         assert.equal(await revisionOf(f, caseId), 1);
         // SUBMIT re-checks the saved answers; an empty draft cannot submit.
         await assert.rejects(
-          () => f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true }),
+          () => f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true }),
           rejected("VALIDATION"),
         );
         for (const payload of [
@@ -706,7 +699,7 @@ test("case actions apply the shared check order against real Supabase", async (t
           { confirmed: true, extra: 1 },
         ])
           await assert.rejects(
-            () => f.act(f.applicantA, caseId, null, "SUBMIT", payload),
+            () => f.act(f.applicantA, caseId, "SUBMIT", payload),
             rejected("VALIDATION"),
           );
         // Version 2 has no screening: SUBMIT refuses a required, visible field
@@ -720,24 +713,24 @@ test("case actions apply the shared check order against real Supabase", async (t
           { hh: null },
           { tp_phone: null },
         ]) {
-          await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
+          await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
             answers: makeSampleAnswers(),
           });
-          await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
+          await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
             answers: patch,
           });
           await assert.rejects(
             () =>
-              f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true }),
+              f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true }),
             rejected("VALIDATION"),
           );
           assert.equal((await caseRow(f, caseId)).stage, "draft");
         }
         // Positive control: complete, supported answers do submit.
-        await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", {
+        await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
           answers: makeSampleAnswers(),
         });
-        await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+        await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
         assert.equal((await caseRow(f, caseId)).stage, "received");
         for (const payload of [
           {},
@@ -747,21 +740,21 @@ test("case actions apply the shared check order against real Supabase", async (t
           { checks: f.intakeChecks, extra: 1 },
         ])
           await assert.rejects(
-            () => f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", payload),
+            () => f.act(f.siteCoordinator, caseId, "VERIFY_INTAKE", payload),
             rejected("VALIDATION"),
           );
-        await f.act(f.presenter, caseId, f.sam, "START_SCREENING", {});
-        await f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
+        await f.act(f.siteCoordinator, caseId, "START_SCREENING", {});
+        await f.act(f.siteCoordinator, caseId, "VERIFY_INTAKE", {
           checks: f.intakeChecks,
         });
         await assert.rejects(
           () =>
-            f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {
+            f.act(f.preparer, caseId, "CLAIM_PREPARATION", {
               force: true,
             }),
           rejected("VALIDATION"),
         );
-        await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
+        await f.act(f.preparer, caseId, "CLAIM_PREPARATION", {});
         assert.equal((await caseRow(f, caseId)).stage, "preparing");
       },
     );
@@ -917,7 +910,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
           };
           // An entry for the edit entry point to correct.
           context.contactId = (
-            await f.logContact(f.presenter, fixture.id, f.sam, context.contactEntry)
+            await f.logContactAsPersona(f.presenter, fixture.id, f.sam, context.contactEntry)
           ).contactId;
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
@@ -978,7 +971,7 @@ test("installed entry points deny anonymous callers and serve members", async (t
             )
           ).rows[0];
         const before = await state();
-        assert.equal(before.default_id, f.sam);
+        assert.equal(before.default_id, f.siteCoordinatorId);
         for (const entry of PRIVATE_SETUP_FUNCTIONS)
           for (const [who, client] of [
             ["anonymous", f.anonymous],
@@ -1008,18 +1001,18 @@ const setService = (f, caseId, service) =>
   ]);
 const screeningCase = async (f, service) => {
   const created = await draftCase(f);
-  await f.act(f.applicantA, created.caseId, null, "SAVE_ANSWERS", {
+  await f.act(f.applicantA, created.caseId, "SAVE_ANSWERS", {
     answers: makeSampleAnswers(),
   });
   if (service !== "drop_off") await setService(f, created.caseId, service);
-  await f.act(f.applicantA, created.caseId, null, "SUBMIT", { confirmed: true });
-  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
+  await f.act(f.applicantA, created.caseId, "SUBMIT", { confirmed: true });
+  await f.act(f.siteCoordinator, created.caseId, "START_SCREENING", {});
   return created.caseId;
 };
 const refusedAndUnchanged = async (f, caseId, payload) => {
   const before = await revisionOf(f, caseId);
   await assert.rejects(
-    () => f.act(f.presenter, caseId, f.sam, "VERIFY_INTAKE", payload),
+    () => f.act(f.siteCoordinator, caseId, "VERIFY_INTAKE", payload),
     rejected("VALIDATION"),
   );
   assert.equal((await caseRow(f, caseId)).stage, "screening");
@@ -1030,7 +1023,7 @@ test("screening checks: the set follows the service", async () => {
   const f = await createDatabaseFixture();
   try {
     const dropOff = await screeningCase(f, "drop_off");
-    await f.act(f.presenter, dropOff, f.sam, "VERIFY_INTAKE", {
+    await f.act(f.siteCoordinator, dropOff, "VERIFY_INTAKE", {
       checks: screeningChecks("drop_off"),
     });
     const row = await caseRow(f, dropOff);
@@ -1054,7 +1047,7 @@ test("screening checks: the set follows the service", async () => {
     );
     const online = await screeningCase(f, "online");
     await refusedAndUnchanged(f, online, { checks: screeningChecks("drop_off") });
-    await f.act(f.presenter, online, f.sam, "VERIFY_INTAKE", {
+    await f.act(f.siteCoordinator, online, "VERIFY_INTAKE", {
       checks: screeningChecks("online"),
     });
     assert.equal((await caseRow(f, online)).stage, "preparation_ready");
@@ -1084,7 +1077,7 @@ test("identity refused without online service", async () => {
     await f.sql("update public.cases set answers=answers-'service' where id=$1", [noService]);
     await refusedAndUnchanged(f, noService, { checks: screeningChecks("online") });
     // Positive control: without a service answer the three checks do record.
-    await f.act(f.presenter, noService, f.sam, "VERIFY_INTAKE", {
+    await f.act(f.siteCoordinator, noService, "VERIFY_INTAKE", {
       checks: screeningChecks("drop_off"),
     });
     assert.equal((await caseRow(f, noService)).stage, "preparation_ready");

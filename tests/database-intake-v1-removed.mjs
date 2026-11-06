@@ -70,7 +70,7 @@ test("version 2 is the only accepted version", async (t) => {
     });
     await t.test("a client's and the office's new applications are version 2", async () => {
       const own = await f.createCase(f.applicantA, randomUUID(), { answers: {} });
-      const office = await f.createCase(f.presenter, randomUUID(), { mode: "assisted", personId: f.sam, answers: {} });
+      const office = await f.createCase(f.siteCoordinator, randomUUID(), { mode: "assisted", answers: {} });
       for (const { caseId } of [own, office])
         assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
     });
@@ -79,7 +79,7 @@ test("version 2 is the only accepted version", async (t) => {
     });
     await t.test("an application's version never changes", async () => {
       const { caseId } = await f.draftCase(f.applicantA);
-      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: makeSampleAnswers({ seed: 1 }) });
+      await f.act(f.applicantA, caseId, "SAVE_ANSWERS", { answers: makeSampleAnswers({ seed: 1 }) });
       assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
       // 011's cases_intake_version_fixed refuses the change before the CHECK is reached.
       await rejects(f.sql("update public.cases set intake_version=1 where id=$1", [caseId]), "VT007");

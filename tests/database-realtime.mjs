@@ -178,12 +178,12 @@ const assertHealthy = (...watches) => {
 
 async function preparedCase(f, client) {
   const created = await f.draftCase(client);
-  await f.act(client, created.caseId, null, "SUBMIT", { confirmed: true });
-  await f.act(f.presenter, created.caseId, f.sam, "START_SCREENING", {});
-  await f.act(f.presenter, created.caseId, f.sam, "VERIFY_INTAKE", {
+  await f.act(client, created.caseId, "SUBMIT", { confirmed: true });
+  await f.act(f.siteCoordinator, created.caseId, "START_SCREENING", {});
+  await f.act(f.siteCoordinator, created.caseId, "VERIFY_INTAKE", {
     checks: f.intakeChecks,
   });
-  await f.act(f.presenter, created.caseId, f.alex, "CLAIM_PREPARATION", {});
+  await f.act(f.preparer, created.caseId, "CLAIM_PREPARATION", {});
   return created.caseId;
 }
 
@@ -191,7 +191,7 @@ async function preparedCase(f, client) {
 // in the message the client is allowed to read.
 async function openRequest(f, owner) {
   const text = marker();
-  await f.act(f.presenter, owner.caseId, f.alex, "REQUEST_DOCUMENT", {
+  await f.act(f.preparer, owner.caseId, "REQUEST_DOCUMENT", {
     title: "Mileage record",
     message: text,
   });
@@ -205,7 +205,7 @@ async function openRequest(f, owner) {
 }
 
 async function respondTo(f, owner, requestId) {
-  await f.act(owner.client, owner.caseId, null, "RESPOND_DOCUMENT", {
+  await f.act(owner.client, owner.caseId, "RESPOND_DOCUMENT", {
     requestId,
     filename: f.sampleFilename,
   });
@@ -248,7 +248,7 @@ const MATRIX = Object.freeze([
     markerOf: (row) => row.answers?.addr_city,
     commit: async (f, owner) => {
       const text = marker();
-      const receipt = await f.act(owner.client, owner.draftId, null, "SAVE_ANSWERS", {
+      const receipt = await f.act(owner.client, owner.draftId, "SAVE_ANSWERS", {
         answers: { addr_city: text },
       });
       return { id: owner.draftId, marker: text, revision: receipt.revision };
@@ -303,7 +303,7 @@ const MATRIX = Object.freeze([
     markerOf: (row) => row.message,
     commit: async (f, owner) => {
       const text = marker();
-      await f.act(f.presenter, owner.caseId, f.alex, "REQUEST_DOCUMENT", {
+      await f.act(f.preparer, owner.caseId, "REQUEST_DOCUMENT", {
         title: text,
         message: "Please add the fictional sample.",
       });
@@ -353,7 +353,7 @@ const INTERNAL = Object.freeze([
     identity: (row) => row.id,
     commit: async (f, owner) => {
       await f.sql("delete from public.preparer_shaded_fields where case_id=$1", [owner.caseId]);
-      await f.act(f.presenter, owner.caseId, f.alex, "SAVE_PREPARER_FIELDS", {
+      await f.act(f.preparer, owner.caseId, "SAVE_PREPARER_FIELDS", {
         basedOnVersion: 0,
         fields: { incomeW2s: true, incomeNotes: marker() },
       });
@@ -367,7 +367,7 @@ const INTERNAL = Object.freeze([
     table: "case_events",
     identity: (row) => row.id,
     commit: async (f, owner) => {
-      await f.act(f.presenter, owner.caseId, f.alex, "REQUEST_DOCUMENT", {
+      await f.act(f.preparer, owner.caseId, "REQUEST_DOCUMENT", {
         title: "Mileage record",
         message: marker(),
       });
@@ -385,8 +385,8 @@ const INTERNAL = Object.freeze([
     identity: (row) => `${row.case_id}:${row.person_id}`,
     commit: async (f) => {
       const caseId = await f.readyCase();
-      await f.act(f.presenter, caseId, f.alex, "CLAIM_PREPARATION", {});
-      return { id: `${caseId}:${f.alex}` };
+      await f.act(f.preparer, caseId, "CLAIM_PREPARATION", {});
+      return { id: `${caseId}:${f.preparerId}` };
     },
   },
   {
@@ -395,7 +395,7 @@ const INTERNAL = Object.freeze([
     commit: async (f, owner) => {
       const caseId = await preparedCase(f, owner.client);
       const request = await openRequest(f, { ...owner, caseId });
-      await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", {
+      await f.act(f.preparer, caseId, "ESCALATE_CONTACT", {
         requestId: request.id,
         reason: "No response to the document request.",
       });
@@ -413,7 +413,7 @@ const INTERNAL = Object.freeze([
     commit: async (f, owner) => {
       const caseId = await preparedCase(f, owner.client);
       const request = await openRequest(f, { ...owner, caseId });
-      await f.act(f.presenter, caseId, f.alex, "ESCALATE_CONTACT", {
+      await f.act(f.preparer, caseId, "ESCALATE_CONTACT", {
         requestId: request.id,
         reason: "No response to the document request.",
       });
@@ -423,9 +423,8 @@ const INTERNAL = Object.freeze([
         ])
       ).rows;
       const { contactId } = await f.logContact(
-        f.presenter,
+        f.siteCoordinator,
         caseId,
-        f.sam,
         {
           ...SAMPLE_CONTACT(),
           outcome: "no_answer",
@@ -441,7 +440,7 @@ const INTERNAL = Object.freeze([
     identity: (row) => `${row.contact_id}:${row.version}`,
     commit: async (f, owner) => {
       const caseId = await preparedCase(f, owner.client);
-      const { contactId } = await f.logContact(f.presenter, caseId, f.alex, SAMPLE_CONTACT());
+      const { contactId } = await f.logContact(f.preparer, caseId, SAMPLE_CONTACT());
       return { id: `${contactId}:1` };
     },
   },
@@ -450,7 +449,7 @@ const INTERNAL = Object.freeze([
     identity: (row) => row.id,
     commit: async (f) => {
       const caseId = await f.preparedCase();
-      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      await f.act(f.reviewer, caseId, "CLAIM_REVIEW", {});
       const [row] = (
         await f.sql("select id from public.reviews where case_id=$1", [caseId])
       ).rows;
@@ -474,7 +473,7 @@ const INTERNAL = Object.freeze([
     identity: (row) => row.id,
     commit: async (f) => {
       const caseId = await f.preparedCase();
-      await f.act(f.presenter, caseId, f.morgan, "CLAIM_REVIEW", {});
+      await f.act(f.reviewer, caseId, "CLAIM_REVIEW", {});
       const [review] = (
         await f.sql("select id from public.reviews where case_id=$1", [caseId])
       ).rows;
@@ -482,7 +481,7 @@ const INTERNAL = Object.freeze([
         await f.sql(
           `insert into public.reviewer_questionnaires(workspace_id,case_id,review_id,answered_by_person_id,completed_on,pa_forgiveness,went_over,sign_method,exit_form)
            values($1,$2,$3,$4,'2026-02-11','eligible',false,'portal','{"federal":null,"state":null,"local":[]}') returning id`,
-          [f.workspaceId, caseId, review.id, f.morgan],
+          [f.workspaceId, caseId, review.id, f.reviewerId],
         )
       ).rows;
       return { id: row.id };
@@ -556,7 +555,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
     await withDeadline(keepalive.subscribed, "the keepalive channel never subscribed");
     // One repeatable change with a revision on it, so each attempt is its own.
     const saveFor = async (owner) => {
-      const receipt = await f.act(owner.client, owner.draftId, null, "SAVE_ANSWERS", {
+      const receipt = await f.act(owner.client, owner.draftId, "SAVE_ANSWERS", {
         answers: { addr_city: marker() },
       });
       return { id: receipt.caseId, revision: receipt.revision };
@@ -566,7 +565,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
     // A private client draft is invisible to staff by design, so the keepalive
     // control moves a case the presenter may actually read.
     const bumpStaffCase = async (owner) => {
-      const receipt = await f.act(f.presenter, owner.caseId, f.alex, "REQUEST_DOCUMENT", {
+      const receipt = await f.act(f.preparer, owner.caseId, "REQUEST_DOCUMENT", {
         title: "Mileage record",
         message: marker(),
       });
@@ -1001,7 +1000,7 @@ test("realtime carries no code", async () => {
   let watch = null;
   try {
     const caseId = await f.approvedCase();
-    const act = (type, payload) => f.act(f.presenter, caseId, f.sam, type, payload);
+    const act = (type, payload) => f.act(f.siteCoordinator, caseId, type, payload);
     await act("MARK_READY_TO_EFILE", { confirmed: true });
     await act("MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
     watch = watchTable(

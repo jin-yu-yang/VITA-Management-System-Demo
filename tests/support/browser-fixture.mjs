@@ -348,7 +348,9 @@ export async function loginTestUserById({ page, actor, fixture, otp }) {
 
 export async function createBrowserFixture() {
   const target = await assertTestTarget();
-  const database = await createDatabaseFixture();
+  // The story works its follow-ups as the presenter's Sam, so Sam stays the
+  // default follow-up person here.
+  const database = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   const browsers = [];
   let server = null;
   try {

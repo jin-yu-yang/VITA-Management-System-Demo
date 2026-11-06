@@ -97,9 +97,8 @@ test("the switch-over (020): new applications are version 2", async (t) => {
   await t.test("the office's new assisted application is version 2", async () => {
     const f = await createDatabaseFixture();
     try {
-      const { caseId } = await f.createCase(f.presenter, crypto.randomUUID(), {
+      const { caseId } = await f.createCase(f.siteCoordinator, crypto.randomUUID(), {
         mode: "assisted",
-        personId: f.sam,
         answers: {},
       });
       assert.equal(await versionOfCase(f, caseId), 2);
@@ -208,8 +207,8 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
     await t.test("a checkpoint reload clears materials and card marks, keeps the contact", async () => {
       const [sample] = await samples(f);
       assert.equal(sample.fixture_key, "preparation_ready");
-      await f.act(f.presenter, sample.id, f.sam, "RECORD_MATERIALS", { received: ["w2", "photo_id"] });
-      await f.act(f.presenter, sample.id, f.sam, "SET_DOCUMENT_CARD", { slotId: "photo_id.tp", status: "later" });
+      await f.act(f.siteCoordinator, sample.id, "RECORD_MATERIALS", { received: ["w2", "photo_id"] });
+      await f.act(f.siteCoordinator, sample.id, "SET_DOCUMENT_CARD", { slotId: "photo_id.tp", status: "later" });
       const count = async (table) =>
         Number((await f.sql(`select count(*) as n from public.${table} where case_id=$1`, [sample.id])).rows[0].n);
       assert.equal(await count("case_materials"), 2);
@@ -239,28 +238,27 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
         2,
       );
       const middle = Math.floor(keys.length / 2);
-      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: half(0, middle) });
-      await f.act(f.applicantA, caseId, null, "SAVE_ANSWERS", { answers: half(middle, keys.length) });
-      await f.act(f.applicantA, caseId, null, "SUBMIT", { confirmed: true });
+      await f.act(f.applicantA, caseId, "SAVE_ANSWERS", { answers: half(0, middle) });
+      await f.act(f.applicantA, caseId, "SAVE_ANSWERS", { answers: half(middle, keys.length) });
+      await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];
       assert.equal(row.stage, "received");
       assert.ok(Number.isInteger(Number(row.client_number)) && Number(row.client_number) > 0);
     });
 
     await t.test("an office case round-trips on version 2", async () => {
-      const { caseId } = await f.createCase(f.presenter, crypto.randomUUID(), {
+      const { caseId } = await f.createCase(f.siteCoordinator, crypto.randomUUID(), {
         mode: "assisted",
-        personId: f.sam,
         answers: {},
       });
       assert.equal(
         (await f.sql("select intake_version from public.cases where id=$1", [caseId])).rows[0].intake_version,
         2,
       );
-      await f.act(f.presenter, caseId, f.sam, "SAVE_ANSWERS", {
+      await f.act(f.siteCoordinator, caseId, "SAVE_ANSWERS", {
         answers: makeSampleAnswers({ seed: 0 }),
       });
-      await f.act(f.presenter, caseId, f.sam, "SUBMIT", { confirmed: true });
+      await f.act(f.siteCoordinator, caseId, "SUBMIT", { confirmed: true });
       const row = (await f.sql("select stage, client_number from public.cases where id=$1", [caseId])).rows[0];
       // The office has already screened a client it entered itself.
       assert.equal(row.stage, "screening");
