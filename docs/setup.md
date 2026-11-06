@@ -110,9 +110,19 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    "$VITALLY_NODE" -e "console.log(crypto.randomUUID())"
    ```
 
-3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one staff
-   member, `staff-a@example.org` (Riley Park, a preparer), and two clients, `client-a@example.org`
-   (who owns one sample case) and `client-b@example.org`.
+3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one
+   client, `client-a@example.org` (who owns one sample case), and four staff accounts named for
+   their roles:
+
+   | Address | Person | Can |
+   | --- | --- | --- |
+   | `site-coordinator@example.org` | Sky Chen (site coordinator) | admin, follow-up, assist, receive documents. Is the default follow-up person |
+   | `preparer@example.org` | Rowan Diaz (preparer) | prepare |
+   | `reviewer@example.org` | Ari Novak (reviewer) | review |
+   | `intaker@example.org` | Kai Mensah (intaker) | receive documents, assist |
+
+   The Intaker lands on the Work board until the roster change that gives the role its own
+   landing page.
 
    ```sh
    PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
@@ -123,6 +133,10 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    It prints how many accounts it created. Running it again is harmless and creates nothing new;
    to add people, append addresses to the file and run it again. Nobody is ever removed.
 
+   Run it again after you pull a change to the example roster. The seed command (below) needs the
+   current role accounts. If you copied the file before this change, copy it again and keep your
+   workspace ID.
+
 **Use them (every time).**
 
 1. Start the app with `PATH="$VITALLY_NODE_BIN:$PATH" npm start` and open
@@ -131,19 +145,50 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
 3. Open <http://127.0.0.1:54324> in another tab, open the newest message, and copy the code.
 4. Paste it into **Verification code** and press **Verify and continue**. You are signed in as the
    presenter, with the presenter panel and every staff persona.
-5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
-   code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
-   persona picker, sample reset or checkpoints: the account acts only as its own person, with
-   that person's capabilities. The fill buttons ("Fill fictional details", "Auto-fill fictional
-   data") appear for anyone, staff included, only when `.env.local` sets `VITALLY_DEMO_TOOLS=1`. To add another fictional staff rehearsal
-   account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
-   [Rosters](#rosters)) with a fictional address and run the roster command again.
+5. To rehearse as a real staff member instead, sign in as `preparer@example.org` the same way (the
+   code arrives in Mailpit like any other). The screen says "Signed in as Rowan Diaz (preparer)"
+   and has no persona picker, sample reset or checkpoints: the account acts only as its own
+   person, with that person's capabilities. The fill buttons ("Fill fictional details",
+   "Auto-fill fictional data") appear for anyone, staff included, only when `.env.local` sets
+   `VITALLY_DEMO_TOOLS=1`. To add another fictional staff rehearsal account, append an entry to
+   the `staff` list of `.vitally-roster.local.json` (see [Rosters](#rosters)) with a fictional
+   address and run the roster command again.
 6. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
    second browser) and repeat steps 2–4 with `client-a@example.org`.
 
 A new code for the same address can be requested only about once a minute; the form shows a
-countdown. **Reset sample cases** in the presenter panel rebuilds the ten sample cases at any time
-and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
+countdown. **Reset sample cases** in the presenter panel is the presenter's tool: it rebuilds the
+ten sample cases at any time and leaves any application you created yourself alone. It stays until
+the presenter mode is removed. Stop the app with Ctrl+C in its terminal.
+
+**Seed the rehearsal cases.** To fill the rehearsal workspace with cases at every stage, run the
+seed command. It is local only: it refuses any target that is not the local test stack, and it does
+nothing unless you opt in with `VITALLY_ALLOW_LOCAL_SEED=1`.
+
+```sh
+VITALLY_ALLOW_LOCAL_SEED=1 PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" npm run seed:local
+```
+
+It reads `.vitally-roster.local.json` (or the file after `--roster`), acts as the role accounts
+through the same functions the app uses, and builds:
+
+- client A's case, just submitted, at Received;
+- ten office-entered cases: preparation ready, waiting on documents, an escalated follow-up for the
+  Site Coordinator, ready for review, corrections required, review approved, state return rejected,
+  accepted, on hold and withdrawn;
+- one open help request on client A's case.
+
+On the corrections-required case the case has no current reviewer, because asking for corrections
+clears it. The Reviewer is named on that review round.
+
+It prints `Seeded 11 cases (removed N from the previous run).` and records the cases in
+`.vitally-runs/seed-<workspaceId>.json`. A re-run replaces the previous set and leaves every other
+case alone. If it stops with `SEED_SETUP`, a role account or client A is missing from the
+workspace, or the default follow-up person is not the site coordinator account (this happens on a
+stack set up from the old example roster). In both cases, run the roster command again with the
+current example roster.
+
+Seed before you open the app, or reload any window that is already open afterwards.
 
 To get the fictional fill buttons while rehearsing, add `VITALLY_DEMO_TOOLS=1` to `.env.local` and
 restart the app. They appear only when `SUPABASE_URL` points at this machine (`127.0.0.1`,
@@ -444,8 +489,9 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 ## 5. Tests
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
-suite's **last-verified count** is below. The unit, database and story
-counts were last verified on the preparer's shaded section (2026-10-24, change
+suite's **last-verified count** is below. The database count was last verified on the local
+seed command (2026-11-06, change `add-local-seed-script`, with migration 039 applied). The unit
+and story counts were last verified on the preparer's shaded section (2026-10-24, change
 `add-preparer-13614c-fields`, with migration 038 applied; the story in one run, see the note below the table). The auth-gate count is still from
 the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording`, with migration
 025 applied). Re-run the commands yourself for the current number, since new work changes these counts.
@@ -453,7 +499,7 @@ the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording
 | Suite | Command | Last verified | What it proves |
 | --- | --- | --- | --- |
 | Unit | `"$VITALLY_NODE" --test tests/*.test.mjs` | 1418/1418 | Pure domain/contract logic, the intake catalogue and version-2 renderer, the client text in three languages (every client screen swept in 简体 and 繁體, and the Traditional map checked against `opencc-js`), the auth/store adapters against fakes, the pure view renderers, the controller's async state machine, server allowlist/config logic — no network, no database. |
-| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 434/434 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
+| Database | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/database*.mjs` | 480/480 | Every migration, RLS policy, RPC, and error/ordering rule against the real isolated stack: ownership, authority, idempotent replay, concurrency, Realtime publication/isolation, fixture reset and checkpoints, client numbers, and the version-2 intake checks compared with the browser's. |
 | Auth gate | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/auth-browser.mjs` | 20/20, ~20–95 s | Real Chrome and real Firefox, driving the actual access form: a generated one-time code is typed in and verified through the real `verifyOtp` call; only the outbound `/auth/v1/otp` **send** is intercepted (email-free automation), never verification. |
 | Browser story | `PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" "$VITALLY_NODE" --env-file=.env.test --test tests/browser.mjs` | 77/77, ~11–26 min (see the note below the table) | The full demonstration script (see [`docs/demo-script.md`](demo-script.md)) end to end, twice, roles swapped between Chrome and Firefox, plus the regression list below. Its throwaway workspace is on version 2, the only intake version (the samples too): staff read the answers, the contact card before and after a claim, record materials, edit the best time, work the document checklist and open the draft 13614-C; the office takes in a walk-in on the version-2 Add a case; one phase walks every sub-step of the redesigned intake, marks document cards, reviews, opens the draft 13614-C and submits; one phase checks the staff sidebar's peek and pin (peek without pushing the page, stay, a realtime redraw during a peek, close after leaving, pin, no re-peek after a collapse, keyboard, a dialog opened from a peek, and touch); one phase signs two real staff accounts in through the form, in separate windows (Riley Park, who prepares and reviews, and Jordan Lee, who reviews): the board updates live, Riley fills the shaded section in the editor and its field is as tall as its cell, Riley cannot review a case Riley prepared, and a persona left in storage is ignored; and one phase works in Chinese in its own `zh-CN` browser context (the first visit is 简体 from the browser's language, the version-2 intake by Fill and the rail, submit, the progress page and its history in Chinese, one switch to 繁體 that fetches the Traditional map for the first time, a reload that keeps it, and back to English). Every other context is pinned to `en-US`. Optional to re-run before every rehearsal, but recommended before a presentation. |
 The story passed 77/77 in one run on 2026-10-24 (about 25.6 minutes; an earlier run that day took about 20.7), on change `add-preparer-13614c-fields`, with migration 038 applied, run from a worktree on D: (not under OneDrive). History: it passed 63/63 in one run on 2026-10-20, on change `replace-simulated-screening-checks`, with migration 034 applied, run from a worktree on D: (not under OneDrive). Before that it passed 63/63 in one run on 2026-10-19, on change `add-preparer-and-reviewer-questionnaires`, with migration 033 applied, run from a worktree on D: (not under OneDrive); a worktree outside OneDrive works, while one under OneDrive fails it. Before that it passed 63/63 in one run on 2026-10-19, on change `add-screening-and-efiling-stages`, with migration 032 applied, run from the main checkout. Before that it passed 61/61 in one run on 2026-10-18, on change `add-contact-log`. Before that it passed 57/57 in one run on 2026-10-16 (about 16.6 minutes), on change `add-form-14446-consent`. Before that
