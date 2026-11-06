@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { databaseError } from "./database.mjs";
+import { assertTestTarget } from "./test-target.mjs";
+import { rejected } from "./target-common.mjs";
 
 // Runs `fn` as the given auth user: the same role and claims PostgREST sets,
 // so the public RPCs see auth.uid() and apply their own permission checks.
@@ -45,4 +47,38 @@ export async function applyAction(client, userId, caseId, type, payload = {}) {
     p_type: type,
     p_payload: JSON.stringify(payload),
   });
+}
+
+const failure = (code, message) =>
+  Object.assign(new Error(message), { code });
+
+// The seed only ever runs against the local test stack.
+export async function assertLocalSeedTarget({
+  env,
+  manifest,
+  assert = assertTestTarget,
+} = {}) {
+  const approved = await assert({ env, manifest });
+  if (approved?.mode !== "local") throw rejected();
+  return approved;
+}
+
+export function requireSeedFlag(env) {
+  if (env?.VITALLY_ALLOW_LOCAL_SEED !== "1")
+    throw failure(
+      "SEED_NOT_ALLOWED",
+      "Set VITALLY_ALLOW_LOCAL_SEED=1 to seed the local test stack.",
+    );
+}
+
+export function parseSeedArgs(argv) {
+  const usage = () =>
+    failure("SEED_USAGE", "Usage: seed.mjs [--roster <file.json>]");
+  if (argv.length === 0) return { rosterPath: ".vitally-roster.local.json" };
+  if (argv.length !== 2 || argv[0] !== "--roster" || !argv[1]) throw usage();
+  return { rosterPath: argv[1] };
+}
+
+export function formatSeedResult({ casesRemoved, casesCreated }) {
+  return `Seeded ${casesCreated} cases (removed ${casesRemoved} from the previous run).`;
 }
