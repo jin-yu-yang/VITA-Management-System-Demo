@@ -215,9 +215,13 @@ export async function seedCases(
   await recordRun(run, runDir);
 
   const refused = (scenario, type) => (error) => {
-    throw failure(
-      "SEED_STEP_FAILED",
-      `${scenario}: ${type} was refused (${error.code || "SERVER_ERROR"}).`,
+    // The original error stays as `cause` for debugging; it is never printed.
+    throw Object.assign(
+      failure(
+        "SEED_STEP_FAILED",
+        `${scenario}: ${type} was refused (${error.code || "SERVER_ERROR"}).`,
+      ),
+      { cause: error },
     );
   };
   const act = (scenario, actor, caseId, type, payload = {}) =>
@@ -391,7 +395,7 @@ export async function seedWorkspace({
   env = process.env,
 } = {}) {
   await assertLocalSeedTarget({ env });
-  const client = await openDatabase();
+  const client = await openDatabase({ kind: "test", env });
   try {
     const targets = await resolveSeedTargets(client, {
       workspaceId,

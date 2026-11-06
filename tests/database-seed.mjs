@@ -227,7 +227,7 @@ test("seed command against real Supabase", async (t) => {
     const caseRows = async (ids) =>
       (
         await f.sql(
-          "select id, stage, owner_user_id, preparer_id, reviewer_id, closing_reason, revision from public.cases where id = any($1::uuid[])",
+          "select id, stage, owner_user_id, preparer_id, reviewer_id, closing_reason, hold_origin, revision from public.cases where id = any($1::uuid[])",
           [ids],
         )
       ).rows;
@@ -277,6 +277,8 @@ test("seed command against real Supabase", async (t) => {
               scenario,
             );
           assert.equal(row("preparation_ready").preparer_id, null);
+          assert.equal(row("review_ready").reviewer_id, null);
+          assert.equal(row("on_hold").hold_origin, "awaiting_documents");
           const prepared = SEED_SCENARIOS.slice(
             SEED_SCENARIOS.indexOf("waiting_documents"),
             SEED_SCENARIOS.indexOf("accepted") + 1,
@@ -317,6 +319,16 @@ test("seed command against real Supabase", async (t) => {
             )
           ).rows;
           assert.deepEqual(stateReturn, [{ result: "rejected" }]);
+          const acceptedReturns = (
+            await f.sql(
+              "select result from public.filing_returns where case_id=$1",
+              [ids.accepted],
+            )
+          ).rows;
+          assert.deepEqual(acceptedReturns, [
+            { result: "accepted" },
+            { result: "accepted" },
+          ]);
           const help = (
             await f.sql(
               "select id from public.assistance_items where case_id=$1 and status='open' and assignee_person_id is null",
