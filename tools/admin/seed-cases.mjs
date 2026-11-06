@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { databaseError } from "./database.mjs";
 import { assertTestTarget } from "./test-target.mjs";
 import { rejected } from "./target-common.mjs";
@@ -81,4 +82,95 @@ export function parseSeedArgs(argv) {
 
 export function formatSeedResult({ casesRemoved, casesCreated }) {
   return `Seeded ${casesCreated} cases (removed ${casesRemoved} from the previous run).`;
+}
+
+const ROLE_KEYS = ["site_coordinator", "preparer", "reviewer"];
+
+// Finds the accounts the seed acts as. Refusals never repeat an address.
+export async function resolveSeedTargets(client, { workspaceId, clientAEmail }) {
+  if (!workspaceId || !clientAEmail)
+    throw failure(
+      "SEED_SETUP",
+      "The seed needs a workspace id and the roster's first applicant.",
+    );
+  const targets = { workspaceId };
+  for (const key of ROLE_KEYS) {
+    const { rows } = await client.query(
+      `select p.id, p.user_id
+         from public.people p
+         join public.memberships m
+           on m.workspace_id = p.workspace_id and m.user_id = p.user_id
+        where p.workspace_id = $1 and p.person_key = $2
+          and p.user_id is not null and m.access = 'staff' and m.active`,
+      [workspaceId, key],
+    );
+    if (!rows.length)
+      throw failure(
+        "SEED_SETUP",
+        `The workspace has no staff account with the person key "${key}".`,
+      );
+    const field = key.replace(/_(\w)/g, (_, c) => c.toUpperCase());
+    targets[field] = { userId: rows[0].user_id, personId: rows[0].id };
+  }
+  const { rows: clients } = await client.query(
+    `select u.id
+       from auth.users u
+       join public.memberships m on m.user_id = u.id
+      where lower(u.email) = lower($1) and m.workspace_id = $2
+        and m.access = 'applicant' and m.active`,
+    [clientAEmail, workspaceId],
+  );
+  if (!clients.length)
+    throw failure(
+      "SEED_SETUP",
+      "The roster's first applicant has no client account in this workspace.",
+    );
+  targets.clientA = { userId: clients[0].id };
+  const { rows: workspaces } = await client.query(
+    "select default_followup_person_id from public.workspaces where id = $1",
+    [workspaceId],
+  );
+  if (
+    workspaces[0]?.default_followup_person_id !== targets.siteCoordinator.personId
+  )
+    throw failure(
+      "SEED_SETUP",
+      'The default follow-up person must be the "site_coordinator" account. Re-run the roster command with the current example roster.',
+    );
+  return targets;
+}
+
+export function runFilePath(workspaceId, runDir = ".vitally-runs") {
+  return `${runDir}/seed-${workspaceId}.json`;
+}
+
+export async function readRun(workspaceId, runDir) {
+  try {
+    return JSON.parse(await readFile(runFilePath(workspaceId, runDir), "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return { workspaceId, caseIds: [], assistanceIds: [] };
+  }
+}
+
+// Removes only the rows the previous run recorded, and only in its workspace.
+export async function deletePreviousRun(client, run) {
+  await client.query(
+    "delete from public.assistance_items where workspace_id=$1 and id = any($2::uuid[])",
+    [run.workspaceId, run.assistanceIds],
+  );
+  const { rows } = await client.query(
+    "delete from public.cases where workspace_id=$1 and id = any($2::uuid[]) returning id",
+    [run.workspaceId, run.caseIds],
+  );
+  return { casesRemoved: rows.length };
+}
+
+export async function recordRun(run, runDir = ".vitally-runs") {
+  await mkdir(runDir, { recursive: true, mode: 0o700 });
+  await writeFile(
+    runFilePath(run.workspaceId, runDir),
+    `${JSON.stringify(run, null, 2)}
+`,
+  );
 }
