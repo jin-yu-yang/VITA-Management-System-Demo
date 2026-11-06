@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { databaseError } from "./database.mjs";
+import { databaseError, openDatabase } from "./database.mjs";
+import * as SEED_VALUES from "./seed-values.mjs";
 import { assertTestTarget } from "./test-target.mjs";
 import { rejected } from "./target-common.mjs";
 
@@ -145,12 +146,19 @@ export function runFilePath(workspaceId, runDir = ".vitally-runs") {
 }
 
 export async function readRun(workspaceId, runDir) {
+  let run;
   try {
-    return JSON.parse(await readFile(runFilePath(workspaceId, runDir), "utf8"));
+    run = JSON.parse(await readFile(runFilePath(workspaceId, runDir), "utf8"));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { workspaceId, caseIds: [], assistanceIds: [] };
+    run = { workspaceId };
   }
+  const list = (value) => (Array.isArray(value) ? value : []);
+  return {
+    ...run,
+    caseIds: list(run?.caseIds),
+    assistanceIds: list(run?.assistanceIds),
+  };
 }
 
 // Removes only the rows the previous run recorded, and only in its workspace.
@@ -173,4 +181,227 @@ export async function recordRun(run, runDir = ".vitally-runs") {
     `${JSON.stringify(run, null, 2)}
 `,
   );
+}
+
+export const SEED_SCENARIOS = Object.freeze([
+  "client_received",
+  "preparation_ready",
+  "waiting_documents",
+  "admin_followup",
+  "review_ready",
+  "corrections_required",
+  "review_approved",
+  "rejected",
+  "accepted",
+  "on_hold",
+  "withdrawn",
+]);
+
+// Replaces the previous run's set with a fresh one, built only through the
+// public RPCs as the acting accounts. The run file is rewritten after every
+// create, so a refused step leaves each created id listed for the next run.
+export async function seedCases(
+  client,
+  targets,
+  { runDir = ".vitally-runs", values = SEED_VALUES } = {},
+) {
+  const { workspaceId, siteCoordinator, preparer, reviewer, clientA } = targets;
+  const previous = await readRun(workspaceId, runDir);
+  const { casesRemoved } = await deletePreviousRun(client, {
+    ...previous,
+    workspaceId,
+  });
+  const run = { workspaceId, caseIds: [], assistanceIds: [] };
+  await recordRun(run, runDir);
+
+  const refused = (scenario, type) => (error) => {
+    throw failure(
+      "SEED_STEP_FAILED",
+      `${scenario}: ${type} was refused (${error.code || "SERVER_ERROR"}).`,
+    );
+  };
+  const act = (scenario, actor, caseId, type, payload = {}) =>
+    applyAction(client, actor.userId, caseId, type, payload).catch(
+      refused(scenario, type),
+    );
+  const create = async (scenario, actor, mode) => {
+    const created = await callRpc(client, actor.userId, "vitally_create_case", {
+      p_action_id: randomUUID(),
+      p_mode: mode,
+      p_person_id: null,
+      p_answers: "{}",
+    }).catch(refused(scenario, "CREATE_CASE"));
+    run.caseIds.push(created.caseId);
+    await recordRun(run, runDir);
+    const answers = values.caseAnswers(SEED_SCENARIOS.indexOf(scenario));
+    await act(scenario, actor, created.caseId, "SAVE_ANSWERS", { answers });
+    return { caseId: created.caseId, answers };
+  };
+  const filingDay = async () =>
+    (
+      await client.query(
+        "select (now() at time zone 'America/New_York')::date::text as day",
+      )
+    ).rows[0].day;
+
+  // Each builder takes the case one stage further than the one it calls.
+  const clientCase = async (s) => {
+    const { caseId } = await create(s, clientA, "client");
+    await act(s, clientA, caseId, "SUBMIT", { confirmed: true });
+    return caseId;
+  };
+  const walkIn = async (s) => {
+    const created = await create(s, siteCoordinator, "assisted");
+    // An office-entered submit lands at screening.
+    await act(s, siteCoordinator, created.caseId, "SUBMIT", { confirmed: true });
+    return created;
+  };
+  const officeBase = async (s) => {
+    const { caseId, answers } = await walkIn(s);
+    await act(s, siteCoordinator, caseId, "VERIFY_INTAKE", {
+      checks: values.screeningChecks(answers.service),
+    });
+    return caseId;
+  };
+  const preparing = async (s) => {
+    const caseId = await officeBase(s);
+    await act(s, preparer, caseId, "CLAIM_PREPARATION");
+    return caseId;
+  };
+  const waitingOnRequest = async (s) => {
+    const caseId = await preparing(s);
+    await act(s, preparer, caseId, "REQUEST_DOCUMENT", values.DOCUMENT_REQUEST);
+    return caseId;
+  };
+  const reviewReady = async (s) => {
+    const caseId = await preparing(s);
+    await act(s, preparer, caseId, "SUBMIT_REVIEW", {
+      questionnaire: values.PREPARER_QUESTIONNAIRE,
+    });
+    return caseId;
+  };
+  const inReview = async (s) => {
+    const caseId = await reviewReady(s);
+    await act(s, reviewer, caseId, "CLAIM_REVIEW");
+    return caseId;
+  };
+  const approved = async (s) => {
+    const caseId = await inReview(s);
+    await act(s, reviewer, caseId, "APPROVE_REVIEW", {
+      questionnaire: values.REVIEWER_QUESTIONNAIRE,
+    });
+    return caseId;
+  };
+  const filedWith = (results) => async (s) => {
+    const caseId = await approved(s);
+    await act(s, siteCoordinator, caseId, "MARK_READY_TO_EFILE", {
+      confirmed: true,
+    });
+    await act(s, siteCoordinator, caseId, "MARK_EFILED", {
+      confirmed: true,
+      methods: values.FILING_METHODS,
+    });
+    await act(s, siteCoordinator, caseId, "RECORD_FILING_RESULT", {
+      confirmed: true,
+      results: results(await filingDay()),
+    });
+    return caseId;
+  };
+
+  const builders = {
+    client_received: clientCase,
+    preparation_ready: officeBase,
+    waiting_documents: waitingOnRequest,
+    admin_followup: async (s) => {
+      const caseId = await waitingOnRequest(s);
+      const { rows } = await client.query(
+        "select id from public.document_requests where case_id=$1 and status='open'",
+        [caseId],
+      );
+      await act(s, preparer, caseId, "ESCALATE_CONTACT", {
+        requestId: rows[0]?.id,
+        reason: values.ESCALATION_REASON,
+      });
+      return caseId;
+    },
+    review_ready: reviewReady,
+    corrections_required: async (s) => {
+      const caseId = await inReview(s);
+      await act(s, reviewer, caseId, "REQUEST_CORRECTIONS", {
+        findings: values.CORRECTION_FINDINGS,
+      });
+      return caseId;
+    },
+    review_approved: approved,
+    rejected: filedWith(values.stateRejectedResults),
+    accepted: filedWith(values.acceptedResults),
+    on_hold: async (s) => {
+      const { caseId } = await walkIn(s);
+      await act(s, siteCoordinator, caseId, "REQUEST_DOCUMENTS_AT_INTAKE", {
+        requests: values.INTAKE_REQUESTS,
+      });
+      await act(s, siteCoordinator, caseId, "PUT_ON_HOLD", values.HOLD);
+      return caseId;
+    },
+    withdrawn: async (s) => {
+      const caseId = await officeBase(s);
+      await act(s, siteCoordinator, caseId, "CLOSE_CASE", {
+        confirmed: true,
+        reason: "withdrawn",
+      });
+      return caseId;
+    },
+  };
+
+  const caseIdsByScenario = {};
+  for (const scenario of SEED_SCENARIOS)
+    caseIdsByScenario[scenario] = await builders[scenario](scenario);
+
+  // No action creates help requests, so the one help request is inserted.
+  const help = values.HELP_REQUEST;
+  const { rows } = await client.query(
+    `insert into public.assistance_items(workspace_id,case_id,title,status,revision,assignee_person_id,language,contact_preference)
+     values($1,$2,$3,'open',1,null,$4,$5) returning id`,
+    [
+      workspaceId,
+      caseIdsByScenario.client_received,
+      help.title,
+      help.language,
+      help.contactPreference,
+    ],
+  );
+  const assistanceId = rows[0].id;
+  run.assistanceIds.push(assistanceId);
+  await recordRun(run, runDir);
+
+  return {
+    casesRemoved,
+    casesCreated: run.caseIds.length,
+    caseIdsByScenario,
+    assistanceId,
+  };
+}
+
+// What `seed.mjs` runs: the local-only guard, then one seed on its own
+// connection.
+export async function seedWorkspace({
+  workspaceId,
+  clientAEmail,
+  runDir = ".vitally-runs",
+  env = process.env,
+} = {}) {
+  await assertLocalSeedTarget({ env });
+  const client = await openDatabase();
+  try {
+    const targets = await resolveSeedTargets(client, {
+      workspaceId,
+      clientAEmail,
+    });
+    const { casesRemoved, casesCreated } = await seedCases(client, targets, {
+      runDir,
+    });
+    return { casesRemoved, casesCreated };
+  } finally {
+    await client.end();
+  }
 }
