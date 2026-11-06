@@ -144,6 +144,10 @@ A new code for the same address can be requested only about once a minute; the f
 countdown. **Reset sample cases** in the presenter panel rebuilds the ten sample cases at any time
 and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
 
+To get the fictional fill buttons while rehearsing, add `VITALLY_DEMO_TOOLS=1` to `.env.local` and
+restart the app. They appear only when `SUPABASE_URL` points at this machine (`127.0.0.1`,
+`localhost` or `[::1]`). With a hosted URL the setting is ignored and the server prints a warning.
+
 The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
 database suite and the sign-in gate pass with it present.
 
@@ -560,7 +564,12 @@ a changed file.
 
 Nothing in this section has happened. It is Task 10B (setup) and Task 10D (publication) —
 user-owned steps, not implementation work, and this document does not claim otherwise. What the
-user needs to provide before either can proceed:
+user needs to provide before either can proceed.
+
+A hosted or classroom copy never shows the fill tools, because its Supabase URL is not on the
+machine that serves it. Classroom demos type their answers, or run from a local stack.
+
+What the user needs to provide:
 
 1. **A school sender email/account** (for the preferred Gmail SMTP path) **or** a
    presenter-controlled, DNS-verified domain for the Resend SMTP fallback — a school address alone
