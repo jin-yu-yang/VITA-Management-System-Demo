@@ -2568,6 +2568,42 @@ async function runPermutation(t, roles) {
           0,
           "Morgan is offered Edit on Alex's entry",
         );
+        // Presenter-only (#134/#135): the same check inside one window, where
+        // it can fail. The presenter opens the case as Alex (the work board's
+        // search reaches it), becomes Sam — an admin, the only persona offered
+        // Edit on the Preparer's entry — and opens Edit, then becomes Morgan:
+        // the open form goes with the switch, and Morgan gets no Edit.
+        const presenterStarted = Date.now();
+        const presenterMark = staffWin.errors.length;
+        await choosePersona(presenterPage, alex);
+        await openBoard(presenterPage, WORK_BOARD_HEADING);
+        await openCaseByReference(presenterPage, classReference);
+        await choosePersona(presenterPage, sam);
+        await waitForCaseWorkspace(presenterPage, classReference);
+        await openCaseTab(presenterPage, "contacts");
+        await openEdit(presenterPage, alexId);
+        await choosePersona(presenterPage, morgan);
+        await waitForCaseWorkspace(presenterPage, classReference);
+        await openCaseTab(presenterPage, "contacts");
+        await presenterPage.locator(`[id="contact-${alexId}"]`).waitFor({ state: "visible", timeout: RENDER_MS });
+        await presenterPage
+          .locator(`form.contact-form[data-contact-id="${alexId}"]`)
+          .waitFor({ state: "detached", timeout: RENDER_MS });
+        assert.equal(
+          await presenterPage.locator(`form.contact-form[data-contact-id="${alexId}"]`).count(),
+          0,
+          "Morgan sees the edit form Sam left open in the same presenter window",
+        );
+        assert.equal(
+          await presenterPage.locator(`[id="contact-${alexId}"] [data-action="toggle-contact-edit"]`).count(),
+          0,
+          "Morgan is offered Edit on the Preparer's entry in the presenter window",
+        );
+        assertConsoleQuiet(
+          { errors: staffWin.errors.slice(presenterMark), pageErrors: staffWin.pageErrors },
+          { name: "contact log presenter window" },
+        );
+        evidence.story.presenterEditSwitchMs = Date.now() - presenterStarted;
         // The Preparer puts the open form away again, so its window carries no
         // edit of an entry somebody else is about to correct.
         await clickAction(preparerPage, "toggle-contact-edit", { attributes: `[data-contact-id="${alexId}"]` });
