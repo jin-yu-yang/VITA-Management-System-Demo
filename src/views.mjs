@@ -250,6 +250,7 @@ export function staffScreen(state) {
     connection: state.connection,
     workspace: state.workspace,
     cases: state.cases,
+    demoTools: state.demoTools === true,
   });
   const office = isAdmin(person);
   // A volunteer chosen while an office screen is open gets the work board.

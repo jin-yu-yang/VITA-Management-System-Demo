@@ -77,7 +77,7 @@ test("the persona picker leaves out a person a staff account has claimed", () =>
 });
 
 test("a presenter gets the reset, the checkpoints and the persona choice", () => {
-  const html = renderPresenterPanel(presenterView());
+  const html = renderPresenterPanel(presenterView({ demoTools: true }));
   for (const control of PRIVILEGED) assert.ok(html.includes(control), control);
   // One button per person, and the acting persona says so to a screen reader.
   for (const person of PEOPLE) assert.ok(html.includes(person.name), person.name);
@@ -85,6 +85,12 @@ test("a presenter gets the reset, the checkpoints and the persona choice", () =>
   assert.match(html, /data-person-id="person-morgan" aria-pressed="false"/);
   // The fictional-details helper stays reachable from here too.
   assert.match(html, /data-action="fill-assisted-intake"/);
+  // Without the switch the helper is gone, and the other controls stay.
+  for (const off of [presenterView(), presenterView({ demoTools: false })]) {
+    const bare = renderPresenterPanel(off);
+    assert.doesNotMatch(bare, /fill-assisted-intake/);
+    for (const control of PRIVILEGED) assert.ok(bare.includes(control), control);
+  }
 });
 
 test("the panel says which class workspace and which sample set is on screen", () => {
@@ -315,9 +321,8 @@ test("views.mjs passes the switch, not the presenter, to Add a case", () => {
   assert.doesNotMatch(staffScreen(staff(false)), /fill-assisted-intake/, "switch off, staff account");
   const asPresenter = (demoTools) =>
     presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam", demoTools });
-  // The presenter panel keeps its own helper button; the page's pill is what follows the switch.
-  assert.doesNotMatch(staffScreen(asPresenter(false)), /class="fiction-pill"/, "presenter, switch off");
-  assert.match(staffScreen(asPresenter(true)), /class="fiction-pill"/, "presenter, switch on");
+  assert.doesNotMatch(staffScreen(asPresenter(false)), /fill-assisted-intake/, "presenter, switch off");
+  assert.match(staffScreen(asPresenter(true)), /data-action="fill-assisted-intake"/, "presenter, switch on");
 });
 
 test("the add-case page's Fill fictional details pill follows the switch", () => {

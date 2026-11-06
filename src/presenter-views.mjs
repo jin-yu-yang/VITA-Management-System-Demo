@@ -67,6 +67,8 @@ function personaPicker(roster = [], selectedPersonId = null) {
  * @param {string} view.connection                the controller's connection state
  * @param {{id:string,fixtureGeneration:number}|null} view.workspace
  * @param {object[]} view.cases                   `listCases()`, for the sample count
+ * @param {boolean} [view.demoTools]              the demo-tools switch; only `true` adds the
+ *   Fill fictional details button (the reset and checkpoint buttons never depend on it)
  * @returns {string} HTML, or '' for anybody who is not a presenter
  */
 export function renderPresenterPanel({
@@ -76,6 +78,7 @@ export function renderPresenterPanel({
   connection = "unknown",
   workspace = null,
   cases = [],
+  demoTools = false,
 } = {}) {
   if (principal?.access !== "presenter") return "";
   const roster = Array.isArray(people) ? people : [];
@@ -95,11 +98,11 @@ export function renderPresenterPanel({
     `${icon("clock")} Load a sample checkpoint`,
     "open-checkpoint",
     "secondary",
-  )}${button(`${icon("refresh")} Reset sample cases`, "open-reset-fixtures", "secondary")}${button(
-    `${icon("spark")} Fill fictional details`,
-    "fill-assisted-intake",
-    "demo",
-  )}</div><p class="field-note">A reset rebuilds the ${esc(
+  )}${button(`${icon("refresh")} Reset sample cases`, "open-reset-fixtures", "secondary")}${
+    demoTools === true
+      ? button(`${icon("spark")} Fill fictional details`, "fill-assisted-intake", "demo")
+      : ""
+  }</div><p class="field-note">A reset rebuilds the ${esc(
     samples.length || "six",
   )} sample cases from scratch. Applications this class created are not touched by it, and neither is anybody's sign-in.</p></section>`;
 }
