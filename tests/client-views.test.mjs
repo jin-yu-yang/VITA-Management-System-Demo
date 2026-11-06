@@ -1176,15 +1176,24 @@ const submitOf = (html) => {
 };
 const MEMBER = "000000000000000000000000000003e9"; // the sample's first household member
 
+test("the fiction toolbar shows only with the switch", () => {
+  const off = intakeScreen(v2State({ formSubstep: "about.address", demoTools: false }));
+  assert.doesNotMatch(off, /fill-fictional|regenerate-fictional|demo-fiction/);
+  assert.doesNotMatch(intakeScreen(v2State({ formSubstep: "about.address" })), /fill-fictional/, "absent means off");
+  const on = intakeScreen(v2State({ formSubstep: "about.address", demoTools: true }));
+  assert.match(on, /Fill fictional details/);
+  assert.match(on, /data-action="fill-fictional"/);
+  assert.match(on, /data-action="regenerate-fictional"/);
+  assert.match(on, /demo-fiction/);
+  assert.match(intakeScreen(v2State({ formSubstep: "about.address", demoTools: true, lang: "zh-Hans" })), /填入虚构资料/);
+});
+
 test("a version-2 draft gets the sub-step page: form, overline, title and count", () => {
   const html = intakeScreen(v2State({ formSubstep: "about.address" }));
   assert.match(html, /<form id="intake-v2-form" novalidate data-substep="about\.address">/);
   assert.match(html, /<span class="overline">STEP 1 OF 9 · ABOUT YOU<\/span><h1>Mailing address<\/h1><p class="substep-count">2 of 6<\/p>/);
   // The office card stays under the rail, and the chrome comes from client-views.
   assert.match(html, /class="sidebar-help"[\s\S]*class="office-contact"[\s\S]*tel:\+12159226156/);
-  assert.match(html, /Fill fictional details/);
-  assert.match(html, /data-action="fill-fictional"/);
-  assert.match(html, /data-action="regenerate-fictional"/);
   assert.match(html, /<span class="save-chip/);
   // Save & exit lives in the top bar; the form keeps Back and Continue.
   assert.doesNotMatch(html, /data-action="save-exit"/);

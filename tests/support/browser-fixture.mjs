@@ -3,6 +3,7 @@ import { chromium, firefox } from "playwright";
 import { createClient } from "@supabase/supabase-js";
 import { createAppServer } from "../../server.mjs";
 import { NEUTRAL_SEND_MESSAGE } from "../../src/auth.mjs";
+import { isLoopbackUrl } from "../../src/loopback.mjs";
 import { assertTestTarget } from "../../tools/admin/test-target.mjs";
 import { createDatabaseFixture } from "./database-fixture.mjs";
 
@@ -356,8 +357,12 @@ export async function createBrowserFixture() {
     // Ruling R45: the app is served in-process from the repository, configured
     // only with the guarded test target. No `.env.local` is ever written, and
     // port 0 keeps parallel runs and other sessions' servers out of the way.
+    if (!isLoopbackUrl(target.apiUrl)) {
+      throw new Error("The browser story needs a local (loopback) Supabase test target for the demo tools.");
+    }
     server = createAppServer({
       env: {
+        VITALLY_DEMO_TOOLS: "1",
         SUPABASE_URL: target.apiUrl,
         SUPABASE_PUBLISHABLE_KEY: target.publishableKey,
         AUTH_RESEND_COOLDOWN_SECONDS: String(APP_COOLDOWN_SECONDS),

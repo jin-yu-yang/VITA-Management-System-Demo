@@ -37,7 +37,7 @@ same job.
 
 ### The public configuration contract
 
-The browser fetches `./public-config.json` at start-up. It is one of exactly two shapes:
+The browser fetches `./public-config.json` at start-up. It is one of exactly three shapes:
 
 ```json
 {"configured": false}
@@ -52,8 +52,24 @@ The browser fetches `./public-config.json` at start-up. It is one of exactly two
 }
 ```
 
+```json
+{
+  "configured": true,
+  "supabaseUrl": "http://127.0.0.1:54321",
+  "supabasePublishableKey": "<publishable key>",
+  "authResendCooldownSeconds": 65,
+  "demoTools": true
+}
+```
+
 `server.mjs` builds it from `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
 `AUTH_RESEND_COOLDOWN_SECONDS` in `.env.local`. A static host serves it as a plain committed file.
+`server.mjs` adds `"demoTools": true` only when `VITALLY_DEMO_TOOLS` is `1` and `SUPABASE_URL` is a
+loopback address (`127.0.0.1`, `localhost` or `[::1]`). If the flag is set but the URL is not on
+this machine, the key is left out and the server prints a start-up warning that never includes
+the URL. The browser shows the fill tools only when it receives the key and its own
+`supabaseUrl` is also a loopback address. A committed `public-config.json` must never carry
+`demoTools`; `tests/demo-tools-config.test.mjs` fails if any tracked `public-config*.json` does.
 The publishable key is designed to be public; row-level security protects the data. **The
 service-role (secret) key must never appear in this file, in `src/`, or in the repository.**
 

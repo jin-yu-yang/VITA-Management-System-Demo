@@ -133,8 +133,9 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    presenter, with the presenter panel and every staff persona.
 5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
    code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
-   persona picker, sample reset, checkpoints or "Fill fictional details": the account acts only as
-   its own person, with that person's capabilities. To add another fictional staff rehearsal
+   persona picker, sample reset or checkpoints: the account acts only as its own person, with
+   that person's capabilities. The fill buttons ("Fill fictional details", "Auto-fill fictional
+   data") appear for anyone, staff included, only when `.env.local` sets `VITALLY_DEMO_TOOLS=1`. To add another fictional staff rehearsal
    account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
    [Rosters](#rosters)) with a fictional address and run the roster command again.
 6. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
@@ -143,6 +144,10 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
 A new code for the same address can be requested only about once a minute; the form shows a
 countdown. **Reset sample cases** in the presenter panel rebuilds the ten sample cases at any time
 and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
+
+To get the fictional fill buttons while rehearsing, add `VITALLY_DEMO_TOOLS=1` to `.env.local` and
+restart the app. They appear only when `SUPABASE_URL` points at this machine (`127.0.0.1`,
+`localhost` or `[::1]`). With a hosted URL the setting is ignored and the server prints a warning.
 
 The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
 database suite and the sign-in gate pass with it present.
@@ -560,7 +565,12 @@ a changed file.
 
 Nothing in this section has happened. It is Task 10B (setup) and Task 10D (publication) —
 user-owned steps, not implementation work, and this document does not claim otherwise. What the
-user needs to provide before either can proceed:
+user needs to provide before either can proceed.
+
+A hosted or classroom copy never shows the fill tools, because its Supabase URL is not on the
+machine that serves it. Classroom demos type their answers, or run from a local stack.
+
+What the user needs to provide:
 
 1. **A school sender email/account** (for the preferred Gmail SMTP path) **or** a
    presenter-controlled, DNS-verified domain for the Resend SMTP fallback — a school address alone

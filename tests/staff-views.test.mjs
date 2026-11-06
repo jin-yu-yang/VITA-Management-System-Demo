@@ -1511,6 +1511,14 @@ test("case details keep the rows the story and the office read", () => {
 // "Your next step", the corrections dialog and the tabbed case page (Task 3)
 // ---------------------------------------------------------------------------
 
+test("the preparer questionnaire's auto-fill button follows the switch, not the account", () => {
+  const record = staffCase({ stage: "preparing" });
+  const step = (ui, principal) => nextStep(record, staffEligibility(record, ALEX), { principal, ...ui });
+  assert.match(step({ demoTools: true }, { access: "staff" }), /data-action="demo-fill"/, "staff account, switch on");
+  assert.doesNotMatch(step({ demoTools: false }, { access: "presenter" }), /demo-fill/, "presenter, switch off");
+  assert.doesNotMatch(step({}, { access: "presenter" }), /demo-fill/, "presenter, no switch given");
+});
+
 test("your next step offers the one action that fits, or says who the case waits on", () => {
   const step = (overrides, person) => {
     const record = staffCase(overrides);

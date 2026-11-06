@@ -259,8 +259,11 @@ export function createController({
   // per browser, never in the window state. null when it is blocked.
   localStorage = null,
   languages = [],
+  // The demo-tools switch (demoToolsFromConfig); fixed for the session.
+  demoTools = false,
 }) {
   const state = {
+    demoTools: demoTools === true,
     // The client's language: "en", "zh-Hans" or "zh-Hant". Staff screens
     // ignore it (viewLang). Saved per browser, never in sessionStorage.
     lang: readLanguage({ storage: localStorage, languages }),
