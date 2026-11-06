@@ -338,7 +338,7 @@ async function assertScenario(f, caseId, key, { revision } = {}) {
 // bound client can still read their own fixture case, and an applicant's reset
 // is refused without moving anything at all.
 test("sample reset preserves class-created applications", async () => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     const created = await f.createCase(f.applicantA, crypto.randomUUID());
     // Snapshot helpers use guarded privileged SQL, scoped to this workspace.
@@ -382,7 +382,7 @@ test("sample reset preserves class-created applications", async () => {
 });
 
 test("the seeded workspace tells one coherent story", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await t.test("each of the six cases holds its own stage-consistent records", async () => {
       await f.seedFixtures();
@@ -788,7 +788,7 @@ test("the seeded workspace tells one coherent story", async (t) => {
 });
 
 test("fixture checks by service", async () => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await f.seedFixtures();
     const byKey = await fixtureByKey(f);
@@ -831,7 +831,7 @@ test("fixture checks by service", async () => {
 });
 
 test("receipts outlive the fixtures they targeted", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await f.seedFixtures();
     const byKey = await fixtureByKey(f);
@@ -940,7 +940,7 @@ test("receipts outlive the fixtures they targeted", async (t) => {
 });
 
 test("checkpoint reset leaves no stale answers", async () => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await f.seedFixtures();
     {
@@ -969,7 +969,7 @@ test("checkpoint reset leaves no stale answers", async () => {
 });
 
 test("checkpoints move one demonstration case and nothing else", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await f.seedFixtures();
 
@@ -1141,7 +1141,7 @@ test("checkpoints move one demonstration case and nothing else", async (t) => {
 });
 
 test("the presenter entry points are the only way in", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
   try {
     await f.seedFixtures();
 
