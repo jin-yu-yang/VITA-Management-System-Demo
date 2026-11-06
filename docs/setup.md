@@ -484,7 +484,7 @@ and the commands are in [`docs/developer/database.md`](developer/database.md#mig
 
 All commands below run from the repository root with the command-scoped `PATH` shown. Each
 suite's **last-verified count** is below. The database count was last verified on the local
-seed command (2026-11-06, change `add-local-seed-script`, with migration 038 applied). The unit
+seed command (2026-11-06, change `add-local-seed-script`, with migration 039 applied). The unit
 and story counts were last verified on the preparer's shaded section (2026-10-24, change
 `add-preparer-13614c-fields`, with migration 038 applied; the story in one run, see the note below the table). The auth-gate count is still from
 the not-married intake wording (2026-10-14, change `add-unmarried-intake-wording`, with migration
