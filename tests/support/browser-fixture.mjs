@@ -348,9 +348,9 @@ export async function loginTestUserById({ page, actor, fixture, otp }) {
 
 export async function createBrowserFixture() {
   const target = await assertTestTarget();
-  // The story works its follow-ups as the presenter's Sam, so Sam stays the
-  // default follow-up person here.
-  const database = await createDatabaseFixture({ siteCoordinatorFollowsUp: false });
+  // The database fixture's default: the Site Coordinator is the default
+  // follow-up person, as the seed (tools/admin/seed-cases.mjs) requires.
+  const database = await createDatabaseFixture();
   const browsers = [];
   let server = null;
   try {
@@ -394,9 +394,12 @@ export async function createBrowserFixture() {
     sessionStateKey,
   };
 
-  // One provisioned actor, by the name the database fixture uses.
+  // One provisioned actor, by the name the database fixture uses: one of its
+  // own actors (applicantA, presenter, …) or one of its role-named staff
+  // accounts (siteCoordinator, preparer, reviewer, intaker), whose address the
+  // fixture keeps under `roleAccounts`. Never logged.
   fixture.actor = (key) => {
-    const email = database[`${key}Email`];
+    const email = database[`${key}Email`] ?? database.roleAccounts?.[key]?.email;
     const userId = database[`${key}UserId`];
     assert.ok(
       email && userId,
@@ -451,8 +454,19 @@ export async function createBrowserFixture() {
       // language from `navigator.languages`, so a machine whose browser runs
       // in Chinese would otherwise start an English story in Chinese. The one
       // phase that works in Chinese asks for its own.
-      async newPage({ viewport = { width: 1280, height: 900 }, locale = "en-US" } = {}) {
+      //
+      // `permissions` are granted for the app's origin and `initScript` runs
+      // in every document, both before the first one loads (the story's
+      // clipboard check needs both on a window it signs in once).
+      async newPage({
+        viewport = { width: 1280, height: 900 },
+        locale = "en-US",
+        permissions = [],
+        initScript = null,
+      } = {}) {
         const context = await browser.newContext({ viewport, locale });
+        if (permissions.length) await context.grantPermissions(permissions, { origin: appOrigin });
+        if (initScript) await context.addInitScript(initScript);
         const page = await context.newPage();
         const errors = [];
         const pageErrors = [];
