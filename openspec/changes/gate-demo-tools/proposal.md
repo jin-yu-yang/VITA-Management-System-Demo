@@ -32,7 +32,7 @@ The staff and office ones are tied to the presenter account, which is being remo
 - `demo-tools`: the fictional-fill controls (staff, client and office), the single `demoTools` switch that shows and enables them, how the server sets it (flag plus loopback), the browser's own loopback check, and the guard against a committed config carrying it.
 
 ### Modified Capabilities
-_None._ `client-intake`'s "Fill fictional details" scenarios (the fill leaves consent to the client) still hold when the switch is on.
+- `staff-case-work`: the requirement "A staff account's screens have no persona picker or demo tools" is renamed to "…no persona picker or presenter controls", because staff now see the fill tools when the demo-tools switch is on; its text is unchanged.
 
 ## Impact
 

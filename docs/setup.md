@@ -133,8 +133,9 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    presenter, with the presenter panel and every staff persona.
 5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
    code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
-   persona picker, sample reset, checkpoints or "Fill fictional details": the account acts only as
-   its own person, with that person's capabilities. To add another fictional staff rehearsal
+   persona picker, sample reset or checkpoints: the account acts only as its own person, with
+   that person's capabilities. The fill buttons ("Fill fictional details", "Auto-fill fictional
+   data") appear for anyone, staff included, only when `.env.local` sets `VITALLY_DEMO_TOOLS=1`. To add another fictional staff rehearsal
    account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
    [Rosters](#rosters)) with a fictional address and run the roster command again.
 6. To play the client at the same time, open <http://127.0.0.1:4173> in a private window (or a
