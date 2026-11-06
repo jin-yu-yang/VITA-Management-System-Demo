@@ -77,7 +77,7 @@ test("the persona picker leaves out a person a staff account has claimed", () =>
 });
 
 test("a presenter gets the reset, the checkpoints and the persona choice", () => {
-  const html = renderPresenterPanel(presenterView());
+  const html = renderPresenterPanel(presenterView({ demoTools: true }));
   for (const control of PRIVILEGED) assert.ok(html.includes(control), control);
   // One button per person, and the acting persona says so to a screen reader.
   for (const person of PEOPLE) assert.ok(html.includes(person.name), person.name);
@@ -85,6 +85,12 @@ test("a presenter gets the reset, the checkpoints and the persona choice", () =>
   assert.match(html, /data-person-id="person-morgan" aria-pressed="false"/);
   // The fictional-details helper stays reachable from here too.
   assert.match(html, /data-action="fill-assisted-intake"/);
+  // Without the switch the helper is gone, and the other controls stay.
+  for (const off of [presenterView(), presenterView({ demoTools: false })]) {
+    const bare = renderPresenterPanel(off);
+    assert.doesNotMatch(bare, /fill-assisted-intake/);
+    for (const control of PRIVILEGED) assert.ok(bare.includes(control), control);
+  }
 });
 
 test("the panel says which class workspace and which sample set is on screen", () => {
@@ -303,7 +309,23 @@ test("a refused stored persona shows in the error banner and the window stays us
   assert.match(html, /data-action="select-person"/, "the picker is still there to choose again");
 });
 
-test("the add-case page's Fill fictional details pill is a presenter's only", () => {
+test("views.mjs passes the switch, not the presenter, to Add a case", () => {
+  const add = { screen: "office-add-case", workspace: { defaultIntakeVersion: 2 }, officeDraft: true, draftAnswers: {} };
+  const staff = (demoTools) => {
+    const s = staffView({ ...add, selectedPersonId: "person-sam", demoTools });
+    s.principal.personId = "person-sam";
+    s.principal.personName = "Sam";
+    return s;
+  };
+  assert.match(staffScreen(staff(true)), /data-action="fill-assisted-intake"/, "switch on, staff account");
+  assert.doesNotMatch(staffScreen(staff(false)), /fill-assisted-intake/, "switch off, staff account");
+  const asPresenter = (demoTools) =>
+    presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam", demoTools });
+  assert.doesNotMatch(staffScreen(asPresenter(false)), /fill-assisted-intake/, "presenter, switch off");
+  assert.match(staffScreen(asPresenter(true)), /data-action="fill-assisted-intake"/, "presenter, switch on");
+});
+
+test("the add-case page's Fill fictional details pill follows the switch", () => {
   const add = { screen: "office-add-case", workspace: { defaultIntakeVersion: 2 }, officeDraft: true, draftAnswers: {} };
   const asStaff = staffView({ ...add, selectedPersonId: "person-sam" });
   asStaff.principal.personId = "person-sam";
@@ -312,6 +334,6 @@ test("the add-case page's Fill fictional details pill is a presenter's only", ()
   assert.match(staffHtml, /id="add-case-v2-form"/, "the form is there");
   assert.ok(!staffHtml.includes("Fill fictional details"));
   assert.ok(!staffHtml.includes("fill-assisted-intake"));
-  const presenterHtml = staffScreen(presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam" }));
+  const presenterHtml = staffScreen(presenterView({ ...staffView(add), principal: presenterView().principal, selectedPersonId: "person-sam", demoTools: true }));
   assert.match(presenterHtml, /data-action="fill-assisted-intake"/);
 });

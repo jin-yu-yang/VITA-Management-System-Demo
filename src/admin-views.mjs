@@ -777,7 +777,7 @@ const clientName = (record) =>
 export function markReadyToEfileDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
-    before: demoFillButton(state.principal),
+    before: demoFillButton(state.demoTools === true),
     lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> as ready to e-file?`,
@@ -910,7 +910,7 @@ function efiledChoices(record) {
 export function markEfiledDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
-    before: demoFillButton(state.principal),
+    before: demoFillButton(state.demoTools === true),
     lead: `Mark <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> as e-filed?`,
@@ -962,7 +962,7 @@ function resultFields(kind) {
 export function recordFilingResultDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
-    before: demoFillButton(state.principal),
+    before: demoFillButton(state.demoTools === true),
     lead: `Record the filing result for <strong>${esc(
       record.reference ?? "this case",
     )}</strong> for <strong>${esc(clientName(record))}</strong>?`,
@@ -1001,7 +1001,7 @@ export function recordFilingResultDialogBody(state = {}) {
 export function returnToSigningDialogBody(state = {}) {
   const record = state.savedCase ?? {};
   return confirmBody({
-    before: demoFillButton(state.principal),
+    before: demoFillButton(state.demoTools === true),
     lead: `Return <strong>${esc(record.reference ?? "this case")}</strong> for <strong>${esc(
       clientName(record),
     )}</strong> to signing?`,

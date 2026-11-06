@@ -303,9 +303,15 @@ function build(options = {}) {
     cooldownSeconds: options.cooldownSeconds,
     localStorage: options.localStorage,
     languages: options.languages,
+    demoTools: options.demoTools,
   });
   return { controller, events, sessionStorage, renders };
 }
+
+test("the controller carries the demo-tools switch it was given", () => {
+  assert.equal(build({ demoTools: true }).controller.getState().demoTools, true);
+  assert.equal(build().controller.getState().demoTools, false);
+});
 
 // ---------------------------------------------------------------------------
 // The task brief's test, verbatim.

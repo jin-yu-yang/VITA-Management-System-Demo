@@ -402,7 +402,7 @@ A `staff` member SHALL be able to read exactly the rows a presenter in the same 
 - **WHEN** a staff member has the work board open and another window claims a case
 - **THEN** the staff member's board shows the claim without a reload
 
-### Requirement: A staff account's screens have no persona picker or demo tools
+### Requirement: A staff account's screens have no persona picker or presenter controls
 A `staff` account SHALL get the same staff screens as a presenter: the work board, the case pages, the office screens its capabilities allow. Its screens SHALL NOT show the persona picker, "Reset the sample cases" or "Load a sample checkpoint". They SHALL show "Signed in as <name>" with the staff member's person name where the presenter's "Acting as" appears. A staff window SHALL never save or restore a chosen persona, and SHALL ignore one left in its browser storage. Staff screens SHALL stay in English whatever language the browser chose.
 
 #### Scenario: A staff member signs in
