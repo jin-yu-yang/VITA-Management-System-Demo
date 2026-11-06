@@ -268,6 +268,8 @@ export function staffScreen(state) {
         person,
         // The case header says "Signed in as" for a staff account.
         principal: state.principal,
+        // The demo-tools switch: it shows the Auto-fill button on the forms.
+        demoTools: state.demoTools === true,
         busy: state.busy,
         // A dialog opened from the case page holds the only copy of the error.
         error: state.dialog ? null : state.error,
@@ -390,7 +392,7 @@ function addCasePage(state, person, people) {
     error: state.error,
     retryable: state.retryable,
     people,
-    demoTools: state.principal?.access === "presenter",
+    demoTools: state.demoTools === true,
   });
 }
 

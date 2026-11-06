@@ -786,14 +786,14 @@ function createdBy(record, people) {
  * @param {object} ui `{ person, busy, officeSaving, draftAnswers, savedCase,
  *   openAddSubsteps, openPanels, addCaseShowMissing, revealed, dirty,
  *   saveState, conflict, error, retryable, people, demoTools }`, `demoTools`
- *   (a presenter's window) adds the Fill fictional details pill, `savedCase` decorated
+ *   (the demo-tools switch) adds the Fill fictional details pill, `savedCase` decorated
  *   (`decorateStaffCase`)
  */
 export function renderAddCaseV2(ui = {}) {
   const view = ui ?? {};
   const person = view.person ?? null;
   const off = view.busy ? "disabled" : "";
-  // The fill button is a demo tool: only a presenter's window carries it.
+  // The fill button is a demo tool: only a window with the switch on carries it.
   const pill = !view.demoTools
     ? ""
     : `<p class="fiction-pill">${icon("spark")} Fictional data only · ${button("Fill fictional details", "fill-assisted-intake", "text", off)}</p>`;
