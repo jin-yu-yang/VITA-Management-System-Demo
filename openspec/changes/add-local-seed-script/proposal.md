@@ -54,3 +54,4 @@ _None._ The roster command's rules (`sign-in`) don't change. Only the example fi
 - **Tests:** a unit test for arguments and the guard, and a new database suite that seeds a throwaway workspace twice. It builds on the role-named fixture accounts from the preceding tests-only PR.
 - **Dependencies:** none new. It uses `pg`, `@supabase/supabase-js` and the existing target guard.
 - **Systems:** the local Supabase test stack only. Hosted projects can't be reached by design.
+- **Issue:** #131, part of tracking issue #128.
