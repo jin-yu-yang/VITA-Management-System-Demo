@@ -112,6 +112,8 @@ so each tool must prove it is pointed at the intended target before doing anythi
 | `migrate.mjs` | Applies pending migrations with a SHA-256 ledger. `--target test` (default) or `--target classroom` |
 | `workspace-setup.mjs` | `initializeWorkspace`: creates a workspace, its three demo people, memberships, staff members (038) and sample-case bindings |
 | `roster.mjs` | Reads a roster file, creates confirmed password-free accounts, and calls `initializeWorkspace`. Never prints an address ([roster format](#the-roster)) |
+| `seed.mjs` | `npm run seed:local`: builds rehearsal cases on the **local test stack only**. Needs `VITALLY_ALLOW_LOCAL_SEED=1` (checked before any file is read) and refuses any other target as `TARGET_REJECTED`. Records its case ids in `.vitally-runs/seed-<workspaceId>.json`, which the next run uses to replace the previous set. Never prints an address |
+| `seed-cases.mjs` | The cases it builds, acting as the role accounts through `vitally_create_case` and `vitally_apply_action`. The only direct insert is the help request |
 
 A guard failure is always `TARGET_REJECTED` and deliberately does not say which check failed;
 [`docs/setup.md`](../setup.md#private-test-configuration) lists what to check. The guards are unit
@@ -128,10 +130,12 @@ The roster is a JSON file (a `.vitally-roster*.json` file, ignored by version co
   "workspaceId": "replace-with-a-uuid",
   "presenters": ["presenter@example.org"],
   "staff": [
-    { "email": "staff-a@example.org", "name": "Riley Park", "personKey": "riley", "capabilities": ["prepare"] },
-    { "email": "staff-b@example.org", "name": "Jordan Lee", "personKey": "jordan", "capabilities": ["admin", "followup"] }
+    { "email": "site-coordinator@example.org", "name": "Sky Chen (site coordinator)", "personKey": "site_coordinator", "capabilities": ["admin", "followup", "assist", "receive_documents"] },
+    { "email": "preparer@example.org", "name": "Rowan Diaz (preparer)", "personKey": "preparer", "capabilities": ["prepare"] },
+    { "email": "reviewer@example.org", "name": "Ari Novak (reviewer)", "personKey": "reviewer", "capabilities": ["review"] },
+    { "email": "intaker@example.org", "name": "Kai Mensah (intaker)", "personKey": "intaker", "capabilities": ["receive_documents", "assist"] }
   ],
-  "defaultFollowup": "jordan",
+  "defaultFollowup": "site_coordinator",
   "applicants": ["client-a@example.org"]
 }
 ```

@@ -110,9 +110,19 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    "$VITALLY_NODE" -e "console.log(crypto.randomUUID())"
    ```
 
-3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one staff
-   member, `staff-a@example.org` (Riley Park, a preparer), and two clients, `client-a@example.org`
-   (who owns one sample case) and `client-b@example.org`.
+3. Create the accounts. The example roster makes one presenter, `presenter@example.org`, one
+   client, `client-a@example.org` (who owns one sample case), and four staff accounts named for
+   their roles:
+
+   | Address | Person | Can |
+   | --- | --- | --- |
+   | `site-coordinator@example.org` | Sky Chen (site coordinator) | admin, follow-up, assist, receive documents. Is the default follow-up person |
+   | `preparer@example.org` | Rowan Diaz (preparer) | prepare |
+   | `reviewer@example.org` | Ari Novak (reviewer) | review |
+   | `intaker@example.org` | Kai Mensah (intaker) | receive documents, assist |
+
+   The Intaker lands on the Work board until the roster change that gives the role its own
+   landing page.
 
    ```sh
    PATH="$VITALLY_NODE_BIN:/Users/jinyuyang/.docker/bin:$PATH" \
@@ -123,6 +133,10 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    It prints how many accounts it created. Running it again is harmless and creates nothing new;
    to add people, append addresses to the file and run it again. Nobody is ever removed.
 
+   Run it again after you pull a change to the example roster. The seed command (below) needs the
+   current role accounts. If you copied the file before this change, copy it again and keep your
+   workspace ID.
+
 **Use them (every time).**
 
 1. Start the app with `PATH="$VITALLY_NODE_BIN:$PATH" npm start` and open
@@ -131,8 +145,8 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
 3. Open <http://127.0.0.1:54324> in another tab, open the newest message, and copy the code.
 4. Paste it into **Verification code** and press **Verify and continue**. You are signed in as the
    presenter, with the presenter panel and every staff persona.
-5. To rehearse as a real staff member instead, sign in as `staff-a@example.org` the same way (the
-   code arrives in Mailpit like any other). The screen says "Signed in as Riley Park" and has no
+5. To rehearse as a real staff member instead, sign in as `preparer@example.org` the same way (the
+   code arrives in Mailpit like any other). The screen says "Signed in as Rowan Diaz (preparer)" and has no
    persona picker, sample reset, checkpoints or "Fill fictional details": the account acts only as
    its own person, with that person's capabilities. To add another fictional staff rehearsal
    account, append an entry to the `staff` list of `.vitally-roster.local.json` (see
@@ -141,8 +155,36 @@ stack never sends real mail: every code lands in its local mailbox (Mailpit), a 
    second browser) and repeat steps 2–4 with `client-a@example.org`.
 
 A new code for the same address can be requested only about once a minute; the form shows a
-countdown. **Reset sample cases** in the presenter panel rebuilds the ten sample cases at any time
-and leaves any application you created yourself alone. Stop the app with Ctrl+C in its terminal.
+countdown. **Reset sample cases** in the presenter panel is the presenter's tool: it rebuilds the
+ten sample cases at any time and leaves any application you created yourself alone. It stays until
+the presenter mode is removed. Stop the app with Ctrl+C in its terminal.
+
+**Seed the rehearsal cases.** To fill the rehearsal workspace with cases at every stage, run the
+seed command. It is local only: it refuses any target that is not the local test stack, and it does
+nothing unless you opt in with `VITALLY_ALLOW_LOCAL_SEED=1`.
+
+```sh
+VITALLY_ALLOW_LOCAL_SEED=1 PATH="$VITALLY_NODE_BIN:$PATH" npm run seed:local
+```
+
+It reads `.vitally-roster.local.json` (or the file after `--roster`), acts as the role accounts
+through the same functions the app uses, and builds:
+
+- client A's case, just submitted, at Received;
+- ten office-entered cases: preparation ready, waiting on documents, an escalated follow-up for the
+  Site Coordinator, ready for review, corrections required, review approved, state return rejected,
+  accepted, on hold and withdrawn;
+- one open help request on client A's case.
+
+On the corrections-required case the case has no current reviewer, because asking for corrections
+clears it. The Reviewer is named on that review round.
+
+It prints `Seeded 11 cases (removed N from the previous run).` and records the cases in
+`.vitally-runs/seed-<workspaceId>.json`. A re-run replaces the previous set and leaves every other
+case alone. If it stops with `SEED_SETUP`, a role account or client A is missing from the
+workspace: run the roster command again with the current example roster.
+
+Seed before you open the app, or reload any window that is already open afterwards.
 
 The rehearsal workspace is permanent and separate from the test suites' own workspaces; the
 database suite and the sign-in gate pass with it present.

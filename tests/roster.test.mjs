@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import {
   parseRoster,
@@ -358,4 +359,21 @@ test("a staff account failure names the position, not the address", async () => 
       /staff\[0\]/.test(error.message) &&
       !error.message.includes("@"),
   );
+});
+
+test("the example roster parses and names the role accounts", () => {
+  const example = JSON.parse(readFileSync("tools/admin/roster.example.json", "utf8"));
+  const roster = parseRoster({ ...example, workspaceId: WORKSPACE });
+  assert.deepEqual(
+    roster.staff.map(({ personKey, capabilities }) => [personKey, capabilities]),
+    [
+      ["site_coordinator", ["admin", "followup", "assist", "receive_documents"]],
+      ["preparer", ["prepare"]],
+      ["reviewer", ["review"]],
+      ["intaker", ["receive_documents", "assist"]],
+    ],
+  );
+  assert.equal(roster.defaultFollowup, "site_coordinator");
+  assert.deepEqual(roster.applicants, ["client-a@example.org"]);
+  assert.deepEqual(roster.presenters, ["presenter@example.org"]);
 });
