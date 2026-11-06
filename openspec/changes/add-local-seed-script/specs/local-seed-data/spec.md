@@ -53,7 +53,7 @@ In the target workspace the seed SHALL create:
   - one at `preparing`, held by the Preparer, with one open document request;
   - one at `preparing`, held by the Preparer, whose document request has been escalated into an open follow-up assigned to the Site Coordinator;
   - one at `review_ready`, held by the Preparer, with no reviewer;
-  - one at `corrections_required`, held by the Preparer, with the Reviewer as reviewer;
+  - one at `corrections_required`, held by the Preparer, whose correction round was written by the Reviewer (the case has no current reviewer until it is resubmitted);
   - one at `review_approved`, with the Preparer and Reviewer named;
   - one at `rejected`, with the state return rejected;
   - one at `accepted`, with both returns accepted;
@@ -67,7 +67,7 @@ In the target workspace the seed SHALL create:
 
 #### Scenario: Each login has its own work
 - **WHEN** the Preparer, the Reviewer and the Site Coordinator each read their cases after a seed
-- **THEN** the Preparer holds the cases in preparation and corrections, the Reviewer is the named reviewer on the cases at or past review, and the Site Coordinator has the escalated follow-up and the help request waiting
+- **THEN** the Preparer holds the cases in preparation and corrections, the Reviewer is the named reviewer on the cases from review approved on and wrote the correction round on the corrections case, and the Site Coordinator has the escalated follow-up and the help request waiting
 
 ### Requirement: Running the seed again replaces the previous set
 Each run SHALL record the ids of the cases and help request it creates in a run file under `.vitally-runs/`, named by workspace, writing it as each item is created. A run SHALL first delete exactly the rows listed in that workspace's run file, limited to that workspace, and then seed a fresh set. Rows not listed in the run file SHALL NOT be deleted.

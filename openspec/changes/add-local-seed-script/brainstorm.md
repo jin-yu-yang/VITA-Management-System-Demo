@@ -79,7 +79,7 @@ Builder's calls, settled after the design check:
 | 2 | waiting_documents | as 1, then Preparer: claim, request a document | `preparing`, one open request | Preparer |
 | 3 | admin_followup | as 2, then Preparer: escalate the request | `preparing`, open follow-up | Preparer; follow-up to SC |
 | 4 | review_ready | as 1, then Preparer: claim, submit for review | `review_ready` | Preparer; on the Reviewer's board to claim |
-| 5 | corrections_required | as 4, then Reviewer: claim review, request corrections | `corrections_required` | Preparer; Reviewer named |
+| 5 | corrections_required | as 4, then Reviewer: claim review, request corrections | `corrections_required` | Preparer; Reviewer wrote the correction round |
 | 6 | review_approved | as 4, then Reviewer: claim, approve (went over the return) | `review_approved` | Preparer and Reviewer named; office next |
 | 7 | rejected | as 6, then SC: mark ready to e-file, mark e-filed (both e-file), record results with the state return rejected (fictional reject code) | `rejected` | SC |
 | 8 | accepted | as 7 up to e-filed, then SC: record both returns accepted | `accepted` | none (finished) |
@@ -89,6 +89,7 @@ Builder's calls, settled after the design check:
 - **The help request:** one open request linked to client A's case, inserted directly as the test fixture's `seedAssistance` does today, because help requests have no creating action. It appears in the Site Coordinator's Follow-ups.
 - **No scenario needed adjusting.** Each one can be reached through the real RPCs with this ownership. The escalation has no waiting-time rule, and it assigns the follow-up to the default follow-up person, the Site Coordinator.
 - **Interpretation recorded, not a decision:** the user asked that the Reviewer "holds the ones waiting for or in review". The ten scenarios have no case sitting in `reviewing`. The Reviewer is the named reviewer on cases 5 to 8, and case 4 waits on their board to claim. Turning case 4 into a claimed review would change a scenario, so it isn't done.
+- **Corrected during apply (2026-11-06):** asking for corrections clears the case's reviewer (migration 006), so the Reviewer is the named reviewer on cases 6 to 8 and wrote case 5's correction round.
 - **Builder's call:**
   - Answers come from `makeSampleAnswers()` in `src/sample-data.mjs`, with a distinct fictional client name per case.
   - The questionnaires reuse the shapes the database tests already pass (`PREPARER`, `REVIEWER` in `tests/support/database-fixture.mjs`). The seed keeps its own copy, because tools must not import tests.

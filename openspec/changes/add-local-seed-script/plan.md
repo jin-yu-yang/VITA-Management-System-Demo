@@ -199,7 +199,7 @@
     - stages, in order: `received`, `preparation_ready`, `preparing`, `preparing`, `review_ready`, `corrections_required`, `review_approved`, `rejected`, `accepted`, `on_hold`, `closed`;
     - `owner_user_id` is client A only on `client_received`, and null elsewhere;
     - `preparer_id` is `f.preparerId` on `waiting_documents` through `accepted`, and null on `preparation_ready`;
-    - `reviewer_id` is `f.reviewerId` on `corrections_required` through `accepted`;
+    - `reviewer_id` is `f.reviewerId` on `review_approved` through `accepted`; on `corrections_required` it is null and the case's `corrections_requested` review names `f.reviewerId`;
     - `closing_reason` is `"withdrawn"` on `withdrawn`;
     - `admin_followup` has one open `admin_followups` row with `assignee_person_id` equal to `f.siteCoordinatorId`;
     - `waiting_documents` has one open `document_requests` row;
