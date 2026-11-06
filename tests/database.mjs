@@ -191,7 +191,7 @@ async function seedWorkflow(f, caseId) {
   return seeded;
 }
 test("identity, references, ownership, and privileged setup on real Supabase", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ roleAccounts: false });
   try {
     await t.test(
       "references are stable and unique; IDs and references do not authorize access",
@@ -296,7 +296,7 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
         );
         await assert.rejects(
           () =>
-            f.createCase(f.presenter, crypto.randomUUID(), {
+            f.createCaseAsPersona(f.presenter, crypto.randomUUID(), {
               mode: "assisted",
               personId: f.people.alex,
             }),
@@ -304,14 +304,14 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
         );
         await assert.rejects(
           () =>
-            f.createCase(f.applicantA, crypto.randomUUID(), {
+            f.createCaseAsPersona(f.applicantA, crypto.randomUUID(), {
               personId: f.people.sam,
             }),
           rejected("FORBIDDEN"),
         );
         await assert.rejects(
           () =>
-            f.createCase(f.applicantA, crypto.randomUUID(), {
+            f.createCaseAsPersona(f.applicantA, crypto.randomUUID(), {
               mode: "assisted",
               personId: f.people.sam,
             }),
@@ -319,13 +319,13 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
         );
         await assert.rejects(
           () =>
-            f.createCase(f.presenter, crypto.randomUUID(), {
+            f.createCaseAsPersona(f.presenter, crypto.randomUUID(), {
               mode: "assisted",
               personId: f.foreignPeople.sam,
             }),
           rejected("FORBIDDEN"),
         );
-        const assisted = await f.createCase(f.presenter, crypto.randomUUID(), {
+        const assisted = await f.createCaseAsPersona(f.presenter, crypto.randomUUID(), {
           mode: "assisted",
           personId: f.people.sam,
         });
@@ -708,7 +708,7 @@ test("identity, references, ownership, and privileged setup on real Supabase", a
   }
 });
 test("workflow records stay owner-visible, presenter-only, and write-protected", async (t) => {
-  const f = await createDatabaseFixture();
+  const f = await createDatabaseFixture({ roleAccounts: false });
   try {
     const submitted = await f.createCase(f.applicantA, crypto.randomUUID());
     const draft = await f.createCase(f.applicantA, crypto.randomUUID());

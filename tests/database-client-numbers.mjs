@@ -28,10 +28,10 @@ const submittedCase = async (f, actor = f.applicantA) => {
   const created = await f.createCase(actor, crypto.randomUUID(), {
     answers: {},
   });
-  await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
+  await f.act(actor, created.caseId, "SAVE_ANSWERS", {
     answers: makeSampleAnswers(),
   });
-  await f.act(actor, created.caseId, null, "SUBMIT", { confirmed: true });
+  await f.act(actor, created.caseId, "SUBMIT", { confirmed: true });
   return created.caseId;
 };
 const revisionOf = async (f, caseId) =>
@@ -83,10 +83,10 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
         client_number: null,
       });
       const before = await counter(f);
-      await f.act(f.applicantA, created.caseId, null, "SAVE_ANSWERS", {
+      await f.act(f.applicantA, created.caseId, "SAVE_ANSWERS", {
         answers: makeSampleAnswers(),
       });
-      await f.act(f.applicantA, created.caseId, null, "SUBMIT", {
+      await f.act(f.applicantA, created.caseId, "SUBMIT", {
         confirmed: true,
       });
       assert.deepEqual(await numberOf(f, created.caseId), {
@@ -106,8 +106,8 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
 
     await t.test("an assisted submit takes the next number", async () => {
       const previous = await submittedCase(f);
-      const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
-      await f.act(f.presenter, created.caseId, f.sam, "SUBMIT", {
+      const created = await f.draftCase(f.siteCoordinator, { mode: "assisted" });
+      await f.act(f.siteCoordinator, created.caseId, "SUBMIT", {
         confirmed: true,
       });
       const { client_number: previousNumber } = await numberOf(f, previous);
@@ -125,7 +125,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       );
       const before = await counter(f);
       await assert.rejects(
-        f.act(f.applicantA, incomplete.caseId, null, "SUBMIT", {
+        f.act(f.applicantA, incomplete.caseId, "SUBMIT", {
           confirmed: true,
         }),
         rejected("VALIDATION"),
@@ -137,7 +137,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
       const complete = await f.createCase(f.applicantA, crypto.randomUUID(), {
         answers: {},
       });
-      await f.act(f.applicantA, complete.caseId, null, "SAVE_ANSWERS", {
+      await f.act(f.applicantA, complete.caseId, "SAVE_ANSWERS", {
         answers: makeSampleAnswers(),
       });
       const stale = await f.applicantA.rpc(
@@ -157,9 +157,9 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
     await t.test(
       "closing an assisted draft without sending assigns nothing",
       async () => {
-        const created = await f.draftCase(f.presenter, { mode: "assisted", personId: f.sam });
+        const created = await f.draftCase(f.siteCoordinator, { mode: "assisted" });
         const before = await counter(f);
-        await f.act(f.presenter, created.caseId, f.sam, "CLOSE_CASE", {
+        await f.act(f.siteCoordinator, created.caseId, "CLOSE_CASE", {
           reason: "other",
           note: "The client decided to file elsewhere.",
           confirmed: true,
@@ -187,7 +187,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
           const created = await f.createCase(actor, crypto.randomUUID(), {
             answers: {},
           });
-          await f.act(actor, created.caseId, null, "SAVE_ANSWERS", {
+          await f.act(actor, created.caseId, "SAVE_ANSWERS", {
             answers: makeSampleAnswers(),
           });
           drafts.push([actor, created.caseId]);
@@ -195,7 +195,7 @@ test("client numbers are assigned on submit, per season, and never reused", asyn
         const before = await counter(f);
         await Promise.all(
           drafts.map(([actor, caseId]) =>
-            f.act(actor, caseId, null, "SUBMIT", { confirmed: true }),
+            f.act(actor, caseId, "SUBMIT", { confirmed: true }),
           ),
         );
         const numbers = [];
