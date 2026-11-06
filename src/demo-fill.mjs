@@ -7,8 +7,19 @@
 // The values are pure (testable in node); fillForm is the only DOM code.
 
 import { todayIso } from "./questionnaires.mjs";
+import { isLoopbackUrl } from "./loopback.mjs";
 
 export const DEMO_FILL_ACTION = "demo-fill";
+
+/**
+ * The demo-tools switch, computed once at start-up: the server must have sent
+ * `demoTools: true` and the Supabase URL must be on this machine.
+ */
+export const demoToolsFromConfig = (config) =>
+  config?.demoTools === true && isLoopbackUrl(config?.supabaseUrl);
+
+/** Whether the controller's state has the demo tools switched on. */
+export const demoToolsOn = (state) => state?.demoTools === true;
 
 /**
  * The button, placed at the top of a form or dialog, for a presenter only.

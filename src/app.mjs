@@ -3,7 +3,7 @@ import { createStore } from "./supabase-store.mjs";
 import { createController } from "./controller.mjs";
 import { CASE_ACTIONS, ASSISTANCE_ACTIONS, SHADED_EDITOR, SHADED_UPLOAD, isStaffWindow } from "./contracts.mjs";
 import { payloadFor } from "./case-actions.mjs";
-import { fillForm } from "./demo-fill.mjs";
+import { demoToolsFromConfig, fillForm } from "./demo-fill.mjs";
 import { checkDrafts, forgetDrafts, formValuesWithLists, isCheckable, groupsToOpen, restoreDraft, textDraft } from "./form-values.mjs";
 import { sampleAnswersFor, fictionalAnswers } from "./sample-data.mjs";
 import { checkValue, findQuestion, findSubstep, isAnswered, spouseShown, visibleAnswers } from "./intake-catalogue.mjs";
@@ -135,6 +135,7 @@ if (!config) {
     cooldownSeconds: config.authResendCooldownSeconds,
     localStorage: readLocalStorage(),
     languages: [...(navigator.languages ?? [navigator.language])],
+    demoTools: demoToolsFromConfig(config),
   });
   // The screen language now, for text this file writes itself.
   const screenLang = () => viewLang(controller.getState());

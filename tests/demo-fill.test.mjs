@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demoValues, demoFillButton } from "../src/demo-fill.mjs";
+import { demoValues, demoFillButton, demoToolsFromConfig, demoToolsOn } from "../src/demo-fill.mjs";
 import {
   markEfiledDialogBody,
   markReadyToEfileDialogBody,
@@ -71,4 +71,20 @@ test("a filing dialog shows the auto-fill button to a presenter and never to a s
     assert.match(body({ savedCase, principal: PRESENTER }), /data-action="demo-fill"/, `${body.name}, presenter`);
     assert.doesNotMatch(body({ savedCase, principal: { access: "staff" } }), /demo-fill/, `${body.name}, staff account`);
   }
+});
+
+test("the switch needs demoTools true and a loopback Supabase URL", () => {
+  const local = "http://localhost:54321";
+  assert.equal(demoToolsFromConfig({ demoTools: true, supabaseUrl: local }), true);
+  assert.equal(demoToolsFromConfig({ demoTools: true, supabaseUrl: "https://abcd.supabase.co" }), false);
+  assert.equal(demoToolsFromConfig({ demoTools: "true", supabaseUrl: local }), false);
+  assert.equal(demoToolsFromConfig({ demoTools: 1, supabaseUrl: local }), false);
+  assert.equal(demoToolsFromConfig({ supabaseUrl: local }), false);
+  assert.equal(demoToolsFromConfig(null), false);
+});
+
+test("demoToolsOn reads the controller's switch", () => {
+  assert.equal(demoToolsOn({ demoTools: true }), true);
+  assert.equal(demoToolsOn({}), false);
+  assert.equal(demoToolsOn(null), false);
 });
