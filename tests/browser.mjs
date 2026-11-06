@@ -1014,6 +1014,17 @@ async function runPermutation(t, roles) {
     // ones the story's windows are signed in as.
     await phase("the seed builds its eleven cases in the story's workspace", async () => {
       const page = await use("preparer");
+      // The reset reaches the Preparer's window by Realtime, a moment later.
+      const boardCounts = (total) =>
+        waitFor(
+          page,
+          `the Preparer's board to count ${total} cases`,
+          (wanted) =>
+            new RegExp(`of ${wanted} cases`).test(document.querySelector(".staff-board .section-head")?.textContent ?? ""),
+          total,
+          ARRIVAL_MS,
+        );
+      await boardCounts(10);
       const before = (await readBoardTotals(page)).total;
       assert.equal(before, 10, "the Preparer's board does not count the ten sample cases");
       const runDir = await mkdtemp(path.join(os.tmpdir(), "vitally-story-seed-"));
@@ -1057,14 +1068,7 @@ async function runPermutation(t, roles) {
       // The board shows them with no reload: the Preparer's window counts
       // every seeded case and finds one by its Application ID.
       boardTotal = before + result.casesCreated;
-      await waitFor(
-        page,
-        `the Preparer's board to count ${boardTotal} cases`,
-        (wanted) =>
-          new RegExp(`of ${wanted} cases`).test(document.querySelector(".staff-board .section-head")?.textContent ?? ""),
-        boardTotal,
-        ARRIVAL_MS,
-      );
+      await boardCounts(boardTotal);
       await findOnBoard(page, seeded.preparation_ready.reference);
       evidence.story.seed = {
         casesCreated: result.casesCreated,
@@ -1573,11 +1577,10 @@ async function runPermutation(t, roles) {
       await waitFor(
         staff,
         "the shaded save in the internal history",
-        () =>
-          document
-            .querySelector('#case-panel-history [data-role="internal-history"]')
-            ?.textContent.includes(`${ROLE_NAMES.preparer} saved the shaded section · W-2s, W-2s #.`) ?? false,
-        undefined,
+        (wanted) =>
+          document.querySelector('#case-panel-history [data-role="internal-history"]')?.textContent.includes(wanted) ??
+          false,
+        `${ROLE_NAMES.preparer} saved the shaded section · W-2s, W-2s #.`,
         ARRIVAL_MS,
       );
       assert.doesNotMatch(
@@ -1695,13 +1698,10 @@ async function runPermutation(t, roles) {
       await waitFor(
         staff,
         "the editor's save in the internal history",
-        () =>
-          document
-            .querySelector('#case-panel-history [data-role="internal-history"]')
-            ?.textContent.includes(
-              `${ROLE_NAMES.preparer} saved the shaded section · Row 1: Qualifying child or dependent, Income notes.`,
-            ) ?? false,
-        undefined,
+        (wanted) =>
+          document.querySelector('#case-panel-history [data-role="internal-history"]')?.textContent.includes(wanted) ??
+          false,
+        `${ROLE_NAMES.preparer} saved the shaded section · Row 1: Qualifying child or dependent, Income notes.`,
         ARRIVAL_MS,
       );
       await openCaseTab(staff, "intake");
@@ -3036,7 +3036,7 @@ async function runPermutation(t, roles) {
         const before = await caseById(fixture, sample.id);
         const expected = await one(
           fixture,
-          "select c.season,c.client_number,c.answers->>'tp_first_name' first_name,c.answers->>'tp_last_name' last_name,q.exit_form from public.cases c join public.reviewer_questionnaires q on q.case_id=c.id where c.id=$1",
+          "select c.season,c.client_number,c.answers->>'tp_first_name' first_name,c.answers->>'tp_last_name' last_name,c.answers->>'sp_first_name' sp_first_name,c.answers->>'sp_last_name' sp_last_name,q.exit_form from public.cases c join public.reviewer_questionnaires q on q.case_id=c.id where c.id=$1",
           [sample.id],
         );
         const wrongFont = { on: false };
@@ -3076,7 +3076,11 @@ async function runPermutation(t, roles) {
           for (const wanted of [
             String(expected.season),
             String(expected.client_number),
-            `${expected.first_name} ${expected.last_name}`,
+            // The class case is a married couple's, so the Exit Form names
+            // both, as src/exit-form.mjs joins them.
+            expected.sp_first_name
+              ? `${expected.first_name} ${expected.last_name} & ${expected.sp_first_name} ${expected.sp_last_name}`
+              : `${expected.first_name} ${expected.last_name}`,
             `$${expected.exit_form.federal.amount}`,
           ])
             assert.ok(strings.includes(wanted), `the Exit Form does not print ${JSON.stringify(wanted)}: ${JSON.stringify(strings)}`);
