@@ -198,8 +198,7 @@ export const editContactArgs = ({
   p_entry: entry,
 });
 // `siteCoordinatorFollowsUp: false` leaves Sam as the default follow-up
-// person: the browser story still works its follow-ups as the presenter's Sam,
-// and the sample-data tests (tests/database-fixtures.mjs) check the seeded
+// person: the sample-data tests (tests/database-fixtures.mjs) check the seeded
 // samples' follow-ups against the default the samples are written for.
 // `roleAccounts: false` adds no role accounts at all, for the tests whose
 // subject is the initializer's own workspace (exactly the three demonstration

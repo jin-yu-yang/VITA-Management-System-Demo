@@ -401,10 +401,9 @@ both the volunteer and office pages; handlers in `src/app.mjs`):
 - The three handlers in `app.mjs` (`openEditor`, `downloadShadedCopy`, `uploadShadedCopy`) and
   `editorGone` run for any staff window (`isStaffWindow`: a presenter or a staff account), the
   rule every other staff screen uses (#103). Who may fill is still `staffEligibility` alone,
-  which for a staff account reads the account's own person. The browser story fills the section
-  in the editor as a staff account too (Riley Park), and checks that a field is as tall as its
-  cell. Download and upload still run as a presenter only, so a check that tests
-  `access === "presenter"` in those two would pass every suite and still lock out a real preparer.
+  which for a staff account reads the account's own person. The browser story downloads,
+  uploads and fills the section in the editor as staff accounts (the Preparer, Taylor Brooks, in
+  the main story, and Riley Park), and checks that a field is as tall as its cell.
 - `downloadShadedCopy` builds the editing copy and saves it as `13614-C-shaded-<reference>.pdf`.
 - Beside the Download button the panel says to open the copy in Chrome or the free Adobe Acrobat
   Reader, not macOS Preview (`.shaded-download-note`).
@@ -917,7 +916,7 @@ the keyboard stays on the pressed one.
 | --- | --- | --- |
 | Unit (1418) | `npm test` | Controller against doubles, renderers as strings, payload builders, eligibility, store mapping, auth, focus logic. No browser, no network |
 | Sign-in gate (20) | `npm run test:auth-browser` | Real sign-in through the real form in Chrome and Firefox against the local stack |
-| Story (77) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
+| Story (83) | `npm run test:browser` | The full demonstration in two browsers at once, both engine orders, plus regressions (conflicts, offline retry, privacy, keyboard). The main story signs in as the role-named staff accounts (Site Coordinator, Preparer, Reviewer), each once in a window of its own, and takes its cases from the seed module (`tools/admin/seed-cases.mjs`); only the presenter-only scenarios (persona switches, two presenter windows, the sample resets) sign in as the presenter. The story's workspace is on version 2, and one phase works in Chinese in its own `zh-CN` context (every other context is pinned to `en-US`). `loginTestUserById` in `tests/support/browser-fixture.mjs` signs in without English locators. On a busy machine a Firefox-staff wait can time out ([setup](../setup.md#5-tests)); run it again |
 
 Run the browser suites with the `PATH` prefix from [`docs/setup.md`](../setup.md#5-tests). The
 story writes screenshots to `artifacts/browser/` (git-ignored). Helpers for driving the pages are in
