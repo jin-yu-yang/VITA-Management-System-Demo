@@ -141,8 +141,10 @@ Three rules the controller keeps:
 | Applicant | `applications` (list and lookup by Application ID), `reference` (new ID to keep), `intake` (the sub-step form, built by `src/intake-views.mjs`), `progress` (status, client number, requests, send document) |
 | Staff window, volunteer account | `staff`: the work board; `staff-case`: the case page with its tabs ([`staff-views.mjs`](../../src/staff-views.mjs)) |
 | Staff window, `admin` account | `staff`: the Follow-ups queue ([`office-views.mjs`](../../src/office-views.mjs)); `office-cases`: the case pool ([`pool-views.mjs`](../../src/pool-views.mjs)); `office-add-case`: Add a case for a walk-in client ([`office-views.mjs`](../../src/office-views.mjs)); `staff-case`: the office's case page ([`admin-views.mjs`](../../src/admin-views.mjs)) |
-| Presenter | One bare English screen: "This account is no longer used", the text "Presenter mode has been removed. Ask your site coordinator for a staff account." and Sign out (`presenterScreen` in `views.mjs`). No header, panel, persona picker, sample reset or checkpoints. The fill tools follow the demo-tools switch (see below). With the switch on, an "Auto-fill fictional data" button appears at the top of each questionnaire, the review-contact form and the filing dialogs (Mark ready to e-file, Mark e-filed, Record filing result, Return to signing). [`src/demo-fill.mjs`](../../src/demo-fill.mjs) fills the form with fictional values that the form's own payload builder accepts. It never overwrites typed text or a defaulted choice, and it sends nothing: the form's own button still submits. `demoFillButton(enabled)` renders nothing when the switch (`state.demoTools`) is off, and the `demo-fill` handler in `app.mjs` checks `demoToolsOn` again. The switch is on only when `/public-config.json` sends `demoTools: true` (`server.mjs` does so only with `VITALLY_DEMO_TOOLS=1` and a loopback `SUPABASE_URL`) and the config's `supabaseUrl` is loopback. When on, the buttons, the client intake fiction toolbar and the presenter panel's fill button show to whoever is on the screen, client, staff or presenter; when off, to no one, a presenter included |
-| Staff account | The staff screens: the sidebar and the case page header say "Signed in as <name>", and the person is the account's own (`staffScreen` in `views.mjs` picks the office screens when that person has `admin`, and the volunteer work board otherwise, exactly as for a persona). The fill tools (the "Fill fictional details" pill, including the office's Add a case pill, and the "Auto-fill fictional data" button) follow the demo-tools switch like everyone else's: shown when `state.demoTools` is on, hidden when off. Always English |
+| Presenter | One bare English screen: "This account is no longer used", the text "Presenter mode has been removed. Ask your site coordinator for a staff account." and Sign out (`presenterScreen` in `views.mjs`). No header, panel, persona picker, sample reset or checkpoints. The presenter gets only this plain screen. |
+| Staff account | The staff screens: the sidebar and the case page header say "Signed in as <name>", and the person is the account's own (`staffScreen` in `views.mjs` picks the office screens when that person has `admin`, and the volunteer work board otherwise, exactly as for a persona). Always English |
+
+**Fill tools.** They follow the demo-tools switch. Three controls exist: the staff "Auto-fill fictional data" button, the client intake's fiction toolbar and the office's Add a case "Fill fictional details" pill. With the switch on, an "Auto-fill fictional data" button appears at the top of each questionnaire, the review-contact form and the filing dialogs (Mark ready to e-file, Mark e-filed, Record filing result, Return to signing). [`src/demo-fill.mjs`](../../src/demo-fill.mjs) fills the form with fictional values that the form's own payload builder accepts. It never overwrites typed text or a defaulted choice, and it sends nothing: the form's own button still submits. `demoFillButton(enabled)` renders nothing when the switch (`state.demoTools`) is off, and the `demo-fill` handler in `app.mjs` checks `demoToolsOn` again. The switch is on only when `/public-config.json` sends `demoTools: true` (`server.mjs` does so only with `VITALLY_DEMO_TOOLS=1` and a loopback `SUPABASE_URL`) and the config's `supabaseUrl` is loopback. When on, these controls show to whoever is on that screen; when off, to no one
 
 `staffScreen` in [`views.mjs`](../../src/views.mjs) wraps staff screens in the app shell
 (sidebar plus corner toggle). The collapsed sidebar peeks over the page, without pushing it,
@@ -335,8 +337,8 @@ Result uses, so a value left in a hidden field is never sent.
   missing or invalid answers saves the draft and is refused: "Needs an answer" shows, every part
   that counts opens, and the keyboard goes to the count.
 - Leaving with unsaved answers (Cancel, the breadcrumb's Work board, "Back to Follow-ups", or
-  the sidebar's Work board and All cases) asks "Leave without saving?" first; Sign out and the
-  persona switch leave without asking. The guard also covers `open-add-case`, though that button
+  the sidebar's Work board and All cases) asks "Leave without saving?" first; Sign out leaves
+  without asking. The guard also covers `open-add-case`, though that button
   isn't shown on the page. A conflict with another window shows the shared reconcile choice.
 - The same redraw rules as the client's form bind `#add-case-v2-form`.
 
@@ -757,8 +759,8 @@ and `unloadedLine`, so a client's own text goes through `esc` first. The work bo
 
 **Busy buttons.** While a press runs, `markPressed` in `app.mjs` gives the pressed control
 `.is-busy`, `aria-busy="true"` and a spinner, and finds it again after every redraw. Only presses
-that hold the buttons are marked: a workflow or assistance action, the checkpoint submit, and the
-`BUSY_ACTIONS` allow-list (`confirm-reset-fixtures`, `save-office-draft`, `send-office-draft`). A
+that hold the buttons are marked: a workflow or assistance action and the
+`BUSY_ACTIONS` allow-list (`save-office-draft`, `send-office-draft`). A
 sub-step move is never marked; the save chip says Saving.
 
 **The connection notice and "back online".** `connectionNotice` in `views.mjs` shows while the
