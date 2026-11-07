@@ -778,7 +778,7 @@ re-reads it:
 - a `cases` event: the list;
 - any event about the open case (its requests, documents, history, reviews): that case;
 - an `assistance_items` event: the assistance list;
-- a `workspaces` event (a sample reset, or a change to the workspace row such as its intake
+- a `workspaces` event (a change to the workspace row, such as its intake
   version): everything, with a notice if the open case vanished.
 
 `case_contacts`, `case_materials`, `contact_log` and `contact_log_versions` events carry a case id

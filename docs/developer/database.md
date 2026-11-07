@@ -24,7 +24,7 @@ it. Run everything described here against the local stack from [`docs/setup.md`]
 
 ## Migrations
 
-The schema is thirty-nine plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
+The schema is forty plain SQL files in [`supabase/migrations/`](../../supabase/migrations/), applied
 in order by [`tools/admin/migrate.mjs`](../../tools/admin/migrate.mjs).
 
 | File | Adds |
@@ -105,13 +105,18 @@ catalogue migration's. The hash covers the catalogue and `LOADER_VERSION` in
   Only migrations not yet on `main` may be changed; never 001–014.
 
 Later migrations replace earlier functions with `create or replace`. When you need the current
-version of a function, use the **last** file that defines it:
+version of a function, use the **last** file that defines it. Migration 040 dropped the sample
+functions (`seed_fixtures`, `apply_fixture_scenario`, `fixture_history`, `fixture_answers_v2`,
+`fixture_contact_v2`, `fixture_keys`, `checkpoint_scenario`), `new_reference`,
+`backfill_client_numbers` and `version_one_blocks`, `version_one_disposable`, `version_one_blockers`;
+do not copy them from older files:
 
 | Function | Current definition |
 | --- | --- |
-| `public.vitally_apply_action`, `vitally_private.check_operation_authority`, `check_payload`, `apply_fixture_scenario`, `check_preparer_fields`, `act_save_preparer_fields` | `039_preparer_shaded_fields.sql` |
+| `public.vitally_apply_action`, `vitally_private.check_operation_authority`, `check_payload`, `check_preparer_fields`, `act_save_preparer_fields` | `039_preparer_shaded_fields.sql` |
 | `vitally_private.acting_person`, `check_staff_links`, `add_staff_member`, `set_default_followup` | `038_staff_identity.sql` |
-| `vitally_private.lock_case`, `lock_assistance_item`, `contact_person`, `initialize_workspace` | `038_staff_identity.sql` |
+| `vitally_private.lock_case`, `lock_assistance_item`, `contact_person` | `038_staff_identity.sql` |
+| `vitally_private.filing_notes_append_only`, `reserve_receipt`, `initialize_workspace` (without the bindings parameter), `public.vitally_create_case` (answers must be `{}`) | `040_remove_sample_case_tools.sql` |
 | `public.vitally_log_contact`, `vitally_edit_contact` | `038_staff_identity.sql` |
 | `vitally_private.check_authority`, `receive_document`, `act_verify_document` | `036_hold_and_closing.sql` |
 | `vitally_private.act_verify_intake` | `034_screening_checks.sql` |
@@ -119,22 +124,16 @@ version of a function, use the **last** file that defines it:
 | `vitally_private.check_related`, `act_save_answers` | `023_remove_intake_v1.sql` |
 | `vitally_private.put_intake_field`, `load_intake_catalogue`, `check_intake_value` | `015_intake_loader.sql` |
 | `vitally_private.commit_action` | `008_case_timestamps.sql` |
-| `public.vitally_create_case` (answers must be `{}`) | `038_staff_identity.sql` |
 | `vitally_private.cases_intake_version_insert` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_update_contact` | `023_remove_intake_v1.sql` |
 | `vitally_private.act_submit`, `act_start_screening` | `032_screening_and_efiling_stages.sql` |
 | `vitally_private.act_close_case` | `036_hold_and_closing.sql` |
 | `vitally_private.act_request_documents_at_intake`, `act_put_on_hold`, `act_resume_from_hold`, `act_withdraw` | `036_hold_and_closing.sql` |
-| `vitally_private.act_mark_ready_to_efile`, `fixture_history`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
+| `vitally_private.act_mark_ready_to_efile`, `act_mark_efiled`, `act_record_filing_result`, `filing_line`, `efiled_line` | `037_adjust_filing_to_pcdc.sql` |
 | `vitally_private.act_return_to_signing` | `035_post_efiling_stages.sql` |
 | `public.vitally_close_unsigned` | `038_staff_identity.sql` |
-| `vitally_private.version_one_blocks`, `version_one_disposable`, `version_one_blockers` | `023_remove_intake_v1.sql` |
 | `vitally_private.load_intake_catalogue`, `check_intake_value`, `intake_holds`, `intake_missing` | `011_intake_v2.sql` |
 | `vitally_private.works_on_case` | `013_contact_materials.sql` |
-| `vitally_private.fixture_answers_v2` | `036_hold_and_closing.sql` |
-| `vitally_private.fixture_contact_v2` | `019_fixtures_v2.sql` |
-| `vitally_private.fixture_keys` | `036_hold_and_closing.sql` |
-| `vitally_private.seed_fixtures` | `023_remove_intake_v1.sql` |
 | `public.vitally_assistance_action` | `038_staff_identity.sql` |
 
 To list every function with its file and line:
