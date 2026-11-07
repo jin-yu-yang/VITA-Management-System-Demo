@@ -113,9 +113,10 @@ const SHOTS = screenshotDir(ROOT);
 
 // Enough for a database fixture, two engines, every window and tab the story
 // opens and the whole story with its regressions, on a slower machine too
-// (a clean permutation takes about 7–9 minutes). A run that reaches this has
-// stopped, not slowed.
-const PERMUTATION_TIMEOUT_MS = 900_000;
+// (a clean order took about 12–15 minutes in November 2026, with the slower
+// one close to the old 15-minute limit; see #126). A run that reaches this
+// has stopped, not slowed.
+const PERMUTATION_TIMEOUT_MS = 1_200_000;
 
 // The fictional text this story types. Every sentence is invented, names a
 // fictional person or a simulated step, and carries no address or contact
