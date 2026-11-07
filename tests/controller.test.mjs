@@ -6630,9 +6630,50 @@ test("a presenter's window loads nothing", async () => {
   for (const read of ["listCases", "listPeople", "getCase:case-a", "listAssistance", "getWorkspace"])
     assert.ok(!store.calls.includes(read), `${read} was called`);
   assert.equal(store.subscriptions, 0);
-  const before = JSON.stringify(controller.getState());
-  await store.handlers?.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
-  assert.equal(JSON.stringify(controller.getState()), before);
-  assert.ok(!store.calls.includes("listCases"));
   controller.stop();
+});
+
+function inertPresenter() {
+  const saved = JSON.stringify({ screen: "case", selectedCaseId: "case-a" });
+  const sessionStorage = fakeSession({ "vitally:client:v1:p1": saved });
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "received", revision: 1, answers: {} }],
+  });
+  const { controller, events } = build({ store, sessionStorage });
+  const quiet = async (trigger) => {
+    await controller.start();
+    const calls = store.calls.length;
+    await trigger({ controller, events });
+    assert.deepEqual(store.calls.slice(calls), []);
+    assert.equal(store.subscriptions, 0);
+    assert.equal(sessionStorage.raw("vitally:client:v1:p1"), saved);
+    assert.equal(controller.getState().screen, "presenter");
+    controller.stop();
+  };
+  return { store, quiet };
+}
+
+test("a presenter's window reads and saves nothing on tab focus", async () => {
+  await inertPresenter().quiet(({ events }) => events.emit("focus"));
+});
+
+test("a presenter's window reads and saves nothing when back online", async () => {
+  await inertPresenter().quiet(({ events }) => events.emit("online"));
+});
+
+test("a presenter's window reads and saves nothing on Try again (retry-connection)", async () => {
+  // app.mjs sends retry-connection to controller.refresh().
+  await inertPresenter().quiet(({ controller }) => controller.refresh());
+});
+
+test("a presenter's window makes no store call at all after getPrincipal", async () => {
+  const { store, quiet } = inertPresenter();
+  await quiet(async ({ controller, events }) => {
+    await events.emit("focus");
+    await events.emit("online");
+    await controller.refresh();
+    await controller.refresh();
+  });
+  assert.deepEqual(store.calls, ["getPrincipal"]);
 });

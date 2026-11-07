@@ -479,7 +479,7 @@ export function createController({
   // A staff window has no persona of its own to keep: the collaborator drops
   // `selectedPersonId` both ways when it is told the access.
   function persistSession() {
-    if (!state.principal) return;
+    if (!state.principal || inert()) return;
     const { userId, access } = state.principal;
     windowState.write(userId, {
       screen: state.screen,
@@ -748,6 +748,11 @@ export function createController({
   // `staffWindow()` is everything a staff screen does — its reads, its rules
   // and its actions — which a presenter and a staff account share; only who
   // is acting differs (`actingPersonId`).
+  // The one guard for a presenter's plain screen (remove-presenter-screens): the
+  // four places every read, every save of the window's place and every channel
+  // start from (`loadData`, `loadSelected`, `persistSession`, `subscribe`) return
+  // at once, so no caller (focus, online, Try again, refresh) can wake it.
+  const inert = () => state.principal?.access === "presenter";
   const presenter = () => state.principal?.access === "presenter";
   const staffWindow = () => state.principal?.access === "staff";
 
@@ -777,6 +782,7 @@ export function createController({
   }
 
   async function loadSelected() {
+    if (inert()) return;
     if (!state.selectedCaseId) return;
     const next = await store.getCase(state.selectedCaseId);
     applyCase(next);
@@ -889,7 +895,7 @@ export function createController({
   }
 
   function subscribe() {
-    if (releaseStore) return;
+    if (releaseStore || inert()) return;
     releaseStore = store.subscribe({
       onChange: (change) => handleChange(change),
       onConnection: (status) => {
@@ -959,6 +965,7 @@ export function createController({
   const isLinkedPerson = (id) =>
     id != null && state.people.some((person) => person?.id === id && person.linked);
   async function loadData() {
+    if (inert()) return;
     await loadList();
     if (staffWindow()) {
       state.people = await store.listPeople();

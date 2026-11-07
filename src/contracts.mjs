@@ -137,8 +137,8 @@ export const isStaffWindow = (principal) => principal?.access === "staff";
 //              email, personId, personName }
 //   personId and personName are the staff member's own roster person, linked
 //   through their account; null for an applicant or a presenter.
-//   A staff window is a presenter's or a staff account's: both get the staff
-//   screens. Only a presenter also gets the demo tools and the persona picker.
+//   A staff window is a staff account's alone. A presenter gets one plain
+//   screen and nothing is read for it.
 // Person: { id, name, capabilities: string[] }
 // Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
 //         revision, preparationVersion, answers, intakeVerified,
