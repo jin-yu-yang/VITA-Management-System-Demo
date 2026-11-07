@@ -1,5 +1,9 @@
 # ViTally demonstration script
 
+> **Note:** this script still describes presenter mode (the presenter panel, the persona
+> picker, "Reset sample cases" and the checkpoints), which has been removed. A presenter who signs
+> in now sees one plain screen. The rewrite for the role accounts is #137.
+
 This is the rehearsal script for presenting ViTally. It describes only what the implemented,
 tested application actually does — see [`docs/setup.md`](setup.md) for how to bring up the
 isolated local stack this is rehearsed against. **Use fictional names only. Never type a real

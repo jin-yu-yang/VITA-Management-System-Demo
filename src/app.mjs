@@ -184,13 +184,13 @@ if (!config) {
   // after a real loss, never on the first connection (design D7).
   let drawnConnection = "unknown";
   // What is half-typed into a staff form, by field id. A re-render can arrive
-  // at any moment — a realtime change, a persona click, a connection notice —
+  // at any moment — a realtime change, a click elsewhere, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. What
   // was typed for an action is dropped the moment it is sent. An edit to a
   // saved value is kept as `{ value }` and a tick not yet sent as `{ checked }`
   // (form-values.mjs). Cancel on the best time drops its whole form, and a
-  // dialog closing drops its ticks. It all belongs to the one signed in, the
-  // persona chosen and the case it was typed on: anyone else, or nobody, or
+  // dialog closing drops its ticks. It all belongs to the one signed in and
+  // the case it was typed on: anyone else, or nobody, or
   // another case opened (by any path), starts with none, so nothing can
   // reappear where it does not belong.
   const formDrafts = new Map();
@@ -217,6 +217,7 @@ if (!config) {
       if (state.session !== "none") return views.unreachableScreen(state);
       return client.accessScreen(state);
     }
+    if (state.principal?.access === "presenter") return views.presenterScreen(state);
     if (isStaffWindow(state.principal)) return views.staffScreen(state);
     return client.clientScreen(state);
   }
@@ -505,11 +506,10 @@ if (!config) {
   // buttons, and found again after every draw while the press runs. A
   // sub-step move is never marked because it is not on the allow-list (its
   // `pressed` stays null); the save chip says Saving.
-  const BUSY_ACTIONS = Object.freeze(["confirm-reset-fixtures", "save-office-draft", "send-office-draft"]);
+  const BUSY_ACTIONS = Object.freeze(["save-office-draft", "send-office-draft"]);
   function busyControl(control) {
     if (!control?.dataset) return false;
     if (control.dataset.caseAction || control.dataset.assistanceAction) return true;
-    if (control.id === "checkpoint-submit") return true;
     return BUSY_ACTIONS.includes(control.dataset.action);
   }
   let pressed = null;
@@ -1584,7 +1584,7 @@ if (!config) {
     const state = controller.getState();
     if (state.savedCase?.id !== caseId) return "This case is no longer open here. Close the editor.";
     const people = state.people ?? [];
-    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const person = people.find((entry) => entry.id === state.principal?.personId) ?? null;
     const decision = staffEligibility(decorateStaffCase(state.savedCase, people), person).shadedSection;
     return decision.allowed ? null : decision.reason;
   }
@@ -1786,8 +1786,8 @@ if (!config) {
 
   // On Add a case, an exit that would lose typed answers asks first: a new
   // office draft with any answer, or a saved draft with unsaved edits. True
-  // when it asked (the exit then waits for the dialog). Sign out and the
-  // persona switch leave without asking.
+  // when it asked (the exit then waits for the dialog). Sign out leaves
+  // without asking.
   function leaveAddCaseFirst(action, target) {
     if (controller.getState().screen !== "office-add-case") return false;
     sweepV2Form();
@@ -1967,21 +1967,6 @@ if (!config) {
         // from its own send, not a stale one left over from a previous try.
         controller.dismissError();
         openDialog("request-corrections");
-        break;
-      // The presenter's own two controls. Both confirm first: one replaces
-      // every sample case on the projector, and the other rewrites one of
-      // them in front of the room.
-      case "open-reset-fixtures":
-        openDialog("reset-fixtures");
-        break;
-      case "open-checkpoint":
-        openDialog("load-checkpoint");
-        break;
-      case "confirm-reset-fixtures":
-        await controller.resetFixtures();
-        formDrafts.clear();
-        closeDialog();
-        notify("success", "The sample cases were rebuilt. Nothing else was touched.", by);
         break;
       case "set-board-filter":
         controller.setBoardFilter(target.dataset.filter, target.dataset.value);
@@ -2192,17 +2177,6 @@ if (!config) {
         root.querySelector(`#${CSS.escape(box)}`)?.focus();
         break;
       }
-      case "select-person":
-        // Another persona is another person at the same keyboard; the one
-        // already chosen is nobody new, and what was typed stays.
-        if (target.dataset.personId !== controller.getState().selectedPersonId) formDrafts.clear();
-        controller.selectPerson(target.dataset.personId);
-        // An open contact edit form was the last persona's, so it closes too
-        // (the view already draws it only for its logger or an admin).
-        if (target.dataset.personId !== state.selectedPersonId)
-          for (const panel of controller.getState().openPanels)
-            if (panel.startsWith("contact-edit:")) controller.togglePanel(panel);
-        break;
       case "toggle-contact-edit": {
         const id = target.dataset.contactId ?? "";
         const panel = `contact-edit:${id}`;
@@ -2425,16 +2399,6 @@ if (!config) {
         await runAssistanceAction(assistControl, form, by);
       } else if (form.id === "close-unsigned-form") {
         await submitCloseUnsigned(form, by);
-      } else if (form.id === "checkpoint-form") {
-        // The choice and its confirmation are the same submit: the dialog says
-        // what a checkpoint does, and this button is the person agreeing to it.
-        await controller.loadCheckpoint({
-          caseId: String(values.get("caseId") ?? ""),
-          checkpoint: String(values.get("checkpoint") ?? ""),
-        });
-        formDrafts.clear();
-        closeDialog();
-        notify("success", "The sample case was moved to that point in the story.", by);
       } else if (form.id === "email-form") {
         await controller.sendCode(String(values.get("email") ?? ""));
       } else if (form.id === "code-form") {

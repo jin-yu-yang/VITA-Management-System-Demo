@@ -90,7 +90,7 @@ Closing SHALL stay one move to Closed, by an admin, with a reason (see "A closed
 - **THEN** the case is Accepted, with the staff name "Paper", and it never shows at E-filed
 
 ### Requirement: Screening starts when an admin first opens a case
-When a staff window opens a case's page at Request sent while its selected persona is an admin, the window SHALL start screening for that case. It SHALL do this whether the case page was opened by its reference, the search, Follow-ups, the case pool or a reload, and when the persona is switched to an admin while the case page is open. A list control that acts on a case without opening its page (for example Log contact on Follow-ups) SHALL NOT start screening. A window acting as a volunteer persona SHALL start nothing. The start SHALL be sent once per case.
+When a staff member with `admin` opens a case's page at Request sent, their window SHALL start screening for that case. It SHALL do this whether the case page was opened by its reference, the search, Follow-ups, the case pool or a reload. A list control that acts on a case without opening its page (for example Log contact on Follow-ups) SHALL NOT start screening. The window of a staff member without `admin` SHALL start nothing. The start SHALL be sent once per case.
 
 **Quietly:**
 - It SHALL NOT disable the page's buttons.
@@ -101,7 +101,7 @@ When a staff window opens a case's page at Request sent while its selected perso
 Starting screening SHALL tell the client (see "Clients are told at each new step"). It SHALL NOT be undone.
 
 #### Scenario: An admin opens a new application
-- **WHEN** Sam, acting as an admin, opens a case at Request sent
+- **WHEN** the Site Coordinator, an admin, opens a case at Request sent
 - **THEN** the case moves to Screening in progress, the client's page shows "Being reviewed", and the client's history gains "PCDC started reviewing your application. We may call you."
 
 #### Scenario: Two admins open it at once
@@ -109,7 +109,7 @@ Starting screening SHALL tell the client (see "Clients are told at each new step
 - **THEN** the case moves to Screening in progress once, and neither window shows an error
 
 #### Scenario: A volunteer opens it
-- **WHEN** a window acting as a volunteer opens a case at Request sent
+- **WHEN** a staff member without `admin`, such as the Preparer, opens a case at Request sent
 - **THEN** the case stays at Request sent
 
 #### Scenario: A reload on the case page

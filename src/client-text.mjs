@@ -481,16 +481,10 @@ export const SENTENCES = Object.freeze({
   "Sample cases were reset. The one you had open is no longer there.": "示例申请已重置。您刚才打开的那一份已不存在。",
   // controller.mjs: controllerError sentences (several are staff-only; they cost nothing)
   "Only a volunteer can start an assisted application.": "只有志愿者才能开始协助申请。",
-  "Choose a volunteer persona to act as.": "请选择要扮演的志愿者身份。",
   "Open an application first.": "请先打开一份申请。",
   "This application changed again. Check the newest values and choose once more.": "这份申请又有了变化。请查看最新内容后再选择一次。",
   "This step is not available.": "无法进行这一步。",
   "This request is no longer on screen.": "这项请求已不在页面上。",
-  "This checkpoint is not available.": "无法使用这个检查点。",
-  "This sample case is no longer on screen.": "这份示例申请已不在页面上。",
-  "Checkpoints belong to the sample cases only.": "只有示例申请才有检查点。",
-  "Only the person running the session can reset the sample cases.": "只有本场演示的负责人才能重置示例申请。",
-  "Only the person running the session can load a checkpoint.": "只有本场演示的负责人才能载入检查点。",
   // The application history: every client_events sentence the migrations write (spec §3.3);
   // the request line ("A volunteer requested a document: …") is historyLine's
   "Application received. A volunteer will check your information and documents.": "已收到申请。志愿者会核对您的信息和文件。",

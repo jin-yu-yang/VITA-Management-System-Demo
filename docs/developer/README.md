@@ -89,7 +89,6 @@ src/
   admin-views.mjs          The office's case page; admin eligibility rules.
   office-views.mjs         The office's Follow-ups queue and Add a case.
   pool-views.mjs           The office's case pool (every case, by phase).
-  presenter-views.mjs      Demo-only presenter panel: personas, reset, checkpoints.
   ui.mjs                   HTML helpers, escaping, labels, icons, focus preservation.
   sample-data.mjs          Fictional form filling for demos (version 2).
   styles.css               All styles.
@@ -159,7 +158,7 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Receipt | The stored result of an accepted action, keyed by its action id, returned again on replay. |
 | Preparation version | Which hand-off to review this is; it moves each time a preparer submits or resubmits. |
 | Participation | The permanent record that a person helped prepare a case. It blocks them from reviewing it. |
-| Fixture / sample case | One of ten seeded demonstration cases, rebuilt by a presenter's reset. |
+| Fixture / sample case | One of the seeded demonstration cases migration 009 defines. No screen rebuilds them any more, and #135 removes them; rehearsal cases come from `npm run seed:local`. |
 | Generation | `workspaces.fixture_generation`, the counter a reset moves so every window reloads. |
 | Client number | `#001`-style number a case gets when it is submitted, one sequence per workspace and season (migration 010). |
 | Intake version | Which intake a case uses, fixed when it is created. `2`, the catalogue form of steps 0–9 with sub-steps, is the only version since migration 023 (the original four-step version 1 was removed). New cases take `workspaces.default_intake_version`. |

@@ -60,12 +60,12 @@ erDiagram
 - **Person** (`public.people`): a staff member with capabilities. Every staff action names the
   person it is done as, and the database checks that person's capabilities.
 
-**Presenter accounts are not linked to people.** A presenter account chooses a persona in the
-presenter panel and acts as Alex, Morgan or Sam, so one group member can demonstrate every role.
-The database still enforces each persona's capabilities and independence rules, so the workflow
-rules are real, but the question "is this account allowed to act as Alex?" is answered only by
-"it is a presenter". This is the most important demo-only shortcut, and it stays for the classroom
-demonstration.
+**Presenter accounts are not linked to people.** A presenter who signs in now gets one plain
+screen, "This account is no longer used", and the app reads nothing for it. There is no presenter
+panel and no persona to choose. The database still has the persona rule: a presenter's RPC call
+may name any person as `p_person_id` (the app never sends one now), and the question "is this
+account allowed to act as Alex?" is answered only by "it is a presenter". That rule stays in the
+database until #136 removes the presenter role.
 
 **Staff accounts are linked.** A `staff` membership has exactly one `people` row with a matching
 `user_id`, created from the roster. The database, not the browser, decides who is acting: every
