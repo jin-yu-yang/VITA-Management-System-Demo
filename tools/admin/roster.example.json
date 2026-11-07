@@ -28,6 +28,5 @@
     }
   ],
   "defaultFollowup": "site_coordinator",
-  "applicants": ["client-a@example.org"],
-  "sampleCaseOwners": { "preparation_ready": "client-a@example.org" }
+  "applicants": ["client-a@example.org"]
 }

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import {
   parseRoster,
+  rosterNotes,
   parseRosterArgs,
   applyRoster,
 } from "../tools/admin/roster.mjs";
@@ -12,7 +13,6 @@ const valid = () => ({
   workspaceId: WORKSPACE,
   presenters: ["  Presenter@Example.org "],
   applicants: ["client-a@example.org", "client-b@example.org"],
-  sampleCaseOwners: { preparation_ready: "Client-A@example.org" },
 });
 const invalid = (pattern) => (error) =>
   error.code === "ROSTER_INVALID" && pattern.test(error.message);
@@ -24,10 +24,16 @@ test("a roster is trimmed, lower-cased and kept in order", () => {
     applicants: ["client-a@example.org", "client-b@example.org"],
     staff: [],
     defaultFollowup: null,
-    sampleCaseOwners: { preparation_ready: "client-a@example.org" },
   });
-  const { sampleCaseOwners, ...bare } = valid();
-  assert.deepEqual(parseRoster(bare).sampleCaseOwners, {});
+});
+
+test("an old roster's sampleCaseOwners is ignored with a note", () => {
+  const old = { ...valid(), sampleCaseOwners: { preparation_ready: "client-a@example.org" } };
+  const parsed = parseRoster(old);
+  assert.equal("sampleCaseOwners" in parsed, false);
+  assert.deepEqual(rosterNotes(old), ["sampleCaseOwners is no longer used and was ignored."]);
+  assert.deepEqual(rosterNotes(valid()), []);
+  assert.doesNotThrow(() => parseRoster({ ...valid(), sampleCaseOwners: "anything" }));
 });
 
 test("a malformed roster names the problem, never the address", () => {
@@ -52,16 +58,6 @@ test("a malformed roster names the problem, never the address", () => {
   assert.throws(() => parseRoster(twice), (error) =>
     invalid(/applicants\[0\] is already on the roster/)(error) &&
     !/presenter@/i.test(error.message),
-  );
-  assert.throws(
-    () => parseRoster({ ...valid(), sampleCaseOwners: { intake_ready: "client-a@example.org" } }),
-    invalid(/intake_ready is not a sample case/),
-  );
-  assert.throws(
-    () => parseRoster({ ...valid(), sampleCaseOwners: { review_ready: "presenter@example.org" } }),
-    (error) =>
-      invalid(/review_ready must name an applicant/)(error) &&
-      !error.message.includes("presenter@"),
   );
 });
 
@@ -151,9 +147,6 @@ test("missing accounts are created confirmed, and the workspace gets their ids",
         "00000000-0000-4000-8000-000000000001",
         "bbbbbbbb-0000-4000-8000-000000000002",
       ],
-      fixtureClientBindings: {
-        preparation_ready: "00000000-0000-4000-8000-000000000001",
-      },
       staff: [],
       defaultFollowup: null,
     },
