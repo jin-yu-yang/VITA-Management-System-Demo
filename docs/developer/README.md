@@ -74,7 +74,7 @@ src/
   supabase-store.mjs       The only data adapter: reads, the 8 RPCs, Realtime, row mapping.
   auth.mjs                 Email one-time-code sign-in, resend cooldown, neutral messages.
   contact-log.mjs          The contact log's summary line, labels and New York time helpers.
-  contracts.mjs            Shared vocabulary: stages, actions, checkpoints, error codes.
+  contracts.mjs            Shared vocabulary: stages, actions, error codes.
   errors.mjs               The one mapper from database/transport errors to domain codes.
   domain.mjs               Stages, phases, stage wording.
   intake-catalogue-data.mjs  Generated: the version-2 question catalogue. Never edit by hand.
@@ -158,8 +158,6 @@ These are load-bearing. Changing any of them is an architecture decision, not a 
 | Receipt | The stored result of an accepted action, keyed by its action id, returned again on replay. |
 | Preparation version | Which hand-off to review this is; it moves each time a preparer submits or resubmits. |
 | Participation | The permanent record that a person helped prepare a case. It blocks them from reviewing it. |
-| Fixture / sample case | One of the seeded demonstration cases migration 009 defines. No screen rebuilds them any more, and #135 removes them; rehearsal cases come from `npm run seed:local`. |
-| Generation | `workspaces.fixture_generation`, the counter a reset moves so every window reloads. |
 | Client number | `#001`-style number a case gets when it is submitted, one sequence per workspace and season (migration 010). |
 | Intake version | Which intake a case uses, fixed when it is created. `2`, the catalogue form of steps 0–9 with sub-steps, is the only version since migration 023 (the original four-step version 1 was removed). New cases take `workspaces.default_intake_version`. |
 | Catalogue | The version-2 questions (ids, types, options, show-if rules, standard and senior wording), built from `docs/intake-questions/` into `src/intake-catalogue-data.mjs` and the private `intake_fields` table. |
