@@ -1,5 +1,9 @@
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   parseRoster,
@@ -8,6 +12,7 @@ import {
   applyRoster,
 } from "../tools/admin/roster.mjs";
 
+const NOTE = "sampleCaseOwners is no longer used and was ignored.";
 const WORKSPACE = "3f1c2b4a-8d7e-4f60-9a1b-2c3d4e5f6a7b";
 const valid = () => ({
   workspaceId: WORKSPACE,
@@ -31,9 +36,11 @@ test("an old roster's sampleCaseOwners is ignored with a note", () => {
   const old = { ...valid(), sampleCaseOwners: { preparation_ready: "client-a@example.org" } };
   const parsed = parseRoster(old);
   assert.equal("sampleCaseOwners" in parsed, false);
-  assert.deepEqual(rosterNotes(old), ["sampleCaseOwners is no longer used and was ignored."]);
+  assert.deepEqual(rosterNotes(old), [NOTE]);
   assert.deepEqual(rosterNotes(valid()), []);
   assert.doesNotThrow(() => parseRoster({ ...valid(), sampleCaseOwners: "anything" }));
+  assert.doesNotThrow(() => parseRoster({ ...valid(), sampleCaseOwners: null }));
+  assert.deepEqual(rosterNotes({ ...valid(), sampleCaseOwners: null }), [NOTE]);
 });
 
 test("a malformed roster names the problem, never the address", () => {
@@ -369,4 +376,40 @@ test("the example roster parses and names the role accounts", () => {
   assert.equal(roster.defaultFollowup, "site_coordinator");
   assert.deepEqual(roster.applicants, ["client-a@example.org"]);
   assert.deepEqual(roster.presenters, ["presenter@example.org"]);
+});
+
+test("the roster command prints the sampleCaseOwners note once", () => {
+  const dir = mkdtempSync(join(tmpdir(), "roster-cli-"));
+  try {
+    const script = fileURLToPath(new URL("../tools/admin/roster.mjs", import.meta.url));
+    // No SUPABASE_* or database variables: the target check rejects the run
+    // after the note is printed, so nothing reaches a database.
+    const env = {
+      PATH: process.env.PATH,
+      SystemRoot: process.env.SystemRoot,
+      HOME: dir,
+      USERPROFILE: dir,
+    };
+    const run = (roster) => {
+      const file = join(dir, "roster.json");
+      writeFileSync(file, JSON.stringify(roster));
+      return spawnSync(
+        process.execPath,
+        [script, "--target", "test", "--roster", file],
+        { cwd: dir, env, encoding: "utf8" },
+      );
+    };
+    const withKey = run({
+      ...valid(),
+      workspaceId: crypto.randomUUID(),
+      sampleCaseOwners: { preparation_ready: "client-a@example.org" },
+    });
+    assert.match(withKey.stderr, /Roster failed \(TARGET_REJECTED\)/);
+    assert.equal(withKey.stdout.split(NOTE).length - 1, 1);
+    const without = run({ ...valid(), workspaceId: crypto.randomUUID() });
+    assert.match(without.stderr, /Roster failed \(TARGET_REJECTED\)/);
+    assert.equal(without.stdout.includes(NOTE), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
