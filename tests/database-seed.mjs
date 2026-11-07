@@ -82,7 +82,6 @@ test("seed command against real Supabase", async (t) => {
         workspaceId,
         presenterUserIds: [],
         applicantUserIds: [],
-        fixtureClientBindings: {},
       });
       await f.staff({
         key: "preparer",
@@ -367,15 +366,14 @@ test("seed command against real Supabase", async (t) => {
       async () => {
         const runDir = await tempRunDir();
         try {
-          const appCase = await f.readyCase();
-          await f.seedFixtures();
+          const appCases = [await f.readyCase(), await f.assistedCase()];
           const others = (
             await f.sql(
-              "select id, revision from public.cases where id=$1 or (workspace_id=$2 and fixture) order by id",
-              [appCase, f.workspaceId],
+              "select id, revision from public.cases where id = any($1::uuid[]) order by id",
+              [appCases],
             )
           ).rows;
-          assert.ok(others.length > 1);
+          assert.equal(others.length, 2);
           const first = await seedCases(client, await targetsFor(), { runDir });
           const firstIds = Object.values(first.caseIdsByScenario);
           const second = await seedCases(client, await targetsFor(), { runDir });
@@ -407,6 +405,32 @@ test("seed command against real Supabase", async (t) => {
         }
       },
     );
+
+    await t.test("receipts outlive the cases a re-run deletes", async () => {
+      const runDir = await tempRunDir();
+      try {
+        const first = await seedCases(client, await targetsFor(), { runDir });
+        const firstIds = Object.values(first.caseIdsByScenario);
+        const receiptsOf = async () =>
+          (
+            await f.sql(
+              "select id, target_id from public.action_receipts where target_id = any($1::uuid[]) order by id",
+              [firstIds],
+            )
+          ).rows;
+        const before = await receiptsOf();
+        // Every case the first run made has at least its create receipt.
+        assert.deepEqual(
+          [...new Set(before.map((row) => row.target_id))].sort(),
+          [...firstIds].sort(),
+        );
+        await seedCases(client, await targetsFor(), { runDir });
+        assert.deepEqual(await caseRows(firstIds), []);
+        assert.deepEqual(await receiptsOf(), before);
+      } finally {
+        await rm(runDir, { recursive: true, force: true });
+      }
+    });
 
     await t.test("a partial earlier run is cleaned up", async () => {
       const runDir = await tempRunDir();

@@ -354,34 +354,3 @@ test("an identical replay returns the receipt and saves once", async () => {
     await f.close();
   }
 });
-
-test("seeded samples with a preparer questionnaire carry a shaded row", async () => {
-  const f = await createDatabaseFixture();
-  try {
-    await f.seedFixtures();
-    const withQuestionnaire = (await f.sql("select distinct case_id from public.preparer_questionnaires where workspace_id=$1", [f.workspaceId])).rows.map((r) => r.case_id);
-    assert.ok(withQuestionnaire.length >= 3, "several samples have a questionnaire");
-    const shaded = (await f.sql("select case_id,fields,version from public.preparer_shaded_fields where workspace_id=$1", [f.workspaceId])).rows;
-    assert.deepEqual(shaded.map((r) => r.case_id).sort(), [...withQuestionnaire].sort());
-    for (const row of shaded) {
-      assert.equal(Number(row.version), 1);
-      assert.equal(row.fields.incomeW2s, true);
-      assert.equal(row.fields.incomeW2sCount, 1);
-      assert.equal(row.fields.income1099Int, true);
-      assert.equal(row.fields.income1099IntCount, 1);
-      assert.equal(row.fields.deductionStandard, true);
-      assert.equal(row.fields.incomeNotes, "Fictional: one W-2 from a part-time job.");
-      assert.equal(row.fields.household1QualifyingChild, "yes");
-      assert.equal(row.fields.household1OwnSupport, "no");
-      assert.equal(row.fields.household1LowIncome, "yes");
-      assert.equal(row.fields.household1SupportProvided, "na");
-      assert.equal(row.fields.household1CostOfHome, "yes");
-    }
-    // A reseed replaces rather than duplicates.
-    await f.seedFixtures();
-    const again = (await f.sql("select count(*)::int as n from public.preparer_shaded_fields where workspace_id=$1", [f.workspaceId])).rows[0].n;
-    assert.equal(again, shaded.length);
-  } finally {
-    await f.close();
-  }
-});

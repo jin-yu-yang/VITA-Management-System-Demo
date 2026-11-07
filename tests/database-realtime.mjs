@@ -788,14 +788,17 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
             ["caseId", "eventType", "id", "table"],
             "a change carries identifiers only",
           );
-        // And the shared generation signal arrives as what it is: a workspace
-        // row moved, with no case behind it. This is what tells the browser to
-        // re-read its own lists after somebody resets the demonstration.
-        await f.seedFixtures();
+        // And a workspace update arrives as what it is: a workspace row moved,
+        // with no case behind it. This is what tells the browser to re-read
+        // its own lists when the office's settings change.
+        await f.sql(
+          "update public.workspaces set default_followup_person_id=default_followup_person_id where id=$1",
+          [f.workspaceId],
+        );
         const signal = await awaitChange(
           "A",
           (change) => change.table === "workspaces",
-          "the shared generation signal",
+          "the workspace update",
         );
         assert.deepEqual(signal, {
           table: "workspaces",
@@ -805,64 +808,6 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         });
       } finally {
         for (const stop of stops) stop();
-      }
-    });
-
-    await t.test("the shared generation signal reaches every member", async () => {
-      const bindings = [{ event: "UPDATE", table: "workspaces" }];
-      const staff = watchTable(f.presenter, bindings, "presenter/workspaces");
-      const client = watchTable(f.applicantA, bindings, "A/workspaces");
-      try {
-        await withDeadline(staff.subscribed, "the presenter never subscribed");
-        await withDeadline(client.subscribed, "the applicant never subscribed");
-        // A reset is the only thing that moves the generation, and it is
-        // repeatable, so it is its own control.
-        const control = await controlUntilSeen(
-          staff,
-          async () => {
-            const receipt = await f.seedFixtures();
-            return { id: f.workspaceId, generation: Number(receipt.generation) };
-          },
-          (change) => (row) =>
-            row.id === change.id && Number(row.fixture_generation) === change.generation,
-          "the generation signal",
-        );
-        const generation = control.produced.at(-1).generation;
-        const onStaff = await staff.waitFor(
-          (row) => Number(row.fixture_generation) === generation,
-          `generation ${generation}`,
-        );
-        const onClient = await client.waitFor(
-          (row) => Number(row.fixture_generation) === generation,
-          `generation ${generation}`,
-        );
-        // Both members get the same row, and the row says nothing private: a
-        // workspace id, the default follow-up person, a number, the
-        // current season, which is only a year (migration 010), and the
-        // intake version new cases take (migration 011).
-        for (const seen of [onStaff, onClient]) {
-          assert.equal(seen.eventType, "UPDATE");
-          assert.deepEqual(Object.keys(seen.new).toSorted(), [
-            "current_season",
-            "default_followup_person_id",
-            "default_intake_version",
-            "fixture_generation",
-            "id",
-          ]);
-          assert.equal(seen.new.id, f.workspaceId);
-          assert.equal(Number(seen.new.fixture_generation), generation);
-        }
-        // No case id or case content travels with it, on either channel.
-        const fixtures = new Set((await f.readFixtureCases()).map((row) => row.id));
-        for (const seen of [...staff.rows(), ...client.rows()]) {
-          assert.ok(!fixtures.has(seen.id), "a case id travelled with the signal");
-          assert.equal(seen.answers, undefined);
-          assert.equal(seen.reference, undefined);
-        }
-        assertHealthy(staff, client);
-      } finally {
-        staff.stop();
-        client.stop();
       }
     });
 
@@ -911,7 +856,7 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
       });
     }
 
-    await t.test("a reset publishes no deletion an applicant could read", async () => {
+    await t.test("a seed re-run publishes no deletion an applicant could read", async () => {
       // The publication carries INSERT and UPDATE only (migration 007). A
       // deleted row cannot be authorized through the row-level security state
       // it no longer has, so it is never offered to anybody — which this asks
@@ -924,48 +869,52 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
       assert.deepEqual(publication, [
         { pubinsert: true, pubupdate: true, pubdelete: false, pubtruncate: false },
       ]);
-      await f.seedFixtures();
+      const runner = await f.seedRunner();
       // One channel, two bindings: the deletions this test is asking about,
       // and the updates that prove the channel kept delivering.
-      const watch = watchTable(
-        f.applicantA,
-        [
-          { event: "DELETE", table: "cases" },
-          { event: "UPDATE", table: "cases" },
-        ],
-        "A/cases delete",
-      );
+      let watch = null;
       try {
+        const first = await runner.seed();
+        watch = watchTable(
+          f.applicantA,
+          [
+            { event: "DELETE", table: "cases" },
+            { event: "UPDATE", table: "cases" },
+          ],
+          "A/cases delete",
+        );
         await withDeadline(watch.subscribed, "A never subscribed for deletions");
-        // Control first: this channel is delivering before the reset runs.
+        // Control first: this channel is delivering before the re-run.
         const before = await controlUntilSeen(
           watch,
           () => saveFor(owners.A),
           savedCase,
-          "A's pre-reset control",
+          "A's pre-re-run control",
         );
         assert.ok(before.seen);
         // Everything from here on was committed after the channel was proved
-        // to be delivering, so what it carries is this reset's own traffic.
+        // to be delivering, so what it carries is this re-run's own traffic.
         const from = watch.payloads.length;
-        const doomed = new Set((await f.readFixtureCases()).map((row) => row.id));
-        const bound = (await f.readFixtureCases()).find(
-          (row) => row.fixtureKey === f.boundFixtureKey,
-        );
+        const doomed = new Set(Object.values(first.caseIdsByScenario));
+        const [owned] = (
+          await f.sql("select owner_user_id from public.cases where id=$1", [
+            first.caseIdsByScenario.client_received,
+          ])
+        ).rows;
         assert.equal(
-          bound.ownerUserId,
+          owned.owner_user_id,
           f.applicantAUserId,
           "A owns one of the doomed rows",
         );
-        // Another presenter resets the fixtures, deleting the case A owns.
-        await f.seedFixtures();
+        // The seed runs again, deleting the first run's cases, A's among them.
+        await runner.seed();
         // Two ordered fences afterwards: the channel has been offered
         // everything committed before them, the deletion included.
         for (const attempt of [1, 2]) {
           const fence = await saveFor(owners.A);
           await watch.waitFor(
             savedCase(fence),
-            `A's post-reset ordered fence ${attempt}`,
+            `A's post-re-run ordered fence ${attempt}`,
           );
         }
         const deletions = watch.payloads.filter(
@@ -981,7 +930,8 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
         }
         assertHealthy(watch);
       } finally {
-        watch.stop();
+        watch?.stop();
+        await runner.close();
       }
     });
   } finally {

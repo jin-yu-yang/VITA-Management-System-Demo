@@ -1,8 +1,12 @@
 import { randomUUID, randomBytes } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { assertTestTarget } from "../../tools/admin/test-target.mjs";
 import { openDatabase, databaseError } from "../../tools/admin/database.mjs";
 import { initializeWorkspace } from "../../tools/admin/workspace-setup.mjs";
+import { resolveSeedTargets, seedCases } from "../../tools/admin/seed-cases.mjs";
 import { createAppError } from "../../src/errors.mjs";
 import { makeSampleAnswers } from "../../src/sample-data.mjs";
 import { createRun, ownedRun, saveRun, endRun } from "./run-manifest.mjs";
@@ -34,24 +38,6 @@ const SAMPLE_ASSISTANCE = Object.freeze({
   language: "Mandarin",
   contactPreference: "Prefers calls from the main office",
 });
-// The ten scenario keys the private binding table and `cases.fixture_key`
-// constrain (migration 001, widened to eight in 035 and ten in 036). They are stable names,
-// never case ids.
-const FIXTURE_KEYS = Object.freeze([
-  "preparation_ready",
-  "waiting_documents",
-  "admin_followup",
-  "review_ready",
-  "corrections_required",
-  "review_approved",
-  "rejected",
-  "accepted",
-  "on_hold",
-  "withdrawn",
-]);
-// The one key this fixture binds to applicant A through the shared
-// initializer, so a reset has a durable client binding to reapply.
-const BOUND_FIXTURE_KEY = "preparation_ready";
 // Actions whose payload names a related record. For compact tests only, an
 // omitted id falls back to the case's single current request or open follow-up;
 // the browser always sends the selected id (Ruling R20).
@@ -396,9 +382,9 @@ export async function createDatabaseFixture({
     return data;
   };
   // Legacy, presenter mode only: the caller names a person explicitly. Kept for
-  // the tests whose subject is presenter or persona behaviour (the sample
-  // reset's class case, persona refusals, a client or staff member naming a
-  // person). These go away with presenter mode.
+  // the tests whose subject is presenter or persona behaviour (persona
+  // refusals, a client or staff member naming a person). These go away with
+  // presenter mode.
   f.createCaseAsPersona = createCase;
   f.actAsPersona = act;
   f.logContactAsPersona = logContact;
@@ -574,72 +560,6 @@ export async function createDatabaseFixture({
         )
       ).rows[0].count,
     );
-  // ---- fixtures, resets and checkpoints (Task 9) -------------------------
-  //
-  // Everything a reset must leave alone is read through one set of helpers, so
-  // "preserved" means the same thing in every test: the same privileged
-  // connection, the same deterministic ordering, and values that are stable by
-  // construction rather than by luck.
-
-  f.fixtureKeys = FIXTURE_KEYS;
-  f.boundFixtureKey = BOUND_FIXTURE_KEY;
-
-  // A class-created application carried to the same place the demo's own
-  // cases sit: submitted, intake recorded, and claimed by a preparer whose
-  // participation the claim writes. Only public actions are used, so what this
-  // builds is exactly what a student would have built. It is used by the
-  // sample-reset tests, so it stays on the presenter and its demo personas
-  // (legacy; goes away with presenter mode).
-  f.prepareClassCase = async (caseId, preparerId) => {
-    // A client's own draft is private to them, so the stage is read through
-    // the privileged connection rather than through a staff client that is
-    // not allowed to see it yet.
-    const [current] = (
-      await f.sql("select stage,answers from public.cases where id=$1", [caseId])
-    ).rows;
-    if (current?.stage === "draft" && Object.keys(current?.answers ?? {}).length === 0)
-      await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
-        answers: makeSampleAnswers(),
-      });
-    await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
-    await f.actAsPersona(f.presenter, caseId, f.sam, "START_SCREENING", {});
-    await f.actAsPersona(f.presenter, caseId, f.sam, "VERIFY_INTAKE", {
-      checks: await f.checksFor(caseId),
-    });
-    await f.actAsPersona(f.presenter, caseId, preparerId, "CLAIM_PREPARATION", {});
-    return caseId;
-  };
-
-  // The workspace setup a reset must never touch. Deliberately excludes
-  // `workspaces.fixture_generation`, which a reset is *supposed* to move.
-  f.readStableSetup = async () => {
-    const people = (
-      await f.sql(
-        "select id,person_key,name,capabilities from public.people where workspace_id=$1 order by person_key",
-        [f.workspaceId],
-      )
-    ).rows.map((row) => ({ ...row, capabilities: [...row.capabilities].sort() }));
-    const memberships = (
-      await f.sql(
-        "select user_id,access,active from public.memberships where workspace_id=$1 order by user_id",
-        [f.workspaceId],
-      )
-    ).rows;
-    const bindings = (
-      await f.sql(
-        "select fixture_key,owner_user_id from vitally_private.fixture_client_bindings where workspace_id=$1 order by fixture_key",
-        [f.workspaceId],
-      )
-    ).rows;
-    const workspace = (
-      await f.sql(
-        "select default_followup_person_id from public.workspaces where id=$1",
-        [f.workspaceId],
-      )
-    ).rows;
-    return { people, memberships, bindings, workspace };
-  };
-
   // Every membership row this account holds anywhere, so a revoked or deleted
   // one is an empty array rather than a silent undefined.
   f.readMembership = async (userId) =>
@@ -650,49 +570,28 @@ export async function createDatabaseFixture({
       )
     ).rows;
 
-  f.readFixtureCases = async () =>
-    (
-      await f.sql(
-        "select id,fixture_key,owner_user_id,stage,revision from public.cases where workspace_id=$1 and fixture order by fixture_key",
-        [f.workspaceId],
-      )
-    ).rows.map((row) => ({
-      id: row.id,
-      fixtureKey: row.fixture_key,
-      ownerUserId: row.owner_user_id,
-      stage: row.stage,
-      revision: Number(row.revision),
-    }));
-
-  f.readFixtureAssistance = async () =>
-    (
-      await f.sql(
-        "select * from public.assistance_items where workspace_id=$1 and fixture order by created_at,id",
-        [f.workspaceId],
-      )
-    ).rows.map(camelRow);
-
-  // The generation and the identities of everything a reset replaces: equal
-  // before and after means nothing was reseeded.
-  f.readFixtureState = async () => ({
-    generation: Number(
-      (
-        await f.sql("select fixture_generation from public.workspaces where id=$1", [
-          f.workspaceId,
-        ])
-      ).rows[0].fixture_generation,
-    ),
-    caseIds: (await f.readFixtureCases()).map((row) => row.id).sort(),
-    itemIds: (await f.readFixtureAssistance()).map((row) => row.id).sort(),
-  });
-
-  // A seeded workspace, through the one public path that seeds one.
-  f.seedFixtures = async (client = f.presenter) => {
-    const { data, error } = await client.rpc("vitally_reset_fixtures", {
-      p_action_id: randomUUID(),
-    });
-    if (error) throw createAppError(error);
-    return data;
+  // The seed command (tools/admin/seed-cases.mjs) against this workspace, on
+  // its own connection and run directory. Each `seed()` is one run: it removes
+  // the previous run's cases and help request, then builds a fresh set through
+  // the public actions. `close()` ends the connection and removes the run file.
+  f.seedRunner = async () => {
+    const client = await openDatabase();
+    const runDir = await mkdtemp(path.join(tmpdir(), "seed-run-"));
+    return {
+      seed: async () =>
+        seedCases(
+          client,
+          await resolveSeedTargets(client, {
+            workspaceId: f.workspaceId,
+            clientAEmail: f.applicantAEmail,
+          }),
+          { runDir },
+        ),
+      close: async () => {
+        await client.end();
+        await rm(runDir, { recursive: true, force: true });
+      },
+    };
   };
 
   f.snapshot = async () => {
@@ -702,8 +601,6 @@ export async function createDatabaseFixture({
         "select id,person_key,name,capabilities from public.people where workspace_id=$1 order by person_key",
       memberships:
         "select user_id,access,active from public.memberships where workspace_id=$1 order by user_id",
-      bindings:
-        "select fixture_key,owner_user_id from vitally_private.fixture_client_bindings where workspace_id=$1 order by fixture_key",
       workspace: "select * from public.workspaces where id=$1",
     }))
       out[name] = (await f.sql(sql, [f.workspaceId])).rows;
