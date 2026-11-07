@@ -124,10 +124,7 @@ test("version-2 samples, the checkpoint, and version-2 round trips", async (t) =
   const f = await createDatabaseFixture();
   try {
     await t.test("the new private functions are not executable by clients", async () => {
-      for (const signature of [
-        "vitally_private.fixture_answers_v2(text)",
-        "vitally_private.fixture_contact_v2(text)",
-      ])
+      for (const signature of ["vitally_private.initialize_workspace(uuid,uuid[],uuid[])"])
         for (const role of ["anon", "authenticated"]) {
           const { rows } = await f.sql("select has_function_privilege($1, $2::regprocedure, 'execute') as ok", [
             role,

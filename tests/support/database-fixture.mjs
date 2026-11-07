@@ -827,7 +827,6 @@ export async function createDatabaseFixture({
       workspaceId: f.workspaceId,
       presenterUserIds: [f.presenterUserId],
       applicantUserIds: [f.applicantAUserId, f.applicantBUserId],
-      fixtureClientBindings: { preparation_ready: f.applicantAUserId },
     };
     const initializeOwned = async (setup) => {
       run.pendingWorkspaces.add(setup.workspaceId);
@@ -904,7 +903,6 @@ export async function createDatabaseFixture({
       workspaceId: f.foreignWorkspaceId,
       presenterUserIds: [],
       applicantUserIds: [f.outsiderUserId],
-      fixtureClientBindings: {},
     });
     return f;
   } catch (error) {
