@@ -875,7 +875,7 @@ test("a refusal nobody has dismissed survives an unrelated background re-read", 
   assert.equal(shown.code, "OFFLINE");
   assert.match(shown.message, /Network error\. Please try again later\./);
 
-  // Somebody else's window resets the sample cases. That says nothing about
+  // Somebody else's window changes a case. That says nothing about
   // this person's save, and must not answer for it.
   await store.handlers.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
   assert.deepEqual(controller.getState().error, shown, "the reason is still on screen");
@@ -1722,6 +1722,16 @@ test("a workspace update refetches the lists, the workspace and the open case", 
   // gone, and the window forgets it quietly.
   store.records.delete("fixture-a");
   store.workspace = { ...store.workspace, defaultFollowupPersonId: "person-lee" };
+  // The open case's own change comes first: getCase now answers NOT_FOUND.
+  await store.handlers.onChange({
+    table: "cases",
+    eventType: "UPDATE",
+    id: "fixture-a",
+    caseId: "fixture-a",
+  });
+  assert.equal(controller.getState().selectedCaseId, null);
+  assert.equal("notice" in controller.getState(), false);
+  assert.equal(controller.getState().error, null);
   await store.handlers.onChange({
     table: "workspaces",
     eventType: "UPDATE",
@@ -1730,7 +1740,8 @@ test("a workspace update refetches the lists, the workspace and the open case", 
   });
   assert.equal(
     store.calls.filter((entry) => entry === "listCases").length,
-    before.cases + 1,
+    before.cases + 2,
+    "one list read per change",
   );
   assert.equal(
     store.calls.filter((entry) => entry === "getWorkspace").length,

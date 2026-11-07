@@ -16,7 +16,7 @@ export const TEXT = Object.freeze({
   "frame.help": { en: "Need help?", zh: "需要帮助？" },
   "frame.save_exit": { en: "Save & exit", zh: "保存并退出" },
   "frame.sign_out": { en: "Sign out", zh: "退出登录" },
-  // The connection, notice and problem banners (views.mjs)
+  // The connection and problem banners (views.mjs)
   "frame.reconnecting": { en: "The connection dropped and is being retried. What you see may be out of date, and actions cannot be confirmed until it is back.", zh: "连接中断了，正在重试。您看到的内容可能不是最新的，连接恢复前无法确认任何操作。" },
   "frame.offline": { en: "No connection to the server. You can read this page, but nothing can be saved or sent until the connection returns.", zh: "无法连接到服务器。您可以阅读此页，但连接恢复前无法保存或发送任何内容。" },
   "frame.try_again": { en: "Try again", zh: "再试一次" },
