@@ -14,6 +14,14 @@ import { makeSampleAnswers } from "../src/sample-data.mjs";
 const rejects = (promise, code) =>
   assert.rejects(promise, (error) => (error.cause?.code ?? error.code) === code);
 
+// A fresh case reference in the shape the schema checks.
+const REFERENCE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const reference = () => {
+  const pick = () =>
+    Array.from({ length: 4 }, () => REFERENCE_CHARS[Math.floor(Math.random() * REFERENCE_CHARS.length)]).join("");
+  return `VT-${pick()}-${pick()}`;
+};
+
 test("version 2 is the only accepted version", async (t) => {
   const f = await createDatabaseFixture();
   try {
@@ -44,6 +52,48 @@ test("version 2 is the only accepted version", async (t) => {
       // 011's cases_intake_version_fixed refuses the change before the CHECK is reached.
       await rejects(f.sql("update public.cases set intake_version=1 where id=$1", [caseId]), "VT007");
       assert.equal(Number((await f.sql("select intake_version v from public.cases where id=$1", [caseId])).rows[0].v), 2);
+    });
+    await t.test("a version-1 application can't be created", async () => {
+      // An otherwise-valid client row that asks for version 1.
+      const insert = (ref) =>
+        f.sql(
+          "insert into public.cases(reference,workspace_id,owner_user_id,origin,created_by_user_id,intake_version) values($1,$2,$3,'client',$3,1)",
+          [ref, f.workspaceId, f.applicantAUserId],
+        );
+      const stored = async (ref) =>
+        (await f.sql("select intake_version from public.cases where reference=$1", [ref])).rows;
+      // 023's insert trigger stamps the workspace's version over whatever the
+      // row asked for, so a version-1 insert is stored as version 2.
+      const stamped = reference();
+      await insert(stamped);
+      assert.deepEqual((await stored(stamped)).map((row) => Number(row.intake_version)), [2]);
+      await f.sql("delete from public.cases where reference=$1", [stamped]);
+      // Behind the trigger, 023's check refuses version 1 itself. The trigger
+      // is set aside only inside this rolled-back transaction, so the insert
+      // reaches the check.
+      const refused = reference();
+      await f.sql("begin");
+      try {
+        await f.sql("alter table public.cases disable trigger cases_intake_version_insert");
+        await assert.rejects(
+          () => insert(refused),
+          (error) => {
+            assert.equal(error.cause?.code ?? error.code, "23514");
+            assert.equal(error.cause?.constraint, "cases_intake_version_range");
+            return true;
+          },
+        );
+      } finally {
+        await f.sql("rollback");
+      }
+      assert.deepEqual(await stored(refused), []);
+      // The rollback restored the trigger.
+      const [trigger] = (
+        await f.sql(
+          "select tgenabled from pg_trigger where tgrelid='public.cases'::regclass and tgname='cases_intake_version_insert'",
+        )
+      ).rows;
+      assert.equal(trigger.tgenabled, "O");
     });
     await t.test("every workspace is version 2", async () => {
       assert.equal(Number((await f.sql("select count(*) n from public.workspaces where default_intake_version <> 2")).rows[0].n), 0);

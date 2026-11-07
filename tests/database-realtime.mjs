@@ -811,6 +811,63 @@ test("Realtime carries one applicant's rows to that applicant only", async (t) =
       }
     });
 
+    await t.test("a workspace update reaches every member and carries nothing private", async () => {
+      const bindings = [{ event: "UPDATE", table: "workspaces" }];
+      const staff = watchTable(f.siteCoordinator, bindings, "staff/workspaces");
+      const client = watchTable(f.applicantA, bindings, "A/workspaces");
+      try {
+        await withDeadline(staff.subscribed, "the staff member never subscribed");
+        await withDeadline(client.subscribed, "the applicant never subscribed");
+        // A settings column set to its own value: a real UPDATE of the
+        // workspace row that changes nothing, so it is repeatable and is its
+        // own control.
+        const ofWorkspace = (row) => row.id === f.workspaceId;
+        await controlUntilSeen(
+          staff,
+          async () => {
+            await f.sql(
+              "update public.workspaces set default_followup_person_id=default_followup_person_id where id=$1",
+              [f.workspaceId],
+            );
+            return { id: f.workspaceId };
+          },
+          () => ofWorkspace,
+          "the workspace update",
+        );
+        const onStaff = await staff.waitFor(ofWorkspace, "the workspace update on staff");
+        const onClient = await client.waitFor(ofWorkspace, "the workspace update on the client");
+        // Both members get the same row, and the row says nothing private: a
+        // workspace id, the default follow-up person, the current season,
+        // which is only a year (migration 010), and the intake version new
+        // cases take (migration 011).
+        for (const seen of [onStaff, onClient]) {
+          assert.equal(seen.eventType, "UPDATE");
+          assert.deepEqual(Object.keys(seen.new).toSorted(), [
+            "current_season",
+            "default_followup_person_id",
+            "default_intake_version",
+            "id",
+          ]);
+          assert.equal(seen.new.id, f.workspaceId);
+        }
+        // No case id or case content travels with it, on either channel.
+        const caseIds = new Set(
+          (await f.sql("select id from public.cases where workspace_id=$1", [f.workspaceId])).rows.map(
+            (row) => row.id,
+          ),
+        );
+        for (const seen of [...staff.rows(), ...client.rows()]) {
+          assert.ok(!caseIds.has(seen.id), "a case id travelled with the update");
+          assert.equal(seen.answers, undefined);
+          assert.equal(seen.reference, undefined);
+        }
+        assertHealthy(staff, client);
+      } finally {
+        staff.stop();
+        client.stop();
+      }
+    });
+
     for (const spec of INTERNAL) {
       await t.test(`${spec.table} reaches staff and no client at all`, async () => {
         const bindings = [{ event: "INSERT", table: spec.table }];

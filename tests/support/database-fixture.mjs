@@ -575,8 +575,11 @@ export async function createDatabaseFixture({
   // the previous run's cases and help request, then builds a fresh set through
   // the public actions. `close()` ends the connection and removes the run file.
   f.seedRunner = async () => {
-    const client = await openDatabase();
     const runDir = await mkdtemp(path.join(tmpdir(), "seed-run-"));
+    const client = await openDatabase().catch(async (error) => {
+      await rm(runDir, { recursive: true, force: true });
+      throw error;
+    });
     return {
       seed: async () =>
         seedCases(
