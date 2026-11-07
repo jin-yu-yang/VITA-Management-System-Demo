@@ -6375,6 +6375,10 @@ test("every data load is inert for a presenter", async () => {
   assert.deepEqual(fresh.calls, ["getPrincipal"]);
   const before = presenter.getState();
   await presenter.testing.loadList();
+  // loadWorkspace's inert() guard sits in front of its staff-only check
+  // (`!staffWindow()`), which also returns for a presenter, so removing that
+  // guard can't fail this test. The review checks it by grep instead, as each
+  // data load's first line.
   await presenter.testing.loadWorkspace();
   await presenter.testing.loadAssistance();
   assert.deepEqual(fresh.calls, ["getPrincipal"]);
