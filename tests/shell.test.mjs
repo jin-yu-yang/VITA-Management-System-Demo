@@ -292,11 +292,10 @@ const drawerCase = {
   followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam" }],
 };
 const drawerState = (over = {}) => ({
-  principal: { access: "staff" },
+  principal: { access: "staff", personId: drawerSam.id },
   connection: "online",
   screen: "staff",
   people: [drawerSam],
-  selectedPersonId: drawerSam.id,
   cases: [],
   assistance: [],
   ...over,
@@ -661,9 +660,8 @@ test("the part 4b2 block follows 4b's: icon-and-word marks, the phone bar and th
 
 const ADD_SAM = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup", "assist", "receive_documents"] };
 const addState = (over = {}) => ({
-  principal: { userId: "p1", workspaceId: "w1", access: "staff" },
+  principal: { userId: "p1", workspaceId: "w1", access: "staff", personId: ADD_SAM.id },
   people: [ADD_SAM],
-  selectedPersonId: ADD_SAM.id,
   screen: "office-add-case",
   cases: [],
   assistance: [],
@@ -1357,7 +1355,7 @@ test("a refusal shows in the error banner and the staff window stays usable", ()
 
 test("no staff screen offers a persona, a reset or a checkpoint", () => {
   const people = [{ id: "p-sam", name: "Sam", capabilities: ["prepare"] }];
-  const base = { principal: { access: "staff", personName: "Sam" }, connection: "online", people, selectedPersonId: "p-sam", cases: [], assistance: [], demoTools: true };
+  const base = { principal: { access: "staff", personId: "p-sam", personName: "Sam" }, connection: "online", people, cases: [], assistance: [], demoTools: true };
   const board = staffScreen({ ...base, screen: "staff" });
   const casePage = staffScreen({
     ...base,
@@ -1371,7 +1369,7 @@ test("no staff screen offers a persona, a reset or a checkpoint", () => {
 
 test("a staff account's screens name it and act as no one", () => {
   const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
-  const base = { principal: { access: "staff", personId: "p-sam", personName: "Sam" }, connection: "online", people: [sam], selectedPersonId: "p-sam", cases: [], assistance: [] };
+  const base = { principal: { access: "staff", personId: "p-sam", personName: "Sam" }, connection: "online", people: [sam], cases: [], assistance: [] };
   const board = staffScreen({ ...base, screen: "staff" });
   assert.match(board.match(/<div class="account-row">[\s\S]*?<\/span><\/div>/)[0].replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), /Signed in as Sam/);
   assert.doesNotMatch(board, /Presenter controls|No persona chosen|Acting as/);

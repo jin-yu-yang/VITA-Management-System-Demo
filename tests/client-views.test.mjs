@@ -55,7 +55,6 @@ const baseState = (overrides = {}) => ({
   busy: false,
   screen: "applications",
   selectedCaseId: null,
-  selectedPersonId: null,
   openPanels: [],
   lookup: "",
   dialog: null,
@@ -532,14 +531,13 @@ test("a staff account gets the board and one case workspace, with no persona sel
   ];
   const staffState = (overrides = {}) =>
     baseState({
-      principal: { userId: "p1", workspaceId: "w1", access: "staff" },
+      principal: { userId: "p1", workspaceId: "w1", access: "staff", personId: "person-1" },
       screen: "staff",
       cases,
       people: [
         { id: "person-1", name: "Alex", capabilities: ["prepare"] },
         { id: "person-2", name: "Morgan", capabilities: ["review"] },
       ],
-      selectedPersonId: "person-1",
       boardFilters: { status: "preparation" },
       ...overrides,
     });
@@ -580,14 +578,13 @@ test("a staff account gets the board and one case workspace, with no persona sel
 
 test("the staff workspace announces a failure once, beside the work", () => {
   const state = baseState({
-    principal: { userId: "p1", workspaceId: "w1", access: "staff" },
+    principal: { userId: "p1", workspaceId: "w1", access: "staff", personId: "person-1" },
     screen: "staff-case",
     error: {
       code: "CONFLICT",
       message: "Someone else changed this case. The newest version is shown — check it and try again.",
     },
     people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
-    selectedPersonId: "person-1",
     savedCase: {
       ...caseRecord({ id: "case-a", stage: "preparing", preparerId: "person-1" }),
       participants: ["person-1"],
@@ -631,13 +628,12 @@ test("an error shows inside the open dialog, and the banner steps aside", () => 
 
 test("a dialog on the case page holds the only copy of the error", () => {
   const state = baseState({
-    principal: { userId: "p1", workspaceId: "w1", access: "staff" },
+    principal: { userId: "p1", workspaceId: "w1", access: "staff", personId: "person-1" },
     screen: "staff-case",
     dialog: "close-case",
     error: { code: "SERVER_ERROR", message: "x" },
     retryable: false,
     people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
-    selectedPersonId: "person-1",
     savedCase: {
       ...caseRecord({ id: "case-a", stage: "preparing", preparerId: "person-1" }),
       participants: ["person-1"],

@@ -1584,7 +1584,7 @@ if (!config) {
     const state = controller.getState();
     if (state.savedCase?.id !== caseId) return "This case is no longer open here. Close the editor.";
     const people = state.people ?? [];
-    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const person = people.find((entry) => entry.id === state.principal?.personId) ?? null;
     const decision = staffEligibility(decorateStaffCase(state.savedCase, people), person).shadedSection;
     return decision.allowed ? null : decision.reason;
   }

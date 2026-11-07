@@ -237,9 +237,9 @@ const combineLists = (...states) => {
 export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
-    people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    people.find((entry) => entry.id === state.principal?.personId) ?? null;
   const office = isAdmin(person);
-  // A volunteer chosen while an office screen is open gets the work board.
+  // A volunteer whose window was left on an office screen gets the work board.
   const screen =
     !office && OFFICE_SCREENS.includes(state.screen) ? "staff" : state.screen;
   const main = (() => {
@@ -489,7 +489,7 @@ export function dialog(state) {
   }
   if (DRAWERS.includes(state.dialog)) {
     const people = state.people ?? [];
-    const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
+    const person = people.find((entry) => entry.id === state.principal?.personId) ?? null;
     const ui = { busy: state.busy, error: state.error, retryable: state.retryable, now: Date.now() };
     if (state.dialog === "log-call") {
       title = "Log contact";
