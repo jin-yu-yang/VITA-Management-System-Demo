@@ -73,6 +73,16 @@ test("the catalog after the sample-case tools are removed", async (t) => {
       );
     });
 
+    await t.test("the version-2-only check exists and allows only 2", async () => {
+      const { rows } = await f.sql(
+        "select pg_get_constraintdef(oid) as def from pg_constraint where conrelid='public.cases'::regclass and conname='cases_intake_version_range'",
+      );
+      assert.deepEqual(
+        rows.map((row) => row.def.replace(/\s+/g, " ").trim()),
+        ["CHECK ((intake_version = 2))"],
+      );
+    });
+
     await t.test("a case's origin is client or assisted", async () => {
       for (const name of ["cases_origin_check", "cases_origin_owner"]) {
         const { rows } = await f.sql(
