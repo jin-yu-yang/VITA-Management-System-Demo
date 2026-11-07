@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { appShell, staffSidebar, staffScreen, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
+import { appShell, staffSidebar, staffScreen, presenterScreen, page, clientHeader, languageSwitch, dialog, DRAWERS } from "../src/views.mjs";
 import { icon, ICON_NAMES, describeFocus, focusSelectors } from "../src/ui.mjs";
 import { TEXT, SENTENCES } from "../src/client-text.mjs";
 import { toggleLabel } from "../src/sidebar-peek.mjs";
+import { isStaffWindow } from "../src/contracts.mjs";
 
 // Phase 0 of the redesign adds the frame without moving any screen into it,
 // so the one thing that must hold today is that a page without a sidebar is
@@ -1305,4 +1306,19 @@ test("app.mjs opens, closes and announces the two e-file confirmations", () => {
   // The shared modal frame places both.
   assert.match(dialog({ dialog: "mark-ready-to-efile", savedCase: { reference: "VT-X" } }), /Mark ready to e-file\?/);
   assert.match(dialog({ dialog: "mark-efiled", savedCase: { reference: "VT-X" } }), /Mark e-filed\?/);
+});
+
+test("a presenter is not a staff window", () => {
+  assert.equal(isStaffWindow({ access: "presenter" }), false);
+  assert.equal(isStaffWindow({ access: "staff" }), true);
+  assert.equal(isStaffWindow({ access: "applicant" }), false);
+});
+
+test("the presenter screen says the account is no longer used", () => {
+  const html = presenterScreen({ principal: { access: "presenter" } });
+  assert.ok(html.includes("This account is no longer used"));
+  assert.ok(html.includes("Presenter mode has been removed. Ask your site coordinator for a staff account."));
+  assert.deepEqual([...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]), ["sign-out"]);
+  for (const gone of ["select-person", "open-reset-fixtures", "open-checkpoint", "Class workspace", "board-row"])
+    assert.ok(!html.includes(gone), gone);
 });

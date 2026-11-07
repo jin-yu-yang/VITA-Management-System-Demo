@@ -129,10 +129,9 @@ export const SQLSTATE_ERROR_CODES = Object.freeze({
   VT007: "VALIDATION",
 });
 
-// True for a presenter or a staff account: the principals that get the staff
-// screens. Demo tools and the persona picker test `access === "presenter"`.
-export const isStaffWindow = (principal) =>
-  principal?.access === "presenter" || principal?.access === "staff";
+// True for a staff account only: the principal that gets the staff screens.
+// A presenter gets one plain screen (`presenterScreen`) and nothing else.
+export const isStaffWindow = (principal) => principal?.access === "staff";
 
 // Principal: { userId, workspaceId, access: 'applicant'|'presenter'|'staff',
 //              email, personId, personName }

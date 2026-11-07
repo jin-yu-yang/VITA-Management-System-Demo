@@ -749,8 +749,7 @@ export function createController({
   // and its actions — which a presenter and a staff account share; only who
   // is acting differs (`actingPersonId`).
   const presenter = () => state.principal?.access === "presenter";
-  const staffWindow = () =>
-    state.principal?.access === "presenter" || state.principal?.access === "staff";
+  const staffWindow = () => state.principal?.access === "staff";
 
   // Only a staff window may read the assistance table at all, so only a staff
   // window ever asks: the adapter would refuse an applicant, and asking is
@@ -1043,6 +1042,14 @@ export function createController({
     state.principal = principal;
     state.authError = null;
     windowState.clearAccess();
+    // A presenter account is no longer used: one plain screen, nothing read,
+    // no channel opened and no place saved for this window.
+    if (principal?.access === "presenter") {
+      state.screen = "presenter";
+      state.error = null;
+      show();
+      return;
+    }
     restoreSession();
     // A presenter lands on the work board and a client on their applications,
     // unless this window was already somewhere this principal may be.

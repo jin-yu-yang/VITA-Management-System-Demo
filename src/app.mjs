@@ -217,6 +217,7 @@ if (!config) {
       if (state.session !== "none") return views.unreachableScreen(state);
       return client.accessScreen(state);
     }
+    if (state.principal?.access === "presenter") return views.presenterScreen(state);
     if (isStaffWindow(state.principal)) return views.staffScreen(state);
     return client.clientScreen(state);
   }

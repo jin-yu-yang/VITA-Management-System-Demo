@@ -6614,3 +6614,25 @@ test("a staff member without admin starts no screening, whatever persona the win
   await tick();
   assert.equal(startWrites(store).length, 0);  controller.stop();
 });
+
+test("a presenter's window loads nothing", async () => {
+  const sessionStorage = fakeSession({
+    "vitally:client:v1:p1": JSON.stringify({ screen: "case", selectedCaseId: "case-a" }),
+  });
+  const store = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    people: [{ id: "person-1", name: "Alex", capabilities: ["prepare"] }],
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "received", revision: 1, answers: {} }],
+  });
+  const { controller } = build({ store, sessionStorage });
+  await controller.start();
+  assert.equal(controller.getState().screen, "presenter");
+  for (const read of ["listCases", "listPeople", "getCase:case-a", "listAssistance", "getWorkspace"])
+    assert.ok(!store.calls.includes(read), `${read} was called`);
+  assert.equal(store.subscriptions, 0);
+  const before = JSON.stringify(controller.getState());
+  await store.handlers?.onChange({ table: "cases", eventType: "UPDATE", id: "case-a", caseId: "case-a" });
+  assert.equal(JSON.stringify(controller.getState()), before);
+  assert.ok(!store.calls.includes("listCases"));
+  controller.stop();
+});
