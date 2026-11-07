@@ -1052,6 +1052,32 @@ test("screening checks: the set follows the service", async () => {
   }
 });
 
+test("an online case records the identity check with the other three", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    // The client flow: the client saves an online answer and submits.
+    const { caseId } = await draftCase(f);
+    await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
+      answers: { ...makeSampleAnswers(), service: "online" },
+    });
+    await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
+    await f.act(f.siteCoordinator, caseId, "START_SCREENING", {});
+    const checks = { phone: true, documents: true, in_scope: true, identity: true };
+    await f.act(f.siteCoordinator, caseId, "VERIFY_INTAKE", { checks });
+    const stored = (
+      await f.sql(
+        "select c.answers->>'service' as service, e.detail from public.case_events e join public.cases c on c.id=e.case_id where e.case_id=$1 and e.action='VERIFY_INTAKE'",
+        [caseId],
+      )
+    ).rows;
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].service, "online");
+    assert.deepEqual(stored[0].detail.checks, checks);
+  } finally {
+    await f.close();
+  }
+});
+
 test("old four-key payload refused", async () => {
   const f = await createDatabaseFixture();
   try {

@@ -42,14 +42,16 @@ The database still carries the classroom's sample-case machinery: a reset that r
 - (none)
 
 ### Modified Capabilities
-- `sign-in`: the requirement that the reset and checkpoints stay presenter-only is removed.
+- `sign-in`: the requirement that the reset and checkpoints stay presenter-only is removed, and the staff-only-workspace requirement drops its sentence pointing at it.
 - `client-intake`:
   - the sample-cases-are-version-2 requirement is removed;
   - the Form 14446 sample requirement is replaced by one that keeps only its live rule, that regenerating fictional details keeps the client's own 14446 answers.
 - `review-and-corrections`: the requirement that samples carry fictional answers is removed.
 - `shaded-section`: the requirement that samples carry a shaded section is removed.
-- `case-lifecycle`: the filing-result requirement's scenario "A note goes with its sample" now describes a note going with its deleted case.
-- `local-seed-data`: a seed re-run publishes no deletion, and receipts outlive the cases it deletes.
+- `case-lifecycle`:
+  - the filing-result requirement's scenario "A note goes with its sample" now describes a note going with its deleted case;
+  - the screening-checks scenario "The online sample" now describes the seed's cases: phone, documents and in_scope, plus identity for an online case.
+- `local-seed-data`: a seed re-run publishes no deletion, receipts outlive the cases it deletes, and a re-run in the same season never reuses a client number.
 
 ## Impact
 

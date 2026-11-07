@@ -12,5 +12,5 @@ When a seed run deletes its previous set, the deletion SHALL NOT be published to
 - **THEN** those actions' receipts are still there, naming the deleted case's id
 
 #### Scenario: A re-run never reuses a client number
-- **WHEN** the seed runs again on a workspace
+- **WHEN** the seed runs again on a workspace, in the same season
 - **THEN** the new set's client numbers are all higher than any number the previous set used
