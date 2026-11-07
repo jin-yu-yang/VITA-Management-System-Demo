@@ -9,7 +9,7 @@ organized by phase instead of by task number.
 Everything through the shared demonstration story is implemented and tested against an
 **isolated local Supabase stack**: identity and case ownership, the full workflow (intake,
 preparation, documents, admin follow-up, assistance, independent review and corrections,
-reminders and closure), Realtime-driven shared state, ten seeded sample cases, and the client/staff/admin browser screens with real email
+reminders and closure), Realtime-driven shared state, rehearsal cases from `npm run seed:local` (a new workspace has none), and the client/staff/admin browser screens with real email
 (OTP) sign-in. A roster command admits approved addresses to a workspace, so the local stack can
 hold permanent fictional rehearsal accounts for signing in by hand
 ([Signing in locally](#signing-in-locally)).

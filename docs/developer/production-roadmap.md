@@ -154,13 +154,13 @@ Remove these, or restrict them to non-production environments, before real use:
 
 | Part | Where |
 | --- | --- |
-| Presenter access and the persona picker | `memberships.access = 'presenter'`, `presenter-views.mjs`, `selectedPersonId` |
+| Presenter access and the persona picker | `memberships.access = 'presenter'` (#136). The screen parts, `presenter-views.mjs` and `selectedPersonId`, are done in #134 |
 | Sample cases, reset and checkpoints | Migration 009 functions, `vitally_reset_fixtures`, `vitally_load_checkpoint`, `cases.fixture`, `cases.fixture_key`, `origin = 'fixture'`, `workspaces.fixture_generation`, `vitally_private.fixture_client_bindings`, `assistance_items.fixture` |
 | Fictional form filling | `sample-data.mjs`, the "Fill fictional details" buttons and pill |
 | Simulated document and upload failure | The fixed file name; the "simulate upload failure" checkbox |
 | Tick-box intake checks | `VERIFY_INTAKE`'s four `true` attestations |
 | Simulated reminders | `REMIND` records a time and sends nothing |
-| "Class workspace" wording | Presenter panel and indicator text |
+| "Class workspace" wording | Done in #134: the presenter panel and indicator text are gone |
 
 Removing database objects is a new migration that drops or revokes them; never edit 009.
 `vitally_private.test_workspaces` is used by the test suites and can stay.
@@ -257,8 +257,10 @@ Reviewed and accepted for the demo, and worth knowing about:
 - **An email with a space inside** is invalid in the browser but accepted by the server's check.
   The browser withholds it, so the server never receives one; the two checks are otherwise the
   same, and a database test compares them.
-- **A workspace whose version-1 samples migration 023 deleted has no samples** until a presenter
-  presses **Reset sample cases**, which seeds ten version-2 samples ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
+- **A workspace whose version-1 samples migration 023 deleted has no samples.** The **Reset sample
+  cases** button that seeded ten version-2 samples is gone (done in #134), so rehearsal cases come
+  from `npm run seed:local`; #135 removes the sample-case functions
+  ([Database: sample cases](database.md#sample-cases-reset-and-checkpoints-demo-only)).
 
 ## Suggested order of work
 

@@ -184,13 +184,13 @@ if (!config) {
   // after a real loss, never on the first connection (design D7).
   let drawnConnection = "unknown";
   // What is half-typed into a staff form, by field id. A re-render can arrive
-  // at any moment — a realtime change, a persona click, a connection notice —
+  // at any moment — a realtime change, a click elsewhere, a connection notice —
   // and rebuilding the page must not empty a box somebody is writing in. What
   // was typed for an action is dropped the moment it is sent. An edit to a
   // saved value is kept as `{ value }` and a tick not yet sent as `{ checked }`
   // (form-values.mjs). Cancel on the best time drops its whole form, and a
-  // dialog closing drops its ticks. It all belongs to the one signed in, the
-  // persona chosen and the case it was typed on: anyone else, or nobody, or
+  // dialog closing drops its ticks. It all belongs to the one signed in and
+  // the case it was typed on: anyone else, or nobody, or
   // another case opened (by any path), starts with none, so nothing can
   // reappear where it does not belong.
   const formDrafts = new Map();
@@ -1786,8 +1786,8 @@ if (!config) {
 
   // On Add a case, an exit that would lose typed answers asks first: a new
   // office draft with any answer, or a saved draft with unsaved edits. True
-  // when it asked (the exit then waits for the dialog). Sign out and the
-  // persona switch leave without asking.
+  // when it asked (the exit then waits for the dialog). Sign out leaves
+  // without asking.
   function leaveAddCaseFirst(action, target) {
     if (controller.getState().screen !== "office-add-case") return false;
     sweepV2Form();

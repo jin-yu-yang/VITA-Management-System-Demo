@@ -3493,7 +3493,7 @@ textarea::placeholder {
   vertical-align: top;
 }
 
-/* ---- Every dialog's notes (presenter, help, sample data) ---- */
+/* ---- Every dialog's notes ---- */
 .modal .info-note {
   background: var(--vt-primary-soft);
   border-color: var(--vt-line);
