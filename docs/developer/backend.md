@@ -131,6 +131,8 @@ so each tool must prove it is pointed at the intended target before doing anythi
 | `seed.mjs` | `npm run seed:local`: builds rehearsal cases on the **local test stack only**. Needs `VITALLY_ALLOW_LOCAL_SEED=1` (checked before any file is read) and refuses any other target as `TARGET_REJECTED`. Records its case ids in `.vitally-runs/seed-<workspaceId>.json`, which the next run uses to replace the previous set. Never prints an address |
 | `seed-cases.mjs` | The cases it builds, acting as the role accounts through `vitally_create_case` and `vitally_apply_action`. The only direct insert is the help request |
 
+The database's `vitally_reset_fixtures` and `vitally_load_checkpoint` functions still exist, with no app caller: no screen or controller action calls them since the presenter screens were removed. They go in #135. Rehearsal cases come from `seed.mjs`.
+
 A guard failure is always `TARGET_REJECTED` and deliberately does not say which check failed;
 [`docs/setup.md`](../setup.md#private-test-configuration) lists what to check. The guards are unit
 tested in [`tests/targets.test.mjs`](../../tests/targets.test.mjs).
@@ -160,7 +162,7 @@ The roster is a JSON file (a `.vitally-roster*.json` file, ignored by version co
 | --- | --- |
 | `staff` | Optional list. Each entry has `email`, `name`, `personKey` and `capabilities`. `capabilities` is non-empty, from `prepare`, `review`, `admin`, `followup`, `receive_documents`, `assist`. `personKey` is lower-case letters, digits and underscores, unique on the roster, and not `alex`, `morgan` or `sam` |
 | `defaultFollowup` | Optional: the `personKey` of a `staff` entry that has `followup`. It becomes the workspace's default follow-up person (who new follow-ups and withdrawal notices go to). **Required when the roster has no presenter**, because Sam, the default otherwise, would get work nobody can act on |
-| `presenters` | Now optional, but the roster needs at least one presenter or one staff member |
+| `presenters` | Now optional, but the roster needs at least one presenter or one staff member. A presenter who signs in sees one plain screen, "This account is no longer used"; the role goes in #136 |
 
 For each staff entry the command creates the Auth account as it does for any address, then, inside
 `initializeWorkspace`'s one serializable transaction, calls `add_staff_member` (and
