@@ -90,15 +90,6 @@ export function connectionNotice(state) {
   }<span>${esc(t(reconnecting ? "frame.reconnecting" : "frame.offline", {}, viewLang(state)))}</span></div>`;
 }
 
-// Something worth saying that is not a failure: today, that somebody rebuilt
-// the demonstration cases while this window was looking at one. It is a
-// status, not an alert, and it is dismissed by the same control.
-function noticeBanner(state) {
-  if (!state.notice) return "";
-  const lang = viewLang(state);
-  return `<div class="notice-banner" role="status">${icon("refresh")}<span>${esc(sentence(state.notice, lang))}</span>${button(esc(t("frame.dismiss", {}, lang)), "dismiss-error", "inline")}</div>`;
-}
-
 // The office's two drawers: the modal frame placed at the right edge.
 export const DRAWERS = Object.freeze(["log-call", "resolve-help"]);
 
@@ -141,7 +132,7 @@ export function page(state, body) {
   const staff = isStaffWindow(state?.principal);
   const top = staff ? "" : clientHeader(state);
   const main = staff ? body : `<div class="client-shell">${body}</div>`;
-  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}`;
+  return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}`;
 }
 
 // The toast's parts (design D4). Its host lives outside the page, in app.mjs.

@@ -60,7 +60,6 @@ const officeCase = (overrides = {}) =>
       reference: "VT-AB2C-DE3F",
       workspaceId: "w1",
       ownerUserId: null,
-      fixture: false,
       stage: "preparing",
       revision: 5,
       preparationVersion: 0,

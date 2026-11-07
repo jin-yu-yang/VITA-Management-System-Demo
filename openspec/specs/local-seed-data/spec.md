@@ -1,7 +1,7 @@
 # local-seed-data Specification
 
 ## Purpose
-The local-only seed command (`npm run seed:local`) and module that fill a workspace on the local test stack with rehearsal cases: client A's just-submitted case, ten office-entered cases across the workflow's stages, and one help request. It covers the guard that keeps the seed off any hosted project, the role-named accounts it acts as and how it finds them, building every case through the public RPCs, replacing the previous set on a re-run, and keeping email addresses out of everything it prints or records.
+The local-only seed command (`npm run seed:local`) and module that fill a workspace on the local test stack with rehearsal cases: client A's just-submitted case, ten office-entered cases across the workflow's stages, and one help request. It covers the guard that keeps the seed off any hosted project, the role-named accounts it acts as and how it finds them, building every case through the public RPCs, replacing the previous set on a re-run (with no deletion published and the old receipts kept), and keeping email addresses out of everything it prints or records.
 
 ## Requirements
 
@@ -99,3 +99,18 @@ The seed's output, error messages and run file SHALL NOT contain an email addres
 #### Scenario: A refusal about client A
 - **WHEN** the roster file's first applicant has no account on the stack
 - **THEN** the seed refuses with a message that refers to the roster's first applicant, not to the address
+
+### Requirement: A seed re-run publishes no deletion and keeps receipts
+When a seed run deletes its previous set, the deletion SHALL NOT be published to any member over realtime, as no deletion ever is. The action receipts that named the deleted cases SHALL remain, as historical records.
+
+#### Scenario: An applicant sees no deletion
+- **WHEN** the seed runs again on a workspace and deletes its previous cases
+- **THEN** no member's realtime stream carries a deletion of those cases
+
+#### Scenario: Receipts outlive the deleted cases
+- **WHEN** the seed runs again and deletes a case that earlier actions targeted
+- **THEN** those actions' receipts are still there, naming the deleted case's id
+
+#### Scenario: A re-run never reuses a client number
+- **WHEN** the seed runs again on a workspace, in the same season
+- **THEN** the new set's client numbers are all higher than any number the previous set used

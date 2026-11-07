@@ -1177,7 +1177,7 @@ test("app.mjs marks only the allow-listed press while it runs (design D5)", () =
 
 test("errors share one look (design D7)", () => {
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
-  for (const token of ["--vt-error-bg: #fbeceb", "--vt-error: #8a3b34", "--vt-notice-bg: #efedfb", "--vt-notice: #4b3fa3", "--vt-attention-bg: #faf0dd"])
+  for (const token of ["--vt-error-bg: #fbeceb", "--vt-error: #8a3b34", "--vt-attention-bg: #faf0dd"])
     assert.ok(css.includes(token), token);
   assert.match(css, /\.notice\.error p \{[^}]*color: var\(--vt-error\)/);
   assert.match(css, /\.office-drawer \.notice\.error/);
@@ -1311,30 +1311,6 @@ test("a presenter gets the plain screen in a bare English frame", () => {
     assert.ok(!html.includes(gone), gone);
   assert.ok(!/[一-鿿]/.test(html), "no Chinese characters");
   assert.ok(html.includes("This account is no longer used"));
-});
-
-test("a reset somebody else ran is said plainly, and dismissed", () => {
-  const state = {
-    principal: { userId: "user-2", workspaceId: "w1", access: "applicant" },
-    people: [],
-    cases: [],
-    assistance: [],
-    openPanels: [],
-    draftAnswers: {},
-    connection: "online",
-    screen: "applications",
-    error: null,
-    notice: "Sample cases were reset. The one you had open is no longer there.",
-    dialog: null,
-  };
-  const html = page(state, "<main></main>");
-  assert.match(html, /notice-banner/);
-  assert.match(html, /Sample cases were reset/);
-  assert.match(html, /role="status"/);
-  assert.match(html, /data-action="dismiss-error"/);
-  // It is not an alert: nothing failed.
-  assert.ok(!/notice-banner[^>]*role="alert"/.test(html));
-  assert.ok(!page({ ...state, notice: null }, "").includes("notice-banner"));
 });
 
 test("a refusal shows in the error banner and the staff window stays usable", () => {

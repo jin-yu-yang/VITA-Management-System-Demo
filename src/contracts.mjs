@@ -96,17 +96,6 @@ export const SHADED_EDITOR = "shaded-editor";
 // hold two different ideas of what an assistance control may say.
 export const ASSISTANCE_ACTIONS = Object.freeze(["CLAIM", "RESOLVE"]);
 
-// The points in the story a presenter may put one demonstration case back to.
-// The database enforces the same five names (migration 009); this is the one
-// place the browser spells them, so the panel and the controller cannot drift.
-export const CHECKPOINTS = Object.freeze([
-  "intake_ready",
-  "document_requested",
-  "admin_followup_needed",
-  "ready_for_review",
-  "corrections_required",
-]);
-
 export const ERROR_CODES = Object.freeze([
   "FORBIDDEN",
   "NOT_FOUND",
@@ -140,7 +129,7 @@ export const isStaffWindow = (principal) => principal?.access === "staff";
 //   A staff window is a staff account's alone. A presenter gets one plain
 //   screen and nothing is read for it.
 // Person: { id, name, capabilities: string[] }
-// Case: { id, reference, workspaceId, ownerUserId, fixture, stage,
+// Case: { id, reference, workspaceId, ownerUserId, stage,
 //         revision, preparationVersion, answers, intakeVerified,
 //         preparerId, reviewerId, season, clientNumber, intakeVersion,
 //         intakeVisited, contact, documentCards, requests, documents, history }

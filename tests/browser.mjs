@@ -192,14 +192,14 @@ const one = async (fixture, text, values) =>
 const caseById = (fixture, id) =>
   one(
     fixture,
-    "select id,reference,stage,revision,preparer_id,reviewer_id,owner_user_id,fixture,answers,intake_verified from public.cases where id=$1",
+    "select id,reference,stage,revision,preparer_id,reviewer_id,owner_user_id,answers,intake_verified from public.cases where id=$1",
     [id],
   );
 
 const caseByReference = (fixture, reference) =>
   one(
     fixture,
-    "select id,reference,stage,revision,preparer_id,reviewer_id,owner_user_id,fixture,answers from public.cases where workspace_id=$1 and reference=$2",
+    "select id,reference,stage,revision,preparer_id,reviewer_id,owner_user_id,answers from public.cases where workspace_id=$1 and reference=$2",
     [fixture.database.workspaceId, reference],
   );
 
@@ -213,14 +213,6 @@ const workspaceCaseCount = async (fixture) =>
       )
     ).count,
   );
-
-const fixtureCases = async (fixture) =>
-  (
-    await fixture.database.sql(
-      "select id,fixture_key,reference,stage,owner_user_id from public.cases where workspace_id=$1 and fixture order by fixture_key",
-      [fixture.database.workspaceId],
-    )
-  ).rows;
 
 // Receipts are the server's own record that an action landed exactly once.
 const receiptCount = async (fixture, caseId, operation) =>
@@ -1006,18 +998,17 @@ async function runPermutation(t, roles) {
       }
     };
     // A seed run's cases, by scenario, as { id, reference, stage }: every
-    // scenario, all in the story's workspace, none marked as a sample, and
+    // scenario, all in the story's workspace, and
     // the ones later phases start from at the stage they are named for.
     const seededCases = async (result) => {
       assert.deepEqual(Object.keys(result.caseIdsByScenario).sort(), [...SEED_SCENARIOS].sort());
       const rows = (
         await fixture.database.sql(
-          "select id,reference,stage,fixture from public.cases where workspace_id=$1 and id = any($2::uuid[])",
+          "select id,reference,stage from public.cases where workspace_id=$1 and id = any($2::uuid[])",
           [fixture.database.workspaceId, Object.values(result.caseIdsByScenario)],
         )
       ).rows;
       assert.equal(rows.length, 11, "a seeded case is not in the story's workspace");
-      assert.ok(rows.every((row) => row.fixture === false), "a seeded case is marked as a sample");
       const cases = Object.fromEntries(
         Object.entries(result.caseIdsByScenario).map(([scenario, id]) => {
           const { reference, stage } = rows.find((row) => row.id === id);
@@ -1068,9 +1059,8 @@ async function runPermutation(t, roles) {
         "applicant A in the client window, the Site Coordinator, Preparer and Reviewer each in a staff window of their own, and the presenter on the plain screen, signed out and in again";
     });
 
-    // The story's workspace starts with no cases: its setup records the
-    // client bindings only, and nothing in the app makes sample cases any
-    // more (#134).
+    // The story's workspace starts with no cases: nothing in the app makes
+    // sample cases any more (#134, #135).
     await phase("the board starts with no cases", async () => {
       const page = await use("preparer");
       await waitFor(
@@ -1083,7 +1073,6 @@ async function runPermutation(t, roles) {
       const totals = await readBoardTotals(page);
       assert.deepEqual(totals, { shown: 0, total: 0 }, "the Preparer's board starts with cases on it");
       assert.equal(await page.locator(".board-row").count(), totals.shown);
-      assert.equal((await fixtureCases(fixture)).length, 0, "the story's workspace has sample cases");
       assert.equal(
         Number(
           (await one(fixture, "select count(*)::int as count from public.cases where workspace_id=$1", [
@@ -1152,7 +1141,6 @@ async function runPermutation(t, roles) {
       classCase = await caseByReference(fixture, classReference);
       assert.ok(classCase, "the generated reference names no case");
       assert.equal(classCase.owner_user_id, applicantA.userId);
-      assert.equal(classCase.fixture, false);
       // A client's own draft is theirs alone: the staff board cannot see it yet.
       assert.equal((await readBoardTotals(staff)).total, boardTotal);
       assert.equal(
@@ -4304,7 +4292,7 @@ async function runPermutation(t, roles) {
           .filter(
             (child) =>
               !child.inert &&
-              !["modal-backdrop", "connection-notice", "notice-banner", "problem-banner"].some((name) =>
+              !["modal-backdrop", "connection-notice", "problem-banner"].some((name) =>
                 child.classList.contains(name),
               ),
           )

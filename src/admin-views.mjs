@@ -402,7 +402,7 @@ const requestById = (record, requestId) =>
 
 // How this case started. A staff-entered case has no client account at all, and
 // that is exactly how the database says so: `cases_origin_owner` (migration
-// 001) allows a null owner only for an assisted or fixture case. The Case the
+// 001) allows a null owner only for an assisted case (040 dropped the sample origin). The Case the
 // store maps carries no `origin` column, so the owner is what the browser
 // reads — and only an explicit `null` means it, because a record that simply
 // does not carry the field says nothing about who owns the case.

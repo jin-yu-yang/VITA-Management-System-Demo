@@ -12,7 +12,6 @@ import {
 // two RPCs, its staff-only tables, the move of the old follow-up attempts and
 // the refusal of RECORD_CONTACT.
 const ESCALATION_REASON = "No response to the document request.";
-const SEEDED_NOTE = "Called during office hours. No answer, so a message was left.";
 const ENTRY_FIELDS = [
   "direction",
   "contacted_at",
@@ -650,11 +649,10 @@ test("the contact log", async (t) => {
       });
       const stored = { actionId: args.p_action_id, caseId, revision: Number(revision) + 1 };
       await f.sql(
-        `insert into public.action_receipts(workspace_id,actor_user_id,action_id,operation,request_digest,actor_person_id,generation,target_id,receipt)
-         select $1,$2,$3,'RECORD_CONTACT',
+        `insert into public.action_receipts(workspace_id,actor_user_id,action_id,operation,request_digest,actor_person_id,target_id,receipt)
+         values($1,$2,$3,'RECORD_CONTACT',
           encode(extensions.digest(jsonb_build_object('operation','RECORD_CONTACT','caseId',$4::uuid,'expectedRevision',$5::bigint,'personId',$6::uuid,'payload',$7::jsonb)::text,'sha256'),'hex'),
-          $6,w.fixture_generation,$4,$8
-         from public.workspaces w where w.id=$1`,
+          $6,$4,$8)`,
         [
           f.workspaceId,
           f.presenterUserId,
@@ -671,62 +669,6 @@ test("the contact log", async (t) => {
       assert.deepEqual(data, stored);
     });
 
-    await t.test("the sample follow-up seeds a log entry", async () => {
-      await f.seedFixtures();
-      const byKey = Object.fromEntries((await f.readFixtureCases()).map((row) => [row.fixtureKey, row]));
-      const seededEntries = async (caseId) =>
-        (await f.sql("select * from public.contact_log where case_id=$1", [caseId])).rows;
-      const checkSeeded = async (caseId) => {
-        const [followup] = (
-          await f.sql("select id from public.admin_followups where case_id=$1", [caseId])
-        ).rows;
-        const entries = await seededEntries(caseId);
-        assert.equal(entries.length, 1);
-        const [entry] = entries;
-        assert.equal(entry.followup_id, followup.id);
-        assert.equal(entry.logged_by_person_id, f.sam);
-        assert.equal(entry.direction, "outgoing");
-        assert.equal(entry.method, "phone");
-        assert.equal(entry.with_whom, "client");
-        assert.equal(entry.purpose, "request_documents");
-        assert.equal(entry.outcome, "no_answer");
-        assert.equal(entry.note, SEEDED_NOTE);
-        assert.equal((await versionRows(f, entry.id)).length, 1);
-        const attempts = await f.sql("select count(*)::int as n from public.contact_attempts where case_id=$1", [caseId]);
-        assert.equal(attempts.rows[0].n, 0);
-      };
-      await checkSeeded(byKey.admin_followup.id);
-      // A checkpoint onto the follow-up scenario seeds it on another case too.
-      const target = byKey.waiting_documents;
-      await f.logContact(f.preparer, target.id, SAMPLE_CONTACT());
-      const loaded = await f.presenter.rpc("vitally_load_checkpoint", {
-        p_action_id: crypto.randomUUID(),
-        p_case_id: target.id,
-        p_expected_revision: target.revision,
-        p_checkpoint: "admin_followup_needed",
-      });
-      assert.equal(loaded.error, null);
-      await checkSeeded(target.id);
-      // Loading another checkpoint clears the case's entries.
-      const back = await f.presenter.rpc("vitally_load_checkpoint", {
-        p_action_id: crypto.randomUUID(),
-        p_case_id: target.id,
-        p_expected_revision: loaded.data.revision,
-        p_checkpoint: "document_requested",
-      });
-      assert.equal(back.error, null);
-      assert.deepEqual(await seededEntries(target.id), []);
-      // A reset removes the old samples' entries with the samples.
-      const oldIds = Object.values(byKey).map((row) => row.id);
-      await f.seedFixtures();
-      const leftover = await f.sql(
-        "select count(*)::int as n from public.contact_log where case_id = any($1::uuid[])",
-        [oldIds],
-      );
-      assert.equal(leftover.rows[0].n, 0);
-      const fresh = Object.fromEntries((await f.readFixtureCases()).map((row) => [row.fixtureKey, row]));
-      await checkSeeded(fresh.admin_followup.id);
-    });
   } finally {
     await f.close();
   }

@@ -137,7 +137,6 @@ test("case actions apply the shared check order against real Supabase", async (t
         assert.equal(staff.reference, created.reference);
         assert.equal(staff.workspaceId, f.workspaceId);
         assert.equal(staff.ownerUserId, f.applicantAUserId);
-        assert.equal(staff.fixture, false);
         assert.equal(staff.stage, "preparing");
         assert.equal(staff.revision, 7);
         assert.equal(staff.preparationVersion, 0);
@@ -392,7 +391,7 @@ test("case actions apply the shared check order against real Supabase", async (t
         });
         const accepted = await f.applicantA.rpc("vitally_apply_action", save);
         assert.equal(accepted.error, null);
-        // Task 9's fixture reset deletes cases; receipts are historical scalars
+        // A seed re-run deletes cases; receipts are historical scalars
         // with no foreign key, so an identical replay must still answer.
         await f.sql("delete from public.cases where id=$1", [created.caseId]);
         const replay = await f.applicantA.rpc("vitally_apply_action", save);
@@ -887,30 +886,27 @@ test("installed entry points deny anonymous callers and serve members", async (t
         for (const entry of RPC_SIGNATURES) {
           const draft = await draftCase(f);
           const seeded = await f.seedAssistance();
-          // The two fixture entry points work on the demonstration set, so it
-          // has to exist before either of them is called with a real target.
-          await f.seedFixtures();
-          const fixture = (await f.readFixtureCases()).find(
-            (row) => row.fixtureKey === "review_ready",
-          );
-          const exitCase = (await f.readFixtureCases()).find(
-            (row) => row.fixtureKey === "review_approved",
-          );
+          // Real targets built through the public actions: a case in review
+          // for the contact log, and an approved case for the season close.
+          const contactCaseId = await f.preparedCase();
+          const exitCaseId = await f.approvedCase();
+          const [exitCase] = (
+            await f.sql("select revision from public.cases where id=$1", [exitCaseId])
+          ).rows;
           const context = {
-            exitCaseId: exitCase.id,
+            exitCaseId,
             exitCaseRevision: Number(exitCase.revision),
             draftCaseId: draft.caseId,
             draftRevision: 2,
             assistanceItemId: seeded.itemId,
             assistanceRevision: 1,
             assistPersonId: f.sam,
-            fixtureCaseId: fixture.id,
-            fixtureRevision: fixture.revision,
+            contactCaseId,
             contactEntry: SAMPLE_CONTACT(),
           };
           // An entry for the edit entry point to correct.
           context.contactId = (
-            await f.logContactAsPersona(f.presenter, fixture.id, f.sam, context.contactEntry)
+            await f.logContactAsPersona(f.presenter, contactCaseId, f.sam, context.contactEntry)
           ).contactId;
           const before = await f.stateSnapshot();
           const denied = await f.anonymous.rpc(entry.name, entry.args(context));
@@ -1051,6 +1047,33 @@ test("screening checks: the set follows the service", async () => {
       checks: screeningChecks("online"),
     });
     assert.equal((await caseRow(f, online)).stage, "preparation_ready");
+  } finally {
+    await f.close();
+  }
+});
+
+test("an online case records the identity check with the other three", async () => {
+  const f = await createDatabaseFixture();
+  try {
+    // The client flow: the client saves an online answer and submits.
+    const { caseId } = await draftCase(f);
+    await f.act(f.applicantA, caseId, "SAVE_ANSWERS", {
+      answers: { ...makeSampleAnswers(), service: "online" },
+    });
+    await f.act(f.applicantA, caseId, "SUBMIT", { confirmed: true });
+    await f.act(f.siteCoordinator, caseId, "START_SCREENING", {});
+    const checks = { phone: true, documents: true, in_scope: true, identity: true };
+    await f.act(f.siteCoordinator, caseId, "VERIFY_INTAKE", { checks });
+    const stored = (
+      await f.sql(
+        "select c.answers->>'service' as service, e.detail from public.case_events e join public.cases c on c.id=e.case_id where e.case_id=$1 and e.action='VERIFY_INTAKE'",
+        [caseId],
+      )
+    ).rows;
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].service, "online");
+    assert.deepEqual(stored[0].detail.checks, checks);
+    assert.ok(!("simulated" in stored[0].detail));
   } finally {
     await f.close();
   }

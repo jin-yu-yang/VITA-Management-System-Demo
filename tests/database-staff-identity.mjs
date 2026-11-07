@@ -499,21 +499,6 @@ test("staff identity against real Supabase", async (t) => {
       );
     });
 
-    await t.test("a staff member cannot reset sample cases or load checkpoints", async () => {
-      const caseId = await f.readyCase();
-      const before = await f.readFixtureState();
-      const reset = await riley.client.rpc("vitally_reset_fixtures", { p_action_id: randomUUID() });
-      assert.equal(reset.error?.code, FORBIDDEN);
-      const load = await riley.client.rpc("vitally_load_checkpoint", {
-        p_action_id: randomUUID(),
-        p_case_id: caseId,
-        p_expected_revision: await revisionOf(f, caseId),
-        p_checkpoint: "intake_ready",
-      });
-      assert.equal(load.error?.code, FORBIDDEN);
-      assert.deepEqual(await f.readFixtureState(), before);
-    });
-
     await t.test("two staff members share a case", async () => {
       const caseId = await f.readyCase();
       const receipts = [
@@ -873,7 +858,6 @@ test("staff identity against real Supabase", async (t) => {
         workspaceId,
         presenterUserIds: [],
         applicantUserIds: [client.userId],
-        fixtureClientBindings: {},
       }).then((result) => result.people);
       const lead = await f.staff({
         key: "lead",

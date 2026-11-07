@@ -98,11 +98,6 @@ const STAFF_CONTACT_CONFLICT_MESSAGE =
   "Someone else changed this contact. The newest version is shown — check it and try again.";
 const EDIT_CONFLICT_MESSAGE =
   "Someone else changed this application while you were editing. Choose which answers to keep.";
-// What a window says when the demonstration set is rebuilt underneath it. The
-// signal is a workspace row, not a case, so this is the only way somebody
-// looking at a sample case learns why it is gone.
-const FIXTURES_GONE_NOTICE =
-  "Sample cases were reset. The one you had open is no longer there.";
 
 function controllerError(code, message, cause) {
   return Object.assign(new Error(message, { cause }), { code });
@@ -290,12 +285,9 @@ export function createController({
     lists: { cases: "loading", assistance: "loading" },
     people: [],
     // The caller's own workspace row, read only for a staff window: the
-    // office's defaults, and the fixture generation a reset moves.
+    // office's defaults.
     workspace: null,
-    // Something worth saying that is not a failure. The one thing that says
-    // it today is a fixture reset somebody else ran.
-    notice: null,
-    // The office's assistance requests. Presenter-only: an applicant never
+    // The office's assistance requests. Staff-only: an applicant never
     // reads this table, so the list stays empty for them and is never fetched.
     assistance: [],
     savedCase: null,
@@ -755,9 +747,9 @@ export function createController({
     noteConnected();
   }
 
-  // The workspace row carries the fixture generation, the signal a reset
-  // moves, and what the staff screens need of the office: the default
-  // follow-up person, the season and the intake version a new case starts at.
+  // The workspace row carries what the staff screens need of the office: the
+  // default follow-up person, the season and the intake version a new case
+  // starts at.
   // Only a staff window reads it.
   async function loadWorkspace() {
     if (inert()) return;
@@ -813,13 +805,13 @@ export function createController({
     try {
       await loadSelected();
     } catch (error) {
-      // A case that is gone is not a failure to report: the fixtures were
-      // reset, or it was closed and removed. Fall back to the list.
+      // A case that is gone is not a failure to report: it was closed
+      // and removed. Fall back to the list.
       if (error?.code === "NOT_FOUND") forgetGoneCase();
       else failure = failure ?? error;
     }
     // A refusal the person has been shown is theirs to dismiss or to act on.
-    // Re-reading is not an answer to it: an unrelated fixture reset landing in
+    // Re-reading is not an answer to it: an unrelated change landing in
     // this window must not quietly replace "the demo cannot reach the server"
     // with nothing, leaving a click that did nothing and no explanation. The
     // next deliberate action clears it (every dispatch, save, navigation and
@@ -905,11 +897,9 @@ export function createController({
   // through the same access-scoped path — never the payload itself.
   async function handleChange(change) {
     if (!state.principal || !change) return;
-    // The shared fixture signal. A reset deletes rows wholesale, and a
-    // deletion is never published — so what arrives is one workspace row with
-    // a new generation on it, naming no case and carrying nothing private.
-    // Everything this window holds about the demonstration set may have been
-    // replaced, so all of it is re-read through the same access-scoped paths.
+    // A workspace change names no case and carries nothing private, so
+    // everything this window holds may have changed: all of it is re-read
+    // through the same access-scoped paths.
     const touchesWorkspace = change.table === "workspaces";
     const touchesList = touchesWorkspace || change.table === "cases";
     const touchesOpen =
@@ -933,12 +923,7 @@ export function createController({
       // read is not theirs to erase. See the note in `refresh`.
     } catch (error) {
       if (error?.code !== "NOT_FOUND") noteFailure(error);
-      else {
-        forgetGoneCase();
-        // The case that was open is gone. Somebody reset the demonstration
-        // set, and this is the only place this window can be told so.
-        if (touchesWorkspace) state.notice = FIXTURES_GONE_NOTICE;
-      }
+      else forgetGoneCase();
     }
     show();
   }
@@ -1208,7 +1193,6 @@ export function createController({
     state.people = [];
     state.assistance = [];
     state.workspace = null;
-    state.notice = null;
     state.openPanels = [];
     state.lookup = "";
     state.dialog = null;
@@ -1286,12 +1270,11 @@ export function createController({
   function dismissError() {
     dropLocalRetry();
     state.error = null;
-    state.notice = null;
     show();
   }
 
   // Clears the error only when it is this code's: a draft that was built
-  // ends the draft's own problem, never another error or the notice.
+  // ends the draft's own problem, never another error.
   function clearError(code) {
     if (state.error?.code !== code) return;
     dropLocalRetry();

@@ -128,9 +128,39 @@ test("fix notes go only with their case", async (t) => {
     const noteCount = async (caseId) =>
       (await f.sql("select count(*)::int n from public.filing_notes where case_id=$1", [caseId])).rows[0].n;
 
+    // A fix note made the way staff make one: Record filing result on a rejection.
+    const withRecordedNote = async (fixture) => {
+      const caseId = await fixture.approvedCase();
+      const act = (type, payload) => fixture.act(fixture.siteCoordinator, caseId, type, payload);
+      await act("MARK_READY_TO_EFILE", { confirmed: true });
+      await act("MARK_EFILED", { confirmed: true, methods: { federal: "efile", state: "efile" } });
+      const day = (await fixture.sql("select (now() at time zone 'America/New_York')::date::text d")).rows[0].d;
+      await act("RECORD_FILING_RESULT", {
+        confirmed: true,
+        results: {
+          federal: { result: "accepted", date: day },
+          state: { result: "rejected", date: day, code: "IND-031-04" },
+        },
+        fixNote: "Fictional note: correct the dependent's SSN.",
+      });
+      return caseId;
+    };
+
     await t.test("deleting a filing attempt alone is refused and keeps the note", async () => {
       const caseId = await withNote();
-      await assert.rejects(() => f.sql("delete from public.filing_attempts where case_id=$1", [caseId]));
+      await assert.rejects(
+        () => f.sql("delete from public.filing_attempts where case_id=$1", [caseId]),
+        rejected("VALIDATION"),
+      );
+      assert.equal(await noteCount(caseId), 1);
+    });
+
+    await t.test("a filing note can't be deleted on its own", async () => {
+      const caseId = await withRecordedNote(f);
+      await assert.rejects(
+        () => f.sql("delete from public.filing_notes where case_id=$1", [caseId]),
+        rejected("VALIDATION"),
+      );
       assert.equal(await noteCount(caseId), 1);
     });
 
@@ -138,6 +168,33 @@ test("fix notes go only with their case", async (t) => {
       const caseId = await withNote();
       await f.sql("delete from public.cases where id=$1", [caseId]);
       assert.equal(await noteCount(caseId), 0);
+    });
+
+    await t.test("deleting a case with filing notes succeeds", async () => {
+      const caseId = await withRecordedNote(f);
+      assert.equal(await noteCount(caseId), 1);
+      await f.sql("delete from public.cases where id=$1", [caseId]);
+      assert.equal(await noteCount(caseId), 0);
+      const left = await f.sql(
+        "select (select count(*) from public.filing_attempts where case_id=$1)::int attempts, (select count(*) from public.filing_returns where case_id=$1)::int returns",
+        [caseId],
+      );
+      assert.deepEqual(left.rows, [{ attempts: 0, returns: 0 }]);
+    });
+
+    await t.test("a workspace teardown with filing notes succeeds", async () => {
+      // A second fixture's own cleanup path deletes its workspace, notes included.
+      const other = await createDatabaseFixture();
+      let caseId;
+      try {
+        caseId = await withRecordedNote(other);
+        assert.equal(await noteCount(caseId), 1);
+      } finally {
+        await other.close();
+      }
+      assert.equal(await noteCount(caseId), 0);
+      const gone = await f.sql("select count(*)::int n from public.workspaces where id=$1", [other.workspaceId]);
+      assert.equal(gone.rows[0].n, 0);
     });
 
     await t.test("deleting the workspace removes its notes", async () => {
@@ -897,9 +954,8 @@ test("filing details stay with staff", async (t) => {
     });
 
     await t.test("naming a real case in the clearing setting frees none of its notes", async () => {
+      // The setting freed a sample's notes before 040; it must free nothing now.
       const caseId = await loop();
-      const attempt = (await f.sql("select is_fixture from (select fixture is_fixture from public.cases where id=$1) x", [caseId])).rows[0];
-      assert.equal(attempt.is_fixture, false);
       await assert.rejects(() =>
         f.sql(
           "with s as (select set_config('vitally.clearing_case',$1,true) v) delete from public.filing_notes where case_id=$1::uuid and (select count(*) from s)>=0",

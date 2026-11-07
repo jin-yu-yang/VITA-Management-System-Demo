@@ -155,7 +155,6 @@ test("assistance items are claimed and resolved by their own helper", async (t) 
           f.sampleAssistance.contactPreference,
         );
         assert.equal(resolved.caseId, caseId);
-        assert.equal(resolved.fixture, false);
         assert.equal(resolved.createdAt, initial.createdAt);
         assert.ok(resolved.updatedAt > initial.updatedAt);
         const after = await f.readStaffCase(caseId);

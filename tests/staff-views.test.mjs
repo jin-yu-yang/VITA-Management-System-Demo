@@ -124,7 +124,6 @@ const staffCase = (overrides = {}) =>
       reference: "VT-AB2C-DE3F",
       workspaceId: "w1",
       ownerUserId: "owner-1",
-      fixture: false,
       stage: "preparing",
       revision: 5,
       preparationVersion: 0,
