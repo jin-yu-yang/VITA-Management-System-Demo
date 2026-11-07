@@ -6256,7 +6256,8 @@ test("a staff member without admin starts no screening, whatever persona the win
   await controller.start();
   await controller.selectCase("case-r");
   await tick();
-  assert.equal(startWrites(store).length, 0);  controller.stop();
+  assert.equal(startWrites(store).length, 0);
+  controller.stop();
 });
 
 test("a presenter's window loads nothing", async () => {
@@ -6362,4 +6363,23 @@ test("every data load is inert for a presenter", async () => {
   assert.deepEqual(store.calls.slice(calls), []);
   assert.equal(controller.getState().screen, "presenter");
   controller.stop();
+
+  // And each load on its own, called directly in a window a presenter signed
+  // in to first, reads nothing and leaves the lists as they were.
+  const fresh = fakeStore({
+    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    cases: [{ id: "case-a", reference: "VT-AAAA-BBBB", stage: "preparing", revision: 2, answers: {} }],
+  });
+  const presenter = build({ store: fresh }).controller;
+  await presenter.start();
+  assert.deepEqual(fresh.calls, ["getPrincipal"]);
+  const before = presenter.getState();
+  await presenter.testing.loadList();
+  await presenter.testing.loadWorkspace();
+  await presenter.testing.loadAssistance();
+  assert.deepEqual(fresh.calls, ["getPrincipal"]);
+  assert.deepEqual(presenter.getState().lists, before.lists);
+  assert.equal(presenter.getState().workspace, before.workspace);
+  assert.equal(presenter.getState().screen, "presenter");
+  presenter.stop();
 });

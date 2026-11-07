@@ -2823,5 +2823,8 @@ export function createController({
     dismissError,
     clearError,
     noteLocalFailure,
+    // For the unit tests only: the loads a late change reaches, called
+    // directly to prove each is inert for a presenter on its own.
+    testing: { loadList, loadWorkspace, loadAssistance },
   };
 }
