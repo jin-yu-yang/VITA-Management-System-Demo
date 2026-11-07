@@ -249,9 +249,9 @@ test("English is the default: the same states render in English without a langua
   }
 });
 
-test("a presenter's frame stays English whatever the browser chose", () => {
+test("a staff account's frame stays English whatever the browser chose", () => {
   const presenter = baseState({
-    principal: { userId: "p", workspaceId: "w1", access: "presenter" },
+    principal: { userId: "p", workspaceId: "w1", access: "staff" },
     dialog: "help",
     notice: "Sample cases were reset.",
   });

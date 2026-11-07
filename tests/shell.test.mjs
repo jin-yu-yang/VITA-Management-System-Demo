@@ -55,11 +55,10 @@ test("the staff sidebar carries the logo, the one screen that exists, and the ac
   const office = staffSidebar({ screen: "staff-case" }, { id: "sam", name: "Sam", capabilities: ["admin"] }, true);
   assert.match(office, /Follow-ups/);
   assert.doesNotMatch(office, /aria-current/, "on a case, no nav item is current");
-  assert.match(staffSidebar({ screen: "staff" }, null, false), /No persona chosen/);
 });
 
-test("presenters get the sidebar; clients get the client top bar and shell", () => {
-  const presenter = page({ principal: { access: "presenter" }, connection: "online" }, "<main></main>");
+test("staff get the sidebar; clients get the client top bar and shell", () => {
+  const presenter = page({ principal: { access: "staff" }, connection: "online" }, "<main></main>");
   assert.doesNotMatch(presenter, /class="client-bar"/);
   assert.doesNotMatch(presenter, /class="client-shell"/);
   const client = page({ principal: { access: "applicant" }, connection: "online", screen: "applications" }, "<main></main>");
@@ -204,12 +203,12 @@ test("describeFocus brings the keyboard back to the pressed language button", ()
   assert.deepEqual(focusSelectors(focus), ['[data-action="set-language"][data-value="zh-Hans"]']);
 });
 
-test("the page frame speaks the view language: a client's, never a presenter's", () => {
+test("the page frame speaks the view language: a client's, never a staff account's", () => {
   const client = page({ principal: { access: "applicant" }, connection: "online", screen: "applications", lang: "zh-Hans" }, "<main></main>");
   assert.match(client, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
   const signedOut = page({ principal: null, connection: "online", screen: "access", lang: "zh-Hans" }, "<main></main>");
   assert.match(signedOut, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
-  const presenter = page({ principal: { access: "presenter" }, connection: "online", screen: "staff", lang: "zh-Hans" }, "<main></main>");
+  const presenter = page({ principal: { access: "staff" }, connection: "online", screen: "staff", lang: "zh-Hans" }, "<main></main>");
   assert.match(presenter, /^<a class="skip" href="#main">Skip to content<\/a>/);
   assert.match(page({ principal: null, connection: "online", screen: "access" }, "<main></main>"), /Skip to content/);
 });
@@ -241,11 +240,10 @@ test("the client top bar, footer and dialogs speak the client's language", async
   } finally {
     setHantMap(null);
   }
-  // A presenter's help dialog and every staff dialog stay English.
-  const presenter = page({ principal: { access: "presenter" }, connection: "online", screen: "staff", dialog: "help", lang: "zh-Hans" }, "");
+  // A staff account's help dialog and every staff dialog stay English.
+  const presenter = page({ principal: { access: "staff" }, connection: "online", screen: "staff", dialog: "help", lang: "zh-Hans" }, "");
   assert.match(presenter, /A real person can help\./);
   assert.match(presenter, /aria-label="Close dialog"/);
-  assert.match(dialog({ dialog: "reset-fixtures", lang: "zh-Hans", principal: { access: "presenter" } }), /PRESENTER CONTROLS/);
 });
 
 test("the help dialog gives the office phone and email", () => {
@@ -294,7 +292,7 @@ const drawerCase = {
   followups: [{ id: "f1", status: "open", reason: "Ask for the W-2", assigneeId: "p-sam" }],
 };
 const drawerState = (over = {}) => ({
-  principal: { access: "presenter" },
+  principal: { access: "staff" },
   connection: "online",
   screen: "staff",
   people: [drawerSam],
@@ -340,7 +338,6 @@ test("the drawer is the modal frame at the edge, and each dialog names its place
   assert.match(help, /Resolve a help request/);
   assert.match(help, /data-assistance-action="RESOLVE" data-item-id="h1"/);
 
-  assert.match(dialog({ dialog: "reset-fixtures", cases: [] }), /PRESENTER CONTROLS/);
   assert.match(dialog({ dialog: "help" }), /ViTally · HERE TO HELP/);
   assert.doesNotMatch(dialog({ dialog: "help" }), /office-drawer/);
 });
@@ -664,7 +661,7 @@ test("the part 4b2 block follows 4b's: icon-and-word marks, the phone bar and th
 
 const ADD_SAM = { id: "p-sam", name: "Sam", capabilities: ["admin", "followup", "assist", "receive_documents"] };
 const addState = (over = {}) => ({
-  principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+  principal: { userId: "p1", workspaceId: "w1", access: "staff" },
   people: [ADD_SAM],
   selectedPersonId: ADD_SAM.id,
   screen: "office-add-case",
@@ -829,7 +826,7 @@ const STAFF_ONLY_TOASTS = Object.freeze([
   "The unsigned cases were closed as Dismissed.",
   // fillAssistedIntake: the office's fill on Add a case
   "Fictional details filled in. Nothing is saved yet.",
-  // runCaseAction SUBMIT, presenter branch only
+  // runCaseAction SUBMIT, staff branch only
   "The application is with the office. Record the intake checks next.",
   // runAssistanceAction RESOLVE: the office's help-request drawer
   "Say what you helped with before resolving this request.",
@@ -838,10 +835,6 @@ const STAFF_ONLY_TOASTS = Object.freeze([
   "The application is with the office.",
   "The draft is saved. Some answers still need attention before it can be sent.",
   "Confirm that you have checked these answers with the client first.",
-  // confirm-reset-fixtures: the presenter panel
-  "The sample cases were rebuilt. Nothing else was touched.",
-  // checkpoint-form: the presenter panel
-  "The sample case was moved to that point in the story.",
 ]);
 
 const appSource = () => readFileSync(fileURLToPath(new URL("../src/app.mjs", import.meta.url)), "utf8");
@@ -1033,17 +1026,6 @@ test("unsent staff-form entries belong to the case they were typed on", () => {
   assert.match(app, /let draftsCase = null;/);
 });
 
-// Choosing another persona is another person at the same keyboard; pressing
-// the one already chosen (its button is still live, aria-pressed) is nobody
-// new, so what was typed stays.
-test("choosing the persona already chosen keeps the unsent staff-form entries", () => {
-  const app = appSource();
-  assert.match(
-    app,
-    /case "select-person":\s+\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(target\.dataset\.personId !== controller\.getState\(\)\.selectedPersonId\) formDrafts\.clear\(\);\s+controller\.selectPerson\(target\.dataset\.personId\);/,
-  );
-});
-
 // Cleanup (messages): a press awaits the controller and then says how it went.
 // The person who pressed is the only one it is for: if another user is signed
 // in by then, or nobody, it is not shown. Every press (click and submit) takes
@@ -1169,18 +1151,15 @@ test("the safety net and the toast host (design D1, D4)", () => {
 test("a pressed control is found again after a redraw (design D5)", () => {
   const claim = { id: "", name: "", dataset: { caseAction: "CLAIM_PREPARATION", caseId: "case-7" }, tagName: "BUTTON" };
   const help = { id: "", name: "", dataset: { assistanceAction: "CLAIM", itemId: "help-3" }, tagName: "BUTTON" };
-  const checkpoint = { id: "checkpoint-submit", name: "", dataset: {}, tagName: "BUTTON" };
   assert.ok(focusSelectors(describeFocus(claim)).some((s) => s.includes('data-case-action="CLAIM_PREPARATION"') && s.includes('data-case-id="case-7"')));
   assert.ok(focusSelectors(describeFocus(help)).some((s) => s.includes('data-assistance-action="CLAIM"') && s.includes('data-item-id="help-3"')));
-  assert.deepEqual(focusSelectors(describeFocus(checkpoint)), ['[id="checkpoint-submit"]']);
 });
 
 test("app.mjs marks only the allow-listed press while it runs (design D5)", () => {
   const app = appSource();
-  assert.match(app, /const BUSY_ACTIONS = Object\.freeze\(\["confirm-reset-fixtures", "save-office-draft", "send-office-draft"\]\);/);
+  assert.match(app, /const BUSY_ACTIONS = Object\.freeze\(\["save-office-draft", "send-office-draft"\]\);/);
   const allow = app.slice(app.indexOf("function busyControl("), app.indexOf("function busyControl(") + 600);
   assert.match(allow, /dataset\.caseAction \|\| control\.dataset\.assistanceAction/);
-  assert.match(allow, /control\.id === "checkpoint-submit"/);
   assert.match(allow, /BUSY_ACTIONS\.includes\(control\.dataset\.action\)/);
   assert.match(app, /pressed = null;\s*if \(busyControl\(target\)\) pressed = describeFocus\(target\);/);
   assert.match(app, /pressed = null;\s*if \(event\.submitter && busyControl\(event\.submitter\)\) pressed = describeFocus\(event\.submitter\);/);
@@ -1321,4 +1300,38 @@ test("the presenter screen says the account is no longer used", () => {
   assert.deepEqual([...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]), ["sign-out"]);
   for (const gone of ["select-person", "open-reset-fixtures", "open-checkpoint", "Class workspace", "board-row"])
     assert.ok(!html.includes(gone), gone);
+});
+
+test("no staff screen offers a persona, a reset or a checkpoint", () => {
+  const people = [{ id: "p-sam", name: "Sam", capabilities: ["prepare"] }];
+  const base = { principal: { access: "staff", personName: "Sam" }, connection: "online", people, selectedPersonId: "p-sam", cases: [], assistance: [], demoTools: true };
+  const board = staffScreen({ ...base, screen: "staff" });
+  const casePage = staffScreen({
+    ...base,
+    screen: "staff-case",
+    savedCase: { id: "c1", reference: "VT-TEST-0001", stage: "preparing", revision: 1, answers: {} },
+  });
+  for (const html of [board, casePage])
+    for (const gone of ["select-person", "open-reset-fixtures", "open-checkpoint", "presenter-panel", "Class workspace"])
+      assert.ok(!html.includes(gone), gone);
+});
+
+test("a staff account's screens name it and act as no one", () => {
+  const sam = { id: "p-sam", name: "Sam", capabilities: ["admin"] };
+  const base = { principal: { access: "staff", personId: "p-sam", personName: "Sam" }, connection: "online", people: [sam], selectedPersonId: "p-sam", cases: [], assistance: [] };
+  const board = staffScreen({ ...base, screen: "staff" });
+  assert.match(board.match(/<div class="account-row">[\s\S]*?<\/span><\/div>/)[0].replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), /Signed in as Sam/);
+  assert.doesNotMatch(board, /Presenter controls|No persona chosen|Acting as/);
+  const onCase = staffScreen({
+    ...base,
+    people: [{ id: "p-sam", name: "Sam", capabilities: ["prepare"] }],
+    screen: "staff-case",
+    savedCase: { id: "case-1", reference: "VT-AB2C-DE3F", stage: "preparation_ready", answers: {} },
+  });
+  assert.match(onCase, /Everything this case holds, and the work you may do on it\.</);
+  assert.doesNotMatch(onCase, /acting as/i);
+  // The Add a case fill pill follows the switch alone.
+  const add = { ...base, screen: "office-add-case", workspace: { defaultIntakeVersion: 2 }, officeDraft: true, draftAnswers: {} };
+  assert.match(staffScreen({ ...add, demoTools: true }), /data-action="fill-assisted-intake"/);
+  assert.doesNotMatch(staffScreen({ ...add, demoTools: false }), /fill-assisted-intake/);
 });

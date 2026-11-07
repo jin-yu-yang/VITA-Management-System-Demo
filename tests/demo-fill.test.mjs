@@ -17,7 +17,7 @@ const asForm = (values, ticked = "yes") =>
 
 const NOW = Date.parse("2026-02-10T15:00:00Z");
 
-const PRESENTER = { access: "presenter" };
+const STAFF = { access: "staff" };
 
 test("the auto-fill button names its action", () => {
   assert.match(demoFillButton(true), /data-action="demo-fill"/);
@@ -28,7 +28,7 @@ test("the auto-fill button follows the switch, not the account", () => {
   assert.match(demoFillButton(true), /data-action="demo-fill"/);
   assert.equal(demoFillButton(false), "", "switch off");
   assert.equal(demoFillButton(undefined), "", "no switch given");
-  assert.equal(demoFillButton(PRESENTER), "", "a principal is not the switch");
+  assert.equal(demoFillButton(STAFF), "", "a principal is not the switch");
 });
 
 test("the fictional data passes the preparer questionnaire", () => {
@@ -69,7 +69,7 @@ test("a filing dialog shows the auto-fill button with the switch on and never wi
   const savedCase = { reference: "VT-TEST-0002", answers: { tp_first_name: "Mei", tp_last_name: "Chen" } };
   for (const body of [markReadyToEfileDialogBody, markEfiledDialogBody, recordFilingResultDialogBody, returnToSigningDialogBody]) {
     assert.match(body({ savedCase, principal: { access: "staff" }, demoTools: true }), /data-action="demo-fill"/, `${body.name}, switch on`);
-    assert.doesNotMatch(body({ savedCase, principal: PRESENTER, demoTools: false }), /demo-fill/, `${body.name}, presenter, switch off`);
+    assert.doesNotMatch(body({ savedCase, principal: STAFF, demoTools: false }), /demo-fill/, `${body.name}, switch off`);
   }
 });
 

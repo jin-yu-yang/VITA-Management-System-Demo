@@ -894,6 +894,12 @@ test("the bottom bar: Cancel, Save draft, the confirmation and Send", () => {
   assert.match(addV2({ demoTools: true }), /data-action="fill-assisted-intake"/);
 });
 
+test("Add a case keeps its fill pill for a staff admin with the switch", () => {
+  const body = addV2({ demoTools: true });
+  assert.match(body, /data-action="fill-assisted-intake"/);
+  assert.doesNotMatch(addV2({ demoTools: false }), /fill-assisted-intake/);
+});
+
 test("the version-2 Add a case refuses a persona without the right", () => {
   const refused = addV2({ demoTools: true, person: { id: "p-al", name: "Alex", capabilities: ["prepare"] } });
   assert.match(refused, /staff-reason/);

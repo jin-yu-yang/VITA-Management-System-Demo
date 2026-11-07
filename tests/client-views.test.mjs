@@ -526,13 +526,13 @@ test("the setup-needed screen explains the configuration and holds no secrets", 
   assert.ok(!/data-case-action/.test(html));
 });
 
-test("a presenter gets the persona selector, the board and one case workspace", () => {
+test("a staff account gets the board and one case workspace, with no persona selector", () => {
   const cases = [
     caseRecord({ id: "case-a", reference: "VT-AB2C-DE3F", stage: "preparing", preparerId: "person-1" }),
   ];
   const staffState = (overrides = {}) =>
     baseState({
-      principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+      principal: { userId: "p1", workspaceId: "w1", access: "staff" },
       screen: "staff",
       cases,
       people: [
@@ -548,7 +548,7 @@ test("a presenter gets the persona selector, the board and one case workspace", 
   assert.ok(board.includes(describeStage("preparing").label));
   assert.ok(board.includes("Alex"), "the preparer is named, not an id");
   assert.ok(!board.includes("person-1</"), "no person id is shown as a name");
-  assert.match(board, /data-action="select-person"/);
+  assert.doesNotMatch(board, /data-action="select-person"/);
   assert.match(board, /data-action="open-case" data-case-id="case-a"/);
 
   // Opening a case is the same screen function, with the workspace inside it.
@@ -569,9 +569,9 @@ test("a presenter gets the persona selector, the board and one case workspace", 
   assert.match(workspace, /Preparation milestones/);
   assert.match(workspace, /data-case-action="SUBMIT_REVIEW"/);
   assert.match(workspace, /data-action="open-board"/);
-  assert.match(workspace, /data-action="select-person"/);
+  assert.doesNotMatch(workspace, /data-action="select-person"/);
 
-  // The applicant never sees the persona selector or a staff screen.
+  // The applicant never sees a staff screen.
   const clientPage = page(baseState(), applicationsScreen(baseState()));
   assert.ok(!/data-action="select-person"/.test(clientPage));
   assert.ok(!clientPage.includes("Morgan"));
@@ -580,7 +580,7 @@ test("a presenter gets the persona selector, the board and one case workspace", 
 
 test("the staff workspace announces a failure once, beside the work", () => {
   const state = baseState({
-    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    principal: { userId: "p1", workspaceId: "w1", access: "staff" },
     screen: "staff-case",
     error: {
       code: "CONFLICT",
@@ -612,11 +612,10 @@ test("the staff workspace announces a failure once, beside the work", () => {
 
 test("an error shows inside the open dialog, and the banner steps aside", () => {
   const error = { code: "VALIDATION", message: "This checkpoint is not available." };
-  const presenter = { userId: "p1", workspaceId: "w1", access: "presenter" };
-  for (const name of ["help", "regenerate", "leave-add-case", "close-case", "reset-fixtures", "load-checkpoint", "print"]) {
+  for (const name of ["help", "regenerate", "leave-add-case", "close-case", "print"]) {
     const state = {
       ...baseState({ savedCase: caseRecord() }),
-      principal: ["reset-fixtures", "load-checkpoint"].includes(name) ? presenter : baseState().principal,
+      principal: baseState().principal,
       dialog: name,
       error,
       retryable: false,
@@ -632,7 +631,7 @@ test("an error shows inside the open dialog, and the banner steps aside", () => 
 
 test("a dialog on the case page holds the only copy of the error", () => {
   const state = baseState({
-    principal: { userId: "p1", workspaceId: "w1", access: "presenter" },
+    principal: { userId: "p1", workspaceId: "w1", access: "staff" },
     screen: "staff-case",
     dialog: "close-case",
     error: { code: "SERVER_ERROR", message: "x" },

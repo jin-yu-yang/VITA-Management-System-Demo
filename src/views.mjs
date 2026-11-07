@@ -29,11 +29,6 @@ import {
   closeUnsignedDialogBody,
 } from "./office-views.mjs";
 import { renderCasePool } from "./pool-views.mjs";
-import {
-  renderPresenterPanel,
-  resetDialogBody,
-  checkpointDialogBody,
-} from "./presenter-views.mjs";
 
 // The shared shell: the frame every screen sits in, the dialogs, the two
 // screens that belong to nobody in particular (setup needed, no access), and
@@ -138,11 +133,11 @@ export function appShell({ sidebar = "", body = "", open = true } = {}) {
 }
 
 export function page(state, body) {
-  // Presenters and staff accounts work in the staff frame, whose sidebar
-  // carries the brand, help and sign-out. Everyone else gets the client frame.
-  const presenter = isStaffWindow(state?.principal);
-  const top = presenter ? "" : clientHeader(state);
-  const main = presenter ? body : `<div class="client-shell">${body}</div>`;
+  // Staff accounts work in the staff frame, whose sidebar carries the brand,
+  // help and sign-out. Everyone else gets the client frame.
+  const staff = isStaffWindow(state?.principal);
+  const top = staff ? "" : clientHeader(state);
+  const main = staff ? body : `<div class="client-shell">${body}</div>`;
   return `<a class="skip" href="#main">${t("frame.skip", {}, viewLang(state))}</a>${top}${connectionNotice(state)}${noticeBanner(state)}${problemBanner(state)}${main}${footer(viewLang(state))}${dialog(state)}`;
 }
 
@@ -196,17 +191,12 @@ export function presenterScreen() {
 const isAdmin = (person) =>
   Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
 
-// What the staff sidebar holds in part 1 of the redesign: the brand, the one
-// screen this persona can go to, and who this window is acting as. Screens that
+// What the staff sidebar holds: the brand, the screens this account can go
+// to, and who is signed in. Screens that
 // do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
-  // A staff account is its own person and chooses no one: "Signed in as".
-  const staffAccount = state?.principal?.access === "staff";
-  const accountRow = staffAccount
-    ? `<small>Signed in as</small> <strong>${esc(person?.name ?? state.principal.personName ?? "")}</strong>`
-    : `<strong>${esc(person?.name ?? "No persona chosen")}</strong><small>${esc(
-        person ? "Acting as this volunteer" : "Choose one in the presenter controls",
-      )}</small>`;
+  // A staff account is its own person: "Signed in as".
+  const accountRow = `<small>Signed in as</small> <strong>${esc(person?.name ?? state.principal?.personName ?? "")}</strong>`;
   const onBoard = state?.screen === "staff";
   const onPool = state?.screen === "office-cases";
   const label = office ? "Follow-ups" : "Work board";
@@ -230,12 +220,8 @@ export function staffSidebar(state, person, office) {
   )}${button(`${icon("signout")} Sign out`, "sign-out", "text")}</div>`;
 }
 
-// A presenter is on one of two screens: the work board, or one case. Both get
-// the presenter panel, because which volunteer this window is acting as is
-// what decides who may do what — and because the person running the session
-// needs their own controls wherever they happen to be standing. The records
-// are decorated here — once, with the roster this screen already holds — so
-// the renderers never see a bare id.
+// The records are decorated here — once, with the roster this screen already
+// holds — so the renderers never see a bare id.
 const OFFICE_SCREENS = ["office-cases", "office-add-case"];
 
 // The Follow-ups queue reads the cases and the help requests; it is ready only
@@ -249,15 +235,6 @@ export function staffScreen(state) {
   const people = state.people ?? [];
   const person =
     people.find((entry) => entry.id === state.selectedPersonId) ?? null;
-  const panel = renderPresenterPanel({
-    principal: state.principal,
-    people,
-    selectedPersonId: state.selectedPersonId,
-    connection: state.connection,
-    workspace: state.workspace,
-    cases: state.cases,
-    demoTools: state.demoTools === true,
-  });
   const office = isAdmin(person);
   // A volunteer chosen while an office screen is open gets the work board.
   const screen =
@@ -268,7 +245,7 @@ export function staffScreen(state) {
       `<main id="main" class="narrow" tabindex="-1"><div class="page-intro"><span class="overline">${esc(overline)}</span><h1>${esc(title)}</h1><p>${esc(intro)}</p>${when(
         backLabel,
         button(`${icon("back")} ${backLabel}`, "open-board", "text"),
-      )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${panel}${body}</main>`;
+      )}${when(actions, `<div class="page-actions">${actions}</div>`)}</div>${body}</main>`;
     if (screen === "staff-case" && state.savedCase) {
       const record = decorateStaffCase(state.savedCase, people);
       const ui = {
@@ -421,8 +398,6 @@ function decorateAssistance(item, people = []) {
 // Dialogs
 // ---------------------------------------------------------------------------
 
-const PRESENTER_DIALOGS = Object.freeze(["reset-fixtures", "load-checkpoint"]);
-
 // An error while a dialog is open is said inside it (design D2): the page's
 // banner is behind an aria-modal and could not be reached or read. The drawers
 // and the corrections dialog state their own failure in their bodies.
@@ -509,14 +484,6 @@ export function dialog(state) {
     title = "Ask the preparer for corrections";
     body = correctionsDialogBody(state);
   }
-  if (state.dialog === "reset-fixtures") {
-    title = "Reset the sample cases?";
-    body = resetDialogBody(state);
-  }
-  if (state.dialog === "load-checkpoint") {
-    title = "Load a sample checkpoint";
-    body = checkpointDialogBody(state);
-  }
   if (DRAWERS.includes(state.dialog)) {
     const people = state.people ?? [];
     const person = people.find((entry) => entry.id === state.selectedPersonId) ?? null;
@@ -542,10 +509,6 @@ export function dialog(state) {
     body = `<div class="print-card"><strong>${say("print.org")}</strong><span>${say("id.application_caps")}</span><b>${esc(state.savedCase?.reference)}</b>${state.savedCase?.clientNumber != null ? `<span>${say("id.client_number_caps")}</span><b>${esc(formatClientNumber(state.savedCase.clientNumber))}</b>` : ""}<p>${say("print.return")}</p></div><p class="field-note">${say("print.note")}</p>${button(`${icon("print")} ${say("print.button")}`, "print-now", "primary full")}`;
   }
   const drawer = DRAWERS.includes(state.dialog);
-  const overline = drawer
-    ? "OFFICE FOLLOW-UP"
-    : PRESENTER_DIALOGS.includes(state.dialog)
-      ? "PRESENTER CONTROLS"
-      : t("dialog.overline", {}, lang);
+  const overline = drawer ? "OFFICE FOLLOW-UP" : t("dialog.overline", {}, lang);
   return `<div class="modal-backdrop"><section class="modal${drawer ? " office-drawer" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button class="close-btn" data-action="close-dialog" aria-label="${say("dialog.close")}">${icon("close")}</button><span class="overline">${esc(overline)}</span><h2 id="modal-title">${esc(title)}</h2>${dialogError(state, lang)}${body}</section></div>`;
 }
