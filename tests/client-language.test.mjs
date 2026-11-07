@@ -188,9 +188,6 @@ const STATES = {
   }),
   "the frame: reconnecting": baseState({ connection: "reconnecting", cases: [draftCase] }),
   "the frame: offline": baseState({ connection: "offline", cases: [draftCase] }),
-  "the frame: the notice banner": baseState({
-    notice: "Sample cases were reset. The one you had open is no longer there.",
-  }),
   "the frame: the problem banner": baseState({
     error: { code: "SERVER_ERROR", message: "Something went wrong. Please try again." },
     retryable: true,
@@ -253,7 +250,6 @@ test("a staff account's frame stays English whatever the browser chose", () => {
   const staffPage = baseState({
     principal: { userId: "p", workspaceId: "w1", access: "staff" },
     dialog: "help",
-    notice: "Sample cases were reset.",
   });
   assert.equal(views.page({ ...staffPage, lang: "zh-Hans" }, ""), views.page(staffPage, ""));
 });
@@ -548,7 +544,7 @@ test("every errors.mjs, controller, auth and notice sentence is a SENTENCES key"
   const safe = [...errors.matchAll(/:\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
   assert.equal(safe.length, 9);
   safe.forEach((s) => wanted.add(s));
-  // controller.mjs: literal controllerError sentences, *_NOTICE and the client conflict messages
+  // controller.mjs: literal controllerError sentences, *_MESSAGE constants and the client conflict messages
   const controller = source("controller.mjs");
   const errorsThrown = [...controller.matchAll(/(?:controllerError|refuse)\(\s*"[A-Z_]+"\s*,\s*("(?:[^"\\]|\\.)*")/g)].map((m) => literal(m[1]));
   assert.ok(errorsThrown.length >= 9);
@@ -558,8 +554,7 @@ test("every errors.mjs, controller, auth and notice sentence is a SENTENCES key"
   assert.ok(fallbacks.includes("Sign-in could not be completed."));
   fallbacks.forEach((s) => wanted.add(s));
   const constants = [...controller.matchAll(/const (\w+_(?:NOTICE|MESSAGE)) =\s*("(?:[^"\\]|\\.)*")/g)];
-  const notices = constants.filter(([, name]) => name.endsWith("_NOTICE"));
-  assert.ok(notices.length >= 1);
+  assert.ok(constants.length >= 1);
   for (const [, name, text] of constants) if (!/^(STAFF|ASSISTANCE)_/.test(name)) wanted.add(literal(text));
   // auth.mjs: the neutral message and every authError sentence
   wanted.add(NEUTRAL_SEND_MESSAGE);

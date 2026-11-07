@@ -55,7 +55,6 @@ function fakeStore({
   assistance = [],
   workspace = {
     id: "w1",
-    fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
     defaultIntakeVersion: 2,
   },
@@ -1664,7 +1663,7 @@ test("the office answers for a walk-in client and sends no person", async () => 
 });
 
 // ---------------------------------------------------------------------------
-// The workspace row and the shared generation signal
+// The workspace row and the workspace update
 // ---------------------------------------------------------------------------
 
 const adminStaffStore = (overrides = {}) =>
@@ -1679,19 +1678,17 @@ const sampleCase = (overrides = {}) => ({
   reference: "VT-SEED-1AAA",
   stage: "review_approved",
   revision: 11,
-  fixture: true,
   answers: {},
   ...overrides,
 });
 
-test("a staff start reads the workspace the fixture generation lives on", async () => {
+test("a staff start reads the workspace its settings live on", async () => {
   const store = adminStaffStore({ cases: [sampleCase()] });
   const { controller } = build({ store });
   await controller.start();
   assert.ok(store.calls.includes("getWorkspace"));
   assert.deepEqual(controller.getState().workspace, {
     id: "w1",
-    fixtureGeneration: 3,
     defaultFollowupPersonId: "person-sam",
     defaultIntakeVersion: 2,
   });
@@ -1706,7 +1703,7 @@ test("a staff start reads the workspace the fixture generation lives on", async 
   asClient.controller.stop();
 });
 
-test("the shared generation signal refetches everything it could have replaced", async () => {
+test("a workspace update refetches the lists, the workspace and the open case", async () => {
   const store = adminStaffStore({
     cases: [sampleCase()],
     assistance: [
@@ -1721,10 +1718,10 @@ test("the shared generation signal refetches everything it could have replaced",
     workspace: store.calls.filter((entry) => entry === "getWorkspace").length,
     assistance: store.calls.filter((entry) => entry === "listAssistance").length,
   };
-  // Somebody else reset the samples: the row that moved is the workspace, and
-  // it names no case at all.
+  // The workspace row moved, and it names no case at all. The open case is
+  // gone, and the window forgets it quietly.
   store.records.delete("fixture-a");
-  store.workspace = { ...store.workspace, fixtureGeneration: 9 };
+  store.workspace = { ...store.workspace, defaultFollowupPersonId: "person-lee" };
   await store.handlers.onChange({
     table: "workspaces",
     eventType: "UPDATE",
@@ -1743,18 +1740,15 @@ test("the shared generation signal refetches everything it could have replaced",
     store.calls.filter((entry) => entry === "listAssistance").length,
     before.assistance + 1,
   );
-  assert.equal(controller.getState().workspace.fixtureGeneration, 9);
+  assert.equal(controller.getState().workspace.defaultFollowupPersonId, "person-lee");
   assert.equal(controller.getState().selectedCaseId, null);
   assert.equal(controller.getState().screen, "staff");
-  assert.match(controller.getState().notice, /Sample cases were reset/);
-  assert.equal(controller.getState().error, null, "a reset is not a failure");
-  // Dismissing clears it.
-  controller.dismissError();
-  assert.equal(controller.getState().notice, null);
+  assert.equal("notice" in controller.getState(), false, "nothing is said about it");
+  assert.equal(controller.getState().error, null, "a case that is gone is not a failure");
   controller.stop();
 });
 
-test("a generation signal with the open case still there keeps the selection", async () => {
+test("a workspace update with the open case still there keeps the selection", async () => {
   const store = adminStaffStore({ cases: [sampleCase()] });
   const { controller } = build({ store });
   await controller.start();
@@ -1766,22 +1760,17 @@ test("a generation signal with the open case still there keeps the selection", a
     caseId: null,
   });
   assert.equal(controller.getState().selectedCaseId, "fixture-a");
-  assert.equal(controller.getState().notice, null);
   controller.stop();
 });
 
-test("signing out forgets the workspace and the notice with everything else", async () => {
+test("signing out forgets the workspace with everything else", async () => {
   const store = adminStaffStore({ cases: [sampleCase()] });
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("fixture-a");
-  // Somebody else reset the samples while this one was open.
-  store.records.delete("fixture-a");
-  await store.handlers.onChange({ table: "workspaces", eventType: "UPDATE", id: "w1", caseId: null });
-  assert.ok(controller.getState().notice);
+  assert.ok(controller.getState().workspace);
   await controller.signOut();
   assert.equal(controller.getState().workspace, null);
-  assert.equal(controller.getState().notice, null);
   controller.stop();
 });
 
@@ -3491,7 +3480,7 @@ function officeV2(options = {}) {
   const store = v2Store({
     principal: { userId: "p1", workspaceId: "w1", access: "staff", personId: "sam" },
     people: [{ id: "sam", name: "Sam", capabilities: ["admin", "assist", "followup"] }],
-    workspace: { id: "w1", fixtureGeneration: 3, defaultFollowupPersonId: "sam", defaultIntakeVersion: 2 },
+    workspace: { id: "w1", defaultFollowupPersonId: "sam", defaultIntakeVersion: 2 },
     ...options,
   });
   store.records.set("case-v2", { ...store.records.get("case-v2"), ownerUserId: null });
@@ -3744,10 +3733,10 @@ test("a new office draft never outlives the page, and starts again on a reload o
 
   // A realtime workspace change doesn't wipe what is being typed.
   again.controller.editAnswers({ tp_first_name: "Mei" });
-  again.store.workspace = { ...again.store.workspace, fixtureGeneration: 4 };
+  again.store.workspace = { ...again.store.workspace, defaultFollowupPersonId: "person-lee" };
   await again.store.handlers.onChange({ table: "workspaces" });
   state = again.controller.getState();
-  assert.equal(state.workspace.fixtureGeneration, 4);
+  assert.equal(state.workspace.defaultFollowupPersonId, "person-lee");
   assert.equal(state.officeDraft, true);
   assert.equal(state.draftAnswers.tp_first_name, "Mei");
   assert.equal(state.dirty, true);
@@ -5023,16 +5012,11 @@ test("every recorded error is counted", async () => {
   controller.stop();
 });
 
-test("clearError clears only its own error and leaves the notice", async () => {
+test("clearError clears only its own error", async () => {
   const store = adminStaffStore({ cases: [sampleCase()] });
   const { controller } = build({ store });
   await controller.start();
   await controller.selectCase("fixture-a");
-  // Somebody else reset the samples while this one was open.
-  store.records.delete("fixture-a");
-  await store.handlers.onChange({ table: "workspaces", eventType: "UPDATE", id: "w1", caseId: null });
-  const notice = controller.getState().notice;
-  assert.ok(notice);
   let runs = 0;
   controller.noteLocalFailure({ code: "DRAFT", message: "The draft could not be made. Try again." }, () => {
     runs += 1;
@@ -5042,7 +5026,6 @@ test("clearError clears only its own error and leaves the notice", async () => {
   assert.equal(controller.getState().retryable, true);
   controller.clearError("DRAFT");
   assert.equal(controller.getState().error, null);
-  assert.equal(controller.getState().notice, notice, "the notice is not the draft's to clear");
   assert.equal(controller.getState().retryable, false);
   assert.equal(await controller.retryLast(), null);
   assert.equal(runs, 0);

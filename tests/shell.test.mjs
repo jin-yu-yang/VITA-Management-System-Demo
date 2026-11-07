@@ -1313,30 +1313,6 @@ test("a presenter gets the plain screen in a bare English frame", () => {
   assert.ok(html.includes("This account is no longer used"));
 });
 
-test("a reset somebody else ran is said plainly, and dismissed", () => {
-  const state = {
-    principal: { userId: "user-2", workspaceId: "w1", access: "applicant" },
-    people: [],
-    cases: [],
-    assistance: [],
-    openPanels: [],
-    draftAnswers: {},
-    connection: "online",
-    screen: "applications",
-    error: null,
-    notice: "Sample cases were reset. The one you had open is no longer there.",
-    dialog: null,
-  };
-  const html = page(state, "<main></main>");
-  assert.match(html, /notice-banner/);
-  assert.match(html, /Sample cases were reset/);
-  assert.match(html, /role="status"/);
-  assert.match(html, /data-action="dismiss-error"/);
-  // It is not an alert: nothing failed.
-  assert.ok(!/notice-banner[^>]*role="alert"/.test(html));
-  assert.ok(!page({ ...state, notice: null }, "").includes("notice-banner"));
-});
-
 test("a refusal shows in the error banner and the staff window stays usable", () => {
   const state = {
     principal: { access: "staff", personName: "Sam" },

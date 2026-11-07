@@ -402,7 +402,6 @@ export function confirmBody({ before = "", lead, note = null, form = null, confi
 const STAYS_REACHABLE = Object.freeze([
   "modal-backdrop",
   "connection-notice",
-  "notice-banner",
   "problem-banner",
 ]);
 export const inertWhileDialog = (element) =>

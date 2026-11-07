@@ -2158,7 +2158,6 @@ textarea::placeholder {
   white-space: nowrap;
 }
 .connection-notice,
-.notice-banner,
 .problem-banner {
   display: flex;
   align-items: center;
@@ -2175,19 +2174,12 @@ textarea::placeholder {
   background: var(--vt-error-bg);
   color: var(--vt-error);
 }
-/* Nothing failed here: the demonstration cases were rebuilt. */
-.notice-banner {
-  background: var(--vt-notice-bg);
-  color: var(--vt-notice);
-}
 .connection-notice .icon,
-.notice-banner .icon,
 .problem-banner .icon {
   flex: none;
   width: 18px;
   height: 18px;
 }
-.notice-banner .btn.inline,
 .problem-banner .btn.inline {
   margin-left: auto;
   color: inherit;
@@ -2363,7 +2355,6 @@ textarea::placeholder {
 }
 @media (max-width: 760px) {
   .connection-notice,
-  .notice-banner,
   .problem-banner {
     padding: 10px 18px;
   }
@@ -3147,7 +3138,6 @@ textarea::placeholder {
    style. The banners come right after the client bar in page(). */
 .client-shell .btn.inline,
 .client-bar ~ .connection-notice .btn.inline,
-.client-bar ~ .notice-banner .btn.inline,
 .client-bar ~ .problem-banner .btn.inline {
   min-height: var(--vt-tap);
 }

@@ -474,11 +474,9 @@ export const SENTENCES = Object.freeze({
   "Sign-in could not be completed. Please try again.": "无法完成登录。请再试一次。",
   // controller.mjs: the sign-in fallback when an error carries no message
   "Sign-in could not be completed.": "无法完成登录。",
-  // controller.mjs: the conflict messages a client sees, and the notices (*_NOTICE)
+  // controller.mjs: the conflict messages a client sees
   "Someone else changed this application. The newest version is shown — check it and try again.": "其他人修改了这份申请。现在显示的是最新版本，请检查后再试一次。",
   "Someone else changed this application while you were editing. Choose which answers to keep.": "您编辑期间，其他人修改了这份申请。请选择要保留哪些回答。",
-  "Sample cases were reset.": "示例申请已重置。",
-  "Sample cases were reset. The one you had open is no longer there.": "示例申请已重置。您刚才打开的那一份已不存在。",
   // controller.mjs: controllerError sentences (several are staff-only; they cost nothing)
   "Only a volunteer can start an assisted application.": "只有志愿者才能开始协助申请。",
   "Open an application first.": "请先打开一份申请。",

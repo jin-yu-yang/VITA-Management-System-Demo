@@ -380,7 +380,7 @@ test("a confirmation note always comes before the form", () => {
 
 test("only the dialog and the live regions stay out of inert", () => {
   const el = (...names) => ({ classList: { contains: (name) => names.includes(name) } });
-  for (const name of ["modal-backdrop", "connection-notice", "notice-banner", "problem-banner"])
+  for (const name of ["modal-backdrop", "connection-notice", "problem-banner"])
     assert.equal(inertWhileDialog(el(name)), false, name);
   for (const name of ["skip", "client-header", "client-shell", "app-shell", "site-footer"])
     assert.equal(inertWhileDialog(el(name)), true, name);
