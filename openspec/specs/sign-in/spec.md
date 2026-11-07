@@ -1,7 +1,7 @@
 # sign-in Specification
 
 ## Purpose
-Who a signed-in account acts as: a client; a presenter, the demonstration staff account that chooses a persona; or a staff member, who always acts as their own person, as the database decides from the signed-in account. It also covers how the roster creates staff accounts and chooses the default follow-up person, workspaces with staff and no presenter, and that sample cases and checkpoints stay presenter-only.
+Who a signed-in account acts as: a client; a presenter, the demonstration staff account that chooses a persona; or a staff member, who always acts as their own person, as the database decides from the signed-in account. It also covers how the roster creates staff accounts and chooses the default follow-up person, and workspaces with staff and no presenter.
 
 ## Requirements
 
@@ -101,7 +101,7 @@ The roster command SHALL never print an email address.
 - **THEN** the workspace also has Alex, Morgan and Sam, unlinked, with their usual capabilities
 
 ### Requirement: A workspace can have staff and no presenter
-A roster SHALL need at least one presenter or one staff member, and SHALL NOT require a presenter. A roster with no presenter SHALL name a `defaultFollowup`. A workspace with no presenter SHALL work for staff and clients. Nobody in it can reset sample cases or load checkpoints, because those stay presenter-only.
+A roster SHALL need at least one presenter or one staff member, and SHALL NOT require a presenter. A roster with no presenter SHALL name a `defaultFollowup`. A workspace with no presenter SHALL work for staff and clients.
 
 #### Scenario: A staff-only roster
 - **WHEN** a roster lists staff members and clients, no presenters, and a `defaultFollowup` naming a staff member with `followup`
@@ -133,13 +133,6 @@ The roster file SHALL accept an optional `defaultFollowup`, naming the `personKe
 #### Scenario: A default without the capability
 - **WHEN** `defaultFollowup` names a staff member whose capabilities do not include `followup`
 - **THEN** the roster command refuses the roster, and the default does not change
-
-### Requirement: Sample cases and checkpoints stay presenter-only
-`vitally_reset_fixtures` and `vitally_load_checkpoint` SHALL refuse a `staff` member with `FORBIDDEN`, as they refuse a client.
-
-#### Scenario: A staff member tries to reset sample cases
-- **WHEN** a staff member calls `vitally_reset_fixtures`
-- **THEN** the call is refused with `FORBIDDEN`, and no sample case changes
 
 ### Requirement: A presenter account gets a plain screen and no staff screens
 When an account whose membership has access `presenter` signs in, the app SHALL show one screen in English with:

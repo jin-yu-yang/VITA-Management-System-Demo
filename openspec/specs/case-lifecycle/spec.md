@@ -569,8 +569,8 @@ The database SHALL accept `VERIFY_INTAKE` only with exactly the checks shown for
 - **THEN** its history reads "… recorded the screening checks" for that event, and nothing fails to render
 
 #### Scenario: The online sample
-- **WHEN** the samples are seeded
-- **THEN** the `review_ready` sample's recorded checks include identity, and every other sample's are phone, documents and in_scope
+- **WHEN** the seed builds its cases (capability `local-seed-data`)
+- **THEN** each seeded case's recorded checks are phone, documents and in_scope, plus identity for a case whose service is online
 
 ### Requirement: Admins record each return's filing result
 A case SHALL have two returns: the federal return and the Pennsylvania (state) return. At Mark e-filed, each SHALL get a filing method, `efile` or `paper` (see "Admins record signing and e-filing, with a confirmation").
@@ -579,7 +579,7 @@ PCDC SHALL never mail a return. At Mark e-filed, each return filed on paper SHAL
 
 At E-filed, an admin SHALL be offered **Record filing result…**, on the case page and on that case's Follow-ups row. It SHALL record the answer for one or both of the e-filed returns still waiting, as **accepted** or **rejected**, with the acknowledgment date. A rejected return SHALL also have a reject code: free text, 1 to 40 characters after trimming. It SHALL offer no choice for a paper return.
 
-Every date SHALL be no later than today and no earlier than the day the return was filed. When the case is at Rejected, or the move takes it there, the admin MAY add a fix note (at most 1000 characters) saying what needs fixing in TaxSlayer. Its prompt SHALL read "Fix note (only when a return is rejected): what needs fixing in TaxSlayer". That includes recording the second return's answer at Rejected. A fix note SHALL be refused on any other move. Fix notes SHALL be append-only: each note SHALL be kept with who recorded it and when, and no note SHALL ever be changed, or deleted on its own, not even by the database's own service role. A note is removed only together with its case: a sample reset, a sample checkpoint, or a workspace teardown.
+Every date SHALL be no later than today and no earlier than the day the return was filed. When the case is at Rejected, or the move takes it there, the admin MAY add a fix note (at most 1000 characters) saying what needs fixing in TaxSlayer. Its prompt SHALL read "Fix note (only when a return is rejected): what needs fixing in TaxSlayer". That includes recording the second return's answer at Rejected. A fix note SHALL be refused on any other move. Fix notes SHALL be append-only: each note SHALL be kept with who recorded it and when, and no note SHALL ever be changed, or deleted on its own, not even by the database's own service role. A note is removed only together with its case, when the case is deleted, for example by a seed re-run or a workspace teardown.
 
 Its confirmation dialog SHALL:
 - name the client (as Mark e-filed's does) and the application ID;
@@ -602,7 +602,7 @@ A rejection SHALL move the case to Rejected at once, even while the other return
 
 The move SHALL be admin-only, and SHALL have no undo. A case e-filed before filing methods existed SHALL be treated as both returns e-filed.
 
-Results recorded as `mailed` before this change SHALL be stored as `given_to_client`, with no date. A paper return filed before this change and still waiting SHALL be shown as given to the client and SHALL never be waited for. Such a case may stay at E-filed; a sample reset clears it.
+Results recorded as `mailed` before this change SHALL be stored as `given_to_client`, with no date. A paper return filed before this change and still waiting SHALL be shown as given to the client and SHALL never be waited for. Such a case may stay at E-filed.
 
 #### Scenario: Both accepted
 - **WHEN** an admin records the federal and the state return of a both-e-filed case as accepted, with dates after the filing day, and confirms
@@ -625,12 +625,12 @@ Results recorded as `mailed` before this change SHALL be stored as `given_to_cli
 - **THEN** the database refuses it with `VALIDATION`, and nothing is recorded
 
 #### Scenario: A note can't be changed
-- **WHEN** anyone, the database's service role included, tries to change or delete a recorded fix note on a real (non-sample) case
+- **WHEN** anyone, the database's service role included, tries to change or delete a recorded fix note on its own
 - **THEN** it is refused, and the note stays as recorded
 
 #### Scenario: A note goes with its sample
-- **WHEN** the sample cases are reset
-- **THEN** each sample's notes are removed with it
+- **WHEN** a case with fix notes is deleted, for example by a seed re-run that replaces its previous set
+- **THEN** its notes are removed with it, and no other case's notes change
 
 #### Scenario: A rejection needs a code
 - **WHEN** an admin records a return as rejected with an empty reject code
