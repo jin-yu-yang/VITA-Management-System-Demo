@@ -133,6 +133,9 @@ export function appShell({ sidebar = "", body = "", open = true } = {}) {
 }
 
 export function page(state, body) {
+  // A presenter's one plain screen stands alone: no header, footer, banners or
+  // dialogs around it.
+  if (state?.principal?.access === "presenter") return body;
   // Staff accounts work in the staff frame, whose sidebar carries the brand,
   // help and sign-out. Everyone else gets the client frame.
   const staff = isStaffWindow(state?.principal);
@@ -183,17 +186,17 @@ export function presenterScreen() {
 // The staff frame
 // ---------------------------------------------------------------------------
 
-// Which screens a presenter gets is decided by the persona this window is
-// acting as, not by the account: an office administrator works in the follow-up
-// and assistance workspace, everybody else in the preparation/review one
-// (Ruling R55). The choice is a view choice — the database re-checks every
-// capability on every action, so nothing here grants anything.
+// Which screens a staff account gets is decided by its own capabilities: an
+// office administrator works in the follow-up and assistance workspace,
+// everybody else in the preparation/review one (Ruling R55). This is a view
+// choice — the database re-checks every capability on every action, so nothing
+// here grants anything.
 const isAdmin = (person) =>
   Array.isArray(person?.capabilities) && person.capabilities.includes("admin");
 
-// What the staff sidebar holds: the brand, the screens this account can go
-// to, and who is signed in. Screens that
-// do not exist yet (Dashboard, Schedule, Documents, Messages) are not shown.
+// What the staff sidebar holds: the brand, the screens this account can go to,
+// and who is signed in. Screens that do not exist yet (Dashboard, Schedule,
+// Documents, Messages) are not shown.
 export function staffSidebar(state, person, office) {
   // A staff account is its own person: "Signed in as".
   const accountRow = `<small>Signed in as</small> <strong>${esc(person?.name ?? state.principal?.personName ?? "")}</strong>`;

@@ -250,12 +250,12 @@ test("English is the default: the same states render in English without a langua
 });
 
 test("a staff account's frame stays English whatever the browser chose", () => {
-  const presenter = baseState({
+  const staffPage = baseState({
     principal: { userId: "p", workspaceId: "w1", access: "staff" },
     dialog: "help",
     notice: "Sample cases were reset.",
   });
-  assert.equal(views.page({ ...presenter, lang: "zh-Hans" }, ""), views.page(presenter, ""));
+  assert.equal(views.page({ ...staffPage, lang: "zh-Hans" }, ""), views.page(staffPage, ""));
 });
 
 test("the code step's first draw uses the countdown keys app.mjs patches in place", () => {

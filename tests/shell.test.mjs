@@ -58,9 +58,9 @@ test("the staff sidebar carries the logo, the one screen that exists, and the ac
 });
 
 test("staff get the sidebar; clients get the client top bar and shell", () => {
-  const presenter = page({ principal: { access: "staff" }, connection: "online" }, "<main></main>");
-  assert.doesNotMatch(presenter, /class="client-bar"/);
-  assert.doesNotMatch(presenter, /class="client-shell"/);
+  const staffPage = page({ principal: { access: "staff" }, connection: "online" }, "<main></main>");
+  assert.doesNotMatch(staffPage, /class="client-bar"/);
+  assert.doesNotMatch(staffPage, /class="client-shell"/);
   const client = page({ principal: { access: "applicant" }, connection: "online", screen: "applications" }, "<main></main>");
   assert.match(client, /<header class="client-bar">/);
   assert.match(client, /<div class="client-shell"><main><\/main><\/div>/);
@@ -208,8 +208,8 @@ test("the page frame speaks the view language: a client's, never a staff account
   assert.match(client, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
   const signedOut = page({ principal: null, connection: "online", screen: "access", lang: "zh-Hans" }, "<main></main>");
   assert.match(signedOut, /^<a class="skip" href="#main">跳到主要内容<\/a>/);
-  const presenter = page({ principal: { access: "staff" }, connection: "online", screen: "staff", lang: "zh-Hans" }, "<main></main>");
-  assert.match(presenter, /^<a class="skip" href="#main">Skip to content<\/a>/);
+  const staffPage = page({ principal: { access: "staff" }, connection: "online", screen: "staff", lang: "zh-Hans" }, "<main></main>");
+  assert.match(staffPage, /^<a class="skip" href="#main">Skip to content<\/a>/);
   assert.match(page({ principal: null, connection: "online", screen: "access" }, "<main></main>"), /Skip to content/);
 });
 
@@ -241,9 +241,9 @@ test("the client top bar, footer and dialogs speak the client's language", async
     setHantMap(null);
   }
   // A staff account's help dialog and every staff dialog stay English.
-  const presenter = page({ principal: { access: "staff" }, connection: "online", screen: "staff", dialog: "help", lang: "zh-Hans" }, "");
-  assert.match(presenter, /A real person can help\./);
-  assert.match(presenter, /aria-label="Close dialog"/);
+  const staffPage = page({ principal: { access: "staff" }, connection: "online", screen: "staff", dialog: "help", lang: "zh-Hans" }, "");
+  assert.match(staffPage, /A real person can help\./);
+  assert.match(staffPage, /aria-label="Close dialog"/);
 });
 
 test("the help dialog gives the office phone and email", () => {
@@ -1153,6 +1153,9 @@ test("a pressed control is found again after a redraw (design D5)", () => {
   const help = { id: "", name: "", dataset: { assistanceAction: "CLAIM", itemId: "help-3" }, tagName: "BUTTON" };
   assert.ok(focusSelectors(describeFocus(claim)).some((s) => s.includes('data-case-action="CLAIM_PREPARATION"') && s.includes('data-case-id="case-7"')));
   assert.ok(focusSelectors(describeFocus(help)).some((s) => s.includes('data-assistance-action="CLAIM"') && s.includes('data-item-id="help-3"')));
+  // A pressed control that is known by its id is found again by that id.
+  const byId = { id: "save-draft-submit", name: "", dataset: {}, tagName: "BUTTON" };
+  assert.deepEqual(focusSelectors(describeFocus(byId)), ['[id="save-draft-submit"]']);
 });
 
 test("app.mjs marks only the allow-listed press while it runs (design D5)", () => {
@@ -1300,6 +1303,56 @@ test("the presenter screen says the account is no longer used", () => {
   assert.deepEqual([...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]), ["sign-out"]);
   for (const gone of ["select-person", "open-reset-fixtures", "open-checkpoint", "Class workspace", "board-row"])
     assert.ok(!html.includes(gone), gone);
+});
+
+test("a presenter gets the plain screen in a bare English frame", () => {
+  const state = { principal: { access: "presenter" }, connection: "online", screen: "presenter", lang: "zh-Hans" };
+  const html = page(state, presenterScreen(state));
+  assert.equal([...html.matchAll(/data-action="sign-out"/g)].length, 1);
+  for (const gone of ["set-language", "open-help", "open-applications", "client-bar", "client-shell", "site-footer", 'class="skip"'])
+    assert.ok(!html.includes(gone), gone);
+  assert.ok(!/[一-鿿]/.test(html), "no Chinese characters");
+  assert.ok(html.includes("This account is no longer used"));
+});
+
+test("a reset somebody else ran is said plainly, and dismissed", () => {
+  const state = {
+    principal: { userId: "user-2", workspaceId: "w1", access: "applicant" },
+    people: [],
+    cases: [],
+    assistance: [],
+    openPanels: [],
+    draftAnswers: {},
+    connection: "online",
+    screen: "applications",
+    error: null,
+    notice: "Sample cases were reset. The one you had open is no longer there.",
+    dialog: null,
+  };
+  const html = page(state, "<main></main>");
+  assert.match(html, /notice-banner/);
+  assert.match(html, /Sample cases were reset/);
+  assert.match(html, /role="status"/);
+  assert.match(html, /data-action="dismiss-error"/);
+  // It is not an alert: nothing failed.
+  assert.ok(!/notice-banner[^>]*role="alert"/.test(html));
+  assert.ok(!page({ ...state, notice: null }, "").includes("notice-banner"));
+});
+
+test("a refusal shows in the error banner and the staff window stays usable", () => {
+  const state = {
+    principal: { access: "staff", personName: "Sam" },
+    connection: "online",
+    screen: "staff",
+    people: [],
+    cases: [],
+    assistance: [],
+    error: { code: "FORBIDDEN", message: "You do not have access to that." },
+  };
+  const html = page(state, staffScreen(state));
+  assert.match(html, /class="problem-banner"[\s\S]*You do not have access to that\./);
+  assert.match(html, /data-action="dismiss-error"/);
+  assert.match(html, /data-action="open-board"/, "the sidebar is still there");
 });
 
 test("no staff screen offers a persona, a reset or a checkpoint", () => {
