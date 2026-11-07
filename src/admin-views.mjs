@@ -37,7 +37,7 @@ import {
   REQUEST_STATUS,
   FOLLOWUP_STATUS,
   CONTACT_OUTCOME_LABELS,
-  CHOOSE_PERSONA,
+  NO_LINKED_VOLUNTEER,
   UNKNOWN_PERSON,
   contactsPanel,
   logContactForm,
@@ -160,7 +160,7 @@ export function adminEligibility({ caseRecord, followup, request, item } = {}, p
   // Persona first, then the capability: both are refused before any target is
   // inspected, so an ineligible persona learns nothing about the record.
   const gate = (capability) => {
-    if (!id) return refused(CHOOSE_PERSONA);
+    if (!id) return refused(NO_LINKED_VOLUNTEER);
     if (!has(capability)) return refused(NEEDS[capability]);
     return null;
   };

@@ -481,7 +481,6 @@ export const SENTENCES = Object.freeze({
   "Sample cases were reset. The one you had open is no longer there.": "示例申请已重置。您刚才打开的那一份已不存在。",
   // controller.mjs: controllerError sentences (several are staff-only; they cost nothing)
   "Only a volunteer can start an assisted application.": "只有志愿者才能开始协助申请。",
-  "Choose a volunteer persona to act as.": "请选择要扮演的志愿者身份。",
   "Open an application first.": "请先打开一份申请。",
   "This application changed again. Check the newest values and choose once more.": "这份申请又有了变化。请查看最新内容后再选择一次。",
   "This step is not available.": "无法进行这一步。",

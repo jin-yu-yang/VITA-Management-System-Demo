@@ -778,7 +778,7 @@ test("a window with no persona is offered nothing at all", () => {
   assert.deepEqual(caseActions(html), []);
   assert.doesNotMatch(html, /data-assistance-action/);
   assert.doesNotMatch(html, /data-action="open-close-case"/);
-  assert.match(html, /Choose a volunteer persona to act as\./);
+  assert.match(html, /This account isn(?:'|&#39;)t linked to a volunteer yet\. Ask your site coordinator\./);
 });
 
 test("a persona without the office roles gets explanations, not office actions", () => {

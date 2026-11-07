@@ -363,7 +363,7 @@ test("empty and read-only states explain themselves", () => {
     [{ id: "h", status: "open", title: "Forms", createdAt: daysAgo(1) }],
     null,
   );
-  assert.match(noPerson, /Choose a volunteer persona to act as\./);
+  assert.match(noPerson, /This account isn(?:'|&#39;)t linked to a volunteer yet\. Ask your site coordinator\./);
   assert.deepEqual(actions(noPerson), []);
   assert.doesNotMatch(noPerson, /data-assistance-action/);
   assert.match(noPerson, /class="staff-reason"/);
@@ -905,7 +905,7 @@ test("the version-2 Add a case refuses a persona without the right", () => {
   assert.match(refused, /staff-reason/);
   assert.doesNotMatch(refused, /<form/);
   assert.match(refused, /fill-assisted-intake/);
-  assert.match(addV2({ person: null }), /Choose a volunteer persona to act as\./);
+  assert.match(addV2({ person: null }), /This account isn(?:'|&#39;)t linked to a volunteer yet\. Ask your site coordinator\./);
 });
 
 // Fix round 1 (I1): a conflict on a saved office draft shows the shared choice
