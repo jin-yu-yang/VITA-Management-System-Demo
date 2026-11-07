@@ -145,26 +145,29 @@ export const SIGNED_IN_HEADING = "My applications";
  * `heading` is the signed-in screen's own heading; it defaults to the
  * applicant's, and a staff caller passes the one their principal lands on.
  * `.first()` because a staff screen names itself twice — once in the frame and
- * once in the panel — and a single match is unaffected by it.
+ * once in the panel — and a single match is unaffected by it. `windowState`
+ * is passed on to `assertStoredSession`.
  */
 export async function assertAuthenticatedUser(
   page,
   userId,
-  { timeout, heading = SIGNED_IN_HEADING } = {},
+  { timeout, heading = SIGNED_IN_HEADING, windowState = true } = {},
 ) {
   await page
     .getByRole("heading", { name: heading, exact: true })
     .first()
     .waitFor(timeout === undefined ? undefined : { timeout });
-  await assertStoredSession(page, userId);
+  await assertStoredSession(page, userId, { windowState });
 }
 
 /**
  * The session half of `assertAuthenticatedUser`, with no screen in it: the
  * SDK's stored session belongs to this user and carries an access token, and
  * the app wrote its window state. Only ids and booleans leave the page.
+ * `windowState: false` expects the opposite of the last: a presenter's window
+ * loads nothing, so it stores no window state either.
  */
-export async function assertStoredSession(page, userId) {
+export async function assertStoredSession(page, userId, { windowState = true } = {}) {
   const stored = await page.evaluate(
     ({ stateKey }) => {
       const key = Object.keys(localStorage).find((name) =>
@@ -200,8 +203,10 @@ export async function assertStoredSession(page, userId) {
   );
   assert.equal(
     stored.windowState,
-    true,
-    "the app stored no window state for the signed-in user",
+    windowState,
+    windowState
+      ? "the app stored no window state for the signed-in user"
+      : "the app stored a window state it should not have",
   );
 }
 
@@ -274,9 +279,10 @@ export async function submitVerificationCode({ page, code }) {
  * repeat-generation measurement), otherwise one is generated here. The returned
  * code is for a caller that needs to prove it cannot be reused — it must never
  * be logged. `heading` is the signed-in screen this actor lands on; a presenter
- * passes their own, and an applicant needs nothing.
+ * passes their own, and an applicant needs nothing. `windowState` is
+ * `assertStoredSession`'s: a presenter passes false.
  */
-export async function loginTestUser({ page, actor, fixture, otp, heading }) {
+export async function loginTestUser({ page, actor, fixture, otp, heading, windowState }) {
   const code = otp ?? (await fixture.generateOtp(actor.email));
   assert.match(String(code), /^[0-9]+$/);
   const { route, release } = await requestCode({
@@ -293,6 +299,7 @@ export async function loginTestUser({ page, actor, fixture, otp, heading }) {
     await assertAuthenticatedUser(page, actor.userId, {
       timeout: SIGNED_IN_TIMEOUT_MS,
       ...(heading === undefined ? {} : { heading }),
+      ...(windowState === undefined ? {} : { windowState }),
     });
     return { posts: route.posts, preflights: route.preflights, otp: code };
   } catch (error) {

@@ -304,44 +304,14 @@ const PRESENTER_HEADING = "This account is no longer used";
 const PRESENTER_TEXT = "Presenter mode has been removed. Ask your site coordinator for a staff account.";
 
 /**
- * The presenter signs in through the real form, as `loginTestUser` does: the
- * same intercepted send, the same real verification and the same proof of the
- * SDK's session. Only the window state differs: the controller loads nothing
- * for a presenter, so the window stores nothing either, and that is asserted.
+ * The presenter signs in through the real form with `loginTestUser`: the same
+ * intercepted send, the same real verification, the same 30-second wait and
+ * the same proof of the SDK's session. Only the window state differs: the
+ * controller loads nothing for a presenter, so the window stores nothing
+ * either, and that is asserted.
  */
 async function signInPresenter({ page, actor, fixture }) {
-  const code = await fixture.generateOtp(actor.email);
-  assert.match(String(code), /^[0-9]+$/);
-  const { release } = await requestCode({ page, fixture, address: actor.email });
-  let pending = null;
-  try {
-    await submitVerificationCode({ page, code });
-    await page.getByRole("heading", { name: PRESENTER_HEADING, exact: true }).first().waitFor({ timeout: ARRIVAL_MS });
-    const stored = await page.evaluate((stateKey) => {
-      const key = Object.keys(localStorage).find((name) => /^sb-.*-auth-token$/.test(name));
-      let session = null;
-      try {
-        session = key ? JSON.parse(localStorage.getItem(key)) : null;
-      } catch {
-        session = null;
-      }
-      return {
-        userId: session?.user?.id ?? null,
-        hasAccessToken: typeof session?.access_token === "string" && session.access_token.length > 0,
-        windowState: sessionStorage.getItem(stateKey),
-      };
-    }, fixture.sessionStateKey(actor.userId));
-    assert.deepEqual(
-      stored,
-      { userId: actor.userId, hasAccessToken: true, windowState: null },
-      "the presenter's session is not the presenter's, or the window stored a place",
-    );
-  } catch (error) {
-    pending = error;
-    throw error;
-  } finally {
-    await release({ pending });
-  }
+  await loginTestUser({ page, actor, fixture, heading: PRESENTER_HEADING, windowState: false });
 }
 
 /** The presenter's plain screen is on show, with no board, picker, reset, checkpoint or indicator. */

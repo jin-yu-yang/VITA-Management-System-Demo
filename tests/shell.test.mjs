@@ -996,7 +996,7 @@ test("an unsent tick in a staff form is kept across a redraw, and goes when its 
   assert.match(app, /for \(const form of root\.querySelectorAll\("\.modal form"\)\) clearFormTicks\(form\);\s+controller\.closeDialog\(\);/);
 });
 
-test("unsent staff-form entries belong to the one signed in and the persona chosen", () => {
+test("unsent staff-form entries belong to the one signed in", () => {
   const app = appSource();
   // Like the draft link (showDraftLink → draftOffers.follow), checked on every
   // render: a sign-out from another tab or an expired session counts too.

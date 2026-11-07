@@ -252,29 +252,21 @@ test("a staff window neither stores nor restores a persona", () => {
   const leftover = JSON.stringify({ screen: "staff", selectedPersonId: "person-sam" });
   const sessionStorage = fakeSession({ [windowStateKey("user-riley")]: leftover });
   const window = createWindowState({ sessionStorage });
-  assert.deepEqual(window.read("user-riley", { access: "staff" }), { screen: "staff" });
+  assert.deepEqual(window.read("user-riley"), { screen: "staff" });
   // A record holding nothing but the persona is nothing restored.
   sessionStorage.setItem(windowStateKey("user-riley"), JSON.stringify({ selectedPersonId: "person-sam" }));
-  assert.equal(window.read("user-riley", { access: "staff" }), null);
+  assert.equal(window.read("user-riley"), null);
 
-  window.write("user-riley", { screen: "staff-case", selectedPersonId: "person-sam" }, { access: "staff" });
+  window.write("user-riley", { screen: "staff-case", selectedPersonId: "person-sam" });
   assert.deepEqual(JSON.parse(sessionStorage.raw(windowStateKey("user-riley"))), { screen: "staff-case" });
 });
 
-test("a stored persona is ignored for every access", () => {
+test("a stored persona is ignored and never written", () => {
   // A persona left in this tab by an earlier presenter window (or by hand).
   const leftover = JSON.stringify({ selectedPersonId: "p1", screen: "board" });
-  for (const access of ["staff", "applicant"]) {
-    const sessionStorage = fakeSession({ [windowStateKey("user-1")]: leftover });
-    const window = createWindowState({ sessionStorage });
-    const restored = window.read("user-1", { access });
-    assert.deepEqual(restored, { screen: "board" }, `${access} restored the persona`);
-    assert.ok(!("selectedPersonId" in restored));
-    window.write("user-1", { screen: "board", selectedPersonId: "p1" }, { access });
-    assert.deepEqual(
-      JSON.parse(sessionStorage.raw(windowStateKey("user-1"))),
-      { screen: "board" },
-      `${access} saved a persona`,
-    );
-  }
+  const sessionStorage = fakeSession({ [windowStateKey("user-1")]: leftover });
+  const window = createWindowState({ sessionStorage });
+  assert.deepEqual(window.read("user-1"), { screen: "board" });
+  window.write("user-1", { screen: "board", selectedPersonId: "p1" });
+  assert.deepEqual(JSON.parse(sessionStorage.raw(windowStateKey("user-1"))), { screen: "board" });
 });
