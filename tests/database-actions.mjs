@@ -1073,6 +1073,7 @@ test("an online case records the identity check with the other three", async () 
     assert.equal(stored.length, 1);
     assert.equal(stored[0].service, "online");
     assert.deepEqual(stored[0].detail.checks, checks);
+    assert.ok(!("simulated" in stored[0].detail));
   } finally {
     await f.close();
   }
