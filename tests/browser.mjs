@@ -2682,22 +2682,27 @@ async function runPermutation(t, roles) {
           "Morgan is offered Edit on Alex's entry",
         );
         // The same check inside one window, where it can fail: the person
-        // changes there. The Site Coordinator — an admin, offered Edit on the
-        // Preparer's entry — opens Edit in a window of their own and signs
+        // changes there. An admin — the only kind of account offered Edit on
+        // the Preparer's entry — opens Edit in a window of its own and signs
         // out, and the Reviewer signs in in that window through the real
         // form: the open form went with the sign-out, and the Reviewer gets
-        // no Edit (#134). Its own context, so the sign-out reaches no other
-        // window's storage.
+        // no Edit (#134). Supabase's sign-out ends every session of the
+        // account that signs out, so the admin is one of its own, Quinn Harper,
+        // made for this check alone and signed in nowhere else; the Site
+        // Coordinator's window keeps its session. The Reviewer signing in
+        // ends nothing.
         const switchStarted = Date.now();
+        const switchAdminAccount = await fixture.database.staff({
+          key: "switch_admin",
+          name: "Quinn Harper",
+          capabilities: ["admin"],
+        });
+        const switchAdminActor = { key: "switch_admin", email: switchAdminAccount.email, userId: switchAdminAccount.userId };
         const switchWin = await openWindow(staffEngine);
         try {
           const shared = switchWin.page;
-          await loginTestUser({
-            page: shared,
-            actor: fixture.actor("siteCoordinator"),
-            fixture,
-            heading: OFFICE_BOARD_HEADING,
-          });
+          await loginTestUser({ page: shared, actor: switchAdminActor, fixture, heading: OFFICE_BOARD_HEADING });
+          assert.equal(await readSignedInAs(shared), "Quinn Harper", "the switch window is signed in as someone else");
           await watchAlerts(shared);
           // From the office's case pool, which lists every open case.
           await clickAction(shared, "open-cases");
@@ -2710,7 +2715,7 @@ async function runPermutation(t, roles) {
           assert.equal(
             await shared.locator(`form.contact-form[data-contact-id="${alexId}"]`).count(),
             0,
-            "the Site Coordinator's open edit form outlived the sign-out",
+            "the admin's open edit form outlived the sign-out",
           );
           // A fresh document, as after any sign-out: the auth module's resend
           // cooldown lives in the one it signed out of.
@@ -2725,7 +2730,7 @@ async function runPermutation(t, roles) {
           assert.equal(
             await shared.locator(`form.contact-form[data-contact-id="${alexId}"]`).count(),
             0,
-            "the Reviewer sees the edit form the Site Coordinator left open in the same window",
+            "the Reviewer sees the edit form the admin left open in the same window",
           );
           assert.equal(
             await shared.locator(`[id="contact-${alexId}"] [data-action="toggle-contact-edit"]`).count(),
@@ -7825,7 +7830,8 @@ async function runPermutation(t, roles) {
     // person, work one case in two engines. Neither chooses a persona; the
     // server names whoever is signed in, and the independence rule holds
     // between the accounts. Last before the console check, so the two new
-    // people in the roster reach no earlier phase.
+    // people in the roster reach no earlier phase (the contact log's own
+    // admin, Quinn Harper, is the only other person added to it).
     await phase("two staff accounts work one case, each signed in as themselves", async () => {
       // A call made from this test process (not a page wait, which has its
       // own timeout) has no timeout of its own; a stuck one fails here by
